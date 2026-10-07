@@ -1,6 +1,10 @@
 # Stage 2 research pack
 
-Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. Reports should use `response-template.md`; a private repository link alone may not grant the research tool access.
+Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Reports should use `response-template.md`; a private repository link alone may not grant the research tool access.
+
+## Limited search budgets
+
+**[Russian user guide: broadest searches, protected-page tools and language routes](search-priorities.ru.md).** Maximum-breadth default priorities: R04, conditional R12, R01; R09 is the leading substitute/reserve. Specialist retrieval: only after actual failure on critical lawful public URLs, prioritize R12/R02/R01. No site access tests have been performed.
 
 ## Start here
 

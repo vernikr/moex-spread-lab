@@ -1,11 +1,13 @@
 # Research response contract
 
-Use this outline for each completed Rxx investigation. English, concise but sufficient to audit. Do not fill unknown fields with guesses. This file is a template, not research results.
+Use this outline for each completed Rxx investigation. Use the prompt’s output language (Russian for R01–R06/R12; English for other prompts), translating these headings if needed. Preserve original source titles, quotations and technical identifiers. Be concise but sufficient to audit. Do not fill unknown fields with guesses. This file is a template, not research results.
 
 ## Header
 - Research ID / title:
 - Completed at (date and timezone); current-facts cutoff:
 - Context/policy version used:
+- Search languages actually used; source-discovery branches and stopping limits:
+- Ordinary/specialist retrieval actually used; inaccessible URLs, timestamped failure types and lawful alternatives:
 - Inputs actually read; inaccessible/missing inputs:
 - Status: complete / conditional / blocked / not applicable.
 

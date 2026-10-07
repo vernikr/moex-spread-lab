@@ -2,6 +2,12 @@
 
 You are researching one decision for a private MOEX futures-spread project. Produce an evidence-backed report, not software or investment recommendations. Work in English.
 
+## Search languages, breadth and source access
+- **Languages:** English for original regime/change-point methods; Russian for dated local economic/market episodes and MOEX constraints. No additional segment is justified by default. Any original-language study from elsewhere needs an explicit transfer mechanism and must not replace point-in-time Russian state inputs.
+- **Maximum-breadth search:** Deferred optional investigation; not a scarce maximum-breadth priority until simple baselines and specific incremental hypotheses exist.
+- **Bot-protected public-page tool:** Not recommended by default. Open methods papers and official historical inputs first; a missing regime label cannot be fixed by broader access.
+- Breadth and special access are independent: more source discovery does not imply harder retrieval. Try normal fetch, supplied local documents or official mirrors first. Use a specialist only for lawfully accessible public pages after a documented retrieval failure, not authentication/paywall/rights restrictions or private data. Do not guarantee bypass success; no target sites have been access-tested here. Record URL/date/failure type/outcome; respect prohibitions and limits and request lawful alternatives. Stop expanding when decision-critical claims are supported, conflicts addressed and additional search branches cease changing the decision. Never claim literal exhaustive coverage.
+
 ## Standalone project context
 - Selective medium-term futures spread ideas across an economically defensible broad universe; zero-trade days are acceptable. Initial execution is manual at VTB, later automation potentially at BCS. The user is a qualified investor and reports KPUR status; broker-specific recognition and consequences are unverified.
 - Test allocation: RUB 30,000 including margin, variation-margin liquidity and reserves, on the SAME account as a core LQDT holding exceeding RUB 40 million. Future candidate scale: RUB 10–20 million. Internal budgets do not ring-fence the account or prove broker collateral eligibility.

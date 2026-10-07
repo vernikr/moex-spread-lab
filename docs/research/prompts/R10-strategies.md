@@ -2,6 +2,12 @@
 
 You are researching one decision for a private MOEX futures-spread project. Produce an evidence-backed report, not software or investment recommendations. Work in English.
 
+## Search languages, breadth and source access
+- **Languages:** English is primary for original spread/carry/mean-reversion methods; Russian is mandatory for MOEX economics and examples. Chinese (Simplified) is a conditional useful extension for commodity calendar/basis methods on a genuinely related Chinese underlying identified by R06. Require source-level assumptions and translated terminology; foreign backtests/contract rules are not proof of MOEX value. Skip the extension if no relevant economic connection exists.
+- **Maximum-breadth search:** Reserve after R04/R12/R01/R09 and R06, not an early scarce maximum-breadth run. Broad strategy hunting before a fixed R09 protocol increases selection bias. If expanded, log all candidate families and failed leads.
+- **Bot-protected public-page tool:** Low/conditional priority for an essential public paper/specification; use lawful open versions first. Never spend scarce access on promotional backtests or private signal channels.
+- Breadth and special access are independent: more source discovery does not imply harder retrieval. Try normal fetch, supplied local documents or official mirrors first. Use a specialist only for lawfully accessible public pages after a documented retrieval failure, not authentication/paywall/rights restrictions or private data. Do not guarantee bypass success; no target sites have been access-tested here. Record URL/date/failure type/outcome; respect prohibitions and limits and request lawful alternatives. Stop expanding when decision-critical claims are supported, conflicts addressed and additional search branches cease changing the decision. Never claim literal exhaustive coverage.
+
 ## Standalone project context
 - Selective medium-term futures spread ideas across an economically defensible broad universe; zero-trade days are acceptable. Initial execution is manual at VTB, later automation potentially at BCS. The user is a qualified investor and reports KPUR status; broker-specific recognition and consequences are unverified.
 - Test allocation: RUB 30,000 including margin, variation-margin liquidity and reserves, on the SAME account as a core LQDT holding exceeding RUB 40 million. Future candidate scale: RUB 10–20 million. Internal budgets do not ring-fence the account or prove broker collateral eligibility.

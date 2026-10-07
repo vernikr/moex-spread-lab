@@ -7,6 +7,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 Stage 2 **research prompt pack delivered**; the user will conduct the research. No findings accepted, production server accessed or orders submitted. Stage 3 has not started.
 
 - **[Research pack: what to run first](docs/research/README.md)**
+- [Search priorities and languages — Russian user guide](docs/research/search-priorities.ru.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

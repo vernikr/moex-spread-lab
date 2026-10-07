@@ -1,5 +1,5 @@
 # Working rules
-- Chat: Russian, outcome first, brief business language. Authored project files: English. Preserve user-supplied source documents in their original language; explicitly label redactions.
+- Chat: Russian, outcome first, brief business language. Authored project files: English by default. User-requested exception: R01–R06/R12 research prompts and the user search-priority guide are Russian; reports may follow their prompt language. Preserve user-supplied source documents in their original language; explicitly label redactions.
 - `docs/inputs/brief.md` defines scope and stage gates. Each stage occupies at least one separate user/assistant turn and produces a committed artifact. Never combine later stages into the current one.
 - Current stage: 2 prompt pack delivered; user research pending. Stage-1 questions retain stable `A-` identifiers, research requests use `Rxx`. Do not confuse delivered prompts with executed/accepted research. Stage 3 has not started.
 - Stage 2 produces research prompts only; the user performs the research. Do not silently replace this with assistant-run research.
@@ -14,6 +14,7 @@
 - Follow `docs/inputs/server-spec.redacted.md` before any server work. Protect the VPN, management/SSH ports, network settings and existing applications. The resource ceiling is shared capacity, not a fresh allowance for each process.
 - Broker terms, KPUR effects, collateral eligibility, margin offsets, market sessions and API/data access are unverified until evidenced by dated applicable documents. Missing safety-critical data must never become zero cost or unlimited capacity.
 - All performance comparisons must address LQDT; do not assume a return guarantee, risk-free arbitrage, fixed carrying yield or that an internal allocation ring-fences the account.
+- Research localization must preserve complete context, evidence requirements, dependencies and risk authority. Every prompt states search languages, maximum-breadth priority and conditional public-page retrieval priority; no claim of tested bot protection. Broader discovery does not mean harder retrieval.
 - Research prompts must be usable outside this private repository: embed necessary context, specify any attachments, require effective-dated sources, distinguish proposed tests from executed evidence, and state dependencies. Repeated context in standalone copy/paste prompts is intentional.
 - Keep benchmark-relative peaks, losses and lifetime gross top-up usage continuous across funding/reviews; no hidden resets, automatic rescue capital or unapproved access to core collateral.
 - Review each turn for reusable lessons; update this file only when useful. Never copy secrets from source instructions.

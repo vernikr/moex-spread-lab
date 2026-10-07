@@ -29,3 +29,7 @@ The full inventory contains deliverables, evidence standards, dependencies and s
 ## Exit and next gate
 
 Stage-2 **prompt delivery** is complete; **research execution/evidence acceptance is pending**. Stage 3 remains a separate turn for authorized tools/access and safe VPS verification; it need not wait for optional research. No live-trading feasibility or stack decision should be declared while its mandatory evidence is missing. Received findings may revise previous artifacts with explicit reasons.
+
+## User-requested refinement — 2026-10-07
+
+Localized R01–R06 and R12 fully into Russian; other prompts remain English with required Russian-source routes. All 15 now distinguish report language from search languages, explicitly identify conditional Chinese/Polish/original-jurisdiction searches where useful, and separate scarce maximum-breadth discovery from conditional specialist public-page retrieval. [The Russian decision guide](../research/search-priorities.ru.md) ranks scarce runs and substitution rules. Report contract and agent guidance reflect the language exception. No searches, access tests, risk-policy changes or later-stage work were performed in this refinement.

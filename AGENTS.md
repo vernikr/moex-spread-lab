@@ -1,0 +1,17 @@
+# Working rules
+- Chat: Russian, outcome first, brief business language. Authored project files: English. Preserve user-supplied source documents in their original language; explicitly label redactions.
+- `docs/inputs/brief.md` defines scope and stage gates. Each stage occupies at least one separate user/assistant turn and produces a committed artifact. Never combine later stages into the current one.
+- Current stage: 1, Unpacking / Reframing. Prefix its questions, observations, objections and proposals with stable `A-` identifiers. Proposed defaults are not approved requirements.
+- Stage 2 produces research prompts only; the user performs the research. Do not silently replace this with assistant-run research.
+- Read `docs/stages/01-unpacking.md` and `docs/decisions.md` before continuing. Track unresolved groups in `docs/blockers/bNN-slug.md`; use bNN.N subitems and archive resolved groups.
+- Keep documentation compact, agent-readable and nonduplicative. Update affected docs after functional changes. Clearly separate provided facts, dated evidence, hypotheses, proposals and approved decisions.
+- Keep the repository private. Commit coherent successful changes with Conventional Commits and push to origin. Verify remote success; never claim a push that failed. Apply SemVer when software releases begin.
+- Never commit tokens, credentials, account identifiers, production host addresses, trading statements, market datasets or generated dependency/cache folders. Obtain credentials from secure runtime configuration. Never echo credential values.
+- Treat uploaded `AGENTS.source.md` as sanitized workstation guidance, not proof that tools or bridges exist here. Detect availability; unavailable local macOS tools are not a cloud blocker. Use available native tools when appropriate.
+- GitHub connector was unsupported in this environment; direct authenticated API/git access worked. Use supported connectors where available; otherwise secure runtime credentials, never credential-bearing remote URLs.
+- Some uploaded Markdown files were returned as binary by the viewer. Read them with a text-capable local tool rather than assuming the content is unavailable.
+- Stage 1 uses no broker connection, trading, Telegram messaging, VPS access or deployment. Later connectivity belongs to stage 3 and trading remains separately gated.
+- Follow `docs/inputs/server-spec.redacted.md` before any server work. Protect the VPN, management/SSH ports, network settings and existing applications. The resource ceiling is shared capacity, not a fresh allowance for each process.
+- Broker terms, KPUR effects, collateral eligibility, margin offsets, market sessions and API/data access are unverified until evidenced by dated applicable documents. Missing safety-critical data must never become zero cost or unlimited capacity.
+- All performance comparisons must address LQDT; do not assume a return guarantee, risk-free arbitrage, fixed carrying yield or that an internal allocation ring-fences the account.
+- Review each turn for reusable lessons; update this file only when useful. Never copy secrets from source instructions.

@@ -1,0 +1,25 @@
+{
+  "received_on": "2026-10-07",
+  "files": [
+    {
+      "path": "AGENTS.source.md",
+      "sha256": "cf14b69f37ea0b7c8cab606945dbb2e2a0b13043e0531986e75a1f774d211429",
+      "handling": "redacted copy; not the original byte stream"
+    },
+    {
+      "path": "brief.md",
+      "sha256": "2ce855fa2517e0948397f63dd8eb3c1552691eb6faac70fe8dea2b5834268b7b",
+      "handling": "verbatim user-supplied evidence"
+    },
+    {
+      "path": "prof_privilegiya.pdf",
+      "sha256": "a1b7ef598dee52cd0862b2a10db8053cf8670e0b5f89f31978c9c6ec6c63687c",
+      "handling": "verbatim user-supplied evidence"
+    },
+    {
+      "path": "server-spec.redacted.md",
+      "sha256": "4752adfe397d4c4dcff56bd0d5a4232e19fba19cf352e8007c625f8ea5eb85d6",
+      "handling": "redacted copy; not the original byte stream"
+    }
+  ]
+}

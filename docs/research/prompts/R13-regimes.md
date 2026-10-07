@@ -2,6 +2,13 @@
 
 You are researching one decision for a private MOEX futures-spread project. Produce an evidence-backed report, not software or investment recommendations. Work in English.
 
+## Inputs and operation outside the repository
+You have no repository access or previous conversation. This complete prompt contains the task context; no separate brief, agent-instruction or policy file is required. Rxx codes identify other investigations, not documents automatically available to you.
+- **Inputs for this task:** Supply R09/R10 for the chosen validation protocol and baseline hypotheses; R02/R07/R08 define actual costs, risk and delayed execution. R09 does not itself establish these market inputs. Measured incremental value additionally needs actual baseline data/results, not just the R10 research plan; these do not yet exist. Without them, produce only a conditional research design.
+- **Meaning of referenced investigations:** R09 — validation protocol, leakage and multiple testing; R10 — deterministic hypotheses and baseline test plan; R02 — full VTB/BCS costs and fees; R07 — risk, stress, funding and sizing; R08 — delayed execution, signal validity and virtual portfolio
+- If reports exist, the user supplies them as text or readable files in any format. An abridged handoff must retain relevant findings, original sources/dates, parameters/formulas, scope limitations and conflicts. A private repository link is not a report you have read.
+- If reports or confirmations are absent, perform independent public-source work and mark dependent conclusions conditional. Do not invent results or claim actual trading feasibility. Ask only for the minimal materials needed to resolve a specific remaining question. Books/transcripts/exports are optional leads, not assumed attachments.
+
 ## Search languages, breadth and source access
 - **Languages:** English for original regime/change-point methods; Russian for dated local economic/market episodes and MOEX constraints. No additional segment is justified by default. Any original-language study from elsewhere needs an explicit transfer mechanism and must not replace point-in-time Russian state inputs.
 - **Maximum-breadth search:** Deferred optional investigation; not a scarce maximum-breadth priority until simple baselines and specific incremental hypotheses exist.
@@ -20,7 +27,7 @@ You are researching one decision for a private MOEX futures-spread project. Prod
 
 ## Evidence and response requirements
 Use the actual research date as the current-facts cutoff (pack prepared 2026-10-07). Use current/historical primary documents with applicable dates; distinguish publication, availability, effective time and access time. Cite every material factual claim with URL/issuer/title/page or section/version/date and a short supporting excerpt; books/papers need bibliographic locations. Do not invent sources, API endpoints, past availability or numerical test results. A later edited page does not prove what was known historically. Mark assumptions and unknowns explicitly; absent information is not zero cost or permission.
-Return: (1) decision summary with go/conditional/no-go, (2) claim/evidence table using this research ID as prefix, (3) the task-specific tables/calculations/protocols below, (4) conflicts and gaps with exact questions for the owner/broker, (5) falsification/acceptance criteria and uncertainty, (6) proposed project changes and refresh triggers. State which inputs were actually read and which requested checks were only proposed. Use public, permitted, read-only examples if useful; no credentials, live trades, paid subscriptions, big downloads or production access. Missing dependency reports make relevant conclusions conditional; they do not prevent independent evidence collection.
+Choose your own report format, section order and file type; there is no shared template. Cover conclusions, traceable evidence, the substantive tasks below, material conflicts/unknowns, falsification criteria and possible project changes. Requested tables/calculations may use any clear equivalent representation; no common schema or claim-prefix convention is mandatory. State which inputs were actually read and which requested checks were only proposed. Use public, permitted, read-only examples if useful; no credentials, live trades, paid subscriptions, big downloads or production access. Missing dependency reports make relevant conclusions conditional; they do not prevent independent evidence collection.
 
 ## Status and question
 Optional, deferred until R09/R10 establish simple baselines. Does market-wide or instrument-family regime information improve out-of-sample net decisions, or mainly add overfit complexity?
@@ -28,7 +35,7 @@ Optional, deferred until R09/R10 establish simple baselines. Does market-wide or
 ## Investigate and deliver
 - Compare a no-regime baseline to simple observable volatility/liquidity/carry-state splits before hidden-state/change-point models. Define each state's information set at decision time and prevent full-sample smoothing/future regime labels.
 - Predeclare whether regime affects entry, size, exit, duration or pair eligibility. Avoid changing all simultaneously and attributing gains to an unspecified regime layer.
-- Control additional search degrees of freedom, label switching, sparse state samples, transition costs and shared macro episodes. Use the exact R09 splits/delays/costs and a final untouched evaluation.
+- Control additional search degrees of freedom, label switching, sparse state samples, transition costs and shared macro episodes. Use the R09 validation splits and the same explicit R02/R07/R08 cost/risk/delay assumptions as the baseline and a final untouched evaluation.
 - Distinguish policy-defined market closures/contract changes from learned predictive states; don't infer causality from a profitable label.
 - Return hypothesis cards, required fields/publication dates, leakage tests, ablation/uncertainty protocol, resource estimates and explicit discard criteria. No new mandatory architecture or unsupported performance claims.
 - Ask for books/papers only around a specific unresolved statistical method; do not request whole libraries/channels. If no incremental evidence can be identified, recommend deferral.

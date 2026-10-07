@@ -6,7 +6,6 @@ Delivered 2026-10-07. **Scope: research design only. The user performs the resea
 
 - [Research pack: sequence, dependencies, literature/channel leads](../research/README.md)
 - [Fifteen standalone prompts](../research/prompts/)
-- [Research response contract](../research/response-template.md)
 - [Report return instructions](../research/results/README.md)
 - [Delegated provisional pilot risk policy](../risk/pilot-policy.md)
 - [Updated decisions](../decisions.md) and [account/risk blockers](../blockers/b01-account-and-risk.md)
@@ -32,4 +31,8 @@ Stage-2 **prompt delivery** is complete; **research execution/evidence acceptanc
 
 ## User-requested refinement — 2026-10-07
 
-Localized R01–R06 and R12 fully into Russian; other prompts remain English with required Russian-source routes. All 15 now distinguish report language from search languages, explicitly identify conditional Chinese/Polish/original-jurisdiction searches where useful, and separate scarce maximum-breadth discovery from conditional specialist public-page retrieval. [The Russian decision guide](../research/search-priorities.ru.md) ranks scarce runs and substitution rules. Report contract and agent guidance reflect the language exception. No searches, access tests, risk-policy changes or later-stage work were performed in this refinement.
+Localized R01–R06 and R12 fully into Russian; other prompts remain English with required Russian-source routes. All 15 now distinguish report language from search languages, explicitly identify conditional Chinese/Polish/original-jurisdiction searches where useful, and separate scarce maximum-breadth discovery from conditional specialist public-page retrieval. [The consolidated research README](../research/README.md) ranks scarce runs and substitution rules. Prompt language and agent guidance reflect the language exception. No searches, access tests, risk-policy changes or later-stage work were performed in this refinement.
+
+## External-agent handoff refinement — 2026-10-07
+
+The research README now includes search-resource priorities, language routes and an explicit attachment/dependency guide. Separate search-guide and response-template files were removed at the user's request; report format is unrestricted, while substantive questions and evidence traceability remain. Every prompt now defines its referenced Rxx inputs and behavior when they are absent. R05/R07/R08 embed the relevant detailed policy semantics; R11 embeds the necessary hardware constraints. Only R02 has a mandatory original attachment for its attached-tariff review; downstream project-specific conclusions need supplied predecessor findings. Optional extension plans are not evidence of measured baseline performance. No research, access checks or risk-policy changes occurred.

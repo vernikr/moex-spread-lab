@@ -1,10 +1,59 @@
 # Stage 2 research pack
 
-Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Reports should use `response-template.md`; a private repository link alone may not grant the research tool access.
+Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Report format is unrestricted: no shared template, mandatory section layout or file type. Each prompt contains the project context, explicitly named inputs and fallback instructions for an external agent without repository access.
 
-## Limited search budgets
+## Как распределить редкие расширенные запуски
 
-**[Russian user guide: broadest searches, protected-page tools and language routes](search-priorities.ru.md).** Maximum-breadth default priorities: R04, conditional R12, R01; R09 is the leading substitute/reserve. Specialist retrieval: only after actual failure on critical lawful public URLs, prioritize R12/R02/R01. No site access tests have been performed.
+Обновлено 07.10.2026. Это рекомендации по организации поиска, **не результаты исследований и не проверка доступности сайтов**. Два ресурса независимы: широкий поиск находит источники; специальный инструмент помогает получить конкретные публичные страницы, если обычное получение не сработало.
+
+### Максимально широкий поиск: куда направить 2–3 запуска
+
+| Очередь | Исследование | Почему оправдана широта |
+|---|---|---|
+| **1** | **R04 — данные** | Пропущенный бесплатный архив, поле или ограничение лицензии может изменить всю систему. Нужны разные типы источников, истёкшие контракты, история/реальное время, альтернативы и ограничения — не только первый рабочий API. |
+| **2, условно** | **R12 — дивиденды и события** | Для акций/индексов важны первоначальные решения, исправления, удалённые страницы и датированные версии. Если эти пары исключены, запуск не нужен: передать место R09. |
+| **3** | **R01 — правила брокеров и риск основного портфеля** | Требования разбросаны между регулятором, биржей, НКЦ, договором и приложениями брокера. Нужна полнота применимой цепочки и разрешение противоречий, а не множество пересказов. Настройки конкретного счёта всё равно подтверждаются брокером. |
+| **4 / замена** | **R09 — проверка стратегий** | Нужен поиск конкурирующих методов, критики, репликаций и ограничений при редких зависимых сделках. Полезно, если доступны всего 2–3 запуска, а R01 уже закрыт документами или R12 не нужен. |
+| Резерв | R06, затем R10 | Расширять, если обычный поиск не объясняет экономические связи или упускает классы стратегий. До фиксации правил проверки массовый поиск стратегий увеличивает риск подгонки. |
+
+**Если доступен один запуск:** R04. **Два:** R04 + R12, если сохраняются акции/индексы; иначе R04 + R09. **Три:** добавить R01. Если общий счёт вызывает неразрешённый риск для основного портфеля, поднять R01 на второе место независимо от этой очереди.
+
+В R02/R03/R05 обычно важнее точное чтение официальных документов и расчёты. В R07/R08 — качественные зависимости и проверка путей убытка/исполнения. В R11 — реальные замеры на следующем этапе. R13–R15 пока не заслуживают дефицитных расширенных запусков.
+
+#### Что попросить от широкого режима
+
+Поиск разными формулировками и исходными терминами; несколько классов первоисточников; архивы/изменения; переходы по ссылкам и научным цитированиям; отрицательные результаты и противоречия. Сохранить журнал проверенных ветвей, ограничения покрытия и неудовлетворённые вопросы. Заканчивать при насыщении полезных результатов, а не заявлять «найдено всё». Широта не отменяет проверку применимости и дат.
+
+### Инструмент для бот-защит: куда направить 1–3 запуска
+
+Запускать **после** составления списка важных URL и проб обычного получения. Здесь не установлено, какие именно сайты блокируют загрузку; не тратить лимит только потому, что сайт «может быть защищён».
+
+| Очередь | Исследование | Обоснованная цель |
+|---|---|---|
+| **1** | **R12** | Недоступные обычному получению публичные первичные страницы раскрытия, эмитентов и нужные архивные версии. Если R12 не нужен либо страницы доступны — пропустить. |
+| **2** | **R02** | Критические публичные тарифы/приложения/изменения ВТБ и БКС, которые не удалось получить иначе. Приложенному PDF такой инструмент не нужен. |
+| **3** | **R01** | Недоступные необходимые публичные регламенты/методики/приложения брокеров, биржи или НКЦ. Индивидуальные условия счёта подтверждать письменно, не обходом кабинета. |
+| Резерв | R04, R03 | Важные заблокированные условия доступа к данным/архивам или публичная справка API. Доступ к странице не доказывает бесплатность, полноту данных или право торговых операций. |
+| Позже | R14 | Выбранные первичные новости, только если гипотеза полезности текста уже обоснована. Не сегодняшняя приоритетная задача. |
+
+**Если доступен один запуск:** R12, но только при реальном сбое на существенных URL; иначе первый фактически заблокированный документ из R02/R01. **Два:** добавить следующий из R02/R01. Можно объединить нужные страницы одного исследования в один пакет, если инструмент поддерживает это, не выходя за разрешённые лимиты.
+
+Широкое сканирование всех сайтов, повторные проходы доступных страниц, paywall, авторизация, закрытые каналы и частные данные не являются целями. Соблюдать разрешения, права, ограничения и частоту; не обещать прохождение любой защиты. Исчезнувший документ требует архива/копии, а не обхода защиты современной страницы. При ошибках фиксировать время, URL, ответ и разрешённую альтернативу.
+
+### Языки
+
+- Полностью переведены на русский **R01–R06 и R12**, включая контекст, результаты и правила доказательств. Поисковая область не ограничена русским только потому, что текст русского промпта.
+- **R07–R11 и R13–R15** оставлены на английском: методы/технические первоисточники преимущественно международные, но обязательный русский поиск для российских правил/данных указан там, где нужен.
+- **Китайский:** точечная условная ветвь R06/R07/R10/R12/R14 для действительно связанных китайских товарных/RMB-источников; R15 — только оригинальный документ выбранного релевантного проекта без достаточной английской версии. Не обязательный широкий проход китайского сегмента и не перенос чужих контрактных правил на MOEX.
+- **Польский:** R01/R11 только для условий конкретного польского хостинга или установленного операционного вопроса. Не из-за одной лишь географии VPS.
+- **Другой язык налоговой юрисдикции:** R05 только после установления реальных налоговых обстоятельств пользователя. Аналогично оригинальный язык конкретного иностранного эмитента/индекса в R12/R14 — только при доказанной связи.
+
+Названия иностранных рынков/языков — условные маршруты, а не подтверждение связи выбранных инструментов. Где дополнительный сегмент не даёт ожидаемой пользы, это прямо указано в промпте.
+
+### Как вернуть результаты
+
+Русские промпты предполагают отчёт на русском, английские — на английском. Формат отчёта свободный: отдельного шаблона, обязательных заголовков и типа файла нет. Содержательные вопросы и требования к проверяемости источников из промпта сохраняются. Оригинальные названия, цитаты, термины API и даты сохранять. В сводке отметить фактические языки, поисковые ветви, недоступные источники и применённые способы получения. Исследования по-прежнему выполняет пользователь; результаты пока не получены.
+
 
 ## Start here
 
@@ -13,14 +62,14 @@ Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions ve
 3. Use their conclusions for **R07, R08, R10 and R11**. Run **R12** early if equity/index-linked pairs remain candidates. R11 is desk research/a proposed benchmark plan only; actual installation and VPS checks belong to stage 3.
 4. **R03** may run early in parallel but is mandatory only before designing/enabling automated BCS execution. Do not choose architecture that assumes unverified API features.
 5. **R13–R15** are optional extensions, deferred until simpler deterministic approaches have evidence. R12's event timing is not deferred with optional NLP.
-6. Return reports as `Rxx-YYYY-MM-DD.md`, with evidence and tables. Bring partial/blocked reports too. A book chapter or channel export is supplementary evidence, not a substitute for current official broker rules.
+6. Return reports in any format, identifying the Rxx investigation and research date, with traceable evidence. Bring partial/blocked reports too. A book chapter or channel export is supplementary evidence, not a substitute for current official broker rules.
 
 ## Inventory and dependencies
 
 | ID | Investigation / prompt | Priority / dependencies | Decision enabled |
 |---|---|---|---|
 | R01 | [Broker rules, KPUR, collateral and liquidation](prompts/R01-broker-risk.md) | Wave 1; none | Can shared-account real testing be safe and within the funding authority? |
-| R02 | [VTB/BCS full cost comparison](prompts/R02-costs.md) | Wave 1; none, reconcile R01/R06 later | Costs to use by date, contract and scale; tariff switches |
+| R02 | [VTB/BCS full cost comparison](prompts/R02-costs.md) | Wave 1; none, reconcile R01/R05/R06 later | Costs to use by date, contract and scale; tariff switches |
 | R03 | [BCS Trade API and automation constraints](prompts/R03-bcs-api.md) | Parallel or later; before automation | Is a reliable authorized execution adapter feasible? |
 | R04 | [Free market data and point-in-time coverage](prompts/R04-data.md) | Wave 1; none | Finest defensible interval, fields and limits |
 | R05 | [LQDT accounting, funding and taxes](prompts/R05-benchmark.md) | Wave 1; none, reconcile R01/R02 | Correct net comparison and risk-curve accounting |
@@ -28,14 +77,48 @@ Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions ve
 | R07 | [Pilot risk, margin liquidity and position sizing](prompts/R07-risk.md) | Wave 2; R01/R02/R04/R05/R06/R09 | Validate/revise provisional limits, smallest feasible position |
 | R08 | [Manual fills, validity and virtual portfolio](prompts/R08-execution.md) | Wave 2; R01/R02/R04/R06/R09; exchange constraints with R07 | Credible delayed execution and nonexecution accounting |
 | R09 | [Selection bias and validation protocol](prompts/R09-validation.md) | Wave 1; none | Predeclared standard of evidence before strategy selection |
-| R10 | [Deterministic strategies and holding/allocation decisions](prompts/R10-strategies.md) | Wave 2; R04/R05/R06/R09; constrained by R07/R08 | Testable baseline hypotheses, not a profitable model claim |
+| R10 | [Deterministic strategies and holding/allocation decisions](prompts/R10-strategies.md) | Wave 2; R04/R05/R06/R09; constrained by R07/R08; R02 for actual cost inputs | Testable baseline hypotheses, not a profitable model claim |
 | R11 | [Free-resource feasibility and resilient operations](prompts/R11-operations.md) | Wave 2; R04; add R03 for automation | Stage-3 measurement plan and input to stack decisions |
 | R12 | [Dividends and other point-in-time events](prompts/R12-events.md) | Conditional core; R06 scopes it | Valid equity/index economics and later reuse requirements |
-| R13 | [Market regimes](prompts/R13-regimes.md) | Optional; after R09/R10 baselines | Whether state conditioning earns its complexity |
-| R14 | [News/text and channel evidence](prompts/R14-text.md) | Optional; R04/R09/R10/R12 | Timestamp-valid incremental text evidence |
-| R15 | [Neural models under local compute limits](prompts/R15-neural.md) | Optional; R04/R09/R10/R11 | Whether neural approaches beat simple alternatives net of burden |
+| R13 | [Market regimes](prompts/R13-regimes.md) | Optional; R09/R10; R02/R07/R08 for cost/risk/execution assumptions | Whether state conditioning earns its complexity |
+| R14 | [News/text and channel evidence](prompts/R14-text.md) | Optional; R04/R09/R10/R12; actual baseline evidence if measured value is claimed | Timestamp-valid incremental text evidence |
+| R15 | [Neural models under local compute limits](prompts/R15-neural.md) | Optional; R04/R09/R10/R11; R02/R07/R08 for actual constraints | Whether neural approaches beat simple alternatives net of burden |
 
 Dependencies are evidence inputs, not an instruction to fabricate missing reports. Independent parts may be researched early; dependent conclusions remain conditional. R07/R08 exchange stress and execution assumptions and need a consistency review, not a circular request to “finish the other first.”
+
+## Передача внешнему агенту: что приложить
+
+**Передавайте полный текст одного промпта**, а не одну задачу из его середины. Доступ к репозиторию, остальным файлам проекта или этой переписке не предполагается. Коды Rxx — названия других исследований, не автоматически доступные документы. Все необходимые определения зависимых исследований добавлены прямо в каждый промпт.
+
+### Минимальный комплект
+
+| Исследование | Что нужно сверх полного промпта |
+|---|---|
+| **R01, R03, R04, R05, R06, R09** | Для самостоятельного исследования общедоступных источников — **ничего**. Персональные выводы по счёту/налогам могут остаться условными. |
+| **R02** | **`prof_privilegiya.pdf`** для проверки именно предоставленного тарифа. Без него возможна только публичная часть с явной оговоркой. |
+| **R07** | Для выводов именно по проекту — результаты **R01/R02/R04/R05/R06/R09**; R08 добавить по готовности для согласования исполнения. |
+| **R08** | **R01/R02/R04/R06/R09**; R07 по готовности. R05 полезен для согласования виртуального учёта. |
+| **R10** | **R04/R05/R06/R09**; R07/R08 для конкретных ограничений; R02 для фактических комиссий/издержек. |
+| **R11** | **R04** для реального объёма данных; **R03**, если рассматривается автоматизация. Характеристики техники и запреты на вмешательство включены в промпт; отдельный файл сервера не нужен. |
+| **R12** | **R06**, если уже определён набор семейств. Без него можно исследовать источники событий для акций/индексов как условную область. Старые проекты пока не нужны. |
+| **R13** | **R09/R10**, а для конкретных одинаковых условий сравнения — **R02/R07/R08**. Если нужны выводы о фактической пользе, необходимы реальные результаты базовых тестов, не только исследовательский план. |
+| **R14** | **R04/R09/R10/R12**; данные/результаты базовых тестов нужны только для измеренной добавочной пользы. Выгрузки каналов не обязательны для составления плана и подбора источников. |
+| **R15** | **R04/R09/R10/R11**; **R02/R07/R08** для конкретных издержек/риска/исполнения. Данные/результаты базовых тестов — только для эмпирических выводов. |
+
+**Это зависимости для конкретных выводов, а не обязательные вложения для любого старта.** Без предыдущих отчётов агент может найти первоисточники, сравнить методы и предложить условный протокол; он не должен выдумывать выбранные параметры, выполненные тесты или доказанную применимость. У R07/R08 нет требования ждать друг друга бесконечно: подготовить независимые части, затем сверить общие предпосылки.
+
+Отчёт можно передать файлом любого поддерживаемого агентом формата или текстом. Если нужен компактный вариант, передайте относящиеся к задаче выводы **вместе с источниками, датами, формулами/параметрами, ограничениями и нерешёнными противоречиями**, а не только резюме «подходит». Одна ссылка на приватный репозиторий и один код Rxx не заменяют содержимое. Если источник доступен по публичной ссылке, агент должен явно подтвердить, что смог прочитать его.
+
+### Что пока неизвестно и не должно угадываться
+
+- **R01/R02/R03:** фактические настройки/договор на счёте, признание статуса каждым брокером, включённые Advisory-услуги, выбранный тариф/доступ API БКС. Можно начать с публичных правил; для персонального заключения позже потребуются обезличенные подтверждения или письменный ответ брокера.
+- **R05:** налоговое резидентство, тип счёта и применимые налоговые обстоятельства. Без них — условные ветви и результат до личных налогов, не готовый персональный расчёт.
+- **R07/R08:** фактический источник/срок поступления экстренных денег, периоды недоступности пользователя, что считается дневной «сделкой». Эти вопросы открыты; для метода достаточно сценариев, но не для утверждения безопасности реальной торговли.
+- **R11:** реальный свободный ресурс VPS, поставщик и условия размещения, версии локальных инструментов. Измерения/доступ — на этапе 3; в исследовании только план проверок. SSH, IP, ключи и полный исходный файл сервера не нужны.
+- **R12:** прежние проекты поступят на этапе 7. Сейчас нужен перечень источников/рисков и критерии извлечения, не анализ несуществующих вложений.
+- **R13–R15:** измеренных результатов простых стратегий пока нет. Можно подготовить гипотезы/план; нельзя подтвердить добавочную пользу без последующего тестирования. Для R14 реальная квота/модель Gemini также неизвестна — публичные условия и сценарии, без API-ключей.
+
+Книги, статьи, транскрипты и Telegram-экспорты — дополнительные материалы **по конкретному обоснованному запросу**, не обязательный стартовый пакет. Упоминание книги не означает, что агент получил её текст. Не отправляйте исходный `AGENTS.md`, секреты, номера счетов или производственные доступы. `brief.md` и внутренняя политика риска для текущего исследовательского запроса отдельно не требуются: нужный контекст встроен; при последующих изменениях обновляйте передаваемый промпт/добавляйте явную поправку.
 
 ## Shared evidence standard
 

@@ -1,6 +1,6 @@
 # Stage 1 — Unpacking / Reframing
 
-Date: 2026-10-07. Evidence: four user attachments plus answers recorded in `../decisions.md`. This is framing, not deep research, requirements approval or architecture. Current broker/data facts are not independently verified. All suggestions below remain proposals unless marked confirmed.
+Date: 2026-10-07. Evidence: four user attachments plus answers recorded in `../decisions.md`. This is framing, not deep research, requirements approval or architecture. Current broker/data facts are not independently verified. All suggestions below remain proposals unless marked confirmed. Stage-2 revision on 2026-10-07 incorporates the user’s clarification and delegated risk defaults; see `../risk/pilot-policy.md`. Other proposals retain their original status.
 
 ## Decisions and remaining decision-critical questions
 
@@ -14,10 +14,10 @@ RUB 30,000 includes margin, variation-margin liquidity and reserves. The user al
 Attempt all eligible signals without discretionary skips, using comparable execution delays. Record every signal and outcome, including expiry, market closure, capital rejection, unfilled orders and partial execution. All signals being accounted for does not mean every signal becomes a filled trade. No unlimited-capital parallel portfolio is requested.
 
 ### A-04 — Loss tolerance: confirmed range, incomplete control policy
-The user accepts RUB 10,000–15,000 final loss across several months and can provide emergency funds. This is not a per-position allowance or a peak-drawdown threshold. Do not pick a precise stop from the range. Gap moves, liquidity and broker actions mean an internal limit cannot guarantee an exact realized maximum.
+The user clarified that RUB 10,000–15,000 means final **underperformance versus LQDT**, not absolute cash loss, and can provide emergency funds. In the next turn the user delegated selection of interim drawdown and maximum top-up values. The versioned provisional policy uses a 10,000 excess-curve drawdown trigger, action at 10,000 cumulative shortfall and 15,000 cumulative gross additional funding, still with per-use approval. These are assistant-selected operational defaults, not empirical calibration. Gap moves, liquidity and broker actions can exceed internal limits.
 
-### A-05 — Define what “loss” and “several months” mean — open
-Is A-04 an absolute cash loss, underperformance versus LQDT, or both? What is the evaluation period? Also agree maximum interim drawdown, per-idea loss, aggregate stress loss, funding amount/delay and a hard escalation/stop rule. Proposal: always report both absolute and LQDT-relative outcomes. The choice of risk limits is not inferred from the word “medium.”
+### A-05 — Loss basis resolved; calibration remains open
+The loss basis is LQDT-relative, confirmed by the user. The assistant has selected provisional drawdown, top-up and escalation rules under explicit delegation; see `../risk/pilot-policy.md`. A 90-calendar-day review is a planning default, not a loss reset or compulsory position expiry. Per-idea/aggregate stress calibration, funding source/arrival time and tax treatment remain open. Report both absolute and LQDT-relative outcomes. Numeric defaults are judgment, not values inferred from the word “medium” or verified safe by research.
 
 ### A-06 — Define a human “trade” — open
 Does one-to-several trades per day mean ideas, completed round trips, individual leg orders or all interventions including exits/adjustments? A spread requires multiple actions unless an appropriate broker-supported combined mechanism is available. Proposal: measure entry ideas and total manual interventions separately; the entry quota must not suppress necessary risk exits. Ask about night/unavailable periods and practical ability to respond to margin emergencies.
@@ -124,7 +124,7 @@ A missed margin alert or duplicated signal can matter more than UI polish. Plan 
 ## Questions that can remain open until their stage
 
 ### A-33 — Clarify manual workflow and economics
-Still needed: A-05 loss definition; A-06 workload; tax residency/account treatment; active advisory subscriptions; actual margin/collateral arrangement; source, ceiling and arrival time of rescue funds; overnight unattended exposure; maximum useful holding horizon; acceptable measured risk/return trade-off versus LQDT. None of these is answered by assumed residence or the uploaded tariff alone. Account identifiers and unredacted statements are not needed now.
+Still needed: A-05 risk calibration/tax treatment; A-06 workload; tax residency/account treatment; active advisory subscriptions; actual margin/collateral arrangement; source and arrival time of rescue funds (ceiling is provisionally selected in the risk policy); overnight unattended exposure; maximum useful holding horizon; acceptable measured risk/return trade-off versus LQDT. None of these is answered by assumed residence or the uploaded tariff alone. Account identifiers and unredacted statements are not needed now.
 
 ### A-34 — Previous projects are a deliberate revision gate
 The user will supply earlier MOEX projects in stage 7. Extract especially dividend/event sources, timestamp semantics, research conclusions, failed approaches, reusable data/code and licensing constraints. Explicitly revisit requirements, architecture and source selections then. Do not freeze them irreversibly beforehand.
@@ -133,4 +133,4 @@ The user will supply earlier MOEX projects in stage 7. Extract especially divide
 Proposal: success first means a reproducible, honest decision process capable of rejecting every candidate after costs, delay and risk. A 30k live test is more useful for execution/operational validation than for proving long-run profitability. Advancement to real signals or automation should require evidence and separate authorization, not completion of a UI or a positive in-sample chart.
 
 ### A-36 — Stage exit and next turn
-This stage delivers the reframing artifact, confirmed answers and grouped blockers. It approves neither a strategy nor safe real trading. The next stage is a list of investigations and well-formed prompts for research performed by the user, including any justified book/channel requests. Unresolved questions may be answered in parallel or carried explicitly; their answers must update the decision register rather than silently becoming defaults.
+This stage delivers the reframing artifact, confirmed answers and grouped blockers. It approves neither a strategy nor safe real trading. Stage 2 now delivers a list of investigations and well-formed prompts for research performed by the user, including justified book/channel leads; see `02-research.md`. No research findings are implied. Unresolved questions may be answered in parallel or carried explicitly; their answers must update the decision register rather than silently becoming defaults.

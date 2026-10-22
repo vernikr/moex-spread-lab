@@ -18,6 +18,6 @@ Stage 2 **research prompt pack delivered**; the user will conduct the research. 
 
 ## How to continue
 
-Start with R01, R02, R04, R05, R06 and R09, using one standalone prompt per investigation. Attach the provided tariff PDF to R02. Return reports in any format with dated sources; incomplete/blocked reports are useful too. Optional regime/text/neural investigations are deferred.
+Start with R01, R02, R04, R05, R06 and R09, using one standalone prompt per investigation. Attach the provided tariff PDF to R02. Return reports in any format with dated sources; incomplete/blocked reports are useful too. R10–R15 are standalone as well: the optional regime/text/neural investigations may run at any time and stay conditional designs until actual tests exist.
 
 Installation/access verification, architecture, technology selection and implementation follow their own stages. Delegated numeric risk rules are provisional controls to test, not evidence of safe or profitable trading. Internal funding ceilings do not ring-fence the core brokerage portfolio.

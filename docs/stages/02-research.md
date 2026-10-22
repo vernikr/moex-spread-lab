@@ -21,7 +21,7 @@ Delivered 2026-10-07. **Scope: research design only. The user performs the resea
 
 First run R01 broker/collateral, R02 costs (attach the provided tariff PDF), R04 data, R05 LQDT accounting, R06 universe/economic links and R09 validation. These can proceed independently with unresolved cross-report assumptions made explicit. Return their reports and contradictions before selecting a model.
 
-Then use their findings for R07 risk/sizing, R08 delayed execution, R10 deterministic hypotheses and R11 operational feasibility. Add R12 event/dividend provenance when relevant to candidate families. R03 BCS API can run early but is needed before automation, not to assert manual-stage API functionality. R13–R15 regimes/text/neural models stay optional until simple baselines justify further work.
+Then use their findings for R07 risk/sizing and R08 delayed execution. R10 deterministic hypotheses, R11 operational feasibility and R12 event/dividend provenance are standalone prompts that may run in any order, embedding their working assumptions. R03 BCS API can run early but is needed before automation, not to assert manual-stage API functionality. R13–R15 regimes/text/neural models are standalone optional extensions with embedded reference baselines.
 
 The full inventory contains deliverables, evidence standards, dependencies and stopping conditions. Books/channels are targeted leads, not claimed consulted sources or instructions to ingest everything.
 
@@ -36,3 +36,7 @@ Localized R01–R06 and R12 fully into Russian; other prompts remain English wit
 ## External-agent handoff refinement — 2026-10-07
 
 The research README now includes search-resource priorities, language routes and an explicit attachment/dependency guide. Separate search-guide and response-template files were removed at the user's request; report format is unrestricted, while substantive questions and evidence traceability remain. Every prompt now defines its referenced Rxx inputs and behavior when they are absent. R05/R07/R08 embed the relevant detailed policy semantics; R11 embeds the necessary hardware constraints. Only R02 has a mandatory original attachment for its attached-tariff review; downstream project-specific conclusions need supplied predecessor findings. Optional extension plans are not evidence of measured baseline performance. No research, access checks or risk-policy changes occurred.
+
+## User-requested refinement — 2026-10-22
+
+Rebuilt R10–R15 as fully standalone prompts: each now embeds its working assumptions (data class, cost scenarios, validation skeleton, workload ranges or default scope) and lists no other research reports as inputs; the deferral wording in their status sections was removed accordingly. The research README start sequence, dependency inventory, attachment table and unknowns list plus the root README were updated. R02 still requires the tariff PDF; R07/R08 keep predecessor inputs for project-specific refinement. No research, access checks or risk-policy changes occurred.

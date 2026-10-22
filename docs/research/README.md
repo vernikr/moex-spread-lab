@@ -1,6 +1,6 @@
 # Stage 2 research pack
 
-Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Report format is unrestricted: no shared template, mandatory section layout or file type. Each prompt contains the project context, explicitly named inputs and fallback instructions for an external agent without repository access.
+Prepared 2026-10-07, revised 2026-10-22. **Prompts only: no investigations run and no conclusions verified.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Report format is unrestricted: no shared template, mandatory section layout or file type. Each prompt contains the project context, explicitly named inputs and fallback instructions for an external agent without repository access. Revision: R10–R15 were rebuilt to be fully standalone — they embed all working assumptions (data class, cost scenarios, validation skeletons, workload ranges, default scopes) and take no other research reports as inputs. Only R02 requires an attachment (the tariff PDF); R07/R08 still use predecessor reports for project-specific refinement.
 
 ## Как распределить редкие расширенные запуски
 
@@ -14,7 +14,7 @@ Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions ve
 | **2, условно** | **R12 — дивиденды и события** | Для акций/индексов важны первоначальные решения, исправления, удалённые страницы и датированные версии. Если эти пары исключены, запуск не нужен: передать место R09. |
 | **3** | **R01 — правила брокеров и риск основного портфеля** | Требования разбросаны между регулятором, биржей, НКЦ, договором и приложениями брокера. Нужна полнота применимой цепочки и разрешение противоречий, а не множество пересказов. Настройки конкретного счёта всё равно подтверждаются брокером. |
 | **4 / замена** | **R09 — проверка стратегий** | Нужен поиск конкурирующих методов, критики, репликаций и ограничений при редких зависимых сделках. Полезно, если доступны всего 2–3 запуска, а R01 уже закрыт документами или R12 не нужен. |
-| Резерв | R06, затем R10 | Расширять, если обычный поиск не объясняет экономические связи или упускает классы стратегий. До фиксации правил проверки массовый поиск стратегий увеличивает риск подгонки. |
+| Резерв | R06, затем R10 | Расширять, если обычный поиск не объясняет экономические связи или упускает классы стратегий. Массовый поиск стратегий без заранее применяемого протокола проверки увеличивает риск подгонки. |
 
 **Если доступен один запуск:** R04. **Два:** R04 + R12, если сохраняются акции/индексы; иначе R04 + R09. **Три:** добавить R01. Если общий счёт вызывает неразрешённый риск для основного портфеля, поднять R01 на второе место независимо от этой очереди.
 
@@ -59,9 +59,9 @@ Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions ve
 
 1. Send **R01, R02, R04, R05, R06 and R09** as separate research requests; they can run in parallel. For R02 attach `../inputs/prof_privilegiya.pdf`; it is evidence to verify, not proof of current account applicability. R01/R05 need only redacted account information if public evidence is insufficient.
 2. Return available reports before attempting to make every finding agree. These six resolve collateral, costs, data, benchmark, candidate universe and the validation standard. A decisive feasibility failure should pause dependent work, not cause invented inputs.
-3. Use their conclusions for **R07, R08, R10 and R11**. Run **R12** early if equity/index-linked pairs remain candidates. R11 is desk research/a proposed benchmark plan only; actual installation and VPS checks belong to stage 3.
+3. Use their conclusions for **R07 and R08**. **R10, R11 and R12 are standalone and may run in any wave or in parallel.** R11 is desk research/a proposed benchmark plan only; actual installation and VPS checks belong to stage 3.
 4. **R03** may run early in parallel but is mandatory only before designing/enabling automated BCS execution. Do not choose architecture that assumes unverified API features.
-5. **R13–R15** are optional extensions, deferred until simpler deterministic approaches have evidence. R12's event timing is not deferred with optional NLP.
+5. **R13–R15** are optional standalone extensions with embedded reference baselines; they may run at any time, and their outputs stay conditional designs until actual tests exist. R12's event timing is not deferred with optional NLP.
 6. Return reports in any format, identifying the Rxx investigation and research date, with traceable evidence. Bring partial/blocked reports too. A book chapter or channel export is supplementary evidence, not a substitute for current official broker rules.
 
 ## Inventory and dependencies
@@ -77,18 +77,18 @@ Prepared 2026-10-07. **Prompts only: no investigations run and no conclusions ve
 | R07 | [Pilot risk, margin liquidity and position sizing](prompts/R07-risk.md) | Wave 2; R01/R02/R04/R05/R06/R09 | Validate/revise provisional limits, smallest feasible position |
 | R08 | [Manual fills, validity and virtual portfolio](prompts/R08-execution.md) | Wave 2; R01/R02/R04/R06/R09; exchange constraints with R07 | Credible delayed execution and nonexecution accounting |
 | R09 | [Selection bias and validation protocol](prompts/R09-validation.md) | Wave 1; none | Predeclared standard of evidence before strategy selection |
-| R10 | [Deterministic strategies and holding/allocation decisions](prompts/R10-strategies.md) | Wave 2; R04/R05/R06/R09; constrained by R07/R08; R02 for actual cost inputs | Testable baseline hypotheses, not a profitable model claim |
-| R11 | [Free-resource feasibility and resilient operations](prompts/R11-operations.md) | Wave 2; R04; add R03 for automation | Stage-3 measurement plan and input to stack decisions |
-| R12 | [Dividends and other point-in-time events](prompts/R12-events.md) | Conditional core; R06 scopes it | Valid equity/index economics and later reuse requirements |
-| R13 | [Market regimes](prompts/R13-regimes.md) | Optional; R09/R10; R02/R07/R08 for cost/risk/execution assumptions | Whether state conditioning earns its complexity |
-| R14 | [News/text and channel evidence](prompts/R14-text.md) | Optional; R04/R09/R10/R12; actual baseline evidence if measured value is claimed | Timestamp-valid incremental text evidence |
-| R15 | [Neural models under local compute limits](prompts/R15-neural.md) | Optional; R04/R09/R10/R11; R02/R07/R08 for actual constraints | Whether neural approaches beat simple alternatives net of burden |
+| R10 | [Deterministic strategies and holding/allocation decisions](prompts/R10-strategies.md) | Any wave; none — standalone with embedded data/cost/validation assumptions | Testable baseline hypotheses, not a profitable model claim |
+| R11 | [Free-resource feasibility and resilient operations](prompts/R11-operations.md) | Any wave; none — standalone with embedded workload ranges | Stage-3 measurement plan and input to stack decisions |
+| R12 | [Dividends and other point-in-time events](prompts/R12-events.md) | Conditional core; none — standalone with a default equity/index scope | Valid equity/index economics and later reuse requirements |
+| R13 | [Market regimes](prompts/R13-regimes.md) | Optional; none — standalone conditional design with embedded baseline/protocol | Whether state conditioning earns its complexity |
+| R14 | [News/text and channel evidence](prompts/R14-text.md) | Optional; none — standalone plan with embedded baselines; measured value requires later tests | Timestamp-valid incremental text evidence |
+| R15 | [Neural models under local compute limits](prompts/R15-neural.md) | Optional; none — standalone plan with embedded baselines and resources; measured value requires later tests | Whether neural approaches beat simple alternatives net of burden |
 
-Dependencies are evidence inputs, not an instruction to fabricate missing reports. Independent parts may be researched early; dependent conclusions remain conditional. R07/R08 exchange stress and execution assumptions and need a consistency review, not a circular request to “finish the other first.”
+Dependencies are evidence inputs, not an instruction to fabricate missing reports. Independent parts may be researched early; dependent conclusions remain conditional. R07/R08 exchange stress and execution assumptions and need a consistency review, not a circular request to “finish the other first.” R10–R15 have no cross-research inputs at all.
 
 ## Передача внешнему агенту: что приложить
 
-**Передавайте полный текст одного промпта**, а не одну задачу из его середины. Доступ к репозиторию, остальным файлам проекта или этой переписке не предполагается. Коды Rxx — названия других исследований, не автоматически доступные документы. Все необходимые определения зависимых исследований добавлены прямо в каждый промпт.
+**Передавайте полный текст одного промпта**, а не одну задачу из его середины. Доступ к репозиторию, остальным файлам проекта или этой переписке не предполагается. Коды Rxx — названия других исследований, не автоматически доступные документы. Промпты R10–R15 не используют другие исследования вовсе: все нужные допущения встроены в их текст. Для R07/R08 необходимые определения зависимых исследований добавлены прямо в их промпты.
 
 ### Минимальный комплект
 
@@ -98,12 +98,12 @@ Dependencies are evidence inputs, not an instruction to fabricate missing report
 | **R02** | **`prof_privilegiya.pdf`** для проверки именно предоставленного тарифа. Без него возможна только публичная часть с явной оговоркой. |
 | **R07** | Для выводов именно по проекту — результаты **R01/R02/R04/R05/R06/R09**; R08 добавить по готовности для согласования исполнения. |
 | **R08** | **R01/R02/R04/R06/R09**; R07 по готовности. R05 полезен для согласования виртуального учёта. |
-| **R10** | **R04/R05/R06/R09**; R07/R08 для конкретных ограничений; R02 для фактических комиссий/издержек. |
-| **R11** | **R04** для реального объёма данных; **R03**, если рассматривается автоматизация. Характеристики техники и запреты на вмешательство включены в промпт; отдельный файл сервера не нужен. |
-| **R12** | **R06**, если уже определён набор семейств. Без него можно исследовать источники событий для акций/индексов как условную область. Старые проекты пока не нужны. |
-| **R13** | **R09/R10**, а для конкретных одинаковых условий сравнения — **R02/R07/R08**. Если нужны выводы о фактической пользе, необходимы реальные результаты базовых тестов, не только исследовательский план. |
-| **R14** | **R04/R09/R10/R12**; данные/результаты базовых тестов нужны только для измеренной добавочной пользы. Выгрузки каналов не обязательны для составления плана и подбора источников. |
-| **R15** | **R04/R09/R10/R11**; **R02/R07/R08** для конкретных издержек/риска/исполнения. Данные/результаты базовых тестов — только для эмпирических выводов. |
+| **R10** | **Ничего.** Допущения о данных, издержках и протоколе проверки встроены в промпт. |
+| **R11** | **Ничего.** Диапазоны нагрузок, характеристики техники и запреты на вмешательство включены в промпт; отдельный файл сервера не нужен. |
+| **R12** | **Ничего.** Область по умолчанию (фьючерсы на акции/индексы MOEX) встроена; старые проекты пока не нужны. |
+| **R13** | **Ничего.** Базовая линия сравнения, протокол и сценарии издержек/риска/задержек встроены; результат — условный дизайн. |
+| **R14** | **Ничего.** Эталонные сравнения встроены; выгрузки каналов не обязательны для составления плана и подбора источников. |
+| **R15** | **Ничего.** Эталоны, протокол и ресурсные допущения встроены; модели/блокноты не прилагаются. |
 
 **Это зависимости для конкретных выводов, а не обязательные вложения для любого старта.** Без предыдущих отчётов агент может найти первоисточники, сравнить методы и предложить условный протокол; он не должен выдумывать выбранные параметры, выполненные тесты или доказанную применимость. У R07/R08 нет требования ждать друг друга бесконечно: подготовить независимые части, затем сверить общие предпосылки.
 
@@ -116,7 +116,7 @@ Dependencies are evidence inputs, not an instruction to fabricate missing report
 - **R07/R08:** фактический источник/срок поступления экстренных денег, периоды недоступности пользователя, что считается дневной «сделкой». Эти вопросы открыты; для метода достаточно сценариев, но не для утверждения безопасности реальной торговли.
 - **R11:** реальный свободный ресурс VPS, поставщик и условия размещения, версии локальных инструментов. Измерения/доступ — на этапе 3; в исследовании только план проверок. SSH, IP, ключи и полный исходный файл сервера не нужны.
 - **R12:** прежние проекты поступят на этапе 7. Сейчас нужен перечень источников/рисков и критерии извлечения, не анализ несуществующих вложений.
-- **R13–R15:** измеренных результатов простых стратегий пока нет. Можно подготовить гипотезы/план; нельзя подтвердить добавочную пользу без последующего тестирования. Для R14 реальная квота/модель Gemini также неизвестна — публичные условия и сценарии, без API-ключей.
+- **R13–R15:** запускаются независимо от других исследований; результат — гипотезы/условный дизайн с явными встроенными допущениями. Нельзя подтвердить добавочную пользу без последующего контролируемого тестирования. Для R14 реальная квота/модель Gemini также неизвестна — публичные условия и сценарии, без API-ключей.
 
 Книги, статьи, транскрипты и Telegram-экспорты — дополнительные материалы **по конкретному обоснованному запросу**, не обязательный стартовый пакет. Упоминание книги не означает, что агент получил её текст. Не отправляйте исходный `AGENTS.md`, секреты, номера счетов или производственные доступы. `brief.md` и внутренняя политика риска для текущего исследовательского запроса отдельно не требуются: нужный контекст встроен; при последующих изменениях обновляйте передаваемый промпт/добавляйте явную поправку.
 

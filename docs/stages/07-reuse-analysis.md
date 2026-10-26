@@ -271,6 +271,8 @@ Before the offline vertical slice accepts real source data, it must:
 9. Keep the LQDT benchmark on actual user-supplied or redacted statement/price inputs; label any synthetic predecessor chain separately.
 10. Connect the future UI only to validated schemas and reason-coded gates.
 
+Stage 8 turns these gates into the prioritized delivery sequence in [the delivery and validation plan](08-planning.md).
+
 ## Evidence limits
 
 The repositories were inspected at the revisions listed above. No broker credentials, private account data, live orders or production services were used. The presence of a public endpoint, a committed fixture, a passing repository test or a plausible historical chart does not establish data rights, client-specific tariffs, executable fills, historical availability or profitability.

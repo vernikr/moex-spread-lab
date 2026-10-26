@@ -50,4 +50,5 @@ These are architecture boundaries, not a final technology selection. Concrete st
 3. **Completed:** stage 5 architecture boundaries and decision records, including predeclared scale-in/out ladders, explicit portfolio events and contract-first modularity for independent providers/teams.
 4. **Completed:** stage 6 conditional stack and data-source baseline. The rights, account, executable-data and broker gates remain explicit; no implementation or deployment is authorized by the selection.
 5. **Completed:** stage 7 reuse analysis. Previous projects strengthen the ISS ingestion pattern, price-role separation and dividend provenance requirements; they do not close rights, account, execution or profitability gates.
-6. Move to stage 8 for delivery and validation planning before the offline vertical slice: one candidate pair, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.
+6. **Completed:** stage 8 delivery and validation plan. The first slice starts with offline fixtures, one candidate family, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.
+7. Move to stage 9 development only after the fixture-level gates in `docs/stages/08-planning.md` pass. Broker access, deployment and live trading remain separately blocked.

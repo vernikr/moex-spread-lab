@@ -67,6 +67,7 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **FR-10 — Baselines first.** Run a no-trade LQDT control and a small deterministic baseline before any adaptive, regime, text or neural component.
 - **FR-11 — Trial registry.** Record every tested pair, family, parameter set, cost scenario and decision rule, including discarded trials.
 - **FR-12 — Frozen evaluation.** Use chronological splits, overlap-aware purge/embargo, a sealed confirmation period and no post-result tuning of that period.
+- **FR-12a — Exposure ladder specification.** A strategy that permits staged exposure must declare, before evaluation, its entry/add/reduce/exit thresholds, quantity at each level, maximum aggregate exposure, cooldowns, invalidation rules and risk overrides. The same specification must drive research, signals and virtual execution.
 
 ### Signals and delayed execution
 
@@ -74,6 +75,7 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **FR-14 — Executable revalidation.** At the simulated human decision time, recheck both legs, session, quote age, costs, margin, cash, validity and expected net advantage.
 - **FR-15 — Explicit invalidation.** Signals expire on stale data, price movement, cost erosion, session closure, margin failure, missing leg or model invalidation.
 - **FR-16 — Two-leg lifecycle.** Model submission, acknowledgement, fill, partial fill, cancellation, unknown outcome and hedge completion separately for each leg.
+- **FR-16a — Step lifecycle.** Every exposure increase or reduction is a separate decision and two-leg lifecycle. A later step is never an implicit continuation of the original fill; it requires fresh point-in-time data, revalidation and a new risk check.
 - **FR-17 — Conservative fills.** Do not infer a fill from a candle midpoint or a touch without a declared execution scenario. Unknown execution evidence remains unknown.
 - **FR-18 — Manual workflow.** Measure notification, reading, decision, order and fill timestamps separately when shadow operation begins.
 
@@ -118,6 +120,10 @@ The first implementation may begin only when it can pass these checks on a small
 6. Show that an internal LQDT transfer is not counted as profit and does not replenish the emergency allowance.
 7. Produce identical results after restart and event replay without duplicate signals.
 8. Generate a report containing no secrets and a clear list of unknown or unsupported inputs.
+9. Apply a predeclared scale-in ladder only when its threshold, quantity, aggregate cap, capital, margin, reserve and stress checks pass; otherwise record a rejection.
+10. Prove that an adverse move alone cannot create an unbounded scale-in or consume emergency funding.
+11. Represent each staged reduction and final exit as a separate event, preserving remaining exposure and legging risk after partial execution.
+12. Stop all exposure-increasing steps at the drawdown/shortfall action gates while still permitting controlled risk reduction.
 
 ## Deferred decisions
 
@@ -132,4 +138,4 @@ The following remain intentionally open until later evidence or implementation m
 - public or private UI technology;
 - whether regime, text or neural components add measurable value.
 
-Stage 5 will convert these requirements into architecture boundaries and decision records. Stage 6 will select the stack and data sources with evidence. No live trading or broker write access is implied by this requirements artifact.
+Stage 5 converted these requirements into architecture boundaries and decision records in [the architecture artifact](05-architecture.md). Stage 6 will select the stack and data sources with evidence. No live trading or broker write access is implied by this requirements artifact.

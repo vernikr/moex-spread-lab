@@ -7,8 +7,8 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 | 1 | Unpacking / Reframing | `stages/01-unpacking.md`, decisions, blockers | Artifact delivered; open questions recorded |
 | 2 | Deep Research | `stages/02-research.md`, 15 standalone prompts, external-agent handoff instructions and delegated risk-policy revision | Prompt pack delivered; focused architecture review complete; account-specific acceptance pending |
 | 3 | Environment Setup | Verified access/tool inventory, permissions and safe VPS preflight | Read-only preflight complete; no deployment |
-| 4 | Functional and business requirements | Requirements and acceptance criteria | Artifact delivered; architecture not started |
-| 5 | Architecture | Boundaries and decision records | Not started |
+| 4 | Functional and business requirements | Requirements and acceptance criteria | Delivered; staged exposure clarified |
+| 5 | Architecture | Boundaries and decision records | Artifact delivered; stack selection not started |
 | 6 | Stack and data sources | Evidence-based selections and limitations | Not started |
 | 7 | Reuse from previous projects | Reuse assessment, point-in-time checks, explicit updates to stages 4–6 | Awaiting user materials; not started |
 | 8 | Planning | Prioritized delivery and validation plan | Not started |

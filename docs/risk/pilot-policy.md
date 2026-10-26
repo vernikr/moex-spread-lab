@@ -1,6 +1,6 @@
 # Provisional pilot risk policy
 
-Version: 2026-10-07, stage-2 revision. **Assistant-selected operational defaults under the user's delegation; not statistically validated limits or trading authorization.** Research R01/R05/R07/R08 may tighten or replace them with an explicit revision. This document defines research scenarios now, not running software or broker controls.
+Version: 2026-10-26, stage-5 architecture clarification. **Assistant-selected operational defaults under the user's delegation; not statistically validated limits or trading authorization.** Research R01/R05/R07/R08 may tighten or replace them with an explicit revision. This document defines research scenarios now, not running software or broker controls.
 
 ## Authority and numbers
 
@@ -55,6 +55,13 @@ A matched top-up at X = -8,000 leaves X = -8,000 immediately before its own tran
 7. Entry and exposure-increasing sizing must pass with **zero emergency funding**, using only the original 30,000 envelope less actual losses, reserves and other commitments. A previous rescue allocation or retained profit does not expand that entry authority. Do not count a proposed top-up as available when sizing an entry. For virtual execution, require an explicit recorded funding authorization and model credit time; otherwise use no additional funding. If approval cannot arrive in time, the default is to reduce/exit risk, never inject unapproved funds. Nonavailability is a valid reason to reject or unwind. No automatic sweep of core LQDT is authorized.
 8. An approval to inject money is not an approval to restart trading or increase size. Crossing 30,000 still requires the A-02 per-event approval. Selecting the numeric ceiling here does not replace that approval.
 9. Review dates and restarts do not silently reset `H`, `X`, or funding consumed. Any changed limit/new pilot requires an explicit versioned decision and continuous lifetime reporting.
+
+### Exposure ladders
+
+- A **scale-in** is any action that increases the absolute exposure of an existing spread. It is permitted for research only as a predeclared ladder step with a fixed trigger, quantity, aggregate cap and invalidation rule. A worsening spread may trigger the step, but worsening alone is never sufficient: current executable data, costs, margin, VM liquidity, reserve, competing commitments and stressed exit path must pass again.
+- A scale-in is exposure-increasing sizing and therefore uses only the remaining original pilot envelope. Emergency funding, proposed top-ups, retained profits and automatic core-LQDT transfers cannot finance it. The action is blocked at `D >= 10,000` or `X <= -10,000`, and earlier broker, margin, legging, expiry or data danger overrides these thresholds.
+- A **staged exit** is a predeclared or risk-forced reduction in target exposure. Each reduction has its own two-leg execution lifecycle; partial reduction leaves the remaining position explicitly recorded. Risk-forced reduction may bypass the profit-taking ladder, but may not silently create a new scale-in.
+- A strategy may be rejected if its minimum ladder step cannot satisfy the same finite-capital and stress constraints as a single-entry strategy. The ladder is a testable hypothesis, not a presumption that averaging into a widening spread is safe or profitable.
 
 ## Preconditions and still-unvalidated controls
 

@@ -105,8 +105,12 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **NFR-04 — Security.** Tokens, keys, account identifiers, client profiles and personal statements stay outside Git and logs.
 - **NFR-05 — Resource isolation.** Heavy research runs on the laptop. Any VPS process is bounded, has an explicit memory cap and does not bind a new public port.
 - **NFR-06 — Availability behavior.** Outage, stale-data and broker-unreachable states are visible and safe; the system does not pretend that monitoring equals execution.
-- **NFR-07 — Modular extension.** Data providers, strategy families, execution modes, brokers and notification channels are replaceable boundaries, not duplicated business logic.
+- **NFR-07 — Modular extension.** Data providers, tariff/cost profiles, strategy families, execution modes, brokers, reports and notification channels are replaceable boundaries, not duplicated business logic.
 - **NFR-08 — Dark-only interface.** Any future user interface is dark-only and private/local by default; a UI is not required for the first offline slice.
+- **NFR-09 — Contract-first modules.** A replaceable module declares a stable contract version, capabilities, inputs, outputs, dependencies, resource needs, data rights and owner. Modules communicate through domain contracts and events, not private tables or undocumented imports.
+- **NFR-10 — Independent lifecycle.** A module can be enabled, disabled, upgraded or rolled back through a versioned run configuration. Historical runs retain the exact module and artifact versions used.
+- **NFR-11 — Team isolation.** An independent team can develop and test a module using public schemas, fixtures and contract tests without access to credentials, unrelated private data or another team's implementation.
+- **NFR-12 — Safe unknowns.** An absent, incompatible or revoked module capability blocks only the dependent operation and produces an explicit reason; it never silently falls back to zero cost, zero risk or a different artifact.
 
 ## Acceptance gates for the first implementation slice
 

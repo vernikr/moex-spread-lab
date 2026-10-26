@@ -47,5 +47,5 @@ These are architecture boundaries, not a final technology selection. Concrete st
 
 1. **Completed:** stage 3 read-only inventory and non-destructive VPS preflight. The VPN, existing services and ports were protected; no installation or deployment was performed.
 2. **Completed:** stage-4 requirements around the virtual portfolio, data lineage, manual workflow, LQDT accounting and rejection reasons. Account-specific broker facts remain configuration inputs rather than hard-coded assumptions.
-3. **Completed:** stage 5 architecture boundaries and decision records, including predeclared scale-in/out ladders and explicit portfolio events.
+3. **Completed:** stage 5 architecture boundaries and decision records, including predeclared scale-in/out ladders, explicit portfolio events and contract-first modularity for independent providers/teams.
 4. Move to stage 6 for evidence-based stack and data-source selection before implementing the smallest offline vertical slice: one candidate pair, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.

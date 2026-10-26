@@ -17,6 +17,74 @@ The architecture must support a deterministic strategy that can enter, add, redu
 5. **The benchmark is a parallel accounting view.** LQDT comparison is reconciled from the same genuine external flows and does not share the strategy's pilot-induced transfers.
 6. **Heavy work stays on the laptop.** The future VPS runtime is a bounded monitor, virtual-ledger/outbox worker and alert process; it is not the research warehouse or public application host.
 
+## Modularity assessment
+
+The previous proposal had the right conceptual seams, especially replaceable source adapters, strategy specifications, broker boundaries and notification adapters. It was not yet sufficient for independent teams: it did not define module contracts, capability discovery, version compatibility, ownership, activation/rollback or protection from direct shared-state coupling.
+
+This revision makes the architecture **contract-first and modular by default**. It does not require microservices. The first implementation may use one process and one repository, provided the same public contracts, package boundaries, fixtures and contract tests are enforced. A module may later move to another process or repository without changing the domain model.
+
+### Module contract
+
+Every replaceable module must publish a manifest containing:
+
+| Field | Purpose |
+|---|---|
+| `module_id` and SemVer | Stable identity and release compatibility |
+| `contract_version` | Version of the input/output/event contract |
+| `kind` | `data`, `specification`, `tariff`, `strategy`, `risk`, `execution`, `accounting`, `report`, `notification` or `artifact` |
+| capabilities | Explicit operations and fields supported; no implied behavior |
+| inputs/outputs | Typed schemas, timestamps, units and missingness semantics |
+| dependencies | Required contract versions and optional capabilities |
+| owner | Team/contact and escalation path, without embedding credentials |
+| resource profile | CPU, memory, disk, network and offline/online requirements |
+| rights/provenance | Data-use restrictions, source lineage and retention limits |
+| determinism | Whether identical inputs must produce identical outputs and how randomness is seeded |
+| health/compatibility | Self-check, supported runtime and migration status |
+
+The registry stores manifests and immutable release references. It does not grant a module permission to bypass risk gates or write directly to the portfolio.
+
+Non-executable artifacts are first-class versioned inputs: model parameters, tariff schedules, contract tables, risk policies, source vintages, fixtures and report definitions. Each artifact has an ID, schema version, content hash, effective/publication/receipt dates, rights status and producing module. A run pins artifact references alongside executable module releases. An unknown or incompatible artifact blocks only the dependent operation.
+
+### Replaceable module map
+
+| Module | Owns | May depend on | Must not own |
+|---|---|---|---|
+| Data provider | Retrieval, raw capture, timestamps, normalization and quality status | Source credentials through secure runtime only | Strategy logic, sizing or orders |
+| Contract/specification provider | Contract, calendar, lot, tick, expiry and margin facts | Dated source evidence | Signal decisions or account state |
+| Tariff/cost provider | Effective-dated commissions, exchange/clearing charges, funding and scenario costs | Contract, broker and account profile inputs | Market observations, positions or fills |
+| Strategy module | Candidate relationships, indicators, ladder and target-exposure proposal | Normalized point-in-time data and declared specifications | Credentials, tariff lookup internals, order submission or portfolio mutation |
+| Risk module | Feasibility and increase/reduction decision with reason codes | Portfolio snapshot, cost result, limits and stress inputs | Strategy discovery, broker calls or hidden funding |
+| Execution adapter | Translation of order intents and lifecycle observations | Public order schema and broker session | Strategy/risk decisions, portfolio policy or silent fills |
+| Portfolio/accounting core | Event log, projections, reservations, fills, benchmark and reconciliation | Validated domain events | Provider-specific parsing or team-owned strategy code |
+| Artifact registry | Immutable artifact references, schemas, hashes, dates and rights status | Producing modules and approved storage | Runtime decisions, silent replacement or private credentials |
+| Report module | Reproducible views and limitations | Versioned projections and run manifest | New trading decisions or event mutation |
+| Notification adapter | Delivery and retry status | Durable outbox contract | Authorization, risk changes or event creation |
+
+The portfolio/accounting core remains a protected domain boundary rather than an interchangeable plugin. Its projections expose read contracts; external modules submit commands that become validated events.
+
+### Independent-team rules
+
+- A team owns a module directory/package, manifest, schemas, fixtures, contract tests and changelog.
+- Cross-module imports are allowed only through published ports/contracts. No module reads another module's private database tables, files or in-memory objects.
+- Shared events and schemas are versioned artifacts. Additive changes are preferred; breaking changes require a new contract version and an explicit migration/compatibility window.
+- A module is accepted through conformance tests against golden fixtures, including missing data, stale data, unknown values and failure responses. Passing a unit test against private implementation details is insufficient.
+- A run pins the complete module manifest set. Replacing a strategy, tariff schedule or data provider creates a new run configuration and never changes an existing result.
+- A module can be disabled without deleting its historical artifacts. If a required capability is unavailable, the dependent signal is rejected with a stable reason code.
+- Credentials and private account data are injected only at the adapter boundary. A strategy or tariff module receives typed account/cost inputs, never raw credentials or unrelated account records.
+
+### Activation and rollback
+
+The run manifest selects modules by `module_id`, release, contract version and configuration hash. A module registry must support:
+
+1. discovery and compatibility checking before a run;
+2. explicit enable/disable and feature flags at run or environment scope;
+3. dry-run validation against fixtures;
+4. atomic activation of a compatible release;
+5. rollback to the previous release without rewriting events;
+6. a clear `module_unavailable`, `contract_incompatible` or `artifact_revoked` outcome.
+
+Disabling a strategy stops new proposals from that module but does not cancel, alter or hide existing portfolio positions. Disabling a tariff or data provider blocks dependent new exposure if no approved compatible replacement is available.
+
 ## System boundaries
 
 ```text
@@ -52,7 +120,7 @@ Owns source adapters, raw references/hashes where retention is permitted, normal
 
 ### 2. Specification registry
 
-Versions contract terms, lot size, tick value, expiry, calendar, session, margin/risk inputs, fees, data-source terms and strategy specifications. Every evaluation records the specification versions used.
+Versions contract terms, lot size, tick value, expiry, calendar, session, margin/risk inputs, fees, data-source terms, module manifests and strategy specifications. Every evaluation records the complete run manifest and specification versions used. Tariffs are providers of dated cost facts, not constants embedded in strategies.
 
 ### 3. Strategy evaluator
 
@@ -77,6 +145,10 @@ Maintains the matched no-pilot path and calculates `V`, `B`, `X`, `H`, `D`, shor
 ### 8. Outbox and notifications
 
 Writes an idempotent durable notification record before delivery. Delivery failure cannot authorize, repeat or alter a portfolio step.
+
+### 9. Module registry and contract validation
+
+Discovers manifests, checks contract compatibility, validates required capabilities and pins the module set for each run. It performs no trading decision. Registry failure blocks activation of dependent modules and leaves prior projections/events intact.
 
 ## Strategy specification: exposure ladder
 
@@ -168,6 +240,15 @@ Events are immutable and carry `portfolio_id`, `idea_id`, `ladder_id`, `step_id`
 - `reconciliation_exception`
 - `notification_enqueued` / `notification_delivered` / `notification_failed`
 
+### Module and artifact lifecycle events
+
+- `run_manifest_pinned`
+- `module_manifest_registered`
+- `module_compatibility_checked`
+- `module_activated` / `module_disabled`
+- `module_rolled_back`
+- `module_unavailable` / `contract_incompatible` / `artifact_revoked`
+
 An event must not carry secret credentials, account identifiers or raw private statements. Private source material is referenced by a local or secure-runtime identifier and content hash where permitted.
 
 ## Scale-in and staged-exit rules
@@ -225,6 +306,38 @@ An event must not carry secret credentials, account identifiers or raw private s
 
 **Consequence:** No new public listener, heavy archive or unrestricted parameter search is part of the first deployment boundary.
 
+### ADR-05-06 — Contract-first modularity without premature microservices
+
+**Decision:** Define every replaceable strategy, data source, tariff, risk profile, execution mode, report and notification channel through a manifest, typed port and conformance fixtures. Keep the initial deployment free to run in one process.
+
+**Reason:** Independent teams need stable ownership and compatibility rules, while microservices would add operational cost and failure modes before the workload justifies them.
+
+**Consequence:** Package boundaries and contract tests are mandatory even when implementation modules share a process. A later split is an optimization, not a redesign of domain behavior.
+
+### ADR-05-07 — No direct shared-state coupling
+
+**Decision:** Modules exchange commands, typed results and immutable events. They cannot read or write another module's private tables, files or memory state.
+
+**Reason:** Direct shared state makes strategies, tariffs and providers impossible to disable, replace or develop independently and makes historical replay ambiguous.
+
+**Consequence:** The portfolio core owns mutations; modules expose ports and read models. Schema changes require compatibility checks and explicit migrations.
+
+### ADR-05-08 — Version-pinned run manifests
+
+**Decision:** Every research, virtual-execution and future live-mode run pins the complete set of module releases, contract versions, configurations, source vintages and artifact hashes.
+
+**Reason:** A strategy result must remain reproducible when a tariff schedule, source adapter or risk policy changes.
+
+**Consequence:** Disabling or rolling back a module affects future runs and operation, never historical events or reports.
+
+### ADR-05-09 — Capability-based safe degradation
+
+**Decision:** Modules declare capabilities and the engine permits only operations supported by the complete active set. Missing or incompatible capabilities produce explicit blocked outcomes.
+
+**Reason:** New or unexpected artifacts must not silently become zero cost, unlimited capacity or an unvalidated fallback.
+
+**Consequence:** A disabled strategy stops proposals; a disabled cost/data/risk capability blocks dependent exposure; reporting can continue from already recorded events.
+
 ## Stage-5 acceptance gates
 
 Architecture is ready for stack selection when a small fixture can:
@@ -235,6 +348,10 @@ Architecture is ready for stack selection when a small fixture can:
 4. Rebuild the same exposure, `X`, `D` and funding history after restart without duplicate events.
 5. Demonstrate that emergency funding supports only risk reduction and cannot authorize a new ladder step.
 6. Keep strategy events, benchmark flows and private credentials separated in the resulting report.
+7. Replace a strategy and a tariff module using only a new run manifest, without changing portfolio-core code or historical results.
+8. Disable a strategy and prove that it creates no new proposals while existing positions and events remain visible.
+9. Reject a module with an incompatible contract or missing capability before activation and produce a stable reason code.
+10. Run a module's conformance fixtures without credentials, private account data or access to another module's private state.
 
 ## Open inputs for Stage 6
 

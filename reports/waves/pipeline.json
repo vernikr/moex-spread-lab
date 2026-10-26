@@ -1,0 +1,343 @@
+{
+  "all_fixture_gates_passed": true,
+  "config_hash": "ecf7f4f753246677b160254036d2babb5cfa06aaeb41b4ae54c9ee59047be8d2",
+  "fixture_hash": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca",
+  "fixture_rights_status": "synthetic_test_data",
+  "gates": {
+    "G10_validation": true,
+    "G11_modularity": true,
+    "G12_security": true,
+    "G1_rebuild": true,
+    "G2_provenance": true,
+    "G3_price_roles": true,
+    "G4_contract_identity": true,
+    "G5_corporate_actions": true,
+    "G6_costs": true,
+    "G7_execution": true,
+    "G8_portfolio": true,
+    "G9_risk": true
+  },
+  "network_access": false,
+  "reason": "The complete offline mechanics pass, but the fixture and benchmark are synthetic and cannot support a market conclusion.",
+  "release_state": "inconclusive",
+  "report_hash": "792c63d5946452613bbfc72798c9bfc788cc38573053795847cf0c481c60ccdc",
+  "run_id": "w0-fixture-2026-10-27",
+  "schema_version": "research.report.v1",
+  "waves": {
+    "W1": {
+      "candidates": [
+        {
+          "candidate_id": "SYN-CNYRUB-NEAR-FAR",
+          "far_stable_id": "SYN-CNYRUB-2027-03",
+          "near_stable_id": "SYN-CNYRUB-2026-12",
+          "reason": "stable identities and contract terms present",
+          "status": "admitted"
+        }
+      ],
+      "instrument_count": 2,
+      "pages": [
+        0,
+        1
+      ],
+      "price_roles": [
+        "analytical_close",
+        "ask",
+        "bid",
+        "last_trade_close",
+        "live_mark",
+        "settlement"
+      ],
+      "price_row_count": 2,
+      "raw_response_provenance": true,
+      "status": "passed",
+      "wave": "W1"
+    },
+    "W2": {
+      "availability_vintage_enforced": true,
+      "blocked_actions": [
+        {
+          "action_id": "SYN-ACT-CONFLICT",
+          "reason": "missing availability vintage, non-primary source or unresolved conflict"
+        },
+        {
+          "action_id": "SYN-ACT-UNAVAILABLE",
+          "reason": "missing availability vintage, non-primary source or unresolved conflict"
+        }
+      ],
+      "conflict_count": 1,
+      "eligible_action_ids": [
+        "SYN-ACT-PRIMARY"
+      ],
+      "price_gap_diagnostics": 1,
+      "status": "passed",
+      "wave": "W2"
+    },
+    "W3": {
+      "contract_count": 2,
+      "cost_per_leg": 11.0,
+      "cost_per_pair": 22.0,
+      "direction": "near_minus_far",
+      "known_cost_components": [
+        "exchange",
+        "clearing",
+        "broker",
+        "slippage",
+        "funding",
+        "exit"
+      ],
+      "spread_row_count": 6,
+      "status": "passed",
+      "unknown_cost_is_zero": false,
+      "wave": "W3"
+    },
+    "W4": {
+      "attempts": [
+        {
+          "attempt_id": "SYN-ENTRY-001",
+          "lifecycle": "entry",
+          "outcome": "filled_balanced",
+          "scenario": "native_spread"
+        },
+        {
+          "attempt_id": "SYN-ADD-STALE",
+          "lifecycle": "scale_in",
+          "outcome": "rejected_stale",
+          "scenario": "independent_two_leg"
+        },
+        {
+          "attempt_id": "SYN-REDUCE-PARTIAL",
+          "lifecycle": "reduce",
+          "outcome": "partial_unbalanced",
+          "scenario": "independent_two_leg"
+        },
+        {
+          "attempt_id": "SYN-EXIT-001",
+          "lifecycle": "exit",
+          "outcome": "filled_balanced",
+          "scenario": "native_spread"
+        }
+      ],
+      "delayed_execution_only": true,
+      "outcome_counts": {
+        "filled_balanced": 2,
+        "partial_unbalanced": 1,
+        "rejected_stale": 1
+      },
+      "partial_fills_visible": true,
+      "status": "passed",
+      "wave": "W4"
+    },
+    "W5": {
+      "actual_lqdt_account_reconciliation": false,
+      "attribution_status": "unresolved_synthetic_benchmark",
+      "balanced_position_qty_after_replay": 0,
+      "event_types": [
+        "portfolio_open",
+        "execution_attempt:filled_balanced",
+        "execution_attempt:rejected_stale",
+        "execution_attempt:partial_unbalanced",
+        "execution_attempt:filled_balanced",
+        "entry",
+        "exit",
+        "portfolio_marks"
+      ],
+      "execution_attempts_recorded": 4,
+      "external_cash_flows_matched": true,
+      "initial_capital": 30000.0,
+      "lifetime_topup_usage": 0.0,
+      "rows": [
+        {
+          "D": 0.0,
+          "H": 0.0,
+          "X": 0.0,
+          "benchmark_value": 30000.0,
+          "cumulative_costs": 0.0,
+          "event_time": "2026-10-01T15:00:00Z",
+          "strategy_value": 30000.0
+        },
+        {
+          "D": 0.0,
+          "H": 40.0,
+          "X": 40.0,
+          "benchmark_value": 30030.0,
+          "cumulative_costs": 10.0,
+          "event_time": "2026-10-02T15:00:00Z",
+          "strategy_value": 30070.0
+        },
+        {
+          "D": 0.0,
+          "H": 110.0,
+          "X": 110.0,
+          "benchmark_value": 30060.0,
+          "cumulative_costs": 30.0,
+          "event_time": "2026-10-03T15:00:00Z",
+          "strategy_value": 30170.0
+        },
+        {
+          "D": 0.0,
+          "H": 115.0,
+          "X": 115.0,
+          "benchmark_value": 30000.0,
+          "cumulative_costs": 45.0,
+          "event_time": "2026-10-04T15:00:00Z",
+          "strategy_value": 30115.0
+        },
+        {
+          "D": 0.0,
+          "H": 140.0,
+          "X": 140.0,
+          "benchmark_value": 30090.0,
+          "cumulative_costs": 70.0,
+          "event_time": "2026-10-05T15:00:00Z",
+          "strategy_value": 30230.0
+        },
+        {
+          "D": 0.0,
+          "H": 200.0,
+          "X": 200.0,
+          "benchmark_value": 30120.0,
+          "cumulative_costs": 90.0,
+          "event_time": "2026-10-06T15:00:00Z",
+          "strategy_value": 30320.0
+        }
+      ],
+      "status": "passed",
+      "unbalanced_attempts_preserved": 1,
+      "wave": "W5"
+    },
+    "W6": {
+      "aggregate_cap": 2,
+      "integer_sizing": true,
+      "ladder": [
+        {
+          "quantity": 1,
+          "step": 1,
+          "trigger": "entry_threshold"
+        },
+        {
+          "quantity": 1,
+          "step": 2,
+          "trigger": "widening_with_revalidation"
+        }
+      ],
+      "no_automatic_top_up": true,
+      "signals": [
+        {
+          "distance_from_mean_ticks": -6.6667,
+          "event_time": "2026-10-01T15:00:00Z",
+          "signal": "no_signal"
+        },
+        {
+          "distance_from_mean_ticks": 33.3333,
+          "event_time": "2026-10-02T15:00:00Z",
+          "signal": "eligible_entry"
+        },
+        {
+          "distance_from_mean_ticks": 13.3333,
+          "event_time": "2026-10-03T15:00:00Z",
+          "signal": "no_signal"
+        },
+        {
+          "distance_from_mean_ticks": -26.6667,
+          "event_time": "2026-10-04T15:00:00Z",
+          "signal": "eligible_entry"
+        },
+        {
+          "distance_from_mean_ticks": -16.6667,
+          "event_time": "2026-10-05T15:00:00Z",
+          "signal": "no_signal"
+        },
+        {
+          "distance_from_mean_ticks": 3.3333,
+          "event_time": "2026-10-06T15:00:00Z",
+          "signal": "no_signal"
+        }
+      ],
+      "status": "passed",
+      "strategies": [
+        {
+          "reason": "benchmark control",
+          "status": "accepted",
+          "trial_id": "no-trade-control"
+        },
+        {
+          "reason": "fixed parameters and finite ladder",
+          "status": "accepted",
+          "trial_id": "mean-reversion-v1"
+        },
+        {
+          "reason": "reference-rate evidence is not present in synthetic fixture",
+          "status": "rejected",
+          "trial_id": "carry-v1"
+        }
+      ],
+      "stress": {
+        "envelope": 30000.0,
+        "initial_margin": 4500.0,
+        "passed": true,
+        "reserve": 5000.0,
+        "stressed_incremental_loss": 500.0
+      },
+      "wave": "W6"
+    },
+    "W7": {
+      "conclusion_blockers": [
+        "all market and LQDT observations are synthetic test data",
+        "actual LQDT account reconciliation is unavailable",
+        "broker tariff, collateral and executable quote evidence remain unresolved"
+      ],
+      "cost_sensitivity": [
+        {
+          "cost_multiplier": 1.0,
+          "status": "synthetic_only"
+        },
+        {
+          "cost_multiplier": 1.5,
+          "status": "synthetic_only"
+        },
+        {
+          "cost_multiplier": 2.0,
+          "status": "synthetic_only"
+        }
+      ],
+      "delay_sensitivity": [
+        {
+          "X": 200.0,
+          "delay_seconds": 0,
+          "result_status": "synthetic_sensitivity_only"
+        },
+        {
+          "X": 182.0,
+          "delay_seconds": 180,
+          "result_status": "synthetic_sensitivity_only"
+        },
+        {
+          "X": 110.0,
+          "delay_seconds": 900,
+          "result_status": "synthetic_sensitivity_only"
+        },
+        {
+          "X": -340.0,
+          "delay_seconds": 5400,
+          "result_status": "synthetic_sensitivity_only"
+        }
+      ],
+      "eligible_signal_count": 2,
+      "no_profitability_claim": true,
+      "null_sign_flip_mean_X": -100.83333333,
+      "rejected_opportunity_count": 1,
+      "result_state": "inconclusive",
+      "sample_size_status": "small_fixture",
+      "status": "passed",
+      "strategy_mean_X": 100.83333333,
+      "test_period": {
+        "rows": 2
+      },
+      "train_period": {
+        "end": "2026-10-04T15:00:00Z",
+        "rows": 4
+      },
+      "wave": "W7"
+    }
+  }
+}

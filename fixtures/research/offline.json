@@ -1,0 +1,294 @@
+{
+  "schema_version": "research.fixture.v1",
+  "fixture_id": "research-w1-w7-synthetic",
+  "source": {
+    "provider": "synthetic",
+    "rights_status": "synthetic_test_data",
+    "network_required": false,
+    "note": "Mechanics fixture only; not MOEX or LQDT market evidence."
+  },
+  "catalog": {
+    "pages": [
+      {
+        "page_no": 0,
+        "next_page": 1,
+        "received_at": "2026-10-27T00:00:00Z",
+        "raw_response_sha256": "synthetic-catalog-page-0",
+        "items": [
+          {
+            "stable_id": "SYN-CNYRUB-2026-12",
+            "board": "SYNTHETIC",
+            "security": "SYN_CNYRUB",
+            "short_code": "SYN_CNYRUB",
+            "expiry": "2026-12-15T00:00:00Z",
+            "lot_size": 1,
+            "tick_size": 0.0001,
+            "settlement_type": "cash",
+            "historical_status": "versioned_fixture"
+          }
+        ]
+      },
+      {
+        "page_no": 1,
+        "next_page": null,
+        "received_at": "2026-10-27T00:00:01Z",
+        "raw_response_sha256": "synthetic-catalog-page-1",
+        "items": [
+          {
+            "stable_id": "SYN-CNYRUB-2027-03",
+            "board": "SYNTHETIC",
+            "security": "SYN_CNYRUB",
+            "short_code": "SYN_CNYRUB",
+            "expiry": "2027-03-15T00:00:00Z",
+            "lot_size": 1,
+            "tick_size": 0.0001,
+            "settlement_type": "cash",
+            "historical_status": "versioned_fixture"
+          }
+        ]
+      }
+    ],
+    "aliases": [
+      {"source_code": "SYN_NEAR", "stable_id": "SYN-CNYRUB-2026-12"},
+      {"source_code": "SYN_FAR", "stable_id": "SYN-CNYRUB-2027-03"}
+    ],
+    "candidates": [
+      {
+        "candidate_id": "SYN-CNYRUB-NEAR-FAR",
+        "near_stable_id": "SYN-CNYRUB-2026-12",
+        "far_stable_id": "SYN-CNYRUB-2027-03"
+      }
+    ]
+  },
+  "prices": [
+    {
+      "stable_id": "SYN-CNYRUB-2026-12",
+      "event_time": "2026-10-01T15:00:00Z",
+      "receipt_at": "2026-10-01T15:01:00Z",
+      "source_vintage": "synthetic-v1",
+      "settlement": 12.0100,
+      "analytical_close": 12.0110,
+      "last_trade_close": 12.0105,
+      "bid": 12.0099,
+      "ask": 12.0101,
+      "live_mark": 12.0100
+    },
+    {
+      "stable_id": "SYN-CNYRUB-2027-03",
+      "event_time": "2026-10-01T15:00:00Z",
+      "receipt_at": "2026-10-01T15:01:00Z",
+      "source_vintage": "synthetic-v1",
+      "settlement": 11.9800,
+      "analytical_close": 11.9790,
+      "last_trade_close": 11.9795,
+      "bid": 11.9799,
+      "ask": 11.9801,
+      "live_mark": 11.9800
+    }
+  ],
+  "corporate_actions": [
+    {
+      "action_id": "SYN-ACT-PRIMARY",
+      "instrument_id": "SYN-CNYRUB-2026-12",
+      "event_type": "dividend",
+      "source_role": "primary",
+      "available_at": "2026-09-20T10:00:00Z",
+      "announced_at": "2026-09-19T10:00:00Z",
+      "ex_date": "2026-10-05",
+      "amount": 0.10,
+      "currency": "RUB",
+      "conflict_status": "none",
+      "evidence_locator": "synthetic://primary/action-1",
+      "content_sha256": "synthetic-action-primary"
+    },
+    {
+      "action_id": "SYN-ACT-CONFLICT",
+      "instrument_id": "SYN-CNYRUB-2026-12",
+      "event_type": "dividend",
+      "source_role": "secondary",
+      "available_at": "2026-09-21T10:00:00Z",
+      "announced_at": null,
+      "ex_date": "2026-10-05",
+      "amount": 0.12,
+      "currency": "RUB",
+      "conflict_status": "conflict",
+      "evidence_locator": "synthetic://secondary/action-1",
+      "content_sha256": "synthetic-action-conflict"
+    },
+    {
+      "action_id": "SYN-ACT-UNAVAILABLE",
+      "instrument_id": "SYN-CNYRUB-2027-03",
+      "event_type": "split",
+      "source_role": "primary",
+      "available_at": null,
+      "announced_at": "2026-09-22T10:00:00Z",
+      "ex_date": null,
+      "amount": null,
+      "currency": null,
+      "conflict_status": "none",
+      "evidence_locator": "synthetic://primary/action-2",
+      "content_sha256": "synthetic-action-unavailable"
+    }
+  ],
+  "price_gap_checks": [
+    {
+      "diagnostic_type": "price_gap",
+      "date": "2026-10-05",
+      "gap_size": 0.02,
+      "derived_only": true
+    }
+  ],
+  "contracts": [
+    {
+      "stable_id": "SYN-CNYRUB-2026-12",
+      "expiry": "2026-12-15T00:00:00Z",
+      "lot_size": 1,
+      "tick_size": 0.0001,
+      "multiplier": 1000,
+      "settlement_type": "cash",
+      "price_unit": "RUB_per_CNY",
+      "margin_requirement": 2200,
+      "cost_profile": {
+        "exchange": 2.0,
+        "clearing": 1.0,
+        "broker": 1.5,
+        "slippage": 3.0,
+        "funding": 0.5,
+        "exit": 3.0
+      }
+    },
+    {
+      "stable_id": "SYN-CNYRUB-2027-03",
+      "expiry": "2027-03-15T00:00:00Z",
+      "lot_size": 1,
+      "tick_size": 0.0001,
+      "multiplier": 1000,
+      "settlement_type": "cash",
+      "price_unit": "RUB_per_CNY",
+      "margin_requirement": 2300,
+      "cost_profile": {
+        "exchange": 2.0,
+        "clearing": 1.0,
+        "broker": 1.5,
+        "slippage": 3.0,
+        "funding": 0.5,
+        "exit": 3.0
+      }
+    }
+  ],
+  "spread_series": [
+    {"event_time": "2026-10-01T15:00:00Z", "near_settlement": 12.0100, "far_settlement": 11.9800, "spread_value": 0.0300, "spread_ticks": 300, "direction": "near_minus_far", "quality_status": "complete"},
+    {"event_time": "2026-10-02T15:00:00Z", "near_settlement": 12.0140, "far_settlement": 11.9800, "spread_value": 0.0340, "spread_ticks": 340, "direction": "near_minus_far", "quality_status": "complete"},
+    {"event_time": "2026-10-03T15:00:00Z", "near_settlement": 12.0120, "far_settlement": 11.9800, "spread_value": 0.0320, "spread_ticks": 320, "direction": "near_minus_far", "quality_status": "complete"},
+    {"event_time": "2026-10-04T15:00:00Z", "near_settlement": 12.0080, "far_settlement": 11.9800, "spread_value": 0.0280, "spread_ticks": 280, "direction": "near_minus_far", "quality_status": "complete"},
+    {"event_time": "2026-10-05T15:00:00Z", "near_settlement": 12.0090, "far_settlement": 11.9800, "spread_value": 0.0290, "spread_ticks": 290, "direction": "near_minus_far", "quality_status": "complete"},
+    {"event_time": "2026-10-06T15:00:00Z", "near_settlement": 12.0110, "far_settlement": 11.9800, "spread_value": 0.0310, "spread_ticks": 310, "direction": "near_minus_far", "quality_status": "complete"}
+  ],
+  "execution": {
+    "attempts": [
+      {
+        "attempt_id": "SYN-ENTRY-001",
+        "lifecycle": "entry",
+        "scenario": "native_spread",
+        "signal_at": "2026-10-02T15:00:00Z",
+        "decision_at": "2026-10-02T15:15:00Z",
+        "session_open": true,
+        "quote_age_seconds": 20,
+        "max_quote_age_seconds": 90,
+        "requested_qty": 1,
+        "filled_near_qty": 1,
+        "filled_far_qty": 1,
+        "cost_status": "known",
+        "capital_status": "passed",
+        "margin_status": "passed"
+      },
+      {
+        "attempt_id": "SYN-ADD-STALE",
+        "lifecycle": "scale_in",
+        "scenario": "independent_two_leg",
+        "signal_at": "2026-10-03T15:00:00Z",
+        "decision_at": "2026-10-03T16:30:00Z",
+        "session_open": true,
+        "quote_age_seconds": 120,
+        "max_quote_age_seconds": 90,
+        "requested_qty": 1,
+        "filled_near_qty": 0,
+        "filled_far_qty": 0,
+        "cost_status": "known",
+        "capital_status": "passed",
+        "margin_status": "passed"
+      },
+      {
+        "attempt_id": "SYN-REDUCE-PARTIAL",
+        "lifecycle": "reduce",
+        "scenario": "independent_two_leg",
+        "signal_at": "2026-10-04T15:00:00Z",
+        "decision_at": "2026-10-04T15:10:00Z",
+        "session_open": true,
+        "quote_age_seconds": 30,
+        "max_quote_age_seconds": 90,
+        "requested_qty": 1,
+        "filled_near_qty": 1,
+        "filled_far_qty": 0,
+        "cost_status": "known",
+        "capital_status": "passed",
+        "margin_status": "passed"
+      },
+      {
+        "attempt_id": "SYN-EXIT-001",
+        "lifecycle": "exit",
+        "scenario": "native_spread",
+        "signal_at": "2026-10-06T15:00:00Z",
+        "decision_at": "2026-10-06T15:20:00Z",
+        "session_open": true,
+        "quote_age_seconds": 25,
+        "max_quote_age_seconds": 90,
+        "requested_qty": 1,
+        "filled_near_qty": 1,
+        "filled_far_qty": 1,
+        "cost_status": "known",
+        "capital_status": "passed",
+        "margin_status": "passed"
+      }
+    ]
+  },
+  "portfolio": {
+    "initial_capital": 30000,
+    "marks": [
+      {"event_time": "2026-10-01T15:00:00Z", "lqdt_index": 100.0, "strategy_gross_pnl": 0.0, "strategy_costs": 0.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0},
+      {"event_time": "2026-10-02T15:00:00Z", "lqdt_index": 100.1, "strategy_gross_pnl": 80.0, "strategy_costs": 10.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0},
+      {"event_time": "2026-10-03T15:00:00Z", "lqdt_index": 100.2, "strategy_gross_pnl": 120.0, "strategy_costs": 20.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0},
+      {"event_time": "2026-10-04T15:00:00Z", "lqdt_index": 100.0, "strategy_gross_pnl": -40.0, "strategy_costs": 15.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0},
+      {"event_time": "2026-10-05T15:00:00Z", "lqdt_index": 100.3, "strategy_gross_pnl": 140.0, "strategy_costs": 25.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0},
+      {"event_time": "2026-10-06T15:00:00Z", "lqdt_index": 100.4, "strategy_gross_pnl": 110.0, "strategy_costs": 20.0, "external_cash_flow": 0.0, "additional_funding": 0.0, "core_transfer": 0.0}
+    ]
+  },
+  "strategy": {
+    "mean_reversion": {
+      "lookback": 3,
+      "entry_threshold_ticks": 25,
+      "exit_threshold_ticks": 10,
+      "max_quantity": 2,
+      "aggregate_cap": 2,
+      "uses_emergency_funding": false,
+      "ladder": [
+        {"step": 1, "trigger": "entry_threshold", "quantity": 1},
+        {"step": 2, "trigger": "widening_with_revalidation", "quantity": 1}
+      ],
+      "stress": {
+        "stressed_incremental_loss": 500,
+        "reserve": 5000,
+        "initial_margin": 4500
+      }
+    }
+  },
+  "validation": {
+    "train_end": "2026-10-04T15:00:00Z",
+    "delay_seconds": [0, 180, 900, 5400],
+    "cost_sensitivity": [
+      {"cost_multiplier": 1.0, "status": "synthetic_only"},
+      {"cost_multiplier": 1.5, "status": "synthetic_only"},
+      {"cost_multiplier": 2.0, "status": "synthetic_only"}
+    ]
+  }
+}

@@ -10,9 +10,20 @@
       "rights_status": "synthetic_test_data",
       "schema_version": "w0.fixture.v1",
       "sha256": "6e5b841830659f02bdd4d341c3cfc22c9974ed30580527c2a1eed14c76135b3b"
+    },
+    {
+      "artifact_id": "research-w1-w7-synthetic",
+      "effective_at": null,
+      "path": "fixtures/research/offline.json",
+      "producer": "project-core",
+      "publication_at": null,
+      "receipt_at": "2026-10-27T00:00:00Z",
+      "rights_status": "synthetic_test_data",
+      "schema_version": "research.fixture.v1",
+      "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "cf3e975509bb3e9b36b908d4d5b21a98efa914e454d87779104a7240f83bd3a3",
+  "config_hash": "ecf7f4f753246677b160254036d2babb5cfa06aaeb41b4ae54c9ee59047be8d2",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -25,6 +36,13 @@
       "manifest_path": "config/modules/w0.json",
       "manifest_sha256": "6b78d4ee139c70b1e98350e59b1752a0929f2df2755cf4778ed0bb034ec8e9d2",
       "module_id": "moex-spread-lab.w0",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "research.v1",
+      "manifest_path": "config/modules/w1-w7.json",
+      "manifest_sha256": "f4d70c8dc5fbecf3dc7ba1a54ce10e18ecd99dfed50a64aaa0a6c932b4e8ef72",
+      "module_id": "moex-spread-lab.research-waves",
       "release": "0.1.0"
     }
   ],
@@ -39,6 +57,15 @@
       "parameters": {},
       "provider": "synthetic",
       "request_id": "w0-synthetic-fixture",
+      "rights_status": "synthetic_test_data"
+    },
+    {
+      "endpoint": null,
+      "fixture_ref": "research-w1-w7-synthetic",
+      "network_required": false,
+      "parameters": {},
+      "provider": "synthetic",
+      "request_id": "research-w1-w7-fixture",
       "rights_status": "synthetic_test_data"
     }
   ],

@@ -4,9 +4,10 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 2 **research prompt pack delivered**; 15 user-supplied research reports are now received in [the intake archive](docs/research/results/received/). Findings are not yet validated or accepted. No production server was accessed or orders submitted. Stage 3 has not started.
+Stage 2 **research prompt pack delivered**; a focused review of the 15 user-supplied reports has unlocked provisional architecture boundaries. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No production server was accessed or orders submitted. Stage 3 has not started.
 
 - **[Research pack: what to run first](docs/research/README.md)**
+- [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

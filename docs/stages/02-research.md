@@ -8,6 +8,7 @@ Delivered 2026-10-07. **Scope: research design and handoff. The user performs th
 - [Fifteen standalone prompts](../research/prompts/)
 - [Report return instructions](../research/results/README.md)
 - [Received research intake](../research/results/received/README.md)
+- [Focused critical-gate review](../research/accepted/2026-10-26-critical-gates.md)
 - [Delegated provisional pilot risk policy](../risk/pilot-policy.md)
 - [Updated decisions](../decisions.md) and [account/risk blockers](../blockers/b01-account-and-risk.md)
 
@@ -28,7 +29,7 @@ The full inventory contains deliverables, evidence standards, dependencies and s
 
 ## Exit and next gate
 
-Stage-2 **prompt delivery** is complete; **research reports have been received, while execution review and evidence acceptance are pending**. Stage 3 remains a separate turn for authorized tools/access and safe VPS verification; it need not wait for optional research. No live-trading feasibility or stack decision should be declared while its mandatory evidence is missing. Accepted findings may revise previous artifacts with explicit reasons.
+Stage-2 **prompt delivery** is complete. A focused review has accepted cross-report architecture inputs; account-specific evidence and execution validation remain pending. Stage 3 remains a separate turn for authorized tools/access and safe VPS verification; it need not wait for optional research. No live-trading feasibility or final stack decision should be declared while its mandatory evidence is missing. Accepted findings may revise previous artifacts with explicit reasons.
 
 ## User-requested refinement — 2026-10-07
 

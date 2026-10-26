@@ -6,7 +6,7 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 |---|---|---|---|
 | 1 | Unpacking / Reframing | `stages/01-unpacking.md`, decisions, blockers | Artifact delivered; open questions recorded |
 | 2 | Deep Research | `stages/02-research.md`, 15 standalone prompts, external-agent handoff instructions and delegated risk-policy revision | Prompt pack delivered; focused architecture review complete; account-specific acceptance pending |
-| 3 | Environment Setup | Verified access/tool inventory, permissions and safe VPS preflight | Not started |
+| 3 | Environment Setup | Verified access/tool inventory, permissions and safe VPS preflight | Read-only preflight complete; no deployment |
 | 4 | Functional and business requirements | Requirements and acceptance criteria | Not started |
 | 5 | Architecture | Boundaries and decision records | Not started |
 | 6 | Stack and data sources | Evidence-based selections and limitations | Not started |

@@ -362,4 +362,4 @@ Architecture is ready for stack selection when a small fixture can:
 - final storage and deployment choice after measuring the first offline slice;
 - validated ladder thresholds, quantities, stress multipliers and risk limits.
 
-Stage 6 may select technologies only within these boundaries. Research findings, broker evidence and the later reuse stage may revise this architecture through explicit decision records.
+Stage 6 selected the conditional baseline in [the stack and data-source artifact](06-stack-and-data.md) within these boundaries. Research findings, broker evidence and the later reuse stage may revise this architecture through explicit decision records.

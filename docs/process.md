@@ -9,7 +9,7 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 | 3 | Environment Setup | Verified access/tool inventory, permissions and safe VPS preflight | Read-only preflight complete; no deployment |
 | 4 | Functional and business requirements | Requirements and acceptance criteria | Delivered; staged exposure clarified |
 | 5 | Architecture | Boundaries and decision records | Artifact delivered; stack selection not started |
-| 6 | Stack and data sources | Evidence-based selections and limitations | Not started |
+| 6 | Stack and data sources | Evidence-based selections and limitations | Artifact delivered; conditional sources and gates recorded |
 | 7 | Reuse from previous projects | Reuse assessment, point-in-time checks, explicit updates to stages 4–6 | Awaiting user materials; not started |
 | 8 | Planning | Prioritized delivery and validation plan | Not started |
 | 9 | Development | Working software, tests and concise operating/interpretation guide | Not started |

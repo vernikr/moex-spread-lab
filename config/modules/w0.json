@@ -1,0 +1,38 @@
+{
+  "module_id": "moex-spread-lab.w0",
+  "release": "0.1.0",
+  "contract_version": "w0.v1",
+  "kind": "artifact",
+  "capabilities": [
+    "load_fixture",
+    "canonical_hash",
+    "offline_replay",
+    "secret_scan"
+  ],
+  "inputs": [
+    "run-manifest.v1",
+    "w0.fixture.v1"
+  ],
+  "outputs": [
+    "w0.replay.v1"
+  ],
+  "dependencies": [],
+  "owner": "project-core",
+  "resource_profile": {
+    "network": "disabled",
+    "runtime": "single-process",
+    "storage": "local-files"
+  },
+  "rights_provenance": {
+    "data_rights": "synthetic_fixture_only",
+    "credentials": "none"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "fixture-only"
+  }
+}

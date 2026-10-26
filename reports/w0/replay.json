@@ -1,0 +1,31 @@
+{
+  "config_hash": "cf3e975509bb3e9b36b908d4d5b21a98efa914e454d87779104a7240f83bd3a3",
+  "fixture_hash": "6e5b841830659f02bdd4d341c3cfc22c9974ed30580527c2a1eed14c76135b3b",
+  "network_access": false,
+  "normalized_fixture": {
+    "fixture_id": "w0-replay-fixture",
+    "records": [
+      {
+        "event_time": "2026-10-27T08:00:00Z",
+        "record_id": "probe-001",
+        "value": 1
+      },
+      {
+        "event_time": "2026-10-27T09:00:00Z",
+        "record_id": "probe-002",
+        "value": 2
+      }
+    ],
+    "schema_version": "w0.fixture.v1",
+    "source": {
+      "network_required": false,
+      "provider": "synthetic",
+      "rights_status": "synthetic_test_data"
+    }
+  },
+  "normalized_fixture_hash": "7adf647b8897032f680a2cdf4da0919576691bbf30107b162fe1eb1bc34215d3",
+  "record_count": 2,
+  "run_id": "w0-fixture-2026-10-27",
+  "schema_version": "w0.replay.v1",
+  "trial_counter": 0
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "w0.fixture.v1",
+  "fixture_id": "w0-replay-fixture",
+  "source": {
+    "provider": "synthetic",
+    "rights_status": "synthetic_test_data",
+    "network_required": false
+  },
+  "records": [
+    {
+      "record_id": "probe-002",
+      "event_time": "2026-10-27T09:00:00Z",
+      "value": 2
+    },
+    {
+      "record_id": "probe-001",
+      "event_time": "2026-10-27T08:00:00Z",
+      "value": 1
+    }
+  ]
+}

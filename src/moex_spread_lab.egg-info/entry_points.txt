@@ -1,0 +1,2 @@
+[console_scripts]
+moex-spread-lab = moex_spread_lab.cli:main

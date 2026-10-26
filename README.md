@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 8 **delivery and validation plan delivered** after reviewing prior-project reuse and formalizing the offline vertical slice. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W0 reproducible run/evidence manifest delivered**. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -14,6 +14,7 @@ Stage 8 **delivery and validation plan delivered** after reviewing prior-project
 - [Stage 6: stack and data sources](docs/stages/06-stack-and-data.md)
 - [Stage 7: reuse analysis](docs/stages/07-reuse-analysis.md)
 - [Stage 8: delivery and validation plan](docs/stages/08-planning.md)
+- [W0: reproducible run and evidence manifest](docs/development/w0.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

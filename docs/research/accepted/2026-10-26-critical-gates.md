@@ -46,6 +46,6 @@ These are architecture boundaries, not a final technology selection. Concrete st
 ## Immediate sequence
 
 1. **Completed:** stage 3 read-only inventory and non-destructive VPS preflight. The VPN, existing services and ports were protected; no installation or deployment was performed.
-2. Draft stage-4 requirements around the virtual portfolio, data lineage, manual workflow, LQDT accounting and rejection reasons. Keep account-specific broker facts as configuration inputs rather than hard-coded assumptions.
-3. Implement the smallest offline vertical slice only after the stage-4 artifact: one candidate pair, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.
-4. Add broader data, intraday collection, Telegram delivery and BCS automation only when each preceding gate produces evidence that justifies the added complexity.
+2. **Completed:** stage-4 requirements around the virtual portfolio, data lineage, manual workflow, LQDT accounting and rejection reasons. Account-specific broker facts remain configuration inputs rather than hard-coded assumptions.
+3. Move to stage 5 and convert the requirements into architecture boundaries and decision records.
+4. Implement the smallest offline vertical slice only after the stage-5 artifact: one candidate pair, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.

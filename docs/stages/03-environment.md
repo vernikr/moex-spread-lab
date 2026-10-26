@@ -46,7 +46,7 @@ The host was already running kernel `6.8.0-147-generic`; AmneziaWG DKMS was inst
 | Browser agent | ~118 MB current, ~473 MB peak, 600 MB cap | Do not overlap heavy jobs with Chrome |
 | Existing services | Gemini router, Gemini MCP, TinyFish MCP, browser-agent, digest timer | Treat shared headroom as already allocated |
 
-Additional active services were found and documented in `tspu-vpn`: `shadowsocks-libev`, `openvpn-server@server` and `strongswan`. The public TCP/UDP port 8443 is occupied by Shadowsocks and is unavailable for a new project service.
+Additional active services were found and documented in `tspu-vpn`: `shadowsocks-libev` and `strongswan`. The failed OpenVPN deployment was subsequently removed on 2026-10-26 at the owner's request. The public TCP/UDP port 8443 is occupied by Shadowsocks and is unavailable for a new project service.
 
 `dnsmasq.service` is enabled but failed during the audit. It was not repaired because its role and failure path are outside this project and changing DNS/networking could affect the VPN.
 

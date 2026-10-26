@@ -1,0 +1,135 @@
+# Stage 4 — Functional and business requirements
+
+Date: 2026-10-26
+
+## Status and scope
+
+Stage-4 requirements are delivered. This document defines the first useful product boundary and acceptance criteria. It does not select the final technology stack, authorize trading or claim that a profitable strategy exists.
+
+The first product must answer one question honestly:
+
+> Given the data, costs, available capital and actual delay, is there a tradeable MOEX futures-spread opportunity that improves the user's wealth path versus keeping the relevant capital in LQDT?
+
+The product must be allowed to answer **no opportunity**, **inconclusive** or **insufficient data**.
+
+## Product boundary
+
+### MVP includes
+
+1. Versioned market and contract data intake.
+2. A narrow, explicitly configured universe of economically related futures.
+3. No-trade and deterministic strategy baselines.
+4. One finite-capital virtual portfolio.
+5. Delayed manual-execution simulation and signal revalidation.
+6. Matched LQDT accounting and risk-path reporting.
+7. Reproducible research runs, rejected-signal records and compact reports.
+8. A future-compatible notification boundary; Telegram delivery may be added after the offline workflow is reliable.
+
+### MVP excludes
+
+- real orders or broker API write access;
+- automatic funding, liquidation or rescue actions;
+- BCS execution;
+- a public web dashboard;
+- unrestricted all-pairs or unlimited parameter search;
+- text, regime and neural models as required components;
+- a claim of profitability, safety or capacity at RUB 10–20 million.
+
+## Business requirements
+
+| ID | Requirement | Acceptance criterion |
+|---|---|---|
+| BR-01 | Compare every strategy against a flow-matched LQDT counterfactual | Reports show `V`, `B`, `X = V - B`, peak drawdown `D`, shortfall and costs on a common valuation boundary |
+| BR-02 | Prefer rare, high-quality opportunities over forced activity | Zero-trade days are valid; no component is rewarded for increasing trade count |
+| BR-03 | Respect the RUB 30,000 initial test allocation | Entry feasibility excludes emergency funding and respects integer contracts, margin, VM reserve, costs and concurrent commitments |
+| BR-04 | Keep the core LQDT holding outside assumed pilot liquidity | The system never treats core collateral as available cash without an explicit scenario and evidence flag |
+| BR-05 | Account for manual response from 3 to 90 minutes | Every signal has a decision-time revalidation and a recorded delay scenario |
+| BR-06 | Preserve the user's one realistic virtual portfolio | All eligible signals are attempted according to a frozen priority rule; omissions, rejections and partial fills remain outcomes |
+| BR-07 | Make a signal explainable | A report identifies the relationship, data vintage, costs, expected holding period, size basis, invalidation conditions and uncertainty |
+| BR-08 | Permit a safe conclusion when evidence is weak | Missing data, rights, costs, margin or fills produce an explicit block/inconclusive result rather than a zero assumption |
+
+## Functional requirements
+
+### Data and provenance
+
+- **FR-01 — Source adapters.** The system must accept data through replaceable providers; no strategy may depend directly on one broker or ISS response shape.
+- **FR-02 — Raw preservation.** Store the original response/file reference and a content hash before normalization where licensing permits local retention.
+- **FR-03 — Three clocks.** Keep exchange event time, source publication/update time and local receipt time separately. Unknown times stay unknown.
+- **FR-04 — Versioned specifications.** Version contract terms, lot size, tick value, settlement, expiry, trading calendar, risk parameters and fees with effective, publication and receipt dates.
+- **FR-05 — Missingness.** Distinguish no observation, unavailable source, stale observation, rejected quality check and genuine no-trade state.
+- **FR-06 — Point-in-time rule.** A decision may use only fields available at its decision timestamp. Later corrections are new vintages, not silent edits.
+
+### Universe and strategies
+
+- **FR-07 — Explicit universe.** Candidate instruments and relationship families are configured and logged before evaluation.
+- **FR-08 — Economic relationship.** Every pair has a declared relationship type: identity, calendar/carry, exchange-recognized spread, or a separately justified hypothesis.
+- **FR-09 — Eligibility filters.** Apply contract status, expiry, trading session, liquidity, lot feasibility and data completeness before signal generation.
+- **FR-10 — Baselines first.** Run a no-trade LQDT control and a small deterministic baseline before any adaptive, regime, text or neural component.
+- **FR-11 — Trial registry.** Record every tested pair, family, parameter set, cost scenario and decision rule, including discarded trials.
+- **FR-12 — Frozen evaluation.** Use chronological splits, overlap-aware purge/embargo, a sealed confirmation period and no post-result tuning of that period.
+
+### Signals and delayed execution
+
+- **FR-13 — Signal identity.** Each signal has a stable ID, version, pair, legs, quantities, model version, data vintage and creation timestamp.
+- **FR-14 — Executable revalidation.** At the simulated human decision time, recheck both legs, session, quote age, costs, margin, cash, validity and expected net advantage.
+- **FR-15 — Explicit invalidation.** Signals expire on stale data, price movement, cost erosion, session closure, margin failure, missing leg or model invalidation.
+- **FR-16 — Two-leg lifecycle.** Model submission, acknowledgement, fill, partial fill, cancellation, unknown outcome and hedge completion separately for each leg.
+- **FR-17 — Conservative fills.** Do not infer a fill from a candle midpoint or a touch without a declared execution scenario. Unknown execution evidence remains unknown.
+- **FR-18 — Manual workflow.** Measure notification, reading, decision, order and fill timestamps separately when shadow operation begins.
+
+### Virtual portfolio and accounting
+
+- **FR-19 — Single portfolio.** Maintain one event-sourced virtual portfolio with cash, positions, reservations, orders, fills, funding events and reconciliation corrections.
+- **FR-20 — Integer and finite resources.** Enforce whole contracts, available RUB, margin, VM liquidity, reserve, simultaneous positions and competing signals.
+- **FR-21 — LQDT ledger.** Reconstruct the no-pilot path with identical genuine external flows. Internal transfers and pilot-induced LQDT sales do not reset performance.
+- **FR-22 — No double counting.** Reconcile variation margin, futures P&L, retained LQDT return, financing, fees and liquidation marks exactly once.
+- **FR-23 — Risk path.** Report `X`, high-water mark, `D`, cumulative shortfall, absolute P&L, margin peaks, VM cash needs, legging exposure and emergency-funding usage separately.
+- **FR-24 — Funding gate.** Entry uses zero emergency funding. A simulated top-up requires a recorded approval and credit timestamp and may only support orderly de-risking of an existing position.
+- **FR-25 — Failure states.** The portfolio fails closed on stale safety data, unknown broker state, missing hedge, unavailable capital or unresolved reconciliation.
+
+### Reporting and operations
+
+- **FR-26 — Research report.** Every run produces inputs, versions, assumptions, trial count, rejected opportunities, fills, costs, benchmark path, sensitivity cases and limitations.
+- **FR-27 — Signal explanation.** The user sees what changed, why the opportunity may exist, what must be true to enter and when it no longer makes sense.
+- **FR-28 — Notification boundary.** Notifications are idempotent, retryable and deduplicated. Loss of Telegram delivery never authorizes a trade.
+- **FR-29 — Operational outbox.** Future alerts are written durably before delivery and can be replayed without duplicate signals.
+- **FR-30 — Recovery.** After a restart or outage, reconcile stored events and current source state before generating new entries.
+
+## Non-functional requirements
+
+- **NFR-01 — Reproducibility.** A run is reproducible from versioned code, configuration, source vintages and trial registry.
+- **NFR-02 — Fail closed.** Unknown safety-critical values block new exposure; they are never coerced to zero, free or unlimited.
+- **NFR-03 — Auditability.** Corrections append new records and retain the prior observation; reports can trace a result to source and timestamp.
+- **NFR-04 — Security.** Tokens, keys, account identifiers, client profiles and personal statements stay outside Git and logs.
+- **NFR-05 — Resource isolation.** Heavy research runs on the laptop. Any VPS process is bounded, has an explicit memory cap and does not bind a new public port.
+- **NFR-06 — Availability behavior.** Outage, stale-data and broker-unreachable states are visible and safe; the system does not pretend that monitoring equals execution.
+- **NFR-07 — Modular extension.** Data providers, strategy families, execution modes, brokers and notification channels are replaceable boundaries, not duplicated business logic.
+- **NFR-08 — Dark-only interface.** Any future user interface is dark-only and private/local by default; a UI is not required for the first offline slice.
+
+## Acceptance gates for the first implementation slice
+
+The first implementation may begin only when it can pass these checks on a small fixture:
+
+1. Rebuild the same LQDT counterfactual and `X` curve twice with identical output.
+2. Reject an entry when one leg is stale, unavailable, unaffordable or outside its session.
+3. Record a signal that becomes stale during the simulated 3–90 minute delay as a non-entry.
+4. Record partial legging and require an explicit hedge/flatten decision; never create an invisible balanced fill.
+5. Show that a genuine external top-up moves both paths symmetrically and does not erase the loss history.
+6. Show that an internal LQDT transfer is not counted as profit and does not replenish the emergency allowance.
+7. Produce identical results after restart and event replay without duplicate signals.
+8. Generate a report containing no secrets and a clear list of unknown or unsupported inputs.
+
+## Deferred decisions
+
+The following remain intentionally open until later evidence or implementation measurements:
+
+- exact broker/account configuration and collateral treatment;
+- final data source and permitted automated-use terms;
+- final timeframe and storage engine;
+- Telegram deployment details;
+- final sizing formula and risk thresholds;
+- BCS order semantics and automation permission;
+- public or private UI technology;
+- whether regime, text or neural components add measurable value.
+
+Stage 5 will convert these requirements into architecture boundaries and decision records. Stage 6 will select the stack and data sources with evidence. No live trading or broker write access is implied by this requirements artifact.

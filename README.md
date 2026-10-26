@@ -4,11 +4,12 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 3 **read-only environment preflight completed** after the focused research review. Provisional architecture boundaries are set; account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted. Stage 4 has not started.
+Stage 4 **functional and business requirements delivered** after the focused research review and read-only environment preflight. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted. Stage 5 has not started.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
 - [Stage 3: environment preflight](docs/stages/03-environment.md)
+- [Stage 4: functional and business requirements](docs/stages/04-requirements.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

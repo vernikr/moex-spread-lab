@@ -56,8 +56,11 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **FR-02 — Raw preservation.** Store the original response/file reference and a content hash before normalization where licensing permits local retention.
 - **FR-03 — Three clocks.** Keep exchange event time, source publication/update time and local receipt time separately. Unknown times stay unknown.
 - **FR-04 — Versioned specifications.** Version contract terms, lot size, tick value, settlement, expiry, trading calendar, risk parameters and fees with effective, publication and receipt dates.
+- **FR-04a — Corporate-action provenance.** Store corporate actions as dated observations with action type, announcement/publication/availability time, record/ex/payment dates, amount, currency, source role, locator, content hash and conflict/supersession status. Unknown dates remain unknown.
 - **FR-05 — Missingness.** Distinguish no observation, unavailable source, stale observation, rejected quality check and genuine no-trade state.
 - **FR-06 — Point-in-time rule.** A decision may use only fields available at its decision timestamp. Later corrections are new vintages, not silent edits.
+- **FR-06a — Price roles.** Keep settlement, analytical close, last-trade close, bid, ask and live mark as distinct observations. Each strategy/accounting operation declares the role it consumes; an absent role cannot be silently substituted.
+- **FR-06b — Adjustment lineage.** Split/dividend-adjusted series are explicit derived views with source events, adjustment mode and vintage. A price-gap check may validate or challenge an event but cannot overwrite its primary date or amount.
 
 ### Universe and strategies
 
@@ -128,6 +131,7 @@ The first implementation may begin only when it can pass these checks on a small
 10. Prove that an adverse move alone cannot create an unbounded scale-in or consume emergency funding.
 11. Represent each staged reduction and final exit as a separate event, preserving remaining exposure and legging risk after partial execution.
 12. Stop all exposure-increasing steps at the drawdown/shortfall action gates while still permitting controlled risk reduction.
+13. Reproduce a historical decision without using a later corporate-action correction, adjusted series or current contract snapshot.
 
 ## Deferred decisions
 
@@ -142,4 +146,4 @@ The following remain intentionally open until later evidence or implementation m
 - public or private UI technology;
 - whether regime, text or neural components add measurable value.
 
-Stage 5 converted these requirements into architecture boundaries and decision records in [the architecture artifact](05-architecture.md). Stage 6 will select the stack and data sources with evidence. No live trading or broker write access is implied by this requirements artifact.
+Stage 5 converted these requirements into architecture boundaries and decision records in [the architecture artifact](05-architecture.md). Stages 6–7 selected a conditional stack/data baseline and incorporated prior-project reuse findings. Stage 8 will plan delivery and validation. No live trading or broker write access is implied by this requirements artifact.

@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 6 **conditional stack and data-source baseline delivered** after formalizing modular architecture and staged exposure rules. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted. Stage 7 awaits the previous-project materials.
+Stage 7 **reuse analysis delivered** after reviewing three previous projects and preserving the supplied product hypothesis document. Account-specific evidence, data rights, execution evidence and strategy validation remain open. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -12,6 +12,7 @@ Stage 6 **conditional stack and data-source baseline delivered** after formalizi
 - [Stage 4: functional and business requirements](docs/stages/04-requirements.md)
 - [Stage 5: architecture](docs/stages/05-architecture.md)
 - [Stage 6: stack and data sources](docs/stages/06-stack-and-data.md)
+- [Stage 7: reuse analysis](docs/stages/07-reuse-analysis.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

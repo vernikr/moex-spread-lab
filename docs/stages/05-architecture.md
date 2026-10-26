@@ -116,11 +116,11 @@ normalized observations ---> strategy evaluator ---> signal/step proposals
 
 ### 1. Point-in-time intake
 
-Owns source adapters, raw references/hashes where retention is permitted, normalization, quality status and the three timestamps: exchange event, source publication/update and local receipt. It does not decide whether a trade is attractive.
+Owns source adapters, raw references/hashes where retention is permitted, normalization, quality status and the three timestamps: exchange event, source publication/update and local receipt. It keeps price roles separate (`settlement`, `legal_close`, `last_trade_close`, `bid`, `ask`, `live_mark`) and stores corporate actions as source observations plus explicitly derived checks. It does not decide whether a trade is attractive.
 
 ### 2. Specification registry
 
-Versions contract terms, lot size, tick value, expiry, calendar, session, margin/risk inputs, fees, data-source terms, module manifests and strategy specifications. Every evaluation records the complete run manifest and specification versions used. Tariffs are providers of dated cost facts, not constants embedded in strategies.
+Versions contract terms, lot size, tick value, expiry, calendar, session, margin/risk inputs, fees, data-source terms, module manifests, strategy specifications and adjustment modes. Every evaluation records the complete run manifest, specification versions, consumed price roles and corporate-action vintages used. Tariffs are providers of dated cost facts, not constants embedded in strategies.
 
 ### 3. Strategy evaluator
 
@@ -205,6 +205,8 @@ Events are immutable and carry `portfolio_id`, `idea_id`, `ladder_id`, `step_id`
 ### Observation and decision events
 
 - `market_observation_recorded`
+- `corporate_action_observed` / `corporate_action_corrected`
+- `derived_price_check_recorded`
 - `strategy_evaluation_recorded`
 - `signal_created`
 - `signal_revalidated`
@@ -338,6 +340,14 @@ An event must not carry secret credentials, account identifiers or raw private s
 
 **Consequence:** A disabled strategy stops proposals; a disabled cost/data/risk capability blocks dependent exposure; reporting can continue from already recorded events.
 
+### ADR-05-10 — Price roles and corporate actions are explicit
+
+**Decision:** Settlement, analytical close, last-trade close, quotes and live marks are separate contract fields. Corporate actions retain primary dates and availability vintages; price-gap and adjustment calculations are derived diagnostics.
+
+**Reason:** The previous projects show that a generic `close`, current catalog snapshot or inferred `registry_date - 2 days` can silently mix accounting, research and execution meanings or leak later information into history.
+
+**Consequence:** Each consumer declares its price role and adjustment mode. Missing role or unavailable event vintage blocks the dependent historical claim rather than selecting a convenient fallback.
+
 ## Stage-5 acceptance gates
 
 Architecture is ready for stack selection when a small fixture can:
@@ -353,7 +363,7 @@ Architecture is ready for stack selection when a small fixture can:
 9. Reject a module with an incompatible contract or missing capability before activation and produce a stable reason code.
 10. Run a module's conformance fixtures without credentials, private account data or access to another module's private state.
 
-## Open inputs for Stage 6
+## Open inputs for implementation after Stage 7
 
 - broker-specific margin offsets, liquidation and order semantics;
 - applicable VTB tariff and permitted manual data access;
@@ -362,4 +372,4 @@ Architecture is ready for stack selection when a small fixture can:
 - final storage and deployment choice after measuring the first offline slice;
 - validated ladder thresholds, quantities, stress multipliers and risk limits.
 
-Stage 6 selected the conditional baseline in [the stack and data-source artifact](06-stack-and-data.md) within these boundaries. Research findings, broker evidence and the later reuse stage may revise this architecture through explicit decision records.
+Stage 6 selected the conditional baseline in [the stack and data-source artifact](06-stack-and-data.md) within these boundaries. Stage 7 revised the price/event provenance boundary in [the reuse analysis](07-reuse-analysis.md). Broker evidence and implementation measurements may revise this architecture through explicit decision records.

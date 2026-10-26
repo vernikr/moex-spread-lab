@@ -62,6 +62,8 @@ Use as the first candidate for offline exploratory studies only, subject to the 
 - no automated signal-to-order path from ISS;
 - no public display or redistribution of captured market data.
 
+**Reuse implementation pattern from Stage 7:** discover boards before history requests, resolve documented aliases, paginate history, request an explicit field list and retain the raw response with request parameters, receipt time and hash. For shares/ETFs, prefer `LEGALCLOSEPRICE` when the source supplies and defines it; for futures, preserve settlement and last-trade fields separately rather than applying the equity rule.
+
 **Gate:** obtain and archive the applicable written interpretation/permission for the intended personal research and automated collection scenario. Until then, ISS may support a clearly labelled local research experiment only; it is not the approved source for an unattended signal runtime or live trading.
 
 ### 2. MOEX and NCC primary documents — specification and event evidence
@@ -69,6 +71,8 @@ Use as the first candidate for offline exploratory studies only, subject to the 
 Use dated official documents for contract terms, calendars, settlement conventions, exchange fees, recognized spread groups and risk-parameter snapshots. The specification registry must preserve effective date, publication date, receipt date and source hash.
 
 Current reports do not prove a complete historical risk-parameter archive or the broker's client-specific transformation. Missing dates remain unknown and are stress inputs, not zeros.
+
+The futures catalog adapter may use fields such as `PREVSETTLEPRICE`, `LASTSETTLEPRICE`, `MINSTEP`, `STEPPRICE`, `LASTTRADEDATE`, `INITIALMARGIN` and `BUYSELLFEE`, but each field is a dated snapshot. Current ГО/fees cannot be retrofitted into expired contracts as historical facts. Historical approximations remain labelled sensitivity scenarios.
 
 ### 3. VTB/QUIK — manual execution evidence
 
@@ -86,11 +90,11 @@ The adapter remains disabled until account-level authorization, data-use rights,
 
 Use a secure, user-supplied account/statement import or manually prepared redacted fixture for actual benchmark accounting. Do not substitute RUSFAR, a generic cash rate or an invented fixed yield for the matched LQDT path.
 
-The benchmark adapter must preserve whole-account genuine external flows and distinguish economic LQDT value from usable collateral. Account identifiers and statements never enter Git, logs or external model prompts.
+The benchmark adapter must preserve whole-account genuine external flows and distinguish economic LQDT value from usable collateral. A predecessor chain such as RUONIA → RUSFAR → VTBM → LQDT may extend exploratory history by linking returns, but those synthetic periods must be labelled and cannot replace actual LQDT data in the pilot benchmark. Account identifiers and statements never enter Git, logs or external model prompts.
 
 ### 6. Corporate and calendar events
 
-Do not build a broad news/dividend subsystem before a selected pair requires it. For an admitted family, use a dated primary event source and the R12 point-in-time rule. If an event cannot be shown to have been available before the decision, the affected signal is blocked or labelled inconclusive.
+Do not build a broad news/dividend subsystem before a selected pair requires it. For an admitted family, use a dated primary event source and the R12 point-in-time rule. A reviewed seed and secondary sources may fill discovery gaps or provide a conflict check, but source role and availability remain visible. Store announcement/publication/availability, record, ex and payment dates separately. A price-gap check can challenge or support an event; it cannot invent its factual ex-date. If an event cannot be shown to have been available before the decision, the affected signal is blocked or labelled inconclusive.
 
 ## Initial universe and research order
 
@@ -138,7 +142,9 @@ The 90-day research window must be able to cross tariff effective dates. A run r
 | VPS state | SQLite + bounded single process candidate | Workload benchmark and resource cap test |
 | Manual broker | VTB | Account/tariff/collateral and execution evidence |
 | Future API broker | BCS adapter candidate | Read-only access, rights, account and order semantics |
-| First market data | MOEX ISS conditional research source | Written rights/permission interpretation and reproducible access check |
+| First market data | MOEX ISS conditional research source with dynamic board/history adapter | Written rights/permission interpretation and reproducible access check |
+| Price roles | Separate settlement, analytical close, last trade, quote and live-mark fields | Instrument-specific field mapping and historical availability |
+| Corporate actions | Official-first event adapter with reviewed seed and secondary cross-checks | Availability vintages, source rights and conflict handling |
 | Executable prices | Future VTB/QUIK or authorized broker feed | Read-only shadow evidence; ISS cannot substitute |
 | First pair family | CNY/RUB same-underlying carry/calendar candidate | Current contract, margin, liquidity, costs and integer feasibility |
 | Notifications | Telegram outbox adapter | Offline replay first; user delivery and outage test later |
@@ -174,4 +180,4 @@ The main business question for a later decision is whether to prioritize a wider
 
 This selection uses the supplied R01, R02, R04, R05, R06, R07, R08, R10 and R11 reports, together with the previously accepted architecture review. They are provisional intake material. Public accessibility, documented formulas and reported observations do not prove the user's individual tariff, account perimeter, data rights, executable access or profitable strategy.
 
-Stage 7 remains separate and may revise this selection after the user's previous MOEX projects are supplied. Stage 8 will turn the selected baseline into a delivery and validation plan.
+Stage 7 revised this selection in [the reuse analysis](07-reuse-analysis.md): dynamic ISS board/history handling, explicit price roles, an official-first corporate-action adapter and labelled synthetic LQDT predecessor chains are now part of the conditional baseline. Stage 8 will turn the selected baseline into a delivery and validation plan.

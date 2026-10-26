@@ -1,0 +1,369 @@
+# R13 — Optional regime conditioning: incremental evidence test
+
+**Status:** conditional research design; no baseline has been measured and no backtest was run. All performance figures below are either pre-registered design parameters or rough resource arithmetic, not results.
+
+## 1. Bottom line
+
+**No direct evidence was found that market-wide or instrument-family regime information improves out-of-sample net RUB decisions for a MOEX futures-spread baseline, after realistic costs, manual delay and the matched-LQDT counterfactual.** The closest evidence is mixed: some studies find that regime dependence exists but does not improve out-of-sample forecasts; others find weak statistical gains but some economic gains; one finds improved volatility forecasts but not trading profits; one claims improved risk-adjusted returns without a net-RUB, cost-adjusted, multiple-testing-controlled comparison. No study covers MOEX calendar spreads, RUB 30,000 integer-contract capital, manual 3–90 minute execution or LQDT opportunity cost.
+
+**Recommendation: defer hidden-state and change-point regime models. Do not add a regime layer now.** If the baseline is eventually measured and passes its own validation, a single low-cost falsification test of one or two observable state splits may be justified. If that simple test fails, stop; do not proceed to HMMs or change-point models.
+
+---
+
+## 2. What was actually read, and what remains only proposed
+
+### Read
+
+Primary/official:
+
+- Bank of Russia press releases on MOEX trading restrictions and resumption in February–March 2022.
+- MOEX futures contract parameters, trading hours and expiry rules.
+- MOEX RVI methodology and publication schedule.
+- MOEX historical calendar-spread archive, including zero-bid/zero-volume and wide-spread observations.
+- MOEX announcements on weekend trading, the unified trading session, expanded trading hours and the 2026 holiday schedule.
+
+Academic/method:
+
+- Guidolin & Pedio, *Switching Coefficients or Automatic Variable Selection*, published 18 February 2022.
+- Guidolin & Pedio, *Forecasting Commodity Futures Returns: An Economic Value Analysis…*, 2021.
+- Rubaszek et al., *The role of the threshold effect…*, published 13 July 2020.
+- Fong & See, *Basis variations and regime shifts in the oil futures market*, 2003.
+- Marshall et al., *Liquidity commonality in commodities*, 2013.
+- Asset-independent regime-switching HMM paper, 2021 abstract.
+- Bailey, Borwein, López de Prado & Zhu, *The Probability of Backtest Overfitting*, revised 2014 / journal 2017.
+- Bailey & López de Prado, *The Deflated Sharpe Ratio*, 2014.
+- Bailey et al., *Pseudo-Mathematics and Financial Charlatanism*, 2014.
+
+### Proposed only, not executed
+
+- MOEX data download and cleaning.
+- Baseline parameter selection and backtest.
+- Regime-variant walk-forward tests.
+- Execution-delay simulation and broker fill checks.
+- LQDT counterfactual accounting.
+- Broker collateral/KPUR confirmation.
+- Legal/tax verification.
+- Any live or paper trading.
+
+---
+
+## 3. Evidence assessment
+
+### 3.1 Regime dependence is real, but out-of-sample economic value is not established
+
+| Evidence | Finding | Relevance and limitation |
+|---|---|---|
+| Guidolin & Pedio 2022 | HMM and stepwise models “may outperform the benchmark under standard statistical loss functions is rather weak and limited to low-volatility regimes,” but a mean-variance investor “achieves large benefits in terms of realized Sharpe ratios and mean-variance utility.” | Mixed. Economic gains are possible, but the statistical evidence is weak and limited to low-volatility states. Not a net-RUB, cost-adjusted MOEX spread test. |
+| Guidolin & Pedio 2021 | Including commodity-specific factors “does not improve the forecasting power”; risk-adjusted performance “does not allow us to conclude that any forecasting approach outperforms the others”; however, “strategies based on commodity-specific predictors outperform … in the high-volatility state.” | Suggests high-volatility conditioning may matter, but the overall ranking is inconclusive. It also warns that many predictors do not survive out of sample. |
+| Rubaszek et al. 2020 | Spot–futures relationship is “regime dependent but accounting for this property does not improve the quality of out-of-sample forecasts.” | Direct counterexample: regime dependence ≠ incremental predictive value. |
+| Fong & See 2003 | Regime shifts improve short-term **volatility** forecasts. | Supports volatility-state modelling, not net spread returns or entry decisions. |
+| HMM asset-independent paper 2021 | Claims out-of-sample detection of bull/bear/high-volatility periods “improving risk-adjusted returns while keeping a preferable turnover level.” | Positive but abstract-level. No visible net-RUB, transaction-cost, multiple-testing or no-regime-baseline comparison. |
+| Liquidity commonality 2013 | “Strong systematic liquidity factor in commodities”; no consistent link between stock and commodity liquidity. | Supports a commodity-market-wide liquidity state, but also warns that equity liquidity proxies such as RVI may not transfer cleanly to commodities. |
+
+**Assessment:** the literature supports testing **observable volatility, liquidity and carry states** before hidden-state models, but it does not establish that any of them will improve **net decisions** in this project. The most defensible conclusion is that the incremental value is an open, low-base-rate hypothesis.
+
+### 3.2 The multiple-testing and overfitting risk is material
+
+The regime search adds degrees of freedom at several levels: state definition, threshold, window length, number of states, decision lever, instrument subset and cost scenario. The overfitting literature is directly relevant:
+
+- PBO paper: “Standard statistical techniques designed to prevent regression overfitting, such as holdout, tend to be unreliable and inaccurate in the context of investment backtests”.
+- DSR paper: “Not controlling for the number of trials involved in a particular discovery leads to overly optimistic performance expectations”; DSR corrects selection bias and non-normality.
+- Pseudo-mathematics paper: “The higher the number of configurations tried, the greater is the probability that the backtest is overfit” and analysts rarely report the number of configurations tried.
+
+A regime layer that is tried after seeing baseline results, or that changes entry, size, exit, duration and pair eligibility at once, is especially exposed to this criticism.
+
+### 3.3 MOEX-specific constraints are structural, not just statistical
+
+MOEX contract specifications, expiry rules and trading hours are not stationary background conditions:
+
+- Single-stock futures expire on the third Thursday of the contract month, with settlement on the first trading day thereafter.
+- Trading hours include a main session and an evening session, with two clearing sessions.
+- Weekend trading in all futures and calendar spreads, except FX contracts, began on 16 August 2025.
+- A unified trading session began on 23 March 2026, removing intraday clearing and changing expiry times.
+- Trading hours expanded on 14 July 2026.
+- MOEX markets are closed on specified 2026 holidays.
+
+These are **policy-defined and contract-defined events**, not learned predictive states. They affect liquidity, clearing, margin and execution. A regime label that happens to align with these events is not evidence of a causal regime effect.
+
+The public calendar-spread archive also illustrates why pair eligibility is a real constraint: for one spread, many dates show `Bid: 0`, `Ask: 0`, `Volume: 0`, `Trades: 0`, while other dates show quoted spreads of 12–63 points. This is not a market-wide liquidity statistic, but it shows that “liquid pair” cannot be assumed.
+
+---
+
+## 4. Reference baseline specification
+
+The baseline must be defined **before** any regime variant. Two fixed-parameter baselines are sufficient.
+
+### B0 — carry/calendar baseline
+
+- **Universe:** MOEX futures families with at least two contract months that meet a pre-registered liquidity screen at decision time. Integer contracts only.
+- **Signal at decision time \(t\):** annualised log carry between front and second contract:
+  \[
+  c_t = \frac{\ln(F_t^{(1)}) - \ln(F_t^{(2)})}{T_2 - T_1}
+  \]
+  using prices available at the decision timestamp.
+- **Entry rule:** fixed threshold \(k\), selected on training windows only. Enter the carry-positive or carry-negative spread when \(|c_t| > k\). No regime conditioning.
+- **Exit:** fixed holding period \(H\), or a pre-registered stop, whichever comes first. No regime conditioning.
+- **Capital:** RUB 30,000 all-in, integer contracts, same margin/liquidity reserve assumptions as the project context.
+- **Costs and delay:** identical conservative/base/stress fee/spread/slippage sets and 3–90 minute signal-to-action delay for baseline and all variants.
+- **Metric:** net RUB excess over the matched LQDT counterfactual, with identical true external flows.
+
+### B1 — mean-reversion baseline
+
+- **Signal:** spread z-score relative to a trailing mean and standard deviation computed only from data available at \(t\).
+- **Entry:** \(|z_t| > z_0\), fixed on training data.
+- **Exit:** \(|z_t| < z_1\) or fixed maximum holding period.
+- **No regime conditioning.**
+
+All parameters are selected on training windows only. The final holdout is untouched until the final evaluation.
+
+---
+
+## 5. State definitions and information sets
+
+The key discipline is that every state at decision time \(t\) uses only information available at or before \(t\). No full-sample quantiles, no full-sample z-scores, no smoothed regime probabilities.
+
+| State | Definition | Information set at decision time | Lag / look-ahead control |
+|---|---|---|---|
+| **V-market** | RVI trailing percentile: high if \(RVI_t \ge Q_{0.8}(RVI_{t-252:t-1})\). | RVI at 18:45 MSK, prior 252 sessions. RVI is published every 15 seconds during the day and evening sessions. | Use only RVI prints at or before 18:45. Do not use the session close after the decision. |
+| **V-family** | Front-contract realised volatility, trailing 20 sessions, annualised; high/low relative to its own 252-session history. | Previous session close and prior 20/252 sessions. | Shift by one session; no same-day close after decision. |
+| **L-pair** | Pair eligibility: previous day’s median bid–ask spread and volume percentile for the specific contract pair. | Previous day’s MOEX archive data. | Use previous-day data only. Do not use same-day closing spread/volume. |
+| **C-state** | Carry state: sign and magnitude of annualised log slope between front and second contract. | Previous settlement prices and known contract maturities. | Use previous settlement; do not use a same-day settlement that is published after the decision. |
+| **P-policy** | Policy/contract event flag: official closure, restricted session, changed trading hours, expiry-time change. | Official CBR/MOEX publication and effective date. | Not a predictive state. Used only to exclude/flag affected observations and as an evaluation stratum. |
+| **M-macro** | CBR key rate, OFZ yield, inflation regime. | Publication and effective dates. | Not primary. Used only as an evaluation stratum or robustness control; revised data must not replace real-time data. |
+
+**Market-wide vs instrument-family:** V-market is a market-wide volatility proxy but is equity-index-centric: RVI is based on RTS Index options, not a commodity-wide or MOEX-futures-wide volatility index. V-family, L-pair and C-state are instrument-family or pair-specific. Do not call RVI a “MOEX futures regime” without qualification.
+
+**Observable before hidden:** H1–H4 use only observable states. H5, the hidden-state model, is deferred and tested only if an observable state passes.
+
+---
+
+## 6. Predeclared decision levers
+
+To avoid attributing gains to an unspecified “regime layer,” each primary hypothesis changes exactly one lever.
+
+| Hypothesis | Baseline | Lever changed by regime | Levers held fixed |
+|---|---|---|---|
+| H1: V-market | B0 or B1 | **Entry only** (on/off throttle) | Size, exit, duration, pair eligibility |
+| H2: L-pair | B0 or B1 | **Pair eligibility only** | Entry threshold, size, exit, duration |
+| H3: C-state | B1 | **Entry threshold only** | Size, exit, duration, pair eligibility |
+| H4: combined simple states | Best single-state variant | **Two predeclared levers only** | All other levers fixed |
+| H5: hidden-state | H1 comparator | **Entry only** (same lever as H1) | Size, exit, duration, pair eligibility |
+
+**Size, exit and duration changes are not part of the primary test.** They may be explored only after a primary variant passes, and every additional variant counts toward the trial count for DSR/PBO.
+
+---
+
+## 7. Hypothesis cards
+
+### H1 — Market-wide volatility state as an entry throttle
+
+- **Economic mechanism:** high market-wide implied volatility may coincide with wider spreads, higher correlation and noisier carry/mean-reversion signals; an entry throttle may avoid negative-expectancy states.
+- **State:** \(V_t = 1\{RVI_t \ge Q_{0.8}(RVI_{t-252:t-1})\}\).
+- **Information set:** RVI at 18:45 MSK; trailing 252 sessions; no future data.
+- **Decision affected:** entry only. Baseline signal and exit unchanged.
+- **Primary metric:** incremental net RUB over LQDT, base cost, all delay scenarios.
+- **Falsification:** incremental net ≤ 0 in base and conservative cost scenarios; fewer than 20 non-overlapping high-vol episodes in the evaluation window; >50% of incremental PnL from one episode; DSR < 0.95 or PBO > 0.20.
+- **Source date:** RVI first calculated 18 November 2013; official launch 16 April 2014; publication every 15 seconds.
+
+### H2 — Instrument-family liquidity state as pair eligibility
+
+- **Economic mechanism:** illiquid calendar spreads have wider quoted spreads, higher market impact and more stale prints; excluding them may improve net results without forecasting direction.
+- **State:** pair eligible if previous-day median bid–ask spread is below its 252-day median and previous-day volume is above its 252-day 30th percentile.
+- **Information set:** previous-day MOEX archive data only.
+- **Decision affected:** pair eligibility only.
+- **Primary metric:** incremental net RUB over LQDT; also report excluded-pair contribution to baseline PnL.
+- **Falsification:** filter reduces net after costs; excluded pairs account for >50% of baseline profit; state is unstable across adjacent days; fewer than 20 eligible/ineligible episodes.
+- **Source date:** MOEX historical calendar spreads, accessed 2026-10-07; illustrative zero-bid/zero-volume days and wide spreads.
+
+### H3 — Carry state as a mean-reversion entry condition
+
+- **Economic mechanism:** the shape of the futures curve may change the mean-reversion behaviour of the spread; basis effects can be asymmetric across volatility states.
+- **State:** absolute carry percentile: high if \(|c_t| \ge Q_{0.67}(|c|_{t-252:t-1})\).
+- **Information set:** previous settlement prices and contract maturities.
+- **Decision affected:** entry threshold only for B1.
+- **Primary metric:** incremental net RUB over LQDT.
+- **Falsification:** no incremental net; results driven by a single commodity family; state is merely a proxy for days-to-expiry; DSR/PBO fail.
+- **Source date:** Fong & See 2003, published 1 October 2003; basis-dependent regime transitions and volatility forecasting gains, not net trading gains.
+
+### H4 — Combined simple states vs single states
+
+- **Purpose:** test whether a predeclared combination of two simple states adds value beyond the best single state, without adding a hidden-state layer.
+- **Variants:** V-market + L-pair; V-market + C-state. No other combinations in the primary test.
+- **Decision affected:** exactly the two levers of the component hypotheses; all other levers fixed.
+- **Falsification:** combined variant does not beat the best single-state variant after DSR/PBO; interaction is concentrated in one episode or family; incremental net is negative in conservative cost.
+
+### H5 — Hidden-state/change-point incremental test — deferred
+
+- **Precondition:** H1 or H2 or H3 must first show incremental net > 0 at base and conservative cost, with acceptable DSR/PBO and episode robustness.
+- **State:** two-state Gaussian HMM on returns and realised volatility, fitted on an expanding window ending at \(t-1\); use the **filtered** probability at \(t\), never the smoothed probability or Viterbi path.
+- **Decision affected:** entry only, exactly the same lever as H1, so the comparison is “hidden state vs observable state,” not “hidden state vs baseline with extra levers.”
+- **Falsification:** fails to beat H1 by a predeclared margin; label switching; state occupancy < 10%; transition costs erase the gain; DSR/PBO fail; detection delay makes the signal stale under the 3–90 minute execution delay.
+
+---
+
+## 8. Validation skeleton and leakage tests
+
+### Chronological walk-forward
+
+- Expanding or rolling training window, pre-registered.
+- All state definitions, thresholds, model choices and labels fitted on training data only.
+- A gap between training and test at least as long as the maximum holding period plus the maximum signal-to-action delay. If the holding period is \(H\) days, the gap is at least \(H + 1\) trading day.
+- Preregistered hypotheses and a trial log covering every variant, including failures.
+- A final untouched holdout of at least 12 contiguous months, locked before any variant is run. One evaluation only.
+
+### Leakage tests
+
+1. **Timestamp audit:** every feature’s latest timestamp ≤ decision timestamp.
+2. **Future-blind perturbation:** replace all data after \(t\) with noise; the state label at \(t\) must be unchanged.
+3. **Full-sample vs expanding threshold:** compare; if the full-sample version is materially better, flag leakage.
+4. **Filtered vs smoothed probability:** HMM variants must use filtered probabilities only. A smoothed-probability version is a leakage diagnostic, not a candidate strategy.
+5. **Label stability:** multiple refits; sort states by conditional volatility mean; report label-flip rate. If labels permute across refits, discard.
+6. **Policy-event separation:** exclude official closure/restricted days; verify that state labels are not simply policy-event dummies.
+7. **Holdout audit:** hash the holdout data and access log; no holdout inspection before final evaluation.
+
+### Policy-defined events vs learned states
+
+- **Policy-defined:** CBR decisions not to start MOEX derivatives sessions on 28 February 2022; restricted derivatives trading on 14–18 March 2022 with single-stock/index contracts available only for negotiated position-closing; resumption of index derivatives on 24 March 2022 from 10:00–14:00; weekend trading from 16 August 2025; unified session from 23 March 2026; expanded hours from 14 July 2026; 2026 holiday closures.
+- **Learned predictive states:** only states computed from market data available at decision time.
+- **Rule:** never call a policy event a “regime” and then infer causality from a profitable label. Policy events are evaluation strata and execution-risk flags, not alpha signals.
+
+---
+
+## 9. Ablation and uncertainty protocol
+
+### Ablation sequence
+
+1. **B0 vs B0 + H1** — entry throttle only.
+2. **B0 vs B0 + H2** — pair eligibility only.
+3. **B1 vs B1 + H3** — entry threshold only.
+4. **Best single-state vs H4** — combined simple states.
+5. **H1 vs H5** — observable vs hidden state, same lever, only if H1 passed.
+
+Each step reports:
+
+- Incremental net RUB over LQDT, paired by date.
+- Incremental turnover and number of extra round trips.
+- Break-even cost: the per-contract cost at which incremental net = 0.
+- State occupancy, transition counts and average episode duration.
+
+### Uncertainty
+
+- Block bootstrap by trading week or calendar month, not trade-level bootstrap.
+- Leave-one-episode-out: remove each macro episode (e.g., 2022 sanctions, 2024 MOEX sanctions, 2025–2026 rate cycle) and re-estimate.
+- Leave-one-family-out: remove each instrument family and re-estimate.
+- Report 90% and 95% intervals for incremental net.
+- Report DSR and PBO across the full trial log, not only the winning variant.
+- Report MCS or an equivalent model-confidence set across baseline and variants.
+
+### Multiple testing
+
+- Pre-register one primary variant per baseline; all others are secondary and counted.
+- Keep parameter grids small and identical across instruments.
+- No per-instrument threshold tuning in the primary test.
+- Log every trial, including failures, with code version, data snapshot hash and parameter grid.
+- DSR and PBO are computed over the full set of trials, not just the reported winner.
+
+---
+
+## 10. Resource estimates
+
+Rough order-of-magnitude, not measured:
+
+| Item | Estimate | Notes |
+|---|---|---|
+| Daily data | ~15 instruments × 10 years × 250 sessions ≈ 37,500 rows; < 50 MB | Trivial on the MacBook; suitable for simple state splits. |
+| Minute data | ~15 × 250 × 600 × 5 ≈ 11.25 million rows; ~1–3 GB compressed | Do not fit on the 1 vCPU / 1 GB VPS. Use the MacBook; VPS only for alerts/monitoring. |
+| Simple-split compute | < 1 hour per full walk-forward on a laptop | Baseline plus 3–5 simple variants. |
+| HMM grid | ~100 fits; minutes to a few hours on a laptop | Only if H5 is reached. |
+| Human effort | ~3–6 part-time weeks | Data pipeline, preregistration, tests, review. |
+| Paid data | None assumed | Free data may limit the finest defensible timeframe; that is a research question, not an entitlement. |
+
+No production probing, no live deployment and no paid subscription are assumed.
+
+---
+
+## 11. Discard criteria
+
+The regime layer should be **discarded** if any of the following occurs:
+
+1. Incremental net RUB ≤ 0 at base cost.
+2. Incremental net RUB ≤ 0 at conservative cost.
+3. Break-even cost is below the base cost scenario.
+4. DSR < 0.95 or PBO > 0.20 over the full trial log.
+5. More than 50% of incremental PnL comes from one macro episode.
+6. More than 50% of incremental PnL comes from one instrument family.
+7. State occupancy < 10% or fewer than 20 non-overlapping episodes per state in the evaluation window.
+8. Label-flip rate > 20% across refits, or HMM state ordering cannot be stabilised.
+9. The simple observable state fails; then H5 is not run.
+10. The baseline itself has not been measured and validated; then no regime test is meaningful.
+
+If a simple split passes but H5 fails, keep the simple split only as a risk throttle or eligibility filter, not as an alpha layer.
+
+---
+
+## 12. Material conflicts and unknowns
+
+| Conflict / unknown | Consequence |
+|---|---|
+| Guidolin & Pedio find weak statistical OOS but some economic gains; Rubaszek finds regime dependence does not improve OOS forecasts | The incremental hypothesis is genuinely uncertain; do not assume regime conditioning helps. |
+| Fong & See find better volatility forecasts, not better trading profits | Do not transfer volatility-forecast evidence to net spread decisions. |
+| HMM paper claims improved risk-adjusted returns but lacks visible net-RUB, cost, multiple-testing and no-regime-baseline comparison | Positive evidence is not sufficient for this project. |
+| RVI is an equity-index volatility index, not a commodity-wide or MOEX-futures-wide regime | A market-wide volatility state based on RVI may not transfer to commodity or stock futures spreads. |
+| MOEX calendar-spread archive can show zero bids/asks and zero volume on individual spreads | Liquidity states are relevant, but free data may be too sparse for reliable state estimation. |
+| 2022 policy closures and 2025–2026 contract changes dominate the sample | Historical regime labels may be proxies for policy events; sample size outside these events may be too short. |
+| No baseline has been measured | Any claim about incremental value is conditional, not empirical. |
+| Broker collateral, KPUR recognition and legal/tax treatment are unverified | Do not treat the pilot as ring-fenced or assume LQDT collateral eligibility. |
+| Manual delay distribution is unknown beyond 3–90 minutes, median ~5–15 minutes | State detection delay and execution delay may erase statistical gains. |
+
+---
+
+## 13. Possible project changes
+
+- **If simple splits fail:** drop regime conditioning entirely; keep the no-regime baseline and reallocate research effort to execution cost, liquidity screening and position sizing.
+- **If liquidity state passes:** use it only as a pair-eligibility filter; do not call it alpha.
+- **If volatility state passes:** use it only as a de-risking throttle, not as a return-enhancement layer.
+- **If hidden-state fails:** defer HMM/change-point models permanently for this project.
+- **If policy events dominate:** build a dated event calendar; exclude closure days from signal evaluation; report policy-event periods separately.
+- **If the baseline fails:** do not test regimes; the baseline is the prerequisite.
+
+---
+
+## 14. Minimal method references — no library request
+
+No book or paper purchase is requested now. If H5 is ever reached, the only specific unresolved method issues are:
+
+- **Filtered vs smoothed state probabilities:** Hamilton, J. D. (1989), “A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle,” *Econometrica* 57(2), 357–384.
+- **Label switching in Markov-switching models:** Frühwirth-Schnatter, S. (2006), *Finite Mixture and Markov Switching Models*, Springer.
+- **Block bootstrap for dependent data:** Politis, D. N. & Romano, J. P. (1994), “The Stationary Bootstrap,” *JASA* 89(428), 1303–1313.
+- **Multiple testing / model confidence:** White, H. (2000), “A Reality Check for Data Snooping,” *Econometrica* 68(5), 1097–1126; Hansen, P. R., Lunde, A. & Nason, J. M. (2011), “The Model Confidence Set,” *Econometrica* 79(2), 453–497.
+
+These are method references, not data or strategy evidence.
+
+---
+
+## 15. Source ledger
+
+| Source | Date / version | What it supports |
+|---|---|---|
+| CBR, “Trading on Moscow Exchange on 28 February 2022” | 28 Feb 2022 | Derivatives sessions not started. |
+| CBR, “Trading on Moscow Exchange on 14–18 March 2022” | 12 Mar 2022 | Restricted derivatives trading; only negotiated closing for single-stock/index contracts. |
+| MOEX, “Moscow Exchange to resume equity trading” | 23 Mar 2022 | Index derivatives resumed 24 Mar, 10:00–14:00. |
+| MOEX, “Futures parameters” | Accessed 2026-10-07 | Contract months, expiry, trading hours, clearing. |
+| MOEX, “The New Russian Volatility Index – RVI” | Accessed 2026-10-07; first calculated 18 Nov 2013; launched 16 Apr 2014 | RVI definition and publication. |
+| MOEX, “RVI” | Accessed 2026-10-07 | Publication every 15 seconds; calculation windows. |
+| MOEX, historical calendar spreads | Accessed 2026-10-07 | Zero-bid/zero-volume and wide-spread observations. |
+| MOEX, weekend trading launch | 20 Jun 2025 | Weekend trading from 16 Aug 2025; all futures and calendar spreads except FX. |
+| MOEX, unified trading session | 13 Mar 2026 | Unified session from 23 Mar 2026; no intraday clearing; expiry time changes. |
+| MOEX, expanded trading hours | 10 Jul 2026 | Trading hours expanded from 14 Jul 2026. |
+| MOEX, 2026 trading schedule | 7 Oct 2025 | Holiday closures. |
+| Guidolin & Pedio, MDPI | Published 18 Feb 2022 | HMM/stepwise OOS evidence is weak statistically, some economic gains. |
+| Guidolin & Pedio, economic value analysis | 2021 | Commodity-specific factors do not improve forecasting; high-vol state exception. |
+| Rubaszek et al. | Published 13 Jul 2020 | Regime dependence does not improve OOS forecasts. |
+| Fong & See | 1 Oct 2003 | Regime shifts improve volatility forecasts. |
+| Marshall et al. | 2013 | Systematic liquidity factor in commodity futures. |
+| Asset-independent HMM paper | 2021 | Claims improved risk-adjusted returns; no net-RUB comparison visible. |
+| Bailey et al., PBO | Revised 27 Nov 2014; journal 2017 | Holdout unreliable; PBO framework. |
+| Bailey & López de Prado, DSR | 2014 | Selection bias and non-normality correction. |
+| Bailey et al., pseudo-mathematics | 1 Apr 2014 | More configurations → higher overfitting probability. |
+
+**No actual backtest, data download, broker check, legal review or performance measurement was performed for this report.**

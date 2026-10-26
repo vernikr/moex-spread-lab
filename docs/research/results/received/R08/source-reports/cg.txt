@@ -1,0 +1,408 @@
+# R08 — Delayed manual execution, signal validity and virtual portfolio
+
+**Evidence-backed research report**  
+**Research date / factual cutoff:** 22 October 2026  
+**Purpose:** define a falsifiable protocol for evaluating delayed manual execution of MOEX futures-spread ideas against a matched LQDT counterfactual.  
+**Status:** research design only — not an executable backtest, account feasibility confirmation, software specification, or investment recommendation.
+
+## Executive assessment
+
+The most important conclusion is methodological: a signal observed at one time is not a fill at that time. This project needs a second, timestamped execution layer that begins when a person can actually act. Every candidate must be revalidated against the then-current executable prices, session, contract state, minimum lot, fees, margin and finite cash. A good historical signal can be a rejected, stale, partially filled or unfilled trade; the simulator must preserve those outcomes rather than force each signal into the P&L ledger.
+
+Five findings govern the design:
+
+1.  **MOEX session rules changed during 2026.** The exchange’s 10 July announcement extended the futures day, and its 14 August announcement subsequently moved the main session start to 09:00 Moscow time effective 14 September. As of this report, the stated weekday schedule is 06:50–09:00 morning (including the 06:50–07:00 opening auction), 09:00–19:00 main, and 19:00–23:50 evening; weekend trading is stated as 09:50–19:00. The dated calendar and contract-specific session eligibility must decide each event, not a generic “24/7” assumption. \[S1–S3\]
+2.  **Exchange trading hours do not establish VTB client access.** VTB’s public help page currently surfaced an 08:50–23:50 futures window, which conflicts with the MOEX schedule’s 06:50 start. The page’s update/effective date is not clear and a direct fetch returned HTTP 502, so its indexed text is a verification lead, not sufficient proof of actual account access. Test or obtain written confirmation for the specific client platform, contract and session before simulating early-session eligibility as executable. \[S4\]
+3.  **Atomic execution cannot be assumed for a project-defined pair.** MOEX documents a calendar-spread service for two expiries of the same underlying, including synthetic matching and supported limit, market and fill-or-kill orders. Its public page describes cross-product spreads as a prospective extension. This does not establish atomic handling of two different economic underlyings, nor establish that a VTB client interface exposes even the eligible exchange spread instrument. Until R01/R03 or explicit broker documentation proves otherwise, simulate the legs independently. \[S5\]
+4.  **Public quote display is not execution-grade history.** MOEX contract pages state that displayed futures data are delayed by 15 minutes and that real-time data require a subscription. That page-level fact does not establish which free historical candle intervals, bid/ask histories or order-book records are licensable and downloadable for the full universe. The finest free defensible timeframe therefore remains unresolved without R04 and a documented data-coverage check. \[S6\]
+5.  **The pilot must fail closed on capital and unknowns.** The supplied RUB 30,000 is the full initial strategy envelope, not spare margin on the shared account. New entries must pass with zero emergency funding. Any emergency allocation needs separate approval and may only prevent disorderly liquidation or help get flat; it cannot fund a new entry, averaging down or restart. Gross additional allocations remain capped at RUB 15,000 lifetime, with the supplied X/D action rules unchanged. Those controls are policy defaults supplied in the task, not validated risk bounds.
+
+**Present decision:** the evidence supports a concrete simulation protocol, but it does **not** establish that a single minimum-lot pair fits the RUB 30,000 envelope, that the intended broker route supports atomic spread execution, that the desired free historical data exists, or that the signal has positive edge after delayed execution. Those conclusions require the missing dependency reports and data described below.
+
+## 1. Scope, inputs actually read, and evidence limits
+
+### What was available
+
+I read the complete R08 task text supplied in this conversation and performed focused public-source research on MOEX sessions, calendar spreads, futures quote displays and risk parameters, VTB public trading-help material, Telegram Bot API timestamps, simulated slippage, backtest overfitting and market microstructure. Sources and retrieval notes appear in Section 12.
+
+### What was not available or not performed
+
+No separate R01, R02, R03, R04, R05, R06, R07 or R09 report was supplied or read. No repository was accessed. No broker account, KPUR status, collateral treatment, actual VTB order entry or BCS route was checked. No historical best bid/ask series or fills were supplied; no backtest or performance measurement was run. No paid market-data subscription, credentials, production system or large download was used. No special-access/bot-protected retrieval attempt was needed for the decision-critical public facts found here. The VTB pages could not be opened directly during retrieval (HTTP 502); only the search-indexed public snippets were readable, so the page-date and account-specific implications remain unresolved.
+
+Missing inputs are not interpreted as zero cost, zero risk, available margin, permission to trade, or permission to draw on core LQDT. This report proposes a protocol; it does not assert that it has been implemented or tested.
+
+## 2. Dated MOEX and broker constraints
+
+### 2.1 Session schedule: use the newest applicable dated notice
+
+| Source / effective date                                          | Evidence                                                                                                                                                                                                  | Simulation consequence                                                                                                                                                                 |
+|------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| MOEX announcement dated 10 July 2026; schedule effective 14 July | The original expanded schedule stated opening auction 06:50–07:00, morning 07:00–10:00, main 10:00–19:00, evening 19:00–23:50. \[S1\]                                                                     | Useful chronology only. Do not preserve the original 10:00 main-session start after the later amendment.                                                                               |
+| MOEX announcement dated 14 August 2026; effective 14 September   | Futures/stock markets: morning 06:50–09:00, with opening auction 06:50–07:00; main 09:00–19:00; evening 19:00–23:50. Weekend trading remains 09:50–19:00, including a 09:50–10:00 opening auction. \[S2\] | This is the more recent published schedule for the report date. Session state must still be checked for the particular contract, date, auction phase, holiday and any exchange notice. |
+| MOEX 2026 holiday schedule dated 30 December 2025                | MOEX identified specific official holidays with trading and other dates with a no-trading schedule; holiday/weekend sessions have special time windows. \[S3\]                                            | Use a dated exchange trading calendar, including exceptional days. Do not classify dates using weekday alone.                                                                          |
+
+The routine weekday span of 06:50–23:50 is 17 hours, not 24 hours. A “dark-only” screener running around the clock should monitor data/system health at any time, but it must only label a contract actionable when the exchange and broker are accepting the relevant order type for that contract.
+
+**Broker discrepancy.** VTB’s public “general questions about exchange trading” page currently surfaced “Derivatives Market: 08:50–23:50 MSK.” \[S4\] It may be stale or describe the client route rather than the exchange’s full schedule; public evidence retrieved here does not resolve which. Because the exchange changed its morning opening auction to 06:50 and VTB’s snippet gives 08:50, the system should not infer that a manual VTB order can be accepted at 06:50. Until confirmed, classify those early windows `BROKER_SESSION_UNCONFIRMED`, rather than either falsely trading them or silently excluding the discrepancy.
+
+### 2.2 Calendar spread support is narrow, not a general “spread order” claim
+
+MOEX’s calendar-spread page describes a service that simultaneously trades two futures with different expiries on the **same underlying**, with the spread price defined as far-month minus near-month. It says synthetic matching is available for instruments for which calendar spreads are listed, and lists limit, market and fill-or-kill order categories. The same page describes cross-product spread functionality as a future extension. \[S5\]
+
+That evidence supports only the following narrow claims:
+
+- A listed MOEX calendar spread may have a native exchange matching mechanism.
+- Eligibility is instrument-specific; existence of the service does not show that every futures pair is listed as a spread.
+- It does not prove that VTB’s specific client workflow supports submitting or closing the listed spread, whether particular user permissions are needed, or whether the broker exposes correct net-price/fee handling.
+- It does not prove atomic exchange execution for two legs with different underlyings, sectors, economic drivers or contract families.
+
+**Default until proved otherwise:** model two independent leg orders and the interval during which only one leg is filled. A separate atomic-spread scenario may be run only for a named, listed MOEX spread after both exchange eligibility and broker access are evidenced. Do not silently transfer institutional execution assumptions to a manual retail route.
+
+### 2.3 Quote data and contract/margin changes
+
+MOEX futures product pages report a 15-minute delay for displayed trading data and say real-time data require a subscription. \[S6\] The public calendar-spread page also exposes current-day aggregates and “archive” links for listed calendar spreads, but those aggregates alone do not reconstruct timestamped historical bid/ask and queue state. \[S5\]
+
+Current contract terms and margin inputs are time-varying. MOEX exposes a futures initial-margin/risk-parameter table, while NCC publishes dated changes to risk parameters and identified spread groups; for example, NCC published on 16 July 2026 a change effective 23:50 on 3 August for new futures and specified a 70% initial-margin discount for a defined inter-contract spread group. \[S7–S8\] This is evidence that margin treatment can depend on the approved group and effective time—not evidence that any project-defined economic pair receives such a discount. Store dated snapshots of contract specs, price tick/value, settlement/expiry, current margin, concentration limits, spread-group recognition and broker risk limits.
+
+**Data-resolution conclusion.** A delayed public quote screen is not suitable to justify a 3–90 minute manual execution simulation. A historical OHLCV series may be enough to test some signal-decay questions, but not to prove an executable bid/ask, queue position, fill, or partial-fill outcome. This investigation did not verify that free one-minute bid/ask or order-book history is available for all candidates. R04 must establish the actual source, license, access date, instrument coverage, bar/quote interval, session treatment, fields, missingness and retention limits. Until then, OHLCV-only output is explicitly exploratory.
+
+## 3. Required event clock and lifecycle
+
+Store the event log in UTC with the original source timezone/offset (MOEX time is Moscow time, UTC+3), source event time and local receive/record time. Use a monotonic clock for measured durations and synchronise host clocks; never overwrite the original event with a later status timestamp. Millisecond precision is desirable for system and broker acknowledgements; manual reaction timestamps should be recorded at the finest honest precision rather than falsely implying milliseconds.
+
+| Event                                                                     | Meaning and required fields                                                                                                                                                        | Why it matters                                                                                                                                                                                  |
+|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `t_market_event` / `t_data_received`                                      | Market timestamp for each input observation and time the system actually received it; include instrument, source, bid/ask/size or OHLCV field, sequence/version and quality flags. | Separates historical time from information actually available to the model.                                                                                                                     |
+| `t_eval_start`, `t_eval_end`                                              | Model began/completed evaluation; include model/version/config and data watermark.                                                                                                 | Prevents assigning a signal before its calculation finished.                                                                                                                                    |
+| `t_signal_created`                                                        | Unique signal ID, thesis/episode ID, direction, legs, entry bounds, expiry and exact data snapshot IDs.                                                                            | The decision origin—not a fill time.                                                                                                                                                            |
+| `t_send_requested`, `t_send_response`, `t_telegram_message_date`          | Bot API request/response result, message ID if returned, retry count, and Telegram’s returned sent timestamp.                                                                      | A send response is not proof that the user received or read it. Telegram documents `Message.date` as the time the message was sent; it does not document that field as a user-read time. \[S9\] |
+| `t_read` / `t_decision`                                                   | User-reported or instrumented first-read time and explicit accept/decline/ignore decision; flag self-reported values and uncertainty.                                              | Estimates genuine human availability and reaction delay. Standard bot notifications should not be assumed to provide a read receipt.                                                            |
+| `t_revalidation_snapshot`                                                 | Newest executable quote for both legs, each quote timestamp/age, session state, margin/cash, model state and recomputed costs/edge.                                                | Revalidation must use new market evidence; refreshing the alert timestamp is not enough.                                                                                                        |
+| `t_order_submit`, `t_broker_ack`                                          | Separate time the user submitted and time broker/exchange accepted or rejected it, client/order IDs, order type, price cap and quantity.                                           | A click is not order acceptance.                                                                                                                                                                |
+| Per-leg `t_first_fill`, `t_last_fill`, `t_cancel_request`, `t_cancel_ack` | Every partial fill quantity/price/fee, reject, cancel and acknowledgment; retain all order-state transitions.                                                                      | Models leg mismatch, cancel races and uncertain exposure. A cancel request does not prove the order is cancelled.                                                                               |
+| `t_pair_hedged`, `t_abort/flatten`, `t_exit_fill`                         | Time the intended ratio is restored, an unhedged leg is flattened, or the position is fully closed.                                                                                | Measures actual unhedged exposure and time to recover from execution failure.                                                                                                                   |
+| `t_mark`, `t_settlement`, `t_reconcile`                                   | Every mark source/time, variation-margin cash movements, official settlement and matched-counterfactual reconciliation.                                                            | Prevents mixing mark-to-market, cash funding and realized P&L or double-counting variation margin.                                                                                              |
+
+### State machine
+
+1.  **Observe** — persist raw inputs and freshness/quality; model-down and data-down are separate health states.
+2.  **Evaluate** — create a versioned signal only after evaluation has completed using eligible data.
+3.  **Create idea** — assign one stable signal ID and one underlying idea/episode ID; define expiry/invalidation before viewing subsequent prices.
+4.  **Notify** — send; log API result, message ID and retry. A retry reuses the same signal ID and is never a new trade trigger.
+5.  **Wait / human unavailable** — delay is measured or simulated separately from transport, system outage and market closure.
+6.  **Revalidate** — update both legs and all costs, check market/session/broker, quote freshness, minimum lot, free funds, margin and stress. If any hard condition fails, terminate with a reason code and do not submit an order.
+7.  **Admit to portfolio** — reserve worst-case required margin, exit/hedge capacity and variation-margin liquidity. Finite capital and conflict priority apply here.
+8.  **Submit orders** — only submit what the chosen route actually supports; persist order state per leg.
+9.  **Hedge, abort or work remaining quantity** — process each fill event. Unhedged risk takes priority over a new-idea quota. Keep cancel-pending exposure reserved until cancellation is acknowledged or the order is otherwise confirmed terminal.
+10. **Manage / exit** — separate position-risk actions from new-idea entry actions; exits and urgent hedges bypass new-idea quota.
+11. **Reconcile** — calculate pair and account-level P&L, all incremental costs, VM cash movements, LQDT counterfactual and remaining capital; close only when all quantities/orders/fees are reconciled.
+
+### Reason-code taxonomy
+
+Persist one primary terminal reason and any secondary flags. Do not replace a failure with a “no trade” blank.
+
+| Family                | Codes (illustrative stable identifiers)                                                                                                                                                    | Meaning                                                                                                   |
+|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| Data/model            | `DATA_MISSING`, `DATA_STALE`, `DATA_CROSSED_OR_INVALID`, `MODEL_DOWN`, `MODEL_VERSION_MISMATCH`, `SIGNAL_NOT_REPRODUCIBLE`                                                                 | Required input is absent, stale, inconsistent, or not generated by the approved model version.            |
+| Time/session          | `MARKET_CLOSED`, `OPENING_AUCTION`, `CLEARING_WINDOW`, `HOLIDAY_CALENDAR`, `CONTRACT_NOT_TRADING`, `BROKER_SESSION_UNCONFIRMED`, `SESSION_ENDED`                                           | Exchange/calendar/contract or broker route makes an order unavailable or not yet verified.                |
+| Signal economics      | `EDGE_BELOW_FLOOR`, `ENTRY_BOUND_BREACHED`, `STATE_INVALIDATED`, `EXPIRED`, `ROLL_OR_EXPIRY_NEAR`, `COSTS_UNKNOWN`, `LEG_PRICE_MISSING`                                                    | Edge, price, model state, contract state or cost inputs fail their pre-set entry test.                    |
+| Risk/capital          | `INSUFFICIENT_FUNDS`, `MARGIN_STRESS_FAIL`, `MIN_LOT_STRESS_FAIL`, `RESERVE_UNAVAILABLE`, `OVERLAP_CAPACITY`, `PAIR_NOT_APPROVED`, `EMERGENCY_FUNDS_NOT_AUTHORIZED`, `FUNDING_NOT_CLEARED` | Entry is not funded within the original envelope or requires an unapproved/unsettled top-up.              |
+| Orders/execution      | `ORDER_REJECTED`, `PARTIAL`, `ONE_LEG_FILLED`, `HEDGE_REJECTED`, `UNFILLED`, `CANCEL_PENDING`, `CANCEL_REJECTED`, `BROKER_STATE_UNKNOWN`, `EXIT_SLIPPAGE_BREACH`                           | Order acknowledgements/fills do not achieve the intended ratio or price.                                  |
+| Communication/human   | `SEND_FAILED`, `DELIVERY_UNKNOWN`, `USER_UNAVAILABLE`, `USER_DECLINED`, `DUPLICATE_RETRY`, `ALERT_IGNORED`, `MANUAL_ACTION_LIMIT`                                                          | Communication or human capacity prevented action; a duplicate notification does not create a second idea. |
+| Risk control/incident | `X_ACTION_TRIGGER`, `DRAWDOWN_ACTION_TRIGGER`, `CORE_COLLATERAL_INCIDENT`, `UNAPPROVED_FUNDING_INCIDENT`, `OUTER_BOUNDARY_BREACH`, `UNHEDGED_TIMEOUT`                                      | Required risk action or policy incident.                                                                  |
+
+## 4. Delay experiments — plausible designs, not an estimated distribution
+
+The prompt states manual reaction of 3–90 minutes with a typical median around 5–15 minutes, while the real distribution is unknown. Use the following as **seeded design scenarios**, not evidence about the person’s future behavior or a fitted probability law. Both example mixtures span 3 to 90 minutes and have a median of 10 minutes; they are intentionally alternatives, not claims that either is true.
+
+| Delay scenario                | Seeded hypothetical distribution                                                                                                                                                                                                                                 | Purpose                                                                                                                                                                     |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A — centred                   | 3 min 5%; 5 min 20%; 10 min 45%; 15 min 20%; 30 min 9%; 90 min 1%                                                                                                                                                                                                | Central manual-response design; median 10 min.                                                                                                                              |
+| B — heavier tail              | 3 min 5%; 5 min 15%; 10 min 35%; 15 min 20%; 30 min 15%; 60 min 8%; 90 min 2%                                                                                                                                                                                    | More delays beyond 15 minutes; median 10 min.                                                                                                                               |
+| C — fixed stress grid         | Run every eligible idea at 3, 5, 10, 15, 30, 60 and 90 minutes, one delay at a time.                                                                                                                                                                             | Shows outcome as a function of delay without probability weights.                                                                                                           |
+| D — correlated adverse regime | Conditional on high trailing volatility and/or poor trailing liquidity proxy, shift more trials to 15/30/60/90 minutes; widen the adverse-price and exit-cost stress at the same time.                                                                           | Prevents treating long delay, high volatility and illiquidity as independent conveniences. Thresholds must use information available at the decision time only.             |
+| E — outage/no response        | Signal-generation, Telegram-send, data-feed, broker-access and user-unavailable episodes are separate event types. A message delayed across a closed session may not become actionable until a later eligible session, then it must be revalidated from scratch. | Tests operational failure, not the normal human reaction distribution. Do not truncate outage duration to 90 minutes just because normal reactions were described that way. |
+
+Use common random-number seeds across strategy variants so a performance difference is not simply caused by different delay draws. Preserve both the deterministic grid and stochastic scenario labels. Random delay must be drawn without looking at the signal’s future return. Later replace the placeholder distributions with timestamped observations of alert send, human read/decision, broker submit/ack and fill latency; report empirical percentiles by time of day and market regime, with sample counts and uncertainty. If telemetry is missing, report bounds and “unknown”, not zero delay.
+
+**Correlation design.** At the time the user acts, classify market state only from data already available then (e.g., trailing realized volatility, displayed spread, depth, quote update rate and recent traded volume where observed). For high-volatility or illiquid states, run both longer reaction delays and adverse execution assumptions. Do not use future realized volatility to assign the scenario retrospectively. If best bid/ask/depth is unavailable, do not claim to have modelled liquidity; use an explicitly coarse stress proxy.
+
+## 5. Revalidation, expiry and decision bounds
+
+At `t_revalidation_snapshot`, recompute the whole idea—not just the signal timestamp.
+
+### Revalidation checklist
+
+- **Executable pair economics:** evaluate direction-specific sides of both legs (buy at ask, sell at bid; reverse for the opposite position), using contract tick values/multipliers and consistent pair ratios. Calculate entry and exit cost, not a midpoint mark. Include broker commission, exchange/clearing fees, expected spread crossing, slippage/impact stress and any incremental funding or carrying costs supported by R02/R07. The exact rates are absent, so `COSTS_UNKNOWN` is a valid rejection reason.
+- **LQDT comparison:** compare the net incremental result against the matched no-pilot LQDT path in the task, not against an uninvested cash benchmark and not against the entire core holding. Avoid deducting continuing LQDT return on eligible retained collateral twice. Handle investor-specific tax separately; R05 is missing.
+- **Market evidence freshness:** both legs need valid, synchronized observations with source timestamps and ages. A fresh alert or Telegram resend does not refresh the underlying market data. If the live source does not expose a defensible quote timestamp or executable bid/ask, an execution-grade entry must fail closed.
+- **Tradability:** check the dated exchange calendar, phase (including auction/clearing if relevant), instrument’s session, broker access, contract expiry/roll and any special restrictions. A calendar spread order is only eligible if the exchange spread exists and the broker route has been verified.
+- **Size and cash:** whole minimum-lot pair must fit remaining original RUB 30,000 after already committed positions, fees, VM/liquidity reserve and exit/hedge stress, with no emergency funding. Evaluate each leg and the gross worst-case temporary exposure; do not assume spread margin offsets until the actual pair/group treatment is known.
+- **Model/state:** current features still satisfy the exact locked strategy conditions; model/data version is approved; no duplicate active thesis; no known invalidation event; entry advantage remains above a pre-registered net hurdle after a positive uncertainty buffer.
+- **Risk/recourse:** before entry and at reliable reviews, test `X − stressed incremental loss − positive uncertainty buffer ≥ −RUB 15,000`, plus a separately viable cash/margin path. The RUB 5,000 buffer and 50% starting margin-use ideas in the task are hypotheses to test, not validated rules.
+
+### Expiry and reissue proposal
+
+Treat the idea’s **entry permission** as perishable; do not make a position’s **holding horizon** equal to the alert TTL.
+
+1.  Store at signal creation a pre-registered `valid_until`, invalidation levels/state rules, minimum net edge and model version. Do not set those bounds after seeing subsequent prices.
+2.  Provisional fail-closed manual-entry bound: do not initiate an entry from an alert older than 90 minutes; this is an operational design candidate based on the described upper normal reaction, not a validated economic TTL. An earlier idea-specific expiry or any failed revalidation condition overrides it.
+3.  At user action, recompute the edge and both leg prices using then-current quotes. Reject immediately if a quote is stale, one leg is unavailable, the executable edge falls below the hurdle, margin/capital has changed, a contract/session boundary invalidates the thesis or the model is down. No “the chart later came back” exception.
+4.  Reissue only if a **new, distinct strategy episode** satisfies the rule after its prescribed neutral/reset condition and cooldown. An amended notification is linked to the same signal/idea ID; it does not create a second portfolio entry. A repeat send or new timestamp cannot refresh stale data.
+5.  A missed/expired entry remains recorded as such even if the pair later moves favorably. A separate later signal may qualify only under the pre-registered re-entry rule.
+
+## 6. Two-leg and partial-execution policy
+
+### If a verified native spread order exists
+
+Use an atomic-spread scenario only after the exact listed instrument and VTB order path are documented. Model its actual accepted order types, net-price increments, reject conditions, expiration rules, available quotes and fees. A theoretical MOEX feature does not prove that the user can submit it in the chosen client interface. If any one of those is unresolved, the “native spread” branch is exploratory only.
+
+### Otherwise: independent legs
+
+For every idea, predeclare the lead-leg/hedge-leg policy, allowed order types and price bounds. No simulator may retrospectively choose which leg to send first based on subsequent prices. The implementation later must model each leg’s order acceptance, partial fills, rejects, cancel acknowledgement, hedge and exit independently.
+
+1.  Reserve enough capacity for the intended complete pair and for the temporary one-leg position/flattening scenario before the first order.
+2.  Submit only a bounded order. Log order submit and broker acknowledgement separately. Until the response is known, represent status as `BROKER_STATE_UNKNOWN`; do not presume a click succeeded or failed.
+3.  On any partial fill, compute actual net positions by instrument and filled quantity. Hedge exactly the filled quantity needed to restore the target ratio, or abort/flatten according to the predeclared policy. Do not hedge the intended total when only a partial lead leg filled.
+4.  If a hedge is rejected, quotes disappear, or the permitted unhedged loss/time bound is reached, prioritize risk reduction over all new ideas. A partially filled second leg may leave a residual that must be explicitly closed/rebalanced.
+5.  A cancel request remains live exposure until cancel acknowledgement or confirmed terminal state. Handle the race where a fill arrives while cancellation is pending; apply every broker event in order and recompute quantity from the final state.
+6.  Simulate worse-than-expected exit prices and missing quotes. An inability to compute a safe executable exit is not “zero loss”; it is a separate failure mode that may falsify the live feasibility of the pair.
+
+MOEX’s calendar-spread synthetic matching is a useful comparator because it expressly combines interests from the two legs’ books; do not transfer that property to independent orders or unrelated pairs. \[S5\]
+
+## 7. One deterministic, finite-capital virtual portfolio
+
+The unit of simulation is a single portfolio with event-sourced cash, positions, working orders and reservations—not an independent backtest for each signal. It must attempt every **eligible signal** in a deterministic way, including recording failed admission, stale/rejected/unfilled/partial outcomes. “Attempt” means evaluate and record an admission/order path; it does not mean force a fill.
+
+### Admission and reservation rules
+
+- Start with an explicit RUB 30,000 test envelope. Reserve open-order margin, intended pair margin, one-leg stress, fees and VM liquidity needs. Reserve cash when an order is accepted/pending until the state is known. Never allow simultaneous signals to double-spend the same free funds.
+- The test must pass at entry with zero emergency money. Prior rescue contributions or retained profits do not automatically expand the original entry envelope.
+- New emergency allocations are unavailable in a virtual run absent explicit approval and verified credit/availability time. Count newly earmarked cash/collateral toward the lifetime RUB 15,000 gross limit; do not double-count a conversion of collateral to cash. Withdrawals/returned funds do not restore consumed lifetime allowance. Unapproved broker-induced use of core collateral is an incident.
+- Core LQDT is not silently available to fund the sleeve. The task’s shared-account setup does not establish that the broker recognizes core assets as eligible collateral or that the account gives the intended recourse controls.
+- Track any NCC/Broker margin re-rating on its effective timestamp. A discount for a specific recognised spread group applies only if the actual two contracts/account route qualify; otherwise calculate legs separately.
+
+### Deterministic priority
+
+At each event timestamp, process in this order:
+
+1.  **Hard risk controls and position repair:** broker margin/restriction event, unhedged-leg hedge/flatten, cancel races, risk exits and risk-required reductions.
+2.  **Existing working orders/position updates:** fills, cancels, acknowledgements and recalculated reservations.
+3.  **New entry candidates:** apply a frozen, predeclared rank (suggested: highest precomputed net edge after costs and uncertainty buffer per unit of stressed capital; tie-break by earlier signal timestamp, then stable signal ID). If that score itself is not validated, use oldest eligible signal first and stable ID as tie-breaker. Never rank on future returns, eventual fills or later volatility.
+4.  **Reject candidates that do not fit:** record `OVERLAP_CAPACITY`, `INSUFFICIENT_FUNDS`, `MARGIN_STRESS_FAIL` or the exact cause. A signal that loses an allocation contest must not be retrospectively treated as if it had been independently funded.
+
+Use the same priority rules and seeded delays across all alternatives. An existing position’s exit or hedge does not count as a fresh-idea slot.
+
+### Counterfactual accounting and supplied action rules
+
+Keep the task’s accounting definitions:
+
+- `V(t)` = strategy-enabled wealth; `B(t)` = matched no-pilot LQDT counterfactual; `X(t) = V(t) − B(t)`; `X(0) = 0` before incremental test costs; `H(t) = max(0, past X)`; `D(t) = H(t) − X(t)`.
+- V and B mirror the same true external flows and exogenous core actions. B keeps core LQDT that was diverted for the pilot invested; it does not mirror pilot-induced core sales/liquidations. An external top-up must be reflected symmetrically so a contribution cannot improve X. An internal core sale is not itself an external flow and its proceeds are not automatically economic loss.
+- Reconcile the sleeve ledger to the whole-wealth difference X. Do not compare a RUB 30,000 sleeve against the whole \>RUB 40 million core. Use synchronized defensible marks, consistent exit costs, and no duplicate deduction of VM or fund expenses. Exclude only the lost LQDT long-term holding deduction as specified; report investor/account-specific tax sensitivity separately because residence/account treatment is unknown.
+- At `D ≥ RUB 5,000`: warn and reassess. At `D ≥ RUB 10,000`: suspend new entries/additions, reduce risk in an orderly manner, and require explicit review before restart even if X remains positive. At `X ≤ −RUB 10,000`: stop new risk and start an orderly exit; any separately approved funding at this trigger is only to reach flat, not to await recovery. `X < −RUB 15,000` is a boundary breach, not tolerated overshoot. Earlier broker, naked-leg, stale-data or communication danger overrides monetary triggers.
+- The formal 90-calendar-day review does not reset X, H, losses or consumed funding and does not itself force every open position to expire.
+
+### Required portfolio outputs
+
+Per signal and per day, retain: eligible candidates, admission results, rejection codes, priority rank, starting/ending free cash, peak reserved/used margin, stressed minimum cash, open positions by contract, leg imbalance, unhedged duration, orders/cancels/fills, capital tied up, fees and slippage, P&L/variation-margin cash movements, marks and exits, X/H/D, funding requested/approved/credited/used, lifetime allowance remaining, and the LQDT counterfactual reconciliation. Include simultaneous alerts and end-of-session working orders.
+
+## 8. Signal message: idea first, order instruction only if specifically authorized
+
+A Telegram alert should be concise enough to act on, but sufficiently complete to reject without reconstructing its premise. It must say **IDEA — NOT AN ORDER** unless a later, separately authorized system actually generates broker-order instructions.
+
+Required fields:
+
+- Stable `signal_id`, strategy/model version, creation time, thesis/episode ID and `valid_until`.
+- Full exchange contract codes, expiries and direction per leg (e.g., buy A, sell B), target quantities/ratio, tick values and minimum lot. Avoid ambiguous shorthand.
+- Price snapshot timestamp and age **for each leg**, displayed bid/ask and available size if observable; data source/status and any delayed/stale qualification.
+- Estimated executable entry spread using the correct sides, acceptable maximum entry prices/net spread, expected net advantage versus matched LQDT after itemised fees/cost assumptions, minimum edge hurdle and uncertainty buffer. Display a range/scenario, not a made-up win probability.
+- Risk disclosure: stressed loss/exit cost, one-leg failure risk, current margin estimate/date, free funds reserved, VM-liquidity requirement, maximum holding/decision uncertainty if established, and whether pair execution is native-spread verified or independent-leg only.
+- Explicit “DO NOT ENTER IF” clauses: quote stale/missing; age/expiry exceeded; spread beyond bound; edge below floor; session/broker route unconfirmed; margin or cash fails; contract rolls/changes; model/data health fails; existing overlapping exposure or no capacity.
+- A button/reply should record accept, decline or ignore as a decision event, never directly create a second trade on retry. Any eventual order workflow must revalidate again immediately before submission.
+
+Example of useful confidence wording: “Evidence status: exploratory; spread quote history incomplete; net-cost range depends on unconfirmed R02 rates; no calibrated probability of profit.” Do not replace this with a numerical win probability or a single gross “target.”
+
+## 9. Falsifiable delayed-fill evaluation protocol
+
+### Protocol phases
+
+**A. Data and timestamp audit.** For each data source and contract, document timestamp semantics, receive latency, actual history horizon, update cadence, session coverage, survivorship/contract-roll treatment, missing bars, quote-staleness distribution and licensing. Reconstruct what was knowable at every signal evaluation and delayed decision—not merely what appears on the final chart. Align both legs and the LQDT comparator; forbid any field timestamped after a decision from affecting it.
+
+**B. Freeze the experiment.** Lock strategy rules, universe-selection rules, pair formation, signal threshold, invalidation/expiry, fees, spread/impact model, delay grid, capital rules, risk limits and ranking policy before the final out-of-sample run. Maintain a full record of all parameter variants tried. A large exploratory search increases selection-bias risk; the Deflated Sharpe Ratio paper addresses selection bias under multiple testing and non-normal returns, but it cannot compensate for false fills or missing market data. \[S10\]
+
+**C. Generate every signal, then replay decisions.** Recreate signal creation from point-in-time data. For each eligible event, replay each delay design from `t_signal_created` to simulated `t_decision`; then obtain only the first valid market state available at that time. If the needed quote is missing/stale or the market/broker is closed, record failure rather than forward-fill. Use common seeds across variants.
+
+**D. Revalidate and submit.** Recompute executable net edge and all account/capital gates at the delayed time. Preserve rejects, expired signals, no-fill and partial-fill outcomes. Avoid midpoint execution. Independently model the two legs unless the exact native spread path is evidenced.
+
+**E. Mark and close conservatively.** Mark using a synchronized and explicitly selected source; add realistic exit costs. Test adverse exits, missing quotes, partial fills, cancel races, session closes, contract expiry/roll, changing margin and one-leg exposure. Report both ordinary and tail/stress scenarios. Apply the X/H/D policy without resetting it at the review, at funding or on restart.
+
+**F. Separate discovery from confirmation.** Use training/validation/test chronology or walk-forward folds; avoid random shuffles that leak future regimes. Report results by pair family, contract, session, volatility/liquidity state and delay bucket as well as in aggregate. The test must include rejected and unfilled ideas; selecting only completed/winning trades is invalid. Use uncertainty intervals and the number of independent signal episodes, not just a headline Sharpe ratio.
+
+**G. Compare models to explicit falsification criteria.** Before results are reviewed, set thresholds in R09 for minimum net edge after adverse execution, acceptable rejection/partial-fill and manual-burden rates, worst credible loss/one-leg stress, and required sample size. If no defensible thresholds have been selected, report the distributions and call the result exploratory—do not invent a pass.
+
+### OHLCV-only fallback — two outputs, neither an executable backtest
+
+With OHLCV only, do **not** claim that a bid/ask, order-book queue, fill probability or actual fill was observed.
+
+1.  **Primary OHLCV study:** test signal age/decay and whether the strategy’s theoretical pair state survives until the first *complete bar strictly after* simulated order-ready time. Bars overlapping order submission are excluded. Keep the event-time alignment and bar timestamp convention explicit. This is an idea-survival study, not a fill backtest.
+2.  **Pessimistic execution sensitivity:** if a separate, clearly labeled surrogate is needed, for a hypothetical marketable buy use the adverse high of the first wholly post-arrival bar plus a declared impact buffer; for a sell use the adverse low minus that buffer. Calibrate the buffer only from independent forward fills/quote evidence where possible; otherwise sweep fixed tick/ATR-linked stresses as assumptions. These extreme prices are stress proxies, not assertions about actual market execution.
+3.  **Limit orders:** a bar merely touching the limit proves only that a trade occurred somewhere in the bar’s range; it does not prove the order was accepted, displayed, ahead in the queue or filled. The primary conservative fill record remains `UNFILLED/UNKNOWN`; an optional touch/penetration scenario must be separately labelled, use no midpoint, and never be merged into observed fills. Do not infer a partial-fill quantity from candle volume without a validated capacity/queue model.
+4.  **No eligible post-arrival bar, closed session, missing leg bar or ambiguous time zone:** no fill evidence. Do not carry the last close forward as an executable quote. Overnight/weekend gaps and next-session opening prices need separate stress treatment.
+5.  **Comparison requirement:** only quote/trade-history with defensible timestamps can move the project toward an execution-grade replay. OHLCV sensitivity can falsify a fragile idea, but a favourable OHLCV result cannot establish the fills necessary for live feasibility. General guidance on hypothetical futures results likewise warns that simulations can fail to account adequately for liquidity, bid/ask, slippage, margin calls and actual trading behaviour. \[S11\]
+
+### Forward data to collect
+
+At minimum, start collecting **all generated signals and all revalidation failures**, not just alerts accepted by the human. Store: the raw signal inputs and source timestamps; top-of-book bid/ask and available quantity for each leg with receive timestamps; quote update/sequence timestamps and session state; recent trades/volume; contract specs/tick value/expiry; daily margin/risk-parameter snapshots and recognized spread-group state; VTB displayed free funds/blocked collateral and any changing risk limits; fee schedule version; every notification send attempt/API response/message ID and user read/decision time (manually marked if necessary); every broker order request/ack/reject/cancel/partial/full fill with prices, quantities and timestamps; actual hedge/exit action and unhedged interval; VM/settlement cash movements; and synchronized LQDT counterfactual marks and true external flows. Retain outages, missed alerts, ignored alerts and no-response episodes. Preserve raw immutable events as well as cleaned derived data.
+
+## 10. Six hypothetical failure cases
+
+All values below are **invented only to make the protocol concrete**; they are not MOEX observations, forecasts, fee estimates or backtest results.
+
+| Case                                     | Hypothetical sequence                                                                                                                                                                                                                                                      | Required simulator outcome                                                                                                                                                                                                                                                                               |
+|------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1\. Stale winner                         | At signal time estimated advantage is RUB 700 per minimum pair; estimated two-leg costs are RUB 300 and uncertainty buffer RUB 100, so the candidate initially clears a RUB 400 net hurdle. At the user’s 18-minute revalidation, current executable advantage is RUB 250. | Recompute: RUB 250 less RUB 300 costs is negative before the buffer. Record `EDGE_BELOW_FLOOR` or `STATE_INVALIDATED`; submit no order. A later favorable price path cannot retroactively turn this into a fill.                                                                                         |
+| 2\. Missed opportunity                   | A signal has adequate edge at `t_signal`, but delivery/user response occurs after price convergence; at the first fresh decision snapshot the edge is zero. The pair then widens favourably later in the day.                                                              | Record expired/no entry at the decision time. It is a missed opportunity, not a loss-making fill and not a winning fill at the original price. A later re-entry is possible only if a distinct locked rule fires.                                                                                        |
+| 3\. Two signals compete for finite funds | Only RUB 30,000 is committed. Pair A needs RUB 18,000 initial margin plus RUB 7,000 stress/VM/exit reserve. Pair B needs RUB 16,000 plus RUB 8,000 reserve. Each passes alone; together they would reserve RUB 49,000.                                                     | Apply deterministic priority. Admit A if its frozen rank wins; record B as `OVERLAP_CAPACITY` or `INSUFFICIENT_FUNDS`. Do not give both independent hypothetical capital. Recalculate available capital after every partial fill and exit.                                                               |
+| 4\. One leg fills                        | One lot of A fills. B is rejected or remains unfilled; the order cancel is pending and B might still fill.                                                                                                                                                                 | Mark `ONE_LEG_FILLED`/`PARTIAL`, reserve exposure, process any late fill, then follow the predeclared bounded hedge/flatten policy. Report exact unhedged duration and worst price excursion. A cancel request alone does not clear risk.                                                                |
+| 5\. Margin escalation                    | A pair initially requires RUB 12,000 margin, but an effective exchange/broker risk-parameter update increases requirement to RUB 18,000 while only RUB 15,000 is available for that purpose after other commitments.                                                       | Block new risk; run orderly position reduction/exit and margin response. Do not assume core LQDT will fund the gap. Any extra funding needs explicit separate approval and timing and cannot authorize a new entry. Record `MARGIN_STRESS_FAIL` and any unauthorized core-collateral use as an incident. |
+| 6\. Notification retry                   | A send attempt times out after the server might have accepted it. The alert is resent and appears twice.                                                                                                                                                                   | Keep one `signal_id` and one idea/episode ID. Deduplicate on ID/version and record retry separately. Do not create a second admission, reserve or order. Telegram’s message send timestamp is not proof of user receipt/read. \[S9\]                                                                     |
+
+Additional edge case to include in automated tests: an order fills while `CANCEL_PENDING`, after which the second leg is rejected. Final position is computed from ordered broker events and actual filled quantities, never from the last UI status alone.
+
+## 11. Manual burden and the undefined “daily trade” quota
+
+The word *trade* could mean an idea, user decision, broker order, individual fill, complete two-leg entry, exit, or full round trip. Those units differ sharply for a manual two-leg spread and cannot be combined into one quota without distorting workload and risk.
+
+**Proposed terminology for requirements:**
+
+- **Idea / entry episode:** one distinct strategy qualification under a pre-registered reset rule; repeated notification edits/retries remain the same episode.
+- **Decision:** human accept, decline or no-response for one idea.
+- **Order:** one broker order per contract leg, including replacement/cancel orders.
+- **Fill:** one partial/full executed quantity event.
+- **Position intervention:** any human action to hedge, cancel, reduce or exit existing exposure, or respond to margin/incident states.
+- **Round trip:** one complete position lifecycle from entry to flat; a new re-entry after an exit is a new episode.
+
+For paper-workload testing, sweep **0, 1 and 2 accepted new-idea episodes per day** as alternatives rather than silently selecting one live quota. Keep risk exits, mandatory hedging and incident response on a separate priority path and never suppress them because the idea quota is exhausted. Report what the daily maximum means in every result.
+
+Record: signal count and eligible fraction; alerts/day and duplicate retries; decisions/day; median, P90 and P99 signal-to-read/decision/order-ack/first-fill times; hands-on minutes per decision/order/hedge/exit; orders and order replacements per round trip; overlapping unresolved ideas; partial-fill and cancel-race counts; time spent unhedged; out-of-hours margin/emergency alerts; the number of times user unavailability prevented required action; rejected candidates per cause; and maximum consecutive busy periods. Include a conservative “no response until next available window” scenario for existing-position emergencies. A claim of 24/7 monitoring is not a claim of 24/7 human execution or of 24/7 market access.
+
+The key unresolved human requirement is: **what should one daily “trade” cap count, and what emergency response time can actually be guaranteed?** Until these are answered, do not claim realistic human-operability even if the simulated edge is positive.
+
+## 12. Falsification gates and possible project changes
+
+### Findings that would falsify present manual-execution feasibility
+
+- VTB cannot confirm the intended session/order route or cannot enter/close the eligible pair in the stated way.
+- The minimum one-lot pair fails cash, stress loss, VM-liquidity or one-leg flattening tests inside the RUB 30,000 envelope without emergency funding.
+- Intended inter-underlying pair has no proven atomic route and credible one-leg execution stress breaches the project’s risk boundary.
+- Signal edge disappears at 5–15 minute delays, or depends on midpoint, last trade, post-event bars, optimistic queue assumptions or omitted fees.
+- The free data source cannot supply timestamped signal inputs and enough market evidence to revalidate both legs; OHLCV-only returns are the only support for fill claims.
+- Reasonable joint stress of delay, volatility, spread widening, margin increase and no response requires assuming core collateral or unlimited emergency funding.
+- Event accounting cannot reconcile `X=V−B`, external flows, VM, core collateral incidents and LQDT opportunity return without double-counting.
+- Human workload, overlapping alerts or unresolved one-leg states exceed a pre-registered availability bound.
+
+### Changes that might be researched if a gate fails
+
+Narrow the candidate universe to the most liquid families with lower minimum-lot risk; limit eligible hours to broker-confirmed windows; require wider net edge; use only a verified listed MOEX spread instrument where economically appropriate; reduce simultaneous concurrency; lower new-idea frequency; lengthen or redesign the strategy so its edge can plausibly survive manual reaction; or stop the pilot pending better data/account controls. These are research branches, not recommendations to trade or increase capital. Do not solve a failed gate by raising the rescue allowance, assuming the core is a backstop, or retrofitting the strategy to the test sample.
+
+## 13. Selected microstructure reading
+
+A full book excerpt is not required. If one is available later, request selected sections from Larry Harris, *Trading and Exchanges: Market Microstructure for Practitioners* (Oxford University Press, published 24 October 2002):
+
+- Chapter 4, **Orders and Order Properties** — marketable versus resting limit orders, price constraints and cancellation.
+- Chapter 6, **Order-driven Markets** — matching and queue/priority mechanics relevant to why a touched OHLCV limit is not proof of a fill.
+- Chapter 14, **Bid/Ask Spreads** — spread cost and why midpoint performance is optimistic for takers.
+- Chapters 19–20, **Liquidity** and **Volatility** — correlated slippage, liquidity withdrawal and stress exits.
+- Chapter 21, **Liquidity and Transaction Cost Measurement** — entry/exit shortfall design.
+- Chapter 22, **Performance Evaluation and Prediction** — separating a strategy result from selection and execution effects. \[S12\]
+
+These concepts should be applied to the actual MOEX order type, contract and VTB manual route; institutional assumptions, queue visibility or exchange-spread functionality must not be transferred without evidence.
+
+## 14. Dependency handoff — minimum material needed to close specific questions
+
+| Missing input                                                 | Decision it would resolve                                            | Minimum useful contents                                                                                                                                                                                                                                              |
+|---------------------------------------------------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R01 (VTB account/broker rules, KPUR, collateral, liquidation) | Is the shared-account risk/recourse and order workflow controllable? | Dated applicable broker terms, KPUR recognition/status consequence evidence, account separation/collateral treatment, forced reduction/liquidation policy, contract access and margin-call timing. Redact account identifiers.                                       |
+| R02 (all VTB/BCS costs)                                       | Can net edge be computed?                                            | Dated client tariff and complete per-contract broker/exchange/clearing fees, order/cancel fees if any, treatment by order type and whether VTB spreads qualify for any discount.                                                                                     |
+| R03 (atomic spread / order routing proof)                     | Can one pair order be treated atomically?                            | Exact MOEX spread code if listed; exact VTB interface route, supported order types, acknowledgement/fill/cancel semantics and applicable broker permission. If no report exists, written broker confirmation for the specific pair is enough to narrow the question. |
+| R04 (data inventory)                                          | Can history support executable replay, and at what interval?         | Source, license, field definitions, timestamps/timezone, bid/ask/depth/trade availability, bar intervals, retained history, symbol coverage, session/holiday treatment, gaps and reproducible sample exports.                                                        |
+| R05 (LQDT, flows, taxes)                                      | Is performance measured against the correct comparator?              | Matched-flow accounting, treatment of cash diverted from LQDT, retained-collateral return, tax/account assumptions, long-term deduction scenario and a sleeve-to-wealth reconciliation.                                                                              |
+| R06 (universe and contract specs)                             | Which exact pairs/quantities are physically testable?                | Full listed contract IDs/expiries, lot size, tick value, multiplier, settlement/expiry, price limits, liquidity tests, pair economic rationale and any recognized exchange spread/group mapping.                                                                     |
+| R07 (risk/funding/stress/sizing)                              | Is the proposed buffer/capital policy adequate?                      | Minimum-lot stressed price scenarios, VM/cash timing, margin add-on/gap stress, loss/liquidity on one-leg failure, per-idea and aggregate limits, and emergency response/funding mechanics.                                                                          |
+| R09 (validation/leakage/multiple tests)                       | What constitutes evidence of success/failure?                        | Locked universe/rules, walk-forward/holdout design, all model variants tried, sample size/uncertainty criteria, test thresholds and multiple-testing treatment.                                                                                                      |
+
+**No need to wait for R07 to continue independent work.** However, the live-feasibility conclusion remains conditional until the above decisions are resolved. If reports are unavailable, the next useful evidence is a small, lawful, public, read-only set of relevant dated source documents and forward-observed quotes/fills—not an assertion that missing data are free, complete or real-time.
+
+## 15. Source register and retrieval notes
+
+All URLs were checked on **22 October 2026**. Publication and effective dates are given separately where the issuer states them. For dynamic pages, the access date is not evidence of what a historical page displayed on an earlier date. The report uses dated exchange notices for historical schedule claims and describes undated/dynamic pages only within their proper scope.
+
+**\[S1\] Moscow Exchange (MOEX), “Московская биржа расширяет время торгов на срочном рынке,” 10 July 2026; schedule effective 14 July 2026.**  
+URL: https://www.moex.com/n101980?nt=112  
+Supporting excerpt: “06:50-07:00 – аукцион открытия … 07:00-10:00 … 10:00-19:00 … 19:00-23:50.”  
+Use: chronology of the original July schedule. Its 10:00 main-session start was superseded by S2 effective 14 September.
+
+**\[S2\] MOEX, “Московская биржа расширяет время проведения торгов,” published 14 August 2026; effective 14 September 2026.**  
+URL: https://www.moex.com/n103379?nt=112  
+Supporting excerpt: “6:50–9:00 – утренняя торговая сессия … 9:00–19:00 – основная … 19:00–23:50.” Weekend sessions are stated as 09:50–19:00.  
+Use: applicable exchange schedule for this report date.
+
+**\[S3\] MOEX, “Московская биржа определила расписание торгов в праздничные дни 2026 года,” 30 December 2025.**  
+URL: https://www.moex.com/n96571  
+Supporting excerpt: official public holidays in 2026 include special sessions; MOEX gives the dates and session format.  
+Use: evidence that weekday-only calendar logic is insufficient. Always retrieve the applicable date/market from the actual calendar before any future test.
+
+**\[S4\] VTB, “Общие вопросы о торговле на бирже,” undated public help page; indexed text retrieved 22 October 2026.**  
+URL: https://www.vtb.ru/personal/investicii/help/obschie-voprosy-o-torgovle-na-birzhe/  
+Supporting excerpt: “Срочный рынок: с 8:50 до 23:50 мск.”  
+Retrieval note: direct page open returned HTTP 502; the search-indexed snippet was readable. Page update/effective date and account-specific client access are unknown. Treat the 08:50 start as a discrepancy to resolve, not established access proof.
+
+**\[S5\] MOEX, “Календарные спреды,” current public product-description page, accessed 22 October 2026.**  
+URL: https://www.moex.com/ru/spreads  
+Supporting excerpt: calendar spread is two futures of “разных дат исполнения на один базовый актив”; supported order categories include “лимитированная, рыночная, fill or kill.” The page describes inter-product spreads as a prospective extension.  
+Use: limit native/atomic-spread assumptions to specifically listed exchange calendar spreads; does not prove VTB route access.
+
+**\[S6\] MOEX, “Фьючерсный контракт на волатильность российского рынка — RVI-12.26,” current instrument page, accessed 22 October 2026.**  
+URL: https://www.moex.com/ru/derivatives/futures-on-indices/viz6  
+Supporting excerpt: “Данные о торгах отображаются с задержкой в 15 минут. Для получения информации в режиме реального времени необходимо оформить подписку.”  
+Use: evidence about that public instrument-page display, not proof of the free historical interval or full-universe history. The page is dynamic and was not used for historical contract prices.
+
+**\[S7\] MOEX, “Гарантийное обеспечение по фьючерсным контрактам и ставки риска,” dynamic table, accessed 22 October 2026.**  
+URL: https://www.moex.com/ru/derivatives/go_futures.aspx?tid=3013  
+Supporting content: contract-specific futures collateral/risk table, with data date shown by MOEX’s indexed page.  
+Use: margin values must be stored as dated snapshots; current-page values must not be substituted into a historical backtest.
+
+**\[S8\] National Clearing Centre (NCC), “О значениях риск-параметров для новых фьючерсных контрактов на Срочном рынке,” 16 July 2026; specified changes effective 23:50 on 3 August 2026.**  
+URL: https://www.nationalclearingcentre.ru/catalog/0701/98622  
+Supporting content: dated minimum margin levels and named inter-contract spread group, including a 70% initial-margin discount for that specific group.  
+Use: margin relief is rule-/group-specific, not a universal right for economically related pairs.
+
+**\[S9\] Telegram, “Telegram Bot API,” live API reference; page’s recent-changes section includes Bot API 10.3 on 24 August 2026; accessed 22 October 2026.**  
+URL: https://core.telegram.org/bots/api  
+Supporting excerpt: `Message.date` is the “Date the message was sent in Unix time”; the API also says delivery is not guaranteed, especially if the user is offline, in its message-sending parameters. `retry_after` is provided for flood-control waits.  
+Use: log send result/message ID and retries; do not infer read time or duplicate-trade permission from delivery retry.
+
+**\[S10\] Bailey, D. H., and López de Prado, M., “The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality,” *Journal of Portfolio Management*, 40(5), 2014, pp. 94–107.**  
+URL: https://doi.org/10.2139/ssrn.2460551  
+Supporting excerpt from the abstract: the method corrects for selection bias under multiple testing and non-normality.  
+Use: validation/multiple-testing design; does not repair execution-data defects.
+
+**\[S11\] Commodity Futures Trading Commission (CFTC), “Fraud Advisory: Commodity Trading Systems Sold on the Internet,” current public educational advisory, accessed 22 October 2026.**  
+URL: https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/fraudadv_tradingsystem.html  
+Supporting excerpt: hypothetical performance may not adequately account for “bid/ask spreads,” margin calls, liquidity and actual trading conditions.  
+Use: general methodological caution only; this US advisory is not asserted to govern the MOEX/VTB project.
+
+**\[S12\] Harris, Larry, *Trading and Exchanges: Market Microstructure for Practitioners*, Oxford University Press, published 24 October 2002.**  
+URL: https://academic.oup.com/book/52292  
+Relevant bibliographic locations: Chapter 4 “Orders and Order Properties”; Chapter 6 “Order-driven Markets”; Chapter 14 “Bid/Ask Spreads”; Chapters 19–20 “Liquidity” and “Volatility”; Chapter 21 “Liquidity and Transaction Cost Measurement”; Chapter 22 “Performance Evaluation and Prediction.”  
+Use: selected optional reading for order/fill and transaction-cost reasoning; not a source for current MOEX broker rules.
+
+**\[S13\] Backtrader, “Broker — Slippage,” software documentation, accessed 22 October 2026.**  
+URL: https://www.backtrader.com/docu/slippage/slippage/  
+Supporting content: execution simulation exposes explicit slippage and matching assumptions; its documentation cautions that simulated brokerage cannot guarantee real market conditions.  
+Use: illustrates why fill/slippage assumptions must be explicit; not evidence about MOEX fills or VTB behaviour.
+
+## Bottom line
+
+R08 can define how to test delayed manual execution, but the current evidence is not an executable backtest. The minimum credible next phase is to resolve the exchange/broker session discrepancy and actual spread order route, establish a lawful timestamped data set and complete costs, then run a finite-capital event replay where every eligible signal gets a recorded result—even when stale, rejected, partially filled or unfilled. A favourable signal curve is not enough: the test must survive delayed executable prices, independent-leg risk, real capital constraints and the matched LQDT accounting rules.

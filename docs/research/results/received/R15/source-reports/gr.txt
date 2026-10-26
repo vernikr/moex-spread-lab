@@ -1,0 +1,204 @@
+# Neural Architecture Evaluation and Feasibility Analysis for MOEX Futures Spread Trading Under Limited Compute Constraints
+
+## 1. Supervised Objective Framework, Decision Horizons, and Baseline Hierarchy
+
+Evaluating machine learning architectures for quantitative futures spread trading on the Moscow Exchange (MOEX) requires establishing an explicit connection between mathematical objective functions, trading horizons, and physical execution frictions. In an end-of-day (EOD) futures panel encompassing tens to a few hundred contracts, the primary objective is capturing relative mispricings between economically linked instruments, such as inter-commodity or intra-commodity calendar spreads.
+
+The target spread price $S_t$ at trading day $t$ is formulated from the settlement prices of constituent contract $A$ ($P_t^{(A)}$) and contract $B$ ($P_t^{(B)}$) via a dynamically estimated hedge ratio $\beta_t$:
+
+$$S_t = P_t^{(A)} - \beta_t P_t^{(B)}$$
+
+The hedge ratio $\beta_t$ is computed using rolling Ordinary Least Squares (OLS) or a Kalman filter to maintain cointegrating alignment across structural parameter shifts. The target variable $y_t$ represents the continuous, volatility-standardized $h$-step forward price change over a multi-day holding horizon $h \in [3, 10]$ trading days:
+
+$$y_t = \frac{S_{t+h} - S_t}{\hat{\sigma}_{S, t} \sqrt{h}}$$
+
+where $\hat{\sigma}_{S, t}$ represents the exponentially weighted moving sample standard deviation of daily spread shifts up to decision time $t$. To prevent econometric leakage, feature calculation and scaling are restricted to information available prior to market close at time $t$.
+
+The trading workflow progresses through a structured decision temporal sequence. First, end-of-day settlement prices, volume, and open interest data are ingested at market close. Second, feature pipelines calculate technical, structural, and cross-asset variables using historical training statistics. Third, model inference yields a continuous directional forecast $\hat{y}_t$. Fourth, an operational manual reaction window elapses—spanning 3 to 90 minutes with a median expected delay of 5 to 15 minutes—during which human execution occurs. Fifth, orders enter the market via VTB or BCS broker interfaces, subject to available order book liquidity and execution slippage.
+
+Model outputs are converted into discrete target positions $w_t \in \{-1, 0, 1\}$ using a symmetric activation hurdle $\delta$:
+
+$$w_t = \begin{cases} 1 & \text{if } \hat{y}_t > \delta \\ -1 & \text{if } \hat{y}_t < -\delta \\ 0 & \text{if } \vert{}\hat{y}_t\vert{} \le \delta \end{cases}$$
+
+Net realized returns $R_{net, t}$ must explicitly deduct execution friction costs $c_t$, parameterized across conservative, base, and stress scenarios. Transaction costs encompass exchange clearing fees, broker commissions, half-spread crossing, and execution slippage induced by manual delay:
+
+$$c_t = 2 \times \left( f_{exchange} + f_{broker} \right) + \frac{\text{Spread}_t}{2} + \text{Slippage}_t$$
+
+To justify the addition of neural network parameters, candidate models are evaluated against a benchmark hierarchy ordered by model complexity.
+
+| Model Tier | Computational Complexity | Primary Feature Inputs | Decision Logic & Signal Generation | Cost-Awareness Integration |
+| --- | --- | --- | --- | --- |
+| **0. No-Trade Baseline** | Zero ($O(0)$ operations) | None | Position remains $w_t = 0$; capital earns baseline yield | Zero friction incurred |
+| **1. Deterministic Spread Baseline** | Minimal ($O(N)$ vector ops) | Rolling $Z$-score of spread $S_t$, stationarity half-life | Mean-reversion entry at $\Vert{}Z\Vert{} > 2.0$, close at $\Vert{}Z\Vert{} < 0.5$ | Static hurdle rate filter |
+| **2. Regularized Linear (Ridge/Lasso)** | Low ($O(N \cdot P)$ training) | Lagged spread returns, volume imbalances, term structure | Linear signal $\hat{y}_t = X_t \theta$; threshold position assignment | L1/L2 loss penalty + cost hurdle |
+| **3. Gradient Boosted Trees (LightGBM)** | Moderate ($O(T \cdot K \cdot N \log N)$) | Multi-period momentum, open interest dynamics, volatility ratios | Non-linear tree ensembles targeting directional alpha | Turnover penalty inside objective |
+| **4. Small Neural Network (MLP / TabNet)** | High ($O(E \cdot N \cdot W)$ training) | Raw sequence features, non-linear cross-instrument interactions | Dense / attention transformations targeting expected spread return | Custom loss function incorporating expected transaction fee $c_t$ |
+
+An optional neural candidate adds defensible economic value only if it demonstrates a statistically significant out-of-sample net excess return over all lower-tier baselines after deducting friction $c_t$ and accounting for the opportunity cost of holding the core account collateral.
+
+---
+
+## 2. Econometric Validation Skeleton, Panel Leakage, and Data Sufficiency
+
+The underlying data class comprises a daily end-of-day MOEX futures panel containing tens to a few hundred contracts with finite lifespans, periodic contract rolls, and structural delistings. Financial panels in emerging market derivatives exhibit distinct non-stationarity driven by macroeconomic regime shifts, foreign capital reconfigurations, capital control implementations, and central bank interest rate adjustments. Consequently, the number of truly independent economic market regimes in historical data remains scarce.
+
+Standard $k$-fold cross-validation is invalid for financial time series because serial correlation and overlapping multi-day target horizons introduce severe data leakage between training and testing folds. To establish honest out-of-sample performance bounds, model validation adheres strictly to the Purged and Embargoed Walk-Forward Cross-Validation framework.
+
+In this framework, the continuous timeline is partitioned into sequential, chronological walk-forward blocks consisting of a training fold, a purging gap, an out-of-sample test fold spanning target horizon $h$, and a trailing embargo gap.
+
+Purging removes training observations whose informational span overlaps with the evaluation period. Specifically, any training label $y_j$ covering period $[t_{j, 0}, t_{j, 1}]$ that intersects the test window $[t_{test, start}, t_{test, end}]$ is removed:
+
+$$t_{j, 0} \le t_{test, end} \quad \text{and} \quad t_{j, 1} \ge t_{test, start}$$
+
+Embargoing addresses post-test serial correlation. Following the conclusion of a test fold $t_{test, end}$, an embargo window $M$ (set equal to the maximum autocorrelation lag or holding period $h$) is enforced. Training samples commencing within $[t_{test, end}, t_{test, end} + M]$ are excluded from subsequent training splits.
+
+All feature transformations, Z-score standardizers, principal component analyses, and quantile mappers are fitted exclusively on the purged training partition and applied out-of-sample to test folds.
+
+| Validation Guardrail | Leakage Mechanism | Implementation Safeguard & Remediation |
+| --- | --- | --- |
+| **Lookahead Scaler Leakage** | Fitting global mean and variance parameters across the full time series | Fit `StandardScaler` strictly on $\text{Train}_k$; transform $\text{Test}_k$ using saved $\mu_k, \sigma_k$ |
+| **Cross-Panel Information Leakage** | Computing cross-sectional ranks using data outside the current day $t$ | Restrict cross-sectional rank and quantile calculations to time $t$ cross-sections |
+| **Overlapping Label Autocorrelation** | Label $y_t$ shares $h-1$ days of return trajectory with $y_{t+1}$ | Apply sample weighting inversely proportional to label overlap density |
+| **Hyperparameter Selection Bias** | Overfitting architecture parameters through repeated testing on test folds | Log every trial; penalize out-of-sample returns via the Deflated Sharpe Ratio |
+| **Untouched Out-of-Sample Holdout** | Unconscious model selection bias during iterative validation tuning | Reserve final 18–24 months of panel data; evaluate exactly once prior to final deployment |
+
+---
+
+## 3. Computational Constraints, Model Architectures, and Compute Profiles
+
+Model exploration is bounded by physical hardware limitations across research and operational deployment environments.
+
+The research platform consists of a MacBook Pro equipped with an Intel 6-core i7 processor, 16 GB RAM, and an AMD Radeon Pro 5300M 4 GB GPU. Crucially, the AMD GPU lacks CUDA driver support. PyTorch or TensorFlow executions rely on CPU multi-threading or Apple Metal Performance Shaders (MPS), which introduce execution overhead for small-batch tabular operations compared to standard CUDA acceleration.
+
+The execution environment consists of a Virtual Private Server (VPS) provisioned with 1 vCPU, 1 GB RAM, 2 GB swap space, and 20 GB disk space. The VPS actively hosts a Virtual Private Network (VPN) and system processes, leaving a strict background memory budget of 250–350 MB RAM for trading execution scripts.
+
+Deploying standard PyTorch or TensorFlow packages on the execution VPS is unfeasible due to memory constraints. Importing `torch` into a Python process consumes between 800 MB and 1.5 GB of system RAM, exceeding the VPS memory allocation.
+
+To overcome this, candidate neural architectures are developed and trained on the local Intel i7 platform, exported to the Open Neural Network Exchange (ONNX) format, and executed on the VPS using the lightweight C++ ONNX Runtime (`onnxruntime`).
+
+The runtime process follows a clear build-to-execution pipeline. Models undergo training and hyperparameter optimization on the local MacBook Pro or cloud environment. Once trained, PyTorch computational graphs are exported to `.onnx` model artifacts and subjected to dynamic 8-bit integer quantization (`QInt8`). The quantized ONNX model artifact is deployed to the 1 vCPU VPS, where the C++ ONNX Runtime engine executes inference inside an execution script utilizing less than 250 MB RAM with single-digit millisecond latency.
+
+The C++ ONNX Runtime engine maintains a minimal memory footprint, consuming between 40 MB and 150 MB RAM for tabular neural networks. Dynamic 8-bit quantization (`QInt8`) reduces model file sizes by up to 75% while accelerating single-thread CPU execution without degradation in tabular prediction accuracy.
+
+For research experimentation beyond local CPU limits, public cloud infrastructure provides zero-cost compute tiers. Hugging Face Free CPU Basic Spaces provide 2 vCPUs, 16 GB RAM, and 50 GB non-persistent disk space, offering an isolated environment for hyperparameter searches. Additionally, Hugging Face offers temporary ZeroGPU quotas for dynamic accelerator access, while GitHub Actions Hosted Runners provide 2 vCPUs and 7–14 GB RAM for automated pipeline testing.
+
+| Candidate Model Family | Structural Architecture | Training Overhead (Intel i7) | Production Footprint (ONNX CPU) | VPS Latency (1 vCPU) | Operational Suitability |
+| --- | --- | --- | --- | --- | --- |
+| **Multi-Layer Perceptron (MLP)** | Fully-connected dense layers ($10\text{K} - 100\text{K}$ params) | $< 2$ mins / fold | ~45 MB RAM (QInt8) | $< 1$ ms | **High:** Highly compact, fast execution, low overfitting risk |
+| **TabNet** | Sequential attentive masking ($100\text{K} - 500\text{K}$ params) | ~15 mins / fold | ~110 MB RAM (FP32) | ~8 ms | **Moderate:** High parameter capacity; risk of overfitting small panels |
+| **Temporal Fusion Transformer (TFT)** | Multi-head attention + gating ($500\text{K} - 2\text{M}$ params) | $> 1.5$ hours / fold | ~280 MB RAM (Exceeds budget) | ~45 ms | **Low:** Heavy resource footprint; overfits small time series |
+| **1D CNN-LSTM Hybrid** | Local temporal convolution + recurrent gates ($50\text{K} - 200\text{K}$ params) | ~8 mins / fold | ~70 MB RAM (QInt8) | ~5 ms | **Moderate:** Effective feature extraction for time-series dynamics |
+
+---
+
+## 4. Production Governance, Statistical Drift, and Matched Counterfactual Framework
+
+Deploying machine learning models in live financial markets requires automated monitoring to detect population shifts in input distributions and predictive signals before performance degradation impacts capital.
+
+Feature distribution shifts between training baselines and live evaluation windows are monitored using the two-sample Kolmogorov-Smirnov (K-S) test. The non-parametric test statistic $D$ quantifies the maximum distance between empirical cumulative distribution functions $F_{1, n}(x)$ and $F_{2, m}(x)$:
+
+$$D = \sup_x \vert{}F_{1, n}(x) - F_{2, m}(x)\vert{}$$
+
+A resulting $p$-value $< 0.05$ rejects the null hypothesis of identical underlying distributions, signaling feature drift.
+
+Complementing the K-S test, the Population Stability Index (PSI) evaluates distributional shift across discretized feature bins:
+
+$$PSI = \sum_{b=1}^{B} \left( P_b - Q_b \right) \times \ln\left( \frac{P_b}{Q_b} \right)$$
+
+where $P_b$ represents the proportion of samples in bin $b$ during the baseline training period, and $Q_b$ represents the proportion observed during the rolling evaluation window.
+
+Distributional stability is categorized into three operational action tiers based on the calculated PSI metric:
+
+* **Stable Distribution ($PSI < 0.10$):** Features remain within expected baseline distributions. System operates without intervention.
+* **Moderate Drift ($0.10 \le PSI < 0.25$):** Distribution shifts detected. System issues automated warnings and increases auditing frequency.
+* **Severe Shift ($PSI \ge 0.25$):** Significant structural shift detected. Automated execution suspends new entries and reverts position logic to the deterministic baseline.
+
+All strategy performance metrics are evaluated relative to a matched counterfactual allocation holding the Moscow Exchange Money Market ETF (LQDT). Active futures trading capital is drawn from a core account holding exceeding RUB 40 million invested in LQDT. Strategy evaluation isolates the net excess RUB return generated above the opportunity cost of holding LQDT.
+
+Let $C_{alloc} = \text{RUB } 30,000$ denote the pilot allocation. When active margin $M_t \le C_{alloc}$ is committed to a futures spread position, unallocated capital $C_{alloc} - M_t$ remains invested in LQDT. The active futures return is $R_{futures, t}$, and the overnight yield earned by LQDT is $R_{LQDT, t}$.
+
+The wealth paths of the active pilot ($V_{pilot, t}$) and the benchmark counterfactual ($V_{counter, t}$) evolve according to:
+
+$$V_{pilot, t} = V_{pilot, t-1} \cdot \left[ 1 + \frac{M_{t-1}}{C_{alloc}} R_{futures, t-1} + \left(1 - \frac{M_{t-1}}{C_{alloc}}\right) R_{LQDT, t-1} \right]$$
+
+$$V_{counter, t} = V_{counter, t-1} \cdot \left[ 1 + R_{LQDT, t-1} \right]$$
+
+Net excess RUB returns ($\Delta V_t$) are computed as:
+
+$$\Delta V_t = V_{pilot, t} - V_{counter, t}$$
+
+Because margin posted for MOEX futures positions can utilize eligible retained LQDT shares (subject to broker collateral discount haircuts), the continuing yield on retained margin collateral is credited to the account and must not be double-counted.
+
+Risk governance operates under strict drawdown and capital preservation constraints:
+
+* **Initial Test Allocation:** RUB 30,000 all-in (encompassing initial margin, variation margin buffers, and liquidity reserves).
+* **Early Warning Boundary:** An excess curve drawdown $\Delta V_t \le -\text{RUB } 5,000$ generates automated alerts and initiates diagnostic reviews of statistical drift metrics.
+* **Action Trigger:** An excess drawdown of $-\text{RUB } 10,000$ from the high-water mark, or a cumulative LQDT shortfall of $-\text{RUB } 10,000$, suspends new trade entries and systematically flattens existing exposures upon signal termination.
+* **Outer Risk Boundary:** Capped at a maximum acceptable cumulative underperformance of **RUB 15,000** relative to LQDT.
+* **Evaluation Window:** Fixed at 90 calendar days without loss-resetting provisions.
+* **Emergency Funding Provisions:** A maximum cumulative gross reserve of **RUB 15,000** is available exclusively to prevent disorderly broker liquidation during extreme margin spikes. Emergency allocations cannot fund fresh positions, average down losing trades, or reset drawdown thresholds. Every trade entry must proceed with zero reliance on emergency funding.
+
+---
+
+## 5. Staged Experimental Framework, Ablation Testing, and Early Discard Criteria
+
+To ensure systematic evaluation without premature operational deployment, research follows a five-stage experimental matrix.
+
+| Stage | Objective | Primary Deliverables | Target Success Gate | Early Discard Criteria |
+| --- | --- | --- | --- | --- |
+| **Stage 0** | Data Engineering & Purging Pipeline | Validated dataset, leak-free purging engine | Zero cross-fold temporal overlap; verified feature pipelines | Leakage detected in scaling, normalizations, or rank transforms |
+| **Stage 1** | Baseline Benchmarking | Deterministic Kalman filter, Ridge, LightGBM | Net excess return $> 0$ over LQDT counterfactual | LightGBM fails to beat No-Trade net of conservative costs |
+| **Stage 2** | Neural Architecture Exploration | MLP and TabNet training on MacBook i7 / HF Spaces | Outperforms LightGBM Sharpe ratio by $> 0.20$ net | Neural validation loss exceeds linear baselines |
+| **Stage 3** | ONNX Export & VPS Benchmarking | Quantized `.onnx` runtime engine on 1 vCPU VPS | VPS RAM footprint $< 250$ MB; inference delay $< 10$ ms | Memory footprint exceeds 250 MB or ONNX runtime fails |
+| **Stage 4** | Paper Trading & Execution Logging | Virtual execution log capturing 3–90 min delays | Out-of-sample tracking error $< 5\%$ relative to backtest | Execution slippage consumes $> 50\%$ of predicted alpha |
+
+Candidate neural models undergo systematic ablation testing to isolate genuine predictive value:
+
+* **Feature Block Stripping:** Evaluates model performance after removing specific feature blocks (such as open interest indicators or cross-asset price ratios). If removing a complex feature block produces equal or superior out-of-sample net excess returns, the simpler feature set is retained.
+* **Structural Network Simplification:** Multi-layer neural networks must demonstrate superior net returns compared to single-layer linear models trained on identical purged splits. If an MLP with hidden layers $[64, 32]$ fails to beat regularized Ridge regression, the neural candidate is discarded.
+* **Execution Delay Sensitivity:** Model signals are evaluated under simulated execution delays of 3, 15, 45, and 90 minutes. Architectures whose returns degrade rapidly at a 15-minute delay are discarded as unviable for manual execution.
+
+A candidate neural model is immediately discarded if any of the following falsification rules are triggered:
+
+* **Rule 1:** The candidate neural network fails to beat the deterministic Kalman-filter baseline or LightGBM model in net RUB excess return across purged walk-forward splits.
+* **Rule 2:** Model memory footprint exceeds **250 MB RAM** on the execution VPS during ONNX inference runs.
+* **Rule 3:** The Population Stability Index (PSI) of model output probabilities exceeds **0.25** across two consecutive rolling 15-day evaluation windows, indicating output instability.
+* **Rule 4:** The active pilot incurs a cumulative net shortfall of **RUB 10,000** relative to the LQDT counterfactual during paper trading execution.
+
+---
+
+## 6. Critical Evaluation of Methodological Transferability to MOEX
+
+Applying theoretical machine learning concepts to real-world futures spread trading requires evaluating their practical transferability. A critical assessment of methodologies from Marcos López de Prado's *Advances in Financial Machine Learning* reveals specific structural boundaries when applied to daily MOEX derivatives panels.
+
+### Inapplicability of Information-Driven Bars (AFML Chapter 2)
+
+López de Prado argues that standard time-sampled bars (daily OHLCV) exhibit poor statistical properties, such as serial correlation, heteroskedasticity, and non-normality. He advocates sampling data based on volume, tick, or dollar imbalances (Information-Driven Bars) to recover Gaussian return distributions.
+
+In the context of this project, data access is constrained to free end-of-day daily market data. Constructing volume or tick imbalance bars requires tick-level order book feeds, which are unavailable in daily panels. Synthesizing imbalance bars from daily settlement aggregates is mathematically unfeasible. Consequently, research must operate within time-sampled daily bars, mitigating non-normality through robust scaling and non-parametric rank transformations.
+
+### Relevance of Purged and Embargoed Cross-Validation (AFML Chapter 7)
+
+López de Prado establishes that standard cross-validation leads to severe lookahead leakage in financial time series due to overlapping holding periods.
+
+This methodology is **fully applicable and essential**. Because target labels span multi-day holding horizons ($h \in [3, 10]$ days), adjacent daily samples share substantial return trajectories. Purging overlapping training observations and embargoing post-test data are critical econometric requirements. Failing to enforce purging and embargoing results in severe out-of-sample performance overestimation.
+
+### Irrelevance of High-Performance Cluster Computing (AFML Chapters 20–22)
+
+AFML advocates deploying distributed computing clusters, extensive multiprocessing vectorization, and large parameter search grids.
+
+As noted in industry literature reviews, these infrastructure requirements assume institutional compute environments and offer limited applicability to small-scale trading projects. Attempting complex hyperparameter searches on a single 1 vCPU VPS or local laptop causes resource contention and increases path-dependent overfitting risks. Lightweight models trained over simple walk-forward splits are structurally superior for small capital allocations.
+
+### Structural Break Adaptation (AFML Chapters 17–19)
+
+AFML focuses on microstructure features derived from high-frequency order books, which are inaccessible in daily EOD panels. However, the concept of structural break detection—such as CUSUM tests on spread levels—can be directly adapted to daily settlement data. Tracking cumulative spread deviations allows the system to identify regime shifts and dynamically suspend mean-reverting trading signals when cointegrating relationships breakdown.
+
+### Synthesis and Final Recommendation
+
+For a daily MOEX futures-spread strategy operating on a RUB 30,000 pilot allocation and executing on a 1 vCPU VPS, **optional neural network architectures present high structural complexity with a low probability of outperforming well-regularized tree models or deterministic baselines.**
+
+The optimal research path prioritizes operational simplicity and econometric rigor:
+
+1. Construct the **Deterministic Kalman-Filter Spread Baseline** and **LightGBM Regressor** using Purged and Embargoed Walk-Forward splits.
+2. If and only if LightGBM yields statistically significant net excess returns over the LQDT counterfactual, evaluate a compact **Multi-Layer Perceptron (MLP)** exported via **ONNX Runtime with QInt8 dynamic quantization**.
+3. Enforce the **RUB 10,000 LQDT underperformance limit** and monitor feature stability via the **Population Stability Index (PSI)** to ensure strict capital preservation.

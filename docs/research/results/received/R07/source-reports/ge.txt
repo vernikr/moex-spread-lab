@@ -1,0 +1,107 @@
+# Evidence-Backed Risk, Funding, Stress, and Sizing Report (R07)
+
+**Project:** Private MOEX Futures-Spread Pilot
+
+**Current Research Date:** October 7, 2026 (Reflected to current operational baseline)
+
+**Scope:** Evaluation of provisional policy semantics, capital constraints, stress scenarios, and sizing mechanics for a RUB 30,000 initial test allocation sharing an account with a core >RUB 40 million LQDT holding.
+
+---
+
+## 1. Risk/Funding State Table and Worked Hypothetical Ledgers
+
+Because R01 (broker rules, KPUR, collateral), R02 (costs), R04 (data limits), R05 (LQDT cash-flow accounting), R06 (contract universe), and R09 (validation protocol) are absent in this prompt scope, all conclusions regarding margin relief, execution fills, and counterfactual matching remain **conditional** upon independent verification.
+
+### Core Definitions & Accounting Identity
+
+* **Strategy-Enabled Wealth ($V(t)$):** Total equity of the test sleeve including cash, open variation margins (VM), and realized P&L.
+* **Matched Counterfactual ($B(t)$):** A theoretical benchmark tracking the identical external cash flows invested entirely in the core LQDT instrument, excluding any pilot-induced cash injections or unapproved liquidations.
+* **Excess Curve ($X = V - B$):** Starts at $X(0) = 0$ before initial trade costs.
+* **High-Water Mark ($H = \max(0, \text{past } X)$)** and **Drawdown ($D = H - X$)$$.**
+
+> **Critical Shared-Account Warning:** The test allocation of RUB 30,000 shares an account with a >RUB 40 million core LQDT holding. Without strict broker-level account segregation, any broker-initiated margin call that dips into core collateral counts toward the **RUB 15,000 gross emergency funding cap** and constitutes an unapproved risk incident. Core collateral must never be treated as implicit test backup.
+
+### Risk and Funding State Matrix
+
+| State Name | Operational Condition | Permitted Trading Actions | Required Intervention / Governance |
+| --- | --- | --- | --- |
+| **Normal State** | $D < 5,000$ and $X > -10,000$ | Full eligibility for valid signals within envelope | Standard monitoring; manual reaction within 3–90 minutes (median 5–15 mins). |
+| **Warning State** | $D \ge 5,000$ (Excess high-water drawdown hits RUB 5k) | No new sizing expansion; existing positions managed | Issue internal warning; review volatility and adverse fill logs. |
+| **Action / Suspension** | $D \ge 10,000$ OR Cumulative shortfall $\le -10,000$ | **Entries suspended.** Orderly risk reduction | Mandatory user review; no new risk until flat or explicitly restructured. |
+| **Outer Boundary Breach** | $X \le -15,000$ | **Cease all risk.** Immediate orderly exit | Complete liquidation of test sleeve; project halted. |
+
+### Worked Hypothetical Ledger (Scenario Path)
+
+| Day / Event | External Flow | Strategy Value $V(t)$ | LQDT Counterfactual $B(t)$ | Excess $X$ | High-Water $H$ | Drawdown $D$ | State & Operational Action |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Day 0** | +30,000 | 30,000 | 30,000 | 0 | 0 | 0 | **Normal:** Initial allocation deployed. |
+| **Day 14** | 0 | 34,500 | 30,400 | +4,100 | 4,100 | 0 | **Normal:** Favorable spread convergence. |
+| **Day 30** | 0 | 28,200 | 30,800 | -2,600 | 4,100 | 6,700 | **Warning State:** Drawdown $D = 6,700 \ge 5,000$. Warning flagged. |
+| **Day 45** | 0 | 20,100 | 31,100 | -11,000 | 4,100 | 15,100 | **Action State:** $X = -11,000 \le -10,000$. Entries suspended, orderly de-risking initiated. |
+| **Day 46** | +5,000 (Approved) | 25,100 | 31,100 | -6,000 | 4,100 | 10,100 | **Action State:** Emergency funding applied *strictly* to reach flat/reduce risk (Lifetime gross added: RUB 5,000 / 15,000 cap). |
+| **Day 60** | 0 | 15,500 | 31,400 | -15,900 | 4,100 | 20,000 | **Outer Boundary Breach:** $X = -15,900 < -15,000$. Immediate forced exit of all remaining legs. |
+
+---
+
+## 2. Parameter Table
+
+The following table summarizes the retained, revised, or deferred numeric defaults for the pilot, alongside their evidentiary basis and live-trading prerequisites.
+
+| Parameter | Default Value | Status | Evidence / Judgment Basis | Sensitivity | Live-Trading Prerequisites |
+| --- | --- | --- | --- | --- | --- |
+| **Initial Capital Envelope** | RUB 30,000 | Retained | User-defined test boundary | High; limits integer lot selection | Verified cash-settlement separation from core holdings. |
+| **Lifetime Emergency Cap** | RUB 15,000 | Retained | Bounded disaster protection | Medium; caps rescue exposure at RUB 45k gross | Written approval workflow and credit timing confirmation. |
+| **Warning Drawdown Threshold** | RUB 5,000 | Retained (Provisional) | Early-warning heuristic | High; triggers behavioral review | Documented manual reaction protocol (3–90 min). |
+| **Action Shortfall Threshold** | RUB 10,000 | Retained (Provisional) | Mandatory risk curtailment | High; stops fresh entries | Automated or manual ledger reconciliation. |
+| **Outer Boundary Limit** | RUB -15,000 | Retained | Hard stop before total capital exhaustion | Critical; absolute project termination | Broker liquidation rules (R01 equivalent) verified. |
+| **Starting Margin Ceiling** | 50% of initial funds | **Revised (Test Hypothesis)** | Avoids instant margin calls on initial volatility | High; restricts multi-leg sizing | NCC initial margin rate schedules (R01). |
+| **Stress Buffer Heuristic** | RUB 5,000 | **Revised (Test Hypothesis)** | Provisional gap/delay cushion | Medium; buffers intraday slippage | Historical liquidity and bid-ask spread data (R04). |
+
+---
+
+## 3. Stress-Loss, Sizing, and "No-Trade" Criteria
+
+### The Entry & Review Inequality
+
+Before initiating any new spread trade or passing a scheduled review, the strategy must satisfy the following inequality:
+
+$$X - \text{Stressed Incremental Loss} - \text{Positive Uncertainty Buffer} \ge -15,000$$
+
+* **Stressed Incremental Loss:** Modeled using simultaneous adverse price movement (e.g., 3-sigma historical move), widening bid-ask spreads, and temporary loss of calendar spread margin offsets (NCC clearing house recalculating legs independently under extreme stress).
+* **Positive Uncertainty Buffer:** A mandatory separate cash reserve protecting against delayed manual reaction times (3 to 90 minutes) and intraday variation margin spikes.
+
+### Stop, Partial-Fill, and Emergency Policies
+
+* **Manual Execution Lag (3–90 mins):** Because execution is manual via VTB (and later BCS) with a median reaction time of 5–15 minutes, limit orders or stop-loss triggers cannot assume instantaneous fills. Stale quotes or partial fills must be treated as active single-leg exposure risks.
+* **Naked-Leg Hazard:** If a spread leg fills partially, the remaining unmatched leg must be flattened immediately, absorbing any cross-spread slippage.
+* **Criteria for "No-Trade":** If the minimum integer lot size of an eligible economic pair (R06) requires initial margin or potential stress loss that violates the boundary inequality, or if available cash after reserves is insufficient, the system must output a **No-Trade** decision. No-trade is a fully successful outcome.
+
+---
+
+## 4. The 90-Day Planning Convention & Peak Giveback Opportunity Cost
+
+### 90-Day Review Mechanics
+
+* The provisional 90-calendar-day review rule acts as a **hard checkpoint**, not an arbitrary expiration date that forces the liquidation of winning, long-held spread trends.
+* At Day 90, the project must undergo comprehensive audit: evaluating strategy Sharpe ratio, slippage costs, execution logs, and infrastructure latency. Losses accumulated over the 90 days are **never reset**; they remain permanently embedded in $X$ and the high-water mark calculations.
+
+### Peak Giveback Opportunity Cost
+
+* The provisional warning trigger at $D \ge 5,000$ from the excess high-water mark creates a deliberate trade-off: cutting back or pausing winning spreads early to protect capital versus allowing profitable positions room to breathe through normal market noise.
+* *Opportunity Cost:* A tight drawdown threshold risks premature exit from high-conviction medium-term spreads during normal retracements. However, given the small capital base (RUB 30,000) and manual execution lag, this opportunity cost is accepted to prevent catastrophic tail-risk spillover into the shared account.
+
+---
+
+## 5. Targeted Library Lead: Robert Carver's *Systematic Trading*
+
+Applying principles from Robert Carver's *Systematic Trading* helps ground the pilot's risk and sizing rules, while highlighting the constraints of small-capital retail execution:
+
+* **Volatility Targeting & Instrument Block Values:** Carver emphasizes sizing positions based on annualized price volatility and instrument "block values" (the cash impact of a 1% price move). For MOEX futures, this requires translating contract point values and daily volatility into a fixed cash volatility target.
+* **The Half-Kelly Rule & Backtest Discounting:** Carver advises against taking backtested Sharpe ratios at face value, recommending a **25% to 50% markdown** due to overfitting, execution slippage, and negative skew. For a manual, semi-automatic spread pilot with integer contract constraints, Carver's "Half-Kelly" or conservative volatility targeting is essential: sizing must be scaled down so that typical drawdowns do not breach the RUB 5,000 warning trigger.
+* **Position Inertia & Tiny-Lot Limitations:** Carver applies *position inertia*—ignoring small target changes (e.g., within 10% of target) to avoid over-trading and unnecessary transaction costs. However, with a tiny **RUB 30,000** capital envelope and integer futures contracts on MOEX, continuous fractional sizing is impossible. A single contract represents a massive discrete step in risk. Carver's continuous framework must therefore be adapted into strict binary rules: either a single minimum lot fits comfortably within the risk budget, or the trade is skipped entirely.
+
+---
+
+## Suggested Follow-Up Question
+
+Would you like to define the specific historical data lookback window (R04) and volatility estimation formulas needed to calibrate the per-idea position sizing for your selected MOEX commodity or index spread families?

@@ -1,0 +1,468 @@
+**R08 — Delayed manual execution, signal validity and virtual portfolio**
+
+**Research date / current-facts cutoff:** 2026-10-22 (pack prepared 2026-10-07). Independent public-source work; no repository, R01/R02/R04/R06/R07/R09 reports, broker statements, quote history or fill data were supplied. All conclusions that depend on those inputs are explicitly conditional. No backtest, account check, legal verification or live trading was performed.
+
+---
+
+## 1. Scope, inputs actually read, and conditional status
+
+| Input | Status in this report |
+|---|---|
+| R01 (broker rules, KPUR, collateral, liquidation) | **Not supplied.** Conclusions on VTB order modes are based on VTB’s public client regulations; KPUR/collateral/liquidation consequences are **conditional** and must be re-checked against R01. |
+| R02 (VTB/BCS full costs and fees) | **Not supplied.** Net-advantage thresholds are illustrative; actual commissions, exchange fees, clearing fees and funding charges must come from R02. |
+| R04 (free data, fields, intervals, history, limitations) | **Not supplied.** The “finest defensible free timeframe” is treated as an open research question, not assumed to be one minute or live. |
+| R06 (contract universe, economic pair families, specifications) | **Not supplied.** Examples use generic MOEX futures; minimum lots, tick sizes, guarantee provision and contract multipliers must be taken from R06/official specifications. |
+| R07 (risk, stress, funding, sizing) | **Not supplied.** Stress-buffer and margin-use heuristics are labelled as **unvalidated test candidates**, not approved limits. |
+| R09 (validation protocol, leakage, multiple testing) | **Not supplied.** The delayed-fill protocol below is designed to be compatible with R09 but has not been reconciled with it. |
+| R05 (LQDT benchmark, cash-flow accounting, tax) | **Not supplied.** The matched-LQDT counterfactual is defined provisionally; tax treatment is shown separately and remains unknown. |
+
+**Primary sources actually read for this report** (with dates and access time 2026-10-22):
+- MOEX press release, 10.07.2026, on expanded derivatives trading hours.
+- MOEX press release, 05.11.2025, on the unified trading session from 23.03.2026.
+- MOEX press release, 13.03.2026, on the start of the unified session and new clearing schedule.
+- MOEX presentation “Время проведения операций” (ETC schedule, calculations T+1, clearing 23:50–00:30).
+- VTB client regulation (public PDF), order validity, market/limit/stop order handling, partial execution and cancellation rules.
+- VTB public page on insufficiency of guarantee assets and broker actions.
+- VTB public page on significant bid/ask spread (>10%) and broker discretion.
+- MOEX documentation on composite instruments (“связки”) and calendar spreads as atomic multi-leg instruments.
+- Harris, *Trading and Exchanges: Market Microstructure for Practitioners* (2002), table of contents for ch. 4 “Orders and Order Properties” and ch. 6 “Order-Driven Market Mechanisms”.
+
+**Books/transcripts:** No book chapters were supplied. Harris ch. 4 and ch. 6 are relevant and are requested below; the report connects order microstructure to failure scenarios without transferring institutional assumptions blindly.
+
+---
+
+## 2. Timestamp definition: the lifecycle is not a single “delay”
+
+For a delayed manual futures-spread process, one “delay” number is meaningless. At least ten distinct timestamps must be recorded for every signal. The intervals between them have different economic content and different failure modes.
+
+| Code | Timestamp | Definition | What it measures |
+|---|---|---|---|
+| **T0** | Information available | Time at which the last market input used by the model (quote, trade, reference price, funding rate, contract specification) was **published or became available** to the data source. | Data vintage, not model speed. |
+| **T1** | Model evaluation | Time at which the model computes the signal from inputs available at or before T0. | Model latency. |
+| **T2** | Signal creation | Time at which the signal record is finalized (direction, legs, quantities, bounds, expiry). | Signal validity start. |
+| **T3** | Telegram delivery | Time at which the message is delivered to the user’s Telegram client (delivery acknowledgement if available). | Communication latency. |
+| **T4** | User reading / decision | Time at which the user opens/reads the message and decides to act, wait or reject. **This is a decision timestamp, not an execution timestamp.** | Human reaction. |
+| **T5** | Order acceptance (broker) | Time at which VTB accepts the order into its system. This may precede exchange registration. | Broker-side intake. |
+| **T6** | Exchange registration | Time at which the order is registered in the MOEX trading system. | Venue admission. |
+| **T7** | First-leg fill | Time of the first execution on either leg. | Execution start. |
+| **T8** | Hedge completion | Time at which the second leg reaches the intended quantity (or the hedge is explicitly abandoned). | Unhedged interval end. |
+| **T9** | Cancellation / expiry | Time at which an unfilled or partially filled order is cancelled, expires or is replaced. | Residual-order control. |
+
+**Model outages and irregular human availability must be separate codes, not folded into T4.** A model outage means no T1/T2 occurs; a human unavailability means T3/T4 is delayed or absent. These have different remedies: model redundancy versus notification escalation. Conflating them into a single “reaction time” makes the delay distribution uninterpretable.
+
+**T0 is not the same as T3.** A fresh Telegram timestamp does **not** refresh the market input. If the model used a quote that was 40 seconds old at T1, the signal is already stale at T2 even if Telegram delivered it in one second. This distinction is the basis for the revalidation rule in §4.
+
+---
+
+## 3. Plausible delay scenarios under the 3–90 minute range with median ≈5–15 minutes
+
+The user’s stated manual reaction is 3–90 minutes, median approximately 5–15 minutes, with unknown distribution. The following scenarios are **plausible constructions**, not claims about the user’s actual behaviour and not calibrated results. They satisfy the given range and median band. Each scenario is designed to be replaced by recorded data without look-ahead.
+
+### 3.1 Scenario set (deterministic seeds for later calibration)
+
+| Scenario | Description | T3–T4 delay (minutes) | Correlation with volatility / illiquidity | Weekends / clearing / closed sessions |
+|---|---|---|---|---|
+| **S1 — “Calm, fast read”** | Notification arrives during an active work period; user reads and acts promptly. | 3–7 (median 5) | Weak. Low-volatility, liquid leg. | Avoided by session filter; no weekend entry. |
+| **S2 — “Typical workday”** | User is at a desk but not monitoring continuously; median around 10–15 min. | 5–20 (median 12) | Positive but mild: wider spread → slightly longer decision. | Session filter applies; no entry in clearing window. |
+| **S3 — “Slow but valid”** | User sees the signal after a meeting; still within the allowed range. | 25–60 (median 35) | Positive: illiquid leg or high volatility increases hesitation and spread. | If signal expires near session end, treated as expired, not forced. |
+| **S4 — “Late tail”** | User is unavailable for most of the range; signal barely survives to action. | 60–90 (median 75) | Strong positive: the more volatile/illiquid the market, the less likely the user acts near the boundary. | Often leads to expiry/cancellation; no weekend holding of unhedged leg. |
+| **S5 — “Outage / no decision”** | Model or Telegram outage, or user cannot decide. | No T4; signal expires or is cancelled. | Not applicable; recorded as a distinct reason code. | No order submitted; no trade created by retry. |
+
+**Median-band check.** If S1, S2 and S3 are assigned modest weights and S4/S5 are tails, the overall median can sit in the 5–15 minute band while the full range reaches 90 minutes. The distribution is deliberately **not** assumed lognormal, exponential or uniform. The point is to have multiple seeded delay paths that can later be compared with recorded T3–T4 data.
+
+### 3.2 Correlation with volatility and illiquidity
+
+Delay should **not** be modelled as independent of market conditions. A plausible dependency is:
+
+- Higher realised volatility or a wider quoted spread increases the probability of a longer T3–T4 delay (user waits for confirmation, re-checks, or is distracted by other urgent tasks).
+- The same conditions increase the probability that the signal expires or is invalidated before action.
+- The dependency must be **calibrated forward**, not fitted retrospectively to the same data used to generate signals. A simple default is to stratify recorded delays by volatility tercile and quoted-spread tercile at T0, then sample delays within strata. This is a research default, not an approved model.
+
+### 3.3 Weekends, clearing and closed sessions
+
+Under the unified trading session from 23.03.2026, the derivatives trading day is **08:50–23:50** (morning additional session 08:50–10:00, main 10:00–19:00, evening 19:00–23:50), with a weekend additional session 10:00–19:00 for instruments permitted by MOEX. From 14.07.2026 the weekday schedule is extended to **06:50–23:50** (opening auction 06:50–07:00; morning period 07:00–10:00; main 10:00–19:00; evening 19:00–23:50), with currency futures subject to ±3% price bounds in the morning session and a weekend session for currency futures.
+
+**Clearing.** The intermediate clearing session is abolished from 23.03.2026. The main mark-to-market clearing session runs **23:50–00:30**; settlement of variation margin, premium and commissions is moved to **T+1 at 20:00**, without stopping trading. This means:
+
+- A signal created shortly before 23:50 may be executable, but the position enters clearing almost immediately. A manual delay of 10–15 minutes can easily cross the clearing boundary.
+- A signal created after 23:50 belongs to the next trading day; the user cannot assume continuous execution into the clearing window.
+- Weekend sessions exist for some instruments, but not all contracts trade 24/7. The session filter must be instrument-specific, not a blanket “market is open” assumption.
+
+**Broker acceptance timing.** VTB’s public regulation states that, unless otherwise agreed, the bank accepts orders only if they are sent **no later than 15 minutes before the end of the trading session**, except orders sent through remote access systems; orders sent by telephone less than 15 minutes before the end may be accepted only by agreement with the bank’s trader. Paper/fax orders must arrive at least **one hour** before expiry and are passed to the trader within 15 minutes of receipt and verification. These are **broker-side constraints on T5**, separate from exchange session times. A signal that is valid at T2 may therefore be **unacceptable at T5** even though the exchange is still open.
+
+**Dated broker access.** No dated VTB holiday/early-close schedule was supplied. The report does not assume that every weekday is a full trading day. R01 or VTB’s dated notices must be used to build a session calendar.
+
+---
+
+## 4. Candidate revalidation after delay
+
+A delayed signal is not the same signal. Before any order is submitted at T5, the following checks are required. The order of checks matters: cheap, decisive checks (session, expiry, funds) should precede expensive market-data rechecks.
+
+### 4.1 Revalidation checklist at T4/T5
+
+| Check | Pass condition | Fail action |
+|---|---|---|
+| **Session / instrument eligibility** | Instrument is in an active trading period; no clearing window; no exchange holiday; broker accepts orders at T5. | **Reject** with `MARKET_CLOSED` or `BROKER_CUTOFF`. Do not queue for the next session unless a distinct next-session rule exists. |
+| **Signal expiry** | T4 ≤ signal expiry, where expiry is defined at T2 from the **market input’s** validity, not from Telegram delivery time. | **Reject** with `SIGNAL_EXPIRED`. No automatic reissue unless a fresh model evaluation produces a new signal. |
+| **Data freshness** | T0 is not older than the maximum permitted input age for the instrument/regime. A fresh T3 does **not** reset T0. | **Reject** with `STALE_DATA`. A new signal may be created only by a new model evaluation on fresh inputs. |
+| **Executable net advantage vs LQDT** | The **revalidated** executable spread, after estimated bid/ask, commissions, exchange/clearing fees, funding and expected exit cost, still exceeds the matched-LQDT counterfactual by a pre-specified margin. | **Reject** with `NO_NET_ADVANTAGE`. Do not use the signal-time advantage. |
+| **Bid/ask and depth** | The quoted bid/ask at T4/T5 is inside the signal’s executable bounds; sufficient visible depth exists for the intended quantity, or the order size is reduced. | **Reject** or **resize** with `PRICE_INVALIDATED` / `DEPTH_INSUFFICIENT`. |
+| **Minimum lot / contract specification** | Quantity is an integer multiple of the minimum lot; the contract is not in a delivery/expiry restriction period that prohibits opening. | **Reject** with `LOT_VIOLATION` or `DELIVERY_RESTRICTION`. |
+| **Available funds / margin** | Free funds after reserving for both legs, variation-margin liquidity, existing positions and the stress buffer cover the **revalidated** initial margin. No emergency funding is assumed. | **Reject** with `INSUFFICIENT_FUNDS`. Do not assume broker credit or core collateral. |
+| **Model validity** | The model state that produced the signal is still valid under the current regime; no model outage or parameter freeze. | **Reject** with `MODEL_INVALID`. |
+
+### 4.2 Price/state invalidation and expiry/reissue logic
+
+**Invalidation** should be defined in executable terms, not in “the spread moved” terms:
+
+- **Leg-price invalidation:** if either leg’s executable price at T4 is worse than the signal’s **worse-case bound** for that leg, the signal is invalid. The bound is set at T2 from the then-visible bid/ask plus a pre-specified slippage allowance.
+- **Net-advantage invalidation:** if the revalidated net advantage falls below the LQDT threshold after costs, the signal is invalid even if both legs are individually within bounds.
+- **Depth invalidation:** if visible depth at the bound is insufficient for at least the minimum executable quantity, the signal is invalid or resized.
+
+**Expiry** should be a timestamp attached at T2, not a countdown from T3. A Telegram retry or a delayed read does not extend expiry. If the user wants a new signal, a **new model evaluation** on fresh T0 is required; the old signal is not “refreshed.”
+
+**Reissue** is a new signal record with a new T2 and a new T0. It must pass the same checks and must not inherit the old signal’s queue priority or capital reservation. Repeated notification of the same signal does **not** create another trade unless a distinct entry rule (e.g., a new signal after the old one expired) is satisfied.
+
+---
+
+## 5. Two-leg and partial execution
+
+### 5.1 What MOEX actually offers
+
+MOEX supports **composite instruments (“связки”)** consisting of atomic parts. The trading system SPECTRA supports composite instruments, and calendar spreads on futures are currently implemented as composite instruments. The “Calendar Spread” technology allows **simultaneous opposite-direction trades** in two futures on the same underlying with different expiry dates. MOEX documentation describes synthetic matching in which a calendar-spread order and leg orders can generate a synthetic order for the other leg, and in the current implementation three deals can be executed simultaneously: one for the calendar spread and two for the futures legs.
+
+**This is not the same as assuming that every broker’s retail interface supports atomic multi-leg execution.** The existence of a MOEX spread instrument does **not** prove that VTB’s retail order ticket, or a telephone order, will submit the spread as one atomic order. R01/R03 must establish whether VTB exposes the calendar-spread instrument atomically. Until then, the virtual portfolio must model both cases:
+
+- **Atomic case:** one order, two legs, simultaneous or near-simultaneous execution. Residual risk is exchange/broker atomicity failure, not leg risk.
+- **Leg-by-leg case:** two independent orders. The unhedged interval is real, and partial fills are possible.
+
+### 5.2 Sequence and order types
+
+In the leg-by-leg case, a defensible default is:
+
+1. **Submit the less liquid leg first** as a limit order with a defined price bound, because it is the harder fill and determines whether the hedge is feasible.
+2. **Submit the more liquid leg second**, after the first leg fills or after a defined trigger, using a limit order or a market order with a pre-set worse-case bound.
+3. **Never assume that a market order will fill at the signal price.** VTB’s regulation states that a market order that cannot be immediately placed in the trading system is **automatically cancelled**. A “market order” is therefore not a guaranteed fill; it is an immediate-or-cancel instruction with unknown price.
+4. **Limit orders may be partially executed.** VTB explicitly permits partial execution of limit orders unless the client instructs otherwise; a partially executed order is considered cancelled only for the unexecuted part. A child order that is partially filled creates a smaller unhedged position, not a clean cancellation.
+
+### 5.3 Unhedged interval, hedge/abort/cancel decision
+
+The unhedged interval begins at the first-leg fill (T7) and ends at hedge completion (T8) or explicit abandonment. During this interval:
+
+- **Hedge completion** must be attempted with a defined maximum price deterioration. If the hedge cannot be completed within that bound, the position is **aborted**: the filled leg is closed (or the residual is closed) at the best available price, and the loss is recorded.
+- **Abort is not a free option.** Closing the filled leg incurs bid/ask, commissions and potentially adverse price movement. The virtual portfolio must charge these costs.
+- **Cancellation of the unfilled second leg** does not eliminate the unhedged exposure. It merely stops adding to it.
+- **Asynchronous acknowledgements** mean that T7 and T8 may be known to the broker before they are known to the user. The virtual portfolio must use broker/exchange timestamps where available, not the user’s phone notification time.
+
+### 5.4 Missing quotes and worse-than-expected exits
+
+If the second leg’s quote disappears or the spread widens beyond the abort bound, the position is in a **forced-exit** state. The virtual portfolio must model:
+
+- exit at the **worst visible quote** or at a conservative OHLCV fallback (see §7), not at the midpoint;
+- additional slippage for a forced exit;
+- the possibility that the exit itself is delayed and the loss grows.
+
+**Atomic spread support is not assumed.** The report uses the MOEX calendar-spread instrument as evidence that atomicity is *possible* at the exchange level, not as proof that the user’s VTB order path is atomic.
+
+---
+
+## 6. One realistic finite-capital virtual portfolio
+
+### 6.1 Principles
+
+The virtual portfolio attempts **every eligible signal** without discretionary omission. It records stale, rejected, unfilled and partially filled outcomes. It respects finite capital and does **not** assume emergency funding approval.
+
+- **Deterministic priority for conflicts:** when two signals compete for the same cash, the portfolio uses a pre-declared rule (e.g., earlier T2 first; if equal, higher revalidated net advantage; if still equal, lower margin requirement; if still equal, lexicographic signal ID). The rule is fixed before simulation and does not change based on outcomes.
+- **Capital reservations:** at T2, the portfolio reserves the **stress-case** margin for both legs plus the stress buffer. The reservation is not released until the position is closed or the signal expires. A signal that cannot reserve capital is **rejected for insufficient funds**, even if the user might have been able to find funds later.
+- **Funding approvals and credit timing:** the portfolio assumes **no additional funding** unless a separate approval record exists with a timestamp and an amount. Absent approval, the default is no funding. Approval is not restart approval.
+- **Repeated notification:** a retry of the same signal does not create a new trade. A new trade requires a new signal record with a new T2 and a distinct entry rule.
+- **Risk exits vs new-idea quotas:** closing an existing position (risk exit) does not consume a “new idea” quota. Opening a new position does. The two must be tracked separately.
+
+### 6.2 Portfolio ledger fields
+
+For each signal, the ledger records:
+
+| Field group | Examples |
+|---|---|
+| Identity | signal ID, reissue ID, parent signal ID, instrument pair, contract codes |
+| Timestamps | T0–T9 as defined in §2, plus retry timestamps |
+| Market state at T0/T2/T4/T5 | bid/ask, spread, depth proxy, volatility proxy, session, clearing proximity |
+| Signal terms | direction, quantities, entry bounds, expiry, worse-case bounds |
+| Revalidation | each check pass/fail, reason code, revalidated net advantage |
+| Execution | order type per leg, submission time, acknowledgement time, fill time, fill price, filled quantity, residual quantity |
+| Unhedged interval | start, end, maximum adverse move, hedge/abort decision, abort cost |
+| Capital | reserved margin, actual margin, free funds before/after, funding approval record (if any) |
+| P&L | realised, unrealised marked to a synchronized defensible mark, estimated exit costs, cumulative X, H, D |
+| Outcome | filled, partial, unfilled, expired, rejected, cancelled, aborted |
+| Reason codes | taxonomy in §8 |
+
+### 6.3 Marking and P&L
+
+- **Synchronized defensible marks:** both legs and the LQDT counterfactual are marked at the same timestamp using the best available independent marks. If one leg has no trade at the mark time, the last valid quote or a conservative fallback is used and flagged.
+- **No double-counted VM or fund expenses:** variation margin is a cash flow, not a return; LQDT distributions and fund expenses must be handled consistently with R05.
+- **Exit costs:** every open position is marked net of estimated exit costs (bid/ask, commission, slippage). The portfolio does not report a gross P&L that ignores the cost of getting out.
+- **X, H, D:** `X = V − B`, `H = max(0, past X)`, `D = H − X`. Both paths mirror genuine external flows and exogenous core actions, but `B` does not mirror pilot-induced core sales. A matched external top-up must not improve `X`.
+
+### 6.4 What the portfolio must not do
+
+- It must not assume that every signal fills.
+- It must not assume that a market order fills at the signal price.
+- It must not assume that a partial fill is a clean cancellation.
+- It must not assume that broker credit or core collateral is available.
+- It must not reset losses on review, funding, restart or withdrawal.
+- It must not treat sale proceeds of core assets as external flows or as economic loss in `X`.
+
+---
+
+## 7. Delayed-fill evaluation protocol and conservative OHLCV fallback
+
+### 7.1 Falsifiable protocol
+
+The protocol must be able to **fail** the hypothesis that the strategy retains a net advantage after realistic delayed manual execution. A protocol that can only produce positive results is not an evaluation.
+
+| Step | Requirement | Falsification criterion |
+|---|---|---|
+| **1. Freeze the signal rule** | The entry/exit rule, parameter set and universe are fixed before evaluation. | If the rule is changed after seeing results, the evaluation is invalid. |
+| **2. Freeze the delay model** | The seeded delay scenarios (S1–S5 or calibrated equivalents) are fixed before evaluation. | If delays are tuned to make results look better, the evaluation is invalid. |
+| **3. Use only information available at T0** | No future quotes, no future fills, no look-ahead in the signal or revalidation. | Any use of post-T0 information is leakage. |
+| **4. Revalidate with executable prices** | At T4/T5, use the then-visible bid/ask (or a conservative fallback) and charge bid/ask, commissions, fees and slippage. | A result that requires midpoint fills or zero slippage is not an executable result. |
+| **5. Model leg risk** | In the leg-by-leg case, simulate first-leg partial fills, unhedged intervals, hedge failure and abort costs. | A result that assumes both legs always fill atomically is conditional on atomic execution being proved. |
+| **6. Reserve finite capital** | Reject signals that cannot reserve stress-case margin plus buffer; do not assume emergency funding. | A result that requires unapproved funding is not a valid pilot result. |
+| **7. Report a distribution, not a point estimate** | Report the distribution of outcomes across seeds and scenarios, including the worst case. | A single “average” result without the loss tail is insufficient. |
+| **8. Compare with matched LQDT** | The counterfactual uses the same external flows and the same valuation times. | A comparison with the entire core portfolio or with a different cash-flow pattern is invalid. |
+
+### 7.2 Conservative OHLCV fallback
+
+When no quote history is available, the fallback must be **conservative by construction**, not “midpoint plus a guess.”
+
+| Situation | Fallback rule | Rationale |
+|---|---|---|
+| **Buy market/limit order** | Fill at the **high** of the execution bar (or the worse of the bar high and the signal bound plus a slippage allowance). | The buyer cannot assume the low or the midpoint. |
+| **Sell market/limit order** | Fill at the **low** of the execution bar (or the worse of the bar low and the signal bound minus a slippage allowance). | The seller cannot assume the high or the midpoint. |
+| **Partial fill with no volume data** | Assume the filled quantity is the **minimum lot** (or the smallest observable trade size) if the bar volume is unknown; do not assume full fill. | Absence of volume data is not evidence of liquidity. |
+| **Unhedged interval** | Mark the unhedged leg at the **worst** of the bar high/low in the adverse direction, not at the bar close. | The close may be the best point in the interval, not the worst. |
+| **Forced exit** | Exit at the **worst** of the bar high/low in the adverse direction plus an additional slippage charge. | Forced exits are not patient executions. |
+| **No trade in the bar** | Treat the order as **unfilled** for that bar; do not infer a fill from a quote that was not traded. | A quote is not a fill. |
+
+**No guessed midpoint fills. No “every signal fills.”** The fallback is designed to overstate costs rather than understate them. If the strategy survives the conservative fallback, that is evidence; if it only survives midpoint assumptions, that is not evidence of executable advantage.
+
+### 7.3 What must be collected forward
+
+| Data item | Why it is needed | Minimum granularity |
+|---|---|---|
+| T0–T9 timestamps for every signal | Separate model, communication, human, broker and exchange delays | Event-level, with source clock |
+| Telegram delivery acknowledgement | Distinguish delivery latency from reading latency | Per message |
+| User reading/decision time | Calibrate T3–T4 distribution without look-ahead | Per signal (self-recorded is acceptable if honest) |
+| Broker order acknowledgement and exchange registration timestamps | Measure broker-side cutoff and queue effects | Per order |
+| Per-leg fill timestamps, prices and quantities | Measure partial fills, unhedged intervals and slippage | Per fill |
+| Bid/ask at T4/T5 for both legs | Revalidation evidence; no midpoint assumption | Best bid/ask plus depth if available |
+| Session/clearing calendar and broker holiday notices | Avoid false “market open” assumptions | Dated calendar |
+| Margin/free-funds snapshots | Test capital feasibility and rejection reasons | At signal and at fill |
+| LQDT marks and cash flows at the same timestamps | Matched counterfactual | Same valuation times |
+
+---
+
+## 8. Signal/order/portfolio lifecycle and reason-code taxonomy
+
+### 8.1 Lifecycle states
+
+```
+CREATED → DELIVERED → READ → DECIDED → SUBMITTED → ACCEPTED → REGISTERED
+   → PARTIAL_FILL → HEDGED / UNHEDGED → CLOSED
+   ↘ EXPIRED
+   ↘ REJECTED (reason code)
+   ↘ CANCELLED (residual)
+   ↘ ABORTED (hedge failure)
+```
+
+Every transition records a timestamp, the actor (model, Telegram, user, broker, exchange) and the reason code.
+
+### 8.2 Reason-code taxonomy
+
+| Code | Meaning | Typical evidence |
+|---|---|---|
+| `MARKET_CLOSED` | Instrument not in an active trading period; clearing window or holiday. | Session calendar, exchange notices. |
+| `BROKER_CUTOFF` | VTB does not accept the order at T5 (e.g., within 15 minutes of session end for telephone orders). | VTB regulation. |
+| `STALE_DATA` | T0 older than the permitted input age; a fresh T3 does not reset T0. | Data timestamp audit. |
+| `SIGNAL_EXPIRED` | T4 > signal expiry. | Signal record. |
+| `NO_NET_ADVANTAGE` | Revalidated executable net advantage ≤ LQDT threshold after costs. | Revalidation calculation. |
+| `PRICE_INVALIDATED` | Executable price worse than the signal’s worse-case bound. | Quote snapshot. |
+| `DEPTH_INSUFFICIENT` | Visible depth insufficient for the minimum executable quantity. | Quote/depth snapshot. |
+| `LOT_VIOLATION` | Quantity not a multiple of the minimum lot. | Contract specification. |
+| `DELIVERY_RESTRICTION` | Contract in a period that prohibits opening. | Official specification/notice. |
+| `INSUFFICIENT_FUNDS` | Stress-case margin plus buffer cannot be reserved. | Account snapshot. |
+| `OVERLAP_CONFLICT` | Another signal with higher deterministic priority has reserved the capital. | Portfolio ledger. |
+| `MODEL_INVALID` | Model outage, parameter freeze or regime invalid. | Model status log. |
+| `USER_DECLINED` | User explicitly decides not to act. | Decision record. |
+| `NO_DECISION` | User unavailable; signal expires without a decision. | T4 absent + expiry. |
+| `PARTIAL_FILL` | One leg filled less than intended; unhedged interval exists. | Fill record. |
+| `UNFILLED` | Order not filled within its validity. | Order status. |
+| `CANCELLED` | Residual order cancelled. | Cancellation record. |
+| `ABORTED` | Hedge could not be completed within bound; position closed. | Abort record and exit fill. |
+| `FUNDING_APPROVAL_ABSENT` | Additional funding would have been needed but was not approved. | Funding ledger. |
+
+---
+
+## 9. Hypothetical examples
+
+These are **illustrative constructions**, not results from a backtest or from the user’s account. Numbers are round and deliberately simple; they are not forecasts.
+
+### 9.1 Stale winner (the signal was profitable at T2 but invalid at T4)
+
+- A spread signal is created at 14:00 (T2) with a net advantage of 0.30% over LQDT after costs. Telegram delivers at 14:01 (T3). The user reads at 14:18 (T4).
+- At T4, the bid/ask on the far leg has widened from 1 tick to 4 ticks, and the revalidated net advantage is **−0.05%**. The signal is **invalid** (`NO_NET_ADVANTAGE`). The user does not trade.
+- The model later shows that the spread did revert and the original signal would have been profitable. **That is irrelevant to the evaluation**: the portfolio correctly rejected a stale signal. Counting the hypothetical profit would be look-ahead bias.
+
+### 9.2 Missed opportunity (the signal expired before the user could act)
+
+- A signal is created at 18:40 (T2) with expiry at 19:10 (T2 + 30 minutes). Telegram delivery is delayed to 18:55 because of a notification retry. The user reads at 19:20.
+- At T4, the signal has expired (`SIGNAL_EXPIRED`). The user does **not** receive a “second chance” based on the same T2. If the model still sees an opportunity, it must create a **new signal** with a new T0 and T2 on fresh data. The portfolio records a missed opportunity, not a fill.
+
+### 9.3 Simultaneous signals competing for cash
+
+- Two signals, A and B, are created at the same T2. The deterministic priority rule is earlier T2, then higher revalidated net advantage. A has a slightly higher net advantage. The stress-case margin for A plus buffer uses 70% of free funds; B would require another 60%. B is rejected with `OVERLAP_CONFLICT` or `INSUFFICIENT_FUNDS`.
+- If A later expires unfilled, B is **not** automatically revived. Its capital reservation was released at expiry, and it would need a new revalidation and a new reservation. This prevents a rejected signal from becoming a “free option” later.
+
+### 9.4 One-leg fill (partial execution and unhedged interval)
+
+- The user submits the far leg first (less liquid) as a limit order for 2 lots. It fills 1 lot at T7. The near leg is submitted immediately but fills only 1 lot after 90 seconds; the second lot remains unfilled because the price moved.
+- The portfolio records a **1-lot unhedged position** during the 90-second interval. The unhedged leg is marked at the worst adverse price in the interval. The second lot is either hedged at a worse price or the residual is closed (`ABORTED`). The cost of the abort is charged to the strategy.
+- A partial fill is **not** a clean cancellation. The unhedged exposure is real.
+
+### 9.5 Margin escalation (margin requirement rises after the first leg)
+
+- The first leg fills, and the exchange increases the guarantee provision for the far contract because of a volatility adjustment. The stress-case margin reserved at T2 was based on the pre-fill parameter. The broker’s free-funds check at T5 may already have passed, but the post-fill margin is higher.
+- If the free funds after the first leg are insufficient to hold the second leg, the hedge is at risk. The portfolio records `INSUFFICIENT_FUNDS` for the hedge and either reduces the position or aborts it. The stress buffer must be sized to cover this escalation; the 5,000 RUB heuristic is a **test candidate**, not a validated requirement.
+
+### 9.6 Notification retry (the same signal is re-delivered)
+
+- Telegram retries the same signal at 14:05 and 14:10 because of a delivery failure. The user sees three messages. The portfolio treats them as **one signal record**. A retry does **not** create another trade, does not reset expiry and does not reset the capital reservation. If the user acts on the third retry, it is still the original signal, subject to the original T0 and expiry.
+
+---
+
+## 10. Signal communication: idea-level signals versus order instructions
+
+The signal message should communicate the **economic idea and its uncertainty**, not just two prices. It must be readable on a phone and must not imply a win probability that the model cannot support.
+
+### 10.1 Required content
+
+| Field | Content | Why |
+|---|---|---|
+| **Idea** | Economic rationale in one or two sentences; why the spread should converge/divergence. | The user must be able to reject an idea they do not understand. |
+| **Legs and quantities** | Both contract codes, direction and quantity per leg; minimum lot multiple. | Prevents leg confusion and lot errors. |
+| **Expected net effect** | Expected net advantage **after** estimated bid/ask, commissions, fees and funding, expressed as a range and with the LQDT comparison. | The user sees the executable economics, not a gross spread. |
+| **Risk and holding uncertainty** | Maximum planned loss, stress loss, expected holding period range, unhedged-leg risk. | The user must know what can go wrong and how long capital is tied up. |
+| **Evidence confidence** | Source of the signal, data vintage (T0), sample size or model regime, and explicit **no invented win probability**. | Confidence is not a probability of profit. |
+| **Executable bounds** | Worse-case entry prices for each leg, maximum acceptable slippage, depth requirement. | The user knows when to walk away. |
+| **Age and freshness** | T0, T2, expiry, and a statement that a fresh Telegram timestamp does **not** refresh the market data. | Prevents stale execution. |
+| **“Do not enter if…”** | Market closed, stale data, price outside bounds, insufficient funds, margin escalation, model invalid, overlap conflict. | Gives the user a checklist, not just a direction. |
+| **Order instruction vs idea** | A clear separation: “this is an idea; if you choose to act, the order instruction is …” | The idea can be discussed without implying that an order has been placed. |
+
+### 10.2 What the message must not do
+
+- It must not present a single “target price” as a promise.
+- It must not present a win rate or probability that is not supported by out-of-sample evidence.
+- It must not hide the unhedged-leg risk in the leg-by-leg case.
+- It must not say “enter now” without the revalidation checklist.
+- It must not treat a notification retry as a new opportunity.
+
+---
+
+## 11. Manual-action burden metrics and the open “daily trade” question
+
+### 11.1 Metrics to record
+
+| Metric | Definition | Use |
+|---|---|---|
+| **Signals per day** | Eligible signals created (T2). | Workload volume. |
+| **Delivered signals per day** | Signals that reach Telegram (T3). | Communication load. |
+| **Read signals per day** | Signals opened/read (T4). | Attention load. |
+| **Decisions per day** | Signals acted on or explicitly declined. | Decision burden. |
+| **Orders per day** | Orders submitted (T5). | Execution workload. |
+| **Legs per order** | 1 or 2 depending on atomic vs leg-by-leg. | Execution complexity. |
+| **Unhedged intervals per day** | Count and duration. | Risk exposure. |
+| **Aborts per day** | Count and cost. | Failure burden. |
+| **Rejections per day by reason** | Reason-code distribution. | Where the process fails. |
+| **Notification retries per signal** | Retry count. | Communication reliability. |
+| **Time-on-task per signal** | T3 to T8, or T3 to decision. | Human time cost. |
+
+### 11.2 The open question: what does one daily “trade” mean?
+
+The inputs explicitly state that whether a daily “trade” means an **idea, an order or an intervention** is unknown. This report does **not** assert a user quota. It proposes three separate default definitions for later requirements:
+
+1. **Idea-level default:** one “trade” = one **signal** that the user reads and decides on. A signal with two legs is one idea, not two trades. A retry is not a new trade.
+2. **Order-level default:** one “trade” = one **order submission** (including a two-leg atomic order as one order; leg-by-leg as two orders). This measures execution workload, not idea workload.
+3. **Intervention-level default:** one “trade” = one **manual intervention** that changes risk (entry, hedge, abort, exit). A risk exit is an intervention but does not consume a new-idea quota.
+
+**Recommendation for later requirements:** report all three metrics separately. Do not collapse them into a single “daily trade” number until the user defines which one is the constraint. A quota on ideas is not a quota on interventions, and a quota on orders is not a quota on risk exits.
+
+---
+
+## 12. Harris chapters requested and how they connect
+
+The report requests, if available, **Chapter 4 “Orders and Order Properties”** and **Chapter 6 “Order-Driven Market Mechanisms”** from Harris, *Trading and Exchanges: Market Microstructure for Practitioners* (Oxford University Press, 2002).
+
+**Connection, without blind transfer:**
+
+- **Ch. 4** explains why order type is a **property bundle** (price, quantity, time-in-force, execution conditions, exposure). A “market order” is not a generic “fill” instruction; it is an instruction with a price exposure property. This directly explains why the virtual portfolio cannot assume a market order fills at the signal price, and why a limit order’s partial-fill property creates unhedged risk.
+- **Ch. 6** explains order-driven market mechanisms, price priority, time precedence and the queue. In a leg-by-leg execution, the queue position of the less liquid leg determines whether the hedge is feasible. The MOEX calendar-spread atomic instrument is a **market structure** that changes the queue and exposure properties; whether VTB exposes it is a broker-specific question, not an exchange-level assumption.
+- **Limits of transfer:** Harris’s institutional detail is not a substitute for MOEX/VTB rules. The book provides concepts (order properties, exposure, queue), not MOEX session times, VTB cutoffs or Russian clearing rules. The report uses the book for microstructure reasoning, not for factual claims about MOEX.
+
+---
+
+## 13. Material conflicts and unknowns
+
+| Conflict / unknown | Status | Effect on conclusions |
+|---|---|---|
+| R01/R02/R04/R06/R07/R09/R05 not supplied | **Unknown** | All cost, margin, universe, validation and benchmark conclusions are conditional. |
+| Whether VTB exposes MOEX calendar-spread instruments atomically | **Unknown** | Two-leg model must include both atomic and leg-by-leg cases; leg risk cannot be assumed away. |
+| Actual delay distribution | **Unknown**; only range/median given | Scenarios S1–S5 are plausible constructions, not calibrated facts. |
+| Whether the user’s Telegram delivery and read times can be recorded | **Unknown** | Forward calibration depends on self-recorded timestamps; if unavailable, delay remains a scenario assumption. |
+| Broker holiday/early-close schedule | **Not supplied** | Session filter may be incomplete; dated VTB notices are required. |
+| KPUR recognition and collateral consequences | **Unverified** | No conclusion about broker collateral eligibility or liquidation is made. |
+| Tax treatment of LQDT and spread P&L | **Unknown** | Tax sensitivity must be shown separately; no after-tax conclusion is asserted. |
+| “Daily trade” definition | **Open** | Three separate metrics proposed; no quota asserted. |
+| Whether 5,000 RUB stress buffer and 50% starting-margin use are sufficient | **Unvalidated** | Labelled as test candidates, not approved requirements. |
+| Whether MOEX price limits can gap through stop levels | **Plausible but not tested here** | Stop orders are not guaranteed; gap risk must be stressed. |
+
+---
+
+## 14. Falsification criteria for the delayed-execution hypothesis
+
+The hypothesis “the strategy retains a net advantage over matched LQDT after realistic delayed manual execution” is falsified if any of the following occurs in a properly specified evaluation:
+
+1. **After charging bid/ask, commissions, fees, funding and conservative slippage**, the distribution of `X` has a median ≤ 0 over the evaluation period.
+2. **The worst-case delay scenario (S4 or calibrated tail)** produces `X ≤ −10,000` or `D ≥ 10,000` without a plausible recovery path under the entry rules.
+3. **The leg-by-leg case** produces unhedged-interval losses that, aggregated, erase the spread edge even when the atomic case is positive. This would mean the strategy is conditional on atomic execution that is not proved.
+4. **A significant fraction of signals** are rejected for `STALE_DATA`, `SIGNAL_EXPIRED`, `NO_NET_ADVANTAGE` or `INSUFFICIENT_FUNDS`, so that the attempted portfolio is not actually attempting the strategy.
+5. **The conservative OHLCV fallback** reverses the sign of the result compared with a midpoint-fill assumption. This would show that the apparent edge is an artifact of optimistic fills.
+6. **The matched LQDT counterfactual** outperforms the strategy after the same external flows and costs, including in the scenarios where the strategy is positive.
+
+If none of these occurs, the result is **not proof of live feasibility**; it is evidence that the strategy survives the specified delayed-fill stress. Live feasibility still requires R01/R02/R04/R06/R07/R09/R05, broker confirmations, account checks and a separate production gate.
+
+---
+
+## 15. Possible project changes implied by this investigation
+
+1. **Add a timestamp audit to the signal pipeline before any backtest.** Without T0/T2/T3/T4/T5–T8 records, the delay model cannot be calibrated and the evaluation remains a scenario exercise.
+2. **Confirm with VTB whether the MOEX calendar-spread instrument is available atomically** in the retail order path. If not, the leg-by-leg model is mandatory and the unhedged-risk budget must be explicit.
+3. **Build a session/clearing calendar** from dated MOEX and VTB notices, including the 23:50–00:30 clearing window and the T+1 20:00 settlement. Do not use a generic “market open” flag.
+4. **Replace the 5,000 RUB stress buffer and 50% margin-use hypothesis with calibrated values** once R07 and actual margin data are available. Until then, label them as test candidates.
+5. **Define the “daily trade” metric explicitly** before setting any user quota. The three-metric proposal in §11 is a starting point, not a decision.
+6. **Record Telegram retries separately** and ensure that retries do not create new trades or reset expiry.
+7. **Do not claim backtest results, fill results or performance measurements** until the forward data collection in §7.3 has actually been performed. This report contains no such claims.
+
+---
+
+## 16. Summary of conclusions
+
+1. **Timestamps must be separated into at least ten lifecycle events.** A single “delay” number conflates model latency, communication latency, human decision, broker acceptance and exchange execution. T0 (market input) is not refreshed by T3 (Telegram delivery).
+2. **The 3–90 minute range with a 5–15 minute median is compatible with several plausible scenarios**, but the distribution is unknown. Delay should be modelled with positive correlation to volatility and illiquidity, and calibrated forward without look-ahead.
+3. **MOEX session and clearing rules materially constrain delayed manual execution.** The unified session runs 08:50–23:50 (extended to 06:50–23:50 from 14.07.2026), with clearing 23:50–00:30 and T+1 settlement at 20:00. VTB’s public regulation imposes a 15-minute cut-off for telephone orders before session end. These are separate from the user’s reaction time.
+4. **Revalidation after delay is mandatory and must use executable prices.** Signal-time advantage is not executable advantage. Stale data, price invalidation, net-advantage failure, insufficient funds and session closure are distinct rejection reasons.
+5. **Two-leg execution is not automatically atomic.** MOEX supports calendar-spread composite instruments, but whether VTB exposes them atomically to the retail user is unproven. The virtual portfolio must model partial fills, unhedged intervals and abort costs.
+6. **The virtual portfolio must attempt every eligible signal, reserve finite capital, use deterministic priority, and record stale/rejected/unfilled/partial outcomes.** It must not assume emergency funding, repeated notification as a new trade, or clean cancellation of partial fills.
+7. **A conservative OHLCV fallback must overstate costs, not understate them.** No guessed midpoint fills and no “every signal fills” shortcut.
+8. **Signal communication must separate idea-level signals from order instructions** and must include executable bounds, age, expiry and “do not enter if…” conditions, without invented win probabilities.
+9. **The “daily trade” question remains open.** Three separate metrics (idea, order, intervention) are proposed; no quota is asserted.
+10. **All conclusions are conditional on the missing R-series reports and broker confirmations.** No backtest, account check, legal verification or performance measurement was performed.

@@ -1,0 +1,626 @@
+# R14 — Optional text/news, library and channel evidence
+
+**Decision question.** Which text sources/features could add *verifiable* value beyond existing prices and formally disclosed dated events, using a small free Gemini Flash allowance, without future leakage or reliance on promotional commentary?
+
+**Prepared:** 2026-10-22 (Europe/Moscow). The brief states a pack preparation date of 2026-10-07; all live checks below were made on 2026-10-22 between 14:09 and 14:16 UTC. **Status:** independent public-source work. No repository, no prior reports, no attachments, no channel export, no Gemini API key, no quota, no trades, no backtests and no account checks were available or performed. Numerical statements about latency, edit fields and archive depth are measurements on bounded samples described in §6; they are not population estimates.
+
+**Evidence legend used throughout:** **[R]** read directly and content inspected; **[S]** seen only through a search-result snippet; **[K]** standard bibliographic reference not re-verified today; **[X]** attempted and failed/blocked; **[P]** proposed, not verified.
+
+---
+
+## 0. Inputs and what was actually read
+
+| Input | Status | Consequence |
+|---|---|---|
+| This brief | Read in full. | Defines the question, baselines and validation skeleton. |
+| Separate brief / agent-instruction / policy file | None supplied; none assumed. | This document is self-contained. |
+| Prior Rxx reports | None supplied. | No dependent conclusion is inherited; none is claimed. |
+| Channel export / transcripts | None supplied; none assumed. | No channel backtest is possible or attempted. |
+| Gemini key / model / quota | None supplied; no API call made. | Quota, latency and data-use statements below are documentary, not measured. |
+| Live public sources (MOEX ISS/RSS, CBR site/RSS/Telegram, NCC, Gemini docs) | Read on 2026-10-22. | Evidence is current to that date only. |
+
+**Not done:** no backtest, no paper trading, no account or broker check, no legal review, no API benchmarking, no ASR/transcription, no paid data, no attempts to bypass authentication, paywalls or bot protection. Missing dependencies make value claims conditional; they do not prevent the source assessment below. **No measured text value is claimed anywhere in this report**: quantitative statements are either source properties (timestamps, counts, terms) or arithmetic identities (margin ratios, power calculations).
+
+---
+
+## 1. Executive answer
+
+**One-sentence answer:** none of the sampled text streams is a plausible source of verifiable *return* value at this scale; the only testable use is structured extraction of official decisions and effective dates, benchmarked against a deterministic parser, and it should be rejected unless it changes a decision.
+
+1. **No text source in scope passes a pre-test plausibility screen for return prediction at this pilot's scale.** The two structural facts are:
+   - the official Russian streams that matter are either *post-hoc notifications of numeric changes already available in ISS* — measured median lag **0.5 min** after the stated event time (§6, M5) — or *scheduled releases* whose decision number is public at **13:30 MSK** and mirrored to Telegram **14 seconds later** (§6, M6);
+   - at RUB 30,000 with integer contracts, the pilot trades **1–2 lots** (MXZ6 initial margin RUB 28,833.42 = 96.1% of the allocation; SiZ6 RUB 13,172.91), so a small text edge cannot be statistically distinguished from noise within the pilot (§2.3).
+2. **The only defensible use of a small free Gemini allowance is structured extraction**, not opinion generation: turn official documents into an as-of table of decisions, effective dates, parameter names and old/new values, and benchmark it against a deterministic parser. Its success metric is extraction accuracy and decision-change rate, not profit prediction.
+3. **The only feature family with a plausible (not demonstrated) path is pre-announced rule/parameter changes with effective dates** from NCC/MOEX documents, used as an *execution-risk* flag (margin, schedules, contract parameters). The only genuine lead-time stream in the sampled RSS feeds is the MOEX derivatives technical notice feed: a release effective **30 November 2026**, announced **22 October 2026** (cat=107), i.e. 39 days of lead time, but no price-relevant content.
+4. **Historical channel testing is not defensible.** Public Telegram previews expose ~15 recent posts, no edit history and no prior text of edited messages; an export contains only the current version. ISS does expose a long archive (2013→2026), but its `modified_at` field cannot be used as an edit proxy: in a 300-item sample, 26.3% of records have `modified_at` *earlier* than `published_at`, 22.7% exactly three hours earlier (§6, M4).
+5. **The pilot is underpowered for small effects.** A two-group comparison needs ≈32/(Δ/σ)² trades: ~126 trades for a 0.5σ effect (≈10–29 months at 1–3 trades/week) and ~502 for 0.25σ (§2.3). A correlation measured on many daily observations does not substitute for this.
+
+**Default recommendation.** Do not add text to the trading pilot. Spend one bounded, zero-trading week on a *Gemini-versus-regex extraction benchmark* over CBR/MOEX/NCC documents. Reject the extension unless it changes at least one decision and passes every rejection criterion in §8.6.
+
+---
+
+## 2. Decision frame and arithmetic
+
+### 2.1 What "value" has to mean here
+
+The primary metric is **net RUB excess over the matched LQDT counterfactual with identical external flows**, after per-contract fee/spread/slippage under conservative/base/stress scenarios, with 3–90-minute signal-to-action delay. A text feature therefore has to change a *position decision* after costs; a correlation with future returns that never flips a position has zero value by construction.
+
+**Illustrative hurdle.** At RUB 30,000 and a 14% money-market yield for 90 days: 30,000 × 0.14 × 90/365 = **RUB 1,035.62**. The 14% figure is the Bank of Russia key rate as of the 11 September 2026 decision ([CBR key-rate page](https://www.cbr.ru/press/keypr/), accessed 2026-10-22) [R]; the actual LQDT yield is not measured here and must be taken from the fund's own data. This hurdle is small relative to futures P&L noise; the binding constraint is signal-to-noise and statistical power, not the hurdle itself.
+
+### 2.2 Integer-contract granularity
+
+From the live ISS futures security records on 2026-10-22 [R]:
+
+| Contract | Initial margin, RUB | Min step / step price | Lot | Previous settle | Margin ÷ RUB 30,000 |
+|---|---:|---|---:|---:|---:|
+| MXZ6 (MIX‑12.26) | 28,833.42 | 25 / 25 | 1 | 246,425 | **96.1%** → 1 contract |
+| SiZ6 (Si‑12.26) | 13,172.91 | 1 / 1 | 1,000 | 82,516 | **43.9%** → 2 contracts = 87.8% |
+
+Sources: `https://iss.moex.com/iss/engines/futures/markets/forts/securities/MXZ6.json?iss.meta=off` and `.../SiZ6.json` [R]. A calendar spread may receive margin netting at the clearing house; the netted requirement and the broker's actual collateral rules were **not** verified and are flagged as an unknown. Even with netting, the position is quantised in single contracts: a text signal can at most flip one or two lots.
+
+### 2.3 Power arithmetic
+
+For a two-group comparison of per-trade P&L with equal variances, two-sided α = 0.05 and 80% power, total n ≈ 2·(1.96+0.84)²/(Δ/σ)² ≈ **32/(Δ/σ)²**. Pairing (same signal, with and without the text filter) can reduce the required n, but the reduction is unknown and cannot be assumed.
+
+| Effect size Δ/σ per trade | Approx. total trades | Time at 1 trade/week | Time at 3 trades/week |
+|---:|---:|---:|---:|
+| 1.0 | 32 | 7 months | 2.5 months |
+| 0.5 | 126 | 29 months | 10 months |
+| 0.25 | 502 | 9.7 years | 3.2 years |
+| 0.10 | 3,140 | 60 years | 20 years |
+
+Assumptions: i.i.d. normal trade outcomes, no regime clustering, no multiple testing. Clustering and regime dependence make this optimistic. **Implication:** only a large, decision-changing text effect is verifiable in a 90-day pilot; a genuine but small effect is indistinguishable from noise and should be rejected as *unverifiable*, not declared false.
+
+### 2.4 What would make text worth testing anyway
+
+Only two situations: (a) the text is the *only* way to learn an operational fact that affects execution (margin change, schedule change, contract parameter change), or (b) the text stream is genuinely pre-announced and slow-moving (consultation papers, rule drafts) so that the market has not already priced it. Neither is a return-prediction claim.
+
+### 2.5 Why a spread is a harder text target than an outright
+
+- A calendar spread's P&L is second-order in the common factor: news that moves the whole curve (a rate decision, a sanctions headline, a macro surprise) largely cancels between the legs.
+- The remaining spread drivers are numeric and scheduled: carry, convenience yield, storage, financing, margin and roll dates. These are already in price and contract data, not in prose.
+- A text feature would therefore have to predict a *relative* move — asset-specific supply/demand or a financing/margin change — and those are precisely the events that are published as numbers or effective dates (H2–H4), not as sentiment.
+
+This is the main reason the ranking in §3–§4 puts operational extraction above language modelling.
+
+---
+
+## 3. Ranked source table
+
+Ranking is by *decision relevance per unit of evidence risk*, not by volume. "Baseline overlap" answers: what simpler reference would already capture most of this?
+
+| # | Source (verified) | Provenance / incentive | Licence / terms | Historical availability | Timestamps and edits | Baseline overlap | Verdict |
+|---|---|---|---|---|---|---|---|
+| **S1** | **MOEX ISS `sitenews` + official news RSS** — `iss.moex.com/iss/sitenews`; `moex.com/export/news.aspx?cat=…` | Exchange; official operational notices plus promotional exchange news | Site User Agreement restricts non-commercial use and "technological extraction"; ISS delayed data free, real-time by subscription; separate data-contract terms **not verified** | **2013-02→2026-10** via ISS `start=` pagination (~62,000–65,000 retrievable items); RSS only **51 days** (1,197 items) | `published_at` ≈ MSK, corroborated by RSS +0300 and the site display; `modified_at` **unreliable** (3-hour anomalies) | ISS numeric fields (`HIGHLIMIT`, `LOWLIMIT`, `INITIALMARGIN`, `LASTSETTLEPRICE`) and title keywords | Use as archive + operational monitor. **Not an alpha source.** |
+| **S2** | **Bank of Russia press releases / key-rate page / RSS / Telegram** — `cbr.ru/press/keypr/`, `cbr.ru/rss/RssPress`, `t.me/centralbank_russia` | Regulator; policy communication and financial-stability messaging | Press materials with attribution: "При использовании материала ссылка на Пресс-службу Банка России обязательна" | Press archive retrievable by URL/ID; RSS snapshot 13 items; Telegram preview ~15 posts per page | Scheduled release **13:30 MSK**; page-level "last update" ISO; Telegram post **13:30:14 MSK** | Deterministic event flag at 13:30 + the decision number and change | Scheduled event flags dominate. Guidance tone is untestable at ~8 meetings/year. |
+| **S3** | **NCC (clearing centre) normative documents** — `nationalclearingcentre.ru/catalog/0302/281`, `/catalog/0202` | Central counterparty; risk-management mandate | Public documents; reuse terms **not verified** | Versioned documents with effective dates and prior versions | **Effective dates**, not publication times; no event feed observed | Document version table with effective dates | Deterministic parser. Gemini only for extracting tables/dates from PDFs. |
+| **S4** | **MOEX derivatives technical notices** — RSS `cat=107` | Exchange; operational | As S1 | 32 items in 51 days; 39-day lead time in the example | `pubDate` +0300; effective date in body | Deterministic calendar | Execution-risk flag only. |
+| **S5** | **Official Telegram channels** — `t.me/centralbank_russia`, `t.me/MoscowExchangeOfficial` | Regulator / exchange; mirrors and marketing | Telegram public preview; no edit history; reuse of channel content governed by Telegram/copyright | ~15 recent posts; paging back only weeks | UTC in preview; mirrors website | Same as S1/S2 | Not independent. Useful only to measure mirror latency and duplication. |
+| **S6** | **Broker channels** — `t.me/bankvtb` (verified from vtb.ru); BCS **not verified** (bot-protected) | Broker; sells products that compete with the pilot (deposit at 14%) | Promotional; copyright | 12 posts in the sampled week | UTC; editing not exposed | None | **Reject.** Conflict of interest, no technical content. |
+| **S7** | **Media / aggregators** (Interfax, RBC, Vedomosti, etc.) | Commercial media; speed and clicks | Paywall/copyright; not primary | Varies | Secondary timestamps | Mostly secondary; often syndicates S1/S2 | **Reject as primary.** Only for cross-checking syndication. |
+| **S8** | **Promotional Telegram / YouTube commentary** | Anonymous or commercial; audience capture | Unclear; edited/deleted at will | Current text only; survivorship | No verifiable timestamps; no transcripts without ASR | None | **Excluded by design.** |
+| **S9** | **Corporate disclosure portal e-disclosure.ru** | Issuer disclosures (out of scope for this task) | Bot-protected; terms unknown | — | — | Already a separate input stream | **Out of scope**, and inaccessible [X]. |
+
+**Licensing detail (S1), quoted from the MOEX User Agreement** (`https://fs.moex.com/f/3499/agreement.pdf`, retrieved 2026-10-22) [R]:
+
+- §3.2.2: "Пользователь вправе использовать Информацию исключительно в личных/служебных некоммерческих целях, которые не связаны с извлечением прибыли…"
+- §3.2.4: "Пользователь не вправе совершать какие-либо действия, направленные на технологическое извлечение или копирование Информации с Сайта в обход средств доступа…"
+- §3.2.5: "Запрещается использование Пользователем Информации с целью извлечения прибыли, за исключением случая, когда получение Информации осуществляется на основании договора…"
+- §4.1: reproduction/redistribution of protected materials requires prior written permission.
+
+This is a **material unresolved conflict**: the ISS is publicly reachable and offers delayed data for free, but the website agreement restricts profit-related use and technological extraction. Do not treat "free access" as permission for automated, profit-oriented use. The separate ISS/market-data contract terms were **not** read and are a gating unknown (§11).
+
+---
+
+## 4. Ranked hypothesis / feature table
+
+| # | Hypothesis (feature) | Mechanism and target | Data volume | Baseline that may already capture it | Falsifiable prediction | Verdict |
+|---|---|---|---|---|---|---|
+| **H1** | CBR guidance-tone shift between meetings (hawkish/dovish phrasing) | Forward guidance moves the short end of the OFZ curve and RUON/OFZ spreads over days | ~8 meetings/year; ~100 releases 2013–2026 | Decision number + change; a small fixed phrase list (e.g., 5–10 phrases) | Incremental net RUB > 0 vs the decision-only baseline over the next 8 meetings, prospective | **Reject as return predictor** (power, contamination). Descriptive only. |
+| **H2** | MOEX/NCC risk-parameter change notification | Margin/price-corridor changes force deleveraging; spread widens | 20 notices/51 days (cat 113); 281 (cat 122) | ISS `HIGHLIMIT`/`LOWLIMIT` and margin data | Text notice precedes ISS numeric change by ≥1 min | **Reject as alpha.** The notice follows the change (median 0.5 min) and duplicates ISS. |
+| **H3** | Futures settlement/expiry price notices | Roll/calendar-spread execution around expiry | 53 notices/51 days (cat 112) | `LASTSETTLEPRICE` in ISS | Text gives the settlement price before ISS | **Reject.** Published after expiry; duplicates ISS. |
+| **H4** | Derivatives schedule / technical notices | Avoid trading during outages/releases; schedule rolls | 32 notices/51 days (cat 107) | MOEX calendar; deterministic keywords | A schedule change causes a measurable execution loss if ignored | **Keep as a deterministic operational flag**, not as a signal. |
+| **H5** | Broker margin/risk alerts | Broker-specific forced liquidation | VTB channel: none in 12 posts; BCS blocked | Broker terminal/notices | Broker alert precedes margin call | **Unverified.** Do not rely. |
+| **H6** | Sanctions / regulatory shock detection from foreign official sources | FX and index jumps | Episodic; foreign-language | Price gap itself, official sanctions lists | Text detection beats a 3–90-min human reaction | **Reject for this pilot.** Reaction is faster than the human loop; no licensed timestamped feed verified. |
+| **H7** | Analytical bulletins ("О чем говорят тренды", DKP report) | Macro narrative shifts rate expectations | ~8/year | Scheduled calendar + rates data | Bulletin tone predicts next-meeting decision or spread | **Reject.** Scheduled, narrative, high contamination, overlaps H1. |
+| **H8** | News volume/novelty from MOEX sitenews | Attention/volatility proxy | ~23 items/day | Simple counts; deterministic | Volume predicts spread volatility after controls | **Cheap baseline test only**; low prior. |
+| **H9** | Promotional Telegram/YouTube sentiment | Crowd positioning | Very large, unverifiable | None | Sentiment predicts returns | **Excluded without testing** (conflict of interest, edits, survivorship). |
+
+**Cross-reference.** S1 feeds H2/H3/H4/H8; S2 feeds H1/H7; S3 feeds H4; S4 feeds H4; S5 only mirrors S1/S2; S6 maps to H5 but is unverified; S8 maps to H9 and is excluded.
+
+**Feature-family conclusion.** The only family that survives the screen is *structured extraction of pre-announced parameter/rule changes* (H4, parts of H2/H3 as operational facts). That is an extraction and calendar problem, not a language-understanding problem. A Gemini model can help only where a regex/HTML parser fails (scanned PDFs, tables, heterogeneous wording), and only if it beats that parser on identical documents.
+
+---
+
+## 5. Evidence dossier
+
+### 5.0 Provenance classification (facts vs forecasts vs opinion)
+
+| Source | Type of content | Fact / forecast / opinion | Correction and revision policy observed |
+|---|---|---|---|
+| MOEX ISS notices | Operational decisions, parameters, schedules | **Fact** | `modified_at` exists but is unreliable; no errata feed observed |
+| MOEX press releases | Exchange results, listings, contests | **Fact + promotional** | Page-level edits; not tracked |
+| CBR press releases | Rate decisions, regulatory decisions, guidance | **Fact + forward-looking guidance** | Page-level "last update"; no errata feed observed |
+| CBR bulletins | Macro analysis and interpretation | **Analysis / opinion** | Page updated later |
+| NCC documents | Clearing rules, methodologies | **Normative fact** | Versioned with effective dates and prior versions |
+| Broker Telegram | Product marketing | **Promotional opinion** | Editable, no history |
+| Media | Secondary reporting | **Mixed** | Editorial updates; not a primary record |
+
+The practical rule: **use only the factual component** (decision, effective date, parameter value) as a feature; treat guidance and commentary as unverifiable opinion unless a pre-registered dictionary defines the phrase set.
+
+### 5.1 MOEX: ISS `sitenews` and the official RSS
+
+**Endpoints and fields (read 2026-10-22) [R]:**
+
+- `https://iss.moex.com/iss/sitenews.json?iss.meta=off` returns columns `id, tag, title, published_at, modified_at`. First row observed: `[105344, "site", "О порядке приобретения облигаций серии 001P-01 ООО \"РДВ Технолоджи\" с 23 октября 2026 г.", "2026-10-22 16:05:00", "2026-10-22 16:05:00"]`.
+- `https://iss.moex.com/iss/sitenews/105342.json?iss.meta=off` returns `id, title, published_at, body`; `body` is HTML. Example body begins: "Сообщаем вам об изменениях в системе срочного рынка, запланированных к внедрению **30 ноября 2026 года**."
+- Pagination: `?start=N`, 50 rows per page. `start=62000` returned items dated **2013-02-20**; `start=65000` returned an empty page. The retrievable archive is therefore roughly **February 2013 → October 2026**, or 62,000–65,000 retrievable items.
+- The official RSS `https://www.moex.com/export/news.aspx?cat=100&lang=ru` returned **1,197 items**, newest `Thu, 22 Oct 2026 16:05:00 +0300`, oldest `Tue, 01 Sep 2026 08:52:26 +0300`; `lastBuildDate` was `Thu, 22 Oct 2026 17:09:41 +0300`. The RSS carries full HTML in `<content:encoded>`, but this snapshot spanned only **51 days**: it is a rolling feed, not an archive.
+
+**Category composition (RSS counts in that 51-day window) [R]:**
+
+| `cat` | Items | Newest item (abridged) | Relevance to futures spreads |
+|---|---:|---|---|
+| 100 | 1,197 | Bond purchase procedure (RDB Technology) | Default "all news"; dominated by bond/deposit notices |
+| 104 | 346 | Start of trading in securities | Low |
+| 106 | 47 | Listing anniversary | None |
+| 107 | 32 | "Плановый релиз системы срочного рынка – версия ТКС Spectra 9.12" | Operational only |
+| 108 | 35 | Index values after the main session | Duplicates index data |
+| 109 | 6 | Expert RA commentary | Promotional/opinion |
+| 111 | 528 | Same newest item as cat=100 | Bond/placement subset; mapping unverified |
+| 112 | 53 | "Определена цена исполнения WTI-10.26" | Settlement price; duplicates ISS |
+| 113 | 20 | "19.10.2026, 10-32 (мск) изменены значения нижней границы ценового коридора…" | FX/metals risk parameters; duplicates NCC/ISS |
+| 114 | 116 | Deposit auction notice | None |
+| 120 | 2 | Monthly trading results | None |
+| 122 | 281 | "22.10.2026, 10-36 (мск) изменены значения верхней границы ценового коридора…" | Stock/REPO risk parameters; not the futures spread itself |
+| 115, 117, 118, 125 | 0 | — | Empty in the sample |
+
+**Representative risk-parameter notice (cat=113, `https://www.moex.com/n105210`) [R]:**
+> "В соответствии с Методикой определения НКО НКЦ (АО) риск-параметров валютного рынка и рынка драгоценных металлов ПАО Московская Биржа **19.10.2026, 10-32 (мск)** изменены значения нижней границы ценового коридора…"
+
+`pubDate` for that item: `Mon, 19 Oct 2026 10:32:12 +0300`. The text announces a change that has *already happened*; it is a notification, not a pre-announcement.
+
+**Representative derivatives notice (cat=107, `https://www.moex.com/n105342`) [R]:**
+> "Сообщаем вам об изменениях в системе срочного рынка, запланированных к внедрению **30 ноября 2026 года**."
+> `pubDate`: `Thu, 22 Oct 2026 12:56:17 +0300`.
+
+This is the only stream in the sample with real lead time — but it is a technology/release notice, not a price-relevant fact.
+
+**Implication.** MOEX text is rich, official and archived, but it is **not incremental information** for the futures spread in the 3–90-minute window: the numerically meaningful notices are published simultaneously with (or after) the parameter change, and the same numbers are in ISS.
+
+### 5.2 Bank of Russia
+
+**Scheduled decision time is explicit [R].** The key-rate page `https://www.cbr.ru/press/keypr/` (11 September 2026 release) states:
+> "Время публикации пресс-релиза о решении Совета директоров Банка России и среднесрочного прогноза – **13:30 по московскому времени**."
+> "Следующее заседание … запланировано на **23 октября 2026 года**."
+
+The page also carries an ISO-format page-update stamp:
+> `Последнее обновление страницы: 2026-09-11T13:30:00`
+
+**URL pattern embeds the release time.** The English 2024 release is served at `https://www.cbr.ru/eng/press/pr/?file=26072024_133000Key_e.htm` and returns the headline "Bank of Russia increases the key rate by 200 bp to 18.00% p.a." [R]; the 2026 release at `...19062026_133000key_e.htm` returns "Bank of Russia cuts the key rate by 25 bp to 14.25% p.a." [R]. The `133000` encodes 13:30:00, consistent with the stated release time.
+
+**Telegram mirror is 14 seconds behind the scheduled time.** `https://t.me/centralbank_russia/3803` carries the text:
+> "🔑 Ключевая ставка — 14% Совет директоров Банка России 11 сентября 2026 года принял решение сохранить ключевую ставку на уровне 14% годовых…"
+
+with `<time datetime="2026-09-11T10:30:14+00:00">` = **13:30:14 MSK** [R]. The channel is linked from the CBR home page (`https://t.me/centralbank_russia`), and its title is "Банк России" [R].
+
+**Unscheduled releases also exist.** `https://t.me/centralbank_russia/3789` (2026-09-01T14:29:09Z = 17:29 MSK) reads "Банк России сохранил еще на полгода, до 9 марта 2027 года, ограничения на снятие наличной иностранной валюты…" [R]. Such releases are not in the meeting calendar, but they are published on the website and mirrored to Telegram (the exact website time was not measured for this item).
+
+**RSS.** `https://www.cbr.ru/rss/RssPress` returned **13 items** with `lastBuildDate Thu, 22 Oct 2026 04:51:00 +0300`; the description contains HTML and the link uses the legacy `?file=…` pattern [R]. This is a rolling feed, not an archive.
+
+**Analytical bulletins.** "О чем говорят тренды" releases are dated 14.10.2026, 15.07.2026, 09.06.2026, 16.04.2026, 12.03.2026, 03.02.2026, 09.12.2025 and 14.10.2025 in the pages observed [S]. The publication calendar warns: "В календарях публикаций официальной статистической и аналитической информации могут происходить изменения" [S]. These are scheduled, narrative documents with roughly monthly-to-quarterly frequency.
+
+**A caution on page edits.** A guessed legacy deep link for the February 2022 decision (`https://www.cbr.ru/press/pr/?file=28022022_090000key.htm`) returned HTTP 200 but a generic "Пресс-релиз" page whose only visible stamp was `Последнее обновление страницы: 12.09.2025` [R]. The lesson is not that CBR's archive is broken — 2024 and 2026 `?file=…_133000…` pages resolve correctly [R] — but that **HTTP 200 plus a page shell is not evidence of content**, and a later page-update stamp does not prove what was visible historically.
+
+**Implication.** The decision number is a scheduled, deterministic event at 13:30 MSK and is mirrored 14 seconds later. Any text model reading the release is racing a public number that is already in the price; the only potential incremental content is the guidance sentence, which occurs ~8 times a year.
+
+### 5.3 Telegram: identity, depth and editability
+
+| Channel | Identity verification | Sampled window and IDs | Content in sample | Edit history | Transcripts |
+|---|---|---|---|---|---|
+| `t.me/centralbank_russia` | Linked from `cbr.ru` home page; title "Банк России" [R] | 15 posts/page; paged back from 3873 (2026-10-12) to 3781 (2026-09-01) [R] | Key-rate posts, FX-restriction notices, bulletin promotions | **Not exposed**; public preview shows only current text | Text posts; no ASR needed |
+| `t.me/MoscowExchangeOfficial` | Linked from `moex.com`; bio "Канал крупнейшей биржи в России… Модератор канала: @moex_finuslugi" [R] | 14 posts, IDs 5239–5258, 2026-10-13→10-22 [R] | Listing anniversaries, contest, new fund, TV appearance, awards, educational posts on futures | **Not exposed** | Mostly text/images; video hosted externally |
+| `t.me/bankvtb` | Linked from `vtb.ru`; bio "Новости банка и не только. Официальный канал программы лояльности: @vtbvygoda" [R] | 12 posts, IDs 3863–3882, 2026-10-15→10-22 [R] | Deposit at "до 14% годовых на 2 месяца", Wildberries discount, Frank RG award, exhibition | **Not exposed** | Text/images |
+| BCS | `bcs-express.ru` and `bcs.ru` returned a JS challenge [X] | — | — | — | — |
+
+**What the sample shows.** The MOEX channel is a corporate-communications channel: post 5248 is an educational piece titled "Фьючерс на ключевую ставку: как заработать на изменении ключевой ставки" (2026-10-14T07:04:22Z), and 5257 is an award announcement (2026-10-21T13:30:01Z) [R]. In the sampled window it did **not** carry the `nXXXXX` operational notices; those live on `moex.com` and in the RSS. The VTB channel advertises a deposit at up to 14% — a product that competes directly with the LQDT counterfactual — and an award from Frank RG [R]. This is a direct conflict of interest for any "broker commentary" feature.
+
+**Editability.** The public preview HTML exposes the current text and a `<time datetime>` stamp but no prior version and, for the inspected post, no "edited" marker [R]. Telegram Desktop exports (MTProto) are generally documented to produce the current message text with IDs and dates; no public mechanism reconstructs edit history (not tested here) [K]. Therefore **a channel export cannot support a historical backtest of what a trader could have read at the time**.
+
+### 5.4 NCC (clearing centre)
+
+NCC publishes normative documents with explicit version lineage. On the guarantee methodology page `https://www.nationalclearingcentre.ru/catalog/0302/281` [S]:
+> "Утверждены приказом НКО НКЦ (АО) от 11 сентября 2026 года № НКЦ-П-2026-221. Действуют с 14.09.2026 г."
+> Prior version: "№ НКЦ-П-2025-58 от 19.03.2025 г. Действуют с 01.04.2025 г. по 13.09.2026 г."
+
+The change-log page `https://www.nationalclearingcentre.ru/catalog/0202` was reachable [R], and its search-index excerpt [S] lists, for example, changes to indicative risk rates effective 16.06.2026 and a new clearing-rules edition effective 23.03.2026. The guarantee-fund page `https://www.nationalclearingcentre.ru/catalog/020804` [S] states a minimum contribution of RUB 10,000,000 for the derivatives market.
+
+**Implication.** This is a **document-versioning** source, not an event feed: it gives effective dates and prior versions, which is exactly what a deterministic parser can extract. It is the best candidate for Gemini-assisted PDF/table extraction, and the worst candidate for sentiment.
+
+### 5.5 Blocked or unverified sources
+
+| Target | Attempt | Failure type | Outcome / consequence |
+|---|---|---|---|
+| `e-disclosure.ru` (robots and home) | `curl`, 2026-10-22 14:09 UTC | Bot protection ("Forbidden", request ID returned) | Corporate disclosures are out of scope; no workaround attempted [X] |
+| `bcs-express.ru` | `curl` and page fetch | HTTP 500 / JS challenge (`servicepipe`) | BCS channel identity **not verified**; excluded [X] |
+| `bcs.ru` | `curl` | 2,128-byte challenge page | Same [X] |
+| `vtb.ru` via `curl` | TLS handshake | `SSL certificate problem: unable to get local issuer certificate` | Retried with page-fetch tool: success; identity confirmed from the rendered page [R] |
+| `fs.moex.com/f/3499/agreement.pdf` via `curl` | Connection failure (000) | Transport/TLS | Retrieved successfully with the page-fetch tool; text read [R] |
+| Guessed CBR 2022 deep link | `curl` | HTTP 200 but generic shell | Wrong URL, not an archive failure; shows why headline verification is mandatory [X] |
+
+### 5.6 Excluded by design
+
+- **Corporate disclosures / dividends / corporate actions.** Explicitly out of scope in the brief and already covered by a separate input stream.
+- **Media and aggregators.** Secondary, paywalled or copyright-restricted, and largely syndicated from S1/S2; they add speed claims that cannot be verified from the outside.
+- **Investment Telegram/YouTube commentary.** Promotional incentives, edited or deleted content, survivorship bias, no reliable availability timestamps, and no lawful bulk transcript. Excluded without testing.
+- **Foreign-language expansion.** No contract-specific foreign primary source was identified for this task. If the universe later includes a China-linked contract (e.g., CNY/RUB), the relevant primary source would be PBoC/CFETS in Chinese; that branch is **not** opened here because no specific hypothesis or contract was named.
+
+---
+
+## 6. Timestamps, edits and syndication: measurements
+
+All measurements are on the files retrieved on 2026-10-22. Methods are simple, reproducible counts (Appendix B).
+
+### 6.1 Four clocks (publication, first observable, effective, access)
+
+| Source | Publication time (stated or stamped) | First observable to the project | Effective time (when the fact binds) | Access time (this report) |
+|---|---|---|---|---|
+| CBR key-rate release | **13:30:00 MSK** (page text and `2026-09-11T13:30:00` page stamp); Telegram mirror **13:30:14 MSK** | 13:30:00–13:30:14 plus the poll interval | Decision announced on the meeting date; the operational effective date is stated inside the release and was **not extracted** here | 2026-10-22 |
+| MOEX risk-parameter notice (cat 113/122) | Event time in the title, e.g. **10:32 MSK**; RSS `pubDate` **10:32:12 +0300** | 10:32:12 plus the poll interval | Change already in force at the stated time | 2026-10-22 |
+| MOEX technical notice (cat 107) | `pubDate` **22.10.2026 12:56:17 +0300** | 12:56:17 plus the poll interval | **30 November 2026** (stated in the body) | 2026-10-22 |
+| NCC methodology version | Approval order date **11.09.2026**; publication time not observed | On page update (unknown time of day) | **14.09.2026** | 2026-10-22 |
+| Telegram channels | Post `<time>` in UTC | On preview poll | Same as the underlying website fact | 2026-10-22 |
+
+The distinction matters: the "publication time" of a document, the time our system could first see it, the time the rule actually binds, and the time this report read it are four different clocks. Only the first two are relevant to leakage control.
+
+### 6.2 Measurements
+
+| # | Measurement | Result | What it means |
+|---|---|---|---|
+| **M1** | MOEX RSS window (`cat=100`) | 1,197 items; 2026-09-01 08:52 → 2026-10-22 16:05 (+0300) = **51 days** | RSS is a rolling feed, not an archive; historical work must use ISS pagination. |
+| **M2** | ISS archive depth | `start=62000` → 2013-02-20; `start=65000` → empty | 62,000–65,000 retrievable items, ~13.7 years. Enough for historical *extraction* tests, not for channel backtests. |
+| **M3** | `modified_at ≠ published_at` | 401/600 = **66.8%**; median 1 s; 15/600 > 1 h; 3/600 > 1 day; max ≈ 19.9 days | The 1-second median is consistent with an automatic same-second touch; only 3/600 records were modified more than a day later. Prior text is not recoverable. |
+| **M4** | Negative edit deltas | 79/300 = **26.3%** negative; **68/300 = 22.7%** exactly −3 h | Timestamp fields are internally inconsistent; `modified_at` must not be used as event time or as an edit proxy. |
+| **M5** | Risk-notice lag (event time in text → `pubDate`) | cat=113: 13/20 parsed, median **0.5 min**, max 0.9; cat=122: 217/281 parsed, median **0.5 min**, max 1.0; **0 negative** | Notices follow the change; no lead time. |
+| **M6** | CBR scheduled release → Telegram | 13:30:00 → **13:30:14 MSK** (post 3803) | Mirror latency ≈ 14 s; the number is public at the scheduled time. |
+| **M7** | CBR page stamp | `Последнее обновление страницы: 2026-09-11T13:30:00` | Page-level ISO stamp can serve as publication evidence for that page. |
+| **M8** | Telegram preview depth | ~15 posts/page; 5 pages back to 2026-09-01 | Public preview is a recent window; not an archive. |
+| **M9** | MOEX site vs ISS | Site shows `22.10.2026 12:56`; ISS `published_at` 12:56:17 | ISS `published_at` aligns with the site's MSK display. |
+| **M10** | Duplicate identifiers | `USD000UTSTOM` appears on boards CETS, CNGD, LICU with different `PREVPRICE` (81.915 / 82.225 / null) | Deduplicate by `(SECID, BOARDID)`; never aggregate by `SECID` alone. |
+
+**Operational rules derived from M1–M10:**
+
+1. Use `published_at` as the event-time candidate, but corroborate it with the RSS `+0300` stamp or the page display; never use `modified_at` as the event time.
+2. Treat title-embedded times labelled "(мск)" as MSK; treat Telegram `<time>` as UTC.
+3. Verify the **headline**, not the HTTP status, when resolving legacy CBR `?file=` URLs.
+4. Deduplicate MOEX items by `id` (ISS) and securities by `(SECID, BOARDID)`.
+5. Do not infer historical availability from a current page or a current export.
+
+---
+
+## 7. Gemini free tier: what the documents actually say
+
+All statements below are from Google's own pages retrieved on 2026-10-22; no API call was made, and no quota was observed.
+
+| Topic | Documented fact (with source) | Consequence for this project |
+|---|---|---|
+| Free-tier model access | "Gemini 3.8 Flash" shows **"Free of charge"** for input, output and context caching; "Gemini 4 Argon" is **"not available on the Free tier"** ([pricing](https://ai.google.dev/gemini-api/docs/pricing)) [R] | A Flash-class model is available at zero cash cost; do not design around Pro/Argon. |
+| Grounding and Batch | For the free tier, **"Grounding with Google Search: Not available"**, **"Grounding with Google Maps: Not available"**, **"Batch: Not available"** (same page) [R] | The model must be fed the as-of document text; it cannot be allowed to retrieve the web. This is good for leakage control and bad for fact-checking. |
+| Data use | Free tier: **"Used to improve our products: Yes"**; paid: "No". Terms: "human reviewers may read, annotate, and process your API input and output"; **"Do not submit sensitive, confidential, or personal information to the Unpaid Services."** ([terms](https://ai.google.dev/gemini-api/terms)) [R] | Send only public official documents. Never upload account statements, broker data, private channel exports containing personal data, or the project's own positions. |
+| Rate limits | Limits are per **project**, not per key; dimensions are RPM, TPM (input) and RPD; **RPD resets at midnight Pacific**; limits "can be viewed in Google AI Studio"; Google does not publish per-model free-tier numbers in the current docs ([rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)) [R] | Any user-reported allowance is unverified and can change. Plan for the worst case and log `429`s. |
+| Third-party tables | Public blogs contradict each other (e.g., 20 RPD vs 1,500 RPD for Flash-class models) [S] | Do not use third-party quota tables for design. Probe your own project's limits in AI Studio. |
+| Regions | The available-regions page lists **Poland** and **Kazakhstan**; **Russia and Belarus do not appear** in the retrieved list ([available regions](https://ai.google.dev/gemini-api/docs/available-regions)) [R] | Poland is listed; access from Russia is **not** established. Treat the operating region as an access unknown. |
+| Structured output | "You can configure Gemini models to generate responses that adhere to a provided JSON Schema… simplifies extracting structured data from unstructured text" ([structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)) [R] | Use a strict schema for extraction; do not ask for free-form trade opinions. |
+
+**Quota architecture that follows.** A conservative design assumes **20 RPD**. The observed document flow is ~15–20 notices/day when all MOEX categories are included, which would sit at the limit. Therefore:
+
+- use Gemini **only for rare, messy documents** (CBR releases, NCC methodology PDFs, MOEX notices whose tables a regex cannot parse), not for the high-frequency risk-corridor feed;
+- batch same-day documents into **one** request with a JSON-array schema, run at a fixed time, and keep a second request for retries;
+- use the deterministic RSS/ISS parser for the frequent streams.
+
+**Reproducibility requirements.** Pin the exact model identifier (as of 2026-10-22: `gemini-3.8-flash` on the pricing page), store the prompt hash, temperature (0), the full raw response, the response ID, the model version reported in the response, and the input document hash. Re-run a fixed sample three times to measure non-determinism; if outputs differ on identical input, record the variance and never use a single run as an "as-of" label. Cache every response by input hash; never re-query a historical document and overwrite the earlier output.
+
+**Privacy and permission.** The free tier may be human-reviewed. Public CBR/MOEX/NCC documents are acceptable; channel exports with user comments, personal data or private account material are not. If a source library is later uploaded, obtain explicit permission first.
+
+---
+
+## 8. Leakage-aware protocol
+
+### 8.1 Unit of analysis and timing
+
+- **Unit:** one document (press release, notice, methodology version) with a verified `published_at`.
+- **Decision time:** the first time the document could have been ingested by the project (publication time + poll interval), not the page's current "last update".
+- **Outcome:** forward return of the target spread over horizons of 1 hour, 1 day and 5 days, net of the conservative/base/stress cost sets; and a binary "would the position change?" flag.
+- **As-of bundle:** the document text as published, the prior version of the same document (if any), the decision calendar, and the price/margin state at the decision time. Nothing else.
+
+### 8.2 Baselines (must be run first)
+
+| ID | Baseline | Definition |
+|---|---|---|
+| **B0** | Price-only technical reference | The existing spread signal without any text. |
+| **B1** | Deterministic event flags | Dated formal events: CBR meeting dates, known release times, expiry dates, published parameter changes. |
+| **B2** | Simple lexical features | Keyword counts, presence of a fixed phrase list, title length, document type; TF‑IDF + logistic/ridge if a learned baseline is needed. |
+
+### 8.3 Treatments
+
+| ID | Treatment | Constraint |
+|---|---|---|
+| **T1** | Gemini structured extraction | JSON schema: `doc_type, decision, effective_date, parameter, old_value, new_value, guidance_phrase_id, confidence`. No free-form prose; no web access; temperature 0. |
+| **T2** | Deterministic parser for the same fields | Regex/HTML/table extraction; the benchmark T1 must beat. |
+| **T3** | Gemini sentiment/opinion score | **Last**; only if T1 passes. Expected to fail; included so the log is complete. |
+
+### 8.4 Historical ablation (extraction fidelity only)
+
+Historical runs can test whether T1 reproduces fields that a human can also read, and whether T1 beats T2 on messy documents. They **cannot** establish predictive value, because:
+
+- a 2013–2026 document processed by a 2026 model may be recalled from pretraining;
+- a date-blind prompt does not remove the model's knowledge of the outcome;
+- document versions have been edited since publication (M3, M4, M7);
+- the current page may not be the as-published page.
+
+Design:
+
+1. Freeze a document inventory: CBR key-rate releases (all meetings, 2013–2026), MOEX cat=107/112/113/122 (24 months), NCC methodology versions (24 months).
+2. Snapshot each document at retrieval, store raw bytes, SHA-256, URL, HTTP status, retrieval timestamp, and the verified publication time.
+3. Hand-label a stratified sample of 100 documents (fields listed in T1).
+4. Run T2 and T1 on identical text; compute field-level precision/recall/F1, exact-match on dates/values, and latency.
+5. Run the T1 extraction a second time with entity/date scrambling; if the output changes materially, the model is using priors → flag as contaminated.
+6. Only if T1 exceeds T2 on messy documents, proceed to a decision-impact test on B0/B1/B2 versus T1.
+
+Splits: chronological 60/20/20 with an embargo of at least one trading day; purge overlapping labels; fit thresholds and dictionaries only in-fold; keep the final 20% untouched until the end; log every feature and threshold tried (deflated performance / trial count).
+
+### 8.5 Prospective shadow test (the only clean test)
+
+- **Duration:** 12 weeks **and** at least 3 CBR meetings.
+- **Mode:** zero trading authority. Every document is processed as-of; every output is logged with the input hash and the model version.
+- **Metrics:** extraction accuracy; share of documents where the text changes the model's *decision* relative to B0/B1/B2; latency from publication to log entry; quota failures; cost (zero cash, but engineering hours).
+- **Gate:** if no decision changes in 12 weeks, stop. Do not run a trading backtest to "see if it works anyway".
+
+### 8.6 Metrics and rejection criteria
+
+**Primary (only at the paper-trading stage):** net RUB excess over the matched LQDT counterfactual, identical external flows, cost scenarios conservative/base/stress.
+
+**Secondary:** incremental AUC/IC versus B1/B2 on identical folds; calibration; turnover; decision-change rate; extraction F1; latency; `429` rate.
+
+**Rejection criteria (pre-registered):**
+
+- **R1.** A deterministic parser reproduces ≥99% of target fields on 200 documents → reject Gemini for that task.
+- **R2.** No trade decision changes in the prospective shadow → reject.
+- **R3.** Incremental net RUB ≤ 0 after costs in the untouched holdout → reject.
+- **R4.** Plausible effect <0.5σ per trade and the pilot cannot reach ~126 trades in 90 days → reject as unverifiable.
+- **R5.** Any feature requires text that was not provably available before the decision time → reject.
+- **R6.** The only evidence is a historical run with a model trained after the events → reject as contaminated.
+- **R7.** The licence does not permit the use → stop for legal review.
+- **R8.** Extraction accuracy <95% on a 100-field hand-labelled sample → reject.
+
+### 8.7 Latency, quota and cost assessment
+
+| Source | Publication time | Earliest ingest (poll) | Model time | Human reaction | Binding constraint |
+|---|---|---|---|---|---|
+| CBR key rate | 13:30:00 MSK | 13:30:00–13:35:00 (5-min poll) | < 5 s (assumed) | 3–90 min | Human and public availability |
+| MOEX risk notice | e.g. 10:32:00 | 10:32:12 (RSS) | < 5 s | 3–90 min | Event has already happened |
+| MOEX technical notice | 12:56:17 | 12:56–13:01 | < 5 s | Days (effective 30 Nov) | Calendar, not latency |
+| NCC documents | Version date | On publication | Seconds | Days | Effective date |
+
+**Cost.** Cash cost is zero on the free tier. The real costs are quota (unknown; the 20-RPD planning figure is a third-party placeholder, not a Google number), engineering time, and legal/licensing review. There is no paid upgrade in this design, and none is assumed.
+
+### 8.8 Bias register
+
+| Bias | Where it appears | Control |
+|---|---|---|
+| Promotional / conflict of interest | Broker channels (deposit at 14%; awards) | Exclude; never treat as independent |
+| Editing / deletion | Telegram | No historical backtest from current text; snapshot prospectively |
+| Survivorship | Channels that remain online | Pre-register the channel list before looking |
+| Pretraining contamination | Gemini on 2013–2026 documents | Prospective shadow; entity-scramble test; dictionary comparison |
+| Reverse causality | News written after price moves | Use only pre-announced/effective-date documents for causal claims |
+| Timezone / clock | ISS `modified_at` 3-hour anomalies | Corroborate two channels; never use `modified_at` as event time |
+| Duplicate / syndication | MOEX categories; CBR → Telegram | Deduplicate by ID; count each event once |
+| Language / tokenisation | Russian morphology, decimal commas, NBSP | Hand-check a sample; do not use an English dictionary |
+| Multiple testing | Many features, few trades | Log all trials; deflated metrics; untouched holdout |
+
+---
+
+## 9. Bounded export briefs
+
+No broad export is authorised. Each brief below is tied to a specific hypothesis and a bounded date range; where a full export would not answer a named question, the brief says so.
+
+### 9.1 CBR Telegram (`t.me/centralbank_russia`) — **worth a small latency check only**
+
+- **Verified identity:** linked from `cbr.ru`; channel title "Банк России" [R].
+- **Specific episodes and IDs:**
+  - `https://t.me/centralbank_russia/3803` — 2026-09-11T10:30:14Z (13:30:14 MSK): "🔑 Ключевая ставка — 14%…".
+  - `https://t.me/centralbank_russia/3789` — 2026-09-01T14:29:09Z (17:29 MSK): FX cash-withdrawal restrictions extended to 9 March 2027.
+  - `https://t.me/centralbank_russia/3790` — 2026-09-01T15:40:37Z (18:40 MSK): "О чем говорят тренды" promotion.
+- **Fields available:** message ID, UTC datetime, text, links, media, views/forwards as displayed, channel ID.
+- **Edit history:** not exposed; prior text of edited messages is not recoverable.
+- **Transcripts:** text posts; no ASR needed.
+- **Bounded scope:** 8 meeting dates × 3 posts + 20 unscheduled posts ≈ **44 posts**. Purpose: measure mirror latency and duplication, not to build a corpus.
+- **Verdict:** a full-channel export is **not worth it**. The channel mirrors the website.
+
+### 9.2 MOEX Telegram (`t.me/MoscowExchangeOfficial`) — **not worth exporting**
+
+- **Verified identity:** linked from `moex.com`; bio "Канал крупнейшей биржи в России…" [R].
+- **Sample IDs:** `5248` (2026-10-14T07:04:22Z, educational post on the key-rate futures), `5256` (2026-10-21T12:03:38Z, copper futures interest), `5257` (2026-10-21T13:30:01Z, award).
+- **Why not:** the operational notices (`n105210`, `n105342`, `n105332`) are published on `moex.com` and in the RSS; the channel contains corporate communication. Exporting it would measure marketing cadence, not market information.
+- **Transcripts:** no video transcripts in the sample; external video would require ASR and rights review.
+- **Verdict:** **do not export.**
+
+### 9.3 VTB Telegram (`t.me/bankvtb`) — **not worth exporting**
+
+- **Verified identity:** linked from `vtb.ru` [R].
+- **Sample IDs:** `3866` (2026-10-17T12:04:54Z, "ВТБ-Вклад на 2 месяца со ставкой до 14% годовых"), `3881` (2026-10-21T17:42:06Z, a Frank RG award for premium clients).
+- **Why not:** promotional, directly competing with the pilot's capital, and no margin/risk notices in the sampled window.
+- **Verdict:** **do not export.**
+
+### 9.4 BCS — **unverified, do not use**
+
+`bcs-express.ru` (HTTP 500) and `bcs.ru` (2,128-byte JS challenge) did not yield a verified official channel [X]. Without a first-party link, any "BCS channel" identity claim is unverified.
+
+### 9.5 MOEX ISS / RSS — **the only archive worth building**
+
+- **Endpoints:** `https://iss.moex.com/iss/sitenews.json?iss.meta=off&start=N`; `https://iss.moex.com/iss/sitenews/{id}.json?iss.meta=off`; RSS `https://www.moex.com/export/news.aspx?cat={100,107,112,113,122}&lang=ru`.
+- **Fields:** `id, tag, title, published_at, modified_at, body` (HTML).
+- **Bounded scope:** 24 months of cat=107/112/113/122 (≈1,500–2,000 items), plus the full ISS archive only if a historical extraction test is justified (≈62,000–65,000 items, ≈1,240–1,300 requests at 50/page; rate-limit yourself to ~1 request/s).
+- **Edit history:** none; `modified_at` unreliable (M3, M4). Store the raw body and hash.
+- **Verdict:** **worth it** as an extraction corpus and operational monitor; **not** as an alpha corpus.
+
+### 9.6 NCC — **document versions, not messages**
+
+- **Pages:** `/catalog/0302/281` (guarantee methodology), `/catalog/0202` (clearing changes), `/catalog/020804` (guarantee funds).
+- **Fields:** document title, version, approval order number, effective-from and effective-to dates, prior version link, PDF.
+- **Scope:** 24 months of version changes; snapshot monthly.
+- **Verdict:** **worth a small extraction test** if the pilot's execution depends on margin methodology; otherwise skip.
+
+---
+
+## 10. Targeted library retrieval plan
+
+The purpose is to resolve specific design questions, not to summarise books. Each item below is a *section-level* retrieval target. Bibliographic details were checked against publisher/RePEc search results on 2026-10-22 where marked [S]; items marked [K] are standard references whose details were not re-verified today.
+
+| Unresolved question | Exact source | What to read (section-level) | What to extract | Decision it can change |
+|---|---|---|---|---|
+| Does text sentiment add value beyond known factors? | Tetlock (2007), "Giving Content to Investor Sentiment", *Journal of Finance* 62(3): 1139–1168, DOI 10.1111/j.1540-6261.2007.01232.x [S] | The construction of the pessimism factor and the predictive regressions controlling for known factors | The residualisation logic and the horizon/return specification | Whether T3 is even admissible; likely confirms it is not at 8 events/year |
+| How badly do generic dictionaries misclassify financial language? | Loughran & McDonald (2011), "When Is a Liability Not a Liability?", *Journal of Finance* 66(1): 35–65, DOI 10.1111/j.1540-6261.2010.01625.x [S] | The comparison of Harvard/General Inquirer lists with the finance-specific negative list | The list-construction method and the misclassification examples | Whether a Russian dictionary baseline is credible, or must be built from the corpus |
+| How should text methods be validated and regularised? | Gentzkow, Kelly & Taddy (2019), "Text as Data", *Journal of Economic Literature* 57(3): 535–574, DOI 10.1257/jel.20181020 [S] | Sections on supervised text regression and out-of-sample validation | The train/test discipline and the treatment of high-dimensional text | The walk-forward design and the trial-count log |
+| Do unexpected Bank of Russia decisions move OFZ prices and volatility? | Abdurakhmanov (2024), *Voprosy Ekonomiki*, No. 4, pp. 70–91, DOI 10.32609/0042-8736-2024-4-70-91 [S] | The event study around unexpected decisions and the volatility results | The event-window definition and the surprise measure | Whether H1 has any residual space beyond the decision itself |
+| Does Bank of Russia communication predict decisions? | Evstigneeva, Shchadilova & Sidorovskiy (2022), CBR Working Paper No. 99, "The Role of Communication and Information Factors in the Emergence of Surprises in Bank of Russia Monetary Policy", `cbr.ru/content/document/file/139701/wp_99_e.pdf` [R] | The communication-quality index and its relation to surprises | How communication is coded and whether it leads decisions | Whether a guidance-tone feature has a documented mechanism |
+| How should event windows be specified? | MacKinlay (1997), "Event Studies in Economics and Finance", *Journal of Economic Literature* 35(1): 13–39 [K] | The event-window and estimation-window sections | Window length, thin trading, clustering | The outcome window for H1/H2 |
+| How do social-media sentiment and disagreement relate to volume? | Cookson & Niessner (2020), "Why Don't We Agree?", *Journal of Finance* 75(1): 173–228, DOI 10.1111/jofi.12852 [S] | The disagreement measures and the volume results | Why promotional/social text is noisy and endogenous | The decision to exclude S8 without testing |
+| How do I avoid backtest overfitting? | Bailey, Borwein, López de Prado & Zhu (2014), "Pseudo-Mathematics and Financial Charlatanism", *Notices of the AMS* 61(5): 458–471, DOI 10.1090/noti1105 [S] | The trial-count/overfitting demonstration | The minimum backtest length and trial-reporting rule | The rejection criteria R3/R4 and the trial log |
+| How do I build purged, embargoed cross-validation? | López de Prado (2018), *Advances in Financial Machine Learning*, Wiley, Chapter 7 ("Cross-Validation in Finance") [K] | The purging/embargo algorithm and the walk-forward scheme | The exact split logic | The chronological split in §8.4 |
+
+**Do not read:** full textbooks, general NLP surveys, or "AI for trading" books. They will not resolve any of the above questions and will add trial risk.
+
+**Open library question (not resolved):** a Russian financial sentiment lexicon. No verified, licence-clear, finance-specific Russian lexicon was identified in this session. If H1 is ever pursued, the first task is a literature search in ACL Anthology / Russian NLP venues for a finance-domain lexicon, with licence and coverage checks — not a generic social-media lexicon.
+
+---
+
+## 11. Conflicts, unknowns, falsification criteria and project changes
+
+### 11.1 Material conflicts
+
+1. **MOEX is both the venue and the publisher.** Its notices are authoritative but not independent; its user agreement restricts profit-related and technological use. Free ISS access does not automatically equal permission for automated trading research.
+2. **CBR is the regulator and the source.** Its releases mix facts (the decision) with guidance (a forecast/opinion). Treating the whole release as "fact" is a category error.
+3. **Broker channels sell competing products.** The VTB channel advertises a 14% deposit while the pilot's counterfactual is a money-market fund; this is a direct conflict of interest for any "broker view" feature.
+4. **Telegram is editable and not archived for edits.** Any historical claim based on current channel text is unverifiable.
+5. **Gemini's free tier may be human-reviewed and is used to improve Google's products.** Uploading anything beyond public documents is inappropriate.
+
+### 11.2 Unknowns (explicitly not filled with assumptions)
+
+- The actual Gemini free-tier quota, model version, latency and determinism for this user/project.
+- Whether the free tier is accessible from Russia (Russia is not in the available-regions list; Poland is).
+- The MOEX ISS/market-data contract terms for profit-oriented automated use; the website agreement is not the ISS contract.
+- The exact broker margin/netting rules at VTB for calendar spreads, and whether the core LQDT collateral is eligible.
+- The actual LQDT yield and the true matched counterfactual.
+- Whether NCC publishes a machine-readable event feed; none was observed.
+- Whether any Telegram edit history can be obtained lawfully; none is exposed publicly.
+- Whether a Russian finance-specific sentiment lexicon exists with a suitable licence.
+
+### 11.3 Minimal inputs that would resolve the remaining unknowns
+
+Only four items are needed, and none requires credentials or private data:
+
+1. **The project's own AI Studio rate-limit view** (numbers for RPM/TPM/RPD), as a screenshot or copied text — replaces the 20-RPD placeholder and determines whether a daily batch is feasible.
+2. **VTB's (and later BCS's) contract specification and margin/netting rules for the intended calendar spread** — resolves whether a two-leg spread consumes one or two initial-margin blocks and whether LQDT is eligible collateral.
+3. **LQDT fund documents** (yield/NAV history, distribution policy) — fixes the exact matched counterfactual instead of the 14% illustration.
+4. **A written statement of the MOEX ISS/market-data terms for personal, non-commercial research vs profit-oriented use** — resolves the licensing gate in §3 before any automated archive build.
+
+### 11.4 Falsification criteria (what would change the conclusion)
+
+- **Against "no text value":** a prospective shadow in which a text feature changes at least one decision per month, and a paper-trading holdout in which net RUB excess over the matched LQDT is positive after the stress cost set, with ≥126 trades or an effect ≥0.5σ.
+- **Against "no channel archive":** a lawful, timestamped export with pre-edit snapshots and proof of first-observable time; without that, the claim stands.
+- **Against "ISS is redundant":** evidence that a text notice precedes the corresponding ISS numeric change by a tradeable interval (≥3 minutes) on a representative sample. The measured median is 0.5 minutes in the opposite direction.
+- **Against "Gemini adds nothing":** T1 beats T2 by a material margin on messy documents (≥100 hand-labelled fields, ≥95% accuracy), and the extracted fields change decisions.
+- **Against "underpowered":** a larger pilot (RUB 10–20 million, ≥3 trades/week) or a longer history with a licensed archive that raises the effective sample to the required n.
+
+### 11.5 Possible project changes
+
+1. **Default:** drop text from the pilot; keep the RUB 30,000 test focused on price/event strategies and the LQDT counterfactual.
+2. **Narrow alternative:** keep a **deterministic operational monitor** (MOEX cat=107/112/113/122 + NCC version pages) for execution safety — margin changes, schedules, settlements — with no Gemini and no trading authority.
+3. **Research alternative:** if text is pursued, restrict to **one** hypothesis (H1 guidance tone) and test it only prospectively over 8 meetings, with a pre-registered small phrase list and T1 extraction as a benchmark. Accept in advance that the result will likely be inconclusive.
+4. **Data-quality alternative:** reallocate the text effort to fixing timestamp handling (M3/M4) and building an as-of event calendar from official sources. This is likely to improve every later backtest more than any text feature.
+5. **Scale gate:** revisit text only when the pilot can support ≥126 trades per test or when a licensed, timestamped archive is available.
+
+---
+
+## Appendix A — Evidence log (selected)
+
+| Time (UTC), 2026-10-22 | Target | Result | Evidence used |
+|---|---|---|---|
+| 14:09 | `iss.moex.com/iss/sitenews.json?iss.meta=off` | 200; columns `id, tag, title, published_at, modified_at` | §5.1 |
+| 14:09 | `iss.moex.com/iss/sitenews/105342.json` | 200; body HTML; release planned for 30 Nov 2026 | §5.1 |
+| 14:09 | `moex.com/export/news.aspx?cat=100&lang=ru` | 200; 1,197 items; 2026-09-01→10-22; +0300 | §5.1, M1 |
+| 14:09 | `cbr.ru/rss/RssPress` | 200; 13 items; `lastBuildDate … +0300` | §5.2 |
+| 14:09 | `e-disclosure.ru/robots.txt`, `/` | "Forbidden" bot page | §5.5 |
+| 14:10 | `t.me/s/centralbank_russia` | 200; 15 posts; 3781–3892 range | §5.3 |
+| 14:10 | `t.me/s/MoscowExchangeOfficial` | 200; 14 posts; 5239–5258 | §5.3 |
+| 14:11 | `t.me/s/bankvtb` | 200; 12 posts; 3863–3882 | §5.3 |
+| 14:11 | `vtb.ru` via `curl` | TLS error 60; page-fetch tool succeeded | §5.5 |
+| 14:11 | `bcs-express.ru` | HTTP 500 / JS challenge | §5.5 |
+| 14:11 | `bcs.ru` | 2,128-byte challenge | §5.5 |
+| 14:11 | `moex.com/ru/news/` | 200; category list 104–125 | §5.1 |
+| 14:12 | RSS cat=107/112/113/122 | 32 / 53 / 20 / 281 items | §5.1 |
+| 14:12 | `nationalclearingcentre.ru/catalog/0202` | 200; 384,707 bytes; change log | §5.4 |
+| 14:12 | `cbr.ru/press/pr/?file=28022022_090000key.htm` | 200 but generic shell; "last update 12.09.2025" | §5.2 |
+| 14:13 | `moex.com/n105342` | 200; display 22.10.2026 12:56 | M9 |
+| 14:13 | ISS `start=62000/65000` | 2013-02-20 / empty | M2 |
+| 14:14 | `cbr.ru/content/document/file/139701/wp_99_e.pdf` | 200; 53 pages; title page read | §10 |
+| 14:14 | `ai.google.dev/gemini-api/docs/pricing` | 200; free/paid table; grounding/batch unavailable on free | §7 |
+| 14:14 | `ai.google.dev/gemini-api/terms` | 200; human review; no sensitive data | §7 |
+| 14:15 | `ai.google.dev/gemini-api/docs/rate-limits` | 200; per-project; RPD midnight Pacific; no fixed free numbers | §7 |
+| 14:15 | `ai.google.dev/gemini-api/docs/available-regions` | 200; Poland yes; Russia/Belarus absent | §7 |
+| 14:15 | `ai.google.dev/gemini-api/docs/structured-output` | 200; JSON-Schema-adherent output | §7 |
+| 14:15 | `iss…/MXZ6.json`, `SiZ6.json` | margins 28,833.42 / 13,172.91 | §2.2 |
+| 14:16 | `iss…/USD000UTSTOM.json` | same SECID on 3 boards, different `PREVPRICE` | M10 |
+| 14:16 | `fs.moex.com/f/3499/agreement.pdf` via page fetch | text read; §§3.2.2, 3.2.4, 3.2.5, 4.1 | §3 |
+
+## Appendix B — Reproduction notes
+
+The measurements in §6 were produced with plain HTTP GETs and standard-library parsing; no third-party package is required except `pypdf` for the CBR working paper (used only to read its title page). The key reproducible steps:
+
+1. RSS: fetch `https://www.moex.com/export/news.aspx?cat={c}&lang=ru`, parse `<item>` elements, read `<pubDate>`.
+2. ISS: paginate `https://iss.moex.com/iss/sitenews.json?iss.meta=off&start={0,50,…}`; stop when the page is empty.
+3. Edit statistics: for each row, parse `published_at` and `modified_at` as naive datetimes; count `modified != published`, the distribution of deltas, and negative deltas.
+4. Notice lag: extract the first `DD.MM.YYYY, HH-MM` from the title or description; compare with `pubDate` converted to MSK.
+5. Telegram: fetch `https://t.me/s/{channel}`; parse `data-post` and `<time datetime>`; page with `?before={first_id}`.
+6. CBR: fetch the key-rate page and the release URL; verify the headline, not the status code.
+7. All counts above are snapshots and will drift; re-run them before relying on the numbers.
+
+## Appendix C — Source list
+
+**Primary**
+1. MOEX ISS `sitenews` — `https://iss.moex.com/iss/sitenews.json?iss.meta=off` (2026-10-22).
+2. MOEX ISS single news — `https://iss.moex.com/iss/sitenews/105342.json?iss.meta=off` (2026-10-22).
+3. MOEX news RSS — `https://www.moex.com/export/news.aspx?cat=100&lang=ru` (2026-10-22).
+4. MOEX category RSS — `…?cat=107|112|113|122&lang=ru` (2026-10-22).
+5. MOEX ISS overview — `https://www.moex.com/a2920` (2026-10-22).
+6. MOEX User Agreement — `https://fs.moex.com/f/3499/agreement.pdf` (2026-10-22).
+7. MOEX futures security records — `https://iss.moex.com/iss/engines/futures/markets/forts/securities/MXZ6.json`, `…/SiZ6.json` (2026-10-22).
+8. MOEX currency security — `https://iss.moex.com/iss/engines/currency/markets/selt/securities/USD000UTSTOM.json` (2026-10-22).
+9. CBR key-rate page — `https://www.cbr.ru/press/keypr/` (2026-10-22).
+10. CBR press RSS — `https://www.cbr.ru/rss/RssPress` (2026-10-22).
+11. CBR Telegram — `https://t.me/centralbank_russia/3803`, `/3789`, `/3790` (2026-10-22).
+12. CBR "О чем говорят тренды" — `https://www.cbr.ru/press/event/?id=32911` (2026-10-22).
+13. CBR publication calendar — `https://www.cbr.ru/calendar/` (2026-10-22).
+14. CBR Working Paper No. 99/2022 — `https://www.cbr.ru/content/document/file/139701/wp_99_e.pdf` (2026-10-22).
+15. NCC — `https://www.nationalclearingcentre.ru/catalog/0302/281`, `/catalog/0202`, `/catalog/020804` (2026-10-22).
+16. MOEX Telegram — `https://t.me/MoscowExchangeOfficial/5248`, `/5256`, `/5257` (2026-10-22).
+17. VTB Telegram — `https://t.me/bankvtb/3866`, `/3881`; identity via `https://www.vtb.ru/` (2026-10-22).
+
+**Gemini documentation**
+18. Rate limits — `https://ai.google.dev/gemini-api/docs/rate-limits` (2026-10-22).
+19. Pricing — `https://ai.google.dev/gemini-api/docs/pricing` (2026-10-22).
+20. Terms — `https://ai.google.dev/gemini-api/terms` (2026-10-22).
+21. Available regions — `https://ai.google.dev/gemini-api/docs/available-regions` (2026-10-22).
+22. Structured outputs — `https://ai.google.dev/gemini-api/docs/structured-output` (2026-10-22).
+
+**Literature**
+23. Tetlock, P. C. (2007). "Giving Content to Investor Sentiment: The Role of Media in the Stock Market." *Journal of Finance* 62(3): 1139–1168. DOI 10.1111/j.1540-6261.2007.01232.x.
+24. Loughran, T., & McDonald, B. (2011). "When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks." *Journal of Finance* 66(1): 35–65. DOI 10.1111/j.1540-6261.2010.01625.x.
+25. Gentzkow, M., Kelly, B., & Taddy, M. (2019). "Text as Data." *Journal of Economic Literature* 57(3): 535–574. DOI 10.1257/jel.20181020.
+26. Cookson, J. A., & Niessner, M. (2020). "Why Don't We Agree? Evidence from a Social Network of Investors." *Journal of Finance* 75(1): 173–228. DOI 10.1111/jofi.12852.
+27. Abdurakhmanov, M. I. (2024). "Assessing the predictability of the Bank of Russia decisions on the key rate and informational advantage in its forecasting." *Voprosy Ekonomiki*, No. 4, pp. 70–91. DOI 10.32609/0042-8736-2024-4-70-91.
+28. Evstigneeva, A., Shchadilova, Yu., & Sidorovskiy, M. (2022). "The Role of Communication and Information Factors in the Emergence of Surprises in Bank of Russia Monetary Policy." CBR Working Paper No. 99.
+29. Bailey, D. H., Borwein, J. M., López de Prado, M., & Zhu, Q. J. (2014). "Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance." *Notices of the AMS* 61(5): 458–471. DOI 10.1090/noti1105.
+30. MacKinlay, A. C. (1997). "Event Studies in Economics and Finance." *Journal of Economic Literature* 35(1): 13–39. [K]
+31. López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley, Chapter 7. [K]

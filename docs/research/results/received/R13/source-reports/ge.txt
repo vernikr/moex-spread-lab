@@ -1,0 +1,118 @@
+# Research Report: Optional Regime Conditioning — Incremental Evidence Test (R13)
+
+**Project:** MOEX Futures-Spread Pilot
+
+**Research Date:** October 23, 2026 (Baseline pack prepared 2026-10-07)
+
+**Author:** Personal AI Collaborator
+
+**Status:** Conditional Research Design & Falsification Framework
+
+---
+
+## Executive Summary & Core Conclusion
+
+This report investigates whether market-wide or instrument-family regime information improves out-of-sample net performance over a no-regime deterministic baseline in a private MOEX futures-spread project, or whether it primarily introduces overfit complexity.
+
+Given the project's operational constraints—specifically a tight capital allocation ($\text{RUB } 30,000$), manual execution latency ($\text{3–90}$ minutes, median $\text{5–15}$ minutes), and strict net-of-fee tracking against a matched $\text{LQDT}$ counterfactual—**market-wide and instrument-family regime conditioning predominantly adds overfit complexity rather than robust net alpha.**
+
+### Key Recommendation
+
+**Conditional Deferral:** Unless a simple, observable, non-parametric state filter demonstrates statistically robust net excess over the fixed-parameter baseline across a chronological walk-forward split under base-case and stress execution friction, regime conditioning should be discarded. The project should default to the no-regime deterministic baseline.
+
+---
+
+## 1. Reference Baseline vs. Observable Regime Splits
+
+To rigorously test whether regime conditioning adds value, we must compare it against an explicit, non-regime baseline using identical data and execution constraints.
+
+### 1.1 Reference Baseline Definition
+
+* **Family 1 (Calendar Carry):** A fixed-parameter roll-spread or inter-expiration calendar spread (e.g., near-month vs. next-quarter on liquid MOEX contracts such as $\text{Si}$ [USDRUB futures] or $\text{BR}$ [Brent futures]) entering when the annualized basis deviates by a fixed historical mean threshold (fitted purely on training windows) and holding until expiration or a fixed time stop.
+* **Family 2 (Cross-Contract Mean Reversion):** A stationary cointegrated pair or tri-spread with fixed rolling lookback windows for hedge ratio estimation and fixed entry/exit z-score boundaries ($\pm 2.0$ entry, $\pm 0.5$ exit).
+
+### 1.2 Observable State Splits vs. Hidden-State Models
+
+Complex hidden Markov models (HMMs) or unsupervised change-point detection algorithms (e.g., Bayesian online change point detection) applied to full-sample data inevitably suffer from lookahead bias, parameter instability, and label switching. We restrict our investigation to **simple, observable, point-in-time state splits**:
+
+1. **Realized Volatility State:** Rolling 20-day annualized standard deviation of underlying settlement prices, split into low ($\text{Vol} < \text{median}$) and high ($\text{Vol} \ge \text{median}$) regimes based strictly on expanding or rolling training windows.
+2. **Carry/Interest Rate State:** Bank of Russia (CBR) key rate level and official policy stance announcements (point-in-time release date), splitting the sample into tightening, easing, and stable regimes.
+3. **Liquidity State:** Average daily open interest and order book depth on MOEX derivatives board during the main trading session, split into high-liquidity and low-liquidity terciles.
+
+> **Information Set Rule:** At decision time $T$, the state label must be calculated using information available strictly up to $T-\epsilon$ (where $\epsilon$ accounts for clearing and reporting lags). No full-sample smoothing or retroactive regime labeling is permitted.
+
+---
+
+## 2. Predeclaration of Regime Transmission Channels
+
+To prevent data dredging and degrees-of-freedom explosion, a regime filter must be mapped to **exactly one** operational dimension prior to testing. Changing entry, size, exit, duration, and pair eligibility simultaneously guarantees spurious in-sample optimization.
+
+| Transmission Channel | Permitted Action | Prohibited Action |
+| --- | --- | --- |
+| **Entry Threshold** | Scale entry z-score wider during high-volatility regimes to avoid false breakouts. | Selectively dropping losing trades or cherry-picking entry moments. |
+| **Position Size** | Reduce nominal position size (e.g., integer contracts rounded down) during stressed liquidity states. | Continuously scaling leverage or violating the $\text{RUB } 30,000$ capital cap. |
+| **Exit Rule** | Tighten profit-taking thresholds or shorten max holding duration during macro policy transition weeks. | Dynamically shifting stop-losses retroactively. |
+| **Pair Eligibility** | Temporarily suspend trading in specific contract pairs if liquidity tercile drops below the operational threshold. | Rotating into entirely new asset classes outside the predefined universe. |
+
+---
+
+## 3. Validation Skeleton & Overfitting Controls
+
+### 3.1 Chronological Walk-Forward Protocol
+
+* **Splits:** Expanding training window (minimum 12 months) followed by 3-month out-of-sample test windows. No overlapping test periods without explicit cross-validation adjustments.
+* **Preregistration:** All parameter search ranges, threshold rules, and ablation variants must be logged in a immutable research registry prior to test execution.
+* **Primary Metric:** Net RUB excess return over the matched $\text{LQDT}$ counterfactual, factoring in broker commissions, exchange fees, and variation margin liquidity requirements.
+
+### 3.2 Cost, Risk, and Execution Constraints
+
+* **Capital & Funding:** Initial test allocation of $\text{RUB } 30,000$ all-in (including margin and reserves) on the same account as the core $\text{LQDT}$ holding. Maximum gross emergency funding capped at $\text{RUB } 15,000$ (total ceiling $\text{RUB } 45,000$).
+* **Execution Latency:** Simulated signal-to-action delay of $\text{3–90}$ minutes (median $\text{5–15}$ minutes). High-frequency regime adjustments that rely on sub-minute reaction times are invalid for manual execution at VTB / BCS.
+* **Transaction Friction Scenarios:**
+* *Conservative:* Standard exchange and broker fee schedules + half-spread crossing.
+* *Base:* Fee schedules + full bid-ask spread + 1 tick slippage per leg.
+* *Stress:* Double spread crossing + 2 ticks slippage, reflecting manual delay during volatile market phases.
+
+
+
+---
+
+## 4. Structural & Policy Distinctions on MOEX
+
+Regime models frequently mistake structural administrative events for statistical state shifts. The research protocol must explicitly isolate policy-defined events:
+
+* **Market Halts & Interventions:** CBR emergency rate hikes, capital controls, and MOEX-imposed trading halts in specific contracts must be treated as exogenous structural breaks, not predictable market regimes.
+* **Contract Expiration and Rolls:** MOEX quarterly futures expire on the 15th (or business day nearest) of March, June, September, and December. The basis behavior near expiration is a deterministic calendar function, not a learned volatility regime.
+* **Clearing Cycles:** Distinguish intraday volatility spikes driven by evening clearing sessions (19:00–19:05 MSK) from broader macroeconomic regime shifts.
+
+---
+
+## 5. Hypothesis Cards, Ablation Protocol & Discard Criteria
+
+### 5.1 Hypothesis Cards
+
+* **Hypothesis H1 (No-Regime Baseline):** A fixed-parameter calendar carry and mean-reversion strategy with zero regime conditioning yields higher net excess return over $\text{LQDT}$ than any regime-conditioned variant after accounting for transition costs and execution delays.
+* **Hypothesis H2 (Volatility-Conditioned Entry):** Widening entry thresholds by $0.5$ standard deviations during high-volatility regimes reduces turnover and transaction costs sufficiently to improve net out-of-sample return.
+* **Hypothesis H3 (Liquidity-Conditioned Sizing):** Halting new entries during low-liquidity terciles prevents slippage-heavy execution losses during manual order routing.
+
+### 5.2 Leakage & Ablation Protocol
+
+1. **Leakage Test:** Run a permutation test by randomly shuffling regime labels across timestamps. If the shuffled labels produce similar or superior performance to the true regime model, the regime conditioning is declared statistically insignificant (overfit).
+2. **Ablation Protocol:** Add regime filters one at a time to the baseline. If adding a regime filter reduces net return or increases maximum drawdown beyond the $\text{RUB } 10,000$ warning threshold, that filter is permanently discarded.
+
+### 5.3 Explicit Discard Criteria
+
+The regime-conditioning layer must be **immediately discarded** and the project must revert to the no-regime baseline if any of the following conditions are met:
+
+* Out-of-sample net excess return over $\text{LQDT}$ is lower than the baseline in more than 50% of walk-forward test folds.
+* The regime-conditioned variant incurs cumulative drawdown exceeding $\text{RUB } 5,000$ faster than the baseline during test periods.
+* The added complexity requires manual intervention frequency exceeding the human trade quota or operational reaction limits ($\text{5–15}$ minute median).
+
+---
+
+## Summary of Actionable Next Steps
+
+1. Implement and measure the **Reference Baseline** (no-regime calendar carry and mean-reversion) under base-case fee and delay assumptions.
+2. Construct the single observable volatility state split ($\text{20-day rolling vol}$) with point-in-time expanding window boundaries.
+3. Test **H2** (Volatility-Conditioned Entry) against the baseline using the chronological walk-forward validation skeleton.
+4. If net excess return does not statistically beat the baseline at a $95\%$ confidence level, **defer regime conditioning** and proceed exclusively with the deterministic baseline.

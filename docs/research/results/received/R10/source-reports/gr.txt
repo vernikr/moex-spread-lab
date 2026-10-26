@@ -1,0 +1,452 @@
+# Deterministic Strategy Hypotheses, Continuation Logic, and Opportunity Cost Frameworks for MOEX Futures Spreads
+
+## Executive Summary & Research Context
+
+This report establishes an evidence-backed hypothesis and validation plan for systematic, deterministic futures spread strategies on the Moscow Exchange (MOEX) Derivatives Market. Designed for a pilot capital allocation of RUB 30,000 under a capital preservation framework benchmarked against a passive allocation to the native cash-management instrument (`LQDT`), this document synthesizes structural market mechanics, quantitative formulation, entry/continuation decision logic, position sizing dynamics, and experimental design.
+
+### Structural Context & Operational Constraints
+* **Brokerage & Collateral Topology:** Initial manual execution via VTB with future API automation capability via BCS. The trading account maintains a core `LQDT` holding exceeding RUB 40,000,000, against which a micro-pilot allocation of RUB 30,000 is deployed for futures initial margin (IM) and variation margin (VM) buffer.
+* **Capital Protection Limits & Excess Benchmarking:** All performance and risk metrics are calculated strictly as net RUB excess return over the matched `LQDT` yield counterfactual. The system operates under a hard operational warning threshold at a RUB 5,000 excess-curve drawdown and a soft stop/review threshold at a RUB 10,000 drawdown or cumulative `LQDT` shortfall. An outer absolute loss boundary is established at RUB 15,000 over a 90-calendar-day evaluation window.
+* **Emergency Funding Allocation Rules:** Up to RUB 15,000 cumulative gross emergency liquidity is conditionally authorized *solely* to prevent forced broker liquidation or disorderly de-risking of open positions due to temporary margin spikes. Emergency funds must never be utilized to average down, fund fresh entries, or reset lifetime drawdown allowances.
+* **Execution Realities:** Manual reaction latency ranges between 3 and 90 minutes (median: 5–15 minutes). All hypothesis testing and signal pipelines account for execution stale times, partial fills, and slippage penalties.
+
+---
+
+## 1. Economic Mechanisms & Baseline Classifications for MOEX Futures Spreads
+
+Quantitative spread trading on MOEX frequently fails when pure statistical co-movement (such as high sample correlation, stationary Augmented Dickey-Fuller test statistics, or simple z-score divergences) is confused with underlying economic equilibrium mechanisms. Pure statistical relationships are prone to structural breaks caused by monetary policy shifts, capital controls, corporate actions, or seasonal liquidity drains.
+
+```
+       ┌─────────────────────────────────────────────────────────┐
+       │              MOEX SPREAD ASSET CLASSES                  │
+       └────────────────────────────┬────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┼───────────────────────────────┐
+    ▼                               ▼                               ▼
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│   Commodity Calendar    │   │    FX Synthetic Basis   │   │ Equity / Index Relative │
+│        Spreads          │   │        & Carry          │   │      Value Spreads      │
+├─────────────────────────┤   ├─────────────────────────┤   ├─────────────────────────┤
+│ • Brent (BR)            │   │ • Yuan (CY / CNYRUBF)   │   │ • Single-Stock (SBRF)   │
+│ • Gold (GOLD)           │   │ • USD (Si / USDRUBF)    │   │ • Index (MIX / MXI)     │
+│ • Natural Gas (NG)      │   │ • Cross Rates           │   │ • Sector Pairs          │
+├─────────────────────────┤   ├─────────────────────────┤   ├─────────────────────────┤
+│ Driver: Theory of       │   │ Driver: Covered Interest│   │ Driver: Common Factor   │
+│ Storage & Carry Cost    │   │ Parity & RUSFAR Rates   │   │ Risk & Capital Strt.    │
+└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+```
+
+### 1.1 Classifications and Structural Mechanics
+
+#### A. Commodity Calendar Spreads (Brent: `BR`, Gold: `GOLD`, Natural Gas: `NG`)
+Governed by the fundamental **Theory of Storage**:
+$$F_{t,T_2} = F_{t,T_1} \cdot \left(1 + r_{t, T_1 \to T_2} + u_{T_1 \to T_2} - c_{T_1 \to T_2}\right)$$
+*where $r$ represents domestic financing costs, $u$ is physical storage and insurance, and $c$ is convenience yield.*
+
+On MOEX, commodity calendar spreads alternate between contango (dominated by financing and storage costs) and backwardation (driven by immediate physical supply constraints). The mean-reversion hypothesis relies on short-term term-structure distortions converging back toward cost-of-carry equilibrium as delivery approaches.
+
+#### B. FX Synthetic Basis & Carry Relationships (Yuan: `CY`/`CNYRUBF`, USD: `Si`/`USDRUBF`)
+Governed by **Covered Interest Parity (CIP)** relative to the interbank money market benchmark rate (**RUSFAR**):
+$$F_{t,T} = S_t \cdot \frac{1 + r_{\text{RUB}, t \to T}}{1 + r_{\text{FOREIGN}, t \to T}}$$
+
+Dislocations between the implied futures yield and overnight money market rates create temporary basis arbitrage opportunities. Convergence is driven by institutional capital restoring equilibrium across onshore cash and futures markets.
+
+#### C. Cross-Index and Equity Relative Value Spreads (Sberbank: `SBRF`, MOEX Index: `MIX`/`MXI`)
+Governed by common factor risk pricing and index constituent weightings:
+$$R_{i,t} = \alpha_i + \beta_i R_{m,t} + \epsilon_{i,t}$$
+
+When single-stock futures temporarily deviate from index futures or sector peers due to localized order flow imbalances, mean reversion is driven by arbitrageurs rebalancing constituent baskets.
+
+### 1.2 Failure Modes of Purely Statistical Indicators
+
+| Statistical Metric | Standard Academic Assumption | Structural Economic Pitfall | Real-World Breakdown Mechanism on MOEX |
+| :--- | :--- | :--- | :--- |
+| **High Empirical Correlation ($r > 0.90$)** | Assets co-move stably; spread will remain bounded. | Measures co-movement of short-term returns, not price level equilibrium. | Assets can drift indefinitely far apart in absolute terms while maintaining high return correlation. |
+| **ADF Stationarity ($p < 0.05$)** | Rejection of unit root guarantees tradeable mean reversion. | Highly sensitive to sample window selection and lookback duration. | Historical stationarity collapses post-entry due to macroeconomic policy shifts or structural rate adjustments. |
+| **Simple Z-Score Triggers ($|Z| > 2.0$)** | Extreme deviations represent mispricings bound to revert. | Assumes constant variance and stationary mean over time. | Structural shifts cause the spread mean to jump, leading to false entry signals into an expanding loss. |
+
+---
+
+## 2. Quantitative Formulation & Operational Specifications
+
+### 2.1 Spread Normalization, Hedge Ratio Estimation, and Integer Mapping
+
+To construct a tradable spread between Leg A ($P_{A}$) and Leg B ($P_{B}$), the raw hedge ratio $\beta_t$ must be continuously estimated while preserving point-in-time integrity.
+
+```
+       ┌────────────────────────────────────────────────────────┐
+       │             POINT-IN-TIME MARKET DATA                  │
+       │     Prices (PA, PB), Tick Sizes, Lot Dimensions        │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │             DYNAMIC HEDGE RATIO ESTIMATION             │
+       │    Kalman Filter State-Space / Rolling TLS Regression  │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │             INTEGER LOT MAPPING ENGINE                 │
+       │       Minimizes Residual Exposure Under Capital        │
+       │                 Constraint (N_A * PA <= C)             │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │            NORMALIZED SPREAD & INDICATORS              │
+       │       Spread_t = P_A,t - β_mapped * P_B,t              │
+       │       Z_t = Rolling Robust Z-Score (Median/MAD)        │
+       └────────────────────────────────────────────────────────┘
+```
+
+#### A. Hedge Ratio ($\beta$) Estimation
+Rather than static Ordinary Least Squares (OLS) over in-sample data, $\beta_t$ is estimated dynamically using one of two methods:
+1. **Total Least Squares (TLS):** Accounts for measurement noise in both leg prices simultaneously:
+   $$\min_{\alpha, \beta} \frac{\sum (P_{A,t} - \alpha - \beta P_{B,t})^2}{1 + \beta^2}$$
+2. **Kalman Filter (State-Space Formulation):**
+   $$\text{Observation Equation: } P_{A,t} = \beta_t P_{B,t} + v_t, \quad v_t \sim \mathcal{N}(0, V_t)$$
+   $$\text{State Equation: } \beta_t = \beta_{t-1} + w_t, \quad w_t \sim \mathcal{N}(0, W_t)$$
+
+#### B. Integer Lot Mapping Algorithm
+Because futures trade in discrete integer contract lots $N_A, N_B \in \mathbb{Z}^+$, the physical hedge ratio is constrained. Given a target theoretical ratio $\beta_t$, position limits, and contract multipliers ($M_A, M_B$):
+$$\min_{N_A, N_B} \left| \frac{N_B \cdot M_B}{N_A \cdot M_A} - \beta_t \right| \quad \text{s.t.} \quad N_A \cdot \text{Margin}_A + N_B \cdot \text{Margin}_B \le \text{Capital Limit}$$
+
+#### C. Robust Spread Z-Score Calculation
+To prevent variance distorting entry/exit boundaries during market shocks, normalized spreads use Median Absolute Deviation (MAD):
+$$\text{Spread}_t = P_{A,t} - \beta_{\text{mapped}} \cdot P_{B,t}$$
+$$\mu_{t,k} = \text{Median}(\text{Spread}_{t-k:t}), \quad \text{MAD}_{t,k} = \text{Median}(|\text{Spread}_{t-k:t} - \mu_{t,k}|)$$
+$$Z_t = \frac{\text{Spread}_t - \mu_{t,k}}{1.4826 \cdot \text{MAD}_{t,k}}$$
+
+### 2.2 Entry, Exit, Invalidation, and Expiry Protocols
+
+```
+                          ┌────────────────────────┐
+                          │    EVALUATE SIGNAL     │
+                          │   |Z_t| >= Z_entry?    │
+                          └───────────┬────────────┘
+                                      │
+                                Yes   │   No
+                        ┌─────────────┴─────────────┐
+                        ▼                           ▼
+            ┌───────────────────────┐   ┌───────────────────────┐
+            │   STRUCTURAL CHECKS   │   │   REMAIN IN CASH /    │
+            │ • Volatility Shock?   │   │    RETAIN LQDT YIELD  │
+            │ • Calendar/Expiry?    │   └───────────────────────┘
+            │ • Net Return > Cost?  │
+            └───────────┬───────────┘
+                        │
+                  Pass  │  Fail
+            ┌───────────┴───────────┐
+            ▼                       ▼
+┌───────────────────────┐   ┌───────────────────────┐
+│     ENTER POSITION    │   │    REJECT SIGNAL      │
+│ (Exec Latency 5-15m)  │   └───────────────────────┘
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│                    CONTINUATION MONITOR                   │
+│                                                           │
+│ • Exit Target:  |Z_t| <= Z_exit (Mean Reversion)          │
+│ • Invalidate:   |Z_t| >= Z_stop OR Structural Break     │
+│ • Time Stop:    Holding Period > Max_Days                 │
+│ • Expiry Roll:  T_exp - t <= Roll_Window                 │
+└───────────────────────────────────────────────────────────┘
+```
+
+* **Entry Condition:** $|Z_t| \ge Z_{\text{entry}}$ (Preregistered candidate range: $[1.8, 2.5]$), subject to minimum expected trade return exceeding conservative round-trip transaction costs and bid-ask slippage.
+* **Mean-Reversion Exit:** $|Z_t| \le Z_{\text{exit}}$ (Preregistered candidate range: $[0.0, 0.3]$).
+* **Statistical Stop-Loss Invalidation:** $|Z_t| \ge Z_{\text{stop}}$ (Preregistered candidate range: $[3.2, 4.0]$).
+* **Time-Based Invalidation:** Maximum holding period $T_{\text{max}}$ (Preregistered: 10 to 20 trading days). Positions failing to revert within $T_{\text{max}}$ are liquidated to free margin capital.
+* **Expiration Protocol:** Futures positions in expiring contracts are forcibly closed or rolled $N$ days prior to the official settlement date ($N \in [3, 5]$) to avoid settlement volatility, physical delivery fees, and sharp liquidity collapses.
+
+---
+
+## 3. Entry vs. Continuation Decision Framework & Opportunity Cost Model
+
+### 3.1 Conditional Incremental Net Expected Value ($\text{EV}_{\text{cont}}$)
+
+Every rebalancing interval $t$, the decision to hold an open spread position versus closing it to re-allocate capital to alternative opportunities or default `LQDT` holding is governed by the forward-looking incremental valuation function:
+
+$$\text{EV}_{\text{cont}}(t) = \mathbb{E}\left[\Delta P_{\text{spread}}(t \to t+\tau)\right] - \text{Costs}_{\text{exit}}(t+\tau) - \text{LQDT}_{\text{opportunity}}(t \to t+\tau) - \text{RiskPenalty}(\sigma, \tau)$$
+
+#### Components
+1. **Expected Spread Convergence ($\mathbb{E}\left[\Delta P_{\text{spread}}\right]$):** Estimated using an Ornstein-Uhlenbeck (OU) mean-reversion process parameterized on in-sample training data:
+   $$d S_t = \theta (\mu - S_t) dt + \sigma dW_t \implies \mathbb{E}[S_{t+\tau} \mid S_t] = \mu + (S_t - \mu) e^{-\theta \tau}$$
+2. **Remaining Liquidation Cost ($\text{Costs}_{\text{exit}}$):** Transaction fees and market impact needed to exit the position at $t+\tau$. Sunk entry costs are explicitly excluded from this calculation.
+3. **Counterfactual Opportunity Cost ($\text{LQDT}_{\text{opportunity}}$):** The risk-free return sacrificed by keeping initial and variation margin tied up in the futures spread rather than earning the native `LQDT` yield ($r_{\text{LQDT}}$):
+   $$\text{LQDT}_{\text{opportunity}}(t \to t+\tau) = \text{Margin}_{\text{deployed}}(t) \cdot r_{\text{LQDT}}(t) \cdot \frac{\tau}{365}$$
+4. **Time-to-Exit Distribution ($\tau$):** The expected holding duration derived from the OU analytical half-life:
+   $$t_{1/2} = \frac{\ln(2)}{\theta}$$
+
+```
+                       ┌─────────────────────────────────┐
+                       │   CONTINUATION EVALUATION AT t  │
+                       └────────────────┬────────────────┘
+                                        │
+                                        ▼
+                       ┌─────────────────────────────────┐
+                       │ Calculate Forward EV_cont(t)    │
+                       │ • OU Reversion Expectation      │
+                       │ • Deduct Exit Costs             │
+                       │ • Deduct LQDT Opportunity Cost  │
+                       │ • Apply Volatility/Risk Penalty │
+                       └────────────────┬────────────────┘
+                                        │
+                                        ▼
+                       ┌─────────────────────────────────┐
+                       │        DECISION GATEWAY         │
+                       └────────────────┬────────────────┘
+                                        │
+             ┌──────────────────────────┴──────────────────────────┐
+             ▼                                                     ▼
+  ┌─────────────────────┐                               ┌─────────────────────┐
+  │   EV_cont(t) > 0    │                               │   EV_cont(t) <= 0   │
+  ├─────────────────────┤                               ├─────────────────────┤
+  │ MAINTAIN POSITION   │                               │ CLOSE POSITION      │
+  │ Retain exposure for │                               │ Release IM/VM to    │
+  │ mean reversion      │                               │ high-yielding LQDT  │
+  └─────────────────────┘                               └─────────────────────┘
+```
+
+---
+
+## 4. Capital Allocation, Position Sizing, and Sizing Ablation Plan
+
+### 4.1 Comparative Sizing Methodologies
+
+To ensure capital preservation on a RUB 30,000 pilot account while retaining scale-up potential for RUB 10–20M, three distinct position sizing methodologies are tested under strict operational constraints:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               SIZING METHODOLOGY SPECTRUM                              │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+  [1. Fixed Minimum Sizing]    ──► [2. Capped Adaptive Sizing]  ──► [3. Preplanned Scale-In]
+  • 1 Lot Leg A / K Lot Leg B      • Scaled by Inverse Volatility     • Initial Entry: 50%
+  • Zero Leverage Optimization     • Maximum Margin <= 80% Capital    • Re-entry at Z_entry + 0.75
+  • Minimal Operational Risk       • Dynamic Portfolio Scaling       • Strict No-Averaging Rules
+```
+
+1. **Fixed Minimum Sizing:** Trades the absolute minimum integer lot ratio (e.g., 1 lot Leg A vs. $K$ lots Leg B). Eliminates leverage variability; highly robust for micro-accounts.
+2. **Capped Adaptive Volatility-Adjusted Sizing:** Sizes positions dynamically inversely proportional to realized volatility, capped such that total Initial Margin never exceeds 80% of account equity:
+   $$N_A = \min \left( \left\lfloor \frac{\text{Capital} \cdot \delta}{\text{Margin}_A + \beta \cdot \text{Margin}_B} \right\rfloor, \quad \left\lfloor \frac{\text{Target Risk Budget}}{\sigma_{\text{spread}} \cdot \text{Contract Value}_A} \right\rfloor \right)$$
+3. **Preplanned Scale-In (Tranching):** Deploys 50% of maximum target sizing at $|Z_t| = Z_{\text{entry}}$, and the remaining 50% only if $|Z_t| = Z_{\text{entry}} + 0.75 \sigma$. **Strict Limit:** Averaging down beyond preplanned initial tranches is strictly forbidden.
+
+### 4.2 Sizing Ablation Matrix
+
+To verify whether complex dynamic sizing adds genuine statistical edge over simple minimum integer sizing after accounting for execution delays and transaction costs, the following ablation protocol is executed across identical data splits:
+
+| Experiment Code | Sizing Model | Scale-In Logic | Friction / Delay Assumptions | Primary Evaluation Target |
+| :--- | :--- | :--- | :--- | :--- |
+| **ABL-SIZ-01** | Fixed Minimum (1x Lot) | Single Tranche (100%) | Base Fees + 15m Delay | Baseline net excess return against `LQDT`. |
+| **ABL-SIZ-02** | Capped Volatility-Adjusted | Single Tranche (100%) | Base Fees + 15m Delay | Evaluates if inverse-volatility scaling improves Sharpe/Sortino. |
+| **ABL-SIZ-03** | Fixed Minimum (1x Lot) | Preplanned 2-Tranche | Base Fees + 15m Delay | Tests if tranching entries reduces realized maximum drawdown. |
+| **ABL-SIZ-04** | Capped Volatility-Adjusted | Preplanned 2-Tranche | Stress Fees + 30m Delay | Stress test evaluating sizing resilience during volatility spikes. |
+
+---
+
+## 5. Opportunity Arrival Modeling & Prioritized Execution Queue
+
+### 5.1 Realistic Signal Queue vs. Lookahead Oracle
+
+To eliminate selection bias, opportunity arrival must be modeled strictly using past point-in-time information. An "oracle" backtest that assumes perfect foresight to select the ex-post best performing spread among concurrent signals is explicitly prohibited.
+
+```
+       ┌────────────────────────────────────────────────────────┐
+       │             CONCURRENT SIGNAL ARRIVAL (t)              │
+       │         Multiple Spreads Cross Entry Thresholds        │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │               POINT-IN-TIME SIGNAL FILTER              │
+       │    Filter out stale, unexecutable, or low-margin ideas │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │                 RANKING ENGINE (SCORE)                 │
+       │   Score_i = (|Z_i| * Expect_Reversion) / (Margin * Vol)│
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │               PRIORITIZED EXECUTION QUEUE              │
+       │   Allocate Capital Sequentially Until Cash/IM Exhausted│
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │              REJECTED / UNFILLED LOGGING               │
+       │     Log all skipped signals for queue audit analysis   │
+       └────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Signal Ranking Metrics
+
+When available capital is insufficient to execute all active entry signals, candidate trades are placed in a prioritized queue ranked by the following ratio:
+
+$$\text{Rank Score}_i = \frac{|Z_{i,t}| \cdot \theta_i}{\text{Margin Requirement}_i \cdot \sigma_{i,\text{daily}}}$$
+
+*where $|Z_{i,t}|$ is the current signal strength, $\theta_i$ is the Ornstein-Uhlenbeck mean-reversion speed, $\text{Margin Requirement}_i$ is the required initial margin in RUB, and $\sigma_{i,\text{daily}}$ is daily spread volatility.*
+
+Every rejected, stale, or partially filled trade signal is logged with its timestamp, rank score, and capital state to audit the opportunity cost of capital rationing.
+
+---
+
+## 6. Candidate Hypothesis Cards
+
+### Hypothesis Card 1: Commodity Term-Structure Reversion (Brent Oil)
+
+* **Economic Story:** Short-term supply/demand imbalances push Brent calendar spreads away from structural cost-of-carry. Arbitrage capital forces convergence as contracts approach delivery.
+* **Target Instruments:** `BR-<front>` vs. `BR-<next>` (e.g., `BR-11.26` vs. `BR-12.26`).
+* **Required Data & Frequency:** End-of-Day (EOD) daily bars (OHLCV, Open Interest), contract settlement rules, tick size/value tables.
+* **Quantitative Formulas:**
+  $$\text{Spread}_t = P_{\text{Front},t} - P_{\text{Next},t}$$
+  $$Z_t = \frac{\text{Spread}_t - \text{Median}(\text{Spread}_{t-20:t})}{1.4826 \cdot \text{MAD}_{t-20:t}}$$
+* **Parameter Selection:** Rolling 20-day window for robust Z-score; $Z_{\text{entry}} = 2.0$, $Z_{\text{exit}} = 0.2$, $Z_{\text{stop}} = 3.5$.
+* **Entry / Continue / Exit / Invalidate Rules:**
+  * **Entry:** $Z_t \ge 2.0$ AND Expected Return > Total Friction Costs.
+  * **Continue:** $\text{EV}_{\text{cont}}(t) > 0$ AND Holding Period < 10 Days.
+  * **Exit:** $Z_t \le 0.2$ OR Expiry $T - t \le 3$ Days.
+  * **Invalidation:** $Z_t \ge 3.5$ OR Excess Drawdown threshold hit.
+* **Expected Failure Mode:** Structural regime change in global oil term structure (e.g., sudden shift from super-contango to deep backwardation).
+* **Validation & Decision Rule:** Walk-forward out-of-sample testing across 2022–2026 data. **Reject if** net RUB return after costs fails to beat `LQDT` yield by at least 2.0% annualized.
+
+---
+
+### Hypothesis Card 2: FX Synthetic Basis Arbitrage (Yuan/Rouble)
+
+* **Economic Story:** Implied yield differentials between deliverable futures (`CY`) and daily perpetual futures (`CNYRUBF`) deviate from RUSFAR benchmark interest rates due to localized bank balance sheet constraints.
+* **Target Instruments:** `CY-<quarter>` vs. `CNYRUBF`.
+* **Required Data & Frequency:** Daily settlement prices, overnight RUSFAR interest rate series, MOEX swap rate curves.
+* **Quantitative Formulas:**
+  $$\text{Implied Yield}_t = \left( \frac{P_{\text{Futures},t}}{P_{\text{Perp},t}} - 1 \right) \cdot \frac{365}{T - t}$$
+  $$\text{Spread}_t = \text{Implied Yield}_t - \text{RUSFAR}_t$$
+* **Parameter Selection:** $Z_{\text{entry}} = 2.2$, $Z_{\text{exit}} = 0.1$, $Z_{\text{stop}} = 3.8$.
+* **Entry / Continue / Exit / Invalidate Rules:**
+  * **Entry:** $|\text{Spread}_t| \ge 2.5\%$ annualized yield divergence.
+  * **Continue:** Reversion trend active AND No capital control policy adjustments announced.
+  * **Exit:** $|\text{Spread}_t| \le 0.5\%$ annualized yield divergence.
+  * **Invalidation:** Sudden change in foreign currency liquidity buffers or regulatory policy changes.
+* **Expected Failure Mode:** Unilateral policy changes or balance sheet restrictions on Yuan liquidity on MOEX.
+* **Validation & Decision Rule:** **Reject if** cost-adjusted excess return over `LQDT` is negative in > 40% of walk-forward test folds.
+
+---
+
+### Hypothesis Card 3: Single-Stock / Index Relative Value (Sberbank vs. MOEX Mini-Index)
+
+* **Economic Story:** Divergence between Sberbank (`SBRF`) and MOEX Mini-Index (`MXI`) driven by institutional block rebalancing. Convergence is enforced by index constituent arbitrage.
+* **Target Instruments:** `SBRF-<quarter>` vs. `MXI-<quarter>`.
+* **Required Data & Frequency:** Daily OHLCV bars, index weighting updates, dividend announcement schedules.
+* **Quantitative Formulas:**
+  $$\beta_t = \text{Kalman Filter State Estimate}(P_{\text{SBRF}}, P_{\text{MXI}})$$
+  $$\text{Spread}_t = P_{\text{SBRF},t} - \beta_t \cdot P_{\text{MXI},t}$$
+* **Parameter Selection:** Process variance $W = 10^{-4}$, Measurement variance $V = 10^{-2}$; $Z_{\text{entry}} = 2.0$, $Z_{\text{exit}} = 0.0$.
+* **Entry / Continue / Exit / Invalidate Rules:**
+  * **Entry:** $|Z_t| \ge 2.0$ outside corporate dividend window ($t_{\text{div}} \pm 5$ days).
+  * **Continue:** Spread residual within $3\sigma$ standard error band.
+  * **Exit:** $|Z_t| \le 0.0$ OR 15 trading days elapsed.
+  * **Invalidation:** Corporate action, earnings surprise, or dividend announcement during holding period.
+* **Expected Failure Mode:** Single-stock idiosyncratic earnings or dividend shock altering fundamental factor weighting.
+* **Validation & Decision Rule:** **Reject if** strategy Sharpe ratio is lower than standalone index buy-and-hold during training validation.
+
+---
+
+## 7. Pair-Family Strategy Matrix & Ranked Test Experiments
+
+### 7.1 Strategy Compatibility Matrix
+
+| Asset Class / Pair | Underlying Mechanics | Data Requirement | Volatility Profile | Complexity | Priority Rank |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **BR Calendar Spread** | Commodity Storage / Carry | EOD Daily Bars | Low – Moderate | Low | **1** |
+| **CY / CNYRUBF Basis** | FX Covered Interest Parity | EOD Bars + RUSFAR | Low | Moderate | **2** |
+| **SBRF / MXI Spread** | Factor Cointegration | EOD Daily Bars | Moderate – High | High | **3** |
+| **GOLD Calendar Spread** | Precious Metals Storage | EOD Daily Bars | Very Low | Low | **4** |
+| **Si / USDRUBF Basis** | FX Basis Dislocation | EOD Bars + RUSFAR | Moderate | High | **5** |
+
+### 7.2 Cost & Resource Evaluation Scenarios
+
+Every strategy experiment is evaluated against three cost tiers:
+* **Conservative Scenario:** Exchange fee + Broker fee = RUB 3.0/contract; Bid-Ask Spread = 1 tick/side; Slippage = 0 ticks.
+* **Base Scenario:** Exchange fee + Broker fee = RUB 5.0/contract; Bid-Ask Spread = 1 tick/side; Slippage = 1 tick/side.
+* **Stress Scenario:** Exchange fee + Broker fee = RUB 10.0/contract; Bid-Ask Spread = 2 ticks/side; Slippage = 2 ticks/side.
+
+---
+
+## 8. Ablation Framework & Library Exploration Strategy
+
+### 8.1 Strategy Component Ablation Plan
+
+To prove that added model complexity provides genuine incremental value, components are systematically isolated and removed:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        FULL COMPLEX MODEL                              │
+│ (Dynamic Kalman Beta + Adaptive Vol Sizing + Scale-In + Queue Ranking) │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                       ABLATION STEP 1: SIZING                          │
+│     Remove Adaptive Sizing & Scale-Ins ──► Replace with Fixed 1-Lot   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                       ABLATION STEP 2: DYNAMICS                        │
+│     Remove Kalman Filter Beta ──────────► Replace with Static TLS Beta │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        MINIMAL BASELINE MODEL                          │
+│       (Static Beta + Fixed Sizing + Simple FIFO Signal Queue)          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Ablation 1 (Dynamic Sizing Removal):** Replaces adaptive sizing and scale-ins with static fixed minimum 1-lot trading. If performance does not suffer significantly, dynamic sizing is discarded.
+2. **Ablation 2 (Dynamic Beta Removal):** Replaces Kalman Filter dynamic hedge ratio with a static 60-day rolling Total Least Squares (TLS) regression beta.
+3. **Ablation 3 (Queue Optimization Removal):** Replaces the multi-metric queue ranking engine with a simple First-In, First-Out (FIFO) signal execution loop.
+
+### 8.2 Quantitative Targeted Library Strategy
+
+Prioritized library search targets focused on specific analytical methods:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      TARGETED LIBRARY REFERENCE                        │
+└────────────────────────────────────────────────────────────────────────┘
+  ├── 1. Vidyamurthy (2004) - "Pairs Trading"
+  │    └── Section: Cointegration & State-Space Spread Modeling
+  │    └── Extraction Focus: Distance metrics & analytical stop boundaries
+  │
+  ├── 2. Chan (2013) - "Algorithmic Trading"
+  │    └── Section: Mean-Reversion & OU Process Parameter Estimation
+  │    └── Extraction Focus: Analytical half-life (t_1/2 = ln(2)/θ)
+  │
+  └── 3. Carver (2016) - "Systematic Trading"
+       └── Section: Capital Allocation & Volatility Targeting
+       └── Extraction Focus: Position sizing caps under non-linear costs
+```
+
+1. **Vidyamurthy, G. (2004). *Pairs Trading: Quantitative Methods and Analysis*. Wiley.**
+   * *Target Focus:* Chapter 3 (Statistical Tests for Cointegration) and Chapter 6 (State-Space Modeling).
+   * *Extraction Goal:* Parameterizing stationary spread boundaries and analytical stop-loss calculation methods.
+2. **Chan, E. P. (2013). *Algorithmic Trading: Winning Strategies and Their Rationale*. Wiley.**
+   * *Target Focus:* Chapter 3 (Mean-Reverting Strategies).
+   * *Extraction Goal:* Ornstein-Uhlenbeck parameter estimation equations ($\theta, \mu, \sigma$) and optimal exit threshold formulas.
+3. **Carver, R. (2016). *Systematic Trading: A unique new method for designing trading systems for stocks, futures and options*. Harriman House.**
+   * *Target Focus:* Chapter 9 (Position Sizing) and Chapter 13 (Combined Portfolio Sizing).
+   * *Extraction Goal:* Capital allocation algorithms under explicit leverage constraints and counterfactual cash benchmarking.
+
+---
+
+## 9. Next Steps & Walk-Forward Execution Plan
+
+1. **Data Pipeline Verification:** Acquire and format free MOEX End-of-Day futures daily bars (OHLCV + Open Interest) for target contracts (`BR`, `CY`, `CNYRUBF`, `SBRF`, `MXI`) spanning 2021–2026.
+2. **Walk-Forward Partitioning:** Split data into 70% rolling in-sample training folds and 30% out-of-sample evaluation folds, enforcing a 5-day purge gap between folds to eliminate signal overlap.
+3. **Ablation Protocol Execution:** Run backtests across the defined ablation matrix (ABL-SIZ-01 to ABL-SIZ-04) using strict point-in-time constraints.
+4. **Counterfactual Validation:** Measure net excess RUB performance against `LQDT` holding returns across Conservative, Base, and Stress cost tiers.
+5. **Decision & Strategy Preregistration:** Finalize strategy parameters based strictly on out-of-sample survival prior to any live micro-pilot trading.

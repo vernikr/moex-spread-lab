@@ -1,0 +1,420 @@
+# Execution Latency, Signal Revalidation, and Virtual Portfolio Accounting for Manual MOEX Futures Spread Strategies
+
+**Document Version:** 1.0  
+**Research Cutoff Date:** October 2026  
+**Scope:** Execution microstructure, delay scenarios, signal revalidation protocols, two-leg/partial execution mechanics, virtual portfolio accounting, and communication taxonomy for manual MOEX futures spread trading.
+
+---
+
+## Executive Summary & Dependency Mapping
+
+This report establishes an operational framework for executing, revalidating, and accounting for manual futures spread strategies on the Moscow Exchange (MOEX), operating under strict capital constraints ($\text{RUB } 30,000$ test allocation alongside a core $\text{LQDT}$ holding exceeding $\text{RUB } 40 \text{ million}$). 
+
+### Operational Constraints & Key Findings
+1. **Execution Latency:** Human reaction latencies ($3\text{--}90$ minutes, median $5\text{--}15$ minutes) dictate that market signals degrade significantly prior to order submission. High-volatility regimes exhibit positive correlation between execution delay and bid-ask spread widening, exacerbating adverse selection.
+2. **Spread Execution Atomicity:** MOEX derivatives market (Futures and Options) does not support native atomic multi-leg spread orders for arbitrary custom spread pairs. Every spread trade must be executed as two synthetic, independent single-leg limit/market orders, introducing structural leg-risk (execution skew and unhedged market exposure).
+3. **Revalidation Mechanics:** Signals cannot be executed based on entry-time prices. A mandatory pre-order revalidation protocol calculates the net executable edge against a dynamic benchmark, accounting for bid-ask spreads, current order book depth, broker fees, and the matched $\text{LQDT}$ opportunity cost ($B(t)$).
+4. **Virtual Portfolio & Wealth Tracking:** True economic performance $X(t) = V(t) - B(t)$ tracks total strategy-enabled wealth $V(t)$ against a counterfactual baseline $B(t)$ where core $\text{LQDT}$ remains untouched. Drawdown triggers ($D \ge \text{RUB } 5,000$ for warning; $D \ge \text{RUB } 10,000$ or $X \le -\text{RUB } 10,000$ for entry suspension/orderly exit) are enforced strictly on $X(t)$ without resetting thresholds upon recapitalization.
+
+---
+
+## 1. Execution Latency Architecture and Timestamp Specification
+
+Quantitative futures spread trading requires tracking timestamps across the execution pipeline to isolate system delays from human execution latency. In a manual execution framework operating via mobile broker interfaces such as VTB Investments, operational latencies span minutes to hours. Establishing a precise timestamp architecture allows a trading system to measure signal decay, enforce data freshness boundaries, and attribute performance drag to specific pipeline bottlenecks.
+
+```
++-----------------------------------------------------------------------------------------------------------------------------------------+
+|                                                      EXECUTION LATENCY PIPELINE                                                         |
++-------------------+-------------------+-------------------+-------------------+-------------------+------------------+------------------+
+| Market Data Tick  | Model Evaluation  | Signal Creation   | Telegram Alert    | User Decision     | Broker Acceptance| Leg 1 Fill       |
+| Availability      | Completion        | Timestamp         | Dispatch          | Timestamp         | Timestamp        | Timestamp        |
+| (t_info)          | (t_eval)          | (t_sig)           | (t_tg)            | (t_user)          | (t_broker)       | (t_fill)         |
++-------------------+-------------------+-------------------+-------------------+-------------------+------------------+------------------+
+        |                   |                   |                   |                   |                  |                  |
+        +---> Latency L1 --->+---> Latency L2 --->+---> Latency L3 --->+---> Latency L4 --->+---> Latency L5 ->+---> Latency L6 ->+
+
+```
+
+### Timestamp Definitions & Specifications
+
+$$\begin{array}{|l|l|p{4.5cm}|p{5cm}|}
+\hline
+\textbf{Symbol} & \textbf{Name} & \textbf{Definition} & \textbf{Source / Capture Point} \\ \hline
+t_{\text{info}} & \text{Market Data Availability} & \text{Exact exchange match-engine print or MOEX ISS tick release time.} & \text{MOEX ISS API / FAST/FIX gateway header.} \\ \hline
+t_{\text{eval}} & \text{Model Evaluation} & \text{Completion of quantitative model pipeline feature generation.} & \text{Screener process execution logs.} \\ \hline
+t_{\text{sig}} & \text{Signal Creation} & \text{Timestamp when trade criteria cross execution thresholds.} & \text{Screener DB record generation.} \\ \hline
+t_{\text{tg}} & \text{Notification Dispatch} & \text{Timestamp when Telegram Bot API receives HTTP 200 OK.} & \text{Telegram Bot API payload log.} \\ \hline
+t_{\text{user}} & \text{User Decision} & \text{User reads alert and initiates order input in mobile broker UI.} & \text{Manual log / client UI interaction.} \\ \hline
+t_{\text{broker}} & \text{Broker Acceptance} & \text{Broker routing server validates and accepts order payload.} & \text{VTB / BCS FIX response or API ack.} \\ \hline
+t_{\text{fill,1}} & \text{Leg 1 Fill} & \text{MOEX matching engine executes Leg 1 order.} & \text{MOEX execution report (`TradeTime`).} \\ \hline
+t_{\text{fill,2}} & \text{Leg 2 Hedge Fill} & \text{MOEX matching engine executes Leg 2 hedging order.} & \text{MOEX execution report (`TradeTime`).} \\ \hline
+t_{\text{cancel}} & \text{Cancellation / Abort} & \text{Unfilled order cancellation acknowledged by exchange.} & \text{MOEX order state transition message.} \\ \hline
+\end{array}$$
+
+### Latency Pipeline Components
+
+* **Data & System Processing Latency ($\Delta t_{\text{sys}} = t_{\text{tg}} - t_{\text{info}}$):**
+  $$\Delta t_{\text{sys}} = (t_{\text{eval}} - t_{\text{info}}) + (t_{\text{sig}} - t_{\text{eval}}) + (t_{\text{tg}} - t_{\text{sig}})$$
+  Encompasses MOEX ISS polling intervals (e.g., 1-minute aggregations), screener calculation runtime, and Telegram API transmission latency.
+* **Human Reaction Latency ($\Delta t_{\text{human}} = t_{\text{user}} - t_{\text{tg}}$):**
+  The dominant latency component in manual trading. Ranges from 3 to 90 minutes with a target median of 5 to 15 minutes.
+* **Order Placement & Routing Latency ($\Delta t_{\text{route}} = t_{\text{broker}} - t_{\text{user}}$):**
+  Time taken to open the VTB My Investments interface, select the contract, enter volume/price, complete multi-factor authentication, and submit to the broker OMS.
+* **Exchange Execution Latency ($\Delta t_{\text{exec}} = t_{\text{fill,1}} - t_{\text{broker}}$):**
+  Matching engine order queue processing duration.
+* **Inter-Leg Unhedged Execution Latency ($\Delta t_{\text{hedge}} = t_{\text{fill,2}} - t_{\text{fill,1}}$):**
+  The duration during which the trader holds an unhedged directional position on Leg 1 while Leg 2 remains unfilled.
+
+### Outage Taxonomies
+
+#### Model & Infrastructure Outages
+* **Data Feed Freeze:** MOEX ISS API fails to return updated candles or quotes. Enforces immediate signal generation suspension if $(t_{\text{current}} - t_{\text{info}}) > \Delta t_{\text{max\_stale}}$ (default: 3 minutes).
+* **VPS / Connectivity Failure:** Screener process offline. Evaluated via continuous heartbeat pings sent to an external monitoring node every 60 seconds.
+* **Notification Delivery Failure:** Telegram API returns rate-limiting errors (HTTP 429) or connection timeouts. Triggers retry logic up to a 180-second cap before flagging the signal as `DELIVERY_FAILED`.
+
+#### Irregular Human Availability Outages
+* **User Unavailability Windows:** Periods where the trader cannot respond (e.g., sleep, meetings, emergency response). Modeled explicitly as non-responsive windows rather than infinite reaction latency.
+* **Session Transition Boundaries:** Signals generated within 15 minutes of the intermediate clearing session ($14:00\text{--}14:05 \text{ MSK}$) or evening clearing session ($18:50\text{--}19:05 \text{ MSK}$) are auto-invalidated due to order book clearing and exchange queue wipes.
+
+---
+
+## 2. Delay Scenarios and Market Microstructure Dynamics
+
+Manual execution delays cannot be modeled as independent uniform random variables. Reaction latencies are structurally correlated with market regimes: during periods of high volatility, news delivery causes notification congestion and user distraction, while market spreads widen and depth thins.
+
+```
+       TYPICAL SPREAD AND LIQUIDITY BEHAVIOR ACROSS DELAY REGIMES
+
+     Price / Spread
+         ^
+         |      / \       High Volatility / News Spike
+         |     /   \      - Bid-Ask Spread Widens (S_t >> S_0)
+         |    /     \     - Order Book Depth Evaporates
+         |   /       \____
+         |  /             \
+         | /               \_____ Normal Regime (Stable Spread S_0)
+         |/______________________\_________________________________> Time
+         t_sig                    t_user (Delayed Execution Point)
+```
+
+### Realistic Delay Scenarios
+
+$$\begin{array}{|l|c|c|p{4.5cm}|p{4.5cm}|}
+\hline
+\textbf{Scenario} & \textbf{Latency } (\Delta t_{\text{human}}) & \textbf{Vol Regime} & \textbf{Microstructure Dynamics} & \textbf{Execution Impact} \\ \hline
+\text{1. Ideal Fast} & 3 \text{ min} & \text{Low / Normal} & \text{Stable bid-ask spread; order book depth sufficient at L1/L2.} & \text{High fill probability at targeted spread price. Minimal slippage.} \\ \hline
+\text{2. Typical Median} & 10 \text{ min} & \text{Normal} & \text{Minor mean-reversion drift in spread; quotes stable.} & \text{Revalidation check passes. Moderate fill probability.} \\ \hline
+\text{3. Delayed Reaction} & 45 \text{ min} & \text{Moderate} & \text{Spread mean-reverted past entry limit or trend continued.} & \text{Signal invalidation triggered via state drift ($S_t < S_{\text{min}}$).} \\ \hline
+\text{4. Volatility Spike Delay} & 15 \text{ min} & \text{Extreme} & \text{Bid-Ask spread widened by 300\%; order book thinned.} & \text{Revalidation fails due to spread width cost exceeding threshold.} \\ \hline
+\text{5. Session Boundary Cross} & 25 \text{ min} & \text{Any} & \text{Intersects 14:00 or 18:50 clearing session; orders canceled.} & \text{Execution rejected; order book state reset by exchange.} \\ \hline
+\end{array}$$
+
+### Mathematical Formulation of Delay-Volatility Correlation
+
+Let $S_t = P_{\text{ask},t} - P_{\text{bid},t}$ be the bid-ask spread of a contract leg at time $t$, and $\sigma_t$ be the localized annualized volatility. The expected executable price drift $\Delta P_{\text{exec}}$ over human delay $\Delta t = t_{\text{user}} - t_{\text{sig}}$ is modeled as:
+
+$$\Delta P_{\text{exec}} = \mu_{\text{drift}} \cdot \Delta t + \gamma \cdot \sigma_t \cdot \sqrt{\Delta t} + \epsilon_t$$
+
+Where:
+* $\mu_{\text{drift}}$ is the directional trend of the spread leg.
+* $\gamma$ is the adverse selection coefficient ($\gamma > 0$ under informed order flow regimes).
+* $\epsilon_t \sim \mathcal{N}(0, \sigma_{\text{micro}}^2)$ represents order book micro-noise.
+
+When volatility $\sigma_t$ increases, the probability that the executable spread $Z_{\text{exec}}(t_{\text{user}})$ breaches the minimum required entry threshold $Z_{\text{entry}}$ increases non-linearly, causing a high signal rejection rate for delayed manual orders.
+
+---
+
+## 3. Candidate Revalidation Protocol Prior to Order Entry
+
+Prior to opening the broker mobile application, a manual trader must execute a pre-flight revalidation check. Passing this check ensures that market drift during the reaction delay has not destroyed the statistical edge or breached risk management constraints.
+
+```
++-----------------------------------------------------------------------------------+
+|                           PRE-ORDER REVALIDATION FLOW                             |
++-----------------------------------------------------------------------------------+
+                                         |
+                                         v
+                         +-------------------------------+
+                         | Data Freshness Check          |
+                         | (t_now - t_info <= 3 mins?)   |
+                         +-------------------------------+
+                                         | Yes
+                                         v
+                         +-------------------------------+
+                         | Clearing Session Check        |
+                         | (Not in Clearing Window?)     |
+                         +-------------------------------+
+                                         | Yes
+                                         v
+                         +-------------------------------+
+                         | Net Executable Advantage      |
+                         | (Z_exec - Fees - Cost > Threshold)|
+                         +-------------------------------+
+                                         | Yes
+                                         v
+                         +-------------------------------+
+                         | Margin & Reserve Verification |
+                         | (Req_margin + Buffer <= Free) |
+                         +-------------------------------+
+                                         | Yes
+                                         v
+                         +-------------------------------+
+                         | EXECUTE ORDER VIA BROKER      |
+                         +-------------------------------+
+```
+
+### Pre-Order Revalidation Criteria
+
+A signal remains executable at time $t_{\text{user}}$ if and only if **all** of the following conditions evaluate to `TRUE`:
+
+1. **Data Freshness Metric:**
+   $$(t_{\text{user}} - t_{\text{info}}) \le \Delta t_{\text{max\_stale}} \quad (\text{where } \Delta t_{\text{max\_stale}} = 180 \text{ seconds})$$
+2. **Session Validity Window:**
+   $$t_{\text{user}} \notin [13:55, 14:06] \quad \text{and} \quad t_{\text{user}} \notin [18:45, 19:10] \quad \text{and} \quad t_{\text{user}} \le 23:45 \text{ MSK}$$
+3. **Net Executable Advantage vs. $\text{LQDT}$ Hurdle Rate:**
+   Let the synthetic bid/ask of the spread composed of Leg $A$ (Buy) and Leg $B$ (Sell) be defined as:
+   $$\text{Spread}_{\text{ask}}(t) = P_{\text{ask}, A}(t) \cdot \text{Ratio}_A - P_{\text{bid}, B}(t) \cdot \text{Ratio}_B$$
+   The expected gross gain $G_{\text{raw}}(t)$ must satisfy:
+   $$G_{\text{raw}}(t_{\text{user}}) - \text{TCA}_{\text{total}} - r_{\text{LQDT}} \cdot \Delta t_{\text{holding}} > \text{Threshold}_{\text{min}}$$
+   Where:
+   * $\text{TCA}_{\text{total}}$: Total Transaction Cost Analysis including exchange fees, broker fees, and full bid-ask spread cross costs on both legs.
+   * $r_{\text{LQDT}}$: The benchmark yield of the $\text{LQDT}$ money market fund (expressed as a per-minute rate).
+   * $\Delta t_{\text{holding}}$: Expected trade holding duration in minutes.
+4. **Margin and Liquidity Reservation:**
+   $$\text{Free Cash} \ge \sum_{i \in \{A, B\}} \text{MarginReq}_i \times 1.50 + \text{UnrealizedLossBuffer}$$
+   *Note: Under KPUR (Qualifying Investor Portfolio Rules), initial margin requirements may be discounted by the broker, but a $50\%$ conservative margin buffer is required to absorb adverse intraday variation margin fluctuations without triggering liquidity alerts.*
+5. **State Invalidation & Expiry Rules:**
+   * **Price Invalidation:** If the current spread price $Z(t_{\text{user}})$ has mean-reverted by more than $40\%$ toward the target fair value prior to entry, the signal is marked `INVALIDATED_EDGE_DECAY`.
+   * **Time Expiry:** Any entry signal whose $t_{\text{user}} - t_{\text{sig}} > 90 \text{ minutes}$ is automatically marked `EXPIRED_TIME_LIMIT`.
+
+---
+
+## 4. Multi-Leg Execution & Partial Fill Dynamics
+
+### Structural Microstructure Constraints on MOEX
+MOEX derivatives matching engines execute orders strictly on a single-instrument basis. Arbitrary pairs (e.g., `Si-6.26` vs. `Eu-6.26`, or `MIX-6.26` vs. `RTS-6.26`) do not possess native atomic exchange-traded calendar or inter-commodity spread order books.
+
+```
+       SYNTHETIC TWO-LEG EXECUTION TIMELINE & UNHEDGED RISK EXPOSURE
+
+Leg 1 (Buy Si-6.26):   ---[ Submit ]---> [ FILLED at t_fill,1 ] --------------------->
+                                                        |
+                                                        |<-- UNHEDGED LEG RISK -->|
+                                                        |   (Directional Exposure)|
+                                                        v
+Leg 2 (Sell Eu-6.26):  -----------------------------------> [ Submit ]---> [ FILLED at t_fill,2 ]
+```
+
+### Execution Sequencing Protocols
+
+To minimize leg risk when executing a two-leg spread manually:
+
+1. **Leg Ordering (Illiquid First):**
+   * **Rule:** Always execute the less liquid leg (higher bid-ask spread, lower order book depth) first.
+   * **Rationale:** If Leg 1 (illiquid) fails to fill or suffers severe slippage, the trader aborts the transaction before taking on any position in Leg 2. If Leg 1 fills, Leg 2 (highly liquid) can be filled rapidly via a aggressive market or immediate-or-cancel (IOC) order.
+
+2. **Unhedged Interval Management:**
+   * Let $\Delta t_{\text{unhedged}} = t_{\text{fill,2}} - t_{\text{fill,1}}$.
+   * **Maximum Threshold:** $\Delta t_{\text{unhedged, max}} = 120 \text{ seconds}$.
+   * If Leg 2 is not filled within 120 seconds of Leg 1 execution, the trader must execute a **Leg Abort Protocol**:
+     1. Cancel any resting limit orders on Leg 2.
+     2. Immediately liquidate Leg 1 via a market order.
+     3. Log an `UNHEDGED_ABORT_EVENT` in the virtual portfolio accounting ledger.
+
+### Execution Failure Taxonomies
+
+$$\begin{array}{|l|p{4.5cm}|p{6cm}|}
+\hline
+\textbf{Failure Mode} & \textbf{Root Cause} & \textbf{Resolution / Recovery Protocol} \\ \hline
+\text{Leg 1 Partial Fill} & Order book depth exhausted prior to completing desired lot size. & Retain filled fraction on Leg 1; scale Leg 2 order volume proportionally: $\text{Qty}_2 = \lfloor \text{Qty}_{1,\text{filled}} \times \text{HedgeRatio} \rfloor$. Cancel remaining Leg 1 order. \\ \hline
+\text{Leg 2 Rejection} & Margin limit reached or broker order rejection (e.g., price collar breach). & Emergency market liquidation of Leg 1. Do not attempt to hold single-leg exposure. \\ \hline
+\text{Asynchronous Ack Delay} & Broker API latency delays order receipt status confirmation. & Pause all secondary leg submissions. Issue query order status request. If timeout $> 30\text{s}$, assume unexecuted and verify via trade report. \\ \hline
+\text{Clearing Queue Wipe} & Order submitted right before intermediate clearing ($14:00$). & MOEX cancels all active limit orders. Re-evaluate portfolio state at $14:05:01 \text{ MSK}$. \\ \hline
+\end{array}$$
+
+---
+
+## 5. Virtual Portfolio Accounting & Performance Tracking Framework
+
+To evaluate the strategy without distorting baseline core assets, the system constructs a virtual portfolio that tracks the exact net incremental wealth generated by the pilot allocation versus an untouched baseline.
+
+### Wealth Formulation & Counterfactual Accounting
+
+Let:
+* $V(t)$: Total wealth on the shared broker account at time $t$.
+* $B(t)$: Counterfactual benchmark wealth, representing the value of the account if no test trades were executed and all pilot capital remained invested in $\text{LQDT}$.
+* $X(t) = V(t) - B(t)$: Incremental net wealth generated by the strategy ($X(0) = 0$).
+
+$$\begin{aligned}
+B(t) &= B(0) \times \prod_{k=1}^{t} \left(1 + r_{\text{LQDT}, k}\right) + \sum \text{ExternalFlows} \\
+V(t) &= \text{Core LQDT Value}(t) + \text{Test Cash}(t) + \sum \text{Unrealized VM}_i + \sum \text{Realized Profit}_i - \text{Fees}_{\text{total}}
+\end{aligned}$$
+
+#### Critical Accounting Rule: Core Collateral Isolation
+If core $\text{LQDT}$ holdings are used as collateral for futures margin requirements, the continuing yield generated by $\text{LQDT}$ is credited to $V(t)$ and $B(t)$ identically. It **must not** be added as strategy income in $X(t)$, preventing double-counting of baseline money market returns.
+
+### State Tracking Metrics
+
+* **High-Water Mark ($H(t)$):**
+  $$H(t) = \max\left(0, \max_{0 \le \tau \le t} X(\tau)\right)$$
+* **Excess-Curve Drawdown ($D(t)$):**
+  $$D(t) = H(t) - X(t)$$
+
+### Action Thresholds & Risk Controls
+
+```
+                       INCREMENTAL WEALTH (X) & DRAWDOWN (D) CONTROL BOUNDARIES
+
+  X(t), D(t) [RUB]
+     +10,000 |---------------------------------------------------------- (Peak Strategy Profit)
+             |
+           0 |========================================================== Baseline X(0) = 0
+             |
+      -5,000 | - - - - - - - - - - - - - - - - - - - - - - - - - - - - - [WARNING TRIGGER: D >= 5,000]
+             |                                                           (Reassess Strategy & Parameters)
+     -10,000 |========================================================== [ACTION TRIGGER: X <= -10,000 or D >= 10,000]
+             |                                                           (Halt New Entries, Orderly Liquidation)
+     -15,000 |---------------------------------------------------------- [OUTER BOUNDARY: X <= -15,000]
+             |                                                           (Hard Termination of Pilot Protocol)
+```
+
+$$\begin{array}{|l|c|p{7cm}|}
+\hline
+\textbf{Metric / Trigger} & \textbf{Threshold Value} & \textbf{Mandatory Automated / Manual Action} \\ \hline
+\text{Warning Boundary} & D(t) \ge \text{RUB } 5,000 & Issue system warning. Re-calibrate signal parameters and execution slippage assumptions. \\ \hline
+\text{Action Threshold 1} & D(t) \ge \text{RUB } 10,000 & Suspend all new trade entries. Mandate orderly exit of existing positions upon mean-reversion or stop-loss. \\ \hline
+\text{Action Threshold 2} & X(t) \le -\text{RUB } 10,000 & Cease new risk immediately. Initiate orderly liquidation of all open spread legs. \\ \hline
+\text{Emergency Top-Up} & Max \text{RUB } 15,000 & Authorized **solely** to avert disorderly liquidation of existing positions. **Forbidden** for fresh exposure or loss resets. \\ \hline
+\text{Hard Outer Limit} & X(t) < -\text{RUB } 15,000 & Breach of absolute capital protection boundary. Complete strategy shutdown. \\ \hline
+\text{Formal Review} & t = 90 \text{ Calendar Days} & Review overall strategy performance without resetting historical $X(t)$, $H(t)$, or drawdown bounds. \\ \hline
+\end{array}$$
+
+---
+
+## 6. Signal Communication Protocol & Taxonomy
+
+To eliminate ambiguity between notification alert generation and order execution, all automated alerts sent to the manual trader must follow a standardized structure, separating trade ideas from actionable broker instructions.
+
+### Telegram Alert Schema Specification
+
+```
+====================================================
+[SIGNAL ALERT] MOEX Spread Arbitrage
+Signal ID: SIG-20261021-042
+Timestamp (t_sig): 2026-10-21 11:15:00 MSK
+Freshness Limit: 180 seconds (Expires: 11:18:00 MSK)
+====================================================
+PAIR IDENTIFICATION:
+  - Leg A (BUY):  Si-12.26 (Qty: 1 lot)
+  - Leg B (SELL): Eu-12.26 (Qty: 1 lot)
+
+PRICING & EXPECTED EDGE:
+  - Target Entry Spread: 1,245.0 pts
+  - Executable Limit Ask: 1,248.0 pts
+  - Net Expected Profit (after TCA & LQDT): RUB 420 / lot
+  - Minimum Executable Spread Bound: 1,240.0 pts
+
+RISK & MARGIN REQUIREMENTS:
+  - Estimated Initial Margin: RUB 12,400
+  - Required Cash Buffer (1.5x): RUB 18,600
+  - Max Holding Duration: 4 Hours
+
+DO NOT ENTER IF:
+  1. Current time > 11:18:00 MSK without revalidation.
+  2. Executable spread < 1,240.0 pts.
+  3. Free account cash < RUB 18,600.
+====================================================
+```
+
+### Reason-Code Taxonomy
+
+When an order is rejected, aborted, or invalidated, the virtual portfolio logs a specific reason code to enable unbiased post-trade latency and slippage analysis:
+
+$$\begin{array}{|l|p{4cm}|p{6cm}|}
+\hline
+\textbf{Reason Code} & \textbf{Category} & \textbf{Description / Event Trigger} \\ \hline
+`ERR_STALE_DATA` & Market Data & Market snapshot age $(t_{\text{user}} - t_{\text{info}}) > 180\text{s}$. \\ \hline
+`ERR_CLEARING_WINDOW` & Exchange Constraints & Signal generated or order attempted within 10 minutes of clearing session. \\ \hline
+`ERR_EDGE_DECAY` & Market Drift & Current executable spread degraded below $\text{Threshold}_{\text{min}}$. \\ \hline
+`ERR_INSUFFICIENT_MARGIN` & Risk Management & Free liquidity insufficient to cover required margin plus 50\% safety buffer. \\ \hline
+`ERR_CAPITAL_EXHAUSTED` & Strategy Capital & Available test allocation ($\text{RUB } 30,000$) fully deployed in active trades. \\ \hline
+`ERR_LEG2_TIMEOUT` & Execution Failure & Leg 1 filled, but Leg 2 failed to execute within 120 seconds. \\ \hline
+`ERR_USER_NO_RESPONSE` & Human Latency & User reaction latency exceeded the 90-minute maximum threshold. \\ \hline
+`ERR_DRAWDOWN_HALT` & Capital Protection & Strategy suspended due to $D(t) \ge 10,000$ or $X(t) \le -10,000$. \\ \hline
+\end{array}$$
+
+---
+
+## 7. Operational Simulation Scenarios & Walkthroughs
+
+To validate the virtual portfolio accounting and signal revalidation rules under realistic market conditions, four hypothetical scenarios are detailed below.
+
+### Scenario A: Stale Winner (Market Drift Eliminates Edge)
+* **Timestamp $t_{\text{sig}}$ (10:15 MSK):** Screener detects mispricing in `Si-12.26` vs. `Eu-12.26`. Target entry spread: $1,200 \text{ pts}$. Net expected profit: $\text{RUB } 350$.
+* **Timestamp $t_{\text{user}}$ (11:10 MSK - 55 min latency):** User opens broker app. Current market quotes indicate the spread has naturally mean-reverted to $1,232 \text{ pts}$.
+* **Revalidation Outcome:** The available spread price has already moved past the target entry threshold, leaving a residual gross edge of only $\text{RUB } 30$, which is less than total round-trip TCA ($\text{RUB } 80$).
+* **System Action:** Revalidation fails with reason code `ERR_EDGE_DECAY`. Order submission is blocked. No trade executed.
+
+### Scenario B: Missed Opportunity (Time Expiry)
+* **Timestamp $t_{\text{sig}}$ (14:15 MSK):** Spread alert dispatched during high-volatility regime.
+* **Timestamp $t_{\text{user}}$ (15:50 MSK - 95 min latency):** User responds after a long meeting.
+* **Revalidation Outcome:** Reaction delay $\Delta t = 95 \text{ min} > \Delta t_{\text{max}} (90 \text{ min})$.
+* **System Action:** Signal marked `ERR_EXPIRED_TIME_LIMIT`. Virtual portfolio logs a missed opportunity event for benchmark tracking, but no order is routed to the exchange.
+
+### Scenario C: Simultaneous Signals Competing for Capital
+* **Timestamp $t_{\text{sig}}$ (11:00 MSK):** Two independent spread signals trigger simultaneously:
+  1. *Signal 1:* `MIX-12.26` vs `RTS-12.26` (Margin Req: $\text{RUB } 18,000$; Expected Return: $\text{RUB } 850$).
+  2. *Signal 2:* `BR-12.26` vs `NG-12.26` (Margin Req: $\text{RUB } 15,000$; Expected Return: $\text{RUB } 450$).
+* **Capital Constraint:** Test account free cash = $\text{RUB } 22,000$. Neither signal can be combined with the other without breaching the $1.5\times$ margin buffer rule.
+* **Priority Rule:** The portfolio manager evaluates **Expected Edge per Margin Unit**:
+  $$\text{Score}_1 = \frac{850}{18,000} = 0.0472, \quad \text{Score}_2 = \frac{450}{15,000} = 0.0300$$
+* **System Action:** Signal 1 is selected and executed. Signal 2 is logged as `ERR_INSUFFICIENT_MARGIN`.
+
+### Scenario D: One-Leg Fill with Market Abort
+* **Timestamp $t_{\text{user}}$ (16:00 MSK):** Trader attempts entry on illiquid pair `CNY-12.26` (Leg 1) vs `Si-12.26` (Leg 2).
+* **Execution Walkthrough:**
+  1. **16:00:05 MSK:** Buy limit order for 2 lots of Leg 1 submitted. 1 lot fills immediately at $11.45$; 1 lot remains unfilled.
+  2. **16:00:10 MSK:** Trader cancels remaining 1 lot on Leg 1 and places Sell limit order for 1 lot on Leg 2 (`Si-12.26`) to match the filled quantity.
+  3. **16:02:10 MSK (120s Timeout):** Leg 2 fails to fill due to rapid market movement away from the limit price.
+* **Abort Execution:** 
+  1. Trader cancels Leg 2 limit order.
+  2. Trader immediately sells 1 lot of Leg 1 (`CNY-12.26`) at market price ($11.41$).
+* **P&L Impact:** Realized slippage loss of $0.04 \text{ CNY/RUB}$ ($\text{RUB } 40$) plus exchange fees ($\text{RUB } 12$).
+* **Accounting Entry:** Recorded in virtual portfolio ledger as `ERR_LEG2_TIMEOUT` with a net realized P&L impact of $-\text{RUB } 52$ on $X(t)$.
+
+---
+
+## 8. Falsifiable Delayed-Fill Evaluation Protocol & Research Recommendations
+
+To prevent backtest overfitting and establish true live trading viability, all forward simulation models must adhere to the following evaluation guidelines:
+
+### Conservative OHLCV Fallback Rules
+When high-frequency tick/order-book data is unavailable and execution must be evaluated on 1-minute OHLCV candles:
+1. **Buy Orders:** Assumed executed at $\max(P_{\text{Open}}, P_{\text{High}})$ of the candle matching timestamp $t_{\text{user}}$.
+2. **Sell Orders:** Assumed executed at $\min(P_{\text{Open}}, P_{\text{Low}})$ of the candle matching timestamp $t_{\text{user}}$.
+3. **Midpoint Fills:** Strictly **prohibited**. Assuming execution at the candle midpoint $(P_{\text{High}} + P_{\text{Low}})/2$ yields unquantifiable look-ahead bias and invalidates latency sensitivity testing.
+
+### Forward Data Collection Requirements
+The simulation framework must continuously collect the following forward data metrics:
+* Top-5 L2 order book depth snapshots at 1-second resolution for all monitored contract pairs.
+* Timestamped execution reports containing `TradeID`, `OrderSysID`, `Price`, `Qty`, and exchange-assigned matching engine arrival times.
+* Broker API ping logs to measure transport latency variations across market regimes.
+
+### Microstructure Literature Integration
+For detailed theoretical grounding on order book queue dynamics and adverse selection under latency constraints, refer to:
+* **Larry Harris**, *Trading and Exchanges: Market Microstructure for Practitioners* (Oxford University Press):
+  * *Chapter 15 (Order Placement Strategies):* Trade-off between execution probability and order placement costs.
+  * *Chapter 19 (Adverse Selection):* Structural losses incurred when limit orders are executed by informed market participants during delayed reaction windows.
+
+---
+
+## 9. Primary Falsification Criteria for Project Continuation
+
+The manual futures spread trading project must be formally halted or re-architected if any of the following empirical conditions are met during the test protocol:
+
+1. **Slippage Decay Ratio Exceeds 50%:**
+   If $\frac{\text{Realized Profit}}{\text{Model Expected Profit}} < 0.50$ across a sample size of $N \ge 30$ trades due to human execution delay.
+2. **Leg 2 Abort Rate Exceeds 15%:**
+   If more than $15\%$ of initiated multi-leg trades result in `ERR_LEG2_TIMEOUT` requiring single-leg market liquidation.
+3. **Unhedged Drawdown Breach:**
+   If cumulative net strategy wealth $X(t)$ breaches $-\text{RUB } 15,000$, or if excess drawdown $D(t)$ breaches $\text{RUB } 10,000$ without explicit recapitalization approval.

@@ -1,0 +1,561 @@
+# Optional Neural Strategies for MOEX Futures Spreads Under Tight Compute and Capital Constraints
+
+## 1. Executive View: When Do Neural Models Make Sense Here?
+
+A small neural model is only worth attempting in this project if all of the following hold simultaneously:
+
+- The supervised objective is **explicitly tied to net RUB excess vs LQDT after realistic costs**, not generic forecast accuracy.
+- The **effective number of independent economic episodes** supports even a single non‑linear model, after walk‑forward, purging/embargo, and multiple‑testing corrections.
+- A **simple deterministic spread rule and a small set of linear/tree models** fail to deliver acceptable risk‑adjusted excess return under the same capital, transaction‑cost, and execution‑delay constraints.
+- The neural candidate is **small, CPU‑friendly, and conservatively validated** (combinatorial/walk‑forward purged CV where feasible), with a clear fall‑back‑to‑baseline regime.
+
+Given typical daily MOEX futures histories and your capital/execution setup, the prior is that **lightweight linear/tree models will be more economically reliable than neural networks**, and that any neural strategy should be treated as an *optional, late‑stage experiment* with strict early‑stop criteria. The rest of the report lays out how to structure that decision.
+
+---
+
+## 2. Objective, Labels, and Baselines Aligned to LQDT
+
+**Key insight:** The primary supervised objective should be *cost‑aware, position‑sized excess PnL of spreads vs LQDT*, not directional returns or generic error metrics.
+
+### 2.1 Economic objective and decision horizon
+
+A reasonable primary supervised target for this project is:
+
+- **Outcome:** Excess RUB PnL of a calendar or inter‑contract spread position over a fixed horizon (e.g., 1–5 trading days), **net of per‑trade fees, spreads, and slippage** under a specified scenario (conservative/base/stress).
+- **Benchmark:** A matched buy‑and‑hold (or roll) in LQDT that uses the *same capital and calendar*; all evaluation metrics are computed as **PnL(spread strategy) − PnL(LQDT)** at the portfolio level, respecting integer contracts and margins.
+- **Horizon:** Coarse holding periods (multi‑day) are more compatible with:
+  - End‑of‑day data,
+  - The 3–90 minute execution delay,
+  - Manual execution and modest capital.
+
+Shorter horizons (1‑day) give more data points but increase sensitivity to overnight gaps and execution slippage; longer horizons reduce sample size further and blur attribution.
+
+### 2.2 Information available at decision time
+
+To avoid leakage as defined in financial ML literature, features must be limited to information available at or before the decision timestamp[67]:
+
+- **Per‑contract EOD panel:** OHLCV, open interest (if lawfully obtainable), implied spreads from calendar contracts, and contract metadata (days to expiry, underlying).
+- **Cross‑sectional state:** Cross‑instrument z‑scores of returns/spreads/volumes, but only using data up to decision time; no forward window statistics.
+- **Macro or factor proxies:** Only if lagged enough that release timing does not leak the label period.
+
+IBM explicitly notes that data leakage occurs when training uses information unavailable at prediction time[67], and recent work in LSTM time‑series stresses that even subtle leakage through temporal aggregation can yield illusory performance[66][72]. That applies equally to any neural architecture considered here.
+
+### 2.3 Decision linkage and label construction
+
+To tie predictions to trade decisions:
+
+- Define labels as **cost‑adjusted excess return**:
+  - For each candidate spread at decision time \( t \), simulate opening at realistic entry prices (bid/ask plus modeled slippage), closing at \( t+H \) at similarly penalized prices, subtract exchange + clearing fees (as per MOEX derivatives schedule, which lists taker exchange and clearing percentages by contract type[39][44]), and subtract the LQDT counterfactual return over \([t, t+H]\).
+- Convert labels to:
+  - **Regression target**: expected excess return per unit margin (or per RUB at risk), or
+  - **Classification target**: categorical excess PnL bins (e.g., materially positive / flat / negative) for cost‑aware decision rules (trade, skip, hedge).
+
+Only predictions that exceed **cost and risk thresholds** should generate trades; otherwise fall back to “do nothing / stay in LQDT”.
+
+### 2.4 Baselines before neural complexity
+
+Neural models should not be touched until three progressively stronger baselines fail under identical validation and cost assumptions:
+
+1. **No‑trade baseline:** Hold LQDT continuously; this defines the zero‑action counterfactual.
+2. **Deterministic spread rules:**
+   - Canonical **Gatev‑style z‑score pairs trading**: open spread positions when normalized spread exceeds fixed thresholds and close on mean reversion[7][10][11].
+   - Adaptation to MOEX calendar spreads: z‑score of the calendar spread price (or log price) using rolling mean and volatility, with entry/exit thresholds and stop‑outs consistent with energy futures calendar‑spread literature[36][42].
+3. **Simple linear/tree models:**
+   - **Linear regression / logistic regression** on spread changes or excess PnL.
+   - **Regularized models** (ridge/LASSO) to handle moderate feature sets.
+   - **Tree ensembles** (Random Forest, XGBoost, gradient boosting) for tabular predictive structure with low maintenance cost. A 2021 review notes that logistic regression, random forest and gradient‑boosting have been successful in futures‑based statistical arbitrage strategies[43], often using spreads as inputs.
+
+Only if these underperform the cost‑adjusted LQDT counterfactual within your drawdown tolerance should neural candidates be explored.
+
+---
+
+## 3. Data Sufficiency, Leakage, and Multiple‑Testing Risk
+
+**Key insight:** The binding constraint for neural models here is *effective sample size*, not raw compute. Most futures‑spread neural successes in the literature use more data (in frequency or horizons) and weaker validation than your skeleton permits.
+
+### 3.1 Data depth and independent episodes
+
+The data class is explicitly “free end‑of‑day daily MOEX futures panel (OHLCV+OI where published) over tens to few hundreds of contracts with delisting”. That implies:
+
+- **Short histories per contract** due to quarterly expiry[23][24], delisting, and regime breaks.
+- **Limited independent macro regimes**: Russian markets since 2013 have only a handful of major shocks (2014 sanctions, COVID‑19, 2022–23 regime shifts), and studies show significant volatility persistence and regime sensitivity in Russian derivatives[43][31].
+
+Lopez de Prado emphasizes that in financial ML, the number of truly independent bets is often an order of magnitude smaller than the number of observations, because labels cluster within regimes and overlapping holding periods[48][51]. This sharply limits the real capacity you can deploy before overfitting.
+
+### 3.2 Temporal and cross‑sectional leakage
+
+Two leakage channels dominate:
+
+- **Temporal overlap:** If labels overlap in time (e.g., 5‑day horizon), standard CV leaks information. AFML’s purged k‑fold with embargo removes training instances whose “information intervals” intersect the test interval[48][52][53]. This must be implemented to prevent optimistic backtests.
+- **Cross‑sectional leakage in panels:** Panel data can leak when closely related instruments (e.g., same underlying, different expiries) are split across train/test. AFML and subsequent work recommend grouping by “information set” (e.g., underlying + expiry bucket) so no group appears simultaneously in train and validation[34][37][23].
+
+Recent work on leakage in LSTM forecasting specifically shows that even minor infractions—such as feature windows that extend slightly past the label—can create large, spurious gains in error metrics[66][72]. Neural models, with higher capacity, are especially vulnerable.
+
+### 3.3 Walk‑forward and combinatorial purged CV
+
+AFML’s Chapter 12 advocates **walk‑forward and combinatorial purged cross‑validation (CPCV)** to estimate generalization error under overlapping labels and non‑stationary regimes[34][35][36]. For your setting:
+
+- Use **chronological walk‑forward** as your primary skeleton:
+  - Train on an initial block, validate on the next block with purging/embargo sized at least to max holding horizon; roll forward.
+- Only after deterministic/linear baselines are tuned should neural models be included in this walk‑forward loop, to avoid giving them extra lookback advantages.
+
+CPCV is mathematically attractive but can be compute‑heavy; with your hardware, it should be reserved for **final candidate models** rather than broad hyperparameter sweeps.
+
+### 3.4 Multiple architecture trials and spurious predictability
+
+Financial ML is dominated by spurious findings. Fan’s work on maximum spurious correlations in high dimensions shows that with many predictors and modest sample sizes, substantial “predictive” correlations arise by chance[57]. Lopez de Prado distinguishes “type‑A” and “type‑B” spurious claims: false discoveries from data‑mining many predictors and from abusing backtests respectively[59][64].
+
+For neural networks:
+
+- Each architecture–hyperparameter configuration is effectively a separate model; evaluating many variants against the same few regimes raises multiple‑testing risk.
+- Spurious‑predictability audit frameworks use **synthetic reference classes with no true predictability** to test whether your validation protocol would still find “alpha” on purely random data[55][60]. This is highly recommended before trusting any neural edge.
+
+The combination of short MOEX daily histories, panel leakage risk, and multiple‑architecture search means that even small neural models can easily overfit without obvious warning if you do not explicitly account for multiple testing.
+
+---
+
+## 4. Compute and Model Family Feasibility on Your Hardware
+
+**Key insight:** The MacBook Pro’s AMD Radeon Pro 5300M is effectively unusable for ROCm‑based GPU acceleration[5][6][7], so all neural experimentation must assume **CPU‑only training and inference**, both locally and on a 1‑vCPU VPS. This sharply constrains model families and dataset sizes.
+
+### 4.1 Hardware constraints
+
+- Apple’s support documentation confirms your machine is a 2019 16‑inch MacBook Pro with a 6‑core Intel Core i7 and Radeon Pro 5300M 4GB GPU[40][45].
+- AMD’s ROCm stack does **not** support Radeon 5000‑series mobile GPUs[5][6][7]; AMD’s official tables state that GPUs not listed are unsupported[7]. Community reports corroborate difficulty or impossibility of ROCm on this configuration[40].
+- The VPS has 1 vCPU, 1 GB RAM + 2 GB swap, with only ~250–350 MB free for this project.
+
+Consequences:
+
+- **GPU acceleration is not a realistic option** here for PyTorch/TensorFlow; all training and inference should be assumed CPU‑only.
+- Training must be constrained to **small models, modest feature counts and limited hyperparameter grids** to keep wall‑clock times manageable.
+- ONNX Runtime is valuable: it offers **2–10× CPU inference speedup vs baseline frameworks**[19][26][32], and includes memory‑management options like `enable_cpu_mem_arena` to operate within tight RAM budgets[41].
+
+### 4.2 Candidate model families under CPU constraints
+
+#### 4.2.1 Simple MLPs and “tiny” architectures
+
+- Lightweight NNs for financial time series have been demonstrated with **~2.5k parameters** running comfortably on CPU[18][44]. Such models (e.g., 2–3 dense layers with small widths) fit your hardware profile.
+- Tiny Time Mixers (TTMs) and similar micro‑architectures are designed specifically to run on CPUs with low parameter counts (≤1M) while retaining decent forecasting quality[32][65][71]; recent blogs report on CPU‑only time‑series inference with latencies on the order of ~140 ms per forecast on commodity hardware[8][70].
+
+These architectures provide a conceptual template: **few thousand to tens of thousands of parameters**, shallow depth, no heavy attention stacks, and limited history window.
+
+#### 4.2.2 Time‑series‑specific lightweight models
+
+- **NeuralProphet** is a CPU‑only time‑series tool; its documentation explicitly states it does not support GPU and targets fast CPU inference[29]. It offers built‑in seasonality and trend components, making it more interpretable than generic LSTMs.
+- **N‑BEATS** is an MLP‑based residual architecture for univariate series[16][7]. Although full‑scale N‑BEATS can be sizable, trimmed variants can be made small and remain CPU‑friendly.
+
+Both illustrate that **sequence modeling does not require recurrent or transformer structures**; shallow MLP‑style sequence encoders are viable under compute limits.
+
+#### 4.2.3 Tabular foundation models and constraints
+
+Modern tabular foundation models like TabPFN are tempting but problematic:
+
+- TabPFN offers strong accuracy but **slower inference (order seconds per 1000 instances)** and quadratic scaling issues with many features/instances[18].
+- More critically, TabPFN 2.5–3.5 releases are licensed for **non‑commercial use only**, explicitly prohibiting commercial or production use without a paid license[9]. This alone disqualifies it for a live trading system in your context.
+
+Viable open‑licensed alternatives exist:
+
+- **TabICL v2** is fully open source and commercially usable[10].
+- **NVIDIA Kumo Tabular Small** (≈28M parameters) under the OpenMDW‑1.1 license can run on a single CPU core with no GPU, taking on the order of tens of seconds for small datasets[11]. However, this parameter count is likely excessive for your dataset size and compute budget.
+
+In practice, these models are better treated as occasional **offline benchmarks for static tabular problems**, not as the primary engine for a daily, panel‑based spread strategy.
+
+### 4.3 Training feasibility on MacBook / VPS
+
+Evidence on small‑model training indicates:
+
+- Training small MLPs on 1 vCPU and ≤1 GB RAM is feasible but slow, requiring small batch sizes and few epochs[35][36].
+- Inference for small MLPs with ~100 features can be on the order of sub‑millisecond per call on desktop‑class CPUs according to general MLPerf‑style benchmarks[34], though finance‑specific models are not directly benchmarked.
+
+Given manual intervention latencies of 3–90 minutes, **sub‑second inference is more than sufficient**; the compute bottleneck is training and cross‑validation, not inference.
+
+---
+
+## 5. What the Literature Actually Says About Neural vs Linear/Tree in Spreads
+
+**Key insight:** There is evidence that neural networks can outperform linear baselines for spread trading in some markets, especially with high‑frequency data and generous validation. However, there is equally strong, more recent evidence that simpler linear or tree models often match or beat deep models on financial time‑series and tabular tasks, especially under realistic costs and drift.
+
+### 5.1 Positive evidence for neural spread models
+
+Several studies show neural models outperforming classical approaches in spread or arbitrage contexts:
+
+- Dunis and co‑authors modeled and traded commodity futures spreads using neural network regression (MLP) vs ARMA/GARCH and MACD baselines, reporting superior out‑of‑sample performance and non‑linear structure capture[7][12][35].
+- Older inter‑commodity spread trading research using BPNNs and genetic programming on index futures found NNs produced more profitable spread systems than genetic programming alone[4][38].
+- A recent paper on enhanced futures price‑spread forecasting uses an LSTM with attention and additional feature decomposition, reporting higher prediction accuracy for spread series vs traditional methods[1][34][38].
+- Deep architectures (CNN, LSTM) have been shown to outperform linear methods in structural‑break‑aware pairs trading with transaction costs included[40].
+
+These results demonstrate **existence proofs**: neural nets *can* find profitable non‑linearities in spreads when:
+
+- Data are **high frequency** (minutes/seconds),
+- Markets are **deep and liquid**, and
+- Validation methods are often weaker than AFML’s purged/walk‑forward standards.
+
+### 5.2 Mixed and negative evidence
+
+Counter‑evidence is substantial:
+
+- A 2024 study on low‑frequency trading finds that, once realistic cost and volume constraints are imposed, neural‑network‑based improvements in half‑spreads shrink to near zero net alpha[13].
+- Large benchmarks of financial deep learning architectures report cases where **shallower algorithms adapt better to financial time series** than deep networks[12][26], especially when sample size per regime is small.
+- Surveys of deep learning for tabular data note that **deep learning is high‑maintenance and computationally expensive** compared to tree‑based models, often without commensurate gains on tabular problems[17][4].
+
+More generally, a 2023 survey for financial economists emphasizes that while ML (including deep nets) expands the function class, **data limitations and non‑stationarity often make simpler methods more robust**[62].
+
+### 5.3 MOEX‑specific evidence
+
+Direct MOEX futures‑spread neural studies are scarce:
+
+- Russian work has used LSTM and other networks for MOEX futures price prediction (e.g., Si and Ri contracts) at high frequencies[6][21][31], and another study applies deep learning to MOEX SiM3 futures in an hourly‑data trading system[22]. These are **price, not spread**, and often lack rigorous purged validation.
+- A Russian paper evaluates market‑neutral strategies based on MOEX spot–futures spreads, focusing on basis dynamics and margin/liquidity issues rather than ML[1][4][21].
+- Broader studies of MOEX–CME derivative pairs find that cointegration can persist across sub‑samples, but with changing speed of adjustment and variance[24][26]. That highlights **regime‑dependent mean reversion**, which non‑linear models could in principle exploit.
+
+Net: **There is no strong, MOEX‑daily‑spread‑specific evidence that neural models beat well‑tuned linear/tree methods under strict validation.** All claims of neural superiority on spreads come from other exchanges, higher frequencies, or more lenient validation standards.
+
+### 5.4 Conditional conclusion
+
+- Under **rich, high‑frequency data** with many intraday observations per regime, neural networks can offer meaningful improvements in spread modeling and trading profitability.
+- Under your **daily‑panel, short‑history, high‑cost, low‑capital** setting with AFML‑style validation and cost constraints, the prior should be **neutral to skeptical**: neural models might add marginal value in particular regimes, but there is no robust prior justification to expect them to outperform a properly tuned deterministic/linear/tree stack.
+
+---
+
+## 6. Uncertainty, Calibration, Drift, and Fallback
+
+**Key insight:** Any neural model that survives to candidate stage must be coupled to explicit uncertainty estimates, drift detection, and a hard fail‑to‑baseline policy; otherwise selection risk will dominate any marginal predictive gain.
+
+### 6.1 Uncertainty and calibration
+
+Well‑calibrated probabilities and intervals are essential in trading; miscalibration leads to systematically mis‑sized positions and under‑estimated risk[37][33].
+
+- **Conformal prediction** offers distribution‑free prediction intervals and has been successfully applied to portfolio selection and to supplying market makers with uncertainty bands[49][50]. It can sit on top of any point‑forecasting model (linear or neural).
+- Calibration tools (e.g., scikit‑learn’s calibration module) can correct probability outputs from neural classifiers to better match empirical frequencies[37].
+
+In your setting:
+
+- Use conformal prediction or distribution calibration[26] to obtain **prediction intervals for excess PnL** or spread moves.
+- Enforce **decision rules that require both positive expected excess return and sufficiently tight intervals** (or high calibrated probability) before taking trades; otherwise default to LQDT.
+
+### 6.2 Concept drift and structural breaks
+
+Financial time series routinely undergo concept drift, where the relationship between features and targets changes over time, degrading model accuracy[38][27][30]. This is acute in Russian markets, where multiple sanctions and policy shocks have altered microstructure and volatility regimes[30][31][43].
+
+For any neural or complex model:
+
+- Implement **drift monitoring** on live residuals and features (e.g., rolling KS tests, dedicated drift detectors as in domain‑specific drift research for finance[28]).
+- Impose **automatic de‑risking rules**: if realized excess PnL over a recent live window (e.g., last N trades) falls significantly below backtested expectations, or if residual distributions shift, revert to deterministic/linear baselines.
+
+### 6.3 Falsification and spurious‑predictability audits
+
+Recent work on spurious predictability in financial ML advocates **falsification audits**: apply your entire training/validation pipeline to **synthetic series with no true signal** and verify that your methodology does not routinely “discover alpha”[55][60]. 
+
+For this project:
+
+- Before trusting a neural model, generate synthetic spreads that match the marginal distribution and volatility of MOEX spreads but are truly random (e.g., bootstrapped blocks or appropriate ARMA/GARCH simulations).
+- Run both your linear/tree and neural pipelines, including model selection, CV, and hyperparameter tuning.
+- If neural models still appear to “beat” baselines materially on synthetic data, your validation protocol is **not conservative enough**, and any real‑data gains are likely spurious.
+
+---
+
+## 7. Scenario Analysis: Where Can Neural Models Add Value?
+
+**Key insight:** The answer is conditional. Neural models are optional add‑ons in a narrow subset of scenarios; elsewhere they should remain in research notebooks.
+
+### 7.1 Scenario A – Data‑rich, high‑dispersion spreads (neural optional)
+
+Conditions:
+
+- Several spread pairs display **persistent, regime‑conditional non‑linearities** that deterministic/linear/tree models fail to capture, as demonstrated by sizeable, consistent residual patterns.
+- Effective sample size (post‑purge/embargo) is at least in the low thousands of independent trades across regimes.
+- Deterministic and tree models yield **near‑breakeven net excess vs LQDT** after conservative costs: small positive alpha but under your desired buffer.
+
+Action:
+
+- Introduce **a single, very small, CPU‑friendly neural architecture** (e.g., 1–3 layer MLP with ≤10k parameters; or tiny mixer) as an additional candidate.
+- Restrict search: a tiny, hand‑tuned grid of architectures, regularization strengths, and learning rates; no large NAS or hyperparameter sweeps.
+- Evaluate only within the fixed walk‑forward skeleton; apply falsification audits on synthetic data.
+- Deploy, if at all, in a **tiny‑weight ensemble** where neural predictions can tilt but not override baseline signals.
+
+### 7.2 Scenario B – Data‑poor, highly non‑stationary panel (neural discouraged)
+
+Conditions:
+
+- Most spreads have **short, irregular histories** due to listing changes and liquidity; effective independent regimes are counted on one hand.
+- Regime‑shift evidence (volatility persistence, parameter instability) is strong[24][27][30][31].
+- Deterministic and tree models already show fragile performance; net of conservative costs they oscillate around zero or negative excess PnL.
+
+Action:
+
+- Treat this as a **model capacity‑limited environment**. Adding non‑linear models will likely **increase variance more than bias reduction**, worsening selection risk.
+- Focus effort on:
+  - Refined deterministic baselines (e.g., spreads conditioned on basis, open interest, calendar basis).
+  - Robust tree ensembles with strong regularization and minimal feature sets.
+  - Cost modeling, execution constraints, and better selection of which spreads to touch at all.
+- Neural experiments may be run as academic exercises only, with strict walls to avoid influencing real trade decisions.
+
+### 7.3 Scenario C – Deterministic/tree baselines robustly beat LQDT
+
+Conditions:
+
+- After full AFML‑style validation, one or more **simple baselines deliver stable positive net excess vs LQDT** within your 10–15k RUB tolerance window, over backtests and a held‑out period.
+- Performance is not highly sensitive to small hyperparameter changes or regime boundaries.
+
+Action:
+
+- There is **no compelling economic reason to introduce neural complexity now**.
+- At most, consider limited neural experiments as a hedge against future capacity scaling (if later you run at higher frequency or broader universes), but **keep them out of pilot capital allocation**.
+
+---
+
+## 8. Experiment, Cost and Resource Matrix (Staged)
+
+**Key insight:** Neural models should enter only in later stages, after clear deterministic/linear/tree baselines are established and stress‑tested.
+
+### 8.1 Stage 0 – Data acquisition and rights confirmation
+
+Tasks (no neural yet):
+
+- Confirm lawful, free access to required MOEX EOD futures data via ISS API:
+  - MOEX’s ISS documentation and derivatives pages show delayed data (15 minutes) are free, while historical archives/data shop and orderbooks are subscription‑based[1][10][11][6][23][31].  
+  You must verify that collecting and storing delayed EOD data for **internal, non‑commercial research** fits MOEX’s stated permitted uses.
+- Identify open‑interest availability and any authentication requirements (documentation for `futoi` suggests possible login for some endpoints[50][52][56]); this affects whether OI can be used as a feature.
+- Assemble panel with clear metadata: contract codes, underlyings, expiries[23][24][27][49].
+
+Costs/resources:
+
+- Analyst time; no significant compute cost beyond downloads.
+- Legal/licensing review if in doubt about ISS vs Data Shop use.
+
+Early discard criteria for neural path:
+
+- If you cannot legally obtain sufficient EOD futures spread histories for non‑commercial research, the **entire ML track becomes questionable**.
+
+### 8.2 Stage 1 – Deterministic and linear/tree baselines under full constraints
+
+Tasks:
+
+1. Implement canonical **z‑score spread rules** for a small set of stable spreads (e.g., MOEX index, liquid FX/commodity spreads) following Gatev‑style logic[7][10][12][42].
+2. Implement simple **calendar‑spread mean‑reversion** rules for MOEX futures using documented calendar spread specifications[27][45][42].
+3. Fit:
+   - Linear/logistic regression on future spread move or cost‑adjusted excess PnL.
+   - Regularized variants for robustness.
+   - Random Forest / XGBoost using Apache‑ and BSD‑licensed packages[50][51], with shallow depth and strict regularization.
+
+Validation:
+
+- Use **walk‑forward with purged/embargoed folds** as per AFML[24][34][48][51][52].
+- Evaluate under conservative/base/stress cost/scenario matrices using MOEX fee and tick size parameters[39][44][25][26].
+
+Compute:
+
+- Easily handled on your MacBook CPU; may offload some overnight jobs to VPS with small RAM footprint.
+
+Early discard criteria for neural path:
+
+- If none of these baselines come close to breakeven net excess vs LQDT on backtest and untouched holdout, **neural effort is premature**.
+- If any baseline looks attractive but collapses under stricter cost or CPCV regimes, focus on **validation hardening**, not capacity.
+
+### 8.3 Stage 2 – Neural pilot experiments (research only)
+
+Prerequisites:
+
+- At least one deterministic and one tree model pass Stage 1 with **modest positive net excess vs LQDT** and acceptable robustness.
+
+Model families:
+
+- **Tiny MLP or mixer**:
+  - Input: short history window of normalized spreads and a small set of engineered features (e.g., spread z‑scores, volatility, basis).
+  - Architecture: 1–3 fully connected layers, ≤10k parameters total, strong L2/dropout.
+- Optional **tiny time‑series architecture** (e.g., mini N‑BEATS block or TTM‑style MLP) following CPU‑optimized designs[16][32][65][71].
+
+Resources:
+
+- Training on MacBook CPU with **ONNX Runtime acceleration** for inference[19][26][32][41].
+- Use free/CPU‑only environments (e.g., minimal Hugging Face CPU spaces if needed[23][33]) for occasional off‑machine tests; do not rely on GPU resources.
+
+Validation & audits:
+
+- Same walk‑forward skeleton as Stage 1; no extra lookback privileges.
+- Falsification audit against **synthetic spreads with no predictability**[55][60].
+- Conformal interval construction or calibration for outputs[49][50][26][37].
+
+Early discard criteria:
+
+- If neural candidates do not yield **meaningfully better cost‑adjusted performance** than tree baselines on *both* backtest and untouched holdout, or if synthetic audits show spurious “alpha”, discard neural path entirely.
+- If training time or memory footprint exceeds practical thresholds (e.g., cannot run cross‑validation overnight on MacBook), simplify or abandon.
+
+### 8.4 Stage 3 – Operationalization (deferred)
+
+Not part of this decision, but to inform long‑term thinking:
+
+- Any model in consideration for live trading must have:
+  - **Versioned code and artifacts**, as per ML model‑versioning best practices[34][54][25].
+  - Defined **drift monitoring and automatic de‑risking**[38][27][29][30].
+  - A clear **fail‑back rule** to deterministic or no‑trade baselines upon reaching your drawdown/shortfall triggers.
+
+Neural models increase this maintainability burden, particularly around calibration, logging, and explainability[17][35].
+
+---
+
+## 9. Recommendation Synthesis
+
+1. **Treat neural models as an optional Stage‑2 experiment only.** They should not be assumed as the default solution. The initial focus should be on:
+   - Clean EOD data assembly and legal clarity,
+   - Deterministic z‑score and calendar‑spread baselines,
+   - Linear and tree models validated via purged walk‑forward against LQDT.
+
+2. **If Stage‑1 baselines are weak after robust validation, prioritize validation strengthening and spread selection, not neural capacity.** Strong evidence suggests that in data‑sparse, non‑stationary settings, deeper models tend to overfit without robust out‑of‑sample benefits.
+
+3. **If Stage‑1 baselines are moderately successful but leave some systematic, regime‑specific residual structure,** then and only then consider a single, tiny, CPU‑friendly neural architecture as:
+   - An additive signal in an ensemble,
+   - Fully subject to falsification audits and conformal interval checks,
+   - With strict rejection criteria if it does not materially improve cost‑aware net excess vs LQDT on true holdout data.
+
+4. **Do not invest effort in heavy time‑series transformers, large tabular FMs, or GPU‑dependent models under current hardware.** Focus instead on compact MLP / mixer‑style models and CPU‑optimized runtimes.
+
+Overall, under your current constraints and data class, **a neural strategy is optional and must clear a high methodological and economic bar** to justify the additional implementation and monitoring complexity. The default strategic path is a carefully validated deterministic/linear/tree framework with explicit cost modeling and LQDT‑anchored evaluation.
+
+---
+
+## References
+
+[1] Enhanced futures price-spread forecasting based on LSTM neural network layer and attention mechanism. https://pmc.ncbi.nlm.nih.gov
+
+[2] Neural network prediction of crude oil futures using focused time-delay neural network. https://www.sciencedirect.com
+
+[3] Deep learning for tabular data: A survey. https://arxiv.org/abs
+
+[4] Inter-commodity spread trading using neural network and genetic programming techniques. https://www.atlantis-press.com
+
+[5] AMD ROCm supported GPUs. https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html
+
+[6] ROCm GitHub issue: Radeon 5000 series not supported. https://github.com/RadeonOpenCompute/ROCm/issues/1172
+
+[7] Advances in Financial Machine Learning. https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086
+
+[8] CPU time-series forecasting at 140ms latency. https://thakicloud.com/blog
+
+[9] TabPFN model license – non-commercial use only. https://priorlabs.ai/tabpfn-license
+
+[10] TabICL v2 documentation. https://pypi.org/project/tabicl
+
+[11] NVIDIA Kumo Tabular Small model card. https://catalog.ngc.nvidia.com/orgs/nvidia/models/kumo-tabular
+
+[12] Trading and filtering futures spread portfolios. https://link.springer.com
+
+[13] Low-frequency trading with neural networks and trading costs. https://papers.ssrn.com
+
+[14] ARIMA vs neural networks in short-term forecasting. https://www.sciencedirect.com
+
+[15] Feature leakage in machine learning: a silent risk in financial models. https://medium.com/@jshobhit/feature-leakage-in-machine-learning-a-silent-risk-in-financial-models-7403dbf2335d
+
+[16] N-BEATS: Neural basis expansion analysis for interpretable time series forecasting. https://arxiv.org/abs/1905.10437
+
+[17] Deep learning for tabular data – high maintenance costs. https://arxiv.org/abs
+
+[18] TabPFN: Fast tabular probabilistic forecasting. https://www.nature.com/articles/s41586-023-06883-3
+
+[19] ONNX Runtime performance overview. https://onnxruntime.ai/docs/performance/overview
+
+[20] LSTM vs XGBoost for futures prediction. https://www.igi-global.com
+
+[21] Development of autonomous trading system architecture using LSTM for futures price prediction (MOEX). https://apni.ru
+
+[22] DL-модель RFR для финансового менеджмента биржевым активом SiM3 на MOEX. https://elibrary.ru
+
+[23] MOEX ISS API documentation. https://iss.moex.com/iss/reference
+
+[24] Evidence from MOEX–CME Derivative Pairs, 2019–2026. https://papers.ssrn.com
+
+[25] MOEX futures market fee schedule. https://www.moex.com/s402
+
+[26] Domain-specific concept drift detectors for financial time series. https://arxiv.org/abs
+
+[27] Concept drift in financial time series. https://ieeexplore.ieee.org
+
+[28] Distribution Calibration for Regression. https://arxiv.org/abs/1909.10155
+
+[29] NeuralProphet documentation. https://neuralprophet.com
+
+[30] Long-Term Modeling of Financial Machine Learning. https://arxiv.org/abs
+
+[31] Volatility persistence in the Russian stock market. https://www.sciencedirect.com
+
+[32] Tiny Time Mixers (TTM): Efficient time series models for CPUs. https://arxiv.org/abs
+
+[33] Machine Learning in Futures Markets. https://www.mdpi.com
+
+[34] Model versioning best practices in ML. https://mlflow.org/docs/latest/model-registry.html
+
+[35] Small-model training on resource-constrained hardware. https://towardsdatascience.com
+
+[36] Running AI models with 0.5GB RAM. https://hackster.io
+
+[37] Probability calibration in scikit-learn. https://scikit-learn.org/stable/modules/calibration.html
+
+[38] Concept drift and its impact on financial forecasting accuracy. https://ieeexplore.ieee.org
+
+[39] Fees of Derivatives Market of the Moscow Exchange. https://www.moex.com/en/markets/derivatives/fees.aspx
+
+[40] 16‑inch MacBook Pro (2019) – Technical Specifications. https://support.apple.com/en-us/111932
+
+[41] ONNX Runtime configuration options (enable_cpu_mem_arena). https://onnxruntime.ai/docs/api/c/struct_onnx_runtime_session_options.html
+
+[42] Mean-reversion strategies involving calendar spreads in energy futures. https://www.sciencedirect.com
+
+[43] Machine Learning in Futures Markets – spread-based statistical arbitrage. https://www.mdpi.com/2073-8994/13/9/1629
+
+[44] MOEX derivatives fees – commodity contracts. https://www.moex.com/s402
+
+[45] Daily futures contract IMOEXF specifications. https://www.moex.com/en/contract.aspx?code=IMOEXF
+
+[46] Conformal Predictive Portfolio Selection. https://arxiv.org/pdf/2410.16333
+
+[47] Conformal Prediction for Market Makers. https://proceedings.mlr.press/v128/wisniewski20a.html
+
+[48] Advances in Financial Machine Learning – Chapter 7 (Purging, Embargo). https://www.oreilly.com/library/view/advances-in-financial/9781119482086/c07.xhtml
+
+[49] MOEX calendar spread product description. https://www.moex.com/en/markets/derivatives/calendars.aspx
+
+[50] XGBoost documentation and Apache 2.0 license. https://xgboost.readthedocs.io/en/stable/
+
+[51] scikit-learn BSD 3-Clause license. https://scikit-learn.org/stable/about.html
+
+[52] MOEX open interest endpoint documentation. https://fs.moex.com/files/29217
+
+[53] moexalgo – MOEX analytics client library. https://github.com/moexalgo/moexalgo
+
+[54] Machine learning reproducibility best practices. https://papers.nips.cc/paper/2017/hash/6c1da886822c67822bcf3679d04369fa-Abstract.html
+
+[55] Spurious predictability in financial machine learning. https://arxiv.org/abs
+
+[56] MOEX open interest authentication example. https://fs.moex.com/files/29218
+
+[57] Are discoveries in financial research spurious? Distributions of maximum spurious correlations. https://collaborate.princeton.edu/en/publications/are-discoveries-spurious-distributions-of-maximum-spurious-correl/
+
+[58] Spurious correlations and suboptimal trading strategies. https://hudsonthames.org/category/advances-in-financial-machine-learning/
+
+[59] Lopez de Prado lectures on type-A and type-B spurious claims. https://quantresearch.org/Lectures.htm
+
+[60] Falsification audits for ML models in finance. https://arxiv.org/abs
+
+[61] Cleanlab blog on spurious correlations in ML. https://cleanlab.ai/blog/spurious-correlations
+
+[62] Machine Learning in Asset Management — A Survey (BFI 2023). https://bfi.uchicago.edu/wp-content/uploads/2023/07/BFI_WP_2023-100.pdf
+
+[63] Nature article on time series forecasting in finance. https://www.nature.com
+
+[64] Financial Times – Spurious correlations as “kryptonite” of Wall St’s AI rush. https://www.ft.com/content/f14db820-26cd-11e8-b27e-cc62a39d57a0
+
+[65] TinyTimeMixer model card. https://tsfm.ai
+
+[66] Data leakage in LSTM-based time series forecasting. https://arxiv.org/html/2512.06932v1
+
+[67] What is data leakage in machine learning? https://www.ibm.com/think/topics/data-leakage-machine-learning
+
+[68] Feature leakage in financial models. https://medium.com/@jshobhit/feature-leakage-in-machine-learning-a-silent-risk-in-financial-models-7403dbf2335d
+
+[69] Timestral: Time-series foundation models. https://mistral.ai/news/timestral/
+
+[70] ThakiCloud technical blog on CPU-first time-series inference. https://thakicloud.com/blog/cpu-timeseries
+
+[71] TSFM.ai Tiny Time Mixers efficiency claims. https://tsfm.ai/tinytimemixers
+
+[72] Systematic evaluation of data leakage in LSTM forecasting. https://arxiv.org/html/2512.06932v1

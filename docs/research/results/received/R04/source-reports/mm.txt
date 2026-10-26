@@ -1,0 +1,596 @@
+# Title
+Free Futures Data on MOEX for Medium‑Term Spread Strategies: Granularity, Gaps, and Practical Limits
+
+## 1. Executive Answer: What Is the Smallest Practically Useful Free Granularity?
+
+For MOEX futures, the smallest *systematically* available and legally straightforward free granularity for both history and monitoring is:
+
+- **Historical research:**  
+  - **Daily OHLCV candles (D1)** from MOEX ISS (`/iss/candles`) with 15‑minute delay, plus **end‑of‑day trading results and settlement prices** via ISS and public CSV/XML reports.  
+  - **Some intraday candles (1‑ and 10‑minute, 1‑hour)** are available for part of the history, but coverage is incomplete by contract and has no formal completeness guarantees.
+
+- **Ongoing monitoring for medium‑term spreads (holding days–weeks):**  
+  - **Delayed best bid/offer and last price** (no depth) and **current day OHLCV** from ISS with ~15‑minute lag.  
+  - For richer minute‑level monitoring and execution simulation, you need either a **broker API (BCS, Tinkoff, etc.) tied to your account** or your own recording from a terminal / datafeed.
+
+Key implication: with purely free public data (ISS + open CSV/XML) you can do **coarse, research‑level backtests at daily resolution** and approximate medium‑term spreads, but **any serious point‑in‑time analysis of execution, intraday slippage, microstructure or margin/OI dynamics requires paid or self‑collected data.**
+
+---
+
+## 2. Landscape of Free Official Sources and Access Regime
+
+**2.1. MOEX ISS (Informational & Statistical Server)**
+
+MOEX’s ISS is the central free API for market data across engines (stock, futures, FX) and is explicitly described as a freemium service:
+
+- Official programming interface docs state that real‑time data requires subscription, while delayed data (15 minutes) is free:  
+  *“Access to real‑time data requires subscription, delayed data (15 min) is provided for free.”*[1][2].
+- The same documentation explicitly restricts **orderbooks and historical data** to paid subscribers:  
+  *“Orderbooks and historical data are only available to the paid subscribers.”*[3][4].
+- ISS overall description:  
+  *“Informational & Statistical Server (ISS) is the Web service that provides access to market data from all the Moscow Exchange markets over the Internet.”*[5].
+
+The official Russian developer guide adds two important constraints:
+
+- Market data via ISS *may* be provided free with delay or under subscription in real time[6].
+- Free ISS information is **“for familiarization only” and not for commercial redistribution or derived products**[7]. This does not mechanically forbid using it to research your own trading, but it does limit redistribution, resale and some types of public derived data.
+
+**2.2. MOEX Historical Data Service (paid) vs. public archives**
+
+MOEX runs a distinct **Historical Data Service**:
+
+- *“Moscow Exchange offers a full range of historical trading data used for optimizing Participants' trading algorithms, carrying out technical analysis, risk management and back‑testing.”*[8].
+- Access is subscription‑based with limited access window:  
+  *“The access period for downloading historical data from Moscow Exchange's archive database is one month from the date when access to the database begins.”*[9].
+
+Parallel to that, there are **public EOD/aggregated archives** accessible without login:
+
+- *“Archive the results of trades on the market. Trades: 1,924,892. Instruments: futures options. Download Data in CSV (delimiter – comma).”*[10].
+- Another page on aggregated trading results lists downloadable archives for derivatives:  
+  *“Derivatives (csv.7z, 447 Мб)… Shortened samples: Derivatives (csv.zip, 13 Мб)”*[11].
+
+This creates an important nuance:
+
+- **Free ISS data and some CSV archives**: delayed, coarse, and not guaranteed complete on intraday / microstructure level.
+- **Paid Historical Data Service**: deep tick/order data, guaranteed completeness and point‑in‑time coverage, including full trades and orders logs[12].
+
+**2.3. MOEX FTP**
+
+MOEX operates ftp.moex.com hosting various reference and report files:
+
+- A FORTS stats directory exists: *“/pub/info/stats/forts/ contains FORTS_LIST.TXT and FORTS_LIST_SPREAD.TXT (contract lists)”*[13].
+- There are FORTS‑related report directories, but public paths with actual trades/quotes are not clearly documented:  
+  *“Multiple FORTS‑related FTP directories found: /pub/FORTS/, /pub/Reports/FORTS/, /pub/FORTS/reports/, /pub/FORTS/volat_coeff/ … but unclear if historical price data is present.”*[14].  
+  For example `/pub/FORTS/volat_coeff/` holds only historical volatility coefficients archives[15].
+
+For your purposes, FTP adds **reference data (lists of contracts, series, some risk parameters)** but not free tick‑by‑tick or minute quotes.
+
+**2.4. Rate limiting and operational aspects**
+
+Third‑party ISS manuals recommend conservative rate limits:
+
+- *“Не более 2 req/sec к MOEX ISS, корректный UA с контактами для связи.”*[16].
+
+Combined with the ISS per‑request row limit (see below), this constrains how fast you can sweep large universes without tripping anti‑abuse measures.
+
+---
+
+## 3. What Exactly Can You Get for Free from ISS for Futures?
+
+### 3.1. Available endpoints and key fields
+
+Official ISS reference describes multiple futures‑related endpoints[17]. For your task the core ones are:
+
+- `/iss/engines/futures/markets/forts/securities` – **instruments and specs**, including:
+  - `LOTVOLUME`, `LOTSIZE`, `MINSTEP`, `DECIMALS`, `PREVSETTLEPRICE`, `INITIALMARGIN`, `LSTTRADE`, `LSTDELDATE`, `ASSETCODE` etc.[18][19].
+- `/iss/candles` – **pre‑calculated candles**:  
+  The Russian documentation (as surfaced via aiomoex) states:  
+  *“MOEX ISS формирует свечки в формате HLOCV, при этом используются следующие условные числовые коды: 1 – 1 минута, 10 – 10 минут, 60 – 1 час, 24 – 1 день, 7 – 1 неделя, 31 – 1 месяц, 4 – 1 квартал.”*[20].
+- `/iss/engines/[engine]/markets/[market]/history` – **daily trading results by security** (EOD; subject to historical‑data subscription for full depth according to docs[3][4]).
+
+The **candles** endpoint returns, per official and community docs:
+
+- Fields: `open`, `close`, `high`, `low`, `value`, `volume`, `begin`, `end`[21].
+- `value` is widely used as turnover (RUB), with `value / volume` as VWAP in community examples[22].
+
+For **quotes and best bid/ask**:
+
+- Marketdata endpoints (e.g. `/iss/engines/futures/markets/forts/securities.json`) include `BID`, `BIDDEPTH`, `OFFER` and `OFFERDEPTH` fields in column metadata[23].
+- In practice, direct orderbook endpoints like `/orderbook` for futures securities return an HTML “subscription required” page when called unauthenticated[24], confirming depth is not free.
+
+For **margin, limits and risk parameters**:
+
+- Security description includes `INITIALMARGIN`, `HIGHLIMIT`, `LOWLIMIT`, `PREVOPENPOSITION` and `OPENPOSITIONVALUE` among others[19][25].
+- These are **current values only**; there is no free ISS endpoint documented for **historical margin schedules**.
+
+### 3.2. Time resolution and interval codes (candles)
+
+Per official ISS docs and aiomoex:
+
+- Interval codes and corresponding TFs are:
+
+  | interval | Meaning |
+  |---------|---------|
+  | 1       | 1 minute |
+  | 10      | 10 minutes |
+  | 60      | 1 hour |
+  | 24      | 1 day |
+  | 7       | 1 week |
+  | 31      | 1 month |
+  | 4       | 1 quarter |
+
+  As summarized in aiomoex: *“1 – 1 минута, 10 – 10 минут, 60 – 1 час, 24 – 1 день, 7 – 1 неделя, 31 – 1 месяц, 4 – 1 квартал.”*[20].
+
+Candles are **pre‑aggregated** by the exchange and cover “intervals for which candles are available” per `/candleborders` documentation[26].
+
+### 3.3. Historical depth and pagination
+
+ISS applies record limits and pagination:
+
+- Official docs: *“The limit on the number of records per request is 1000.”*[27][28].  
+  Community libraries note 100‑row paging defaults for many endpoints, requiring looped `start`/`limit` to fetch more[29].
+
+Empirical and community evidence:
+
+- *“By one request 1000 rows could be retrieved maximum, it is a 3 year of history (~ 760 rows) for a single equity.”*[28].  
+  For futures, per‑contract listing periods are much shorter than for stocks, so 1000 rows can cover a full contract life at D1 resolution, but not entire multi‑year rolling series on 1‑minute candles.
+
+MOEX provides **candle borders** endpoints to query available history intervals[26][30], but the practical pattern observed in community code and examples:
+
+- Daily candles for liquid futures can extend back several years.
+- 1‑minute and 10‑minute candles are usually limited (often 3–6 months) and can be missing entirely for delisted or illiquid contracts.
+- Actual guarantees are **not stated** in public docs; historical depth is “best effort”.
+
+For **historical `history` endpoint**:
+
+- The developer guide designates `/iss/history` as historical data/trading results space[31].
+- The same guide emphasizes: *“Orderbooks and historical data are only available to the paid subscribers.”*[3].  
+  Yet, in practice, some `history` URLs for individual futures securities are widely used in examples and work without authentication[32].  
+  Interpretation: **not all historical data is paywalled; but the officially supported “archive database” with full coverage and bulk files is subscription‑based.** The free `history` responses likely represent a limited slice (for example, recent days or reduced fields).
+
+### 3.4. Delay and real‑time constraints
+
+Several official texts converge on:
+
+- *“It is possible to get delayed market data for free or subscribe for real-time. Orderbooks and historical data are only available to the paid subscribers.”*[1][3][4].
+- *“Market data delayed by at least 15 minutes and results of trading will still be available for free on the Exchange's website.”*[33].
+- ISS dev manual (Russian): *“данные (биржевая информация) могут предоставляться в режиме реального времени (по подписке) или с задержкой (без подписки)”*[6].
+
+A manual timestamp comparison of ISS response `SYSTIME` and wall clock confirms ≈15–20 minute lag[34].
+
+For your project this implies:
+
+- Backtests using ISS historical candles and EOD results are unaffected by delay.
+- Live monitoring and execution decisions based on ISS must tolerate **structural 15‑minute staleness**, which is acceptable for slow‑adjusting positional spread rules but not for intraday arbitrage.
+
+### 3.5. What about expired contracts?
+
+Official docs do not clearly state retention period for individual futures series in free ISS.
+
+- Some community posts claim: *“Определение истекших фьючей скачать невозможно. ISS их не помнит”* (expired futures cannot be downloaded; ISS does not remember them)[35].
+- Contradicting examples show `/iss/history/engines/futures/markets/forts/securities/SiU9.xml` and similar URLs being used for old contracts[32].
+
+This suggests **heterogeneous retention**:
+
+- Recent expired liquid contracts often remain available for some time.
+- Deep history and thin instruments may disappear or become accessible only through paid archive products.
+
+For a robust, multi‑year cross‑section of spreads, this is a structural risk: **you cannot assume that all expired legs are present in the free API**.
+
+---
+
+## 4. Non‑MOEX Free Sources: Brokers and Third Parties
+
+### 4.1. Broker APIs (BCS, Tinkoff, etc.)
+
+These are technically “free” in the sense of no per‑quote fee, but **conditioned on brokerage relationship and tokens**.
+
+#### BCS Trade API
+
+- Official description: a WebSocket/HTTP API that lets BCS customers build “профессиональную торговую инфраструктуру” (professional trading infrastructure), with access to market data (candles, quotes, trades, orderbook)[36].
+- Authentication is mandatory: token is issued in client’s personal account and linked to brokerage account:  
+  *“Откройте раздел «Профиль»… нажмите на брокерский счет, к которому вы хотите получить доступ с помощью API. Токен выпускается …”*[37].
+- Market data endpoint for candles:  
+  *“Максимальное количество баров в одном запросе — 1440.”*[38].  
+  Official HTTP endpoint: `GET .../trade-api-market-data-connector/api/v1/candles-chart`[39].
+- Supported intervals include minute/hour/day varieties (M1, M5, M15, M30, H1, H4, D, W, MN)[39].
+
+Implications:
+
+- For **intraday monitoring and 1‑minute backtests from the time you start recording**, BCS can be excellent — but:
+  - Data is only legally accessible as a **BCS client**.
+  - There is **no guarantee or documentation** that BCS exposes arbitrarily deep history – typical pattern is some months to a year per contract.
+  - Usage terms may restrict systematic redistribution or public research output.
+
+#### Tinkoff Invest API
+
+- The current official API (investAPI) replaces the deprecated OpenAPI[40].
+- MarketDataService provides historical candles:  
+  *“GetCandles: Максимальное значение limit — 2400. CANDLE_INTERVAL_HOUR: От 1 часа до 3 месяцев. CANDLE_INTERVAL_DAY: От 1 дня до 6 лет.”*[41][42].
+- Docs state it provides data for all instruments including futures; MarketDataService includes orderbooks (limited depth), trades and statuses[43].
+
+For your use:
+
+- Hourly candles with up to 3 months per request and daily with up to 6 years allow building **reasonably deep backtests at H1/D1 once you are a client**.
+- Again, tokens and terms are tied to a **retail brokerage relationship**; these are not anonymous public feeds.
+
+#### VTB
+
+Search finds general “VTB API Platform” mostly for payment/banking integration, with **no clear futures market‑data API** exposed publicly[44]. For this project, VTB cannot be assumed to provide a usable free programmatic feed.
+
+### 4.2. Third‑party “free” data (Finam, MT5 export, Stooq, etc.)
+
+Evidence for non‑MOEX sources is mixed and generally weaker than for ISS:
+
+- **Finam** historically offered free exports via web UI and libraries like `finam-export`[45][46], but smart‑lab posts report periodic breakage and instability of automated exports[47]. Coverage for modern MOEX futures is inconsistent and ToS may restrict systematic harvesting.
+- **MT5 terminals** can export ticks for symbols supported by a given broker[48]; whether this covers the full MOEX futures universe with archival depth depends on the broker’s own data policies.
+- **Stooq, Yahoo, Investing.com, Quandl**:
+  - Stooq appears not to list MOEX futures like Si‑3.27; searches show other exchanges’ symbols instead[49][50].
+  - Yahoo/Investing.com/Quandl focus on indices and equities; no evidence of complete MOEX futures coverage[51][52][53][54].
+
+These alternatives are *at best* sources of partial or unofficial candles for a subset of instruments. For a systematic cross‑section of MOEX futures spreads with robust legal footing they are **insufficient as a primary source**.
+
+---
+
+## 5. Matrix of Sources vs. Fields, Intervals, Coverage and Rights
+
+Below is a condensed qualitative matrix capturing what is material for your project. “Free” = no per‑data fee; “Public” = accessible without being a brokerage client.
+
+| Source / Access | Fields for futures | Intervals | Historical depth (qualitative) | Delay | Usage / Rights (key points) |
+|-----------------|--------------------|----------|---------------------------------|-------|------------------------------|
+| **MOEX ISS (unauthenticated)** | Daily OHLCV candles (HLOCV), some intraday candles; best bid/offer & last price; EOD results for some endpoints; contract specs incl. tick size, lot, margin, price limits[18][19][20][21] | 1m, 10m, 1h, 1d, week, month, quarter[20] | D1: multi‑year for many instruments; intraday: limited, incomplete, not guaranteed; expired contracts retention inconsistent[28][32][35] | ~15 min delayed for market data, real‑time requires subscription[1][2][6][33] | Informational; real‑time and deep historical data, orderbooks require subscription; redistribution and derived products restricted[3][4][7] |
+| **MOEX Historical Data Service (paid)** | Full trades and orders log; aggregated results; multiple levels of detail for all markets[8][12] | Tick, order‑level, EOD, various aggregates | Exchange‑grade multi‑year coverage; access for subscription period only[8][9][12] | Real‑time or historical snapshots | Commercial product; intended for systematic backtesting, risk and algorithmic trading[8] |
+| **MOEX public CSV/XML archives (HTTP)** | Aggregated futures results (price, volume, OI); settlement prices; some daily results per contract[10][11][27] | Daily | Multi‑year, but coarse and limited to EOD summaries[10][11] | EOD | Public download but framed as part of historical service; terms likely follow general MOEX market data policy |
+| **MOEX FTP (public)** | Contract lists (FORTS_LIST), spread definitions; volatility coefficients; various technical reports[13][14][15] | N/A for prices | Long history for reference files; not price series | N/A | Reference use; not sufficient alone to reconstruct prices |
+| **BCS Trade API (client)** | Historical candles; current quotes; anonymous trades; orderbook; via HTTP/WebSocket[36][49][50] | M1–MN (minute–monthly)[39] | At least several months to 1 year (per 1440 bar limit per request and user docs)[38][39] | Real‑time | Token bound to brokerage account; no public anonymous use; ToS may restrict redistribution |
+| **Tinkoff Invest API (client)** | Candles, orderbook, trades, statuses for all instruments including futures[43] | Hourly (up to 3 months per request), daily (up to 6 years per request)[41][42] | Up to 6 years at D1, 3 months sliding for H1; minute candles also exist but with other limits[41][42] | Real‑time & historical | Requires client token; subject to Tinkoff Invest API terms |
+| **Finam / others** | Some candles/ticks for select instruments[45][46] | Various | Unstable, undocumented for MOEX futures; export can break[47] | N/A | ToS unclear for systematic use; not reliable as core source |
+
+---
+
+## 6. Smallest Practically Useful Timeframe for Your Use Case
+
+You target **medium‑term spread strategies on MOEX futures** with holding horizons of days to weeks, not HFT. Key decisions:
+
+### 6.1. For research backtests
+
+Given free data constraints, a sensible hierarchy is:
+
+1. **Primary research timeframe: Daily (D1) candles and daily EOD fields.**
+
+   - D1 candles from ISS (`/candles` with interval=24) are free delayed and relatively deep[20][28].
+   - CSV/XML aggregated results provide official settlement prices, volumes and OI for many futures and options[10][11].
+   - For spread strategies whose signal is based on slow‑moving relationships (term structure, cross‑asset spreads, basis vs. carry), daily data is **sufficient to establish statistical viability**, given your horizon and capital scale.
+
+2. **Secondary refinement: Hourly candles (H1).**
+
+   - H1 candles are available in ISS via `interval=60`[20], but with **shorter and irregular history**; you must query `/candleborders` for each contract to see what is actually present[26][30].
+   - BCS/Tinkoff APIs provide hourly and finer candles with better controlled history windows (= client‑only, not pure public)[39][41][42].
+   - For execution cost modelling (entering spreads within a day rather than at random daily close), H1 offers a good compromise between detail and data volume.
+
+3. **Minute data (M1/M10) free usage is research‑only and shallow.**
+
+   - ISS defines `interval=1` and `10`, but does not promise uniform coverage; many contracts will have short windows or gaps.
+   - For a medium‑term project, using M1 only to **sanity‑check intraday volatility and volume patterns in recent history** is reasonable, but not as a backbone for long‑span backtests.
+
+### 6.2. For live monitoring and manual execution
+
+Considering your reaction latency (5–15 minutes typical; up to 90 minutes) and 15‑minute data delay:
+
+- **ISS delayed quotes and candles** are aligned with your human timescale:
+  - Price signals for multi‑day spreads will not be materially degraded by 15 minutes.
+  - Execution: you will place orders in a separate trading terminal (VTB/BCS), seeing **real‑time** quotes there; ISS is then a monitoring / logging source, not a trading microstructure oracle.
+
+- Adding a **broker API (BCS/Tinkoff)** later lets you:
+  - Build **own minute‑level recorder** going forward.
+  - Evaluate **intra‑day execution quality, slippage vs. mid‑price**, and refine entry timing.  
+  This is distinct from historical reconstruction: you will have accurate data **only from the point when you start recording.**
+
+Hence the **candidate “main research timeframe”** for now is:
+
+- **Daily** for robust cross‑sectional model design and risk control logic.
+- Optionally **hourly** from ISS/broker APIs where history exists, used conservatively.
+
+---
+
+## 7. What You Cannot Reliably Infer Without Paid or Self‑Collected Data
+
+### 7.1. Execution quality, slippage and realistic fill modelling
+
+Without historical bids/asks and Level‑2 orderbook you cannot:
+
+- Reconstruct **true mid‑price path** at execution time; OHLCV only gives range and volume by bar.
+- Model **limit order fill probability** conditioned on queue position and depth.
+- Quantify **impact of your own order size vs. visible liquidity**.
+
+ISS free data provides at best:
+
+- Top‑of‑book at delayed timestamps (`BID`, `OFFER`, `BIDDEPTH`, `OFFERDEPTH`) in real time for subscribers; delayed for free users[23][1].
+- No time‑stamped event stream of individual trades and orderbook updates without Historical Data Service or broker feeds.
+
+Implication: backtests based solely on OHLCV must assume **simplified execution (e.g., fills at bar’s close or VWAP)**. For your moderate scale (10–20M RUB total, small per‑instrument clips in liquid futures), this may be tolerable, but it will **understate slippage and adverse selection**.
+
+### 7.2. Point‑in‑time risk parameters and margin
+
+You cannot reconstruct historical **margin requirement changes and risk parameters**:
+
+- ISS exposes current `INITIALMARGIN`, `HIGHLIMIT`, `LOWLIMIT`, etc. for each contract[19][25].
+- There is no public ISS or FTP endpoint documented for comprehensive **historical time series of those fields**; detailed OI and analytical statistics `/analyticalproducts/futoi` are explicitly subscription‑gated:  
+  *“The data is available for viewing and downloading only after subscribing /analyticalproducts/futoi/securities/”*[26].
+
+For spread strategies, missing margin history implies:
+
+- Historical drawdowns in your backtest **do not account** for situations where margin jumped and would have forced a position reduction or margin call.
+- Modelling **capital efficiency vs. LQDT baseline** over time becomes approximate – you can only use today’s margin multipliers as proxies.
+
+### 7.3. Full survivorship‑bias‑free cross‑section
+
+Using only free ISS endpoints:
+
+- You can get **current and recent contract lists** from FORTS_LIST.TXT and securities endpoints[13][25].
+- But for past years, **delisted, extremely illiquid or short‑lived contracts may be partially or fully missing.** Community comments that “ISS doesn’t remember expired futures”[35] may reflect such pruning.
+
+Consequences:
+
+- A naive universe constructed from “what is visible today” will **miss contracts that were tradable in historical windows but no longer exist**, biasing empirical distributions (e.g., underestimating tail risk).
+- Even if contract codes are available from FTP lists, their **time series might be incomplete** in free ISS.
+
+To achieve a clean survivorship‑free panel you need either:
+
+- **Paid historical data** with formal guarantees of archive completeness, or
+- Long‑term **own recording** started today (which does not fix the pre‑start history).
+
+### 7.4. Microstructure‑level interval alignment between legs
+
+Spreads between two futures legs need **synchronous pricing** for precise signals. With only OHLCV:
+
+- Bar timestamps for each instrument may drift (e.g., missing bars, different volume patterns), especially for illiquid contracts.
+- ISS returns candles per instrument, not multi‑asset aggregates; **stale quotes** or data glitches are hard to detect.
+
+You cannot robustly:
+
+- Perform **high‑frequency cointegration tests** or algo execution on sub‑hour timescales.
+- Check for **lead‑lag relationships at the trade level**.
+
+For medium‑term daily spreads, this is less critical, but it limits **refinement** of models at intraday granularity.
+
+### 7.5. Robust stress testing on historical regime shifts
+
+Historical archive services include structured data products such as:
+
+- Type A: full trades and orders;  
+- Other types: aggregated results, best ten levels, etc.[12].
+
+Without access to these, you cannot:
+
+- Replay stress periods (e.g., 2014, 2020, 2022 episodes) with **tick or orderbook granularity** to evaluate spread behaviour under liquidity shocks.
+- Model **temporary dislocations** that last minutes but materially affect P&L even for day‑scale holds.
+
+For your initial small capital this is not fatal, but for scaling to 10–20M RUB it becomes important.
+
+---
+
+## 8. Point‑in‑Time Data Sketch and Local Storage Sizing
+
+### 8.1. What a point‑in‑time dataset would minimally contain
+
+For each futures contract and date/time, to support credible medium‑term spread research you ideally want:
+
+- **Prices:** OHLCV candles at D1 (mandatory) and H1/M10 (desirable for execution sensitivity).
+- **Contract specs:** tick size, multiplier, margin, settlement type, last trading day, delivery date; all **versioned by date** (spec changes mid‑life are possible).
+- **Risk parameters:** initial/variation margin levels over time; price limits (`HIGHLIMIT`, `LOWLIMIT`).
+- **OI and volume:** daily and possibly intraday OI (per `/futoi` or similar products, paid[26]).
+- **Calendar:** full MOEX derivatives trading calendar (trading/holiday days, session times) via dedicated calendar pages[55][56].
+
+For a point‑in‑time architecture, you would maintain:
+
+- A **contract dimension table** with version ranges (valid_from, valid_to).
+- A **daily prices table** with contract, date, OHLCV, settlement price, OI.
+- Optional **intraday table** with (contract, datetime, OHLCV).
+- A **parameters change log** for margin, limits, etc. if you acquire such data via paid services.
+
+### 8.2. Storage sizing (order‑of‑magnitude)
+
+Assume:
+
+- ~100 relevant futures contracts per year (major indices, FX, rates, commodities and their nearest 2–3 expiries).
+- 252 trading days/year; 10‑year horizon.
+- D1 candles: 100 * 252 * 10 ≈ 252k rows.
+- With 64‑bit floats and integers plus overhead, ≈100 bytes/row → **~25 MB** for daily prices.
+
+For intraday H1:
+
+- Trading ~16 hours/day; 16 bars/day/contract.
+- Rows: 100 * 16 * 252 * 10 ≈ 4.0M rows.
+- At 100–150 bytes/row including indices → **0.4–0.6 GB**.
+
+For intraday M10:
+
+- 6 bars/hour * 16 h = 96 bars/day/contract.
+- Rows: 100 * 96 * 252 * 10 ≈ 24.2M rows → **2–3 GB** at similar density.
+
+For full M1:
+
+- 60 bars/hour * 16 h = 960 bars/day/contract.
+- Rows: 100 * 960 * 252 * 10 ≈ 242M rows → **20–30 GB**.
+
+On your:
+
+- **Laptop (16 GB RAM)**: storing D1+H1+meta (~1 GB) is trivial; even adding M10 remains easy.
+- **VPS (1 vCPU, 1 GB RAM, 20 GB disk)**: practical upper limit is **D1 + a sliding window of intraday (~6–12 months)**; full multi‑year M1 across many contracts would saturate disk and RAM budgets.
+
+Hence for phase 2:
+
+- Target **D1 for full history** and, if desired, **H1 or M10 only for a rolling window** (e.g., last 1–2 years or only currently traded expiries).
+
+---
+
+## 9. Scenario Analysis: Data Strategy Paths
+
+### Scenario A – “Purely free MOEX ISS + public CSV”
+
+- **What you use:** ISS candles at D1 (plus partial intraday); ISS securities specs; public CSV/XML EOD results.
+- **What you can do:**
+  - Build **daily spread signals** and portfolio construction rules.
+  - Approximate transaction costs with coarse heuristics (spread multiples, volatility).
+  - Evaluate performance vs. LQDT baseline over several years, with daily P&L.
+- **Main risks:**
+  - Survivorship bias from missing contracts / incomplete history.
+  - Underestimation of slippage and margin stress.
+  - No reconstruction of point‑in‑time parameters (margin, limits).
+
+Suitable as **Phase 1 research** under your small test capital.
+
+### Scenario B – Add broker API recording (BCS or Tinkoff) from now on
+
+- **What you add:** Real‑time or near‑real‑time candles, quotes and trades streamed to your own storage, starting today.
+- **What you can do:**
+  - Build accurate **intraday execution models** for the prospective period (post‑start).
+  - Monitor **live spreads at minute‑scale** while still using ISS for historical D1.
+- **Main risks:**
+  - Historical backtests remain reliant on ISS OHLCV for the past; the richer data only applies going forward.
+  - Engineering workload (feed handler, storage, monitoring) on constrained VPS.
+
+This is a natural **Phase 2+** path as you approach larger capital deployment.
+
+### Scenario C – Purchase MOEX Historical Data (or equivalent vendor)
+
+- **What you add:** Full historical trades/orders, formal archive coverage, possibly historical risk parameters.
+- **What you can do:**
+  - Perform **production‑grade backtests** with realistic execution simulation.
+  - Build point‑in‑time exposure, margin, and liquidity analyses across regimes.
+- **Main risks:**
+  - Direct monetary cost.
+  - Need to handle large datasets (tens to hundreds of GB) with more robust infrastructure than current VPS.
+
+This is the path to **industrial‑quality research**, but likely premature for a 30k RUB pilot.
+
+---
+
+## 10. Recommendations (Prioritized)
+
+### 10.1. Immediate (Phase 1, free only)
+
+1. **Standardize ISS D1 data as your core research dataset.**
+
+   - Use `/iss/candles` with `interval=24` for each target futures contract; combine with aggregated CSV results where available.  
+   - Query `/candleborders` (or equivalent) to log **first/last available dates** per contract and explicitly mark missing periods[26][30].
+   - For each contract, also fetch securities metadata with `LOTVOLUME`, `MINSTEP`, `INITIALMARGIN`, `LASTTRADEDATE`, `LSTDELDATE`, `ASSETCODE`[18][19][25].
+
+2. **Define an explicit futures universe with realistic survivorship notes.**
+
+   - Build your universe per year using a combination of:
+     - FORTS_LIST.TXT and FORTS_LIST_SPREAD.TXT from FTP (for “what existed”)[13].
+     - ISS `securities` endpoint for current and recent listings[18][19][25].
+   - Flag contracts whose D1 history cannot be fully pulled as **“incomplete”** and either drop or handle separately.
+
+3. **Adopt D1 as the official backtest timeframe, with controlled intraday checks.**
+
+   - Use **D1** for return, risk, and capital rules; only use **H1** or **M10** opportunistically where ISS provides enough depth to test whether intraday execution materially shifts performance.
+   - Document that fills in backtests are approximated (e.g. at D1 close or midpoint of range) and that slippage vs. real fills is a key out‑of‑sample check.
+
+4. **Respect ISS rate limits and usage terms.**
+
+   - Throttle to ≤2 requests/sec and send a UA with contact info[16].
+   - Avoid building a public service redistributing ISS data; keep usage for personal research/trading.
+
+### 10.2. Short‑term (before auto‑trading, still mostly manual)
+
+5. **Experiment with 1–10 minute candles for a small subset of contracts.**
+
+   - For 5–10 key futures (e.g., RI, Si, BR, GD, key spreads), query `interval=1` and `10` and log how far history goes per instrument.  
+   - If you consistently see, say, ≥6 months of M10 for core contracts, you can optionally:
+     - Use M10 bars to refine entry timing in backtests for the **most recent period only**.
+     - Compare realized reversion horizon (e.g., how often spreads revert intraday vs. over days).
+
+6. **Design your data schema and storage with D1 full history + rolling intraday window.**
+
+   - On the VPS, target:
+     - **Full D1** history across your universe.
+     - **Rolling H1 or M10** for last 1–2 years or only current front/next contracts.
+   - Keep M1 experiments on the laptop if needed, not on the constrained VPS.
+
+### 10.3. Medium‑term (if pilot succeeds; 10–20M RUB scale)
+
+7. **Add a broker API recorder once you stabilize your ISS‑based research.**
+
+   - Choose between BCS and Tinkoff depending on your planned operational account:
+     - BCS: 1440 bars/request historical, M1–MN intervals[38][39].
+     - Tinkoff: H1 up to 3 months and D1 up to 6 years per request; market‑wide coverage[41][42].
+   - From day one of recorder:
+     - Store at least **M1 or M5** candles and quotes for live‑traded instruments.
+     - Tag all future trades with **concurrent best bid/offer** at decision and fill times (for ex‑post slippage analysis).
+
+8. **Consider targeted paid data rather than full archive immediately.**
+
+   - Instead of buying full Type A order logs, you might:
+     - Subscribe only to **aggregated trading results** and **open interest analytics** relevant to your contracts (if MOEX or vendors offer such subsets).
+     - Use them to augment ISS for margin/OI and stress scenarios without processing full tick feeds.
+
+9. **Explicitly separate “research backtest” and “executable backtest” layers.**
+
+   - **Research layer:** ISS D1 data, free candles, approximated execution; used to test many ideas cheaply.
+   - **Executable layer:** limited set of candidate strategies re‑evaluated using broker‑recorded minute data (from the start date), with realistic slippage and order types.
+
+   Clearly mark in your documentation which performance numbers come from which layer, and enforce that **production decisions** are tied to the executable layer wherever feasible.
+
+---
+
+## 11. References
+
+[1] Programming interface to the ISS — Moscow Exchange. https://www.moex.com/a2920  
+[2] Interfaces — Moscow Exchange. https://www.moex.com/a2193  
+[3] Application Programming Interface. PDF extract (ISS Developer Manual). https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0  
+[4] Historical Data: Referens — Moscow Exchange. https://www.moex.com/a2864  
+[5] Informational & Statistical Server — description. https://www.moex.com/a8531  
+[6] Программный интерфейс Информационно‑статистического сервера ММВБ. Руководство разработчика. https://www.moex.com/ru/documents/6523  
+[7] Moscow Exchange ISS usage terms (excerpt via a2193). https://www.moex.com/a2193  
+[8] Historical Data: Service description — Moscow Exchange. https://www.moex.com/a2863  
+[9] Historical Data: Service description (archive access period). https://www.moex.com/a2863  
+[10] Archive the results of trades on the market (futures and options). https://www.moex.com/en/archive/fortsmarketresults.aspx  
+[11] Aggregated Trading Results — data download page. https://www.moex.com/a2869  
+[12] Historical Data: Service description — data products list (Type A, etc.). https://www.moex.com/a2863  
+[13] ftp.moex.com /pub/info/stats/forts/ — FORTS_LIST.TXT and FORTS_LIST_SPREAD.TXT. http://ftp.moex.com/pub/info/stats/forts/  
+[14] ftp.moex.com directory listing notes for FORTS reports. http://ftp.moex.com/pub/Reports/FORTS/  
+[15] ftp.moex.com FORTS volatility coefficients archives. http://ftp.moex.com/pub/FORTS/volat_coeff/  
+[16] MyScreener MOEX ISS usage recommendations. https://myscreener.ru/help/moex-iss  
+[17] ISS reference page — list of futures endpoints. https://iss.moex.com/iss/reference/  
+[18] ISS securities description for futures — example fields. https://iss.moex.com/iss/engines/futures/markets/forts/securities.json  
+[19] ISS securities metadata (securities columns). https://iss.moex.com/iss/securities.json  
+[20] aiomoex documentation: “MOEX ISS формирует свечки в формате HLOCV…” https://wlm1ke.github.io/aiomoex/build/html/api.html  
+[21] MOEX ISS API documentation: /candles data format. https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0  
+[22] Habr: example using `value / volume` as average price. https://habr.com/ru/articles/487436/  
+[23] go-moex-iss package — marketdata fields including BID/OFFER. https://pkg.go.dev/github.com/Ruvad39/go-moex-iss  
+[24] ISS orderbook endpoint for futures returning subscription page. https://iss.moex.com/iss/engines/futures/markets/forts/securities/SiH4/orderbook  
+[25] ISS metadata showing INITIALMARGIN, HIGHLIMIT, LOWLIMIT. https://iss.moex.com/iss/securities/columns.json  
+[26] MOEX ISS API documentation: /candleborders and historical candles. https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0  
+[27] ISS Developer Manual — 1000 records per request limit. https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0  
+[28] Example note: “By one request 1000 rows could be retrieved maximum, it is a 3 year of history (~760 rows) for a single equity.” https://github.com/uqee/moex-api  
+[29] aiomoex: ISS returns many datasets in pages of 100 elements. https://wlm1ke.github.io/aiomoex/build/html/api.html  
+[30] ISS reference: candle borders and available dates. http://iss.moex.com/iss/reference/156  
+[31] ISS namespaces description: /iss (market data) and /iss/history (historical). https://www.moex.com/a2920  
+[32] Example futures history endpoint usage (SiU9, CNYRUBF). https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/SiU9.xml  
+[33] Market data delayed by at least 15 minutes and results of trading available for free. https://www.moex.com/a1501  
+[34] Empirical ISS timestamp vs. wall clock delay example (UPDATETIME vs SYSTIME). https://www.moex.com/a2193  
+[35] Smart‑lab comment on ISS and expired futures. https://smart-lab.ru/blog/  
+[36] BCS Trade API overview. https://bcs.ru/trade-api  
+[37] BCS API token issuance in client profile. https://bcs.ru/trade-api/docs/auth  
+[38] BCS API docs: “Максимальное количество баров в одном запросе — 1440.” https://bcs.ru/trade-api/docs/candles  
+[39] BCS Trade API market data connector documentation. https://be.broker.ru/trade-api-market-data-connector/swagger/index.html  
+[40] Tinkoff Invest OpenAPI deprecation notice. https://tinkoff.github.io/invest-openapi/  
+[41] Tinkoff Invest API MarketDataService GetCandles limits. https://tinkoff.github.io/investAPI/marketdata/#getcandles  
+[42] Tinkoff Invest API GetCandles description (HOUR/DAY intervals). https://developer.tinkoff.ru/invest/api/market-data-service-get-candles  
+[43] Tinkoff Invest API MarketDataService overview. https://tinkoff.github.io/investAPI/marketdata/  
+[44] VTB API Platform general description. https://openapi.vtb.ru  
+[45] finam-export Python package description. https://pypi.org/project/finam-export/  
+[46] Finam export service description. https://www.finam.ru/profile/export/  
+[47] Smart‑lab note on Finam export instability. https://smart-lab.ru/blog/  
+[48] S#.Data description (Finam/MT5 historical data). https://stocksharp.com/products/sdata/  
+[49] Stooq instrument search results for MOEX futures. https://stooq.com/  
+[50] Stooq symbol SI.F referring to COMEX silver futures, not MOEX Si. https://stooq.com/q/?s=SI.F  
+[51] Yahoo Finance MOEX index data (IMOEX.ME). https://finance.yahoo.com/quote/IMOEX.ME  
+[52] Yahoo Finance search for MOEX futures codes. https://finance.yahoo.com/  
+[53] Investing.com MOEX Russia Index data. https://www.investing.com/indices/moex  
+[54] Quandl / Nasdaq Data Link free datasets description. https://data.nasdaq.com/  
+[55] MOEX trading calendar (general). https://www.moex.com/en/tradingcalendar/  
+[56] Derivatives (futures/options) trading calendar (en-fo-calendar). https://www.moex.com/msn/en-fo-calendar

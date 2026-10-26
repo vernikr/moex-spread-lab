@@ -1,0 +1,447 @@
+# Validation Methodology for Sparse Medium-Term Futures Spreads on MOEX
+
+**Research date:** 2026-10-08  
+**Scope:** Evidence-based methodology report. No backtests, account checks, or empirical validation were performed. All proposed tests are conditional on data and operational prerequisites identified below.
+
+---
+
+## 1. Executive Conclusions
+
+**1.1.** The central statistical problem is not “too few trades” in isolation, but that the number of *independent economic episodes* is far smaller than the number of bars, and that multiple-testing corrections designed for dense, approximately independent trials degrade under dependence and sparsity.
+
+**1.2.** No universal minimum trade count exists. The relevant threshold is the *minimum track record length* implied by the observed Sharpe ratio, skewness, and kurtosis, together with the number of trials attempted. For a medium-term spread strategy with overlapping positions, this length must be measured in economic episodes, not calendar days or bars.
+
+**1.3.** The Deflated Sharpe Ratio (DSR) and Probability of Backtest Overfitting (PBO) are useful diagnostics, not validation certificates. The DSR requires the number of *independent* trials as an input; correlated parameter sweeps inflate this number in a way the formula does not automatically correct. A documented critique notes that the DSR formula in the original paper contains an error in equation (2) on page 8.
+
+**1.4.** Russian market nonstationarity is not a theoretical concern. Multiple structural break tests recover a regime shift within 10 trading days of 24 February 2022 without prior event conditioning. A separate study finds a statistically significant break in mid-February 2024 and concludes that “a single stable factor model is too restrictive for the Russian stock market over the period considered”. Any validation protocol must treat pre-2022 and post-2022 data as separate regimes unless the strategy explicitly models regime transitions.
+
+**1.5.** The 90-day pilot can validate *operations* (execution, monitoring, data integrity, incident response) but cannot validate profitability. Evidence from the pilot should be classified as operational feasibility evidence, not statistical evidence of edge.
+
+**1.6.** A final holdout becomes consumed on first use. Once any selection decision — pair inclusion, parameter choice, hedge ratio, regime label threshold — has been informed by holdout performance, that holdout is training data for practical purposes.
+
+---
+
+## 2. Leakage Pathway Inventory
+
+### 2.1. Survivorship and universe selection
+
+**Pathway:** The pair universe is selected from contracts that currently exist and have sufficient history. Contracts that were delisted, merged, or became illiquid are absent.
+
+**MOEX-specific relevance:** MOEX has launched and discontinued single-stock futures and index contracts. The perpetual futures product line (IMOEXF, USD/RUB perpetual) introduced dividend adjustments and funding mechanics that differ from regular futures. A universe built from currently listed perpetuals would exclude the historical period when only regular futures existed.
+
+**Prevention test:** Construct the universe using point-in-time listing records. For each candidate pair, verify that both legs had a listed contract with non-zero open interest and a two-sided quote at the intended entry date. If historical listing data are unavailable, the universe is conditional and the scope limitation must be recorded.
+
+### 2.2. Continuous-contract roll adjustment
+
+**Pathway:** Continuous futures series are constructed by splicing near-month and far-month contracts. The splice method (ratio, difference, panama) determines whether a spread computed on the continuous series equals the spread that could have been traded at the roll moment.
+
+**MOEX-specific relevance:** MOEX regular futures roll via expiry; perpetual futures avoid roll but introduce funding and dividend adjustments that change the economic exposure. The variation margin formula for perpetuals includes revaluation, funding, and dividend adjustment. A continuous series that ignores funding and dividend adjustments will misstate the true carry cost of a perpetual spread.
+
+**Prevention test:** For each pair, reconstruct the spread from individual contract settlement prices on the intended entry and exit dates. Compare against the continuous-series spread at the same timestamps. Document the roll method, the roll trigger (open interest crossover, calendar rule, liquidity threshold), and the adjustment applied. Any discrepancy that exceeds the bid-ask spread at the roll moment is a leakage flag.
+
+### 2.3. Future parameters, events, and dividends
+
+**Pathway:** A parameter is selected using information that was not available at the decision time. Examples: a regime label threshold calibrated on the full sample; a hedge ratio estimated using the full overlap period; a volatility filter whose lookback window extends into the test period.
+
+**Prevention test:** Enforce strict point-in-time discipline. Every transform (normalization, volatility estimate, regime label, hedge ratio) must be computed using only data with timestamps strictly before the decision timestamp. For a spread strategy, the hedge ratio is especially sensitive: if it is estimated on the same period used to evaluate the spread, the evaluation is in-sample.
+
+### 2.4. Late price revisions
+
+**MOEX-specific pathway:** MOEX market data feeds distinguish between “reliable” streams (data not subject to change) and streams where final reported values may differ from online values. Late revisions can alter settlement prices, which feed into variation margin and therefore into the economic result of a position.
+
+**Prevention test:** For every trade date in the backtest, compare the price used at decision time against the final settlement price for that contract and date. If the backtest used a non-final price, record the revision direction and magnitude. If final settlement prices are not available free of charge, this becomes a data feasibility limitation.
+
+### 2.5. Labels overlapping training and test
+
+**Pathway:** A label for trade *i* is defined by the return over a holding period that extends into the test period. Standard k-fold cross-validation shuffles these overlapping labels across folds, leaking information.
+
+**Prevention:** Purging removes from the training set every observation whose label window overlaps the test block. Embargoing removes a buffer of observations immediately after the test block to account for serial dependence that purging alone does not eliminate. For spread trades, the purge and embargo must be defined in terms of the *actual holding overlap*, not a fixed number of bars. If the maximum holding period is 15 trading days, the purge band must cover 15 days.
+
+### 2.6. Reused final holdout
+
+**Pathway:** A holdout is used to evaluate strategy A, then strategy B is developed with knowledge of A's holdout result, then the same holdout is used to evaluate B.
+
+**Prevention:** The final holdout is a one-time-use resource. The experiment registry (Section 4) must record the first date on which any holdout observation was inspected for any purpose. After that date, the holdout is retired for selection purposes. A new holdout can only be defined prospectively, with the same one-time-use rule.
+
+### 2.7. Post-hoc transaction costs and delay scenario selection
+
+**Pathway:** The backtest is run with several cost and delay assumptions; the scenario with the best reported performance is then selected as the headline result.
+
+**Prevention:** Cost and delay scenarios must be pre-specified in the experiment registry before any results are computed. The primary result is the *most conservative pre-specified scenario*, not the best-performing one. All scenarios are reported.
+
+---
+
+## 3. Chronological Walk-Forward and Nested Selection
+
+### 3.1. Why standard k-fold fails
+
+Standard k-fold cross-validation assumes exchangeability: the distribution of the data does not change across folds. Financial time series violate this assumption through serial dependence, non-stationarity, and label overlap. In a spread strategy with overlapping positions, a training sample may share the same underlying price move as a test sample.
+
+### 3.2. Purged walk-forward
+
+The minimum defensible scheme is purged walk-forward:
+
+```
+Timeline:  |--- Train 1 ---|--- Purge | Embargo |--- Test 1 ---|
+           |--- Train 2 ---|--- Purge | Embargo |--- Test 2 ---|
+           |--- Train 3 ---|--- Purge | Embargo |--- Test 3 ---|
+```
+
+- **Train:** all data with timestamps before the purge band.
+- **Purge:** removes training observations whose label window overlaps the test block. The purge width equals the maximum holding period (in calendar days or trading days, whichever governs the spread’s economic exposure).
+- **Embargo:** a buffer after the test block (typically 1% of the total timeline in López de Prado’s convention, but for sparse trades this should be justified by the autocorrelation structure of the spread’s returns, not a fixed percentage).
+- **Test:** the evaluation block. No training observation whose information set overlaps this block may be used.
+
+The critical design choice is the purge width. A fixed “10 bars” is arbitrary. For a spread held for an average of 8 trading days with a maximum of 20, the purge must be 20 trading days on the label side. If the strategy uses a trailing volatility filter with a 60-day lookback, the purge must also account for the lookback window: no training observation whose *feature computation window* overlaps the test period may be used.
+
+### 3.3. Nested selection
+
+When hyperparameters, pair selection, and hedge ratios are all chosen from data, a single walk-forward split is insufficient. The correct structure is nested:
+
+```
+Outer loop (walk-forward):  Train / Purge / Embargo / Test
+  Inner loop (within Train): Train' / Purge' / Embargo' / Validation
+```
+
+The inner loop selects hyperparameters and pairs. The outer test block evaluates the *entire selection procedure*, not just the final model. This distinction is critical: a procedure that selects the best of 50 pairs on the inner validation and then reports the outer test performance of that selected pair is still subject to selection bias unless the outer evaluation accounts for the selection rule.
+
+López de Prado’s Combinatorial Purged Cross-Validation (CPCV) generates multiple training/test paths from a single historical dataset, providing a distribution of out-of-sample performance rather than a single path. For sparse spread strategies, CPCV is preferable to a single walk-forward path because it produces a distribution of outcomes, which is necessary for any uncertainty quantification. However, CPCV increases computational cost and requires the entire dataset to be available at once, which conflicts with strict point-in-time discipline if the dataset itself contains revisions.
+
+### 3.4. Practical constraint for the 90-day pilot
+
+With a 90-calendar-day pilot and medium-term trades, the number of outer test blocks is likely to be 1 or 2. This is not enough for walk-forward selection. The pilot should therefore be treated as a *prospective shadow evaluation* (Section 6), not a walk-forward validation. The walk-forward validation must be performed on historical data before the pilot, with the pilot serving as an operational and behavioral check.
+
+---
+
+## 4. Experiment Registry
+
+The registry is a structured log of every decision, attempted configuration, and result. Without it, multiple-testing corrections are impossible to compute honestly. The minimum required fields are:
+
+| Field | Description | Example |
+|---|---|---|
+| **Experiment ID** | Unique identifier | `EXP-2026-10-08-001` |
+| **Date/time attempted** | Decision timestamp | `2026-10-08T14:32:00+03:00` |
+| **Family** | Strategy family label | `calendar_spread_momentum` |
+| **Pairs attempted** | List of pair identifiers | `[BR-USD/RUB, Si-USD/RUB]` |
+| **Parameters** | All parameter values | `lookback=20d, entry_z=1.5, exit_z=0.5` |
+| **Selection rule** | How this configuration was chosen | `grid_search_sharpe` |
+| **Train period** | Start/end of training data | `2023-01-01` to `2024-06-30` |
+| **Purge/embargo** | Width and justification | `purge=20d, embargo=5d` |
+| **Test period** | Start/end of evaluation data | `2024-07-01` to `2025-06-30` |
+| **Result metric** | Primary metric and value | `excess_return_vs_LQDT = -0.8%` |
+| **Standard error** | Uncertainty of the metric | `SE = 1.2%` |
+| **Number of episodes** | Independent economic episodes | `12` |
+| **Holdout consumed?** | Boolean and date | `TRUE, 2026-10-08` |
+| **Notes** | Anomalies, data issues, deviations | `Si spread discontinuous after 2024-03` |
+
+The registry must be append-only. Corrections are new entries, not edits. The number of *independent* trials for DSR purposes is not the number of rows in the registry but the number of *effectively independent* configurations, estimated from the correlation structure of the trial results.
+
+---
+
+## 5. Multiple-Testing Corrections Under Dependence and Sparsity
+
+### 5.1. The DSR and its assumptions
+
+The Deflated Sharpe Ratio adjusts the Probabilistic Sharpe Ratio (PSR) for the number of trials and the dispersion of trial Sharpe ratios. The PSR itself is:
+
+\[
+\text{PSR}(SR^*) = \Phi\left(\frac{\hat{SR} - SR^*}{\hat{\sigma}(\hat{SR})}\right)
+\]
+
+where
+
+\[
+\hat{\sigma}(\hat{SR}) = \sqrt{\frac{1 - \gamma_3 \hat{SR} + \frac{\gamma_4 - 1}{4} \hat{SR}^2}{N-1}}
+\]
+
+and \(\gamma_3\) and \(\gamma_4\) are the skewness and kurtosis of the return distribution.
+
+The DSR replaces \(SR^*\) with a threshold that rises with the number of trials. The critical assumption is that the trials are independent. When parameter sweeps are correlated — as they almost always are in a grid search over a smooth parameter surface — the effective number of independent trials is smaller than the nominal number. Using the nominal number makes the DSR *conservative* (it rejects more), while using an underestimated effective number makes it *anti-conservative*.
+
+**Applicability to sparse spread trades:** The DSR is designed for return series with a well-defined frequency (daily, monthly). For sparse trades, the “N” in the formula is ambiguous: is it bars, trades, or economic episodes? If N is set to the number of bars, the Sharpe ratio is computed on a series that is mostly zeros, which distorts the skewness and kurtosis estimates. If N is set to the number of trades, the standard error formula is no longer valid because the returns are not identically distributed across trades with different holding periods. The practical resolution is to compute the Sharpe ratio on a *capital-time-weighted* return series, where each trade’s return is allocated across the days it was held, and then to treat the number of *economic episodes* (distinct market dislocations) as the effective sample size for the DSR’s N.
+
+### 5.2. PBO and CSCV
+
+The Probability of Backtest Overfitting uses Combinatorially Symmetric Cross-Validation (CSCV): the performance series of N strategies is split into S disjoint sub-periods; all combinations of S/2 sub-periods are used as in-sample, the complementary S/2 as out-of-sample; the strategy selected as best in-sample is ranked out-of-sample; PBO is the probability that the selected strategy’s out-of-sample rank is below median.
+
+**Limitation for sparse strategies:** CSCV requires each strategy to have a performance observation in every sub-period. A sparse strategy that trades in only some sub-periods will have missing values, which CSCV cannot handle without imputation. Imputation changes the rank statistics. For sparse strategies, PBO should be computed only on sub-periods where all candidate strategies have at least one trade, and the fraction of sub-periods excluded must be reported.
+
+### 5.3. Stepwise Cauchy Combination Test (StepC)
+
+StepC is a multiple-testing procedure designed specifically for dependent, sparse, and possibly contaminated signals. It combines p-values via the Cauchy combination test and controls the familywise error rate under dependence. Unlike the DSR, StepC does not require an estimate of the number of independent trials; it operates directly on the joint distribution of p-values. This makes it more robust to correlated parameter sweeps. However, StepC requires a valid p-value for each strategy, which for sparse trades must be derived from a test that accounts for the episode structure.
+
+### 5.4. Recommended approach for this project
+
+1. **Record all trials** in the experiment registry.
+2. **Compute the effective number of independent trials** from the correlation matrix of trial Sharpe ratios (e.g., via the eigenvalue distribution or a clustering approach). Report the nominal and effective counts.
+3. **Apply DSR as a diagnostic**, not a gate. Report the deflated Sharpe, the PSR, and the minimum backtest length. If the DSR is below a pre-specified threshold (e.g., 0.95), the strategy is flagged for further scrutiny, not automatically rejected.
+4. **Apply StepC if valid p-values can be constructed** for each strategy. For sparse trades, the p-value should come from a block bootstrap or a permutation test that respects the episode structure.
+5. **Report the limitation explicitly:** no correction can recover the information lost by a short effective sample. If the number of economic episodes is fewer than 10–15, statistical inference is extremely weak regardless of the correction used.
+
+---
+
+## 6. Metrics and Uncertainty
+
+### 6.1. Matched LQDT counterfactual
+
+Every performance measure must be expressed as an *excess* over the LQDT counterfactual with identical external flows. The counterfactual is not “LQDT return” but “LQDT return on the capital that would have been invested in LQDT if the pilot capital had remained in LQDT.”
+
+**Operational definition:**
+
+\[
+\text{Excess}_t = \frac{\text{Pilot equity}_t - \text{Pilot equity}_{t-1}}{\text{Pilot equity}_{t-1}} - \frac{\text{LQDT equity}_t - \text{LQDT equity}_{t-1}}{\text{LQDT equity}_{t-1}}
+\]
+
+where the LQDT equity is computed on a shadow basis: the same RUB 30,000 that was diverted to the pilot, plus any emergency funding, minus any withdrawals, invested in LQDT on the same dates.
+
+**Uncertainty:** The excess return series is sparse and autocorrelated. Standard errors from i.i.d. assumptions will be too small. Use a stationary bootstrap (Politis-Romano) or a block bootstrap with block length equal to the maximum holding period. Report the bootstrap confidence interval, not just the point estimate.
+
+### 6.2. Capital-time usage
+
+For a strategy that is in the market only part of the time, the Sharpe ratio on the full calendar is not comparable to a strategy that is always in the market. Report:
+
+- **Capital-time fraction:** (sum of holding periods) / (total calendar days).
+- **Return on capital-time:** excess return divided by capital-time fraction.
+- **Capital-time-adjusted Sharpe:** Sharpe computed on the series of returns for days when the strategy had a position, with zeros for days without a position but with the capital-time fraction reported separately.
+
+### 6.3. Path drawdown and stress funding
+
+The excess-result high-water mark is the relevant drawdown reference, not the absolute equity high-water mark. The RUB 5,000 warning and RUB 10,000 action triggers are defined on the excess curve. Report:
+
+- **Maximum excess drawdown** from the excess high-water mark.
+- **Time to recovery** (or censored recovery time).
+- **Emergency funding incidents:** date, amount, reason, and whether the funding was used to reach flat or to add exposure.
+
+### 6.4. Duration, turnover, and costs
+
+- **Average holding period** in calendar days and trading days.
+- **Turnover:** total notional traded / average deployed capital.
+- **Net execution costs:** commission + spread cost + slippage, estimated from actual fills in the pilot and from conservative assumptions in backtest.
+- **Capacity estimate:** the maximum notional that can be traded without moving the spread by more than a pre-specified fraction of the bid-ask spread, estimated from order book depth (if available) or from the relationship between trade size and realized slippage in the pilot.
+
+### 6.5. Probability calibration
+
+If a win probability is reported, it must be calibrated on out-of-sample data. A simple calibration check: bin predicted probabilities into deciles, compute the observed win rate in each bin, and test whether the observed rate falls within the binomial confidence interval of the predicted rate. Report the Brier score and the calibration curve. If the number of episodes is too small for decile calibration (fewer than 50 episodes), do not report a calibrated probability; report the raw win rate with a confidence interval instead.
+
+### 6.6. Effective sample size
+
+The effective sample size is the number of *independent economic episodes*, not trades or bars. Two trades in the same pair, separated by less than the holding period, are one episode. Two trades in different pairs driven by the same macro shock (e.g., a RUB depreciation) may be effectively one episode if the pairs are correlated.
+
+**Estimation:** Cluster trades by entry date and pair correlation. Use the average cluster size to deflate the trade count. Report both the raw trade count and the episode count.
+
+---
+
+## 7. Baselines, Stress Scenarios, and Prospective Evaluation
+
+### 7.1. No-trade/LQDT baseline
+
+The no-trade baseline is not zero return; it is the LQDT return on the pilot capital. The strategy must beat this baseline, not zero. Report the excess return and its uncertainty against this baseline.
+
+### 7.2. Deterministic baselines
+
+At minimum, compare against:
+
+- **Always-long-spread:** enter every pair at the earliest available date, hold until the end of the evaluation period.
+- **Calendar-only:** enter every pair at a fixed calendar interval (e.g., monthly), regardless of spread level.
+- **Random-entry:** enter at random dates matched to the strategy’s entry frequency and holding period.
+
+These baselines control for the possibility that the strategy’s performance is driven by the general level of the spread or by calendar effects rather than by the signal.
+
+### 7.3. Stress-cost/delay/quote-quality scenarios
+
+Pre-specify at least three scenarios:
+
+| Scenario | Cost assumption | Delay assumption | Quote assumption |
+|---|---|---|---|
+| Base | Historical commission + median spread | 5 minutes | Mid-price execution |
+| Stress | Commission × 1.5 + 90th percentile spread | 15 minutes | Bid/ask execution (entry at ask, exit at bid) |
+| Severe | Commission × 2 + maximum observed spread | 60 minutes | Bid/ask + 50% of spread as additional slippage |
+
+The primary reported result is the **Stress** scenario. The Base scenario is reported for comparison only. If the strategy fails in the Stress scenario, it does not pass validation.
+
+### 7.4. Prospective shadow evaluation
+
+The 90-day pilot is a prospective shadow evaluation if and only if:
+
+1. The strategy specification (pairs, parameters, entry/exit rules, sizing) is frozen before the pilot begins.
+2. The pilot trades are executed in a shadow account (or a tiny live account) without discretionary omission of eligible signals.
+3. The LQDT counterfactual is computed on the same dates with the same external flows.
+4. The pilot results are not used to modify the strategy during the pilot.
+
+If any of these conditions is violated, the pilot is not a shadow evaluation; it is an operational rehearsal.
+
+### 7.5. When the final holdout is consumed
+
+The final holdout is consumed on the first date that any holdout observation is used to inform a selection decision. The experiment registry must record this date. After consumption:
+
+- The holdout may still be used for reporting, but any further selection based on it invalidates the out-of-sample claim.
+- A new holdout can only be defined prospectively, using data that were not available at the time of the original holdout consumption.
+
+---
+
+## 8. Worked Hypothetical Leakage Examples
+
+### Example A: Hedge ratio estimated on the full sample
+
+**Scenario:** A spread between two futures contracts is hedged with a ratio estimated by regressing the two price series over the full evaluation period. The strategy is then backtested on that same period.
+
+**Leakage:** The hedge ratio uses future data. The backtest’s spread series is a linear combination that was chosen with knowledge of the full period’s covariance structure.
+
+**Prevention test:** Re-estimate the hedge ratio on a rolling basis: for each decision date, use only data before that date. Compare the rolling hedge ratio to the full-sample ratio. If the difference is economically meaningful (e.g., the rolling ratio implies a different number of contracts), the full-sample backtest is invalid.
+
+### Example B: Regime label threshold calibrated on the test period
+
+**Scenario:** A volatility regime filter uses the 80th percentile of realized volatility over the full sample as the threshold for “high-volatility” regime. Trades are only taken in the high-volatility regime.
+
+**Leakage:** The 80th percentile is computed using data from the test period. The set of high-volatility days in the test period is determined partly by the test period’s own volatility distribution.
+
+**Prevention test:** Compute the 80th percentile using only training-period data. Apply that threshold to the test period. If the number of high-volatility days in the test period changes materially, the full-sample threshold is leaky.
+
+### Example C: Late settlement price revision
+
+**Scenario:** A backtest uses the online last price at 18:45 as the settlement price for a contract. The final settlement price, published later, is different.
+
+**Leakage:** The backtest’s P&L is based on a price that was not the actual settlement price. If the revision is systematically in one direction (e.g., final settlement tends to be higher than the last online price), the backtest is biased.
+
+**Prevention test:** For a sample of trade dates, compare the online price used in the backtest against the final settlement price. Compute the mean and standard deviation of the revision. If the revision is not zero-mean and small relative to the bid-ask spread, the backtest must be re-run with final settlement prices.
+
+### Example D: Reused holdout
+
+**Scenario:** A researcher evaluates strategy A on holdout period H. Strategy A performs poorly. The researcher then develops strategy B, using the knowledge that A failed on H to inform B’s design. Strategy B is evaluated on H and performs well.
+
+**Leakage:** H is no longer a holdout for B; it is training data for the selection between A and B.
+
+**Prevention test:** The experiment registry must record every holdout inspection. If the holdout has been inspected for any purpose before the evaluation of B, B’s result on H is in-sample. The only remedy is a new, previously uninspected holdout.
+
+---
+
+## 9. Evidence Hierarchy and Decision Thresholds
+
+The project should operate with four distinct evidence levels:
+
+| Level | Evidence type | What it can support |
+|---|---|---|
+| **L1** | Data feasibility | The data can be acquired, cleaned, and used without leakage. |
+| **L2** | Statistical evidence | The strategy’s excess return is distinguishable from the matched LQDT counterfactual after multiple-testing correction. |
+| **L3** | Operational feasibility | The strategy can be executed manually within the 3–90 minute reaction window, with acceptable fill rates and incident rates. |
+| **L4** | Prospective shadow evaluation | The strategy, frozen and executed without discretion, produces excess returns consistent with the L2 evidence. |
+
+The 90-day pilot can provide L3 and, if properly designed, L4. It cannot provide L2 unless the number of economic episodes is sufficient for statistical inference — which is unlikely in 90 days for a medium-term strategy.
+
+**Decision thresholds:**
+
+- **Proceed to pilot** requires L1 and a pre-registered L2 protocol with a defined holdout.
+- **Proceed to scaling** requires L2 (statistical evidence), L3 (operational feasibility), and L4 (shadow evaluation). L2 alone is not sufficient; a strategy can be statistically real but operationally unimplementable at the intended scale.
+- **Abandon** if L1 fails (data cannot be made point-in-time clean) or if L2 fails after the pre-registered number of trials and corrections.
+
+---
+
+## 10. Targeted Reading: DSR and AFML — Actual Passages and Applicability Critique
+
+### 10.1. Bailey & López de Prado (2014), “The Deflated Sharpe Ratio”
+
+**Bibliographic location:** Bailey, D. H., & López de Prado, M. (2014). “The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality.” *The Journal of Portfolio Management*, 40(5), 94–107.
+
+**Passages identified (from search results, not full-text read):** The abstract states that the DSR “corrects for two leading sources of performance inflation: Selection bias under multiple testing and non-normally distributed returns”. The formula for the PSR standard error is \(\hat{\sigma}(\hat{SR}) = \sqrt{(1 - \gamma_3 \hat{SR} + \frac{\gamma_4 - 1}{4} \hat{SR}^2)/(N-1)}\). The DSR replaces the benchmark \(SR^*\) with a threshold that rises with the number of trials.
+
+**Critique for sparse spread trades:**
+
+- The standard error formula assumes i.i.d. returns. For sparse trades, the return series is autocorrelated through the holding period, and the effective sample size is smaller than N.
+- The skewness and kurtosis estimates are unreliable when N is small (fewer than 30–50 episodes). Using noisy estimates of \(\gamma_3\) and \(\gamma_4\) in the standard error formula can produce anti-conservative or conservative results unpredictably.
+- The DSR does not correct for the *timing* of trials. If trials are clustered in a particular regime, the deflation may be insufficient for the regime-specific selection bias.
+- The DSR is a *diagnostic*, not a validation test. A high DSR does not prove the strategy is real; it only means the observed Sharpe is unlikely under the null of no skill *given the number of trials*. The null itself may be misspecified.
+
+### 10.2. López de Prado (2018), *Advances in Financial Machine Learning*
+
+**Bibliographic location:** López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley. ISBN 978-1-119-48208-6.
+
+**Relevant chapters:**
+
+- **Chapter 7 (Cross-Validation in Finance):** Introduces purging and embargoing. Purging removes training observations whose labels overlap the test set. Embargoing removes a buffer after the test set. The chapter argues that standard k-fold cross-validation fails in finance because of serial conditionality in labels.
+- **Chapter 12 (Combinatorial Purged Cross-Validation):** Extends purging and embargoing to combinatorial splits, generating multiple backtest paths. The reference implementation in `timeseriescv` provides `CombPurgedKFoldCV`.
+
+**Critique for sparse spread trades:**
+
+- The book’s examples are predominantly for machine-learning strategies with continuous features and frequent trading. The purging and embargoing logic is general, but the specific parameters (embargo = 1% of T) are calibrated for dense strategies. For sparse trades, the embargo should be derived from the autocorrelation structure of the spread’s returns, not a fixed percentage.
+- CPCV generates multiple paths, but for a strategy with very few trades, the paths may not contain enough trades each to compute a stable performance metric. The distribution of path performance will be extremely noisy.
+- The book does not address the multiple-testing problem for sparse trades directly. The DSR and PBO are developed in separate papers and are not integrated into the AFML framework.
+
+**Request for library excerpts:** The full text of Chapter 7 and Chapter 12 of AFML, and the full text of the DSR paper, are not open-access. If the user has library access, the following excerpts would be useful for verification:
+
+- AFML Chapter 7, sections 7.4–7.5 (purging and embargoing definitions and rationale).
+- AFML Chapter 12, Algorithm 12.1 (CPCV algorithm).
+- DSR paper, Appendix (derivation of the deflated threshold and the minimum backtest length formula).
+
+Without these excerpts, the critique above is based on the abstract, secondary summaries, and the formula as reported in open sources.
+
+---
+
+## 11. Material Conflicts and Unknowns
+
+| Conflict/Unknown | Status | Impact on conclusions |
+|---|---|---|
+| DSR formula error in original paper | Reported in a CEU thesis; not verified in the original text. | If confirmed, the DSR’s numerical output may be unreliable. The diagnostic should be used qualitatively, not as a precise probability. |
+| Effective number of trials | No standard method for correlated parameter sweeps. | DSR and PBO corrections are approximate. Report the nominal and effective counts and treat both as bounds. |
+| MOEX final settlement price availability | Not verified free of charge. | If final settlement prices are unavailable, the late-revision leakage pathway cannot be fully closed. The backtest must be marked as using non-final prices. |
+| Perpetual futures funding history | Not verified for the full pilot period. | If funding data are incomplete, the economic result of a perpetual spread backtest is misstated. |
+| Number of independent economic episodes | Unknown before the pilot. | All statistical evidence claims are conditional on this number. If it is below 15, the project should plan for a longer observation period or a larger cross-section of pairs. |
+| Broker-specific collateral eligibility | Unverified. | The matched LQDT counterfactual assumes that the pilot capital would have been invested in LQDT. If the broker does not treat the core LQDT as eligible collateral, the counterfactual is not achievable in practice. |
+
+---
+
+## 12. Falsification Criteria
+
+The validation protocol should be considered falsified — and the strategy abandoned or redesigned — if any of the following occur:
+
+1. **Data feasibility failure:** The point-in-time universe, roll-adjusted prices, and final settlement prices cannot be constructed without material gaps or revisions. The backtest is not reproducible from independent data.
+2. **Leakage test failure:** The hedge ratio, regime threshold, or parameter selection cannot be reproduced using only pre-decision data. The backtest is in-sample by construction.
+3. **Multiple-testing failure:** The effective number of economic episodes is fewer than 10, and the DSR (or StepC) cannot reject the null at a pre-specified level. The evidence is too weak to support any performance claim.
+4. **Baseline failure:** The strategy does not outperform the deterministic baselines (always-long-spread, calendar-only, random-entry) in the stress-cost scenario.
+5. **Operational failure:** The manual reaction window (3–90 minutes) is insufficient to execute the required entries and exits at the intended frequency. The strategy is not operational at the pilot scale.
+6. **Shadow evaluation failure:** The 90-day pilot produces excess returns that are inconsistent with the L2 evidence (e.g., the pilot excess is negative while the backtest excess is strongly positive, with the difference exceeding the bootstrap confidence interval).
+
+---
+
+## 13. Proposed Project Changes
+
+Based on the evidence above, the following changes to the project design are proposed:
+
+1. **Reduce the universe to pairs with the longest available point-in-time history.** A smaller universe with clean data is preferable to a broad universe with survivorship and roll-adjustment problems.
+2. **Extend the pilot observation period beyond 90 days** if the goal is statistical evidence. The 90-day pilot should be framed as an operational rehearsal. A separate, longer shadow evaluation (6–12 months) is needed for any performance inference.
+3. **Pre-register the experiment registry and the primary metric** before any backtest is run. The primary metric should be the excess return versus the matched LQDT counterfactual in the stress-cost scenario.
+4. **Compute the effective number of trials** from the correlation structure of the parameter sweep, not the nominal grid size.
+5. **Use StepC in addition to DSR** for multiple-testing correction, because StepC is designed for dependent, sparse signals and does not require an estimate of independent trials.
+6. **Treat the 2022 structural break as a regime boundary.** Pre-2022 data may be used for exploratory analysis, but the primary backtest should use only post-March 2022 data unless the strategy explicitly models the regime transition.
+7. **Document all unknowns and conditional conclusions** in the experiment registry. Any conclusion that depends on an unverified input (e.g., final settlement price availability, broker collateral eligibility) must be marked as conditional.
+
+---
+
+## 14. Inputs Actually Read vs. Proposed
+
+**Actually read (via open-access sources):**
+
+- Bailey et al., “The Probability of Backtest Overfitting,” Carmamaths PDF (abstract and introduction).
+- Bailey et al., “Pseudo-Mathematics and Financial Charlatanism,” David H. Bailey PDF (abstract).
+- PSR/DSR formula and assumptions from TradingStrategy.ai glossary.
+- Purge/embargo definitions from AFML-based open-source documentation.
+- Structural break evidence for Russian market: Tandfonline abstract and HSE working paper abstract.
+- MOEX perpetual futures mechanics from MOEX fact sheets and.
+- StepC abstract from Econometric Society.
+
+**Proposed only (not performed):**
+
+- Full-text read of DSR paper and AFML Chapters 7 and 12.
+- Construction of point-in-time MOEX universe.
+- Computation of roll-adjusted spread series.
+- Backtest, walk-forward validation, CPCV, DSR, PBO, or StepC computation.
+- Pilot execution, shadow evaluation, or operational testing.
+- Broker collateral eligibility verification.
+- Final settlement price availability check.
+
+**Minimal materials needed to resolve remaining questions:**
+
+1. Full text of Bailey & López de Prado (2014) DSR paper, especially Appendix (for the deflated threshold and MinBTL formula).
+2. Full text of AFML Chapters 7 and 12 (for the exact purging/embargo/CPCV algorithms).
+3. MOEX historical contract listing and settlement price archive (to assess point-in-time universe feasibility).
+4. MOEX perpetual futures funding and dividend adjustment history (to assess roll-adjustment feasibility).
+5. Broker documentation on LQDT collateral eligibility and treatment for the specific account type.

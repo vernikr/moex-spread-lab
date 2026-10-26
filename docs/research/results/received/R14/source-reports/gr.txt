@@ -1,0 +1,221 @@
+# Research Report R14: Feasibility, Provenance, and Architecture of Text-Derived Features for MOEX Futures Spread Alpha Generation
+
+**Date of Execution:** October 23, 2026
+
+**Context Cutoff / Information Horizon:** October 07, 2026
+
+**Scope:** Private MOEX futures-spread project (Optional Text/News, Library, and Channel Evidence Module)
+
+**Execution Constraints:** No live trading, no production API access, zero paid subscriptions, strict adherence to free-tier quotas (Gemini Flash), manual execution latency (3–90 min), strict budget limits (RUB 30,000 initial capital, RUB 15,000 max emergency funding, counterfactual LQDT benchmark).
+
+## Section 1: Source Hierarchy, Incentives, Provenance, and Lineage Analysis
+
+To prevent lookahead bias and survivorship distortion in quantitative futures-spread trading on the Moscow Exchange (MOEX), textual data sources must be strictly classified by institutional provenance, incentives, revision mechanisms, and historical availability.
+
+### 1.1 Source Taxonomy & Incentive Classification
+
+| 
+
+| **Source Tier** | **Primary Institutions / Channels** | **Data Types / Formats** | **Operational Incentives & Biases** | **Revision & Lineage Characteristics** | 
+| **Tier 1: Regulatory & Official** | Bank of Russia (CBR), MOEX Official Announcements, e-DISCLOSURE (Interfax, AK&M). | Official press releases, monetary policy statements, key rate decisions, regulatory warnings, exchange operational updates, formal corporate disclosures. | High institutional accountability. Non-commercial mandate (CBR) or regulatory compliance mandate (MOEX/Issuers). Objective: Market stabilization, regulatory enforcement, transparent information symmetry. | Strictly version-controlled. Revisions/corrections are published as explicit secondary amendments with distinct timestamps. Historical text archives remain intact on official portals. | 
+| **Tier 2: Primary Financial Media** | Interfax, TASS, RIA Novosti, RBC (Official web feeds / RSS). | Wire news, real-time macroeconomic bulletins, official interviews, corporate press briefings. | Commercial news distribution. High focus on speed and syndication volume. Potential sensationalism in headlines; susceptibility to unannounced stealth edits or minor typo corrections in early reporting minutes. | Syndicated widely. Initial wire posts are frequently updated in-place as stories develop. Require explicit ingestion time recording vs. publication timestamp tracking. | 
+| **Tier 3: Unofficial / Social Channels** | Public Telegram Channels (e.g., *MarketOverview*, issuer-specific public chats), YouTube Video Transcripts. | Commentaries, retail sentiment, promotional analysis, unverified rumors, video interviews. | High conflict of interest. Monetization via channel subscriptions, sponsored content, pump-and-dump operations, or promotional commentary. Severe survivorship bias. | **High Risk:** Posts and videos are subject to silent retro-editing, post-hoc deletion of incorrect calls, and stealth modification. Public web scraping cannot independently verify historical state at decision time. | 
+
+### 1.2 Lineage, Timestamping, and Telemetry Logic
+
+For any textual signal to enter the evaluation pipeline, it must possess a verifiable **Lineage Record**: 
+
+$$
+\text{Lineage Record} = \{T_{\text{pub}}, T_{\text{first\_obs}}, T_{\text{ingest}}, T_{\text{effective}}, \text{URI\_Hash}, \text{Revision\_ID}\}
+$$
+
+* $T_{\text{pub}}$ **(Publication Timestamp):** The timestamp explicitly stamped on the document by the publisher.
+
+* $T_{\text{first\_obs}}$ **(First Observable Timestamp):** The earliest time the system or a verifiable third-party archive detected the payload.
+
+* $T_{\text{ingest}}$ **(Local Ingestion Timestamp):** The exact clock time the signal processing pipeline parsed the data into the local feature store.
+
+* $T_{\text{effective}}$ **(Market Availability Timestamp):** $T_{\text{effective}} = \max(T_{\text{pub}}, T_{\text{first\_obs}}, T_{\text{ingest}})$. All decision models must enforce $T_{\text{decision}} \ge T_{\text{effective}} + \Delta T_{\text{pipeline}}$.
+
+## Section 2: Ranked Source, Hypothesis, and Feature Mapping
+
+| **Priority** | **Source Category** | **Target MOEX Contracts** | **Core Hypothesis** | **Baseline to Beat** | **Complexity / Cost Profile** | 
+| **1** | CBR Monetary Policy Releases & Press Conferences | Equity Index Futures (`MIX`/`RTS`), Short-term Rates / OFZ (`RGBI`) | Quantitative policy stance changes (e.g., hawkish shift in CBR key rate statements) induce systematic directional repricing in rate-sensitive spreads before price discovery completes. | Deterministic Event Flags (e.g., binary calendar flag for key rate announcement date). | Low complexity; deterministic parsing / Gemini structured sentiment extraction; Free Tier compatible. | 
+| **2** | Official Corporate Disclosures (e-DISCLOSURE) | Single Stock Futures (e.g., `SBRF`, `GAZR`, `LKOH` calendar or cross-asset spreads) | Unscheduled corporate announcements (e.g., dividend recommendations, governance changes) introduce short-term volatility and spread divergence. | Simple Lexical / Keyword Match (e.g., regex for "дивиденд", "рекомендовать"). | Low-to-Medium complexity; regular expression filtering +LLM verification. | 
+| **3** | Primary News Wires (Interfax / TASS RSS) | Broad Universe (`Si`, `CNY`, `BR`, Commodities) | Macro/geopolitical wire bulletins create rapid cross-market dislocations that exceed typical bid-ask spreads for 15–45 minutes. | Price-only technical references (e.g., Bollinger Band breaks, short-term moving average crossovers). | Medium complexity; requires low-latency RSS monitoring + structured parsing. | 
+| **4** | Public Telegram Channels (Verified Primary Mirrors) | Selected Liquid Futures | Aggregate public retail sentiment flags overbought/oversold spread conditions during low-liquidity trading hours. | Price Momentum & Volume Spikes. | **High Risk / Low Rank:** Requires explicit restriction due to silent edits/deletions. Only useful if real-time raw stream is recorded without retrospective backfilling. | 
+
+## Section 3: Bounded Export Brief for Technical Channels
+
+To evaluate candidate text sources without falling into the trap of retroactively altered channel history, exports must be strictly bounded and validated.
+
+### 3.1 Bounded Export Specification Template
+
+```
+[CHANNEL EXPORT BRIEF]
+- Target Name: Bank of Russia Official Press Releases (RSS / Web Stream)
+- Official URL/Handle: https://www.cbr.ru/rss/eventnews / https://t.me/centralbank_ru
+- Verification Status: Primary Regulatory Authority
+- Extraction Scope: 
+  * Target Date Range: [Historical Backtest Window - Pre-registered]
+  * Field Requirements: ID, Post URL, Original Publication Time, Full Text Payload, Media Attachments (Metainfo only), Edit History Log
+- Verification Protocol:
+  * Compare RSS pubDate with Telegram message post timestamp.
+  * Filter out any message where Edit_Timestamp > T_pub + 5 minutes unless treated as a secondary revision event.
+- Decision Threshold: If > 5% of channel items exhibit unrecorded edits or retro-deletions in past archives, reject the channel for historical backtesting.
+
+```
+
+### 3.2 Criteria for Discontinuation / Channel Rejection
+
+Deep channel scraping or export is **explicitly aborted** under any of the following conditions:
+
+1. **Unverifiable Revisioning:** The platform does not expose an explicit edit log (e.g., un-archived Telegram channels where historical posts can be modified silently without a revised timestamp).
+
+2. **Access Control / Paywall:** Channel requires paid subscription, closed group membership, or private API authentication violating project zero-cost constraints.
+
+3. **High Noise-to-Signal Ratio:** Promotional commentary or forward-looking retail projections exceed 80% of total post volume without verifiable factual disclosures.
+
+## Section 4: Targeted Library Retrieval Plan
+
+To resolve specific technical and econometric questions regarding text processing for financial time series without reading entire textbooks, the following targeted reference plan is defined:
+
+1. **Topic: Text Preprocessing & Lookahead Mitigation in Financial NLP**
+
+   * **Source Focus:** *Advances in Financial Machine Learning* (Marcos López de Prado).
+
+   * **Target Sections:** Chapter 3 ("Data Labeling"), Chapter 4 ("Sample Weights"), and Chapter 10 ("Feature Importance").
+
+   * **Specific Application:** Applying Triple-Barrier Method to text ingestion events; preventing overlap leakage when constructing walk-forward text features.
+
+2. **Topic: Natural Language Feature Extraction via LLMs for Market Signals**
+
+   * **Source Focus:** Academic literature on Large Language Models in Quantitative Finance (e.g., *Can ChatGPT Forecast Stock Price Changes?* - Lopez-Lira & Tang, 2023).
+
+   * **Target Sections:** Prompting structures for zero-shot sentiment scoring; deterministic constrained JSON output schemes.
+
+   * **Specific Application:** Structuring Gemini Flash system instructions to yield numeric sentiment indices bounded in $[-1.0, +1.0]$ with strict reasoning chains.
+
+## Section 5: Gemini API Quota, Privacy, and Execution Architecture
+
+### 5.1 Quota & Cost Bounds (Free Tier Optimization)
+
+The project relies strictly on free-tier capabilities (e.g., Gemini 1.5 Flash / Gemini 2.0 Flash Free Tiers).
+
+* **Rate Limits:** Typically 15 Requests Per Minute (RPM), 1,000,000 Tokens Per Minute (TPM), 1,500 Requests Per Day (RPD).
+
+* **Operational Strategy:**
+
+  * **Filtering Cascade:** Never pass raw, unfiltered news streams directly to the LLM. Apply a deterministic keyword/regex pre-filter (e.g., checking for specific issuer tickers, CBR keywords, or corporate action verbs) to reduce incoming text volume by \~90–95%.
+
+  * **Batching:** Group candidate snippets into structured single-prompt evaluation requests during non-peak trigger intervals.
+
+  * **VPS Footprint:** Local ingestion and parsing scripts must operate within the designated 250–350 MB shared background RAM budget on the Linux VPS.
+
+### 5.2 Data Privacy & Compliance Safeguards
+
+* **Zero Confidential Data Transmittal:** No private account details, broker statements, account numbers, or private code repositories shall be transmitted in prompts to the API.
+
+* **Public Data Only:** Prompts are strictly restricted to public press releases, regulatory announcements, and publicly available news headlines.
+
+### 5.3 Prompting Architecture & Model Contamination Controls
+
+To prevent LLM hallucination, nondeterminism, and temporal contamination (where the model uses pre-trained knowledge of future events):
+
+1. **System Prompt Constraint:** Set `temperature = 0.0`. Enforce strict JSON output schemas using system instructions.
+
+2. **Temporal Isolation (Anti-Contamination Directive):**
+
+   ```
+   SYSTEM INSTRUCTION: You are a strict factual analyzer. You are provided with a snippet of text dated [T_EVENT]. You MUST evaluate the sentiment and structural impact of THIS TEXT ONLY. Do NOT use any knowledge of events that occurred after [T_EVENT]. Base your numeric scores solely on the provided payload.
+   
+   ```
+
+3. **Reproducibility:** Log model versions explicitly (e.g., `gemini-1.5-flash-002`). Store raw JSON prompt/response pairs locally with SHA-256 hashes to construct an immutable audit log.
+
+## Section 6: Prospective and Historical Ablation Validation Protocol
+
+All text-derived features must prove their marginal predictive power against simpler, deterministic baselines under realistic cost and latency constraints before being eligible for paper trading or manual execution.
+
+### 6.1 Baseline Hierarchy & Model Hierarchy
+
+To justify the inclusion of any text-based feature, candidate models must be evaluated hierarchically:
+
+$$
+\text{Model 0 (Price Baseline)} \longrightarrow \text{Model 1 (+ Event Flags)} \longrightarrow \text{Model 2 (+ Lexical Features)} \longrightarrow \text{Model 3 (+ Gemini LLM Features)}
+$$
+
+1. **Model 0 (Price-Only Baseline):** Technical signals derived strictly from price/spread series (e.g., Z-scores, moving average spreads, EWMA volatility).
+
+2. **Model 1 (Deterministic Event Flags):** Binary flags representing scheduled disclosures (e.g., CBR meeting date, earnings calendar date, dividend record date).
+
+3. **Model 2 (Simple Lexical/Keyword Features):** Term-frequency features or regex matches (e.g., presence of "повышение ставки", "дивиденд утвержден").
+
+4. **Model 3 (Gemini LLM Text Features):** Structured sentiment, stance, or surprise metrics produced by the Gemini API pipeline.
+
+### 6.2 Validation Framework & Anti-Leakage Protocol
+
+* **Walk-Forward Chronological Split:** Strict expanding or rolling window validation. No random k-fold cross-validation is permitted.
+
+* **Zero Lookahead Preprocessing:** All dictionaries, normalization statistics (mean/std), and keyword thresholds are computed **only** on the training window $t \in [0, T_{\text{train}}]$.
+
+* **Latency Mapping:** Every signal generated at $T_{\text{effective}}$ is lagged by the realistic manual reaction window:
+  
+
+  $$
+  \Delta T_{\text{reaction}} \in [5\text{ min}, 15\text{ min}, 90\text{ min}]
+  $$
+
+  
+  Backtest execution price is defined as the first available trade price at $T_{\text{execution}} = T_{\text{effective}} + \Delta T_{\text{reaction}}$.
+
+### 6.3 Economic Benchmark & Counterfactual Account Accounting
+
+The target metric is **Net RUB Excess Return** over the matched LQDT counterfactual performance.
+
+#### Liquidity & Counterfactual Rules:
+
+1. **Initial Capital:** RUB 30,000 allocated to the test. Core LQDT holding (> RUB 40M) remains untouched on the same account.
+
+2. **Counterfactual Baseline (**$R_{\text{LQDT}}$**):** The benchmark assumes the RUB 30,000 remains 100% invested in LQDT continuously over the test duration.
+
+3. **Net Excess Calculation:**
+   
+
+   $$
+   \text{Excess Return} = \Pi_{\text{futures\_strategy}} - \text{Taxes/Fees} - \text{Return}(\text{LQDT}_{\text{diverted}})
+   $$
+
+4. **Drawdown & Stop Rules:**
+
+   * **Warning Threshold:** RUB 5,000 excess-curve drawdown.
+
+   * **Action Trigger:** RUB 10,000 drawdown from the excess-result high-water mark or cumulative LQDT shortfall of RUB 10,000.
+
+   * **Outer Shortfall Limit:** RUB 15,000 cumulative shortfall.
+
+   * **Formal Review:** 90 calendar days continuous execution without loss reset.
+
+   * **Emergency Allocation Rule:** Emergency funds (max RUB 15,000 gross) may **only** be deployed to prevent forced disorderly liquidation of existing open futures positions during margin spikes; never to average down or enter new exposure.
+
+### 6.4 Falsification and Rejection Criteria
+
+A text feature or LLM model extension is **permanently rejected** if any of the following occur:
+
+1. **Failure to Beat Model 1 / Model 2:** Model 3 fails to generate a statistically significant increase in Net RUB Excess Return over Model 1 (Event Flags) or Model 2 (Lexical) after accounting for execution costs and slippage.
+
+2. **Latency Sensitivity Decay:** The signal's excess return degrades to zero or negative when tested under a 15-minute manual execution lag ($\Delta T = 15\text{ min}$).
+
+3. **Quota / Infrastructure Exceeded:** Pipeline maintenance exceeds VPS resource constraints (250–350 MB background RAM) or requires paid API tier upgrades.
+
+4. **Drawdown Trigger Violation:** Strategy incurs a cumulative shortfall exceeding RUB 10,000 against the LQDT counterfactual during walk-forward testing.
+
+## Section 7: Project Changes & Next Steps
+
+Based on this research, the project roadmap is modified as follows:
+
+1. **Prune Unverified Social Channels:** Discontinue all collection of un-archived Telegram or YouTube content lacking cryptographic or server-verified historical revision timestamps.
+
+2. **Implement Lexical Baseline First:** Build and backtest Model 1 (Event Flags) and Model 2 (Lexical/Regex Filters) for the selected futures spread universe prior to executing any LLM prompt pipeline integration.
+
+3. **Deploy Lightweight Ingestion Daemon:** Construct a python-based RSS/Web parser on the VPS within the 250 MB background RAM footprint to capture primary CBR and MOEX releases in real time, logging precise $T_{\text{ingest}}$ values.

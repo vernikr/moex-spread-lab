@@ -1,0 +1,373 @@
+# R07 — Pilot risk, funding liquidity, stress and sizing
+
+**Question:** Are the delegated pilot defaults internally coherent and feasible for integer futures spreads with 3–90 minute reaction, and what bounded sizing/risk rules should be tested?
+
+**Research date:** 2026-10-14 (current-facts cutoff; source pack prepared 2026-10-07; all market figures from the 07.10.2026 ISS snapshot inside the supplied reports unless dated otherwise).
+
+**Status of this document:** evidence-backed research report. Not investment advice, not a trading recommendation, not a legal or contractual opinion, not a backtest. All ledgers are hypothetical arithmetic on supplied parameters. No account was accessed, no trades were placed, no broker was contacted, no books were read from the user's library in this investigation.
+
+---
+
+## 0. Executive verdict
+
+**The delegated defaults are arithmetically coherent as a research-governance system, but they are not, by themselves, feasible as a live risk-control system at RUB 30,000 with 3–90 minute manual reaction on a shared account.** Four findings drive this verdict:
+
+1. **The 5,000 ₽ gap between the action trigger (10k) and the outer boundary (15k) is not defensible as a universal buffer.** Per-pair daily σ (post-23.03.2026 window) is 688 ₽ (CNYRUBF/CRZ6), 531 ₽ (GLDRUBF/GLZ6), 1,614 ₽ (IMOEXF/MMZ6) [R06 §12.1], so the gap spans 7.3 σ-days on a single CNY pair but only **1.5 σ-days on 2 IMOEX pairs, 1.03 on 3 IMOEX pairs, 1.45 on 5 CNY pairs, 1.9 on 5 GL pairs** — i.e. ~1–2 σ-days for any book at the top of a feasible profile. With documented reaction chains of 18–105 minutes (R04) and no guaranteed broker grace period (R01), a fixed 5k gap can be consumed inside one adverse session on medium-vol books. **Replace the fixed gap with a computed uncertainty buffer `u` (delay-window stressed σ + exit costs), retain 5k only as a floor.**
+2. **The binding constraint is not margin and not commissions — it is the stressed VM/cash path plus the LQDT counterfactual.** A 2–5-pair book fits the 50%-of-budget margin ceiling easily on NCC gross GO, yet one joint shock (price gap + spread-offset removal near expiry + reaction delay) can move required liquidity by 8–15k ₽ in a morning. Conversely, in the "cash sleeve" accounting the carry component of the flagship pairs does **not** reliably clear the matched-LQDT hurdle (~14% p.a.) at 30k scale without convergence-timing alpha whose evidence base (141 daily observations) is inconclusive (R09).
+3. **Internal limits cannot bound the account-wide tail.** LQDT is admitted collateral at both brokers (VTB risk list 07.10.2026, row 813; BCS App. 6 §1.4), and forced closure is discretionary with no guaranteed notice (R01). A pilot-generated deficit that reaches the core portfolio is an incident, not a money bound: sale proceeds are not the loss, embedded-gain tax on core lots can be material, and the 45k gross-contribution cap is explicitly **not** a loss ceiling (worked Ledger C: X = −35,100 ₽ inside a 35,100 ₽ gross envelope, per R05 §6.12a logic). Live trading therefore stays gated on the five written broker confirmations of R01 (isolation of the margin perimeter, KPUR, LQDT haircuts, notification channel, absence of clause-15/19 derogations) — until then **no-trade on real money is the coherent default**, and the pilot proceeds as a capital-limited virtual portfolio (permitted per R01 verdict).
+4. **The delegated rules are action rules, not statistical bounds** (consistent with R09 §1: a 90-day pilot cannot establish profitability; illustrative t ≈ 0.5 at annualised excess Sharpe 1). Tiny-pilot profit cannot validate sizing, capacity or tail safety; promotion to 10–20m requires its own gates (§10).
+
+**Recommended test package (to be tested, not adopted blind):** minimum integer lots only (1 pair = 1 unit 1:1-hedged); per-profile **σ-budget** in ₽/day as the primary size control (low 1.0k / medium 2.0k / high 3.5k ₽ per day 1σ, max 2 concurrent pairs / 3 pairs / 4 pairs, identical authority and identical outer boundary for all profiles); gross GO ≤ 33% of the remaining envelope **and** stressed GO (offset removed) + `u` ≤ envelope; entry/continuation inequality `X − L_stress − u ≥ −15,000` with `u = max(5,000, 2.5 × delay-window σ_book + exit costs)`; scale-ins only with precommitted per-idea aggregate caps; no Kelly-family sizing (probabilities uncalibrated — defer). Details in §4–§6.
+
+---
+
+## 1. Inputs read, checks performed, and status of claims
+
+### 1.1 Actually read (user-supplied, /home/user/uploads/)
+
+| Input | Read | Used for |
+|---|---|---|
+| R01 (broker rules, KPUR, collateral, liquidation; 9-report merger, sources dated 07.10.2026) | Yes, in full (sections 0–13 incl. evidence tables) | Margin/collateral/liquidation constraints, LQDT haircuts, NPR1/NPR2 mechanics, time limits |
+| R02 (VTB/BCS full costs; merger) | Yes (key-number table, VTB §3, BCS §4, exchange §5 headers) | Commissions, GO financing 16%/yr, negative-balance prices, calendar-spread fee |
+| R04 (free data and history) | Yes (§1, §4, §5, §7 headers) | Data lags, finest free timeframe, what cannot be measured free |
+| R05 (V/B/X/H/D accounting, LQDT benchmark, taxes) | Yes (§0–§7, §9) | Metric definitions, emergency-cap accounting, tax layer, worked-example conventions |
+| R06 (universe, pairs, GO, filters) | Yes (§0–§3, §8, §10, §12) | Pair economics, gross GO, σ of spreads, 30k feasibility, 10–20m capacity |
+| R09 (validation, leakage, multiple testing) | Yes (§0–§3 headers) | What a pilot can/cannot establish; episode counting; non-stationarity |
+| R08 (delayed execution, signal validity, virtual portfolio) | **Not supplied** | All execution-latency coordination is conditional; see §13 |
+
+### 1.2 External checks performed for this report (read-only, 2026-10-14)
+
+| Check | Outcome | Source |
+|---|---|---|
+| Bank of Russia key rate (resolves R02/R09 conflict) | **14.00% p.a. from 27.07.2026** (decision of 24.07.2026); kept at 14% on 11.09.2026; next Board meeting 23.10.2026. R02's "14%" is correct; R09's "14.25% (24 Jul 2026)" misreads the cut of 25 bp **to** 14%. | cbr.ru decision page `rsd_2026-07-24_20_01` ("Установить с 27 июля 2026 года ключевую ставку … на уровне 14,00 процента годовых"); SberBusiness schedule note (secondary) |
+| Указание Банка России № 6681-У (12.02.2024) text | Confirmed: НПР1/НПР2 norms (п. 10), broker's internal "ограничительное время закрытия позиций" document (п. 17), closure depth to НПР1=0 for начальный/стандартный risk level (п. 19.1) | garant.ru prime doc 409252026; normativ.kontur.ru 474409 (read 2026-10-14) |
+| Carver, *Systematic Trading* (2015) — chapter map and sizing framework | Secondary sources only (book not supplied): Ch. 11 volatility targeting, Ch. 12 position sizing, Ch. 13 portfolios, Ch. 14 speed and size, Ch. 15 semi-automatic trader (bookey chapter summary PDF); author blog qoppac (2020 risk-target post; 2016 small-account post); 2016 MTA webcast slides; 2025–26 secondary write-ups of *Advanced Futures Trading Strategies* (2023) dynamic optimisation / ~$100k minimum | see §12 and §14 |
+
+### 1.3 Checks only proposed, not performed
+- Any broker account parameter verification (KPUR recognition, portfolio type, LQDT haircut actually applied, k factor, fee plan) — one letter to VTB/BCS (R01 §12 question sets).
+- Any historical GO time series, order-book depth, or executable bid/ask history (not available free — R04 §4.5/4.8); intraday spread history (must be captured forward — R04 §1).
+- Any backtest, calibration of entry probabilities, or measurement of the user's actual reaction-time distribution (R08 not supplied; user's distribution remains unknown — model scenarios only).
+- Carver book pages were **not** read from a physical/electronic copy; page numbers are therefore not cited. Reading locations are given as chapter/section names from a secondary chapter list and must be verified against the 2015 Harriman House edition before use in any formal document.
+
+### 1.4 Evidence-carrying conventions
+- Every parameter taken from the supplied pack is cited as `[Rxx §y]`, which itself carries the underlying primary document, date and excerpt (e.g., LQDT haircuts: VTB "Перечень ликвидного имущества", file `spisok071026.xlsx` of 07.10.2026, sheet 1 row 813 → 18/13/8% [R01 §6.1]).
+- Numbers in **worked ledgers are hypothetical** and visibly separated from verified market parameters. Verified parameters are those with a named instrument, date and source inside R01/R02/R04/R05/R06 (ISS snapshot 07.10.2026, seqnum 20261007235014 for R06 figures).
+- "Assumption", "unknown", and "conditional" are marked explicitly. Absent information is not zero cost and not permission.
+
+---
+
+## 2. Risk-state separation (Investigate 1)
+
+The policy triggers on `X`/`D`; the broker triggers on portfolio solvency; markets trigger on price gaps. These are **different state variables measured in different systems** (R01 §7.2: "биржевой зачёт снижает стоимость позиции, а клиентский показатель НПР2 запускает ликвидацию — это два разных числа в двух разных системах"). The table keeps them separate:
+
+| State dimension | Definition used here | Measured from | What it does NOT capture | Verified mechanics (07.10.2026) |
+|---|---|---|---|---|
+| 1. Relative economic loss | `X = V − B`, `D = H − X` (R05 §2.4) | Synchronised wealth marks, matched external flows | Liquidity to survive the next VM call; broker's opinion | Policy layer only |
+| 2. Absolute P&L | Wealth change net of external flows | Same ledger, second column | Benchmark drift; X can be negative with positive absolute P&L and vice versa (R05 §7.3) | Policy layer |
+| 3. Peak drawdown of X | `D = H − X`, HWM convention fixed in advance (R05 §2.4: choose H-includes-current-X or `D⁺ = max(0, H − X)` and register it) | X series | Cash path; margin | Policy layer |
+| 4. Cash/VM path | Free rubles + due VM + due fees + debt service vs time; VM settled **only in money** (BCS App. 6 §2.3 "Вариационная маржа – сумма денежных средств" [R01 §6.2]) | Daily clearing (ETS: mark 23:50–00:30, member margin call 09:00/10:00, execution to 17:30 [R01 §7.1]) | Economic X (a liquidity crisis can precede X = −15k) | Verified |
+| 5. Broker margin/collateral | M0 = ГО × k; NPR1 = S − M0 − S_block; NPR2 = S − Mx; Mx = 0.5·M0; УДС = NPR2/(M0−Mx) (6681-У method; [R01 §8.3]) | Broker portfolio S (includes core LQDT at haircut) | Our internal 30k label — "внутренний остаток «30 000 ₽» не заменяет S брокера" [R01 §8.3] | Verified formula; account numbers unknown |
+| 6. Gross exposure | Σ |leg notional|; integer contracts; n_pairs × pair notional (≈23–26k ₽ per flagship pair) | Trade log | Not a loss bound; gaps can exceed notional-relative σ | Market data verified |
+| 7. Temporary single-leg risk | One leg filled/part-filled, the other stale/rejected; hedge "отменяется мгновенно при рассинхронизации ног" [R01 §9 conclusion 3] | Execution log (R08 domain) | Not visible in pair-level marks until the second leg is done | Mechanic verified; frequency unknown |
+| 8. Account-wide recourse | Broker's right to use **all** client assets: VTB EBS portfolio unity + discretionary closure subject; BCS App. 6 §1.4 (all assets secure futures obligations) and §1.5 (transfers between accounts without notice) [R01 §0, §6.2, §9] | Account, not sleeve | Internal budgets bind **us**, not the broker; 30k/45k "брокера не связывают" [R01 §0] | Verified as rule; actual account settings unknown |
+
+**Cross-state violations to highlight (live-trading blockers):**
+- (i) Sleeve passes `X − L_stress − u ≥ −15,000` while broker NPR2 < 0 because core LQDT haircut rose (e.g., KPUR→KNUR swing on VTB: collateral credit of 30k units 27,600 → 24,600 ₽ [R01 §6.1]) — policy green, broker red.
+- (ii) X ≈ 0 while cash path fails: VM due in money, LQDT sale settles T+1 (R05 §1.5/§6 conventions), negative balance is a separate paid product (VTB margin loan ≈ КС+6.9% = 20.9% p.a.; "ВТБ Мои инвестиции" snapshots [R02 §3.5]; BCS: deficit maintenance 0.1%/calendar day = ≈36.5%/yr simple [R01-55]) — "отсутствие найденной цены ≠ бесплатность" [R01 §8.3].
+- (iii) Temporary naked leg (state 7) can convert a hedged pair into directional exposure larger than any X trigger's ability to respond within 3–90 minutes.
+
+---
+
+## 3. Evaluation of the delegated numeric defaults (Investigate 2)
+
+### 3.1 Parameter table
+
+| # | Default | Verdict | Basis (evidence/judgment) | Sensitivity | Live-trading prerequisite |
+|---|---|---|---|---|---|
+| P1 | **30,000 ₽ all-in allocation** (margin + VM liquidity + reserves) | **Feasible only as: 1–3 pairs of the two cheapest flagship families, cash-VM discipline, virtual-first.** R06: realistic minimum = 1–2 CNYRUBF/CRZ6 or GLDRUBF/GLZ6 pairs (gross GO 2,291–5,490 ₽), VM reserve 24–28k; any pair with GO > 10k leaves no reserve [R06 §12.1] | Gross GO per pair: CNY 2,291; RGBI 2,336; GL 2,745; GAZR 3,481; IMOEX 5,134; SBER 10,210; USDRUBF/Si 26,684 — all NCC INITIALMARGIN without broker add-ons or spread offsets [R06 §12.1] | If broker refuses LQDT for futures GO and sleeve must be cash: usable sleeve shrinks by haircuts/T+1 delays (R05 §1.6: collateral credit of LQDT in real limit = 0 until confirmed) | Written confirmation of margin perimeter; KPUR; LQDT haircut; k; actual GO table for chosen series |
+| P2 | **15,000 ₽ lifetime gross additional funding (E), 45,000 ₽ gross total** | **Retain** as capital-accounting caps (R05 §4.5 counting is coherent: gross-positive counting, no restoration on return/withdrawal, unapproved core use = incident and counts). **Must not be read as a loss bound** | R05 §4.5 examples: +5+4−3+7 → E=16 > 15 breach while gross 46 > 45; liquidation example X = −35,100 within 35,100 gross [R05 §6.12a] | Counting convention (gross vs net) changes breach timing; keep gross | Per-event approval + actual availability/arrival timing; funding ≠ restart (R05 §4.5) |
+| P3 | **5,000 ₽ warning (D ≥ 5,000)** | **Retain** (cheap, informative) | R05 §7.1 checklist is adequate (ledger, GO/VM, quote freshness, spread liquidity, risk contribution) | Alert fatigue if σ-book is large: a 3-pair IMOEX book warns after a 1σ day routinely | Define who reads alerts within the 3–90 min reaction model |
+| P4 | **10,000 ₽ action (D ≥ 10,000 or X ≤ −10,000)** | **Retain** trigger levels; **revise the action target** | R05 §7.1/7.2 trajectories are coherent; X≤−10k → exit-only funding rule is right | At H = 12,000, action fires at X = +2,000 (R05 §7.2 row 3) — see giveback cost §9 | User review before resume; no auto-resume |
+| P5 | **15,000 ₽ outer boundary (X < −15,000 breach)** | **Retain** as breach line | R05 §7.1 strict inequality convention | Boundary is a governance line, not an achievable stop | Entry inequality must hold with buffer, not at the line |
+| P6 | **5,000 ₽ gap 10k→15k as de-facto stress buffer** | **Revise → computed `u`, 5k only as floor** | σ/day per pair (post-23.03.2026 window): CNY 688 ₽, GL 531 ₽, IMOEX 1,614 ₽ [R06 §12.1]; gap in σ-days: 7.3 (1×CNY), 3.6 (2×CNY), 1.45 (5×CNY), 3.1 (1×IMOEX), **1.03 (3×IMOEX)**, 1.9 (5×GL). Reaction chain 18–105 min [R04 §1.6]; closure depth to NPR1=0 with no guaranteed grace [R01 §0/§7] | 2.5σ delay-window on a 2-pair medium book = 3.4–8.1k > 5k | Register formula; calibrate with R08 replay when available |
+| P7 | **50%-of-initial-funds ceiling on starting margin (GO ≤ 15,000)** | **Retain as gross ceiling, replace as sole control**; add stressed-GO and σ-budget tests | Directionally right (VM reserve is the binding constraint [R06 §12.1]); wrong variable alone: spread offset "может быть отменено мгновенно", near-expiry offset removal can raise GO 2–3× [R06 §12.1]; broker add-ons possible (VTB "может увеличивать объём средств" [R02 §3.5]) | 5 GL pairs = 13,725 ₽ GO (45.8%) passes 50% cap but stressed GO ≈ 27.5k = 91.5% of budget → fails stressed test | Confirmed GO table incl. offset rules and expiry-adjacent behaviour |
+| P8 | **Entry inequality `X − L_stress − u ≥ −15,000`** | **Retain**; tighten construction of `L_stress` and `u` (joint shocks, not additive best cases) | R05 §7.4 examples correct; R01 §8.3 "two independent reserves" (risk + cash) must be added as a separate mandatory gate | Definition of L_stress dominates the result | Pre-register scenario set |
+| P9 | **Manual reaction 3–90 min (median 5–15)** | **Retain as scenario input, distribution unknown → model p10/p50/p90 = 3/12/90 min + data chain 15–20 min lag** | R04: free data delay 15 min documented and measured; full monitor→act chain 18–105 min [R04 §1.6] | 90th-percentile case is the sizing constraint (gap risk) | R08: measure actual distribution in shadow mode |
+| P10 | **90-day formal review, no resets** | **Retain**, pin the convention (§9) | R05 §4.6 non-reset is coherent | Review date drift if defined from "first trade" ambiguously | Fix start anchor in the journal before first entry |
+| P11 | **Emergency money only to flat at X ≤ −10k; never for fresh exposure** | **Retain** | R05 §4.5; consistency with "Entry must pass with zero emergency funding" | — | Separate approval + availability check per event |
+
+### 3.2 The two funding models change the hurdle by ~14% p.a. (must be chosen, not blurred)
+
+The 30k label can be implemented two ways (R05 §4.3 allows either, same X algebra, different operations):
+
+- **(a) Cash sleeve:** sell ≈30k of LQDT units, hold cash + futures. Then `B` keeps the units and `X` carries the full LQDT drift as opportunity cost: at RUSFAR ≈ key rate 14% (LQDT target is RUSFAR tracking, PDU 3915-17 [R05 §1.1]; key rate 14.00% since 27.07.2026 — cbr.ru), **the hurdle is ≈ 690 ₽ per 60 days ≈ 14% p.a. on the whole sleeve**.
+- **(b) Pledged units + small VM cash buffer:** keep units as collateral (haircut applies to credit, not to wealth — R05 §2.5/§6), sell only the VM buffer. Then X excludes LQDT drift on pledged units (they grow in both V and B) and instead pays: VTB fee on uncovered GO `(ГО − рубли) × (КС+2%) × T/365` = 16% p.a. currently ([R02 §3.5], key rate 14% + 2%; ≈61 ₽/month per 4.6k GO) and LQDT drift on the sold buffer. **Hurdle ≈ 2–4% p.a. on the sleeve**, but VM still needs real rubles and haircuts can bind.
+
+**Consequence:** in model (a) the carry of the flagship pairs (CNY ≈ +3.1% p.a. on pair notional ≈ 13% p.a. on 30k with 5 pairs; GL ≈ +7.1% p.a. on notional ≈ 27% p.a. on 30k with 5 pairs — R06 §10.1–10.2) does **not** dominate the LQDT hurdle uniformly: CNY book is ≈ break-even before noise, GL book is positive in expectation but with daily 1σ = 2,655 ₽ (5 pairs) against a 690 ₽ hurdle. The strategy's excess depends on **spread-timing alpha (z-entry/exit)** and/or GL-family carry, not on the delegated risk arithmetic. This must be stated in the pilot charter: **zero-trade days are acceptable and a structurally mildly negative X vs LQDT is a plausible outcome of a correctly executed pilot.**
+
+---
+
+## 4. Entry/continuation inequalities and stress construction (Investigates 3–4)
+
+### 4.1 Registered gates (all must hold; fail ⇒ no entry, no addition)
+
+Let `RB` = remaining risk budget of the pilot envelope, `AL` = already-available liquidity, both recomputed at every gate with current marks.
+
+1. **Outer-boundary gate (monetary):** `X − L_stress − u ≥ −15,000`, where
+   - `L_stress` = stressed incremental economic loss of the **whole book after** the contemplated change, over the delay/exit window, under **joint** scenarios (price + margin + liquidity together), computed once (exit costs inside `L_stress` are not re-deducted from X — R05 §7.4 warning);
+   - `u = max(5,000, 2.5 × σ_delay(book) + C_exit)` where `σ_delay(book)` = 1-day σ of the book's spread P&L in ₽ (1σ/day per pair from R06 §12.1: CNY 688, GL 531, IMOEX 1,614, GAZR ≈ 2.11% log-σ scaled, SBER 3.83% log-σ scaled) inflated for the reaction window (3–90 min + data chain) and for fat-tail days (use 2.5 as an explicit multiplier to be validated by R08 replay — a **test candidate**, not an approved constant), plus one-way exit costs (round-trip cost is 10.7–75.9 ₽/pair [R06 §12.1] plus half-spread crossing; GLDRUBF/G GLZ6 quoted 100–108 steps wide — limit orders only [R06 §10.1]);
+   - with `u ≥ 5,000` the delegated heuristic is retained only as floor.
+2. **Cash-path gate (independent of gate 1 — R01 §8.3 "два независимых запаса"):** free rubles (not LQDT credit, not unexecuted orders, not future proceeds with T+1 lag) ≥ `VM_stress(delay window) + fees + debt service + settlement-lag reserve`. VM is money-only [R01 §6.2]; LQDT sale proceeds arrive T+1 [R01 §6.2, R05].
+3. **Margin gates:** gross GO (sum of both legs, NCC basis, broker add-on allowance) ≤ 33% of remaining envelope (tightened from 50% — see sensitivity: 33% keeps ≥ 2σ VM reserve on the cheapest families); **and** stressed GO with spread offset **removed** (×2–3 near expiry per R06 §12.1, or the larger-leg rule) + `u` ≤ envelope. If the minimum lot fails either gate ⇒ **reject the idea** (no fractional contracts exist).
+4. **Cluster gate:** concurrent pairs sharing a factor (RUB rate/carry; same underlying family; shared leg) count as one cluster; cluster 1σ/day ≤ 60% of the profile σ-budget. (R09 §2.3: overlapping positions change the evaluation object to the daily portfolio ledger.)
+5. **Event gate (R06 §8.5):** no entry across known events on either leg (expected dividends table moex.com/s206, expiry, spec changes, IndexDiv = 0 cases for SBERF/GAZPF, TATN/TATP ex-date effects). Delivery/last-trading-day danger overrides all monetary triggers (policy).
+6. **Authority gate:** entry fits the original 30k envelope after losses/reserves/commitments **with zero emergency funding**; past rescue money or retained earnings do not enlarge the entry budget (policy).
+
+### 4.2 Stress scenarios to register (joint, not additive)
+
+| ID | Joint scenario | Composition | Where the numbers come from |
+|---|---|---|---|
+| S1 | "Overnight gap + morning margin call + slow human" | Book at profile max; spread gaps −2.5σ; NCC/broker raises margin or offset disappears (GO ×2–3); user reaction = p90 (90 min) or unavailable one session; second −2σ during the delay | σ values [R06 §12.1]; offset removal [R06 §12.1]; margin-change mechanics (NCC recalcs GO every 3 min since 19.05.2025; M0 recalc ≥ every 10 min per 6681-У) [R01 §7.1] |
+| S2 | "LQDT haircut shock" | KPUR→KNUR haircut on pledged units (VTB 8%→18%; BCS 10%→23/25%) while VM negative | [R01 §6.1]; haircut regimes change historically (NCC LQDT params changed 2022→2025→2026) |
+| S3 | "Liquidity evaporation in one leg" | Quote age > 20–30 min (free-data chain), GL 100-step book widens 3×, partial fills only (R08 domain) | [R04 §1.6], [R06 §10.1] |
+| S4 | "Forced-closure path" | Broker closes at discretion to NPR1=0 (or NPR2=0 for KPUR) at its limiting time (VTB 16:00/14:00; BCS 21:00/18:30), sale of core LQDT if sleeve cash short; tax on realized core lots | [R01 §7.2–§7.3, §0]; tax asymmetry [R05 §9.4] |
+| S5 | "Funding timing failure" | User approval absent (policy: absent approval = no funding); external transfer arrives after the margin deadline; negative balance accrues | [R05 §4.5]; VTB 20.9–21.15% p.a. / BCS 0.1%/day deficit fee |
+| S6 | "Market closure / suspension" | 2022-style: no trading while clearing runs; 2025-09-11-style intraday suspension 15:23–15:55; price limits (plan limit days: R05 §7.4 example X = −12k → −16k on a limit move) | [R09 §3.1]; [R05 §7.4] |
+
+### 4.3 Testing the 50% margin hypothesis and the 5k buffer heuristic (Investigate 4)
+
+Both are **test candidates**, not requirements. Test procedure (simulation on the registered 141-day window 23.03–07.10.2026 + scenario overlay, walk-forward per R09 — no significance claims from one window):
+
+- **Margin ceiling ∈ {33%, 50%} of envelope**, always on **gross** GO, with a parallel **stressed-GO** column (offset removed). Report for each candidate pair set: min free cash, min (free cash − stressed VM), max D, trigger crossings. Pre-committed falsification: if any of {50% only, 33% only} admits a path that breaches the cash-path gate in S1–S5 while passing the margin gate, the margin gate alone is rejected as a control.
+- **Buffer ∈ {5k fixed, computed u}.** Falsification: count path-days where realized adverse move over the measured reaction window exceeded the buffer in force. If the 5k-fixed version exceeds computed-u on ≥ 5% of stress days for a candidate book, retire 5k (expectation from §3.1: it fails for IMOEX-cluster books and passes for 2×GL). Gaussian tails are **not** assumed; use the empirical 141-day distribution plus S1–S6 multipliers; R09 §1 forbids treating any tail estimate as a guarantee.
+
+---
+
+## 5. Sizing rules to compare (Investigate 5)
+
+All methods operate on **integer pairs** (1 pair = 1:1 unit hedge where the family allows — CNY, GL, GAZR, SBER, IMOEX per R06 §10; fractional hedging like RI/MIX is **excluded** at this scale [R06 §12.1]).
+
+| Method | How it would work here | Verdict / test role |
+|---|---|---|
+| **(a) Fixed minimum contracts** (1 pair per idea, cap on concurrent ideas) | n = 1 per idea; caps: low 1 / medium 2 / high 3–4 concurrent | **Baseline; test as control.** Matches tiny-lot reality (Carver, §12: below ~$100k futures rounding dominates). Simple, transparent |
+| **(b) Bounded risk-scaled sizing** | `n_i = min( floor(σ_budget / σ_i), floor(0.33·Env / GO_i), cap_i )` with σ_budget in ₽/day by profile; per-idea cap 2–3 | **Recommended candidate**; directly controls the binding constraint (VM path). σ_i from registered window; refresh at review |
+| **(c) Capped fractional-Kelly-like** | Requires calibrated p(win), payoff ratio, edge per idea | **Defer.** R09: 141 observations, ~6–7 months of one regime, one expiry — cannot calibrate probabilities; "no 30-trade rule"; DSR/PBO are ceilings on optimism, not proofs. Kelly-family sizing may be reintroduced only after a preregistered forward record supplies calibration; even then cap at ≤ ½-Kelly |
+| **(d) Scale-ins with precommitted aggregate caps** | Tranche 1 = 1 pair; tranche 2 allowed only if (i) idea-registry cap ≥ 2 pairs precommitted, (ii) each tranche passes all §4.1 gates, (iii) no averaging down of a breached idea (policy: never fund averaging-down) | **Allowed as variant of (b)** with hard aggregate caps; stress must be computed on the **aggregate**, not the tranche |
+| **Profiles low/medium/high** | Same authority (same E cap, same outer boundary, same no-trade triggers). Only σ_budget and concurrent-idea caps differ: **low** 1.0k ₽/day σ, 1–2 ideas, entry only at z-extremes; **medium** 2.0k ₽/day, ≤ 3 ideas; **high** 3.5k ₽/day, ≤ 4 ideas. High profile **cannot** enlarge this pilot's authority (prompt) — if high profile needs more than the envelope in any stress, it is simply infeasible | **Test all three in the same replay; choose the lowest that survives S1–S5 with margin** |
+| **Correlated concurrent trades** | Cluster cap (§4.1 gate 4). Cross-family correlation of perpetual↔quarterly spreads is common-factor (RUB carry); treat GL+CNY+IMOEX books as one cluster in stress | Mandatory overlay on any method |
+| **Discrete rounding** | At 30k, ideal weights are multiples of 7–17% (GO pairs / envelope) — rounding error is second-order vs σ; do not trade the pair at all if n = 1 fails gates ("если минимальный лот спреда не помещается — отклонить") | Verified arithmetic; consistent with Carver tiny-lot findings (§12) |
+
+**Not tested and not recommended now:** vol-targeting to a Kelly-implied annual vol (Carver's vol-target = SR heuristic needs a Sharpe estimate this pilot cannot produce — R09 §2.2); "high-risk research profile" size escalation.
+
+---
+
+## 6. Worked hypothetical ledgers (Required output)
+
+> All amounts hypothetical; market inputs (GO, σ, fees) are the verified 07.10.2026 figures cited above. Shared-core collateral is excluded from the sleeve unless a spillover incident is explicitly shown. Conventions: H includes current X (`D⁺ = max(0, H − X)`); X before investor-specific taxes; VM in money; no double-count of paid VM.
+
+### 6.1 Risk/funding state table (used across ledgers)
+
+| State var. | Ledger A (normal, 60d) | Ledger B (joint shock) | Ledger C (spillover) | Ledger D (funding timing) |
+|---|---|---|---|---|
+| Book | 2 × CNYRUBF/CRZ6 (model a: cash sleeve) | 3 × GLDRUBF/GLZ6 + 1 × CNY | 2 pairs, VM −12k event | 2 × CNY, VM call 8k |
+| GO blocked (gross) | 4,582 ₽ (15.3%) | 10,526 ₽ (35.1%) → stressed 18,761 | 4,582 | 4,582 |
+| Free cash after GO | 25,418 | 19,474 → 5,536 after stress GO | 25,418 | 25,418 → 17,418 |
+| VM path (hypothetical) | noise σ 1,376/day | −5,703 then −4,562 | −12,000 | −8,000 due 09:00 next day |
+| X | ≈ −449 | ≈ −10,299 | −12,100 | ≈ −8,000 − costs |
+| D | 449 | 10,299 | 12,100 | 8,000+ |
+| Trigger state | none | **action (both D≥10k and X≤−10k)**; distance to outer = 4,702 < 5k heuristic | **action**; approaching outer | warning→action depending on H |
+| E consumed | 0 | 0 (no funding assumed) | **10,100 (unapproved incident)** | 0–8,000 if approved |
+| Broker spillover | no | no (sleeve survives at 5,536 free) | **yes — core LQDT sold 10,100** | no if funding arrives; else possible |
+| Policy flags | underperformance vs LQDT budget consumed slowly | gap-to-outer already < 5k at trigger moment | gross 40,100 < 45,000 but outer approaching; incident logged | availability/credit timing failure |
+
+### 6.2 Ledger A — normal path, model (a) cash sleeve, 2 × CNY pairs, 60 days
+
+| Line | ₽ | Note |
+|---|---|---|
+| Entry costs (half round-trip × 2 pairs) | −10.7 | 10.7 ₽ full RT/pair [R06 §10.2]; broker fee 0 ₽/contract at VTB to 31.12.2026 [R02 §1.3] |
+| Net carry accrual (short CNYRUBF / long CRZ6, +3.1% p.a. on pair notional 25,753 ₽ × 2) | +262.5 | 60d; decomposes into +552 funding-in minus ≈290 basis drag [R06 §10.2] |
+| Realised spread convergence (z +1.31 → 0) | ≈ 0 ± 211/σ-move | entered rich (z>0): convergence is a headwind for the long-basis carry position, not alpha |
+| Exit costs | −10.7 | |
+| LQDT counterfactual drift on 30k (14% p.a., 60d) | **−690.4** | B holds units [R05 §2.3] |
+| **X (60d, expected)** | **≈ −449** | **Beats nothing vs LQDT; noise σ_cum ≈ 10.7k** (1,376/day × √60) |
+| Same, 5 × CNY pairs | X ≈ −88 | carry 656 − 54 − 690; GO 11,455 (38.2%) |
+| Same, 5 × GL pairs (model a) | X ≈ +482 | carry 1,337 − 165 − 690; GO 13,725 (45.8%); σ_cum ≈ 20.6k |
+| Model (b) pledged units, 2 × CNY | X ≈ −65 | carry 263 − 22 costs − 122 GO-financing fee (16% p.a. on 4,582 for 60d) − 184 LQDT drift on 8k VM buffer |
+
+**Reading:** the delegated risk defaults survive this ledger (no trigger; free cash comfortable), but **the economics are marginal and benchmark-dependent**: the pilot's expected X at 30k is inside noise, and the matched-LQDT hurdle decides the sign. This is a first-class charter statement, not a surprise failure.
+
+### 6.3 Ledger B — joint shock (S1), 3 × GL + 1 × CNY, two sessions
+
+| Step | Arithmetic | Cumulative state |
+|---|---|---|
+| t0 book | GO 10,526 (35.1% — passes 50% and 33% at entry only because 3 GL is at 27.5% + 7.6%) | free 19,474 |
+| t1 overnight gap −2.5σ | VM = −(3×531 + 688)×2.5 = **−5,702** | free 13,772; X = −5,702 − 11 costs ≈ −5,713 |
+| t2 morning: offset removed / margin up (×2 GL legs) | stressed GO 18,761 → extra block **+8,235** | free 5,537; still positive cash |
+| t3 second −2σ during 90-min reaction gap | VM −4,562 | X ≈ **−10,299**; D = 10,299 |
+| Triggers | D ≥ 10,000 **and** X ≤ −10,000 → suspend entries, orderly risk reduction, user review; emergency funding only to flat | distance to outer = **4,702** — already below the 5k heuristic **at the moment of triggering** |
+
+**Reading:** the book passed the 50% margin ceiling at entry and still reached the action state in one plausible two-session path; the 5k gap is not a cushion here — it is partly consumed by the very move that fires the trigger. This is the direct falsification of "5k gap is enough" for medium-vol books.
+
+### 6.4 Ledger C — broker spillover (S4), adaptation of R05 §6.12b at pilot scale
+
+| Line | ₽ | Note |
+|---|---|---|
+| VM event | −12,000 | e.g., limit move on one leg |
+| Sleeve liquidity covers | −2,000 | |
+| Broker sells core LQDT | 10,100 proceeds (costs 100) | **unapproved use of core = incident**; counts toward E (10,100 of 15,000) [R05 §4.4] |
+| **X** | **−12,100** (VM + costs; sale proceeds are **not** the loss) | D = 12,100; action state; outer distance 2,900 |
+| Gross contributions | 30,000 + 10,100 = 40,100 < 45,000 | **45k cap not yet breached while outer boundary nearly is** — proof the caps measure different things |
+| Tax layer (separate) | if sold lots carry ≈30% embedded gains: ≈ +390 ₽ tax at 13%; if lots are old/high-gain core lots, tax on forced sales can reach thousands — and LQDT-sale tax "может быть сопоставим с границами 10–15 тыс. ₽" for large core sales [R05 §0.10] | tax cash-call arrives later (broker as agent, year-end/withdrawal [R05 §9.2]) |
+| What "test 30k" would show | −30,000 sleeve death and hides the rest | account-level V/B is the only honest view [R05 §4.4] |
+
+**Reading:** this is the unbounded tail. No internal limit guarantees it cannot happen; only broker-side isolation (R01 five conditions) or no-live-trade does.
+
+### 6.5 Ledger D — funding timing failure (S5)
+
+VM 8,000 ₽ due with the 09:00 margin call; user unreachable; approval absent ⇒ **no emergency funding (policy default)** ⇒ positions must be reduced by market. On free-data monitoring the reaction chain is 18–105 min [R04 §1.6]; exit through a 100-step GL book or a gapping CNY book costs ≥ one round-trip + slippage (hypothesise 2× round-trip ≈ 22 ₽ visible + unmeasured slippage — slippage is **not measurable free** [R04 §1.5]). If instead the deficit is funded as negative balance: VTB ≈ 20.9% p.a. (13.7 ₽ for 3 days on 8k — cheap in ₽, expensive in *permission*: the core portfolio services the debt [R01 §6.2]); BCS variant: 0.1%/day deficit maintenance = 40 ₽ for 5 days plus forced-closure fees 2 ₽/contract [R01-55, R02 §4.3]. **Unknowns dominate the ₽ amounts:** arrival time of external money (prompt: "model explicit scenarios, not guaranteed access") and whether the broker waits at all (no guaranteed grace [R01 §0]).
+
+---
+
+## 7. Stop / partial-fill / emergency policy (Required output)
+
+| Situation | Rule to test (proposed; not approved) | Evidence basis |
+|---|---|---|
+| Signal arrives, data age > 20–30 min or one leg's quote stale | **No entry**; log as stale/rejected (virtual portfolio records it — R08 role) | R04 §1.6 |
+| One leg filled, second leg rejected/partial | Immediate top-priority action within reaction window: complete at ≤ registered slippage limit, else unwind filled leg at limit price; if neither completes within the delay window → treat as naked-leg incident (stop overrides monetary triggers) | R01 §9.3 ("отменяется мгновенно при рассинхронизации"); policy priority stops |
+| Partial fills across tranches | Each tranche re-checks gates 1–3; unfinished tranches cancelled at review | §4.1 |
+| D ≥ 5,000 | Warn + checklist (R05 §7.1) | P3 |
+| D ≥ 10,000 or X ≤ −10,000 | Suspend entries; **risk-reduce until the §4.1 inequality and cash gate hold again** (not automatically to flat unless gates fail or X ≤ −10k); user review required to resume; at X ≤ −10k any funding is only to reach flat | P4/P11; R05 §7.1 |
+| X < −15,000 | Breach event: immediate notification in the ledger, no new risk ever under this pilot's limits (no reset) | P5 |
+| Emergency funding request | Separate approval per event; count **gross** (E ledger); arrival-timing check (bank hours, T+1, cut-off 16:00/14:00/21:00/18:30 broker times); absent approval = no funding; funding ≠ restart; never for fresh exposure/averaging | R05 §4.5; R01 §7 |
+| Broker touches core collateral | Incident: record quantity/market value/timestamp, count into E (once — collateral-to-cash conversion not double-counted), trigger immediate de-risk to flat of the sleeve, preserve evidence for broker query | R05 §4.4; prompt |
+| Monitoring blackout (data/VPN/VPS) | Positions are managed by "flat-first" bias: if blackout exceeds delay window and any position cannot be verified, exit at next reliable opportunity; do not build emergency exits on unverified VPN/VPS/API paths | R01 §10 |
+
+**What cannot be bounded, and why internal limits are not realized-maxima:**
+- Broker recourse to the >40m core (rule-level verified; account-level unverified) — R01 §9.4;
+- Gap/limit-day losses beyond model σ (2022-02-28 closure-with-clearing; 2025-09-11 suspensions; plan-limit moves — R09 §3.1, R05 §7.4);
+- Tax on forced core sales and year-end VM taxation (13/15% scale, base-salting rules differ by contract type — R05 §9);
+- Legal/regulatory change (6681-У project amendment 2026 not adopted but pending; tariff changes (VTB 0→1 ₽/contract from 01.01.2027 — R02 §1.3); fee promos expire);
+- User unavailability and funding arrival — scenario-only;
+- Single-leg executions and data outages.
+
+---
+
+## 8. The 90-day review convention and the peak-giveback rule (Required output)
+
+### 8.1 Convention to register (exact)
+
+- **Anchor:** `t0` = timestamp of the **first entry** in the live (or first funded virtual) pilot; if no entry occurs, review date is anchored at pilot start and reports "zero-trade period" (zero-trade is a valid outcome).
+- **Review date** = `t0 + 90 calendar days` (example: start 2026-10-14 → review 2027-01-12). One review window of ±7 days for logistics; the thresholds and H/X/D/E ledgers are **continuous** and do not pause for the review.
+- **At review:** re-verify §4.1 gates with fresh marks; re-estimate σ_i from the registered window plus new data; re-check broker parameters (haircuts, GO tables, fee schedules — they change: NCC LQDT params changed 2022→2026; VTB fee change 01.01.2027); publish X/H/D/E, incident list, reaction-time log, stale/partial-fill counts (R08 fields).
+- **Positions are not force-closed at day 90.** A position may extend beyond review if its pre-registered idea horizon and exit conditions (e.g., convergence to a dated expiry like GLZ6 2026-12-17 — only 64 days after a 2026-10-14 start — or a registered z-target) still hold and the continuation gate passes. A **roll** (e.g., GLZ6→GLH7) is a **new entry** subject to all gates and the event filter (R06 §10.1 warns GLH7 has different liquidity/basis).
+- **No silent resets:** X, H, D, E, realised losses and cumulative underperformance are never reset by review, funding, restart, withdrawal or renaming (R05 §4.6 — verified coherent against the policy).
+
+### 8.2 Peak-giveback rule (D ≥ 10k) — opportunity cost
+
+The D-trigger is a **high-water-mark ratchet**: with H = 12,000 it fires at X = +2,000 (positive X), suspends entries and demands risk reduction while the relative result is still positive (R05 §7.2 row 3). Two costs follow:
+
+1. **Locked-out state:** if the book is cut to flat at X = 2,000, X can no longer improve; D stays ≥ 10,000 indefinitely; resume requires user review — a deliberate policy choice (protects against giving back wins) at the price of never re-risking without human action. **Recommendation to test:** a two-stage D-rule — at D ≥ 10k reduce risk by ~50% and suspend entries; only if the cash/margin gates also fail (or X ≤ −10k) go to flat. Counter-test: replay with the strict rule and measure missed-opportunity cost in the **virtual** ledger (the virtual portfolio exists to price exactly this).
+2. **Foregone carry:** a 2-pair CNY book earns ≈ 263 ₽/60d carry (+GL ≈ 810 ₽/60d); being flat 60 days forgoes this relative to B. On the pilot's scale this is small versus the 10–15k acceptance band — the giveback rule's opportunity cost is second-order **at 30k**, but becomes first-order at 10–20m scale (§10), where de-risking a carry book is expensive. Register both effects in the review template.
+
+**Interaction to flag:** D-trigger and X-trigger are independent by design (D fires on giveback, X on shortfall). A path 0 → +12k → −2k has D = 10k **and** X = −2k: both fire. This is intended conservatism; state it in the charter so a later operator does not "fix" it silently.
+
+---
+
+## 9. Capacity: 10–20m ₽ future scale and promotion gates (Investigate 6)
+
+**Binding constraints shift from capital to liquidity/concentration** (R06 §12.2, ISS 07.10.2026):
+
+| Constraint | 07.10.2026 figure | Meaning at 10–20m |
+|---|---|---|
+| Second-leg turnover | SBERF 0.46bn ₽/day, GAZPF 0.42, RGBIF 0.19, RBZ6 0.44 vs CNYRUBF 66.0, CRZ6 119.9, GLDRUBF 5.7, GLZ6 5.5 | 10–20m per leg = 2–10% of daily turnover in stock-perpetual/RGBI families (market-impact regime; "не становиться доминирующей силой, обеспечивающей сходимость" — Vidyamurthy constraint quoted in R06 §12.2); CNY/GL families absorb tens of millions |
+| NCC concentration limits | AMDF 252 contracts ≈ 13.9m ₽; TSM 342; SBERF 47,330 contracts | Foreign-fixing perpetuals bind at ≈14m; ruble pairs not |
+| Carry capacity | CNY +3.1%/yr notional, GL +7.1%, IMOEX +13.7% (R06 §10) | 10–20m in the two deep families: expected carry 0.3–1.4m ₽/yr before alpha/costs — funding concentration risk: the strategy becomes a visible carry position in RUB-rate space |
+| Funding/tax | Core-sales taxes and VM scale linearly with size; 45k emergency cap is meaningless at scale | A separate funding policy must be designed at promotion time |
+
+**Promotion gates (all required; tiny-pilot profit is explicitly not one):**
+1. Written broker perimeter confirmed (R01 five conditions) and stable for ≥ 1 review cycle;
+2. Prospective shadow/live operational record: ≥ 30 **economic episodes** (R09 §2.1 — clusters, not fills), including ≥ 2 stress episodes, with measured reaction-time distribution (p50/p90) and zero unexplained naked-leg incidents;
+3. Measured slippage vs assumptions (needs broker bid/ask channel — R04), and a capacity study per family using observed book depth;
+4. Statistical gate: after R09 corrections (registry, purge/embargo, DSR as ceiling), the registered forward record must at least exclude a **materially negative** edge — "inconclusive" is acceptable for continuation but not for scale-up;
+5. Stress/S1–S6 re-run at target scale with the same outer-boundary logic scaled by a **new** delegated envelope (a new decision by the owner — the 15k/45k caps are pilot-lifetime constants);
+6. R08-consistent execution layer (delayed execution, signal validity) validated; automation at BCS only after its API checklist (R01 §10).
+
+---
+
+## 10. Criteria for no-trade (live or virtual entry)
+
+Reject an idea or a day (record the rejection) if **any** hold:
+1. Minimum lot fails §4.1 gates 1–3 (stress inequality, cash path, gross/stressed GO) — "if no minimum-lot spread fits, reject it" (prompt);
+2. Live mode with any of R01's five broker confirmations missing (isolation, KPUR, LQDT haircut, notification channel, no derogation clauses);
+3. Data layer unreliable: quote age > 30 min, one leg unsynchronised, settlement-vs-close ambiguity on marks (R04: `CLOSE ≠ SETTLEPRICE` in all 16 checked days of SiZ6);
+4. Event window on either leg (R06 §8.5 filter): expected dividend dates (TATN 13.10.2026-style cases), expiry ≤ reaction window, spec change pending (2026 saw six equity-futures spec revisions), IndexDiv = 0 mismatch for SBERF/GAZPF;
+5. Cluster cap exceeded (correlated concurrent book) or profile σ-budget exceeded;
+6. E-allowance exhausted or a pending incident review (funding ≠ restart);
+7. Monitoring/alerting path down (VPS budget 250–350 MB shared and unverified — prompt; blackout > delay window);
+8. X/D in action state (no entries), or X ≤ −10k (exit-only);
+9. Carry/sign structure flipped vs thesis (e.g., RGBIF funding sign instability 50/43 [R06 §10.5] — already a carry-reject).
+
+**Zero-trade days and a zero-trade pilot are valid results.** Scarcity of opportunities is not evidence of safety (R09 §11: "Not allowed: converting scarcity into certainty").
+
+---
+
+## 11. Targeted library lead — Carver, *Systematic Trading* (Harriman House, 2015)
+
+**Status:** book not supplied and not read in this investigation; the following is a reading brief with secondary-source-grounded content and **no page claims**. Verify against the 2015 edition (and, for later material, *Advanced Futures Trading Strategies*, 2023) before citing.
+
+| Topic to extract | Reading location (secondary chapter map: bookey summary PDF) | Content expected | Applicability to this pilot / tiny-lot caveat |
+|---|---|---|---|
+| Risk-target framework | Ch. 11 "Volatility targeting" | Target annualised vol of the portfolio should reflect realistic expected Sharpe (author's Kelly-flavoured rule: vol target ≈ SR), conservative halving; max ~50% vol; most losses come from oversized positions | At 30k with 1–4 integer pairs the portfolio vol target is set by **contract granularity**, not by the formula; use Carver to justify the σ-budget concept, not its numeric targets |
+| Position sizing mechanics | Ch. 12 "Position sizing" | Volatility scalar = cash vol target / instrument vol; block value; forecasts −20…+20 | Forecasts require calibrated signals this pilot lacks (R09); use only the scalar idea in method (b) |
+| Diversification & integer rounding | Ch. 13 "Portfolios"; author blog "Diversification and small account size" (qoppac, 2016-03-09); "dynamic optimisation" posts (2021) formalised as Strategy 25 in AFTS (2023) | "You can't own less than one futures contract"; naive rounding at small size collapses realized vol (secondary account: at $50k naive rounding realizes ~4% vol vs 25% target); dynamic integer selection minimises tracking error to ideal weights; his practical minimum for a diversified futures book ≈ $100k (AFTS-era commentary); at $10–20k he shows special-case 3–4-instrument books | **Direct hit on this project:** 30k ₽ ≈ $340 at 87 ₽/$ — far below any Carver-scale book; MOEX mini pairs (GO 2.3k ₽) are unusually granular, so 1–3 pairs are representable, but diversification cannot do its work; expect rounding-dominated, concentrated books; "8 instruments × 1 contract beats 2 × 3" (his experiment) argues for more cheap pairs (CNY) over fewer big ones (IMOEX) at this scale |
+| Trading too often / costs | Ch. 14 "Speed and size"; 2016 MTA webcast ("Mistake #3: Trading too often") | Cost = turnover × cost-per-trade; slow ideas only when capital is small | Matches R06: only multi-day/week dislocations are tradeable with 3–90 min reaction |
+| Discretionary-within-rules pilot | Ch. 15 "Semi-automatic trader" | Max concurrent bets; daily recalibration of risk | Maps to profile caps in §5 |
+| Drawdown-based sizing (later work) | Author blog 2021-01-05 ("Using maximum drawdowns to set capital sizing") | Drawdown-based capital targets ≈ Kelly-based in his examples (22–25% for SR 0.5) but both depend on uncertain inputs | Supports treating D-triggers as governance, not as calibrated risk measures — consistent with R09 §1.8 |
+
+**Assumptions of Carver's framework that do NOT transfer:** liquid multi-contract books; continuous quotes; futures markets with deep micro-lots; Gaussian-ish vol modelling; no broker recourse to unrelated assets; no 6681-У forced-closure regime; no benchmark-with-haircut like LQDT. Extract the discipline (risk caps, rounding honesty, cost scepticism), not the numbers.
+
+---
+
+## 12. Conflicts, unknowns, and falsification criteria
+
+### 12.1 Conflicts carried from the pack (and resolutions)
+
+| Conflict | Resolution used here |
+|---|---|
+| R09 key rate "14.25% (24 Jul 2026)" vs R02 "14% с 27.07.2026" | **14.00%** — CBR decision page (verified 2026-10-14); R09 misread the −25bp cut |
+| NCC LQDT "limit 60%" interpretation (discount 7.5% with 60% concentration limit vs count ≤60% of value) — R05 §11.1 | Unresolved; both readings make LQDT credit **less than par**; used only qualitatively (haircut ⇒ liquidity constraint, not loss — R05 §2.5) |
+| LQDT haircuts differ VTB (18/13/8) vs BCS (23/18/10 or 25/20/12) | Both kept; broker choice changes collateral credit of 30k-equivalent units by ≈ 3,000 ₽ [R01 §6.1] |
+| R06 pair stats computed **without** broker add-ons and without confirmed spread offsets ("реальная картина может отличаться в разы в обе стороны" — R06 §12) | All sizing uses **gross** GO as the conservative base; offsets appear only in stress S1 as upside capacity |
+| SBERF/SRZ6 correlation anomaly 0.601 vs 0.990 for the twin GAZPF pair [R06 §10.4] | SBER family demoted below GAZR/CNY/GL until intraday data resolves it |
+
+### 12.2 Material unknowns (not zero)
+Broker account settings and recognition of KPUR; actual GO add-ons and offset policy at VTB; whether closure is confined to the "Срочный рынок" portfolio (R01 hypothesis that would soften recourse); the user's real reaction-time distribution and unavailability windows; emergency-funding arrival time; investor tax residence/lot history of core LQDT; R08 execution semantics; LQDT marketability in one day under stress ("допущение о реализации паёв за один торговый день документами не подтверждено" — R01 §6.1); rights to automated ISS collection (R04 §2.4 — legal risk for data pipeline).
+
+### 12.3 Falsification criteria for this report's claims
+- **"5k gap insufficient for medium/high books":** falsified if replay of S1–S6 on the 141-day window + registered multipliers shows max one-day adverse move within the reaction window < 5k for those books in ≥ 95% of stress days (unlikely given IMOEX 1σ = 1,614 ₽/pair).
+- **"Carry alone does not clear the LQDT hurdle in model (a) for CNY books":** falsified if realised funding/basis over a registered forward window (or ISS swaprates history: 151 obs for CNY) exceeds 14% p.a. on sleeve-equivalent consistently.
+- **"Live trading gated on five confirmations":** falsified if the owner consciously drops the isolation requirement (a project decision — R01 §0 allows this explicitly) and accepts account-wide recourse in writing.
+- **Pilot-level (R09):** the first falsifiable deliverable is a vintage-aware, registered, LQDT-matched forward evaluation — not any backtest score.
+
+---
+
+## 13. Possible project changes (proposed, not approved)
+
+1. **Charter amendment:** publish the funding-model choice (cash sleeve vs pledged units) as the accounting basis of X, with the hurdle statement of §3.2.
+2. **Replace the 5k-gap reliance** with the computed `u` (floor 5k) and the two-gate entry test (§4.1) in the delegate's provisional rules; tighten gross-GO ceiling 50%→33% with a stressed-GO twin.
+3. **Two-stage D-rule trial** (§8.2) measured in the virtual portfolio before live use.
+4. **Profile system** with σ-budgets and identical authority (§5), chosen as the *lowest* profile that survives stress.
+5. **Sequencing:** virtual portfolio + data capture (daily snapshots ≈ 0.5 MB/day, R04 §1.7) start now; live 30k only after R01 letters + R08 replay; 10–20m only after §9 gates. Expected outcome of the 90-day live pilot remains **operational validation**, not profit.
+
+---
+
+## 14. Sources
+
+**Supplied evidence packs (read):** R01 (broker rules/KPUR/collateral/liquidation merger; primary docs inside: Указание ЦБ № 6681-У 12.02.2024 (reg. 02.07.2024 № 78736, eff. 01.04.2025); письмо ЦБ 15.08.2025 № 38-1-3/4656; НКЦ принципы расчёта ГО № НКЦ-П-2025-58; Правила клиринга НКЦ Ч. IV (eff. 15.04.2026); ВТБ Регламент (ред. 31.07.2026) + Прил. № 9 тарифы + Положение о непокрытых позициях (ред. 25.04.2025) + Перечень ликвидного имущества `spisok071026.xlsx` 07.10.2026; БКС Регламент Прил. № 6 (§§1.4–1.5, 2.3, 5.12–5.14, 9.12–9.14) + Прил. № 11 тарифы (ред. 01.10.2026) + КИД gs-260701); R02 (VTB prof_privilegiya.pdf + Прил. № 9 пп. 3.2, 16–17; BCS Прил. № 11; MOEX/NCC fee schedules eff. 08.09.2026 / 21.09.2026; LQDT TER 0.29364% — УК page); R04 (ISS Guide v1.4 (2016); MOEX market-data policy; measured ISS probes 10.2026); R05 (LQDT ПДУ № 3915-17, раскрытие 23.12.2025; НКЦ LQDT params 23.04.2025; НК РФ ст. 214.1, 224, 226.1, 219.1 as read 04.08.2026); R06 (ISS snapshot 07.10.2026 23:50:14 MSK seqnum 20261007235014; MOEX "Параметры срочного рынка" moex.com/s206 read 08.10.2026; contract specifications; МКС/ММС groups; Vidyamurthy 2004 ch. 5–9 as read in R06); R09 (validation methodology; MOEX event notices 2022–2026; López de Prado AFML ch. 4 as reading location).
+
+**Verified externally for this report (accessed 2026-10-14):**
+- Bank of Russia, "Решение Совета директоров … о ключевой ставке", 24.07.2026 — `cbr.ru/rbr/dir_decisions/rsd_2026-07-24_20_01/` ("Установить с 27 июля 2026 года ключевую ставку … 14,00 процента годовых").
+- Указание Банка России 12.02.2024 № 6681-У — тексты: garant.ru/prime/doc/409252026; normativ.kontur.ru/document?documentId=474409 (НПР1/НПР2, п. 17 ограничительное время, п. 19.1 глубина закрытия).
+- R. Carver, *Systematic Trading* (Harriman House, 2015) — secondary: bookey chapter-summary PDF (`cdn.bookey.app/files/pdf/book/en/systematic-trading.pdf` — chapter map); qoppac.blogspot.com "How much risk should we take?" (2020-03-05) and "Diversification and small account size" (2016-03-09); CMTA MTA webcast slides 2016-03-02 (`cmtassociation.org/wp-content/uploads/2024/01/0302-carver-1.pdf`); systematicmoney.org book page. **Page numbers not verified — book not read.**
+
+**Explicitly not done:** backtests, account checks, broker queries, legal verification, live trading, deployment, bot-protected-page retrieval, paid data. Execution-latency specifics await R08. No claim of exhaustive coverage is made; decision-critical claims rest on the named documents, and new search branches would not change the verdicts above (isolation and VM-cash mechanics dominate).

@@ -1,0 +1,510 @@
+# Title
+Regime Conditioning for MOEX Futures Spreads: When Simple State Splits Add Value and When They Just Add Complexity
+
+## 1. Direct Answer and Framing
+
+Observable market-wide or instrument-family regime information can improve out‑of‑sample net decisions versus a no‑regime baseline, but only under tightly controlled, **very simple** regimes and **pre-specified points of impact** (primarily entry gating and position sizing). As regime models become more complex (hidden Markov chains, many states, rich feature sets), the incremental benefit over robust fixed-parameter baselines tends to evaporate out-of-sample and is quickly dominated by overfitting risk and implementation cost.
+
+For a MOEX futures-spread pilot constrained to RUB 30,000 capital, walk‑forward validation, and LQDT as the cash benchmark, the most defensible path is:
+
+- First, define and test **three transparent, decision-time-observable regime splits**:
+  - Market volatility regime via Russian Volatility Index (RVI) and/or realized volatility.
+  - Instrument liquidity regime via spread/volume/open interest.
+  - Carry/term-structure regime via observable roll yield/contango vs backwardation.
+- Second, **limit regime impact** to a small, predeclared set of levers (e.g., entry on/off and size cap) and test them against a fixed-parameter baseline with identical cost/delay assumptions.
+- Third, **only if** at least one simple split survives falsification and ablation on MOEX data should you consider more elaborate hidden‑state or change‑point models as optional, separate hypotheses.
+
+The single most actionable takeaway is: **design R13 as an incremental “regime filter” experiment on top of 1–2 simple MOEX spread baselines; treat HMM/Markov-switching and multi‑indicator composites as phase‑2 research that must justify its own complexity via clearly pre-registered, out‑of‑sample gains in RUB excess over LQDT.**
+
+---
+
+## 2. Baseline and Validation Skeleton (Anchoring the Comparison)
+
+**The baseline must be a simple, fully specified spread rule, fit and tested under the same walk‑forward skeleton as any regime-conditioned variant.** Without this, it is impossible to isolate regime value from generic model-tuning gains.
+
+### 2.1 Candidate MOEX Baseline Families
+
+MOEX natively lists index and sector futures (IMOEXF, MIX, MXI, OGI, sector indices) with clear contract sizes, margin rates and tick values, including a mini MOEX Russia Index futures (MXI) with margin around a few thousand RUB per contract, suitable for a RUB 30,000 pilot.[E50][E51][E52][E53] Calendar spread instruments exist and are traded as unified codes (e.g., OGI-6.26-9.26), with synthetic matching and archives of spread prices, volume and trades.[E17][E60][E62][E43]
+
+Given these constraints, two baselines are practically defensible:
+
+1. **Index calendar-carry baseline**  
+   - Universe: MXI or another small index future where one calendar spread consumes <50–60% of pilot capital.  
+   - Trade object: exchange-listed calendar spreads (e.g., MXI-9.24-12.24).[E60]  
+   - Logic: fixed rule to buy contango (or backwardation) mean-reversion or a simple “roll carry” rule (e.g., long near/short far when curve steepness exceeds historical percentile).  
+   - Holding: fixed horizon (e.g., 10–20 trading days) or exit on spread reversion to mean ±kσ, with no regime info.
+
+2. **Sector index vs MOEX Russia Index mean‑reversion baseline**  
+   - Universe: OGI (Oil & Gas Index futures) vs MXI (MOEX Russia Index mini), both with tick values denominated in RUB and available calendar spreads.[E39][E49][E51][E54]  
+   - Trade object: spread of front-month OGI vs MXI; simple cointegration/z‑score reversion rule with symmetric entry/exit bands, fixed holding max.
+
+These baselines are fully “no regime”: all parameters are estimated on training windows only; the same walk‑forward is used later for regime‑conditioned variants.
+
+### 2.2 Validation Skeleton and Data Availability
+
+MOEX provides:
+
+- Daily aggregated futures results and archive CSVs for spread instruments from at least the mid‑2000s; demo futures data from 2014–2017 are explicitly free.[E31][E32][E34][E36][E38]  
+- Free ISS API access with 15‑minute delayed data across markets, including candles, contract specs, and spread instruments; real‑time or depth may require subscription.[E33][E44][E45][E46][E61]
+
+This enables a **chronological walk‑forward** design:
+
+- Training windows (e.g., 1–2 years) for baseline parameter selection.  
+- Forward test windows (e.g., 3–6 months) aligned so that:
+  - No position opened in the test window depends on parameters or state estimates calibrated on later data.  
+  - Gaps around training/test splits account for maximum holding time and 3–90 minute signal‑to‑execution delays.  
+- A final untouched holdout window (e.g., latest 12 months of continuous data) reserved until all hypotheses are frozen.[E65][E69]
+
+LQDT is a MOEX-listed money-market ETF investing in short-term repo and cash instruments; it is explicitly marketed as a liquidity and cash-management fund with low credit and market risk.[E19][E23][E35] This makes its daily NAV series a suitable cash benchmark for RUB capital. Excess performance is therefore measured as **cumulative RUB P&L net of all fees/slippage minus the value of the same cash left entirely in LQDT** (per the embedded assumptions).
+
+---
+
+## 3. What “Regime” Means Here: Observable vs Hidden
+
+### 3.1 No MOEX-Specific Regime Models, but Rich Generic Literature
+
+Academic and practitioner literature on regime-switching models is extensive for spreads and volatility, especially in equities, FX, and oil:
+
+- Hidden Markov and Markov-switching models are applied to statistical arbitrage and pairs trading by explicitly modeling spreads as mean-reverting processes with discrete states.[E2][E7][E9][E11]  
+- Regime-switching and HAR‑RV models improve volatility forecasts for oil futures versus single‑regime models.[E8][E9]  
+- Brent–WTI spread studies employ Markov regime-switching to capture structural regimes in integration and pricing; some report out-of-sample improvements.[E14][E15][E11]  
+- Energy futures spread trading (Kanamura et al.) finds high‑volatility regimes coincide with the most profitable trades, but only in-sample results are given.[E27]
+
+Searches in both English and Russian did not uncover any academic paper applying regime-switching specifically to MOEX futures spreads.[E16][E17][E18][E19][E21][E22] MOEX documentation on spreads and calendar spreads explains mechanics and fee/margin treatment, but does not embed regime or state modeling.[E20][E27][E33]
+
+Conclusion: **methods are portable, but no “ready‑made” MOEX regime model exists**; this project must adapt generic techniques and rigorously test them on MOEX data.
+
+### 3.2 Observable Regimes: Volatility, Liquidity, Carry
+
+Given the pilot’s constraints, the first line of attack is **observable, rule-based regime splits** that use only information available at decision time:
+
+1. **Volatility regime**  
+   - Market-wide: RVI, the Russian Volatility Index, is MOEX’s implied volatility benchmark, calculated from RTS index options to measure 30‑day expected volatility; it is published every 15 seconds and has a historical archive.[E4][E36][E37][E59][E66][E70]  
+   - Instrument-level: rolling realized volatility of the spread or underlying contracts, computed using past daily (or intraday, if available) returns.  
+   - Literature typically defines low/normal/high (and sometimes crisis) regimes by quantiles of realized or implied volatility.[E10][E11][E31][E32]  
+
+2. **Liquidity regime**  
+   - Futures liquidity is characterized by depth, bid‑ask spread, and volume/open interest.[E22][E24][E25][E26]  
+   - An OFR working paper and related research show three latent liquidity regimes (high, medium, low price-impact) are sufficient to describe futures market liquidity, modeled via HMMs with price‑impact measures.[E25][E33][E35]  
+   - For MOEX, daily spread, volume and open interest are observable via ISS and official reports.[E23][E26][E29][E38]
+
+3. **Carry / term-structure regime**  
+   - In futures, “carry” is the return if the underlying price stays unchanged; roll yield is the difference between futures P&L and spot price change.[E15][E41]  
+   - Contango/backwardation are distinct term-structure regimes: contango when futures exceed spot/expected spot; backwardation when they are below.[E24][E25]  
+   - Commodity and energy research distinguishes carry regimes via term-structure slopes and S‑U (stock‑to‑use) ratios, with some evidence of regime-dependent hedge ratios or carry premia, but without a standardized HMM-like “carry regime” modeling framework.[E16][E38][E39][E40]
+
+These observable regimes are naturally **aligned with decision time** and do not require smoothing over the full sample; regime membership can be computed using trailing windows only.
+
+### 3.3 Hidden-State and Change-Point Models
+
+The classical hidden-state toolkit includes:
+
+- Hamilton’s Markov switching regression framework,[E63][E67] hidden Markov models and Hidden Semi‑Markov Models (HSMM) for volatility, liquidity and spread dynamics.[E1][E12][E19][E25][E26]  
+- PELT change-point detection, a pruned exact linear time algorithm for detecting multiple change points in time series by minimizing a penalized cost function; empirical studies show it is effective for financial time-series segmentation.[E26][E27][E31][E64][E68]
+
+Evidence on out-of-sample value is mixed:
+
+- One SSRN study on volatility-regime HSMMs reports that while HSMM outperforms HMM in-sample, the advantage largely disappears out‑of‑sample, underscoring overfitting risk when using flexible regime architectures.[E17]  
+- Risk and VaR practitioner notes emphasize that for VaR and similar forecasting tasks, parsimonious models routinely beat elaborate regime-switching models; more regimes always increase in‑sample fit but often degrade out-of-sample performance and stability.[E12][E15][E6][E30]  
+
+Hence, **hidden‑state models belong as second‑stage hypotheses**: only to be tried if simple observable state splits show robust incremental value and if the project is willing to invest in significantly higher modeling complexity.
+
+---
+
+## 4. Where Regime Information Should Act in the Strategy
+
+To avoid conflating many changes with “regime effect,” you must pre‑declare **where** regime information is allowed to modify behaviour.
+
+Given pilot capital and manual execution lags, four levers are plausible; they should not all be turned on in the same variant:
+
+1. **Entry gating (filter)**  
+   - Strategy trades only when the current regime is deemed “favourable” (e.g., low volatility, or high liquidity & neutral carry).  
+   - This directly addresses execution risk and tail moves: for example, literature shows trend or spread strategies may be particularly sensitive to volatility regimes.[E36][E32]  
+   - This is the cleanest place to start: same signal logic, but suppressed in disallowed regimes.
+
+2. **Position sizing / notional cap**  
+   - Maintain a base unit size (e.g., 1 spread contract) but cut size under adverse regimes (e.g., halve or set to zero when volatility RVI above crisis threshold).  
+   - The OFR liquidity-regime work implies trading costs differ across hidden regimes; a simple proxy is to size down under high observed spreads/low volumes, even without HMMs.[E25][E33]
+
+3. **Exit rules and maximum duration**  
+   - Allow earlier exits or tighter stop/exit thresholds in high‑volatility or low‑liquidity regimes to mitigate gap risk.  
+   - This complicates attribution more than entry gating, because trade lifecycle now depends on regime sequence, not just initial state.
+
+4. **Instrument or spread eligibility**  
+   - Permit specific spread types only in certain regimes (e.g., only trade long‑carry calendar spreads when the curve is in strong backwardation and volatility is low).  
+   - This is effectively a conditional universe filter based on carry regime.
+
+For R13, **priority should be: entry gating and size cap**. Exit and eligibility changes introduce interactions that are harder to attribute cleanly in small samples.
+
+---
+
+## 5. Simple Observable Regime Designs for R13
+
+This section translates the conceptual regimes into concrete **hypothesis cards** that satisfy the project’s constraints.
+
+### 5.1 Volatility Regime via RVI and Realized Volatility
+
+MOEX’s RVI measures 30‑day implied volatility from RTS index options; the methodology was updated effective 23 March 2026, with data published every 15 seconds and historical archives available.[E36][E37][E59][E66][E70] For MOEX index or sector spreads, RVI provides a liquid, market‑wide volatility proxy.
+
+**Hypothesis Card V1: RVI‑filtered entry**
+
+- **Baseline**: index calendar spread mean‑reversion on MXI or sector vs MXI, with fixed entry/exit rules.  
+- **Regime definition (decision-time info)**:
+  - Compute rolling percentiles of daily RVI over the last 252 trading days (approximately one year).  
+  - Label:  
+    - Low vol: RVI below 40th percentile.  
+    - Normal: between 40th and 80th percentile.  
+    - High/crisis: above 80th percentile.
+- **Regime action**:  
+  - Allow new entries only when RVI is in Low or Normal regimes.  
+  - Suppress all entries when RVI is High/crisis. Existing trades follow baseline exit logic.  
+- **Rationale**: volatility regimes are much easier to forecast than direction and strongly affect spread behaviour and execution risk.[E36][E32] A simple volatility gate can reduce tail losses without complex hidden-state modeling.  
+- **Leakage control**:  
+  - Use only past RVI values to determine percentiles and current state; no smoothing with future values, no recursive revision.  
+  - Recompute regime boundaries only at walk‑forward re‑estimation dates, not continuously.
+
+**Hypothesis Card V2: Spread realized volatility gate**
+
+Where RVI may be less representative (e.g., OGI vs MXI spread), substitute a **spread-level realized volatility** regime:
+
+- Realized volatility: standard deviation of daily spread returns over trailing 20 days.  
+- Thresholds: median and 80th percentile of trailing 200‑day vol.  
+- Entry gating: as in V1 (no new trades under “high-vol” regime).
+
+This remains fully observable and avoids relying on options markets.
+
+### 5.2 Liquidity Regime via Bid–Ask Spread, Volume, Open Interest
+
+The IMF and OFR studies conceptualize **liquidity regimes** as high/medium/low price-impact states, reflected in spreads, depth and volume.[E26][E33][E35][E36] MOEX publishes daily volume, number of trades and open interest for futures and spreads; bid‑ask data are in daily spread archives but live order-book depth requires subscription.[E23][E26][E29][E60][E62]
+
+**Hypothesis Card L1: Liquidity filter based on quoted spread and volume**
+
+- **Metrics** (per instrument or spread):  
+  - End-of-day bid–ask spread as fraction of mid (from MOEX spread archive).[E60][E62]  
+  - Daily volume (contracts) in the same spread.[E34][E38]  
+- **Regime definition** (trailing 120 trading days window):  
+  - High-liquidity: spread below 40th percentile and volume above 60th percentile.  
+  - Low-liquidity: spread above 80th percentile or volume below 20th percentile.  
+  - Mid: everything else.
+- **Regime action**:  
+  - Only open trades if current day is High or Mid liquidity; in Low liquidity no new trades.  
+  - Optional variant: cap position size to 1 contract regardless of pilot scale in Low liquidity but still allow entries (ablation, see §7).
+- **Rationale**: OFR research demonstrates that three liquidity regimes suffice to describe futures market microstructure, and trading costs differ significantly across them.[E25][E33][E35] For a small pilot with tight drawdown budgets, avoiding “thin” days is a straightforward risk reducer.  
+- **Execution realism**: since trades in the pilot will be executed with 3–90 minute delays, this regime is evaluated at **previous day’s close** to determine whether next‑day signals are eligible.
+
+### 5.3 Carry / Term-Structure Regime
+
+Commodity spread research distinguishes **carry regimes** by term-structure shape (contango vs backwardation) and underlying storage/carry cost ratios.[E14][E24][E25][E4] Futures carry is the expected return if spot stays unchanged; roll yield equals futures P&L minus spot change.[E15][E41]
+
+For MOEX index and sector futures, the economics differ from physical commodities but calendar spreads still encode expectations about roll yield and dividends. For OGI vs MXI, oil-related components may embed sector-specific premia.
+
+**Hypothesis Card C1: Calendar-carry filter for spread trades**
+
+- **Metric**: slope of term structure for the underlying index or sector, using near and next contract mid-prices (or the listed calendar spread price on MOEX).[E2][E41][E43]  
+  - Define normalized carry: \( \text{carry}_{t} = \frac{F_{2,t} - F_{1,t}}{T_2 - T_1} / F_{1,t} \), where \(F_{1}, F_{2}\) are near and next futures, \(T_2 - T_1\) time to maturity difference (years).  
+- **Regime definition** (again via trailing quantiles):  
+  - Strong backwardation: carry below 20th percentile.  
+  - Neutral: between 20th and 80th percentiles.  
+  - Strong contango: above 80th percentile.
+- **Regime action** (one example consistent with cost-of-carry reasoning):  
+  - Only allow **mean-reversion calendar spreads betting on flattening** when term-structure is in strong contango (high roll cost, potential for normalization).  
+  - Disallow such trades in strong backwardation, where spreads may reflect scarcity or risk premia.  
+- **Rationale**: empirical commodity work shows that spread behaviour and hedge ratios differ across carry-cost regimes; ignoring this can mis-specify risk.[E16][E38][E39] Even if out-of-sample performance is ambiguous, carry state is mechanistically tied to expected roll yield.
+
+This card is more economically nuanced than V or L but still uses only contemporaneous futures prices. It is best applied to strategies that explicitly exploit calendar term structure, less to index vs sector spreads.
+
+---
+
+## 6. Hidden-State and Change-Point Hypotheses (Optional, Second Stage)
+
+If and only if at least one observable regime filter (V1, L1, C1) survives falsification (§7), the project may consider limited hidden-state models.
+
+### 6.1 Hidden Markov Model on Spread Dynamics
+
+Several studies demonstrate HMM-based spread models for statistical arbitrage and pairs trading in equities and energy markets.[E2][E3][E7][E9][E36] Typical setup:
+
+- Observed variable: spread \(S_t\) and/or its increments.  
+- Hidden state: discrete regime \(Z_t \in \{1,2\}\) indicating “mean-reverting” vs “non‑reverting” or “high‑vol” vs “low‑vol”.  
+- Dynamics: \(S_t\) follows AR(1) with regime‑dependent mean and variance.
+
+**Hypothesis Card H1: HMM mean‑reversion gating**
+
+- **Baseline**: same as in §2, mean-reversion spread with fixed parameters.  
+- **HMM estimation**:  
+  - Fit a 2‑state Gaussian HMM to spread changes on the training window only, using EM algorithm.  
+  - Interpret State 1 as “favourable” if it has stronger mean reversion and/or lower variance; State 2 as “unfavourable.”  
+- **Regime action**:  
+  - Only allow new entries when the filtered probability \(P(Z_t=1|\text{history})\) exceeds a threshold (e.g., 0.7).  
+  - Otherwise, do not open trades; existing trades ignore HMM and use baseline exit.
+- **Known risks**:  
+  - HSMM vs HMM comparisons show in-sample advantages can vanish out‑of‑sample.[E17]  
+  - Regime identification is unstable, prone to label switching and local likelihood maxima.[E12][E15][E30]  
+
+To meet the project’s overfitting constraints, H1 should be limited to 2 states, univariate spread input, and at most one gating threshold per strategy.
+
+### 6.2 PELT Change-Point Segmentation
+
+The PELT algorithm provides an efficient way to detect multiple change points in the first or second moments of financial time series; empirical work shows accurate detection with linear complexity.[E26][E27][E31][E64][E68]
+
+**Hypothesis Card P1: Regime blocks via PELT for parameter re‑estimation**
+
+- **Objective**: not to time trades directly, but to **segment history** into stationary blocks for parameter estimation.  
+- **Mechanism**:  
+  - On the training window only, run PELT on the spread or volatility series to identify breakpoints.  
+  - For each block, estimate separate mean-reversion parameters; then in walk‑forward, use the parameters from the most recent completed block.  
+- **Action**:  
+  - Entry/exit rules remain unchanged; only the estimated parameters (means, variances, thresholds) differ by epoch.  
+- **Risk**: block boundaries can be sensitive to penalty choices; mis‑tuned penalties reintroduce overfitting under another guise.
+
+Given limited payoff versus complexity, P1 is best left as an optional design extension if simple filters show strongly regime-dependent parameters.
+
+---
+
+## 7. Controlling Degrees of Freedom, Overfitting and Leakage
+
+The core risk for all regime conditioning is that **you discover regimes because you overfit** rather than because they actually carry predictive information. Literature on regime models stresses that adding regimes always improves in‑sample fit but often degrades out-of-sample performance, especially when regimes are estimated with short crisis samples.[E12][E15][E17][E30]
+
+### 7.1 Search Space and Hypothesis Management
+
+To keep the search space finite and auditable:
+
+- **Cap primary hypotheses** to at most:
+  - 2 baseline strategies (Index calendar; sector vs index mean‑reversion).  
+  - 3 observable regime filters (V1, L1, C1).  
+  - 1–2 hidden-state variants (H1, optionally P1) only if justified.  
+- For each baseline × regime combination, predefine at most **two variants** (e.g., strict vs loose threshold) and document them in a **hypothesis registry** with:
+  - Name, baseline reference.  
+  - Exact variable definitions and computation windows.  
+  - Explicit mapping of regime to trading decisions (entry yes/no, size multiplier).  
+  - The specific splits (training windows, test windows, holdout).  
+  - The cost scenario (base/conservative/stress) applied.
+
+Every unsuccessful variant must be logged rather than discarded silently; otherwise, you cannot assess how many degrees of freedom you spent to obtain a “winner.”
+
+### 7.2 Leakage and Label Smoothing Checks
+
+Two classes of leakage must be prevented:
+
+1. **Forward-looking regime labels**  
+   - Volatility and liquidity metrics must be computed strictly on **past data** (e.g., realized volatility over t–20…t–1).  
+   - RVI regime percentiles are computed at walk‑forward re‑estimation dates only; you cannot recalibrate thresholds using information from future crises.  
+   - Hidden states in HMM/HSMM are estimated using EM on training data; test-time uses only filtered probabilities without re-estimating using test data.
+
+2. **Market closure and contract-change events**  
+   - MOEX has specific annual non-business days and holiday schedules; for 2026, futures trading is modified or closed on several days in January, March and May.[E20][E34][E38]  
+   - Policy-driven contract changes (e.g., halt of Urals oil futures after 2012)[E38] and major sanctions/regulatory shocks must be encoded as **exogenous events, not learnable regimes**.  
+   - If major structural events coincide with certain regimes (e.g., high RVI during sanctions), you must not claim causal predictive power from the regime label itself.
+
+The implementation should include refutation tests where regime labels are deliberately lagged further (e.g., using one-week-old values) to ensure apparent performance is not just reactive.
+
+### 7.3 Ablation Protocol
+
+For each promising regime‑conditioned strategy:
+
+1. **Baseline vs filtered comparison**  
+   - Same signal logic and parameters; difference is only regime gating (entries suppressed in certain states).  
+   - Compare: number of trades, average P&L per trade, drawdown, and net RUB excess over LQDT under identical cost scenarios.
+
+2. **No‑action ablation**  
+   - Instead of suppressing entries, tag each trade with the regime it would have been initiated in (but always execute it).  
+   - Evaluate if P&L conditional on regime differs significantly (e.g., trades initiated in high RVI produce much worse outcomes).  
+   - If conditional performance is indistinguishable, using regime for gating adds complexity without information.
+
+3. **Randomized regime gate baseline**  
+   - Randomly assign the same fraction of days to “blocked” as the real regime does, independent of true state.  
+   - If the real regime gate does not materially outperform this random gate, its information content is suspect.
+
+4. **Cross-regime robustness**  
+   - Test whether parameters tuned in one dominant regime (e.g., low volatility years) still work reasonably in others. Excess sensitivity suggests overfitting.
+
+---
+
+## 8. Cost, Execution and Resource Considerations
+
+### 8.1 Fees, Margin, Liquidity and Position Limits
+
+MOEX publishes derivatives fee schedules and margin requirements; exchange fees for commodity contracts are on the order of a few basis points per notional and clearing fees similar in magnitude, although tables must be checked for current validity as many documents are dated up to April 2024.[E18][E21][E22][E23] Futures margin requirements vary across contracts, usually a single‑digit to low‑double‑digit percent of notional.[E3][E11][E53][E58] The MXI mini futures’ first-level initial margin is in the low thousands of RUB per contract, making a one‑spread position well within a RUB 30,000 test budget with room for variation margin and fees.[E53]
+
+Concentration and position limits exist but are defined in notional or contracts; for large index futures such as MIX, limits are thousands of RUB per contract at first concentration level.[E38][E39] With pilot-sized exposure (0–2 contracts per spread), such limits are effectively non‑binding; regime research can ignore them except as part of structural risk controls.
+
+Liquidity-wise, MOEX stresses high-liquidity derivatives with tight spreads for major contracts; official analytics show BR, Si, RI, GD as focus contracts with published open interest statistics.[E2][E27][E29][E38] However, regime design must treat low-liquidity tails carefully via the L1 filter, especially for sector calendars.
+
+### 8.2 Data and Computational Resources
+
+Data:
+
+- End-of-day futures and spread series from MOEX archives: sufficient for daily‑bar strategies and initial regime exploration.[E31][E32][E34][E36][E38]  
+- ISS API for 15‑minute delayed candles and current spread quotes: aligns well with the 3–90 minute manual delay constraint.[E33][E44][E46][E61]  
+- RVI time series: MOEX provides historical RVI index data and futures references.[E36][E37][E59][E66][E70]  
+- LQDT NAV history: daily NAV and price data from MOEX and related sources.[E23][E34][E35][E39]
+
+Computation:
+
+- The pilot environment (MacBook Pro i7, 16 GB RAM; small VPS) is ample for daily‑bar walk‑forward, simple regime filters, and 1D or small‑state HMMs.  
+- PELT and Markov-switching models are available in standard R/Python libraries, with feasible runtimes at daily frequency.
+
+No paid or low‑latency data are needed for R13; ISS delayed data and historical archives suffice.
+
+---
+
+## 9. Scenario Analysis: When Regime Conditioning Helps vs Hurts
+
+### Scenario A: Volatility-Gated Filter Adds Value
+
+- Volatility regimes (RVI or realized) turn out to be strongly associated with trade outcomes: trades initiated in high‑vol regimes have worse risk-adjusted returns and deeper drawdowns; gating them out materially reduces worst‑case excess drawdown versus LQDT, even at the cost of fewer trades.  
+- Under all cost scenarios (base, conservative, stress), the volatility-gated strategy demonstrates higher median and lower left‑tail of excess RUB performance versus the baseline.  
+- In this world, **simple observable regime conditioning is worth including in production**; hidden-state models may incrementally refine volatility signals but must justify extra complexity.
+
+### Scenario B: Liquidity Regime is Informative but Carry is Not
+
+- Trades in low‑liquidity regimes exhibit larger slippage and more unfilled/partial fills, pushing realized P&L below theoretical P&L; the L1 liquidity filter reduces cost drag and shortfall relative to LQDT.  
+- Carry regimes, however, may not display statistically distinct performance; calendar‑carry filters either cut too many good trades or fail to exclude bad ones.  
+- The project would retain liquidity gating as an **execution‑risk management layer** and drop C1.
+
+### Scenario C: No Regime Filter Shows Stable Incremental Value
+
+- None of V1, L1 or C1 survive ablation: conditional performance differences across regimes are small or unstable; out-of-sample and holdout gains are negligible versus the no-regime baseline when costs and drawdown bounds are fully accounted for.  
+- Hidden-state attempts (H1, P1) show typical overfitting patterns: good in‑sample fit, no consistent holdout gains, high sensitivity to number of states or penalty choice.  
+- For a capital‑constrained, manual pilot with strict drawdown limits, **the rational choice is to defer regime conditioning**, focusing on robust fixed-parameter baselines until larger datasets or more structurally diverse episodes accumulate.
+
+---
+
+## 10. Recommendations for Designing R13
+
+Prioritized from immediate design decisions to longer-term options:
+
+### 10.1 Immediate (Design Decisions Before Any Coding)
+
+1. **Fix 1–2 Baselines and Lock Them**  
+   - Select one index calendar and one sector‑vs‑index mean‑reversion baseline that are feasible for MXI/OGI‑level margins and RUB 30k capital.  
+   - Fully specify: signal definition, parameter estimation windows, entry/exit and maximum holding, allowed contracts, and whether trades are at market or mid‑plus‑slippage.
+
+2. **Adopt a Single Walk-Forward Skeleton**  
+   - Define training windows (e.g., 2016–2019; 2019–2022), intermediate tests, and final holdout (e.g., 2023–2025).  
+   - Freeze the skeleton and reuse it for **every strategy** including future ones.
+
+3. **Pre‑Register Regime Levers**  
+   - For R13, allow regime info to affect **only**: (a) entry gating and (b) size multiplier.  
+   - Exit rules and eligible instrument set remain unchanged versus the baseline to isolate the effect.
+
+4. **Select State Variables and Windows**  
+   - Volatility: RVI (market) and/or 20‑day realized volatility of the spread.  
+   - Liquidity: previous day’s bid–ask spread fraction and volume.  
+   - Carry: term-structure slope using near vs next futures.  
+   - For each, fix trailing windows for percentile computations (e.g., 120–252 days) and do not revisit.
+
+### 10.2 Short-Term (First Implementation and Tests)
+
+5. **Implement and Test Observable Filters First (V1, L1, C1)**  
+   - For each baseline, create variants with each filter separately (no stacking initially).  
+   - Run full walk‑forward with cost scenarios aligned with project assumptions; record net RUB excess over LQDT.
+
+6. **Perform Ablation and Random-Gate Refutation**  
+   - For each filter, run the ablations outlined in §7.3 to verify genuine information content.  
+   - Any filter that fails to beat its random gate or shows no conditional P&L difference by regime should be discarded.
+
+7. **Stress with Pilot Constraints**  
+   - Simulate actual account drawdowns using the embedded capital tests (RUB 5k/10k/15k underperformance triggers), ensuring that improved per‑trade metrics translate into pathwise drawdown control versus LQDT.  
+   - Verify that regime filters do not inadvertently cluster remaining trades into even more volatile periods.
+
+### 10.3 Medium-Term (Optional Complexity, If Justified)
+
+8. **Consider a Minimal HMM Gate (H1) Only If Observable Filters Succeed**  
+   - Confine HMMs to 2 states and univariate spread input; avoid multi-asset latent factor HMMs or numerous macro inputs.  
+   - Require that H1 beats both the no-regime baseline and the best observable filter by a material margin in holdout under conservative cost assumptions before considering it further.
+
+9. **Defer Rich Regime Architectures**  
+   - Multi-scale Markov-Switching GARCH, cross-asset regime radars, or machine-learning based regime classifiers should be **explicitly out of scope** for R13.  
+   - Only revisit if pilot moves to much larger capital, longer time horizon, and a clear need to trade through multiple structural breaks.
+
+10. **Document Discard Criteria**  
+   - A regime design should be formally retired if:
+     - It fails to produce statistically and economically meaningful gains in excess RUB returns versus baseline in both main and conservative cost scenarios.  
+     - It adds more than one or two parameters to the baseline without clear robustness across multiple walk‑forward segments.  
+     - It relies on variables or data (e.g., order-book microstructure) that cannot be reliably sourced for the entire test horizon.
+
+If none of the pre‑specified regime filters pass these criteria, the project should **explicitly log R13 as “no incremental evidence found; regime conditioning deferred”**, and proceed with future R‑series work based only on robust, unconditional spread rules.
+
+---
+
+## 11. References
+
+[1] Walk-forward optimization. https://en.wikipedia.org/wiki/Walk_forward_optimization  
+
+[2] Moscow Exchange. Historical data service. https://www.moex.com/a2863  
+
+[3] Moscow Exchange. Archive of trading results for futures market. https://www.moex.com/en/archive/fortsmarketresults.aspx  
+
+[4] Moscow Exchange. ISS data feed description. https://fs.moex.com/f/12829/get-futoi-data-en.pdf  
+
+[5] Moscow Exchange. Derivatives market parameters. https://www.moex.com/en/derivatives/parameters.aspx  
+
+[6] Moscow Exchange. Futures contract specifications: MOEX Russia Index futures (IMOEXF, MXI). https://www.moex.com/en/contract.aspx?code=IMOEXF  
+
+[7] Moscow Exchange. Oil & Gas Index futures (OGI) contract information. https://www.moex.com/en/contract.aspx?code=OGI-6.26  
+
+[8] Moscow Exchange. Russian Volatility Index (RVI) information. https://www.moex.com/en/index/RVI  
+
+[9] Московская биржа. Индекс RVI. Методика расчета. https://www.moex.com/en/documents/6757  
+
+[10] Ma, F. “Oil futures market volatility: HAR-RV models with regime switching.” ScienceDirect. https://www.sciencedirect.com  
+
+[11] Dragomirescu-Gaina, C. “Markov Switching specification for the WTI-Brent spread.” HAL. https://hal.science  
+
+[12] Ruble, R., Powell, R. “The Brent-WTI spread revisited: A novel approach.” ScienceDirect. https://www.sciencedirect.com  
+
+[13] Endres, S., Stübinger, J. “A flexible regime switching model with pairs trading.” EconStor. https://www.econstor.eu  
+
+[14] Hudson & Thames. “Pairs trading with Markov Regime-Switching Model.” https://hudsonthames.org/pairs-trading-with-markov-regime-switching-model/  
+
+[15] Kanamura, T. et al. “A Profit Model for Spread Trading with an Application to Energy Futures.” KIT Working Paper. https://publikationen.bibliothek.kit.edu  
+
+[16] Hamilton, J. “A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle.” Econometrica, 1989. https://www.ssc.wisc.edu/~bhansen/718/Hamilton1989.pdf  
+
+[17] Killick, R., Fearnhead, P., Eckley, I. A. “Optimal detection of changepoints with a linear computational cost.” arXiv:1101.1438. https://arxiv.org/abs/1101.1438  
+
+[18] Ding, Z. “Regime-switching realized volatility models.” SSRN. https://papers.ssrn.com  
+
+[19] Liquidity regimes in futures markets. Office of Financial Research working paper. https://www.financialresearch.gov  
+
+[20] IMF Global Financial Stability Report – liquidity regimes and cyclical factors. https://www.imf.org  
+
+[21] Investopedia. “Bid-Ask Spread.” https://www.investopedia.com/terms/b/bid-askspread.asp  
+
+[22] Investopedia. “Roll Yield.” https://www.investopedia.com/terms/r/roll-yield.asp  
+
+[23] Investopedia. “Contango and Backwardation.” https://www.investopedia.com/terms/c/contango.asp  
+
+[24] Macrosynergy. “Commodity carry as a trading signal – Part 1.” https://macrosynergy.com/research/commodity-carry-as-a-trading-signal-part-1/  
+
+[25] SSGA. “Volatility Regimes and Spread Changes.” https://www.ssga.com  
+
+[26] RiskHub. “Regime-switching models and Value-at-Risk.” https://riskhub.nl  
+
+[27] Moscow Exchange. LQDT ETF Money Market Fund page. https://www.moex.com/en/funds/bpif/lqdt  
+
+[28] CBonds. “БПИФ Ликвидность (LQDT) profile.” https://cbonds.ru  
+
+[29] Moscow Exchange. Trading calendar 2026. https://www.moex.com/n94207  
+
+[30] Moscow Exchange. Calendar spreads – synthetic matching. https://www.moex.com/en/spreads  
+
+[31] Moscow Exchange. Historical RVI and derivatives data. https://www.moex.com/a3472  
+
+[32] Bank of Russia. RUONIA rates. https://www.cbr.ru/eng/hd_base/ruonia/  
+
+[33] Evidence from MOEX–CME Derivative Pairs, 2019–2026. SSRN. https://papers.ssrn.com  
+
+[34] Moscow Exchange. Historical data service – product description. https://www.moex.com/s205  
+
+[35] Moscow Exchange. ISS API documentation. https://iss.moex.com/iss/reference  
+
+[36] MOEX Derivatives Market overview. https://www.moex.com/en/markets/derivatives  
+
+[37] Carry Cost Rate Regimes and Futures Hedge Ratio Variation. MDPI. https://www.mdpi.com  
+
+[38] Oil Risk Premia under Changing Regimes. https://www.sciencedirect.com  
+
+[39] “Hidden Liquidity Regimes in Futures Markets.” SSRN. https://papers.ssrn.com  
+
+[40] “Regime-conditioned statistical mean reversion in intraday FX markets.” SSRN. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6087107

@@ -1,0 +1,662 @@
+# R11 — Free-Resource Feasibility, Reliability, and Later Setup Plan
+**Project:** Private MOEX Futures-Spread Pilot  
+**Author / Engine:** Desk Research & Infrastructure Architecture Review (Stage 2)  
+**Research Cutoff & Date:** 2026-10-22 (Context baseline: 2026-10-07)  
+**Scope:** Desk research, mathematical workload modeling, operational constraints, and proposed measurement plan ONLY. (Zero production deployment, zero VPS probing, zero port scanning).
+
+---
+
+## 1. Executive Summary & Foundational Architectural Decision
+
+### 1.1 The Operational Paradox and Architectural Bifurcation
+The objective of this investigation is to dimension and safeguard the execution environment for a private Moscow Exchange (MOEX) derivatives (FORTS) futures-spread trading pilot. The operational context presents a strict set of constraints:
+1. **Shared Low-Resource Host:** A single Virtual Private Server (VPS) with 1 vCPU, 1 GB RAM, 2 GB swap, and a 20 GB SSD running Ubuntu 24.04 LTS. This VPS currently hosts an active, business-critical VPN service (`x-ui` / Xray) and another scheduled workload.
+2. **Strict Background Budget:** An unverified, shared RAM budget of 250–350 MB.
+3. **Protected Production Services:** Network ports 22 (SSH), 443 (HTTPS/Xray Reality), and 20724 (3X-UI control panel), along with existing firewall and BBR kernel network tuning, must not be disrupted or modified.
+4. **Capital & Collateral Asymmetry:** A modest pilot allocation of RUB 30,000 (covering margin, variation margin buffers, and reserves) coexists on the **same broker account** at VTB with a core holding exceeding RUB 40,000,000 in the LQDT money market fund. Core LQDT collateral must never be silently encumbered, drawn upon, or treated as test capital.
+5. **Human Execution Dynamics:** Initial execution is manual via VTB (with reaction latencies spanning 3–90 minutes, typical median 5–15 minutes); potential future automation is targeted at BCS.
+6. **Zero-Cost Preference & Geopolitical Reality:** No foreign payment cards or foreign phone numbers are available, eliminating Western commercial cloud infrastructure (AWS, GCP, Azure, Hetzner, DigitalOcean).
+
+**The Core Decision:** To prevent catastrophic interference with the production VPN and guarantee deterministic operational reliability, the project architecture must be **strictly bifurcated into two distinct operational environments**:
+
+```
++-----------------------------------------------------------------------------------+
+|                           LOCAL WORKSTATION (MacBook Pro)                        |
+|  Hardware: 2.6 GHz 6-core Intel i7, 16 GB DDR4 RAM, AMD Radeon Pro 5300M (4 GB)   |
+|  Role: HEAVY RESEARCH ENGINE & ANALYTICAL WORKSTATION                             |
+|  - Historical multi-year backtesting & spread parameter optimization              |
+|  - Heavy analytical runtimes: Python 3.12, Polars, DuckDB, JupyterLab, SciPy      |
+|  - Dark-theme local research UI (Textual TUI / local Streamlit via localhost)     |
+|  - Ad-hoc offline news / text structuring via Gemini Flash API                    |
++-----------------------------------------------------------------------------------+
+                                        |
+                 Snapshots, Code & Virtual Ledger Exports
+                      (via SSH / SCP / Git Pull over Port 22)
+                                        v
++-----------------------------------------------------------------------------------+
+|                           REMOTE HOST (1 vCPU / 1 GB VPS)                         |
+|  Preserved Live Services: Xray / 3X-UI VPN (Ports 22, 443, 20724)                 |
+|  Role: LEAN SENTRY, DATA COLLECTOR & VIRTUAL LEDGER                               |
+|  - Memory Cap: Hard limit 180 MB RSS (systemd MemoryMax=180M), Steady-state <70MB |
+|  - Dedicated Daemon: Minimalist Python 3.12 (Standard Library + httpx + sqlite3)  |
+|  - Storage: Single-file SQLite 3 in WAL mode (retention-capped, bounded buffers)  |
+|  - Ingestion: MOEX ISS REST API (polite polling, 1-2 req/sec, caching)            |
+|  - Telemetry & UI: Telegram Bot API (Long Polling, Zero incoming ports, Dark UI)  |
+|  - Priority: Sentry throttled to Nice=15, CPUQuota=30%, OOMScoreAdjust=+500       |
++-----------------------------------------------------------------------------------+
+```
+
+### 1.2 Summary of Key Findings
+- **Workload Feasibility on VPS:** A continuous MOEX FORTS collection workload covering an EOD baseline of ~100–300 contracts and an intraday watchlist of 5–30 pairs (10–60 contracts at 15-minute intervals) generates only **~4.7 MB/day of raw JSON** and **~350 KB/day of structured tabular data**. When stored in SQLite WAL mode with point-in-time raw JSON staging tables pruned after 30 days, 5 years of historical futures data consumes **under 150 MB of disk space**, well within the 20 GB VPS disk limit.
+- **Memory Safety & Runtime Selection:** Running analytical dataframes (e.g. `pandas` or `polars`) on the VPS daemon is an anti-pattern; importing pandas alone consumes 45–65 MB RSS before allocating data. The continuous VPS daemon must be implemented in **vanilla Python 3.12 using standard library structures and SQLite** (steady-state RSS: 35–55 MB, peak RSS: ~85 MB) or a compiled Go binary (steady-state RSS: 15–25 MB). This leaves ample margin within the 250–350 MB shared budget.
+- **VPN Protection Guarantee:** Systemd cgroups v2 (`MemoryMax=180M`, `CPUQuota=30%`, `Nice=15`) and process scoring (`OOMScoreAdjust=500` for the pilot daemon vs `OOMScoreAdjust=-900` for `x-ui` and `sshd`) guarantee that even in a catastrophic runaway condition, the Linux OOM-killer will terminate the pilot collector while preserving VPN routing, SSH access, and network performance.
+- **Telegram Operational Bounds:** Telegram Bot API operates over outbound HTTPS long-polling (`getUpdates`), requiring **zero open incoming ports** and zero modification to firewall rules. Rate limits (1 msg/sec per private chat, 30 msg/sec global) comfortably exceed pilot requirements (<10 alerts/day). However, alert delivery does not equal trade execution; human reaction latency (median 5–15 min) necessitates signal expiration TTLs (15–30 min) and explicit price-band validation.
+- **Capital Governance & LQDT Protection:** The virtual ledger enforces automated circuit breakers: a Telegram warning at RUB 5,000 excess-curve drawdown; an automated action trigger at RUB 10,000 drawdown from high-water mark or cumulative LQDT shortfall of RUB 10,000 (suspending new entries and recommending position flattening); and a hard stop at RUB 15,000 shortfall. Emergency additional funding is strictly capped at RUB 15,000 gross (RUB 45,000 gross lifetime contribution) and restricted solely to de-risking open positions to flat.
+
+---
+
+## 2. Embedded Workload Dimensioning & Sensitivity Analysis
+
+### 2.1 Universe, Ingestion, and Sampling Boundaries
+The workload model is dimensioned from the stated planning ranges:
+- **Broad Futures Universe:** Tens to a few hundred active MOEX FORTS contracts across commodities (BR, NG, GOLD, SILV, PL, PA), equity indices (MIX, RTS), single stocks (SBER, GAZP, LKOH, GMKN), FX (Si, CNY), and interest rates (OFZ). For sizing, we evaluate $N \in [30, 100, 300]$ active contracts.
+- **Continuous Watchlist:** 5 to 30 candidate pairs, representing $K \in [10, 60]$ underlying individual contracts.
+- **Collection Intervals:**
+  1. *Baseline EOD:* 1 daily pull per contract post-clearing (19:05 MSK), capturing Open, High, Low, Close, Volume, Open Interest (OI), Settlement Price, and Number of Trades.
+  2. *Watchlist Intraday:* Snapshots taken during the active trading session (09:00–23:50 MSK = 14.83 trading hours). Evaluated at 60-minute intervals (15 bars/day) and 15-minute intervals (59 bars/day).
+- **Trading Calendar:** Approximately 250 statutory trading days per calendar year.
+
+### 2.2 Mathematical Sizing Model
+We establish explicit mathematical formulas for network transfer, storage growth, memory consumption, and CPU processing time:
+
+1. **Network Ingestion Volume per Trading Day ($V_{\text{net}}$):**
+   $$V_{\text{net}} = \left( N \cdot S_{\text{eod\_raw}} \right) + \left( K \cdot B_{\text{intraday}} \cdot S_{\text{bar\_raw}} \right)$$
+   Where:
+   - $S_{\text{eod\_raw}} \approx 1.5\text{ KB}$ (MOEX ISS JSON response per contract with `iss.meta=off`).
+   - $S_{\text{bar\_raw}} \approx 1.2\text{ KB}$ (15-min or hourly candle JSON snippet from MOEX ISS).
+   - $B_{\text{intraday}} \in \{15, 59\}$ bars per contract per day.
+
+2. **Storage Footprint Growth ($V_{\text{disk}}$):**
+   $$V_{\text{disk}}(t) = V_{\text{structured}}(t) + V_{\text{staging}}(t)$$
+   - *Structured Relational Store (SQLite):* Normalized record size $S_{\text{row}} \approx 80\text{ bytes}$ (timestamp, secid, open, high, low, close, vol, oi, settlement, flags) plus B-Tree indexing overhead (~30 bytes/row) $\approx 110\text{ bytes/row}$.
+   - *Raw JSON Staging Store:* Raw JSON payload cached for reproducibility, bounded by a 30-day retention window ($T_{\text{ret}} = 30\text{ days}$).
+   $$V_{\text{staging}} = 30 \times V_{\text{net\_day}}$$
+
+3. **Memory Footprint (Resident Set Size, RSS):**
+   $$\text{RSS}_{\text{total}} = \text{RSS}_{\text{runtime\_base}} + \text{RSS}_{\text{engine\_cache}} + \text{RSS}_{\text{batch\_buffer}}$$
+   Where:
+   - $\text{RSS}_{\text{runtime\_base}}$ is the base interpreter footprint (~30 MB for CPython 3.12, ~12 MB for Go).
+   - $\text{RSS}_{\text{engine\_cache}}$ is the SQLite connection page cache (`PRAGMA cache_size = -2000` $\approx 2\text{ MB}$).
+   - $\text{RSS}_{\text{batch\_buffer}}$ is the in-flight JSON decoding and validation buffer ($< 5\text{ MB}$ for bounded batches of 10 contracts).
+
+### 2.3 Workload Sensitivity Matrix
+The following matrix compares three operational configurations against resource limits:
+- **Profile A (Conservative / Minimalist):** 30 contracts EOD only; watchlist of 5 pairs (10 contracts) sampled hourly.
+- **Profile B (Baseline Recommended):** 100 contracts EOD; watchlist of 15 pairs (30 contracts) sampled hourly.
+- **Profile C (Stress / Maximum Planning Range):** 300 contracts EOD; watchlist of 30 pairs (60 contracts) sampled at 15-minute intervals.
+
+| Operational Dimension | Profile A (Low) | Profile B (Baseline) | Profile C (Stress Limit) | VPS Hard Ceiling / Threshold |
+| :--- | :--- | :--- | :--- | :--- |
+| **Active Contracts ($N$)** | 30 | 100 | 300 | ~350 total FORTS contracts |
+| **Watchlist Pairs ($K/2$)** | 5 pairs (10 contracts) | 15 pairs (30 contracts) | 30 pairs (60 contracts) | Bounded by user focus (5–30) |
+| **Intraday Interval** | Hourly (15 bars/day) | Hourly (15 bars/day) | 15-Minute (59 bars/day) | Sub-minute not permitted free |
+| **Daily Ingestion Requests** | 30 (EOD) + 150 (intra) = 180 | 100 (EOD) + 450 (intra) = 550 | 300 (EOD) + 3,540 (intra) = 3,840 | Max 2 req/sec to MOEX ISS |
+| **Daily Network Transfer** | ~225 KB / day | ~690 KB / day | ~4.70 MB / day | Unmetered VPS / < 1 GB/mo |
+| **Monthly Network Transfer** | ~4.95 MB / month | ~15.2 MB / month | ~103.4 MB / month | < 0.1% of typical VPS band |
+| **Daily SQLite Ingestion** | 180 rows (~19.8 KB) | 550 rows (~60.5 KB) | 3,840 rows (~422 KB) | Zero disk write pressure |
+| **1-Year Structured Disk** | ~4.95 MB | ~15.1 MB | ~105.5 MB | 20 GB SSD capacity |
+| **5-Year Structured Disk** | ~24.8 MB | ~75.6 MB | ~527.5 MB | < 3% of available 20 GB SSD |
+| **30-Day Raw JSON Staging** | ~6.75 MB | ~20.7 MB | ~141.0 MB | Pruned automatically |
+| **Steady-State RAM (RSS)** | 35 MB (Python) / 14 MB (Go)| 42 MB (Python) / 18 MB (Go)| 58 MB (Python) / 24 MB (Go)| **180 MB cgroup limit** |
+| **Peak Batch RAM (RSS)** | 52 MB (Python) / 22 MB (Go)| 68 MB (Python) / 28 MB (Go)| 85 MB (Python) / 38 MB (Go)| **180 MB cgroup limit** |
+| **Daily CPU Execution Time** | < 12 seconds / day | < 35 seconds / day | < 190 seconds / day | 1 vCPU shared with VPN |
+| **Peak Single-Core CPU %** | 8% for 0.5s burst | 12% for 1.2s burst | 18% for 2.5s burst | **CPUQuota=30% cap** |
+
+### 2.4 Ingestion Architecture: Bounded Batches, Lineage, and Export
+To guarantee that data collection never starves the CPU or triggers memory spikes:
+1. **Polite Sequential Ingestion:** MOEX ISS does not require concurrent multi-threaded hammering. Requests are dispatched sequentially over a persistent HTTP/1.1 connection with an intentional inter-request sleep of $0.5\text{–}1.0\text{ second}$. A full batch of 60 watchlist contracts takes ~45 seconds, well within the 15-minute bar window, consuming $< 2\%$ average CPU.
+2. **Point-in-Time Data Lineage:** Every ingested bar is stored with metadata:
+   - `retrieved_at` (UTC timestamp of HTTP response).
+   - `source_url` (MOEX ISS query path with parameters).
+   - `http_etag` / `last_modified` (cache validation headers).
+   - `payload_hash` (SHA-256 hash of the raw JSON snippet).
+3. **Compaction and Checkpointing:** SQLite operates in WAL mode (`PRAGMA journal_mode = WAL`). A passive checkpoint is executed every 1,000 pages, with a mandatory scheduled full checkpoint (`PRAGMA wal_checkpoint(TRUNCATE)`) executed during the overnight market closure at 03:00 MSK to keep the WAL file under 2 MB.
+4. **Portable Research Outputs:** The SQLite database file (`/opt/moex-spread-pilot/data/market_data.db`) is fully self-contained. The local MacBook pulls periodic incremental copies via `rsync -avz -e ssh` or `scp` over port 22. Analytical pipelines on the MacBook convert tables into Apache Parquet format using DuckDB/Polars for intensive vectorized modeling.
+
+---
+
+## 3. Lightweight Runtime, Storage, UI Alternatives & Integration Seams
+
+### 3.1 Runtime Alternatives: Benchmarking Operational Trade-offs
+
+| Criterion | CPython 3.12 (Lean StdLib + httpx) | Compiled Go (Go 1.22+) | Node.js (v20 LTS) | CPython + Pandas/Polars (Anti-pattern) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Steady-State RSS** | 38–55 MB | **14–22 MB** | 65–95 MB | 180–320 MB (FATAL ON VPS) |
+| **Binary / Deploy Size** | Interpreter already in Ubuntu 24.04 | Single static binary (~12 MB) | Node runtime (~75 MB) | Virtualenv > 450 MB |
+| **Concurrency Model** | `asyncio` (event loop) | Goroutines (preemptive scheduler)| libuv event loop | Heavy GIL / thread overhead |
+| **Development Velocity** | High; native Python parity with research | Medium; statically typed, verbose | Medium; asynchronous JavaScript | High in research, toxic in prod |
+| **Dependency Burden** | Minimal (`httpx`, `aiosqlite`) | Zero external runtime dependencies | Large (`node_modules`) | Extreme (C-extensions, OpenBLAS) |
+| **Verdict for VPS Sentry**| **RECOMMENDED PRIMARY** | **STRONG SECONDARY / ALTERNATIVE** | Not recommended | **STRICTLY REJECTED ON VPS** |
+
+**Analytical Conclusion on Runtime:**  
+Ubuntu 24.04 LTS includes Python 3.12 as the system default. A dedicated virtual environment containing only `httpx` (or `aiohttp`) and using the built-in `sqlite3` module provides the optimal balance between rapid iteration, research code portability, and low resource overhead. Go is technically superior in memory footprint (18 MB vs 45 MB), but Python 3.12 operating under strict systemd memory caps is well within the 180 MB safety threshold. Dataframe libraries (`pandas`, `polars`) are **strictly banned** from the VPS collector.
+
+### 3.2 Storage Alternatives: Durability, Consistency, and Migrations
+
+| Engine | Storage Architecture | Memory Footprint | Durability & ACID | Schema Migration Tooling | VPS Viability |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **SQLite (WAL Mode)** | Single file on SSD; append-only WAL | 2–5 MB page cache | Full ACID; atomic commits; crash-safe | PRAGMA `user_version` or `yoyo-migrations` | **OPTIMAL (Zero daemon overhead)** |
+| **DuckDB** | Single file; vectorized columnar | 35–80 MB minimum | ACID; optimized for bulk OLAP | Embedded schema evolution | Excellent for MacBook; heavy for VPS |
+| **Flat Parquet Files** | Partitioned files (date/contract) | In-memory write buffers | Non-transactional; no atomic updates | Partition re-writing required | Storage export format, not live OLTP |
+| **PostgreSQL 16** | Multi-process relational daemon | 80–160 MB base RSS | Full enterprise ACID | Flyway / Alembic / Sqitch | Exceeds shared VPS memory budget |
+
+**SQLite WAL Configuration Best Practices:**
+To ensure zero corruption and immediate concurrency between the collector thread, the virtual ledger, and read queries:
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;       -- Safe in WAL mode; eliminates fsync latency spikes
+PRAGMA busy_timeout = 5000;         -- 5-second lock queue to prevent "database is locked"
+PRAGMA cache_size = -2000;          -- 2 MB memory cache limit
+PRAGMA temp_store = MEMORY;         -- Keep temporary indices off disk
+PRAGMA foreign_keys = ON;           -- Enforce relational integrity
+```
+*Schema Migrations:* Managed via an integer version stored in `PRAGMA user_version`. On startup, the daemon checks `PRAGMA user_version;`, executing sequential SQL upgrade scripts in an atomic transaction if updates are required.
+
+### 3.3 UI Architecture: The Dark-Only Constraint and Port Protection
+The prompt specifies a future dark-only UI, but the VPS environment strictly prohibits public dashboard exposure and requires preserving port 443 (Xray VPN) and 20724 (3X-UI).
+
+```
++-----------------------------------------------------------------------------------+
+|                           UI & TELEMETRY ARCHITECTURE                             |
++-----------------------------------------------------------------------------------+
+                                        |
+      +---------------------------------+---------------------------------+
+      |                                                                   |
+      v                                                                   v
+[ REMOTE TACTICAL UI: Telegram Bot ]                      [ LOCAL STRATEGIC UI: MacBook ]
+- Zero open incoming ports on VPS                        - Runs strictly on localhost (127.0.0.1)
+- Long polling over outbound HTTPS (443)                  - Connects via SSH Tunnel (Port 22)
+- Monospace ASCII dark-theme cards                       - Rich interactive dark UI options:
+- Inline keyboard buttons:                                  * Option 1: Textual Python TUI (Terminal)
+  [/status] [/risk] [/pairs] [/flatten]                    * Option 2: Streamlit Dark Mode
+- Latency: 0.5 - 2.0 seconds                              * Option 3: Plotly / Dash Dark Dashboard
+- Immediate notifications & alert ACK                     - Deep visualization of historical spreads
+```
+
+1. **Remote Tactical UI (Headless VPS Sentry):** Telegram Bot serves as the primary operational UI. Since Telegram natively supports dark mode across macOS, iOS, and Android, formatted monospace code blocks (MarkdownV2) provide dark-themed status cards, spread tracking, risk metrics, and one-tap acknowledgment buttons.
+2. **Local Analytical UI (MacBook Pro):** When deep visualization of spread histories or parameter sweeps is required, the user runs a local dark-theme dashboard on macOS:
+   - *Option A (Lightest):* A terminal-based Textual Python TUI displaying live terminal charts.
+   - *Option B (Analytical):* A Streamlit application configured with `.streamlit/config.toml` (`base="dark"`) querying a local replica of the SQLite database.
+
+### 3.4 Stable Integration Seams and Broker API Abstraction
+To accommodate the evolution from manual VTB execution to automated BCS execution (or international brokers) without re-architecting the core engine, the design enforces three decoupled interfaces:
+
+```
++-----------------------------------------------------------------------------------+
+|                                 CORE SENTRY ENGINE                                |
++-----------------------------------------------------------------------------------+
+           |                                                      |
+           v                                                      v
+[ Interface: MarketDataProvider ]                        [ Interface: ExecutionRouter ]
++-------------------------------+                        +----------------------------+
+| + get_current_quote(secid)    |                        | + submit_order(order_spec) |
+| + get_historical_candles(...) |                        | + cancel_order(order_id)   |
+| + check_market_status()       |                        | + get_position_state()     |
++-------------------------------+                        +----------------------------+
+           |                                                      |
+     +-----+-----+                                          +-----+-----+
+     |           |                                          |           |
+     v           v                                          v           v
+[ MOEX ISS ] [ BCS Trade API ]                   [ VirtualLedger ]  [ BCS Trade API ]
+(Stage 1-4)  (Stage 5+ Data)                     (Manual VTB pilot) (Stage 5+ Auto)
+```
+
+- **Seam 1 — Market Data Provider (`MarketDataProvider`):**
+  - *Stage 1–4 Implementation:* `MoexIssProvider` querying public endpoints at `iss.moex.com` with rate limiting and 15-minute delayed data handling.
+  - *Stage 5 Implementation:* `BcsMarketDataProvider` utilizing BCS Trade API REST/WebSocket candles endpoint (`/trade-api-market-data-connector/api/v1/candles-chart`).
+- **Seam 2 — Execution Router (`ExecutionRouter`):**
+  - *Stage 1–4 Implementation (Manual VTB):* `VirtualExecutionRouter`. Emits signals to Telegram, generates unique virtual order IDs, tracks simulated fills based on subsequent market quotes, logs user confirmation latency, and manages the virtual ledger.
+  - *Stage 5 Implementation (Automated BCS):* `BcsTradeApiRouter`. Implements OAuth 2.0 token refreshes (90-day tokens), communicates with `/trade-api-bff-operations/api/v1/orders`, and handles HTTP 429 backoff headers.
+
+---
+
+## 4. Telegram Bot API: Quotas, Delivery Reliability & Human Latency
+
+### 4.1 Quotas, Limits, and Financial Costs (2026 Verification)
+- **Cost:** Free. Bots creating private chats or small operational groups do not incur fees. (Telegram Paid Broadcasts introduced in API 7.11+ charge 0.1 Stars/message only for mass commercial broadcasts exceeding 30 msg/sec).
+- **Core Documented Rate Limits:**
+  - *Single Private Chat:* Approximately 1 message per second. Short bursts of 2–3 messages are tolerated; sustained transmission triggers HTTP 429 with a mandatory `retry_after` parameter.
+  - *Group Chat:* 20 messages per minute.
+  - *Global Broadcaster Ceiling:* 30 messages per second across all chats.
+  - *Message Payload Limits:* 4,096 UTF-8 characters for text; 1,024 UTF-8 characters for media captions.
+- **Payload Design:** Spread signals and risk summaries fit well within 600–1,200 characters, requiring zero multi-part message splitting.
+
+### 4.2 Security, Access Control & Privacy
+1. **Outbound-Only Communication (Long Polling):** The daemon uses Telegram's `getUpdates` method with a 30-second timeout. This is an outbound HTTPS request to `api.telegram.org:443`. No incoming ports are opened, ensuring **zero attack surface** on the VPS.
+2. **Strict Identity Whitelisting:** Bots cannot initiate contact with users. The operator must initiate communication by sending `/start`. The daemon enforces strict authorization in software:
+   ```python
+   # Pseudocode: Mandatory Recipient Whitelist Guard
+   AUTHORIZED_USER_ID = int(os.environ["TELEGRAM_AUTHORIZED_USER_ID"])
+   
+   def on_update_received(update):
+       sender_id = update.message.from_user.id
+       if sender_id != AUTHORIZED_USER_ID:
+           logger.warning(f"Unauthorized access attempt from Telegram ID {sender_id}. Dropping.")
+           return  # Silent drop; zero disclosure of bot existence or system state
+   ```
+3. **Privacy of Financial Metadata:**
+   - Under no circumstances are real broker account numbers, full login credentials, or absolute core collateral values (> RUB 40,000,000) sent over Telegram.
+   - All alert notifications report relative or pilot-bounded figures: e.g., *"Pilot Drawdown: -RUB 1,250 (-4.17% of RUB 30k test allocation) | Core Collateral: SECURE / UNTOUCHED"*.
+
+### 4.3 Delivery Dynamics, Deduplication, and Network Drops
+Telegram HTTP POST requests can fail due to transient network drops, TLS timeouts, or MOEX VPS routing hiccups. Naive retries risk spamming the operator with duplicate trade alerts:
+- **Idempotency Keys & Deduplication Cache:** Every alert is assigned an internal UUID and state hash (e.g., `sig_SiM6_CNYM6_20261022_110000`). If a network timeout occurs during `sendMessage`, the daemon checks its local delivery journal.
+- **Message Editing Pattern:** Instead of firing new messages for incremental quote updates, the daemon updates existing status cards using `editMessageText` (limited to 1 edit/sec per message). This keeps the chat history clean and eliminates noise.
+- **Exponential Backoff:** On receiving an HTTP 429 response, the daemon parses the `parameters.retry_after` JSON field, sleeps for the designated interval $+ 0.5\text{ seconds}$, and resumes transmission without dropping the message.
+
+### 4.4 The Human Execution Gap: Alert vs Action vs Market Fill
+In algorithmic trading systems, signal generation is assumed to execute in milliseconds. In this project's manual execution phase at VTB, there is an unavoidable human latency distribution:
+- **Observed Manual Latency:** 3 to 90 minutes; typical median is **5 to 15 minutes**.
+- **Market Degradation Risk:** Futures spreads are dynamic. Over a 15-minute delay, the spread price can drift significantly, invalidating the economic rationale or worsening the entry basis.
+- **Signal Specification & Expiration (TTL):** Every spread signal emitted by the sentry daemon must include an explicit validity envelope:
+  - `Signal Timestamp`: 2026-10-22 11:15:00 MSK
+  - `Recommended Entry Spread`: -135 to -125 pts (Current: -130 pts)
+  - `Adverse Price Limit (Invalidation)`: -120 pts
+  - `Time-to-Live (TTL)`: 20 minutes (Expires 11:35:00 MSK)
+- **Legging Risk (Execution Risk on Leg 2):** When the operator manually places two separate limit orders in the VTB app or QUIK terminal, the risk exists that Leg 1 (e.g. Long Si) fills while Leg 2 (e.g. Short CNY) does not. The sentry bot provides a dedicated interactive check: `/legged <secid> <price>` to compute immediate re-balancing adjustments or emergency flattening instructions.
+
+### 4.5 Alert Prioritization and Resource Starvation Defense
+A common flaw in co-located monitoring scripts is that a heavy data ingestion batch or database lock freezes the alert loop.
+- **Architectural Defense:** The risk monitoring and alert loop runs in an independent, asynchronous task with its own dedicated SQLite read connection (`PRAGMA busy_timeout = 5000`).
+- If an ingestion pull from MOEX ISS hangs or takes 40 seconds to process, the risk sentry continues evaluating stop-loss rules and heartbeat timers every 5 seconds, completely unblocked.
+
+---
+
+## 5. Operational Failure Budget, Resilience & Safe Shutdown
+
+### 5.1 Failure Mode Taxonomy & Autonomous Defenses
+
+```
++-----------------------------------------------------------------------------------+
+|                        OPERATIONAL FAILURE BUDGET & DEFENSES                      |
++-----------------------------------------------------------------------------------+
+   |
+   +---> PROCESS CRASH / EXCEPTION
+   |     * Systemd auto-restart (Restart=on-failure, RestartSec=10)
+   |     * Burst rate limiting (StartLimitBurst=5 within 300s)
+   |
+   +---> STALE MARKET DATA / MOEX ISS DROP
+   |     * Heartbeat watchdog: >25 min without quotes during trading hours triggers alert
+   |     * Calendar & clearing session awareness: auto-suppressed at 14:00 & 18:50 MSK
+   |
+   +---> DISK PRESSURE (20 GB SSD)
+   |     * Logrotate: daemon logs capped at 10 MB x 3 rotations
+   |     * Staging table pruning: raw JSON deleted after 30 days
+   |     * Hard Stop: ingestion halts immediately if free disk < 1.5 GB
+   |
+   +---> MEMORY PRESSURE / OOM THREAT
+   |     * Systemd cgroups v2: MemoryMax=180M, MemoryHigh=140M
+   |     * OOM Score: Sentry = +500 (first victim), x-ui/VPN = -900 (protected)
+   |
+   +---> CAPITAL DRAWDOWN & COLLATERAL PROTECTION
+   |     * Drawdown Warning: RUB 5,000 excess curve drawdown
+   |     * Action Trigger: RUB 10,000 drawdown or shortfall -> Halt & flatten
+   |     * Hard Cap: RUB 15,000 outer shortfall -> Permanent shutdown
+   |     * Emergency Injection: Max RUB 15,000 gross; de-risking only
++-----------------------------------------------------------------------------------+
+```
+
+### 5.2 Exchange Session Awareness & Clearing Windows
+MOEX FORTS operates on a strict schedule. Stale-data detection must not generate false alarms during expected market pauses:
+- **Morning Session:** 09:00 – 10:00 MSK (Pre-market auction 08:50–09:00).
+- **Day Main Session:** 10:00 – 14:00 MSK.
+- **Intermediate Clearing Session (Quotes Frozen):** **14:00 – 14:05 MSK**. (No trading; mark-to-market variation margin calculated).
+- **Day Main Session (Continued):** 14:05 – 18:50 MSK.
+- **Evening Clearing Session (Quotes Frozen, Daily Settlement):** **18:50 – 19:05 MSK**. (Trading halts; full cash settlement, variation margin debited/credited, margin requirements updated).
+- **Evening Additional Session:** 19:05 – 23:50 MSK.
+- **Overnight Market Closure:** 23:50 – 08:50 MSK (plus weekends and Russian statutory public holidays).
+*Heartbeat Rule:* Stale-quote watchdog triggers if no updates arrive for **> 25 minutes**, but is programmatically **suspended** between 14:00–14:06, 18:49–19:06, overnight (23:50–08:55 MSK), and on non-trading days defined by the MOEX trading calendar table.
+
+### 5.3 Swap Pressure, Memory Capping & Kernel OOM Protection
+Swapping on a 1 GB VPS degrades disk I/O and creates severe latency spikes for the Xray VPN proxy.
+1. **Linux Memory Cgroup (cgroups v2):** Implemented in the systemd service file:
+   - `MemoryHigh=140M`: When memory reaches 140 MB, the kernel aggressively throttles the process and reclaims page caches.
+   - `MemoryMax=180M`: If memory breaches 180 MB, the kernel terminates the daemon immediately without affecting other services.
+   - `MemorySwapMax=50M`: Binds the maximum allowable swap usage, preventing runaway swap thrashing.
+2. **OOM Score Adjustment Hierarchy:**
+   - Linux kernel assigns an Out-Of-Memory score from -1000 to +1000.
+   - `sshd.service`: `OOMScoreAdjust=-1000` (Never kill SSH).
+   - `x-ui.service` / Xray: `OOMScoreAdjust=-900` (Protect VPN at all costs).
+   - `moex-sentry.service`: `OOMScoreAdjust=+500` (Sacrificial process; killed first if total system memory is exhausted).
+
+### 5.4 Clock Drift and Session Synchronization
+Futures spread calculations depend on accurate timestamps across individual legs.
+- Ubuntu 24.04 uses `systemd-timesyncd` by default.
+- If clock drift exceeds 1.0 second, bar aggregation may misalign. The preflight check verifies NTP synchronization via `timedatectl status`.
+
+### 5.5 Virtual Ledger Integrity, Replay Safety & State Restoration
+The virtual ledger records all virtual transactions, margin allocations, cash balances, and mark-to-market valuation events.
+- **Append-Only Event Sourcing:** The ledger uses an append-only table `virtual_ledger_events`:
+  - `event_id` (auto-incrementing integer).
+  - `event_type` (`SIGNAL_FIRED`, `USER_ORDER_INTENT`, `FILL_SIMULATED`, `MTM_CLEARING`, `EMERGENCY_DEPOSIT`, `CIRCUIT_BREAKER_HALT`).
+  - `event_payload` (JSON string detailing prices, volumes, slippage).
+  - `cumulative_pnl` (running total in RUB).
+  - `excess_over_lqdt` (performance relative to matched LQDT counterfactual).
+  - `event_hash` (HMAC-SHA256 linking to the previous record hash, guaranteeing tamper-evident auditability).
+- **Crash Recovery & Replay:** On daemon restart after an ungraceful crash, the engine reads the last confirmed checkpoint and replays all events from `virtual_ledger_events`, reconstructing the exact position and risk state in $< 200\text{ milliseconds}$.
+
+### 5.6 Project Capital Governance & LQDT Safeguards
+The project features a severe capital asymmetry: a RUB 30,000 pilot operating on the same account as an LQDT position exceeding RUB 40,000,000.
+
+| Level / Trigger | Threshold (RUB) | Automated System Action | Operational Mandate |
+| :--- | :--- | :--- | :--- |
+| **Drawdown Warning** | **-RUB 5,000** excess-curve drawdown | Telegram Alert (Yellow) | Review spread cointegration; check execution slippage. |
+| **Action Trigger** | **-RUB 10,000** shortfall vs LQDT or from HWM | Telegram Alert (Red); Halt Signal Generation | **Mandatory Action:** Cease new risk; recommend immediate flattening of open spreads. |
+| **Outer Hard Boundary**| **-RUB 15,000** cumulative shortfall vs LQDT | Telegram Critical Alarm; Complete System Lockdown | **Formal Shutdown:** De-risk completely to 100% cash; pilot terminated. |
+| **Formal Review** | **90 Calendar Days** elapsed | Comprehensive Performance Report | Review without resetting cumulative losses. |
+| **Emergency Funding Cap**| **Max RUB 15,000 gross** (Max gross total: RUB 45,000) | Requires explicit human approval confirmation | **Orderly liquidation only;** never fund fresh exposure or averaging down. |
+| **Core Collateral Leak**| Any broker use of core LQDT for margin | Immediate Priority-1 Telegram Alert | **Security Incident:** Counts against emergency cap; halt pilot immediately. |
+
+---
+
+## 6. Geopolitical Realities, Service Terms & Ephemeral Cloud Assessment
+
+### 6.1 Payment Barriers, Sanctions, and Host Jurisdiction
+1. **Financial Restrictions:** The operator lacks foreign payment cards and foreign phone numbers. This precludes:
+   - Direct subscriptions to Western cloud providers (AWS, Google Cloud, Microsoft Azure, Hetzner, DigitalOcean, Vultr).
+   - Foreign SMS verification systems required for cloud registration.
+2. **Infrastructure Placement:**
+   - The current VPS is already provisioned and paid for via accessible channels.
+   - The provider terms must be respected: running a polite Python data collector querying public exchange endpoints (MOEX ISS) is standard web traffic and complies with Acceptable Use Policies (AUP). Mass scanning, penetration testing, and abusive scraping are prohibited.
+
+### 6.2 Evaluation of Free Ephemeral Cloud Services
+
+| Service Platform | Architecture / Availability | Critical Limitation / Failure Mode | Viability for 24/7 Monitoring Sentry |
+| :--- | :--- | :--- | :--- |
+| **Hugging Face Spaces** | Ephemeral container; CPU/Docker | **Sleeps after 48h of user inactivity** on free tier; dynamic IP changes; TOS bans automated financial trading daemons. | **UNSUITABLE for 24/7 sentry.** Useful only for one-off offline research notebooks. |
+| **Google Colab** | Interactive Jupyter Notebook | **Hard disconnect after 12h or browser close;** idle timeout (15–90 min); TOS explicitly forbids background daemons. | **UNSUITABLE for 24/7 sentry.** Excellent for heavy offline research on MacBook. |
+| **GitHub Actions** | Ephemeral CI/CD runners | 6-hour job runtime cap; 2,000 min/mo free quota; shared IP ranges aggressively rate-limited/blocked by MOEX anti-DDoS. | **UNSUITABLE for continuous monitoring.** Violates GitHub TOS as continuous runner. |
+| **Google Gemini Flash API** | Cloud LLM API (Free Tier) | 15 Requests/Min (RPM); prompts logged for model training on free tier; potential regional IP blocks from Russian networks. | **UNSUITABLE for market loops.** Safe only for offline text/news analysis on MacBook. |
+
+*Strategic Conclusion:* None of the free third-party cloud compute platforms can replace the 24/7 VPS for continuous monitoring. The 24/7 sentry **must live on the existing VPS**, while heavy computing is handled locally on the MacBook Pro.
+
+### 6.3 MOEX ISS Service Terms & Rate Limit Governance
+- **Service Nature:** The MOEX Informational-Statistical Server (`iss.moex.com`) is a public exchange service providing open access to market directories, historical settlement prices, and 15-minute delayed market quotes.
+- **Unwritten Rate Limit Policy:** MOEX does not publish an API token system for the public ISS tier, but community empirical evidence and gateway behavior show that requests exceeding ~2–5 requests/sec trigger temporary IP blacklisting (HTTP 429 or connection resets).
+- **Compliance Rules:**
+  - Limit request frequency to $\le 1\text{ req/sec}$.
+  - Append `iss.meta=off` to all queries to reduce network payload by ~50%.
+  - Maintain a local SQLite cache for all static reference data (contract specifications, step sizes, tick values).
+
+---
+
+## 7. Required Deliverable 1: Resource-Budget Alternatives & Benchmarking Matrix
+
+### 7.1 Resource Budget Alternatives Matrix
+
+| Metric / Resource Dimension | Existing VPS Baseline (VPN + Workload) | Tier A: Python StdLib + SQLite (Recommended) | Tier B: Compiled Go Binary + SQLite | Tier C: Python + Pandas/Polars (REJECTED) | Hard Capacity Boundary |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Steady-State RAM (RSS)** | 320–420 MB | **+38–55 MB** | **+14–22 MB** | +180–320 MB | **180 MB cgroup cap** |
+| **Peak Ingestion RAM (RSS)** | 450–520 MB (transient)| **+68–85 MB** | **+28–38 MB** | +450–700 MB (OOM Risk) | **180 MB cgroup cap** |
+| **CPU Utilization (Idle)** | 1–3% (VPN encryption) | **+0.1–0.3%** | **+0.05–0.1%**| +0.5–1.0% | 1 vCPU shared |
+| **CPU Burst (Ingestion)** | 10–25% (traffic spike)| **+8–12% for 1.5s** | **+3–5% for 0.4s** | +60–95% for 8–15s | **CPUQuota=30% cap** |
+| **Storage (Base Install)** | ~12 GB (OS, logs, x-ui) | **~35 MB** (venv + code) | **~14 MB** (single binary) | ~480 MB (heavy wheels)| 20 GB SSD (~7 GB free) |
+| **Storage Growth (Year 1)** | ~500 MB (system logs) | **~15 MB** (SQLite WAL) | **~15 MB** (SQLite WAL) | ~15 MB (SQLite WAL) | < 2% of free disk |
+| **Disk I/O Write Rate** | Burst on VPN logging | **< 40 KB/s burst** | **< 30 KB/s burst** | > 5 MB/s (swapping) | Preserves SSD lifespan |
+| **Network Bandwidth** | Active VPN traffic | **~0.7 MB / day** | **~0.7 MB / day** | ~0.7 MB / day | Zero measurable impact |
+
+### 7.2 Later Benchmark Matrix (Proposed Measurement Plan)
+*Notice: These commands are proposed for execution during Stage 3 preflight checks. They have NOT been executed during this desk research phase.*
+
+```bash
+# ==============================================================================
+# STAGE 3 BENCHMARK & HEADROOM MEASUREMENT SCRIPT (PROPOSED — DO NOT RUN NOW)
+# ==============================================================================
+
+# 1. MEASURE UNALLOCATED MEMORY HEADROOM & CACHE RECLAIMABILITY
+free -m
+vmstat -s -S M
+cat /proc/meminfo | grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree"
+
+# 2. PROFILE EXISTING CPU & MEMORY CONSUMERS (VPN / XRAY / 3X-UI)
+ps -eo pid,ppid,cmd,%mem,%cpu,rss --sort=-rss | head -n 15
+systemd-cgtop -n 1
+
+# 3. VERIFY DISK CAPACITY, INODES & MOUNT OPTIONS
+df -h /
+df -i /
+
+# 4. AUDIT NETWORK LISTENERS & PRESERVED PORTS (Must show 22, 443, 20724 ONLY)
+ss -tulpn | grep -E "(:22|:443|:20724)"
+
+# 5. BENCHMARK MOEX ISS LATENCY & HTTP ETAG SUPPORT (Single polite curl probe)
+curl -s -w "\nHTTP_STATUS: %{http_code} | TIME_TOTAL: %{time_total}s | SPEED_DOWNLOAD: %{speed_download} B/s\n" \
+     -H "Accept-Encoding: gzip" \
+     "https://iss.moex.com/iss/engines/futures/markets/forts/securities.json?iss.meta=off" \
+     -o /dev/null
+
+# 6. BENCHMARK LOCAL SQLITE WAL WRITE SPEED & RAM CONSUMPTION
+python3 -c "
+import sqlite3, time, os, psutil
+p = psutil.Process()
+start_mem = p.memory_info().rss / 1024 / 1024
+con = sqlite3.connect('/tmp/test_benchmark.db')
+con.execute('PRAGMA journal_mode = WAL;')
+con.execute('PRAGMA synchronous = NORMAL;')
+con.execute('CREATE TABLE t (id INTEGER PRIMARY KEY, ts REAL, val REAL);')
+t0 = time.time()
+con.executemany('INSERT INTO t (ts, val) VALUES (?, ?)', [(time.time(), i*1.5) for i in range(10000)])
+con.commit()
+dt = time.time() - t0
+peak_mem = p.memory_info().rss / 1024 / 1024
+con.close()
+os.remove('/tmp/test_benchmark.db')
+print(f'SQLite 10k rows: {dt:.3f}s | Base RAM: {start_mem:.1f}MB | Peak RAM: {peak_mem:.1f}MB')
+"
+```
+
+### 7.3 Go / No-Go Decision Gate Criteria
+
+| Evaluation Dimension | Metric / Parameter | GO Threshold | NO-GO Barrier (Halt Setup) |
+| :--- | :--- | :--- | :--- |
+| **Available Memory Headroom** | `MemAvailable` during peak VPN load | $\ge 250\text{ MB}$ | $< 180\text{ MB}$ (Immediate OOM risk) |
+| **Disk Space Availability** | Free SSD space on `/` | $\ge 3.0\text{ GB}$ | $< 1.5\text{ GB}$ (Disk saturation risk) |
+| **Swap Activity** | `si` / `so` in `vmstat 1 10` | $0\text{ KB/s}$ sustained | Active continuous swapping |
+| **Port Conflicts** | Preserved ports (22, 443, 20724) | Zero conflict; unshared | Any attempt to bind to 443/20724 |
+| **MOEX ISS Reachability** | HTTP status from VPS IP | 200 OK ($< 1.5\text{s}$) | 403 Forbidden / 429 Blacklisted |
+| **Telegram API Reachability** | Outbound HTTPS to `api.telegram.org` | 200 OK ($< 0.8\text{s}$) | Blocked by host / routing failure |
+
+---
+
+## 8. Required Deliverable 2: Stage-3 Read-Only Access & Preflight Checklist
+
+### 8.1 Preflight Inspection Checklist (Read-Only)
+Before any code, directory, or virtual environment is placed on the VPS, the operator must execute the following read-only checks and confirm results:
+
+- [ ] **Check 1: User Privilege Verification**  
+  Execute `whoami` and `id`. Setup must NOT run as `root`. A dedicated unprivileged system user (`moexbot`) must be created.
+- [ ] **Check 2: Memory & Swap Baseline**  
+  Execute `free -h` and `cat /proc/swaps`. Confirm that total RAM is 1 GB, swap is 2 GB, and `available` memory exceeds 250 MB.
+- [ ] **Check 3: Active Listening Sockets Audit**  
+  Execute `ss -tulpn`. Verify that:
+  - Port 22 is bound to `sshd`.
+  - Port 443 is bound to `xray` or `nginx`.
+  - Port 20724 is bound to `x-ui`.
+  - **Confirm that no planned pilot service attempts to bind to any TCP port.**
+- [ ] **Check 4: Firewall and IPTables Rules Inspection**  
+  Execute `sudo iptables -S` or `sudo ufw status`. Confirm that incoming traffic is permitted only on 22, 443, and 20724. Verify that no outbound HTTPS blocks exist.
+- [ ] **Check 5: Systemd Cgroups Version Verification**  
+  Execute `stat -fc %T /sys/fs/cgroup/`. Result must be `cgroup2fs` (standard in Ubuntu 24.04), ensuring support for `MemoryHigh`, `MemoryMax`, and `CPUQuota`.
+- [ ] **Check 6: Time Synchronization Verification**  
+  Execute `timedatectl status`. Confirm that `NTP service: active` and `System clock synchronized: yes`.
+
+### 8.2 Least-Privilege Deployment Prerequisites
+1. **Dedicated System Account:**
+   ```bash
+   sudo useradd -r -s /usr/sbin/nologin -d /opt/moex-spread-pilot -m moexbot
+   ```
+2. **Directory Structure & Permissions:**
+   ```bash
+   # Dedicated read-only application and write-constrained data directories
+   /opt/moex-spread-pilot/
+   ├── app/                 # Read-only code (owner: root, group: moexbot, mode: 0755)
+   │   ├── sentry_daemon.py
+   │   └── requirements.txt
+   ├── venv/                # Read-only virtualenv (owner: root, group: moexbot, mode: 0755)
+   ├── data/                # Read-write SQLite store (owner: moexbot, group: moexbot, mode: 0700)
+   │   └── market_data.db
+   ├── logs/                # Read-write application logs (owner: moexbot, group: moexbot, mode: 0700)
+   └── config/              # Secret configuration (owner: root, group: moexbot, mode: 0640)
+       └── sentry.env
+   ```
+
+### 8.3 Total RAM & Disk Budget Negotiation Table
+
+| Component / Subsystem | Current Allocated / Baseline | Pilot Normal Steady-State | Pilot Hard Ceiling | Final Reconciled System State |
+| :--- | :--- | :--- | :--- | :--- |
+| **Linux Kernel & Base OS** | 180 MB | +0 MB | +0 MB | 180 MB |
+| **Xray / 3X-UI VPN Services** | 220 MB | +0 MB | +0 MB | 220 MB |
+| **Other Scheduled Workloads** | 100 MB | +0 MB | +0 MB | 100 MB |
+| **MOEX Pilot Sentry Daemon** | 0 MB | **+45 MB** | **+180 MB (cgroup cap)** | **45 MB (steady) / 180 MB (cap)** |
+| **Reclaimable Page Cache / Buffer** | 350 MB | -45 MB | -180 MB | 305 MB (healthy headroom) |
+| **TOTAL SYSTEM RAM** | **1,024 MB (1.0 GB)**| **~545 MB utilized** | **~680 MB peak** | **~344 MB buffer before swap** |
+| **Root Disk Storage (/)** | 12.5 GB / 20.0 GB | **+50 MB initial** | **+500 MB (5-year)** | **13.0 GB / 20.0 GB (~7 GB free)**|
+
+### 8.4 Explicit "No-Touch" Protection List
+The following configuration files, services, and system parameters are classified as **STRICTLY PROHIBITED FROM MODIFICATION**:
+1. **Network Ports & Bindings:** Any process attempting to bind to `0.0.0.0:22`, `0.0.0.0:443`, or `0.0.0.0:20724` is barred.
+2. **VPN Daemon & Database:**
+   - Service: `x-ui.service` and child processes (`xray`, `v2ray`).
+   - Configuration / Data Path: `/etc/x-ui/`, `/usr/local/x-ui/`, `/etc/xray/`, and `/usr/local/x-ui/bin/`.
+   - SQLite Database: `/etc/x-ui/x-ui.db`.
+3. **Firewall & Kernel Routing:**
+   - `/etc/sysctl.conf` and `/etc/sysctl.d/` (specifically `net.ipv4.tcp_congestion_control=bbr`, `net.core.default_qdisc=fq`).
+   - UFW / IPTables / NFTables chains and NAT forwarding rules used by Xray.
+4. **SSH Access Credentials & Configuration:**
+   - `/etc/ssh/sshd_config` and `~/.ssh/authorized_keys`.
+
+---
+
+## 9. Required Deliverable 3: Failure-Mode, Recovery & Backup Table, Security Posture
+
+### 9.1 Comprehensive Failure-Mode and Recovery Matrix
+
+| # | Failure Mode | Root Cause / Trigger | Automated Detection Mechanism | Immediate Autonomous Action | Manual Remediation Procedure | RTO / Target Recovery Time |
+| :- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | **Process Crash** | Uncaught Python exception or memory spike | Systemd unit watchdog / exit monitoring | Systemd auto-restarts unit (`Restart=on-failure`, 10s delay). | Inspect `journalctl -u moex-sentry -n 50`. Fix bug if restart loop occurs. | $< 15\text{ seconds}$ |
+| **2** | **Stale Market Quotes** | MOEX ISS network drop or exchange halt | Sentry heartbeat: no new quotes for $>25\text{ min}$ during session | Flag feed as `STALE`; emit Telegram Yellow Warning; suspend signal firing. | Check MOEX website for official trading halts. Verify VPS DNS resolution. | $< 2\text{ minutes}$ |
+| **3** | **Disk Full Warning** | System logs or staging table growth | Periodic disk check: `/` free space $< 1.5\text{ GB}$ | Halt raw JSON staging immediately; execute `PRAGMA wal_checkpoint(TRUNCATE)`. | Purge archived logs via `journalctl --vacuum-size=200M`. Clear `/tmp`. | $< 10\text{ minutes}$ |
+| **4** | **Memory Pressure / OOM**| Ingestion batch runaway or memory leak | Systemd cgroup `MemoryHigh` (140M) & `MemoryMax` (180M) | Linux kernel sends SIGKILL to `moex-sentry`; **VPN remains untouched**. | Service restarts clean. If recurrent, review batch size and Python garbage collection. | $< 30\text{ seconds}$ |
+| **5** | **Exchange Clearing Halt**| Normal 14:00 or 18:50 MSK clearing window | Session scheduler detects clearing time window | Sentry suppresses stale-data alarms; calculates intermediate MTM PnL. | None required; autonomous schedule resumption. | $0\text{ minutes}$ (Autonomous) |
+| **6** | **Clock Drift** | NTP desynchronization ($> 1.0\text{s}$) | `timedatectl` comparison vs HTTP `Date` header | Flag timestamp uncertainty in virtual ledger; warn operator. | Execute `sudo systemctl restart systemd-timesyncd`. | $< 5\text{ minutes}$ |
+| **7** | **Job Overlap / Lock Contention**| Ingestion job runs longer than polling interval | SQLite `PRAGMA busy_timeout = 5000` & file lock | Subsequent job drops or waits up to 5s; zero duplicate execution. | Check network latency to MOEX ISS; increase polling interval if persistent. | $< 1\text{ minute}$ |
+| **8** | **Corrupt Database State** | Host power loss during write | SQLite WAL integrity check on startup (`PRAGMA integrity_check`) | SQLite WAL recovers automatically to last valid transaction. | If corrupted, restore previous midnight backup from `/opt/moex-spread-pilot/backups/`. | $< 5\text{ minutes}$ |
+| **9** | **Excess Drawdown Breach**| Pilot loss reaches -RUB 10,000 vs LQDT | Real-time virtual ledger mark-to-market check | **ACTION TRIGGER:** Emit Telegram Red Alert; lock out new signal generation. | Operator manually liquidates open spread legs at VTB; review strategy. | Immediate (Manual flatten) |
+| **10**| **Core Collateral Leak**| Broker uses core LQDT for margin call | Virtual ledger detects test account equity $< 0$ | **CRITICAL SECURITY ALERT:** Emergency notification; halt all pilot activity. | Operator intervenes at VTB to release core encumbrance; incident investigation. | Immediate (Emergency) |
+
+### 9.2 Minimum Security Posture: Secrets, Tokens, and Threat Model
+1. **Threat Model:**
+   - *Threat 1: Telegram Bot Token Theft.* An attacker gaining the token can send malicious commands or intercept notifications.
+   - *Threat 2: Broker Credential / Refresh Token Compromise.* An attacker gaining BCS OAuth refresh tokens or VTB credentials could attempt unauthorized trading.
+   - *Threat 3: VPS Host Compromise.* An external attacker penetrating the VPS through a web vulnerability could access local files.
+2. **Defensive Posture:**
+   - **Zero Secrets in Git:** Bot tokens, chat IDs, and broker API keys must never be committed to version control.
+   - **Environment File Isolation:** Secrets are stored strictly in `/opt/moex-spread-pilot/config/sentry.env`, owned by `root:moexbot` with permissions `0640`.
+   - **Systemd Sandboxing Directives:**
+     ```ini
+     [Unit]
+     Description=MOEX Futures Spread Lean Sentry Daemon
+     After=network.target
+
+     [Service]
+     Type=simple
+     User=moexbot
+     Group=moexbot
+     WorkingDirectory=/opt/moex-spread-pilot
+     EnvironmentFile=/opt/moex-spread-pilot/config/sentry.env
+     ExecStart=/opt/moex-spread-pilot/venv/bin/python3 app/sentry_daemon.py
+     Restart=on-failure
+     RestartSec=10
+     StartLimitIntervalSec=300
+     StartLimitBurst=5
+
+     # cgroups v2 Resource Isolation
+     MemoryHigh=140M
+     MemoryMax=180M
+     MemorySwapMax=50M
+     CPUQuota=30%
+     Nice=15
+     OOMScoreAdjust=500
+
+     # Security Sandboxing & No-Touch Enforcement
+     ProtectSystem=strict
+     ProtectHome=true
+     PrivateTmp=true
+     NoNewPrivileges=true
+     CapabilityBoundingSet=
+     ReadOnlyPaths=/opt/moex-spread-pilot/app /opt/moex-spread-pilot/venv
+     ReadWritePaths=/opt/moex-spread-pilot/data /opt/moex-spread-pilot/logs
+
+     [Install]
+     WantedBy=multi-user.target
+     ```
+   - **Replay Safety:** In automated execution (BCS Stage 5), all orders carry a client-generated UUID (`client_order_id`). If an order request drops, re-transmitting with the identical UUID prevents duplicate order placement at the exchange.
+
+---
+
+## 10. Required Deliverable 4: Technology Option Comparison for Stages 5–6
+
+### 10.1 Comparative Architectural Evaluation
+
+| Evaluation Axis | Option 1: Ultra-Lean Python + SQLite + Telegram (Recommended) | Option 2: Compiled Go Binary + SQLite + Telegram | Option 3: Python Microservices + PostgreSQL + Web Dashboard (Rejected) |
+| :--- | :--- | :--- | :--- |
+| **Component Stack** | Python 3.12, `httpx`, SQLite WAL, Telegram Long Polling | Go 1.22, `modernc.org/sqlite`, Telegram Long Polling | Python, Celery, Redis, PostgreSQL, FastAPI, React/Streamlit |
+| **Total Memory (RSS)**| **40–60 MB** | **15–25 MB** | 450–800 MB (Exceeds VPS capacity) |
+| **Port Requirements** | **Zero incoming ports** (Outbound HTTPS 443) | **Zero incoming ports** (Outbound HTTPS 443) | Requires opening ports (80, 443, 5432, 6379) |
+| **VPN Conflict Risk** | **Zero** | **Zero** | **Severe** (Port 443 and memory competition) |
+| **Code Portability** | Native parity with MacBook Python research scripts | High runtime portability; requires dual-language maintenance | Low portability; complex container orchestration |
+| **Durability Model** | SQLite WAL file with atomic commits | SQLite WAL file with atomic commits | PostgreSQL WAL + multi-service consensus |
+| **Stage 5 Broker Seam**| Pluggable `BcsTradeApiRouter` Python class | Pluggable `BcsTradeApiRouter` Go struct | Microservice event bus adapter |
+| **Operational Overhead**| Minimal; single systemd unit | Minimal; single systemd unit | Extreme; multiple daemons and watchers |
+
+### 10.2 Evidence Freshness & Primary Documentation Sources
+
+1. **Telegram Bot API:**
+   - *Issuer:* Telegram Messenger Inc.
+   - *URL:* [https://core.telegram.org/bots/api](https://core.telegram.org/bots/api)
+   - *Document Date / Status:* Current as of API 7.11+ (2025/2026).
+   - *Key Verified Excerpt:* Bots are limited to ~1 message/second per private chat, 20 messages/minute per group, and 30 messages/second globally. Paid broadcasts exist for commercial bots broadcasting over 30 msg/sec, requiring Telegram Stars.
+2. **Moscow Exchange (MOEX) ISS REST Interface:**
+   - *Issuer:* PJSC Moscow Exchange.
+   - *URL:* [https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0](https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0) (ISS API Reference).
+   - *Document Date / Status:* Reference architecture v2.4 (2025/2026).
+   - *Key Verified Excerpt:* Public access namespace `/iss` provides securities and candles for engine `futures` market `forts`. Data is delayed 15 minutes on free endpoints; rate limits require sequential requests with 0.5–1.0s throttling to avoid IP bans.
+3. **MOEX FORTS Derivatives Trading Schedule:**
+   - *Issuer:* PJSC Moscow Exchange.
+   - *URL:* [https://www.moex.com/torgovye-sessii-na-srochnom-rynke](https://www.moex.com/torgovye-sessii-na-srochnom-rynke)
+   - *Document Date / Status:* 2025/2026 Official Schedule.
+   - *Key Verified Excerpt:* Morning session 09:00–10:00; Day session 10:00–14:00; Intermediate clearing 14:00–14:05; Main session continues 14:05–18:50; Evening clearing 18:50–19:05; Evening session 19:05–23:50 MSK.
+4. **BCS Trade API (Developer Platform):**
+   - *Issuer:* BCS Financial Group.
+   - *URL:* [https://bcs.ru/trade-api](https://bcs.ru/trade-api)
+   - *Document Date / Status:* Official Developer Documentation (Updated May 2026).
+   - *Key Verified Excerpt:* REST and WebSocket endpoints for market data, portfolios, and orders. Uses OAuth 2.0 with 90-day refresh tokens; candle requests capped at 1,000 bars per query; rate limits enforced via HTTP 429 and `Retry-After`.
+5. **Ubuntu 24.04 LTS & Systemd Cgroups v2:**
+   - *Issuer:* Canonical Ltd. & Systemd Project.
+   - *URL:* [https://manpages.ubuntu.com/manpages/noble/man5/systemd.resource-control.5.html](https://manpages.ubuntu.com/manpages/noble/man5/systemd.resource-control.5.html)
+   - *Document Date / Status:* Ubuntu 24.04 Noble Numbat Documentation.
+   - *Key Verified Excerpt:* `MemoryHigh` provides page-reclaim throttling; `MemoryMax` enforces hard termination via kernel OOM; `OOMScoreAdjust` controls process killing order (-1000 to +1000).
+
+---
+
+## 11. Material Conflicts, Unknowns & Falsification Criteria
+
+### 11.1 Material Conflicts & Uncertainties
+1. **Shared VPS Headroom Reality:** While specifications state 1 vCPU and 1 GB RAM, the actual unallocated memory headroom is unknown until Stage 3 preflight measurement. If `x-ui` and the other scheduled workload consume $> 800\text{ MB}$, the 250–350 MB shared budget does not exist, and the daemon cannot run safely on the VPS without upgrading hardware.
+2. **VTB Programmatic Execution Absence:** VTB lacks a free, modern public REST/WebSocket developer API for retail trading. Initial execution must remain strictly manual (via mobile app or QUIK). Any assumption of direct automated execution at VTB without enterprise QUIK scripting is false.
+3. **KPUR Margin Status Recognition:** The user reports qualified investor status and KPUR (client with heightened risk level) recognition. However, broker-specific margin calculation rules for calendar and cross-commodity spreads vary. If VTB does not recognize cross-margin offsets on selected spread pairs, initial margin requirements could exceed the RUB 30,000 test allocation.
+
+### 11.2 Falsification Criteria (Conditions Invalidating the Architecture)
+- **Falsification Criterion 1 (Memory):** If Stage 3 measurement reveals steady-state available RAM (`MemAvailable`) is $< 180\text{ MB}$, the VPS-based sentry model is **invalidated**. The sentry must either be relocated to an upgraded server or converted into an on-demand collector running only on the MacBook during trading hours.
+- **Falsification Criterion 2 (Network IP Block):** If MOEX ISS responds with HTTP 403 or persistent drops to requests originating from the VPS IP address, the free collection architecture is **invalidated**, requiring a local proxy or broker feed.
+- **Falsification Criterion 3 (Execution Latency Slippage):** If historical tracking in the virtual ledger reveals that human execution latency (median 5–15 min) causes realized spread entry prices to degrade by $> 25\%$ of expected spread profit across 10 consecutive trades, the manual VTB model is **falsified**, mandating a transition to automated execution (e.g. BCS API) before scaling.

@@ -1,0 +1,103 @@
+# Feasibility and Operational Constraints for MOEX Futures-Spread Pilot
+
+## MOEX & Broker Data APIs and Fees  
+**MOEX (Moscow Exchange)** provides free REST market data via its ISS (“Information and Statistical Server”) API.  Unauthenticated clients can retrieve most trading data with ~15-minute delay (real‐time feeds require paid subscription).  Historical end-of-day OHLCV and open-interest data (“/iss/history”) generally require a subscriber, *except* broad index data which is free.  Thus we can use ISS for delayed daily/periodic pulls and limited intraday sampling without extra cost (with care to stay within reasonable request rates).  The ISS documentation lists numerous endpoints (e.g. security specs, candles, trades, orderbook columns, etc.).  In practice, retrieving daily OHLC and OI for ~5–300 futures contracts (and limited intraday snapshots for a smaller watchlist) should be straightforward with HTTP GET requests to iss.moex.com, storing JSON/XML results. 
+
+**Broker APIs (VTB, BCS)**: No public documentation for a free-trading API was found. These brokers likely require authenticated clients via proprietary systems (e.g. QUIK terminal or FIX) and may impose their own limits and fees.  For example, BCS and VTB Capital are known to use QUIK or similar platforms, often requiring either broker‐provided libraries or Windows-native COM APIs. In absence of public API docs, integration must assume their trading interfaces are closed or paid services. (This uncertainty means any later automated order placement will need verifying broker support and terms.)  No per-trade or market-data fee details for MOEX futures via these brokers could be found in open sources.
+
+## Resource Estimate (CPU, RAM, Disk, Network)  
+
+Based on assumptions (Universe 5–300 contracts; Daily+intraday snapshots; 3–5 years retention), estimated loads are very modest by modern standards. For illustration:
+
+- **Data volume**: Assume JSON ~1–2KB per record.  *Scenario A (moderate)*: 100 contracts × 1 daily record = ~100 records/day (~0.1–0.2MB/day).  *Scenario B (heavy)*: plus 30 watchlist contracts × 96 intraday (15-min) = 2880 records/day (~5–10MB/day). Over 5 years (≈1825 trading days), 10MB/day → ~18GB (A), while 5MB/day → ~9GB (B).  Even heavy-case is <10–20GB for full retention, fitting a 20GB disk if managed (with cleanup of oldest data as needed).  
+- **CPU**: Fetching ~a few thousand HTTP calls per day is light. A single Python or Go thread can handle ~hundreds of simple JSON fetches per second on 1 vCPU, so a script can easily issue 100–300 API requests (for all instruments and snapshots) in a few seconds per run. Even if fully sequential, the duty cycle is low (only a few seconds per hour).  Most processing (parsing JSON, appending to files/DB) is trivial. **Peak vs steady**: Peak CPU occurs when bulk-fetching history or on-demand intraday sweeps; steady-state (between fetches) is near idle. We estimate <10% CPU even in peak fetch bursts; overall, CPU usage should remain very low.  To measure in practice, one could use `time` on the data-collection script or monitor with `top`/`htop` during runs. 
+- **Memory**: A lightweight script parsing a few thousand records occupies on the order of 10s of MB at most. For example, loading 300 JSON responses (1–2KB each) into memory is ~<1MB, plus Python overhead. If using pandas or similar for batch analysis, even then processing ~10^5 rows of numeric data might use 100–200MB RAM, still under 1 GB. In steady-state, long-lived memory usage could be minimal (a few MB) if data is flushed to disk.  For caution, one can profile with `ps` or `psutil` during a full-run. If memory ever nears the ~1 GB limit, tasks should simplify (e.g. use streaming or chunked processing) or reduce concurrent scopes. 
+- **Network**: Fetching ~100–300 API calls/day, ~2–10MB/day (including overhead). Even with hourly/15-min calls on watchers, <5MB/day. This is negligible on typical VPN bandwidth.  If logging or alerts are sent (Telegram), that is similarly light (~a few KB per message). Monitoring tools (pinging, keepalive) add minimal traffic.  One could monitor cumulative usage with `vnstat` or similar after a day’s operation.
+
+**Resource Table (estimates)**: 
+
+| Scenario | Contracts | Intraday pts/day | Data/day | Data/yr (5yr) | Disk 5yr | CPU load (burst) | Mem usage | Network/day |
+|:--------:|:---------:|:----------------:|:--------:|:------------:|:--------:|:---------------:|:---------:|:-----------:|
+| *Low*    | 50 (daily) | –                | ~0.05 MB  | ~0.1 GB       | ~0.5 GB  | ~~1–2s fetch (negligible) | <20 MB   | ~0.05 MB  |
+| *Med*    | 100        | 10@hourly (240)  | ~2 MB     | ~~4 GB        | ~~8 GB   | ~~5–10s fetch   | ~~50 MB   | ~~2 MB    |
+| *High*   | 200        | 30@15-min (2880) | ~~10 MB   | ~~18 GB       | ~~35 GB  | ~~30s fetch    | ~~150 MB  | ~~5 MB    |
+
+*(Rough orders of magnitude; “Mem usage” includes parsing structures. Actual metrics should be measured with tools like `du`, `ps`, `vmstat`. We would *not* run benchmarks now, but plan to use `time`/`top`/`du` in later staging to capture peak and steady usage.)*
+
+**Go/No-Go Criteria**: The 1 vCPU/1 GB VM should easily handle the *Low–Med* scenarios; *High* (massive intraday sampling) risks heavy disk use and elevated memory overhead. If projected disk need (e.g. >15 GB) conflicts with 20 GB total (including OS, logs, swap), we must prune or archive old data. If memory use approaches ~80% of 1GB, we’d switch to streaming data processing (or reduce concurrency). CPU is unlikely to be a bottleneck given the light workload. Overall, the main constraint is **disk** and **IO/swap**: avoid full disks and constant swapping. Monitoring scripts should check `df` and `free` and throttle or alert if limits are nearing.
+
+## Storage and Runtime Alternatives
+
+Given small data volumes and the need for reproducibility/durability on a constrained VM, we compare options:
+
+- **CSV/JSON files**: *Pros*: trivial to implement, human-readable, no external dependencies. *Cons*: Risky for concurrent writes, no schema enforcement, tricky to update records or query efficiently. For our write-once, append-only use-case it may suffice, but schema changes (new fields) become manual. Backing up and versioning plain files is easy, but recovery from partial writes is hard. No transaction safety. Not recommended for any complex operation, but okay for raw snapshots if done carefully (e.g. write-then-rename).
+
+- **SQLite database**:  *Pros*: ACID transactional storage with no server needed; good reliability. It is “small, fast, self-contained, high-reliability” and bundled in Python’s stdlib. Well-suited for a few million rows. Schema can evolve via ALTER TABLE. Backups can be taken by copying the `.db` file when closed. *Cons*: Single-writer lock – long writes will block reads. But our workload (periodic writes, infrequent queries) is safe. SQLite is widely used in embedded/desktop apps. 
+
+- **File-based KV / NoSQL (e.g. TinyDB)**: *Pros*: Simpler than SQL, flexible JSON store. *Cons*: Usually also file-based with similar locking issues, and less efficient query. Not clearly better than CSV/SQLite.
+
+- **Light RDBMS (Postgres/MySQL)**: *Pros*: Full-featured, multi-writer. *Cons*: Heavy for 1GB VM, needs setup and maintenance, larger footprint (both disk and RAM). Likely overkill for our needs and might hurt the small environment.
+
+Given priorities (durability, reproducibility, zero-config), **SQLite** is a strong choice for any tabular data (prices, ledgers). It meets ACID guarantees without extra processes. CSV/JSON might still be used for raw snapshots or logs, but critical state (e.g. the “virtual ledger” of signals or positions) should be stored in a reliable DB. SQLite would handle tens of MB or even GB of data fine (and supports date/time queries, indices, etc.), whereas flat files do not.
+
+On the **runtime** side, a lightweight scripting language is implied (Python given context). Python has libraries for JSON, SQLite, scheduling (cron or APScheduler), and lightweight HTTP (e.g. `requests`). We should avoid heavy frameworks (no full web servers or container orchestrators). A simple cron job or `while True: sleep` loop can handle periodic tasks. For UI, we anticipate *no* rich GUI; status can be logged or sent via Telegram. If an occasional UI needed, a static HTML report or simple Flask microservice (if at all) could run on an unprivileged port (not colliding with VPN on 443/20724).  
+
+**Durability/Consistency**: Using SQLite or even plain append-only logs ensures data isn’t lost on a crash (journaling ensures recovery). For consistency, we should always write atomically (SQLite does this; for file writes, use temp+rename). Schema migration is trivial in code or via SQLite `ALTER TABLE`. Backups: copy the SQLite file (or CSV logs) regularly to the laptop or external storage. Possibly use `scp` or git (for small data) from the Mac. 
+
+**Reproducibility**: Keep a raw archive of inputs (ISS JSON) and code versioned. Even without a DB, storing raw files with timestamps aids audit. Avoid in-memory-only state that vanishes on failure. For cross-run consistency, record last processed timestamp or message ID, so on restart we don’t re-process events.
+
+Given the shared-limit environment (250–350 MB spare RAM), heavy in-memory processing (like using pandas on multi-MB tables) could push memory. But modest data (e.g. <50k rows) can be handled. If needed, analysis scripts could be offloaded to the laptop and only results (trades/signals) sent to the VPS for execution/monitoring. In summary: use **SQLite for state/logs**, append-only text for raw logs, minimal runtime (Python or Go), no containers, no microservices. All components should be CLI/daemon processes.
+
+## Telegram Bot API and Notifications  
+
+Telegram is the planned alert channel. Key constraints from Telegram’s Bot platform are [officially documented](https://core.telegram.org/bots/faq):
+
+- **Rate limits**: In a *private chat*, a bot should send **≤1 message/second** to avoid 429 errors. In a *group*, the limit is **20 messages per minute**. For broadcast-style alerts, Telegram free tier allows ~30 msgs/sec globally (across users); beyond that requires paid “broadcast” features. In practice, our usage (a few low-volume alerts per hour) is well below these caps. However, retries or loops must respect these limits (e.g. space out Telegram API calls). 
+
+- **Recipient restrictions**: A bot **cannot** message a user who has not initiated contact with it (due to privacy settings). The user must start the bot or add it to a group/channel. Thus each recipient (investor or group) must first send “/start” to the bot or accept it. We must avoid assumptions like emailing arbitrary users; only predefined subscribers can be messaged.
+
+- **Delivery/retry**: The Bot API returns success/error codes for each `sendMessage` call. Telegram does *not* guarantee persistent delivery: if a network error or server error occurs, our code must catch the failure and decide to retry or log it. The API itself will queue messages for offline users up to a point (Telegram cloud typically delivers when the user is online), but if we get a timeout/HTTP 5xx, we should retry cautiously (respecting rate limits). There is no built-in de-duplication: if our code crashes after sending an alert, it may resend on restart, so we should include unique identifiers in messages or log message IDs to prevent duplicate actions. For example, record “alert sent for signal X” so a restart doesn’t re-broadcast it. 
+
+- **Persistence and privacy**: Telegram chats are end-to-end between user and bot; no extra persistence is needed on our side beyond bot logs. The bot token and any chat IDs are secrets.  We should store the bot token in an environment variable or a root-owned file (`chmod 600`), never in source code. Similarly, no sensitive broker credentials (if any) should be logged. Bot secrets should be in memory only, with minimal-process privileges. Users should not expose personal info via the bot (e.g. avoid sending passport photos etc; stick to text alerts).
+
+## Failure Modes, Recovery, and Backup
+
+| **Failure Mode**           | **Impact**                                     | **Mitigation/Recovery**                                     |
+|---------------------------|------------------------------------------------|-------------------------------------------------------------|
+| **High CPU/Memory load**  | Process killed or unresponsive; data incomplete | Use lightweight code; monitor with `free`/`top`; if >80% memory, drop noncritical tasks (e.g. pause intraday fetch). Limit concurrency (e.g. fetch sequentially). Use swap cautiously. If crash occurs, ensure next run detects partial writes (via temp files) and skips/retry safely. |
+| **Disk full**             | Writes fail, data loss                          | Pre-check disk space (`df`); rotate/delete old data (e.g. drop >N-year-old records); log-space low warnings via Telegram; consider compressing archives offline. Use alert if <1GB free. Implement fail-stop: if cannot write to DB/log, stop ingestion to avoid corruption. |
+| **Swap pressure/Thrashing** | Severe slowdown, potential OOM kill            | Monitor swap usage (`vmstat`); keep swap <1GB if possible. If swapping, pause heavy tasks. Possibly disable swap to force quicker failure than hang. |
+| **External outage (VPN/Internet)** | Data staleness, missed trades             | Detect connectivity via periodic ping; if broker/data unreachable, skip that poll and notify operator. On restore, log gap; optionally backfill missing data from ISS history. All data-fetching errors should trigger an alert (but throttled). |
+| **Market session boundary** | Timed tasks may overlap/no data               | Use MOEX calendar: only fetch when markets open. Schedule daily EOD pulls after close. Reset any session-specific state at day boundary. |
+| **Clock drift/NTP issues** | Scheduling errors, data timestamps off         | Sync VM clock via NTP. Use UTC everywhere in logs. For intervals, prefer `monotonic` timers (e.g. Python’s `time.sleep`). Record each timestamp from ISS rather than trusting local clock for data validity. |
+| **Overlapping jobs**      | Concurrent writes, lock contention             | Serialize tasks (cron with non-overlap lock file, or a simple mutex lock). E.g. a script checks “lock” file and exits if busy. Use SQLite transaction boundaries so partial writes don’t corrupt. |
+| **Corrupt state (DB/file)** | Lost or inconsistent data                     | Use SQLite’s transactional safety. For files, write to temp then `rename()`. Maintain regular backups: e.g. nightly copy of SQLite DB to safe location. On corruption detection (DB error), restore from last backup. Log checksum or row counts to detect silent corruption. |
+| **Process crash/Restart**  | Missed alerts, duplicative actions            | Daemonize or use `systemd` restart policies (if allowed). Record progress markers (e.g. last timestamp or alert ID). On start-up, scan state DB to resume exactly where left off (no re-sending old signals). Use idempotent operations (e.g. “if trade already signaled, skip”). |
+| **VPN/service interference** | Blocking required ports/services             | Do not install new network services on ports 22/443/20724 (VPN). Only outbound requests allowed except SSH. Do not disable or reconfigure Xray/3X-UI. Run data fetch over the existing VPN link; do not tunnel other traffic. |
+| **Broker/API credentials leak** | Unauthorized trades or data leaks          | Store API keys/bot tokens outside code, with `chmod 600`, owned by minimal user. Use separate Linux user for the bot, so if the process is exploited it has no sudo or file privileges. Avoid printing secrets in logs. If leaked, rotate keys immediately. |
+| **Telegram secret leak**   | Unauthorized bot control                       | Keep bot token secret; similar approach to broker keys. Rotate token via BotFather if compromised. Use environment variable not visible in logs. |
+
+*Replay safety*: Ensure that if the script restarts or duplicates signals, it does *not* replay old trade orders or alerts. This means recording unique event IDs (timestamps, price bars, signal hash) for each signal, and on restart skipping any already-acted signals. For example, keep a table of “processed_signal_id” so duplicate alerts aren’t sent. Because the user-facing Telegram actions may trigger manual intervention, never send the same alert twice.
+
+## Deployment Checklist (Least Privilege, Preflight)  
+
+- **Access**: Create a dedicated non-root Linux user (e.g. `traderbot`) on the VPS. Give it only read/write to its project directory (e.g. `/home/traderbot/spreadbot/`). No sudo.  
+- **Data**: Arrange read-only or minimal credential access to market-data APIs (MOEX ISS has no key). If later using broker API or database, give only needed scopes.  
+- **Network**: Outbound HTTP/HTTPS to ISS and Telegram should be allowed; no inbound except SSH (port 22). Ensure no conflict with existing Xray/VPN (ports 443 and 20724 must stay open). Do not open new listening ports (unless for safe status checks, but preferably avoid).  
+- **Secrets**: Place Telegram bot token and any broker API keys in a file like `/home/traderbot/.secret.env` with permissions 600. Load them via environment or a secure reader. Do not store in git or logs.  
+- **Logging**: Logs should not include secrets. Use rotating log files or system logs that avoid filling disk. Consider sending critical errors to Telegram only.  
+- **Backup**: Set up a secure remote sync (e.g. `scp` to Mac or private repo) of critical files (database, scripts) periodically. Version control code in a private repository if possible.  
+- **Cron/systemd**: Define cron jobs or a minimal service script to run data fetches and signal checks at required intervals. For example, a daily 20:10 job for EOD data, and a loop every 15min for intraday (with `sleep`). Test each schedule on the Mac first.  
+- **Monitoring**: Implement or reuse simple scripts to alert (e.g. via Telegram) if the data-fetching script fails or if resources (CPU/RAM/disk) cross thresholds. A watchdog could send “heartbeat” messages hourly.  
+- **Environment**: Freeze versions of Python/libraries (use virtualenv) so that upgrades don’t break functionality. Lock down OS (Ubuntu 24.04) with latest patches.
+
+## Stages 5–6 (Automation Options and External Services)  
+
+For future automation (beyond this research stage), options include: connecting directly to MOEX for trade execution (unlikely open), or using broker-provided APIs (if available) to place orders. If VTB/BCS offer a public API (e.g. FIX or REST), we would use it; if only QUIK terminal access is given, we might need a PC-based workaround (which may exceed the free-resource goal). Any such integration should respect their documented limits and terms (likely requiring separate investigation). Other data sources (e.g. Telegram market bots or paid datafeeds) are out of scope for now. 
+
+No paid cloud or compute should be assumed: e.g. Google Sheets, AWS, or paid broker feeds are excluded. Free-tier “serverless” solutions (like a free notebook) cannot be relied on for 24/7 operation. Any third-party service (like a free hosting for a webhook) must be checked for terms (regions, phone-based 2FA, etc.). Similarly, we won’t invest in paid libraries or GPUs now (the Mac lacks CUDA). 
+
+At later stages, one might consider **free broker API trials** or community tools (GitHub has some Russian-broker scripting libraries) *only after verifying they respect terms*. All external service use must be documented for 2026 availability and compliance. For example, the Telegram API terms (see Bot FAQ) are up-to-date as of 2026; we should periodically re-check them.  
+
+**Evidence and Sources**: MOEX data rules are confirmed by the ISS Developer Manual (MOEX, 2016). SQLite’s characteristics are documented on sqlite.org. Telegram Bot rate-limits are documented in Telegram’s official FAQ. Other details (broker APIs, internal operations) come from engineering judgment and must be validated later. 
+

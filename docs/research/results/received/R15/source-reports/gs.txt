@@ -1,0 +1,409 @@
+# Can a neural model add reproducible net value over simple baselines on free daily MOEX futures-spread data with your hardware?
+
+## 1. Bottom line
+
+**Short answer: probably not. For this project, a neural model should stay an optional, late, falsifiable side experiment. It should not be on the critical path.** No public evidence I found shows that a neural model adds net, reproducible value over deterministic or linear/tree baselines on free end-of-day MOEX futures data. The most useful open questions are about rights, data and statistical power, not architecture. I ran no tests, so this is a reasoned, evidence-based expectation, not a measured result.
+
+Five findings drive this.
+
+**1. Data rights may block the project before any model choice matters.** MOEX's public ISS (data API) page says, in my translation: "Information obtained from the ISS is available only for familiarization, cannot be used to extract profit... Any use of the information (other than familiarization) is possible only under a contract with PJSC Moscow Exchange" [moex.com/a2193](https://www.moex.com/a2193). MOEX's presentation on its data-use rules classes automated processing and use in automatic trading systems as "non-display" use. It says all such use "requires the conclusion of an Information Agreement". The same presentation separately lists "individual use: viewing, storage, accumulation, processing (for personal purposes)" [MOEX presentation](https://www.moex.com/files/45rqbw6j8d9sbx79533bvkzjwa). Whether a private individual may train a model and generate trade signals on free delayed or archive data is a legal question I could not verify. A new edition of the governing rules has been in force since **2026-10-15** [moex.com/ru/documents/7064](https://www.moex.com/ru/documents/7064), and I did not read it in full. This affects every model, not just neural ones, but it is the first gate.
+
+**2. Statistical power is the binding limit, not model capacity.** Assume a RUB 30,000 all-in allocation, integer contracts, two-leg spreads and medium-term holding periods. The pilot would then produce perhaps tens of independent trades per year. Telling a neural model apart from a well-tuned tree model needs a *paired difference* in per-trade results. Under plausible effect sizes that needs hundreds to thousands of independent episodes (§4.3). That is more than a delisting-affected daily panel is likely to provide.
+
+**3. Published evidence points the wrong way for this data class.**
+- In finance, shallow networks beat deeper ones. Gu, Kelly and Xiu attribute this to "the relatively small amount of data and tiny signal-to-noise ratio" [Gu/Kelly/Xiu via dokumen.pub](https://dokumen.pub/empirical-asset-pricing-via-machine-learning.html).
+- In a well-known S&P 500 statistical-arbitrage study, the deep network (0.33%/day before costs) did worse than random forests (0.43%/day). Returns "deteriorat[ed]" after 2001 as markets became more efficient [Krauss, Do & Huck 2017, EJOR](https://www.sciencedirect.com/science/article/abs/pii/S0377221716308657).
+- Tree models "remain state-of-the-art on medium-sized data (~10K samples)" for tabular data [Grinsztajn et al. 2022](https://arxiv.org/abs/2207.08815).
+- One-layer linear models beat Transformer forecasters "in all cases" on nine benchmarks [Zeng et al.](https://arxiv.org/abs/2205.13504).
+
+**4. Your hardware rules out GPU training and makes the standard tools awkward.**
+- Apple lists the current PyTorch Metal (MPS) GPU backend as requiring "Mac computer with Apple silicon" [Apple Developer](https://developer.apple.com/metal/pytorch/). Treat your Radeon GPU as unusable.
+- PyTorch stopped producing macOS x86_64 binaries after 2.2 [PyTorch dev-discuss, 2023-11-30](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690). PyPI's torch 2.14.1 lists only arm64 macOS wheels [PyPI torch](https://pypi.org/project/torch/). The community conda-forge channel does list a macOS-64 build of pytorch 2.14.1 [anaconda.org](https://anaconda.org/conda-forge/pytorch).
+- ONNX Runtime (a common CPU inference engine) 1.31.0 ships only macOS 14+ ARM64 wheels [PyPI onnxruntime](https://pypi.org/project/onnxruntime/).
+- scikit-learn 1.9.1 still ships macOS x86_64 wheels [PyPI scikit-learn](https://pypi.org/project/scikit-learn/).
+
+In short, your baseline stack installs cleanly and the neural stack does not.
+
+**5. Speed of inference doesn't matter; delay to execution does.** On end-of-day data a small model runs in seconds on CPU, so latency is irrelevant next to a 3–90 minute manual reaction. What matters is how far the price moves between the decision snapshot and the fill. That cost is identical for every model, so it shrinks any edge rather than favouring the neural one.
+
+**Recommended decision:** Keep neural work deferred. Approve at most one bounded experiment (Stage N1 in §10), and only after the data-rights question is answered and the baselines have a frozen, logged result. Even then, frame it as "does a small model change net RUB excess versus LQDT on the untouched holdout?" not "does it improve prediction scores?". Discard it early under the criteria in §11.
+
+---
+
+## 2. What I actually read, and what I did not do
+
+**Read during this research (web access 2026-10-22, all public, no logins):**
+
+| Area | Sources read |
+|---|---|
+| MOEX data access and terms | ISS API page (a2193) and its English version (a8531); MOEX settlement-price news (n98831); ISS developer manuals v1.14 (2011) and v1.4 (2016); data-use rules landing page and edition list (7064); the presentation (16970 → current PDF); 2025 public offer on information services; FUTOI (open interest) access note |
+| Validation papers | Deflated Sharpe Ratio paper (2014 version); Probability of Backtest Overfitting paper (2015) |
+| ML evidence | Gu/Kelly/Xiu; Krauss et al.; Grinsztajn et al.; Zeng et al.; M4 abstract; Guijarro-Ordonez/Pelger/Zanotti deep statistical arbitrage paper |
+| Pretrained forecasting models | Chronos-Bolt and Chronos-2 model cards; Chronos-2 paper; TimesFM README; Moirai model card; Meyer et al. on evaluation leakage; Hyndman blog |
+| Compute and packages | Apple MPS page; PyTorch deprecation post; PyPI pages for torch, onnxruntime, scikit-learn and chronos-forecasting; conda-forge pytorch; Hugging Face Spaces, ZeroGPU and pricing pages; Kaggle notebook docs; Colab FAQ |
+| *Advances in Financial Machine Learning* | Only the publicly visible opening of Chapter 7 on O'Reilly |
+
+**Not done (proposed only):**
+- No data download or coverage check of the MOEX futures panel.
+- No backtest, training or benchmark.
+- No measurement of memory or latency on your Mac or VPS.
+- No legal opinion on MOEX data rights.
+- No check of any broker account, margin or KPUR (qualified-investor) treatment.
+- No verification of Kaggle phone acceptance from Russia or of Hugging Face account eligibility.
+
+Every number in §4 is an illustrative calculation, not a result.
+
+**Not read:** the full text of the MOEX rules edition effective 2026-10-15 (only the presentation and the landing page); the full AFML book; LightGBM's current macOS wheel list (the PyPI page did not render a file list); and no Chinese-language sources, because none were needed.
+
+---
+
+## 3. Defining the objective before any model
+
+### 3.1 The decision being supported
+
+The project trades selected medium-term futures spreads and accepts days with no trades. A model is useful only if it changes one of three decisions so that net RUB excess over the matched LQDT counterfactual improves:
+1. **Gate:** take this eligible spread signal or not.
+2. **Size:** usually 0 or 1 spread unit, given integer contracts and RUB 30,000.
+3. **Exit:** hold, or exit early.
+
+Predicting a price or spread level is not the objective. Neural models should therefore compete as **meta-models on top of the fixed deterministic baseline**: they score or filter its signals and never invent a separate strategy. This keeps the candidate set identical across models and caps the search space, which matters for §5.4.
+
+### 3.2 Supervised target, horizon and information set
+
+Use one target for every model: the **net RUB P&L of the baseline trade if taken**, simulated with the shared cost/slippage scenario, minus the matched LQDT return on the capital actually tied up, over the trade's realised holding period. From it derive:
+- a binary label (net P&L > 0);
+- a continuous label (net RUB);
+- optionally a three-way label: hit profit barrier / hit stop / timed out. This structure is often discussed in AFML-related material, but I did not read those chapters and I cite no section for it.
+
+The horizon is the baseline's own exit rule, so labels overlap whenever trades overlap in calendar time.
+
+**What is known at decision time.** The decision snapshot (time *t*) must contain only data published before *t*:
+- **Settlement prices.** MOEX publishes futures settlement prices (used for variation margin) during the evening session right after they are set. They are available "in real time (by paid subscription) or free with a 15-minute delay" [MOEX news n98831](https://www.moex.com/n98831). A feature built from the day's settlement price is therefore usable at the earliest about 15 minutes after publication, during the evening session.
+- **Open interest.** MOEX says its FUTOI open-interest data are free, with a 15-minute delay for non-subscribers and 10 years of history [MOEX FUTOI note](https://fs.moex.com/f/12829/get-futoi-data-en.pdf).
+- **Contract specs, roll dates and delisting.** Use only what was knowable on that date. Do not use a later contract list.
+
+The entry price in the label must be an **executable price after t + the delay** (3–90 minutes; run 15, 45 and 90 as scenarios), never the close or settlement used to make the decision. If only daily bars are available, you cannot reconstruct an intraday fill. The conservative choice is to fill at an adverse price (for example the worse of the next-session open and a stress-slippage-adjusted settlement) and to record trades as stale, rejected or unfilled under explicit rules. The data class here is end-of-day only, so execution realism is capped no matter which model is used.
+
+### 3.3 Linking predictions to RUB results
+
+Turn each model's score into decisions through one fixed policy chosen on training data only. For example: take the trade if predicted net expected value after costs exceeds a threshold; skip it if margin plus a variation-margin reserve would exceed free test capital. Run the same RUB 30,000 portfolio simulator on every model's decisions, with:
+- integer contracts;
+- the same finite-capital rule (a signal is skipped if capital is unavailable, never silently resized);
+- the same emergency-funding rules: no use at entry; any use only to get flat; a lifetime gross cap of RUB 15,000.
+
+The primary metric is **cumulative net RUB excess versus the LQDT counterfactual**, with identical external flows. Report alongside it:
+- the maximum drawdown of the excess curve, checked against the RUB 5k warning / 10k action / 15k outer-boundary rules;
+- the number of trades;
+- the share of stale, rejected or unfilled outcomes;
+- the time spent tying up collateral.
+
+Better accuracy, log-loss or forecast error (CRPS, a forecast-distribution score) counts only as a diagnostic.
+
+### 3.4 Baseline ladder (all under identical splits and constraints)
+
+| Rung | Model | Role |
+|---|---|---|
+| B0 | No trade (100% LQDT counterfactual) | Defines zero; every candidate must beat it net |
+| B1 | Fixed-parameter deterministic spread rule (e.g. z-score entry/exit on a pre-registered spread definition; parameters frozen before the holdout) | The strategy being filtered |
+| B2 | Regularised logistic or linear regression on a small pre-registered feature set (spread z-score, carry/roll yield, recent volatility, OI change, days to expiry, liquidity proxy) | Tests whether any learning helps |
+| B3 | Shallow gradient-boosted trees or random forest, same features, monotonic constraints where defensible | The strongest cheap competitor, given the tabular evidence |
+| N* | Neural candidates (§6) | Must beat B0–B3 net, on the same holdout |
+
+Training success (falling loss, high in-sample accuracy) is not investment evidence. The M4 forecasting competition is a useful warning: of its 17 most accurate methods, 12 were combinations of mostly statistical approaches [IDEAS/RePEc: M4 results](https://ideas.repec.org/a/eee/intfor/v34y2018i4p802-808.html).
+
+---
+
+## 4. Is there enough data, and enough independent episodes?
+
+### 4.1 What the free daily panel probably is
+
+Coverage is unverified, and MOEX's own documents disagree on what free access includes.
+- The 2016 ISS developer manual says "/iss/history – all the historical data (except indices) is available for subscribers only" and that unauthenticated users get market data with a 15-minute delay [MOEX ISS manual v1.4, 2016](https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0). The 2011 manual says the same [ISS manual v1.14, 2011](https://www.moex.com/files/4cdbyxykf9nk93tvngh2p7044r).
+- A recent MOEX news item gives public archive links for futures settlement prices, including ISS `/history/engines/futures/markets/forts/securities` and CSV file archives [MOEX n98831](https://www.moex.com/n98831).
+
+Read-only access to `/history` without login must therefore be tested, not assumed. Having technical access says nothing about permitted use (§8).
+
+### 4.2 Effective independent episodes
+
+Rows are not information. A panel of 100 contracts × 1,250 days gives 125,000 rows but far fewer independent learning episodes:
+- **Term structure.** Calendar spreads on the same underlying share drivers; neighbouring contracts in a chain are nearly duplicates.
+- **Common drivers across the panel.** Rouble rate, key-rate decisions and sanctions affect many contracts at once. One shock day is one episode, not 100.
+- **Overlapping labels.** With a 20-day holding period, consecutive daily labels share about 95% of their window.
+- **Delisting and survivorship.** Contracts that disappeared must stay in the panel up to their last trading date, or the training set is biased.
+
+**Illustrative calculation (assumptions, not measurements).** Take 5 years ≈ 1,250 sessions, a median holding period of 20 sessions and K ≈ 15 economically distinct spread families. Non-overlapping windows per family ≈ 62. If the average correlation of outcomes across families is ρ ≈ 0.3, the effective number of independent families is about K / (1 + (K−1)ρ) ≈ 15 / 5.2 ≈ 2.9. The effective episode count is then on the order of 62 × 2.9 ≈ 180 for *all* signals. The baseline trades only a fraction of these, and a RUB 30,000 account can hold perhaps 1–3 spreads at once (margin per contract is unverified). The number of actually tradable independent decisions could be well below 100 over the whole history.
+
+### 4.3 Power to detect a neural improvement
+
+To show at 5% significance with 80% power that the mean per-trade result differs from zero, you need roughly n ≈ 7.85 × (σ/μ)² independent observations. The number that matters for this decision is the *paired difference* between a neural filter and a tree filter on the same baseline signals. Both filters mostly agree, so the difference is usually small next to its noise.
+
+| Assumed paired effect (μ/σ of per-trade difference) | n needed (independent trades) |
+|---|---|
+| 0.30 | ≈ 87 |
+| 0.20 | ≈ 196 |
+| 0.10 | ≈ 785 |
+| 0.05 | ≈ 3,140 |
+
+*Reasoned estimates from the normal approximation, not computed with a tool. Autocorrelation and fat tails raise them.*
+
+Even optimistic effects need more independent trades than this panel and capital level probably allow. Expect the honest result of a neural test to be **"not distinguishable"**, and pre-register that this outcome means defer, not "promising".
+
+### 4.4 Regime shifts
+
+Russian futures have had structural breaks: sanctions shocks, changes in market access, key-rate cycles, contract launches and delistings. As Bailey et al. note about their overfitting test, a procedure "only takes into account structural breaks as long as they are present in the dataset" [Bailey et al., PBO](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf). The same applies to any walk-forward test: regimes absent from history are not tested. A model trained mostly on one regime and evaluated across a break measures luck about the break.
+
+---
+
+## 5. Leakage and validation design
+
+### 5.1 Walk-forward with purging and embargo
+
+Use expanding or rolling chronological folds and a final untouched holdout: the last 12–18 months, frozen before any neural work starts. Overlapping labels mean that ordinary k-fold cross-validation leaks. AFML's Chapter 7 states the problem directly: "CV is yet another instance where standard ML techniques fail when applied to financial problems... CV will contribute to overfitting through hyper-parameter tuning." That chapter also has a section titled "Purged K-Fold CV" [O'Reilly preview of AFML Ch. 7](https://www.oreilly.com/library/view/advances-in-financial/9781119482086/c07.xhtml).
+
+Practical rules:
+- **Purge:** remove any training observation whose label window overlaps the test window in calendar time.
+- **Embargo:** add a gap after each test window of at least the maximum holding period plus the delay, plus extra for settlement and roll effects.
+
+### 5.2 Leakage specific to a cross-instrument panel
+
+| Leakage path | Typical cause | Control |
+|---|---|---|
+| Cross-instrument contemporaneous leak | Training on contract A's day-*t* outcome while testing contract B on day *t* with a shared driver | Split by **calendar time** across the whole panel, never by instrument; purge across all instruments together |
+| Normalisation fitted on the future | Z-scoring features with full-sample means/variances; global scalers | Fit scalers per fold on training data only; per-instrument statistics using only past data at each *t* |
+| Embeddings | Instrument or sector embeddings learned on full history; contract IDs that encode delisting | Learn embeddings inside each training fold; new contracts get a cold-start embedding |
+| Roll and continuous-series construction | Back-adjusted series using future roll gaps | Build the spread from the actual tradeable contracts on each date, with roll dates known in advance |
+| Universe selection | Choosing "economically defensible" spreads after seeing which worked | Freeze the universe rules before the holdout; log every change |
+| Pretrained-model leakage | Foundation-model corpora overlapping the test period or correlated series | Treat any pretrained model as possibly contaminated; see below |
+
+**Foundation-model leakage is specific and documented.** Meyer et al. identify "indirect information leakage, arising from temporal overlap between correlated training and test series that often share a common causal driver". They require "strict global post-training test periods" after the latest pretraining timestamp [Meyer et al., arXiv 2510.13654](https://arxiv.org/html/2510.13654v3). Hyndman, summarising their work, reports that of 401 datasets used across 22 foundation models, "only 6% had never appeared in any model's pre-training or fine-tuning corpus" [Hyndman, Hyndsight](https://robjhyndman.com/hyndsight/foundation_models.html).
+
+The Chronos-2 paper lists its real-world pretraining sets (energy, transport, web, cloud and so on) and says that for multivariate and covariate-informed tasks "we relied entirely on synthetic data". It states no explicit training-data cutoff date [Chronos-2 paper](https://arxiv.org/html/2510.15821v1). So for any pretrained model, only a holdout that falls *after* the model's release date is clean.
+
+### 5.3 Fitting rules
+
+Labels, transforms, feature selection, hyperparameters, thresholds and the decision policy are all fitted inside each training fold. Early stopping is chosen on an inner validation slice that is itself purged. No setting may be changed after looking at the holdout. If one is, the holdout is spent and must be declared so.
+
+### 5.4 Multiple trials and selection bias
+
+Bailey and López de Prado argue that the number of trials is "the most important piece of information missing from virtually all backtests"; without controlling for it, a backtest "is worthless, regardless of how excellent the reported performance might be" [Deflated Sharpe Ratio paper](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf). Their deflated Sharpe ratio adjusts for:
+- the number of independent trials;
+- the spread of Sharpe ratios across trials;
+- the sample length;
+- skewness and kurtosis.
+
+They also estimate the effective number of independent trials from the average correlation between trials [same source](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf).
+
+**Illustrative effect, using their expected-maximum formula with zero true skill.** E[max SR] ≈ σ_SR × [(1−γ)Φ⁻¹(1−1/N) + γΦ⁻¹(1−1/(Ne))], where γ ≈ 0.5772:
+
+| Trials N | Expected best Sharpe under no skill (in units of σ_SR) | With ~3 years of data (σ_SR ≈ 0.58 annualised) |
+|---|---|---|
+| 10 | ≈ 1.6 | ≈ 0.9 |
+| 100 | ≈ 2.5 | ≈ 1.5 |
+| 1,000 | ≈ 3.3 | ≈ 1.9 |
+
+*Hand calculation, not tool-computed. Precision is only approximate.*
+
+A modest neural search (5 architectures × 20 hyperparameter settings × 3 feature sets = 300 trials) can produce an annualised Sharpe near 1.7 from noise alone over three years. That is the bar the honest comparison must clear.
+
+**Log every trial.** For each one record: ID, timestamp, code/data hash, architecture, hyperparameters, feature set, fold results, and whether the holdout was seen. Unlogged trials make the deflated Sharpe and overfitting estimates invalid.
+
+The Probability of Backtest Overfitting (PBO) is "the probability that an optimal strategy IS underperforms the mean OOS". It is estimated with combinatorially symmetric cross-validation (CSCV) [Bailey, Borwein, López de Prado, Zhu](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf). The authors warn against "applying CSCV to guide the search for an optimal strategy. That would constitute a gross misuse". Use PBO only as a report on the selection process.
+
+---
+
+## 6. Candidate small model families, only where justified
+
+A neural model is justified only if it can use structure the trees cannot: smooth shared patterns across many similar spreads, or sequence patterns too long for hand-made features. With the episode counts in §4, that case is weak. In priority order:
+
+| Family | Why it might help | Why it is likely to fail here | Verdict |
+|---|---|---|---|
+| **N1: small MLP** (1–2 hidden layers, strong weight decay/dropout, same features as B2/B3) | The cleanest like-for-like test of "does nonlinearity via a network add anything over trees?" | Tabular trees usually win at ~10K samples [Grinsztajn](https://arxiv.org/abs/2207.08815); shallow beats deep in finance [Gu/Kelly/Xiu](https://dokumen.pub/empirical-asset-pricing-via-machine-learning.html) | **Only candidate worth a first test** |
+| **N2: linear sequence model** (DLinear/NLinear-style on the spread history) | Zeng et al. found these beat Transformers on long-horizon forecasting [arXiv 2205.13504](https://arxiv.org/abs/2205.13504) | It is close to a linear AR model; it's really a baseline | Treat as part of B2, not "neural value" |
+| **N3: zero-shot pretrained forecaster as a feature generator** (Chronos-Bolt-small 48M or Chronos-2 small/base; TimesFM 2.5) | No training; outputs forecast ranges usable as a volatility/drift feature for B3 | Contamination (§5.2); no finance-specific pretraining in Chronos-2's listed corpus; CPU/x86 packaging friction; possibly no edge over a rolling-volatility feature | **Optional ablation only:** "does adding its forecast-range feature to B3 change net RUB?" |
+| **N4: small GRU/TCN on raw daily windows** | Learns its own features | Many parameters relative to ~100s of independent episodes; unstable on CPU; heavy search | Defer |
+| Transformers, graph networks across instruments, reinforcement learning for execution or sizing | Fashionable | Data-hungry; huge trial counts; reinforcement learning needs a fill simulator you can't build from daily data | Exclude |
+
+Published deep statistical-arbitrage claims do not transfer. One paper reports an annual Sharpe "larger than four" on "the 550 largest and most liquid stocks in the U.S. from 1998 to 2016" with millions of stock-days [Guijarro-Ordonez, Pelger, Zanotti](https://arxiv.org/html/2106.04028v2). That is a different market, liquidity level, data depth, cost structure and period. It says nothing about a RUB 30,000 MOEX spread account.
+
+**Licences of pretrained models:**
+- Chronos-Bolt: "licensed under the Apache-2.0 License" [HF chronos-bolt-small](https://huggingface.co/amazon/chronos-bolt-small).
+- Chronos-2: 120M parameters, Apache-2.0, CPU inference supported [HF chronos-2](https://huggingface.co/amazon/chronos-2).
+- TimesFM: code Apache-2.0; weights Apache-2.0 up to version 2.5; 3.0 weights "restricted to non-commercial, non-production use" [GitHub timesfm](https://github.com/google-research/timesfm).
+- Moirai: weights CC-BY-NC-4.0, released "for research purposes only" [HF Moirai](https://huggingface.co/Salesforce/moirai-1.0-R-large).
+
+Personal trading for profit is at least arguably commercial use, so **exclude non-commercial weights** (TimesFM 3.0, Moirai) from anything that could inform real trades.
+
+---
+
+## 7. Hardware: training versus inference
+
+### 7.1 Local Mac (Intel 6-core i7, 16 GB, Radeon Pro 5300M)
+
+| Item | Evidence | Implication |
+|---|---|---|
+| GPU acceleration | Current PyTorch MPS requirement: "Mac computer with Apple silicon", macOS 14+ [Apple](https://developer.apple.com/metal/pytorch/) | Treat the Radeon as unusable for neural training. Do not assume CUDA, ROCm or MPS |
+| PyTorch install | No x86_64 macOS binaries after 2.2 [PyTorch](https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690); PyPI 2.14.1 macOS wheels are arm64 only [PyPI](https://pypi.org/project/torch/); conda-forge lists macOS-64 for pytorch 2.14.1 [anaconda.org](https://anaconda.org/conda-forge/pytorch) | Either pin old torch 2.2.x (ageing, may conflict with current libraries) or use the community conda-forge build (support and reproducibility are not the same as official wheels) |
+| ONNX Runtime | 1.31.0 has only macOS 14+ ARM64 wheels [PyPI](https://pypi.org/project/onnxruntime/) | Converting models for portable CPU inference is not a free fallback on this Mac |
+| Baseline stack | scikit-learn 1.9.1 ships macOS x86_64 wheels [PyPI](https://pypi.org/project/scikit-learn/) | B2/B3 run natively. LightGBM x86_64 wheels are **unverified**; check before relying on them |
+| Training cost (reasoned estimate) | A 1–2-layer MLP on ≤10⁵ rows × ~20 features trains in seconds to minutes per fit on 6 CPU cores | The cost is not one fit but *folds × trials × seeds* (e.g. 10 × 100 × 5 = 5,000 fits), plus the logging and review burden |
+| Pretrained-model inference (reasoned estimate) | Chronos-2 is 120M parameters; its 28M "small" variant is described as suitable for CPU-only settings [Chronos-2 paper](https://arxiv.org/html/2510.15821v1). 120M fp32 weights ≈ 0.5 GB before runtime overhead | Fine overnight on 16 GB; to measure, not assume |
+
+### 7.2 VPS (1 vCPU, 1 GB RAM + 2 GB swap, shared 250–350 MB budget)
+
+No neural inference belongs on this VPS:
+- A PyTorch runtime plus even a 48M-parameter model likely exceeds the shared 250–350 MB budget. This is a reasoned estimate that would need a careful, non-production measurement.
+- Swapping risks starving the VPN and the other workload.
+
+If anything model-related ever runs there, it should be a tiny exported linear or tree scoring function, or simply a precomputed signal file made on the Mac after the session closes. No production probing should happen now, as specified.
+
+### 7.3 Free cloud compute: optional experiments, not an entitlement
+
+| Platform | Documented free terms | Caveats for this project |
+|---|---|---|
+| Hugging Face Spaces, CPU Basic | "16GB RAM, 2 CPU cores and 50GB of (not persistent) disk"; a free Space will "go to sleep... if unused" [HF Spaces overview](https://huggingface.co/docs/hub/en/spaces-overview); listed as free on [HF pricing](https://huggingface.co/pricing) | Weaker than your Mac (2 vCPU versus 6 cores); public by default unless private; uploading MOEX data may count as redistribution (§8) |
+| HF ZeroGPU | Free accounts: 5 minutes/day of GPU, medium priority; only accounts "in good standing (verified email, account older than 30 days)"; "exclusively compatible with the Gradio SDK" [HF ZeroGPU docs](https://huggingface.co/docs/hub/en/spaces-zerogpu) | A demo-hosting tool, not a training budget; 5 min/day is negligible |
+| Kaggle Notebooks | CPU sessions: 4 cores, 30 GB RAM; 12 h execution limit; 20 min idle timeout; free GPU availability "is limited" [Kaggle docs](https://www.kaggle.com/docs/notebooks) | A third-party tutorial says phone verification is needed for GPU/internet [Climatematch](https://comptools.climatematch.io/tutorials/TechnicalHelp/Tutorial_kaggle.html). Whether a Russian number is accepted is unknown. The often-quoted "30 h/week" comes from community posts, not the official page I read |
+| Google Colab (free) | "dynamic usage limits... not providing guaranteed or unlimited resources"; at most 12 hours; limits unpublished [Colab FAQ](https://research.google.com/colaboratory/faq.html) | Not reproducible as a resource assumption; access from Russia unverified |
+
+**Conclusion on compute:** compute is not the bottleneck. A properly bounded N1 experiment fits on the local CPU. Cloud services add little and bring extra rights and privacy risks. None of them should appear in a production or real-time path.
+
+---
+
+## 8. Data rights and privacy
+
+1. **Use rights.** The ISS restriction quoted in §1 [moex.com/a2193](https://www.moex.com/a2193) and the "non-display" classification [MOEX presentation](https://www.moex.com/files/45rqbw6j8d9sbx79533bvkzjwa) apply to *any* systematic signal generation, including B1–B3. A 2025 MOEX public offer for paid information products also limits them to "familiarization and own internal use for non-commercial purposes" [MOEX offer MB-R-2025-33](https://www.moex.com/files/4yaj8x2pg1fmw346jtp21frt5f). The presentation's "individual use... processing (for personal purposes)" category may cover private research; whether it also covers signals for your own trades is unresolved.
+   - **Minimal request:** a written MOEX answer (via the feedback form named on the data-policy page [moex.com/ru/datapolicy](https://www.moex.com/ru/datapolicy)), or the broker's terms if data comes through VTB or BCS terminals, stating whether automated personal research and signal generation on delayed/archive ISS data needs an information agreement.
+2. **Redistribution.** Uploading the MOEX panel to Kaggle, Hugging Face or Colab, or sharing derived datasets, could count as passing data to third parties. Keep raw and derived data local; don't publish Spaces or datasets.
+3. **Account privacy.** Never put broker statements, positions, LQDT balances or account identifiers into cloud notebooks or model artefacts.
+4. **Model licences.** Use only Apache-2.0 or similarly permissive weights (§6). Save the licence text and model revision hash next to each artefact.
+5. **No gated or paid workarounds.** No login-bypass tools, paid data or paid compute are assumed.
+
+---
+
+## 9. Reproducibility, calibration, drift, fallback and maintenance
+
+**Reproducibility.** Pin exact package versions in a lock file. On this Mac that means a conda-forge environment or pinned torch 2.2.x, so record which. Also:
+- Hash data snapshots and record download dates. MOEX may revise data, and the rules themselves change; the 2026-10-15 edition is the ninth listed period [moex.com/ru/documents/7064](https://www.moex.com/ru/documents/7064).
+- Fix random seeds, and report spread across ≥5 seeds. A neural result that holds for one seed only fails.
+- Record pretrained model revisions. A Hugging Face "main" branch can change; pin the commit hash.
+
+**Numerical stability.** CPU float32 results may differ across BLAS libraries and versions. Re-run the frozen model on two environments, or two versions, and require identical decisions on the holdout. Count decision flips, not just score differences.
+
+**Uncertainty and calibration.** The decision is a threshold on expected net value, so calibration matters more than ranking:
+- Report reliability curves and Brier score per fold.
+- Use fold-internal calibration (isotonic or Platt) fitted on training data only.
+- For quantile outputs (Chronos-family), check coverage of the 10–90% interval on the holdout.
+
+A model that ranks well but is miscalibrated will trade too much or too little against costs.
+
+**Drift and fallback to the baseline.**
+- **Monitor:** input drift (feature distributions versus training), calibration drift, and the running paired difference versus B3.
+- **Fallback rule, pre-registered:** if the neural filter's rolling paired excess versus B3 falls below zero over N signals, or input drift exceeds a set level, switch to B3 or B1 automatically. Lower model complexity, never raise exposure.
+
+The neural layer must never override the RUB-based risk triggers (5k warning / 10k action / 15k outer boundary / 90-day review without resets), the emergency-funding rules or the capital rules.
+
+**Maintenance burden** (relative to B3), which should count against the neural candidate:
+- environment fragility on Intel macOS;
+- retraining schedule and seed management;
+- calibration monitoring;
+- pretrained-model licence and revision tracking;
+- explaining decisions during manual execution;
+- a larger trial log.
+
+A neural model that matches B3 net is a **loss**, because it adds maintenance without adding value.
+
+---
+
+## 10. Staged experiment, cost and resource matrix
+
+| Stage | Purpose | Prerequisites | Resources (estimates) | Cost | Gate to proceed |
+|---|---|---|---|---|---|
+| **S0: rights and data audit** | Settle permitted use; test free `/history` and FUTOI access read-only; coverage, delistings, rolls | MOEX/broker answer on non-display/personal use; small read-only fetch | Hours of manual work; trivial compute | Free | Permitted-use answer documented; coverage table (contracts × dates, delisted included) |
+| **S1: label and simulator** | Build the §3.2 label and the RUB 30,000 portfolio simulator with costs, delay scenarios, integer contracts, LQDT counterfactual and funding rules | Cost scenario parameters; margin per contract (unverified, needs a source) | Mac CPU, minutes | Free | Simulator reproduces B0 = 0 exactly and passes hand-checked trade examples |
+| **S2: baselines B1–B3** | Walk-forward with purge/embargo; trial log; frozen holdout | S0, S1 | Mac CPU; minutes to an hour per full sweep | Free | B1 or B3 shows positive *deflated* net excess in walk-forward. **If not, stop: no neural stage** |
+| **S3: power check** | Count effective independent episodes and actual trades; compute the detectable paired effect | S2 outputs | Analysis only | Free | Detectable μ/σ ≤ ~0.2 with available n; otherwise neural testing cannot be informative → defer |
+| **N1: small MLP meta-filter** | Same features as B3; ≤ 30 pre-registered trials; ≥5 seeds | S3 passed; trial log | Mac CPU (conda-forge or pinned torch); hours | Free | §11 criteria |
+| **N3 (optional): pretrained-forecast feature ablation** | Add the Chronos-Bolt/Chronos-2 forecast range as a feature to B3 | N1 run (pass or fail); holdout dated after the model's release; Apache licence recorded | Mac CPU overnight; ~0.5–1 GB RAM (to measure) | Free | Paired improvement over B3 on post-release data only |
+| **Deferred** | GRU/TCN, Transformers, graph networks, reinforcement learning, intraday data, VPS inference, cloud GPU, automation at BCS | Separate later gates | n/a | n/a | n/a |
+
+---
+
+## 11. Ablations and early discard criteria
+
+**Ablations** (each against the same holdout and simulator):
+1. B3 with versus without the open-interest features.
+2. N1 versus B3 with identical features: the pure "network vs trees" test.
+3. N1 with features scaled on training data only versus scaled on the full sample, to show how much leakage inflates results.
+4. Delay scenarios of 15, 45 and 90 minutes.
+5. Cost scenarios: conservative, base, stress.
+6. Universe with versus without delisted contracts.
+7. N3 forecast feature versus a plain rolling-volatility feature.
+
+**Early discard: stop the neural branch if any of these holds:**
+- S2 baselines show no positive deflated net excess. There is nothing to filter.
+- Effective independent trades in the holdout are below the S3 threshold.
+- N1's paired net excess versus B3 is ≤ 0 under the *base* cost scenario, or turns negative under *stress* or 90-minute delay.
+- The result depends on a single seed, or decisions flip under environment or version changes.
+- PBO of the neural selection process is above 0.5, or the deflated Sharpe is not significant once all logged trials are counted.
+- Holdout calibration error makes the trade count differ materially from the training-period rate.
+- Any gain comes mainly from one regime episode, or disappears when one crisis window is removed.
+- The extra maintenance cost cannot be justified by the measured RUB difference within the 90-day review horizon. A RUB difference smaller than the pilot's noise level counts as zero.
+
+---
+
+## 12. Falsification criteria for this report's conclusion
+
+The conclusion "neural adds no reliable value here" would be **wrong** if a pre-registered N1 or N3 run met all of the following:
+1. Positive paired net RUB excess over B3 on the untouched holdout, under base *and* stress costs and at 90-minute delay.
+2. Deflated Sharpe on the full logged trial count significant at conventional levels.
+3. Holdout-consistent results across ≥5 seeds and two environments.
+4. Sufficient independent trades per §4.3.
+5. Improvement not concentrated in a single regime.
+6. For N3, evaluation only on data after the model's release.
+
+If several of these hold, the right step is to extend paper monitoring forward, not to trade.
+
+---
+
+## 13. Conflicts, unknowns and data limitations
+
+| Item | Status | Fallback / note |
+|---|---|---|
+| Free access to `/iss/history` futures archive | **Conflict.** Manuals from 2011 and 2016 say history is subscriber-only; a current MOEX news item gives archive links | Test read-only in S0; record the date and result |
+| Permitted use of ISS data for personal automated research and signals | **Unknown.** ISS page restricts to "familiarization"; presentation lists both "non-display requires an agreement" and "individual use... processing (personal)" | Ask MOEX or broker in writing; the 2026-10-15 rules edition was not read in full |
+| FUTOI terms | MOEX note says free, 15-minute delay, 10 years | Usage rights still governed by the rules above |
+| Margin per contract, fees, slippage | Not researched here | S1 needs sourced values; never assume zero |
+| LightGBM x86_64 macOS wheels | Unverified | Use scikit-learn trees, or verify first |
+| conda-forge PyTorch on osx-64 | Listed as a platform; not install-tested | Reproducibility risk; record the exact build |
+| Kaggle phone verification from Russia; Colab access | Unknown | Not needed; the local Mac suffices |
+| HF free tiers | As documented on 2026-10-22; may change | Optional only |
+| Pretraining cutoff for Chronos-2 / TimesFM | Not stated in sources read | Use only data after the release date for N3 |
+| Broker/KPUR treatment, collateral eligibility, LQDT tax | Out of scope; unverified | No conclusion depends on them, except that the simulator's capital rules must be confirmed later |
+| AFML content beyond the Ch. 7 opening | Not read | No other chapter or section claims made |
+
+---
+
+## 14. Critique of *Advances in Financial Machine Learning*
+
+**What I read:** only the public opening of **Chapter 7, "Cross-Validation in Finance"** — sections 7.1 Motivation and 7.2 The Goal of Cross-Validation — plus the title of a section "Purged K-Fold CV". This was from the O'Reilly edition: Wiley, ISBN 9781119482086 per the catalogue URL [O'Reilly](https://www.oreilly.com/library/view/advances-in-financial/9781119482086/c07.xhtml). I make no claims about the rest of the book.
+
+**How well it applies here:**
+- **Strong:** the core warning that standard cross-validation leaks under overlapping labels, and that tuning hyperparameters through it causes overfitting. Daily spread labels with multi-week holds are exactly that case.
+- **Weaker:** AFML-style methods assume enough events to purge, embargo and combine folds. On a few hundred effective episodes, purging removes a large share of the training data and the combinatorial paths are highly correlated. Expect wide uncertainty even with careful technique.
+- **Not addressed by any of these methods:** execution realism from daily bars, MOEX data rights, and the matched LQDT counterfactual. Those must be built separately.
+
+---
+
+## 15. Suggested project changes
+
+1. **Make S0 (rights and data audit) a hard gate for every modelling investigation, not just R15.** Data rights apply to every model, not only neural ones.
+2. Frame any neural candidate as a **meta-filter on B1**, with B3 as its primary competitor, and set a **trial budget in advance** (for example ≤30 for N1), all logged.
+3. **Freeze an untouched holdout now**, before any further exploration.
+4. **Exclude non-commercial weights** (TimesFM 3.0, Moirai) and any cloud upload of MOEX data.
+5. Plan **no neural code on the VPS**. If anything ever moves to automation at BCS, ship only precomputed signals or a tiny linear/tree scorer.
+6. Add a pre-registered **"indistinguishable means defer"** rule so an underpowered neural test can't be read as encouraging.
+
+**Materials that would settle the remaining questions:**
+- a written MOEX or broker statement on personal automated use of ISS data;
+- the coverage table from a small read-only S0 fetch;
+- sourced margin and fee parameters for the S1 simulator.

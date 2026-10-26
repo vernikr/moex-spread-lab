@@ -1,0 +1,365 @@
+# R08: Delayed manual execution, signal validity and a virtual portfolio for a MOEX futures-spread pilot
+
+## Executive conclusions
+
+As of 2026-10-21, the evidence supports keeping manual delayed execution under study. It does not support assuming that signals can be executed as generated. Six findings drive the design:
+
+- **Free data is stale before you see it.** Free MOEX ISS market data is delayed 15 minutes, and order books need a subscription [S9][S10]. A signal built on free data is therefore at least 15 minutes old when created. Add the 3–90 minute reaction time and the market input is roughly 18–105+ minutes old when an order arrives. Every entry must be re-checked against live broker bid/ask. This makes the "stale winner" (example 1 below) a structural risk, not an edge case.
+- **The ISS licence may block a signal pipeline.** The terms describe ISS data as "for familiarisation only" and bar using it to make a profit without a contract with the exchange [S11]. An automated signal pipeline built on free ISS data may be outside those terms. This needs an R04 decision before anything is built.
+- **Same-underlying calendar spreads may avoid one-leg risk; cross-product pairs cannot.** MOEX runs calendar-spread order books where one order executes both legs. "Synthetic matching" means the spread order can also trade against the individual contracts' books [S5][S6]. Inter-product spreads (e.g. BR–CL) are only "planned" [S5]. So cross-product pairs must be executed one leg at a time. The presentation I read does not say how partial fills work across legs [S6]. Whether VTB clients can reach these spread books in the app or QUIK is unverified.
+- **The 2026 session regime changes the timing model.** The unified trading session started 2026-03-23 [S1][S2]. Hours were extended from 2026-07-14 [S3]. Under the new regime:
+  - Margin is recomputed once a day at the 23:50–00:30 clearing, and intraday only when price limits change.
+  - Variation margin is settled at 20:00 the next day (T+1).
+  - Participants must meet margin calls by 17:30 T+1; the client deadline is set by the broker [S2].
+  - Orders stay live until the end of the trading day [S2].
+  - The weekend session counts as part of the next trading day, covers only a listed set of contracts, and can be cancelled (15–16 Aug 2026) [S4][S7][S8].
+- **VTB order mechanics add specific failure modes.**
+  - QUIK conditional orders are checked on a server outside the exchange and may fail for technical reasons [S12].
+  - Since a 2026-07-22 release, app orders can be set to stay live for up to 90 days, including futures, and orders entered while the market is closed are queued for the next session [S13]. That queueing is a stale-fill hazard.
+  - A VTB page says orders can be changed or cancelled only by phoning traders. It probably refers to a sanctions-era special regime, so this is a conflict to resolve [S14].
+  - Backup channels are a web version, QUIK and voice orders, highlighted after the 2026-10-11 Runet outage [S15].
+- **No executable backtest is possible from free data.** Without historical bid/ask, any past-data study is exploratory: conservative OHLCV fill scenarios plus forward collection of quotes and broker fills. "Every signal fills" and midpoint fills are excluded.
+
+**Inputs actually read:** none of R01, R02, R04, R05, R06, R07 or R09 was supplied. Everything that depends on broker rules (R01), costs (R02), data (R04), the contract universe (R06), validation (R09), stress (R07) or accounting (R05) is conditional. I ran no backtests, account checks or measurements. All numbers in the examples are hypothetical.
+
+## 1. Timestamp model
+
+Every idea, order and leg carries its own clock. The key rule: **data age is measured from the newest market input the decision actually used.** Re-sending or re-labelling a signal never refreshes it.
+
+| Symbol | Meaning | Source / note |
+|---|---|---|
+| `t_mkt` | Exchange time of the newest market event used | From the data feed |
+| `t_avail` | When that event reached the project | Free ISS: `t_avail ≥ t_mkt + 15 min` [S9] |
+| `t_eval` | Model evaluation start/end | Logged by code; includes model version |
+| `t_sig` | Idea-level signal created | Gets the identifier `idea_id`; never re-stamped |
+| `t_send`, `t_deliv` | Telegram send; delivery acknowledgement if available | Retries logged separately |
+| `t_read`, `t_decide` | User opens the alert; chooses go / no-go | Manual log or app tap |
+| `t_quote_chk` | Live broker bid/ask read for each leg | Screenshot or manual entry |
+| `t_submit[leg]`, `t_ack[leg]` | Order sent; broker or exchange acknowledgement | Broker order log |
+| `t_fill[leg,k]` | Each partial fill | Broker trade report |
+| `t_hedged` | Both legs at target ratio | Derived |
+| `t_cxl_req`, `t_cxl_ack` | Cancel requested; confirmed | Phone cancels need a manual timestamp |
+| `t_expire` | Idea validity end, fixed at `t_sig` | Pre-declared rule |
+
+**Normal reaction** (`t_submit − t_deliv`, within the 3–90 minute range) is modelled separately from three other processes:
+
+- **System outage:** model, data, VPS, VPN or Telegram not working. The signal is never created or never delivered.
+- **Human unavailability:** sleep, work, travel. The alert is read only after the 90-minute limit, so the idea is unexecuted, not merely late.
+- **Broker or channel outage:** app or QUIK unreachable, phone queue. The 2026-10-11 outage shows these are plausible [S15].
+
+Anything beyond 90 minutes becomes "expired" with a cause code. It is never a long-tail fill.
+
+## 2. Delay scenarios (all hypothetical)
+
+The true reaction distribution is unknown. Each scenario below is truncated to 3–90 minutes with a median of 5–15 minutes. Run all of them, plus several random seeds per scenario.
+
+| ID | Shape | Median | p90 | Coupling to market state |
+|---|---|---|---|---|
+| D1 Attentive | Log-normal, truncated | 6 | ~20 | Independent |
+| D2 Typical | Log-normal, truncated | 10 | ~40 | Independent |
+| D3 Heavy tail | Mixture: 70% fast, 30% spread across 30–90 | 14 | ~75 | Independent |
+| D4 Regime | Median 8 when calm; 25 in the top volatility quintile, the evening session, or the first 15 min after the open | Overall 5–15 | Higher | Delay rises with volatility |
+| D5 Adverse ordering | Same marginal distribution as D2, but the longest delays go to signals with the highest volatility / widest spread | 10 | ~40 | Fully adverse |
+| D6 Clustered | Second and later alerts within 30 min of a previous one get +10–30 min | ≥ D2 | Higher | Burden-driven |
+
+Implementation notes:
+
+- **Seeding:** fixed seeds, recorded per run, with one delay draw per (signal, seed).
+- **Calendars:** availability calendars (quiet hours, workdays) are separate inputs, not part of the delay draw.
+- **Closed markets:** if `t_deliv + delay` lands after the session end, in clearing, or on a weekend for a contract not in the weekend list [S7], the outcome is MARKET_CLOSED. It is not converted into a next-open fill unless a separate, declared next-session rule exists.
+- **Dated schedule:** the session calendar is a dated table, not a constant:
+  - before 2026-03-23: old session structure;
+  - 2026-03-23 to 2026-07-13: 08:50–23:50 [S2];
+  - from 2026-07-14: 06:50–23:50 [S3][S16];
+  - plus weekend lists and cancellations [S4][S8].
+- **Later calibration:** fit to the user's own recorded `t_deliv → t_submit` times, using only data before each evaluation date (no look-ahead). Report how much the estimate changes as data accumulates.
+
+## 3. Revalidating a signal after the delay
+
+At `t_decide` (and again just before the second leg if legging), every condition below must pass using live broker quotes. Otherwise the idea gets the first failing reason code.
+
+| Check | Condition |
+|---|---|
+| Session | Each leg is in an active session now, not in the last N minutes before close, not at expiry (cash-settled expiries run at 14:00 or 19:00, or in clearing [S2]) |
+| Data freshness | Age of the newest model input ≤ cap; live quote age ≤ 1 min |
+| Model validity | Same model version; no regime or invalidation flag since `t_sig` |
+| Price | Live executable spread (buy at ask, sell at bid) is inside the pre-declared bound in the signal |
+| Net edge | Expected gain after fees, crossing cost and estimated exit cost exceeds the LQDT carry on the committed capital over the expected holding time, plus a buffer |
+| Lot and liquidity | Minimum lot per leg; visible size ≥ k × order size |
+| Price limits | No leg near its daily price limit (in the evening session limits do not widen automatically [S17]) |
+| Funds | Margin + VM reserve + exit-cost reserve ≤ free envelope, with zero emergency funding; the stress-loss check still holds |
+| Portfolio | No overlapping or conflicting position; quotas not exhausted |
+
+**Expiry and reissue.** Each signal fixes a `t_expire` when created, for example `min(t_sig + 90 min, session end − buffer)`. After expiry the idea is dead. A reissue is allowed only when:
+
+- a new evaluation runs on market data with `t_mkt` newer than the last one used, and
+- it produces a distinct `idea_id` with a reference to its predecessor.
+
+A re-sent Telegram message or a re-run on the same data is not a reissue.
+
+**Price invalidation.** If the spread has moved more than x% of the expected reversion toward fair value (the edge has decayed), or more than y standard deviations against the idea (the model state may be broken), the idea is dead. x and y are calibration parameters.
+
+## 4. Two-leg and partial execution
+
+**Path A: exchange calendar-spread instrument** (same underlying, if the broker supports it — unverified).
+
+- One limit order priced as far-leg minus near-leg [S5].
+- Remaining risks: unfilled, partially filled (cross-leg behaviour not stated in [S6]), stale resting order.
+- Exchange fees for anonymous spread orders follow `T × F × (1 − K)`, with a temporary 0.2 discount [S5] (to be checked in R02).
+
+**Path B: legging** (cross-product pairs, or no broker access to spread books).
+
+1. Enter the less liquid leg first with a limit order.
+2. Start an unhedged timer `T_h` at its first fill.
+3. Hedge the second leg with a limit order at or inside the pre-declared bound.
+4. When `T_h` expires, or the price moves beyond the bound, choose one of:
+   - (a) cross the spread on leg 2, if the remaining edge after crossing is still at least 0 and no price-limit or stale-data flag is set;
+   - (b) otherwise unwind the filled quantity of leg 1 with a marketable limit order.
+5. **Partial fills:** hedge only the filled quantity of leg 1, and cancel the rest of leg 1 before adding to leg 2.
+6. **Uncertain acknowledgement:** if leg 1's status is unknown, assume it filled and hedge to the most conservative known position. Do not send duplicate orders until the position has been checked.
+
+A one-leg exposure is a naked-leg danger. It overrides the money-based triggers.
+
+**Order-type cautions:**
+
+- QUIK stop orders may fail to execute for technical reasons [S12].
+- "Valid until cancel" and closed-market queued orders [S13] must not be used for entries in the virtual or pilot portfolio. A queued order could fill at the next open on information that is hours old.
+- If cancelling really requires a phone call [S14], add the time to cancel to the unhedged interval.
+
+**Microstructure link (Harris).** A resting limit order gives other traders a "free option" [S19]. A stale resting leg is filled exactly when the market has moved against it. This is why fills must be modelled conservatively and why resting orders need short lives.
+
+## 5. The finite-capital virtual portfolio
+
+**Rules:**
+
+- Attempt every eligible signal. No discretionary omission.
+- Draw a delay per scenario and seed.
+- Apply revalidation at the simulated decision time, using only data known by then.
+- Reserve capital at `t_decide`. Release the reservation when a reason code ends the attempt or the position is flat.
+
+**Conflict priority (deterministic):**
+
+1. Risk exits and hedge completions first. They never use the new-idea quota.
+2. Then new ideas by `t_sig`.
+3. Ties broken by a pre-declared score (net edge per unit of stressed loss).
+4. Final tie-break: `idea_id`.
+
+A lower-priority idea freed by another idea's failure is re-checked at its own simulated time.
+
+**Funding:**
+
+- Default: no extra funding.
+- Emergency funds count only if there is an explicit approval event with a credit time. They may only be used to reach flat or to avoid disorderly liquidation.
+- They count toward the 15,000 gross lifetime cap.
+- Broker use of core collateral is an incident and also counts toward the cap.
+- Margin calls: the participant deadline is 17:30 T+1, but the broker's client deadline governs and is unknown (R01) [S2].
+
+**Ledger:**
+
+- Record signals, orders and fills separately.
+- Mark P&L with exit-cost-adjusted marks taken at the same time for both legs.
+- Feed the results into X against the matched LQDT counterfactual B.
+- Unfilled ideas give zero trading P&L, but keep the cash or LQDT position effect (R05).
+
+**Duplicates:** a repeat notification maps to the same `idea_id` and creates no new trade. A new trade needs a distinct entry rule (e.g. a declared scale-in rule), and it still passes the zero-emergency envelope.
+
+## 6. Signal communication
+
+The alert separates the **idea** from the **order instructions**.
+
+**Idea block:**
+
+- `idea_id`, pair family and legs with direction and ratio
+- quantity in lots
+- expected net effect after costs vs LQDT, as a range
+- stressed loss
+- holding-time range
+- evidence confidence: validation tier, sample size, out-of-sample status — not a win probability
+- `t_mkt` of the newest input, data age at `t_sig`, `t_expire`
+
+**Order block:**
+
+- executable bound per leg and for the spread
+- order type and lifetime (e.g. day order, no carry-over)
+- leg sequence, `T_h`, cross/unwind rule
+
+**"Do not enter if" lines:**
+
+- live spread is outside the bound
+- quote age > 1 min
+- less than N minutes to session end or expiry
+- a leg is near its price limit
+- free envelope < requirement
+- an open position overlaps
+- alert age > `t_expire`
+
+## 7. Reason-code taxonomy
+
+| Stage | Codes |
+|---|---|
+| Creation | `DATA_STALE_AT_EVAL`, `MODEL_OUTAGE`, `DATA_GAP`, `NOT_ELIGIBLE_UNIVERSE` |
+| Delivery | `NOTIFY_FAILED`, `NOTIFY_RETRY_DUPLICATE`, `DELIVERED_LATE` |
+| Human | `USER_UNAVAILABLE`, `EXPIRED_BEFORE_READ`, `USER_DECLINED_RULE` (rule-based only), `QUOTA_EXHAUSTED` |
+| Revalidation | `MARKET_CLOSED`, `NOT_IN_WEEKEND_SESSION`, `NEAR_CLOSE_OR_EXPIRY`, `QUOTE_STALE`, `PRICE_OUT_OF_BOUND`, `EDGE_DECAYED`, `INVALIDATED_ADVERSE`, `MODEL_VERSION_CHANGED`, `NEAR_PRICE_LIMIT`, `LOT_OR_DEPTH_INSUFFICIENT` |
+| Capital | `INSUFFICIENT_ENVELOPE`, `STRESS_TEST_FAIL`, `OVERLAP_CONFLICT`, `LOWER_PRIORITY_CASH`, `ADDITIONAL_FUNDS_NOT_AUTHORIZED`, `FUNDS_NOT_CREDITED_IN_TIME`, `TRIGGER_SUSPENDED` (D≥10k or X≤−10k) |
+| Order | `REJECTED_BROKER`, `REJECTED_EXCHANGE`, `UNFILLED`, `PARTIAL`, `CANCELLED`, `CANCEL_UNCONFIRMED`, `ACK_UNKNOWN` |
+| Legs | `ONE_LEG_FILLED`, `HEDGE_CROSSED`, `LEG_UNWOUND`, `HEDGE_TIMEOUT` |
+| Position | `RISK_EXIT`, `MARGIN_ESCALATION`, `BROKER_LIQUIDATION` (incident), `CORE_COLLATERAL_USED` (incident) |
+
+## 8. Delayed-fill evaluation protocol
+
+**Hypothesis to falsify:** manual delayed execution keeps a positive edge net of costs vs LQDT on a meaningful share of eligible signals.
+
+**Historical exploratory step (OHLCV only):**
+
+- **Interval:** use the finest free candle interval R04 confirms. ISS candle codes include 1, 10, 60 and 24 (one day) [S20].
+- **Market orders:** fill at the bar containing the arrival time, at the adverse extreme (buy at the high, sell at the low) of each leg's bar.
+- **Limit orders:** fill only if price traded at least one tick beyond the limit [S18]. Size is capped at a small fraction of bar volume.
+- **No trades:** if a leg has zero volume in the window, the outcome is UNFILLED.
+- **Fill time:** never fill before the arrival time. Never use bars that were not yet available.
+- **Calendar spreads:** the MOEX archive gives daily bid/offer, high/low, volume and trade counts [S21]. Use it only as a daily sanity bound.
+- **Reporting:** per scenario and seed, report
+  - signal count, eligible count, order count, fill count, by reason code;
+  - edge vs delay (an edge "half-life");
+  - legging-loss distribution;
+  - X path and maximum D.
+
+**Falsifiers (thresholds to pre-register in R09):**
+
+- the median-delay pass rate falls below a set level;
+- the edge half-life is shorter than the 5–15 minute median;
+- net edge under D4/D5 is not above LQDT carry;
+- legging loss at p75 wipes out the median edge;
+- forward-collected bid/ask is systematically worse than the OHLCV proxy.
+
+Forward evidence decides. Delay decay is documented in the literature: Gatev, Goetzmann & Rouwenhorst (2006, RFS 19(3), p. 12) found that waiting one day cut average excess returns by about 30–55 bp (fully invested) and 20–35 bp (committed capital) [S22]. It is a daily-data result for US equities, not evidence about MOEX. The implementation-shortfall framework splits costs into delay costs and the opportunity cost of unexecuted trades (Perold 1988, JPM 14(4):4–9) [S23][S24].
+
+**What to collect going forward (paper phase, no trades):**
+
+- the full timestamp chain from §1;
+- live broker bid/ask and visible size per leg at `t_read` and `t_decide` (screenshot or manual entry);
+- the ISS delayed snapshot used;
+- a would-have-submitted price;
+- a counterfactual outcome at +5, +15, +30, +60 and +90 minutes from public trade data.
+
+If a pilot is approved later, also collect broker order and trade exports, acknowledgement times and cancellation times.
+
+ALGOPACK sells richer order-book statistics. Its pricing seen so far (e.g. 600 RUB a month for one analytics service) is a possible small spend, still to be checked in R04 [S25][S26].
+
+## 9. Hypothetical examples (illustrative numbers only)
+
+1. **Stale winner.**
+   - Data as of 11:45, signal at 12:00, read at 12:20.
+   - 70% of the expected reversion has already happened. Net edge at live bid/ask is below LQDT carry plus buffer, so the code is `EDGE_DECAYED`.
+   - The paper idea "wins", but this is recorded only in the opportunity-cost log, not in X.
+2. **Missed opportunity.**
+   - Alert at 23:31; the user is unavailable; trading closes at 23:50 [S16].
+   - Codes: `USER_UNAVAILABLE` → `MARKET_CLOSED` → expired.
+   - No next-open fill. The contract is also not on the weekend list.
+3. **Cash competition.**
+   - Free envelope 9,000. Ideas A (14:02) and B (14:03) each need 6,000 margin plus 3,000 reserves.
+   - A is reserved first. B gets `LOWER_PRIORITY_CASH`.
+   - If A fails revalidation at 14:15, B is re-checked at 14:15 against 14:15 quotes. It does not inherit its 14:03 state.
+4. **One-leg fill.**
+   - Cross-product pair. Leg 1 fills 2 lots; leg 2's bid moves away.
+   - At `T_h` = 2 min, crossing would leave a remaining edge of −150, so leg 1 is unwound at −400.
+   - Codes: `ONE_LEG_FILLED` → `LEG_UNWOUND`. The −400 goes into X.
+5. **Margin escalation.**
+   - A price-limit widening raises margin intraday [S2][S17]. The requirement rises by 4,000 against 1,500 free.
+   - No approval, so the default applies: orderly de-risk, code `ADDITIONAL_FUNDS_NOT_AUTHORIZED`.
+   - Even if approval arrives, a bank transfer credited after the broker's deadline gives `FUNDS_NOT_CREDITED_IN_TIME`.
+   - Any broker use of LQDT collateral is an incident and counts toward the gross cap.
+6. **Notification retry.**
+   - Send fails at 10:05; retry delivers at 10:07; a duplicate arrives at 10:08.
+   - Same `idea_id` and data-state hash, so there is one idea and no second trade.
+   - Age is measured from `t_mkt`/`t_sig`, not from 10:07.
+
+## 10. Manual-action burden and what a "trade" means
+
+**Metrics:**
+
+- alerts per day
+- actionable alerts per day
+- entry decisions, orders, modifications and cancels per day
+- legs per idea
+- hedge-completion actions
+- risk-exit actions
+- phone orders
+- alerts during quiet hours (22:00–08:00) and on weekends
+- alert clusters (≥2 within 30 minutes)
+- attention-minutes per idea
+- share of `USER_UNAVAILABLE` and `QUOTA_EXHAUSTED`
+
+**Open question for you:** does one daily "trade" mean an idea, an order or an intervention?
+
+**Proposed default (needs your approval):** one "trade" = one new-idea entry decision. Draft limits:
+
+- at most 2 new-idea entries per day;
+- at most 1 idea being legged at a time;
+- risk exits, hedge completion and emergency de-risking never use the quota but are counted separately;
+- no new entries in the last 30 minutes before close or in self-declared quiet hours.
+
+Emergency response availability (who acts, how fast, at night) still needs to be defined. Until it is, any position that needs overnight intervention is ineligible.
+
+## 11. Conflicts, unknowns and project changes
+
+**Conflicts:**
+
+- **Main-session start after the July change.** The 2026-07-14 announcement gives a morning session 07:00–10:00 and the main session from 10:00 [S16]. The ETS page shows "morning 07:00–09:00, main 09:00–19:00" [S1]. The risk page says limits widen automatically 09:00–19:00 [S17]. Use a dated calendar and verify it.
+- **Weekend hours:** 10:00–19:00 in the March announcement [S2b] vs 09:50–19:00 in July [S3][S16]. The 09:50 start may be an opening auction.
+- **VTB cancellation by phone only** [S14] vs the app's "valid until cancel" feature [S13]. Probably different regimes; verify.
+
+**Unknowns:**
+
+- whether VTB clients can reach calendar-spread books;
+- the broker's client margin-call deadline and liquidation rules (R01);
+- whether LQDT counts as collateral (R01);
+- whether app quotes are real-time;
+- the ISS licence for signal generation (R04);
+- historical bid/ask availability;
+- the true reaction distribution.
+
+**Possible project changes:**
+
+- prefer same-underlying calendar spreads with exchange spread books;
+- ban carry-over and closed-market queued orders for entries;
+- treat ISS-based signals as "candidate, needs live check";
+- consider a licensed or paid real-time source if R04 confirms the licence restriction;
+- run a paper phase whose main output is the forward quote and timestamp dataset.
+
+**Optional material to send:** Harris, *Trading and Exchanges*, chapters 4 (orders), 6 (order-driven markets), 14 (spreads), 18 (order strategies), 19–21 (liquidity, volatility, cost measurement) [S19]. These would sharpen the free-option and adverse-selection failure models. Institutional block-trading assumptions should not be carried over.
+
+## Evidence register (accessed 2026-10-21)
+
+| ID | Issuer / title / date | Key point |
+|---|---|---|
+| S1 | MOEX, ETS page — https://www.moex.com/ru/derivatives/unified-trading-session | Search excerpt: "Утренняя доп. сессия 7:00–09:00; Основная 09:00–19:00; Вечерняя 19:00–23:50" (the page fetch returned only a legal notice) |
+| S2 | MOEX, ETS guide v.01.04.2026 — https://www.moex.com/media/moex-gid-ets.pdf | Clearing 23:50–00:30; VM settlement 20:00 T+1; margin calls by 17:30 T+1 for participants, clients per broker; margin changes intraday only on price-limit change; orders stay live within the day; expiry at 14:00/19:00 or in clearing |
+| S2b | MOEX news n98363 — https://www.moex.com/n98363 | ETS from 23.03.2026; weekend session 10:00–19:00 |
+| S3 | RBC, 2026-07-10 — https://www.rbc.ru/quote/10/07/2026/6a50de6f9a79471c7e1b0461 | From 14 July, trading 6:50–23:50; FX futures in weekend session from 18 July |
+| S4 | MOEX n103333 — https://www.moex.com/n103333 | No weekend session on 15–16 Aug 2026 |
+| S5 | MOEX, calendar spreads — https://www.moex.com/ru/spreads | Synthetic matching; price = far minus near; inter-product only "в перспективе"; FeeCS formula |
+| S6 | MOEX, synthetic matching presentation, Apr 2026 — https://www.moex.com/files/4h3j47jf4g2dnswvk6fb4ggfcc | Leg pricing rules; partial-fill behaviour not stated |
+| S7 | MOEX, weekend session — https://www.moex.com/ru/derivatives/weekend-session | List of eligible contracts |
+| S8 | frankmedia, ETS — https://frankmedia.ru/229113 | Weekend session belongs to the next working trading day; margin top-up by 17:30 |
+| S9 | MOEX Interfaces — https://www.moex.com/s3630 | "delayed data (15 min) is provided for free" |
+| S10 | MOEX ISS manual v1.4 (2016) — https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0 | "Orderbooks and historical data are only available to the paid subscribers" (2016 wording; current scope to verify) |
+| S11 | MOEX ISS page — https://www.moex.com/a2193 | "только для ознакомления, не может быть использована для извлечения прибыли" |
+| S12 | VTB, trading systems — https://www.vtb.ru/personal/investicii/help/torgovie-sistemy/ | QUIK stop orders checked outside the exchange; execution may fail for technical reasons |
+| S13 | Bankinform, 2026-07-22 — https://bankinform.ru/news/142489 | Orders valid up to 90 days; closed-market queueing; includes futures |
+| S14 | VTB "Важная информация" — https://www.vtb.ru/product/otvety/vazhnoe/ | "Отменить или изменить … только через трейдеров" |
+| S15 | RBC, 2026-10-11 — https://www.rbc.ru/quote/11/10/2026/6ac7a2a29a79476e31a3ea65 | VTB backups: web, QUIK, voice orders |
+| S16 | MOEX n101980 — https://www.moex.com/n101980 | Schedule from 14.07.2026; weekend 9:50–19:00 |
+| S17 | MOEX risk management — https://www.moex.com/s1059 | Possible suspension to widen limits; no automatic widening 19:00–23:50 |
+| S18 | Tradevidence, 2026-10-12 — https://tradevidence.com/backtest-order-fill-assumptions/ | One-tick-beyond rule; keep unfilled orders visible |
+| S19 | Harris draft — https://www.acsu.buffalo.edu/~keechung/MGF743/Readings/Trading-Exchanges-Market-Microstructure-Practitioners%20Draft%20Copy.pdf | Chapter list; "limit orders give free trading options" |
+| S20 | apimoex docs — https://wlm1ke.github.io/apimoex/build/html/api.html | Candle codes 1, 10, 60, 24 |
+| S21 | MOEX spread archive — https://www.moex.com/s3580 | Daily bid/offer, high/low, volume, trades |
+| S22 | Gatev et al. 2006 — https://blog.infoway.io/wp-content/uploads/2025/10/pairs-trading-performance-of-a-relative-value-arbitrage-rule.pdf | One-day wait cuts returns by about 30–55 / 20–35 bp |
+| S23 | Hasbrouck notes — https://pages.stern.nyu.edu/~jhasbrou/Teaching/POST%202015%20Fall/classNotes/STPPTradingCosts.pdf | Implementation shortfall includes delay |
+| S24 | SEC file citing Perold — https://www.sec.gov/files/rules/concept/s72903/s72903-14.pdf | Perold (1988), JPM 14, 4–9 |
+| S25 | MOEX open-positions page — https://www.moex.com/ru/derivatives/open-positions-online.aspx?code=NM | Search excerpt: "с 3 марта … станет платным: 600 ₽ в месяц" (page fetch did not show it; year to verify) |
+| S26 | ALGOPACK — https://moexalgo.github.io/ | Search excerpt: real-time candles, order books and trades every 10 s; Super Candles for futures (docs page fetch returned no content) |
+| S27 | OneChronos — https://www.onechronos.com/insights/pairs-part-one/ | Defines legging risk (US equities) |
+
+One retrieval failed: bcs-express ETS article (network error, 2026-10-21). The content is not decision-critical and is covered by MOEX primary sources.

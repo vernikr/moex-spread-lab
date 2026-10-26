@@ -1,0 +1,438 @@
+# R13 — Optional regime conditioning: incremental evidence test
+
+**Research question:** Does market-wide or instrument-family regime information improve out-of-sample **net** decisions over a fixed-parameter, no-regime spread baseline — or does it mainly add overfit complexity?
+
+**Document status:** conditional research design + evidence assessment. **No strategy has been selected, estimated, backtested or traded.** Nothing in this report is a measured result, and no capacity or margin arithmetic here rests on live broker data (see §14).
+
+**Facts cutoff:** 2026-10-23 (all URLs retrieved/checked on 2026-10-23 unless stated; the pack was prepared 2026-10-07 and several 2026 facts below post-date it). Where a rule has an announcement date, an effective date and an access date, all three are given.
+
+**Inputs actually read for this task:** the prompt's embedded working assumptions only (no attachments, no other Rxx reports existed for me to read). Everything quantitative below is either (a) a published primary/secondary source, or (b) an explicitly labelled illustrative calculation from stated formulas. No project data, no account data, no broker documents.
+
+---
+
+## 1. Bottom line
+
+1. **Default recommendation: defer the predictive regime layer.** Do not add hidden-state, change-point or macro-state conditioning to the spread baseline now. On the public evidence and on the project's own capital and horizon arithmetic, it fails a cost-benefit test before any data work begins: the base rate for real-time regime/volatility conditioning is poor, and the sample available to this project cannot resolve the incremental effect.
+2. **One narrow exception is worth one pre-registered test, and it is not a "regime alpha" claim.** Conditioning that (i) uses only *extreme, discrete, mechanically-defined* states, (ii) acts on **one** decision margin (execution feasibility / pair eligibility), and (iii) has a *feasibility or risk* mechanism (margin, halt, slippage, non-tradability) rather than a return-forecasting mechanism, survives the discount that kills the broader family. The published evidence most directly on point finds conditional volatility targeting pays only in the extremes and only in some markets, with high turnover and leverage as the cost (Bongaerts, Kang & van Dijk 2020) — that is a much narrower object than "regimes help".
+3. **The pilot cannot be the test.** At 14.00% key rate (Bank of Russia, effective 27.07.2026, verified on 2026-10-23) and LQDT total expenses of 0.29364%/yr, the RUB 30,000 counterfactual earns ≈ RUB 343 per month. The delegated action thresholds (RUB 10,000 / 15,000) equal ≈ 29 / 44 **months** of that carry. Any adoption decision must therefore rest on walk-forward out-of-sample backtest evidence with pre-registered discard rules, not on pilot P&L — and the pilot's role is limited to execution-realism and incident discovery.
+4. **The structural breaks in the MOEX sample are policy events, not regimes.** The tradable sample is cut by a market closure (28.02–20.03.2022), a settlement-currency cessation (from 13.06.2024), and — within the last twelve months — a complete change in how a "trading day" and a "close" are defined on FORTS (23.03.2026) and again in session boundaries (14.09.2026). Any regime layer fitted across those dates is fitting policy discontinuities; any layer fitted only after them has too few years to estimate states.
+5. **What I would actually build instead:** a no-regime baseline plus three *feasibility gates* (liquidity, margin, event-calendar) implemented as filters with zero fitted parameters, and one pre-registered volatility-extreme execution gate with 2–3 parameters and a hard cap of ≤ 8 hypothesis cards and ≤ 20 total configurations. Details in §7–§13.
+
+**Confidence:** high on items 1, 3, 4 (primary documents and arithmetic); moderate on item 2 (the literature is supportive but the transfer to MOEX futures *spreads* is unproven); low/unknown on all margin, tariff and eligibility facts that depend on the user's broker (§14).
+
+---
+
+## 2. Why this question is mis-specified unless it is narrowed
+
+"Does regime information help?" has no single answer, because three very different things travel under the word *regime*:
+
+| Layer | What it is | Mechanism | Prior from public evidence |
+|---|---|---|---|
+| **R1 Predictive state** | Hidden-state/change-point/HMM probability used to forecast spread returns (entry or direction) | Claims a state-dependent expected return | Weak: real-time tracking is the known failure point (Ang & Timmermann 2012, §4); out-of-sample collapse documented (Cederburg et al. 2020; Dacco & Satchell 1999) |
+| **R2 Risk state** | Observable volatility/liquidity level used to scale size, widen stops, or gate entry in extremes | Claims state-dependent *risk per unit position*, not direction | Plausible and partially supported, but only for extremes and only in some markets (Bongaerts et al. 2020) |
+| **R3 Feasibility state** | Margin requirement, price corridor, halt/auction status, contract expiry, pair tradability, fee-schedule regime | Purely mechanical: it changes whether/how a decision can be executed and what it costs | Not a hypothesis at all — it is bookkeeping that must be in *both* arms |
+
+Regime *conditioning* as a research programme usually means R1. The requirement that baseline and variant share cost/risk/delay scenarios automatically makes R3 mandatory and non-negotiable. That leaves exactly one decision worth funding: **is R2 worth its degrees of freedom, given R3 is already built?** R1 should be rejected by default and revisited only if R2 shows a stable, mechanism-consistent effect (§15).
+
+This reframing is the main deliverable of the report. Everything below is the protocol for that one test, plus the reason not to run it broadly.
+
+---
+
+## 3. The arithmetic that constrains the whole design
+
+All numbers in this section are **illustrative calculations** from stated formulas and public parameter values; they are not measurements.
+
+### 3.1 The hurdle is an interest rate, not a spread strategy
+
+LQDT ("БПИФ РФИ «Ликвидность»", ISIN RU000A1014L8, trading since 2020-01-20 per MOEX ISS) targets the RUSFAR secured-funding rate. Its total expenses were cut to 0.304%/yr in January 2025 and to 0.29364%/yr in April 2025 (VIM Investitsii press releases, 20.01.2025 and 08.04.2025); older disclosure was "not more than 0.4%", and 2024 commentary quoted ≈0.426–0.43% (sources conflict by vintage — §14).
+
+With key rate 14.00% (Bank of Russia key-rate page, value effective from 27.07.2026, last updated 22.10.2026):
+
+| Net LQDT yield | Per month on RUB 30,000 | 3 months | 6 months | 12 months |
+|---|---|---|---|---|
+| 14.00% − 0.29% = 13.71% | **RUB 343** | RUB 1,028 | RUB 2,056 | RUB 4,112 |
+| 16.00% − 0.29% (2025 rates) | RUB 393 | RUB 1,178 | RUB 2,356 | RUB 4,712 |
+| 12.00% − 0.29% | RUB 293 | RUB 878 | RUB 1,756 | RUB 3,512 |
+
+Two consequences follow immediately.
+
+- **The stop rules cannot be tested in the pilot.** RUB 10,000 cumulative shortfall = ≈29 months of counterfactual carry at current rates. Over a several-month pilot, only a genuine blow-up reaches it. That is acceptable as a *disaster brake*, but it means the action rules provide no discriminating information about whether regime conditioning works; they only cap damage.
+- **A regime layer must earn its keep against ≈RUB 343/month.** If the layer adds one extra round trip per month per active pair, the extra cost must be smaller than the incremental gross improvement *and* both must clear the counterfactual. This is a hard bar for a strategy that, at RUB 30,000 all-in with integer contracts, will often hold 1–2 spreads.
+
+### 3.2 Trades required to detect an incremental effect
+
+Two-sided α = 0.05, power 0.80 → N ≈ 7.85·(σ/Δ)², where σ is the per-trade SD of net RUB excess over the counterfactual and Δ the per-trade incremental improvement attributable to the state:
+
+| σ per trade (RUB) | Δ = 100 | Δ = 200 | Δ = 400 |
+|---|---|---|---|
+| 200 | 31 | 8 | 2 |
+| 400 | 126 | 31 | 8 |
+| 800 | 502 | 126 | 31 |
+
+Now impose the project's own capacity: RUB 30,000, integer contracts, and (illustratively) one contract's initial margin in the low tens of thousands of roubles — the order of magnitude seen in the ISS `INITIALMARGIN` field for front currency futures. Plausibly 1–2 spread pairs can be held at once, and σ per spread round trip is large relative to Δ. If σ ≈ 400 RUB and Δ ≈ 150 RUB, ≈90 completed round trips are needed. At 4–8 round trips/month that is **12–24 months of continuous operation**, before allowing for the fact that trades cluster in shared macro episodes (design effect 2–4 on the effective N, further multiplying the requirement).
+
+**Conclusion:** the incremental question is not answerable inside a 90-day pilot, and only marginally answerable inside a multi-year backtest given the structural breaks in §11. This alone justifies deferral unless the hypothesis is restricted to something with a large, mechanistic effect.
+
+### 3.3 Minimum backtest length as a discipline on trials
+
+Using the minimum-backtest-length approximation of Bailey, Borwein, López de Prado & Zhu (2014), MinBTL ≈ 2·ln(N)/(E[max SR])² years, for N trials and an in-sample best Sharpe of E[max SR]:
+
+| N trials | E[max SR] = 0.5 | 1.0 | 1.5 |
+|---|---|---|---|
+| 5 | 12.9 y | 3.2 y | 1.4 y |
+| 20 | 24.0 y | 6.0 y | 2.7 y |
+| 50 | 31.3 y | 7.8 y | 3.5 y |
+
+The approximation assumes independent trials and is quoted as illustration, not as a bound. The operational reading: **if the project runs a 20-configuration regime search on ~4.5 years of post-2022 data, any winner with a Sharpe around 1.0 is inside the noise floor of the search.** This is the quantitative core of the "overfit complexity" arm of the question, and it is why §13 caps the trial count at 20 and requires the DSR/MCS machinery in §10.
+
+---
+
+## 4. What the public evidence base actually says
+
+### 4.1 The optimistic result and its out-of-sample failure
+
+Moreira & Muir (2017, *Journal of Finance* 72(4):1611–1644) scale factor exposures by the inverse of lagged realized variance and report large spanning-regression alphas and Sharpe gains across equity factors and the currency carry trade ("Managed portfolios that take less risk when volatility is high produce large alphas, increase Sharpe ratios, and produce large utility gains…").
+
+Cederburg, O'Doherty, Wang & Yan (2020, *JFE* 138(1):95–117) evaluate real-time implementable versions on 103 equity strategies and find the opposite conclusion for decision-making: "reasonable out-of-sample versions generally earn lower certainty equivalent returns and Sharpe ratios than do simple investments in the original, unmanaged portfolios", with the cause identified as "structural instability in the underlying spanning regressions". Their headline example: the real-time combination for the market portfolio earns an annualized Sharpe ratio of 0.42 vs 0.46 unmanaged. **This is the single most decision-relevant paper for R13**: it is the same object (conditioning a trading rule on an observable volatility state), evaluated the same way (walk-forward, real-time), with a negative result for the incremental layer.
+
+### 4.2 Why real-time state identification is the weak link
+
+Ang & Timmermann (2012, *Annual Review of Financial Economics* 4:313–337) review the regime literature and state the two facts that matter here:
+
+- "First, regimes are mostly identified by volatility. In all cases, conditional on there being two regimes, we cannot reject that the regime-dependent means are equal to each other… but overwhelmingly reject that σ₀ = σ₁." → If a state is *only* a volatility state, its information is a variance forecast, not a return forecast. Any strategy that "uses regimes to time direction" is claiming more than the data identified.
+- On filtered probabilities in their own illustration: the filter "at times miss[es] an important regime change… and at other times issue[s] false alarms. This emphasizes the difficulty associated with real-time tracking of the underlying regime."
+
+Dacco & Satchell (1999, *Journal of Forecasting* 18(1):1–16) give the formal reason: "It requires only a small misclassification, when forecasting which regime the world will be in, to lose any advantage from knowing the correct model specification." That is a *theorem-shaped* argument against R1 as usually implemented, and it predicts exactly the pattern Cederburg et al. found twenty years later.
+
+### 4.3 The narrow result that survives
+
+Bongaerts, Kang & van Dijk (2020, *Financial Analysts Journal* 76(4), open access) test conventional vs conditional volatility targeting on international equity indices and factors:
+
+- Conventional volatility targeting "does not consistently improve risk-adjusted performance… and can significantly overshoot the volatility target — thereby increasing maximum drawdowns and tail risks", with turnover "often more than 200% per year".
+- The gain is state-dependent: "during times of high volatility, volatility clustering is stronger, the correlation between realized volatility and future returns is significantly more negative, and the gains from volatility targeting are thus larger".
+- Their fix is to adjust exposure **only in the extremes** of the volatility distribution. This helps, but the authors are explicit that the caveat remains: the Sharpe improvement "is statistically significant only for the US and Hong Kong markets" for the unlevered variants.
+
+Read together with §4.1, this is the strongest available warrant for the R2-only design: **extreme, discrete, low-turnover conditioning is the only variant with a positive published real-time record, and even that is market-specific and modest.** Any claim of a general "regime edge" on MOEX spreads would be an extrapolation across asset class, market and instrument type.
+
+### 4.4 Carry/state conditioning specifically
+
+Carry is a legitimate, model-free conditioning characteristic (Koijen, Moskowitz, Pedersen & Vrugt 2018, *JFE* 127(2):197–225: carry is "an ex-ante and model-free characteristic" that "predicts returns cross-sectionally and in time series"). But the conditioning that carries a crash mechanism is the *interaction* with volatility/liquidity states: high-yield currencies "deliver low returns in times of unexpected high volatility" (Menkhoff, Sarno, Schmeling & Schrimpf 2012, *JF* 67(2):681–718). Applied to a MOEX calendar-spread family, this suggests at most a **carry × volatility interaction as a sizing/eligibility rule**, not a carry-state entry signal. Note the transfer problem: the mechanism in Menkhoff et al. is FX funding-liquidity; on MOEX spreads the analogous mechanism is margin and funding cost, which is observable directly as R3 (margin, rate) rather than needing a latent state.
+
+### 4.5 Data-snooping discipline
+
+Because the design compares nested variants on the same short sample, the relevant machinery is standard and freely available in the literature: White (2000) Reality Check / Sullivan, Timmermann & White (1999, *JF* 54(5):1647–1691) bootstrap data-snooping tests; Hansen, Lunde & Nason (2011, *Econometrica* 79(2):453–497) model confidence set; Giacomini & Rossi (2010, *JAE* 25(4):595–620) fluctuation and one-time-reversal tests for time-varying relative performance; Clark & West (2007, *Journal of Econometrics* 138(1):291–311) for the nested-model case; Bailey & López de Prado (2014, *JPM* 40(5):94–107) deflated Sharpe ratio; Harvey, Liu & Zhu (2016, *RFS* 29(1):5–68) on the t > 3.0 hurdle. Bajgrowicz & Scaillet (2012, *JFE* 106(3):473–491) is the cleanest demonstration of the combined point — FDR-controlled selection plus ex-ante costs plus persistence tests — and their conclusion should be assumed as the default prior: "an investor would never have been able to select ex ante the future best-performing rules".
+
+---
+
+## 5. Reference baseline (no-regime) — specification to be held fixed
+
+The brief requires me to specify the baseline; these are working definitions, to be frozen in the protocol file before any data contact.
+
+**Universe (eligibility defined ex ante, no performance screening):** MOEX FORTS calendar spreads ("Календарные спреды") on: index futures (MIX/RTS family), FX futures (Si, CNY), one equity-index basket proxy (e.g. a single-name future pair), one commodity (BR or GOLD). Rationale: these are the only families with per-spread turnover above the liquidity gate in §6.3 (see §6.3 for the measured distribution).
+
+**B1 — Carry/calendar baseline (fixed parameters).** Signal: for each eligible pair, compute the annualized calendar basis b = (F_far − F_near)/F_near × 365/(days between expiries), using settlement prices only. Enter when |b| exceeds a threshold set on the training window; direction = short the expensive leg. Holding: until basis convergence or fixed maximum holding. Parameters: threshold quantile q, maximum holding H, no size adaptation. **Fixed at 3 parameters.**
+
+**B2 — Mean-reversion baseline (fixed parameters).** Signal: z-score of the spread against its trailing rolling mean, with rolling window w and entry/exit bands (z_in, z_out); time stop H. **Fixed at 4 parameters.**
+
+All parameters selected on training windows only; the same values carried through every test fold; the same values used in the regime variants, which may only add or suppress actions, never re-tune B1/B2's core parameters.
+
+**Common accounting.** Net RUB = (mark-to-market + realised) − fees − slippage − funding − any forced liquidation cost. Every result is reported as **excess over the matched LQDT counterfactual**: the same RUB 30,000 notionally invested in LQDT for exactly the same dates, with identical external flows (zero flows in both arms; see §9.3).
+
+---
+
+## 6. Candidate states: definitions and decision-time information sets
+
+Only observable, formula-defined states are considered in the pre-registered set. Hidden-state models are explicitly **out of scope for this round** (see §7, card H8, which is a "reject by default" card).
+
+### 6.1 Volatility state (V)
+
+- **Formula (V1, "level"):** σ̂_t = realised volatility of the *spread* (not the legs) over the last n = 20 trading days of settlement-to-settlement changes, annualized; state = tercile of the trailing 2-year empirical distribution of σ̂, computed **only from data available at t**. Alternatively (V2, "extreme"): binary flag = σ̂_t in the top decile of the trailing 2-year distribution.
+- **Information set at decision time:** settlement prices of both legs from the *previous completed* trading day (see §6.5 on what "completed day" now means), plus the decision timestamp. No intraday smoothing, no full-sample quantiles.
+- **Free parameters:** n, lookback for the distribution, quantile. (V1: 3; V2: 3.)
+- **Why these and not an HMM:** Ang & Timmermann (2012) show regimes are mostly volatility regimes, and an HMM adds filtering error (Dacco & Satchell 1999) without adding information beyond σ̂. If σ̂-based states carry no incremental information, a hidden-state version cannot fix that — it can only add label error.
+
+### 6.2 Liquidity state (L)
+
+- **Formula:** per-pair, per-day (i) number of calendar-spread transactions, (ii) quoted spread in ticks, (iii) contract volume — all from the exchange's published calendar-spread turnover table and/or ISS candles; state = eligibility flag if the trailing-20-day median of (i) is below a floor or the median quoted spread exceeds a cap. **Deliberately a feasibility gate, not a return predictor.**
+- **Information set:** prior session's public statistics, available after the session closes and before the next session opens.
+- **Free parameters:** median window (1), trade-count floor (1), spread cap (1).
+
+### 6.3 What the liquidity data actually looks like (measured, one snapshot)
+
+From the MOEX "Календарные спреды" page, table "Оборот по календарным спредам за текущий торговый день", retrieved 2026-10-23 ≈03:10 MSK (i.e. before that day's session; the figures evidently describe the most recent completed session, and every row was flagged "архив"):
+
+| Metric | Value |
+|---|---|
+| Calendar-spread instruments listed | 189 |
+| Instruments with zero trades in the session | **51 (27%)** |
+| Instruments with ≥ 1 trade | 138; median **91** trades; IQR **9 – 591** |
+| Share of traded pairs with < 10 trades | **25%** |
+| Largest by trade count (examples) | BR-11.26-12.26 (15,232), CNY-12.26-3.27 (15,220), BRM-11.26-12.26 (6,813), **Si-12.26-3.27 (6,139)**, COCOA (5,173), NG (3,974–4,088), GOLD-12.26-3.27 (2,147), YDEX (1,792), SBRF (1,267), GAZR (1,208), SPYF (961), MIX-12.26-3.27 (824), RTS-12.26-3.27 (755) |
+
+Three design consequences, and they are strong:
+
+1. **Pair eligibility dominates any regime story.** A quarter of listed pairs did not trade at all; another quarter traded under ten times. A liquidity gate removes far more variance from realised results than any volatility state can plausibly add. It is also parameter-light and leakage-safe.
+2. **Effective sample size is much smaller than the pair count suggests.** Trading activity concentrates in a handful of families, and those families move together in macro episodes. Cross-pair observations are not independent draws; hence the block bootstrap in §10 and the design-effect penalty in §3.2.
+3. **The tradeable set is not the same as the "interesting" set.** Several high-turnover spreads are on instruments whose legs are themselves policy-sensitive (FX pairs after the 2024 cessation; crypto-tracking contracts). Eligibility must be re-derived per fold, not fixed once from a 2026 snapshot.
+
+### 6.4 Carry state (C)
+
+- **Formula:** the *instrument's own* carry (annualized basis of the pair), banded into terciles using trailing data; this is a per-pair characteristic, not a market-wide regime (per Koijen et al. 2018, carry is a security characteristic).
+- **Information set:** settlement prices of both legs from the previous completed session.
+- **Note:** C is partly collinear with B1's signal by construction. Any card that uses C must state whether it conditions B1 or B2, and the baseline for that card is the corresponding baseline, not both.
+
+### 6.5 The "what is a day" problem (new, and decisive for point-in-time work)
+
+FORTS was restructured twice in the last twelve months, and both changes alter what a daily bar *is*:
+
+- **Effective 23.03.2026 ("единая торговая сессия"):** intraday clearing abolished; "the evening session will belong to the current trading day, not the next"; main clearing moved to 23:50–00:30; settlement T+1 at 20:00; expiry of cash-settled contracts performed at 14:00 and 19:00 *during trading* (MOEX press releases 05.11.2025 and 13.03.2026).
+- **Effective 14.09.2026:** main session starts 09:00 (10 hours), morning session 06:50–09:00 with an opening auction at 06:50–07:00 (MOEX 14.08.2026).
+
+Before 23.03.2026 an "evening" price belonged to the *next* trading day; after it, to the current one. Any state computed from a "daily close" straddles a definitional break. **Protocol rule:** the state's definition must be stated as a function of timestamps (e.g. "settlement price of the session labelled T, published by 20:00 MSK on T"), not of a bar label; and every fold boundary must be checked against the session calendar in force (exchange trading calendar: 23.10.2026 window 06:50–23:50; 337 trading days in 2026, 84 weekend-trading days — MOEX trading calendar, retrieved 2026-10-23).
+
+---
+
+## 7. Where the state may act — pre-declared degrees of freedom
+
+The brief's warning is the design rule: **never change entry, size, exit, duration and pair eligibility at once.** Each hypothesis card touches exactly one margin. Cards H1–H5 are the entire pre-registered set for this round; H6–H8 are recorded as rejected-by-default so that the log shows they were considered and not silently omitted.
+
+| Card | State | Acts on | One-line mechanism | Free params | Baseline compared |
+|---|---|---|---|---|---|
+| **H1** | L (liquidity) | Pair eligibility | Untradeable pairs add slippage and stale marks, not return | 3 | B1 and B2 |
+| **H2** | R3 (margin/feasibility) | Pair eligibility | If required GO exceeds a fixed share of capital, the position cannot be held through a gap: drop the pair, do not resize it | 1 | B1 and B2 |
+| **H3** | V2 (volatility top decile) | Entry suppression | In extreme spread volatility, entry slippage and discrete-auction/halt risk exceed the signal's edge | 3 | B1 and B2 |
+| **H4** | V1 (volatility tercile) | Size (1 unit vs 0.5 unit equivalent) | Risk-per-unit-position rises with σ̂; hold the same *risk*, not the same *notional* | 3 | B1 and B2 |
+| **H5** | C × V (carry tercile × extreme vol) | Entry suppression | Carry-type spreads have a crash state; suppress only the high-carry, high-vol combination | 4 | B1 only |
+| **H6** | V1 | Exit/duration | (Rejected this round) time-stop extension in low-σ states — high turnover, low informational content | — | — |
+| **H7** | Macro/rate state (key-rate path, RUSFAR) | Entry | (Rejected this round) rate level is the *counterfactual's* yield; conditioning on it mostly re-scales both arms | — | — |
+| **H8** | Hidden-state HMM / change-point labels | Any | (Rejected this round) see §4.2: filtering error and label switching dominate in short samples | — | — |
+
+**Total pre-registered budget: 5 cards × (B1, B2 where applicable) × 3 cost scenarios × 4 delay settings.** To keep the trial count ≤ 20 as required by §3.3, the *evaluation* design is: primary test on H1–H3 with base costs at 15-minute delay; the cost/delay grid is run for the surviving card(s) only; H4 and H5 are run once each at base cost. Any additional configuration is charged against the 20-trial budget and must be logged.
+
+### Hypothesis cards — required fields (template, filled per card in `hypothesis_cards.csv`)
+
+Each card must contain, at minimum: ID; mechanism sentence; state formula and every parameter with its training-only fitting rule; **the decision margin affected** (one of entry / size / exit / duration / eligibility); the exact input fields and their publication timestamps (§6, §11); the source of each field with URL and access date; the pre-registered sign of the effect and its minimum economically meaningful size in RUB; the leakage tests that apply (§8); the ablation that isolates the state (§10.1); the discard trigger (§13); the trial count consumed; and a status field that is updated only with a date stamp.
+
+---
+
+## 8. Point-in-time discipline and leakage tests
+
+### 8.1 Construction rules (binding on all variants)
+
+1. **Recursive-only state construction.** Every state value at decision time t is a function of data published at or before t − delay. No centred windows, no full-sample quantiles, no re-fitted thresholds on evaluation data, no smoothed/filtered probability derived from the full sample.
+2. **Delays are explicit and scenario-driven.** Signal-to-action delay ∈ {5, 15, 45, 90} minutes with 15 minutes as the primary (median observed 5–15, distribution unknown). A state must be recomputable at each delay, not only at the bar boundary.
+3. **Vintage, not version.** Each input carries a vintage tag (publication/effective date). CBR key-rate values are effective-dated (page shows the value by calendar day, series from 17.09.2013); ISS margin values carry an `IMTIME` stamp; the trading calendar and contract expiry dates are published in advance. A later edited page does not prove what was known earlier: record the access date with every snapshot.
+4. **Warm-up.** No state is defined for the first max(window, distribution lookback) observations of each fold; those observations run as baseline-only in both arms.
+5. **No label flipping.** If a state is defined by a threshold, the direction of the flag is fixed ex ante in the card; a post hoc sign reversal counts as a new trial.
+
+### 8.2 The eight leakage tests
+
+| # | Test | Pass criterion | Failure action |
+|---|---|---|---|
+| **T1** | **Timestamp audit** of every input field: assert `published_at ≤ decision_time − delay` for all rows | 100% of rows pass; failures listed | Exclude the field for that period |
+| **T2** | **Shift test**: rebuild all states with an extra +1 bar / +1 day shift and re-run | For H1–H3 (feasibility/entry-suppression), the sign and rough magnitude of the improvement must persist; if the edge *disappears* when information is delayed, it was a leak | Discard the card |
+| **T3** | **Full-sample vs expanding-window labels**: compute states both ways, report disagreement rate and Cohen's κ | κ ≥ 0.90 for threshold states; κ ≥ 0.80 tolerated only for stored, documented reasons | Discard or re-specify |
+| **T4** | **Publication-date audit on macro inputs**: re-run using values available one day later | Result must not improve materially; better performance with *later* data is proof of look-ahead | Discard |
+| **T5** | **Randomised-state null**: stationary-bootstrap the state series (preserving marginal frequency and persistence) 500×, re-run | Observed improvement > 95th percentile of the null | Discard |
+| **T6** | **Nested-model test**: Clark & West (2007) adjusted statistic, regime vs nested baseline | Report; adopt only with §13 conditions | — |
+| **T7** | **Continuity test**: include expired contracts, the 2022 halt window and the post-2024 FX-contract discontinuity in the sample; compare with a "clean sample" run | Cannot claim value that exists only by excluding policy breaks | Declare the value as break-dependent |
+| **T8** | **Mechanical sanity**: recompute a random 200-trade sample by hand from raw files | 100% match | Stop and fix the pipeline |
+
+Why T5 rather than more thresholds: the failure mode here is not "2 parameters → overfit" but "state and outcome share a slow-moving driver". A block bootstrap that keeps the state's persistence but destroys its alignment with returns is the direct test of that.
+
+---
+
+## 9. Validation skeleton, scenarios, metric
+
+### 9.1 Splits
+
+Chronological walk-forward with contiguous folds; **no shuffling, no K-fold**. State estimation, thresholds, parameter selection and model choice on training data only. **Embargo between train and test sized by actual overlap**: at minimum the longest holding period H in either baseline plus the maximum state lookback, and at least one full spread-expiry cycle (i.e. do not let a training window end inside a contract's last week). Roll boundaries are the natural fold boundaries on FORTS because the front pair changes.
+
+A **final untouched holdout** is reserved and is touched once, after all variants are frozen. It should be the most recent complete period that post-dates the last policy change; on current information the earliest clean holdout start is 14.09.2026 (last session-schedule change), so the holdout must be accumulated forward rather than carved out of history — this is a real limitation, stated in §14, not a design detail.
+
+### 9.2 Scenarios (identical for baseline and every variant)
+
+| Dimension | Settings |
+|---|---|
+| Fees | Exchange fee per contract F, with calendar-spread fee `Fee_CS = T·F·(1−K)`, K = 0.2 during the marketing period (6 months for non-OFZ assets; no discount after) — MOEX calendar-spread page. Clearing fee per NКЦ tariffs. Broker commission as a fixed per-contract parameter (unknown until the user's tariff is confirmed). |
+| Slippage | base: 1 tick per leg per side; conservative: 2 ticks; stress: 4 ticks plus a gap-day penalty calibrated from the worst observed session-open jump per pair |
+| Funding / carry | the opportunity cost of capital is *inside the counterfactual*, not double-counted: the 30,000 is invested in LQDT in the comparison arm for the same dates |
+| Delay | {5, 15, 45, 90} minutes; stale-signal, rejected-order and partial-fill outcomes recorded as first-class results |
+| Capital | RUB 30,000 all-in, integer contracts, with the margin/emergency-funding rules from the project context (no fresh exposure from emergency funding; entry must pass with zero emergency funding) |
+
+### 9.3 Primary metric
+
+**Net RUB excess over the matched LQDT counterfactual**, defined as: (strategy net P&L + any retained-collateral LQDT yield that is genuinely still earned) − (LQDT units × price change over the identical window), with **zero external flows in both arms**. Explicit rules: (i) LQDT return on eligible retained collateral is not deducted twice; (ii) no adjustment for the LQDT long-term-holding tax deduction (residence/account treatment unknown — recorded as an unknown, not as zero); (iii) forced-liquidation and incident costs are included in the strategy arm at stress slippage. Secondary metrics: number of completed trades, hit rate, average holding, max drawdown of the excess curve, and the count of infeasible signals (which is itself evidence about H1/H2).
+
+---
+
+## 10. Ablation and uncertainty protocol
+
+### 10.1 Ablation ladder (run in this order, stop at the first failure)
+
+- **A0** baseline, no state, 3 cost × 4 delay grid.
+- **A1** H1 alone (liquidity eligibility). *Expected to be the largest single effect and the least controversial.*
+- **A2** A1 + H2 (margin eligibility). Together they define the *tradable universe*.
+- **A3** A2 + H3 (volatility-extreme entry suppression). This is the first genuine "regime" increment; it must beat A2, not A0.
+- **A4** A3 + H4 (size scaling). Must beat A3 under MCS with the extra 3 parameters charged.
+- **A5** A3 + H5 (carry × vol). Run once, base cost.
+
+The critical discipline: **the regime increment is measured against the ladder's previous rung, not against the raw baseline.** Every published negative result in §4.1 comes from comparing a conditioned strategy to an unconditioned one while ignoring the fact that the unconditioned comparator was itself mis-specified.
+
+### 10.2 Uncertainty
+
+- **Blocks, not trades.** Bootstrap blocks = calendar months or identified event windows (2022 closure, 2024 cessation, rate-decision weeks), preserving within-block dependence; report percentile CIs for the RUB excess difference.
+- **Model confidence set** (Hansen, Lunde & Nason 2011) at 90% across A0–A5: the regime variant must be *in* the MCS while A0 is *out* to justify adoption; if both are in, the data are uninformative and the correct action is to keep the simpler model.
+- **Fluctuation / one-time-reversal tests** (Giacomini & Rossi 2010) on the relative loss path, to detect that a favourable average hides a reversal.
+- **Deflated Sharpe / trial-count reporting** (Bailey & López de Prado 2014): report the number of trials actually run and the deflated statistic, with the MinBTL table of §3.3 as the interpretive frame.
+- **Harvey–Liu–Zhu hurdle:** treat t > 3.0 as the adoption threshold for any *new* conditioning claim, and report what the result would have to be to clear it.
+- **Placebo states:** include two deliberately meaningless states (e.g. day-of-month parity; a shuffled-but-persistent state) as controls in every table. If a placebo scores comparably to a real card, the ladder is measuring noise.
+
+---
+
+## 11. Policy-defined states vs learned states
+
+These are **not** regimes to be discovered; they are dated facts that must be encoded as dummies, eligibility filters and cost regressions, in both arms.
+
+| Date | Event | Consequence for the research | Source (retrieved 2026-10-23) |
+|---|---|---|---|
+| 2020-01-20 | LQDT starts trading (ISIN RU000A1014L8; list level 1) | counterfactual series begins; RUSFAR-tracking | MOEX ISS `securities/LQDT` description |
+| 24.02.2022, 11:00 MSK | CBR instructs brokers to suspend short sales; MOEX halts all markets intraday after limits hit | sign/direction feasibility changes discontinuously | CBR via RBC 25.02.2022; RIA 24.02.2022 |
+| 25.02.2022, 28.02.2022 | Morning sessions cancelled (25.02, 28.02); CBR does not open the equity, derivatives and SPFI sections on 28.02 | missing observations are *policy-defined*, not "zero volume" | MOEX release 25.02.2022; CBR/Vedomosti 28.02.2022 |
+| 21.03 / 24.03 / 28.03.2022 | OFZ trading resumes 21.03; 33 index shares 24.03 in 09:50–14:00 with a short-sale ban; all shares 28.03 | partial-universe and truncated-session periods must be flagged, not modelled | CBR 23.03.2022; MOEX 24.03.2022; Vedomosti 28.03.2022 |
+| 13.09.2023 | FORTS outage 09:30–13:30 (trading-and-clearing system failure) | operational-state dummy | RBC 13.09.2023 |
+| 30.10.2023 | Discrete-auction rules changed for non-IMOEX shares (5-minute trigger; unlimited series) | halt-risk model parameter changes | Vedomosti 19.10.2023 |
+| 13.06.2024 | Exchange trading in USD and EUR ceases after OFAC designation of MOEX/NCC/NSD (announced 12.06.2024); CBR moves official rates to OTC data; MOEX suspends FX volume publication | contract set and the composition of "currency" spreads change; USD-based history is not comparable after this date | MOEX/RBC/BBC 12.06.2024; Reuters 12.06.2024; CBR 13.06.2024 |
+| 01.04.2025 → 23.03.2026 | FORTS tariff editions; new edition effective 23.03.2026 | cost model must be dated; fee level changes are not a "regime" | MOEX documents page for FORTS tariffs |
+| **23.03.2026** | Unified trading session: no intraday clearing; evening session belongs to the current trading day; expiry at 14:00/19:00 in-session; main clearing 23:50–00:30; settlement T+1 20:00 | **definition of the daily close and of the trading day changes** | MOEX 05.11.2025 and 13.03.2026 |
+| **14.09.2026** | Main session 09:00–19:00 (10 h); morning 06:50–09:00 with 06:50–07:00 auction | session-boundary dummies; shortest clean holdout start | MOEX 14.08.2026; Interfax/RIA 14.08.2026 |
+| 23.10.2026, 13:30 MSK | CBR board meeting (consensus: hold at 14.00%; next meeting 18.12.2026) | scheduled, pre-announced event — an event-calendar input, not a regime | CBR meeting calendar via Finuslugi 14.10.2026; key-rate page |
+
+**Rule:** a policy-defined event may be used as (a) an eligibility filter, (b) a cost parameter, or (c) a sample-boundary marker. It may **not** be used as a predictor of returns, and no causal interpretation may be attached to a state that happens to coincide with one.
+
+---
+
+## 12. Resource estimates
+
+| Item | Estimate | Notes |
+|---|---|---|
+| Data pull (daily, preferred first pass) | ~189 spread instruments × ~5 y ≈ 470k rows; < 50 MB | settlement prices + spread turnover; runs on the laptop |
+| Data pull (1-minute, needed for delay realism) | ~1,020 bars/day × ~250 sessions × ~8–16 contracts × 5 y ≈ 10–20 M rows; ~0.2–0.5 GB parquet | ISS returns paginated JSON; request-count and throttling limits **unverified** — measure before committing (a 500-row page size would imply 20k–40k requests, which must be rate-limited and cached) |
+| Storage | fits in the 20 GB VPS **or** the laptop; laptop preferred (no dependency on the shared 250–350 MB VPS background budget) | |
+| Compute | all estimations (bootstrap 500×, MCS, fluctuation tests) are small: minutes on a 6-core i7 with 16 GB | |
+| Human time | data build + protocol freeze: ~8–12 h; evaluation and write-up: ~6–10 h; total ~15–25 h | Stage 2 is prompt-driven: the user executes |
+| Trial budget | ≤ 20 configurations (§3.3, §13) | logged in `hypothesis_cards.csv` |
+
+---
+
+## 13. Pre-registered discard criteria
+
+Adopt a regime card only if **all** of the following hold; discard on the first failure, and log the discard with its date.
+
+1. **Economic size:** the incremental net RUB excess over the *previous ladder rung* exceeds the round-trip cost of the average trade by at least 2×, at base costs.
+2. **Cost survival:** the sign of the increment is unchanged at the conservative (2-tick) scenario, and the increment is still positive at the stress (4-tick + gap) scenario. *No* variant that flips sign under stress is adopted.
+3. **Statistical:** MCS at 90% includes the regime variant and excludes the rung below it; **and** the Clark–West statistic is favourable at 5%; **and** the observed improvement exceeds the 95th percentile of the randomised-state null (T5). Because these three are correlated, report all three rather than the best one.
+4. **Stability:** the effect has the pre-registered sign in at least 2 of 3 walk-forward folds and is not driven by a single episode (drop-one-episode sensitivity).
+5. **Sample adequacy:** the state is populated with ≥ 30 completed trades across ≥ 3 independent episodes. Otherwise the correct label is *untestable*, not *promising*.
+6. **Leakage:** all applicable tests in §8.2 pass.
+7. **Trial budget:** the trial count at the time of adoption is ≤ 20; if it exceeds 20, the reported result must be DSR-deflated and the MinBTL of §3.3 must be satisfied by the available sample (it currently is not — see §14).
+8. **Time box:** if by 30 calendar days of Stage-2 work no card has passed 1–6, stop and defer the entire regime programme.
+
+**Default if nothing passes:** keep A0 (baseline) + H1/H2 as pure feasibility filters (they need no statistical licence, only an operational one), and close R13 as "no incremental evidence found; defer".
+
+---
+
+## 14. Conflicts, unknowns, and what I could not verify
+
+**Material conflicts in the sources**
+
+- **LQDT expense ratio:** 0.304%/yr (VIM, 20.01.2025) vs 0.29364%/yr (VIM product page and 08.04.2025 release) vs "not more than 0.4%" (older fund documentation) vs 0.426–0.43% (2024 commentary). Resolution: use the dated sequence; treat 0.29–0.43% as the historical band and re-check at the time of use. The difference is small in RUB (≈RUB 4/month on 30,000) but must not be silently averaged.
+- **Session times in secondary press:** Kommersant's 14.08.2026 piece states the main session runs "09:00–17:00", which contradicts the exchange's own release and every other outlet (09:00–19:00). I treat the MOEX release as authoritative and the Kommersant line as a typographical error; the trading calendar retrieved on 2026-10-23 shows 06:50–23:50 for 23.10.2026, consistent with 09:00–19:00 main.
+- **2022 chronology:** sources differ on whether "derivatives trading" resumed 09.03.2022 (RBC, in the context of the September 2023 outage) or 24.03.2022. MOEX's own 24.03.2022 release describes the *available* derivatives after that date (FX and commodity instruments 10:00–18:45; index/equity contracts only 10:00–14:00). Both can be true for different instrument groups; the exact per-instrument restart calendar is unresolved and must be read from MOEX releases if the 2022 window is ever used.
+
+**Facts I could not verify (and did not assume)**
+
+- **Margin and capacity.** The public ISS endpoint returns an `INITIALMARGIN` field with an `IMTIME` stamp, but the values returned to me in this environment failed a sanity check against the contract specification (e.g. a currency-future initial margin larger than the plausible notional implied by lot size). I therefore quote **no** margin number and derive **no** capacity from it. The user must pull live values and cross-check against the broker's displayed ГО.
+- **Calendar-spread margin treatment.** MOEX documents that calendar spreads may be margined under "нетто" or "полунетто" rules and that the rule is *elected by the clearing member* ("Правило учета календарных спредов для Брокерской фирмы устанавливается Участником клиринга путем подачи заявления"; for accounting registers the "полунетто" rule applies). **Which rule applies on the user's account is unknown and materially changes how many spreads RUB 30,000 can hold.** This is the single most important unverified number in the whole design.
+- **Broker commission and KPUR.** No broker tariff schedule or qualified-investor determination was read. Both are inputs to the cost model and to instrument eligibility; neither is assumed here. (Note: MOEX ISS exposes per-security `ISQUALIFIEDINVESTORS` and `LISTLEVEL` fields, which is a checkable path to instrument eligibility independent of the broker.)
+- **Historical depth and per-board coverage of free data.** In my environment the ISS mirror answered for 2026 dates but returned **empty** arrays for 2009–2013 contract history and for LQDT on the TQTF board (data appeared only on TQBR). I therefore make **no claim** about how far back free MOEX history extends, and the design does not assume any specific depth. This must be measured first (it is the first Stage-2 task).
+- **Pilot-level facts:** variation-margin liquidity, the emergency-funding interaction with core collateral, tax residence and account treatment — all unverified and, per the brief, not resolvable here. Conclusions depending on them are conditional.
+- **The "no shared template" claim I cannot test:** I did not read any prior Rxx report (none were supplied), so nothing here is reconciled with other investigations. Conflicts with those reports may exist and are unknown to me.
+
+---
+
+## 15. What would change the recommendation
+
+**Toward proceeding with a regime layer:**
+- A measured, point-in-time **liquidity/feasibility** effect explaining most of the cross-sectional variance in realised net RUB (partially confirmed by the snapshot in §6.3 — but that is a static fact, not a strategy edge).
+- Evidence that the **extreme-volatility suppression** (H3) has a *mechanistic* signature: the improvement concentrated in sessions with observed discrete auctions, price-corridor hits, or settlement-price gaps — i.e. a slippage mechanism, not a return-prediction mechanism.
+- A longer homogeneous sample: at least 3 additional years *after* 14.09.2026 with the current session structure, which would satisfy the MinBTL requirement for a modest trial count (§3.3).
+
+**Toward abandoning it entirely:**
+- H1/H2 alone reproduce the entire improvement (likely, on the evidence in §6.3).
+- Placebo states score comparably (§10.2).
+- The effect survives only at base costs (§13.2).
+
+**Possible project changes implied by this report (for the user to accept or reject; none implemented):**
+1. **Re-scope the deliverable** from "regime conditioning" to "tradable-universe and execution-feasibility filters" — same data work, far fewer degrees of freedom, testable in weeks.
+2. **Extend any evaluation horizon** beyond 90 days, or explicitly accept that the pilot is an execution/incident exercise and *not* evidence about edge. The current thresholds (10k/15k) are 29–44 months of counterfactual carry and cannot discriminate.
+3. **Pre-commit the trial budget (≤ 20) and the discard criteria in writing before any data contact.** This is the only cheap defence against the failure mode that §3.3 quantifies.
+4. **Record a "no-regime" decision now** and revisit only if the pilot surfaces a specific, mechanistic failure (e.g. repeated slippage in identifiable states) — that would convert an unbounded research question into a defined engineering fix.
+
+---
+
+## 16. Source register
+
+All URLs accessed 2026-10-23. Quotes are short excerpts; page-level claims link to the page, not to a stable anchor.
+
+**Method / literature**
+
+1. Moreira, A. & Muir, T. (2017). "Volatility-Managed Portfolios." *Journal of Finance* 72(4):1611–1644. DOI 10.1111/jofi.12513. Abstract: "Managed portfolios that take less risk when volatility is high produce large alphas, increase Sharpe ratios, and produce large utility gains…" https://onlinelibrary.wiley.com/doi/abs/10.1111/jofi.12513
+2. Cederburg, S., O'Doherty, M. S., Wang, F. & Yan, X. (2020). "On the performance of volatility-managed portfolios." *JFE* 138(1):95–117. DOI 10.1016/j.jfineco.2020.04.015. "…reasonable out-of-sample versions generally earn lower certainty equivalent returns and Sharpe ratios…"; "structural instability in the underlying spanning regressions". Author PDF: https://www.lehigh.edu/~xuy219/research/COWY.pdf
+3. Ang, A. & Timmermann, A. (2012). "Regime Changes and Financial Markets." *Annual Review of Financial Economics* 4:313–337. DOI 10.1146/annurev-financial-110311-101808. "…regimes are mostly identified by volatility…"; "…the difficulty associated with real-time tracking of the underlying regime." Working paper PDF: https://rady.ucsd.edu/_files/faculty-research/timmermann/regime_changes_June_22.pdf
+4. Dacco, R. & Satchell, S. (1999). "Why do regime-switching models forecast so badly?" *Journal of Forecasting* 18(1):1–16. "It requires only a small misclassification… to lose any advantage from knowing the correct model specification." https://onlinelibrary.wiley.com/doi/abs/10.1002/(SICI)1099-131X(199901)18:1%3C1::AID-FOR685%3E3.0.CO;2-B
+5. Bongaerts, D., Kang, X. & van Dijk, M. (2020). "Conditional Volatility Targeting." *Financial Analysts Journal* 76(4) (open access). Gains from volatility targeting are larger in high-volatility states; conditional (extreme-only) version "significantly reduces drawdowns and tail risks"; significance "only for the US and Hong Kong markets". https://www.tandfonline.com/doi/full/10.1080/0015198X.2020.1790853
+6. Koijen, R. S. J., Moskowitz, T. J., Pedersen, L. H. & Vrugt, E. B. (2018). "Carry." *JFE* 127(2):197–225. DOI 10.1016/j.jfineco.2017.11.002. "…an ex-ante and model-free characteristic…". https://ideas.repec.org/a/eee/jfinec/v127y2018i2p197-225.html
+7. Menkhoff, L., Sarno, L., Schmeling, M. & Schrimpf, A. (2012). "Carry Trades and Global Foreign Exchange Volatility." *JF* 67(2):681–718. "…deliver low returns in times of unexpected high volatility…". https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2012.01728.x
+8. Bailey, D. H., Borwein, J. M., López de Prado, M. & Zhu, Q. J. (2014). "Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance." *Notices of the AMS* 61(5):458–471. DOI 10.1090/noti1105 (minimum backtest length). https://www.ams.org/notices/201405/rnoti-p458.pdf
+9. Bailey, D. H. & López de Prado, M. (2014). "The Deflated Sharpe Ratio." *JPM* 40(5):94–107. DOI 10.3905/jpm.2014.40.5.094. https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf
+10. Harvey, C. R., Liu, Y. & Zhu, H. (2016). "…and the Cross-Section of Expected Returns." *RFS* 29(1):5–68. "A new factor needs to clear a much higher hurdle, with a t-statistic greater than 3.0." https://academic.oup.com/rfs/article/29/1/5/1843824
+11. Hansen, P. R., Lunde, A. & Nason, J. M. (2011). "The Model Confidence Set." *Econometrica* 79(2):453–497. DOI 10.3982/ECTA5771. https://onlinelibrary.wiley.com/doi/abs/10.3982/ECTA5771
+12. Giacomini, R. & Rossi, B. (2010). "Forecast comparisons in unstable environments." *JAE* 25(4):595–620. DOI 10.1002/jae.1177. Fluctuation and one-time-reversal tests. https://onlinelibrary.wiley.com/doi/abs/10.1002/jae.1177
+13. Clark, T. E. & West, K. D. (2007). "Approximately normal tests for equal predictive accuracy in nested models." *J. Econometrics* 138(1):291–311. DOI 10.1016/j.jeconom.2006.05.023. https://ideas.repec.org/a/eee/econom/v138y2007i1p291-311.html
+14. Sullivan, R., Timmermann, A. & White, H. (1999). "Data-Snooping, Technical Trading Rule Performance, and the Bootstrap." *JF* 54(5):1647–1691. DOI 10.1111/0022-1082.00163. https://onlinelibrary.wiley.com/doi/10.1111/0022-1082.00163
+15. Bajgrowicz, P. & Scaillet, O. (2012). "Technical trading revisited: False discoveries, persistence tests, and transaction costs." *JFE* 106(3):473–491. DOI 10.1016/j.jfineco.2012.06.001. https://ideas.repec.org/a/eee/jfinec/v106y2012i3p473-491.html
+16. Novy-Marx, R. & Velikov, M. (2016). "A Taxonomy of Anomalies and Their Trading Costs." *RFS* 29(1):104–147. DOI 10.1093/rfs/hhv063. Turnover vs net profitability. https://www.nber.org/system/files/working_papers/w20721/w20721.pdf
+17. Welch, I. & Goyal, A. (2008). "A Comprehensive Look at the Empirical Performance of Equity Premium Prediction." *RFS* 21(4):1455–1508. DOI 10.1093/rfs/hhm014. "…most models are unstable or even spurious." https://www.ivo-welch.info/research/journalcopy/2008-rfs.pdf
+18. Jasra, A., Holmes, C. C. & Stephens, D. A. (2005). "MCMC Methods and the Label Switching Problem in Bayesian Mixture Modeling." *Statistical Science* 20(1):50–67. DOI 10.1214/088342305000000016. https://projecteuclid.org/journals/statistical-science/volume-20/issue-1/Markov-Chain-Monte-Carlo-Methods-and-the-Label-Switching-Problem/10.1214/088342305000000016.full
+
+**MOEX / Russian market and infrastructure (primary where possible)**
+
+19. MOEX, "Календарные спреды" (instrument definition, synthetic matching, margin reservation "в таком же размере, как при сведении 2-х атомарных заявок", fee `Fee_CS = T·F·(1−K)`, K = 0.2, marketing period 6 months for non-OFZ assets, per-pair turnover table). https://www.moex.com/ru/spreads
+20. MOEX, "Срочный рынок Московской биржи переходит на единую торговую сессию", 13.03.2026 (effective 23.03.2026: no intraday clearing; evening session = current trading day; clearing 23:50–00:30; settlement T+1 20:00; expiry 14:00/19:00). https://www.moex.com/n98363
+21. MOEX, "Московская биржа внедряет единую торговую сессию на срочном рынке", 05.11.2025 (announcement). https://www.moex.com/n95054
+22. MOEX, "Единая торговая сессия на срочном рынке — новые правила, расписание и клиринг" (current schedule table; MT timings). https://www.moex.com/s3886
+23. MOEX, "Московская биржа расширяет время проведения торгов", 14.08.2026 (effective 14.09.2026: morning 06:50–09:00, main 09:00–19:00, evening 19:00–23:50). https://www.moex.com/n103379 — corroborated: Interfax 14.09.2026 https://www.interfax.ru/russia/1115919 ; RIA 14.08.2026 https://ria.ru/20260814/birzha-2110838994.html
+24. MOEX, Торговый календарь (23.10.2026 window 06:50–23:50; 337 trading days in 2026; 84 weekend-trading days). https://www.moex.com/ru/tradingcalendar
+25. MOEX, "Тарифы срочного рынка" — base rates by contract group (FX 0.00154%, interest 0.00550%, equity 0.00660%, index 0.00220%, commodity 0.00440%) and new edition effective 23.03.2026. https://www.moex.com/a90 ; https://www.moex.com/ru/documents/3838
+26. НКЦ, "Принципы расчета гарантийного обеспечения" (calendar-spread accounting rule elected by the clearing member; "полунетто" for accounting registers). https://www.moex.com/files/4w80p519837p27m45bhwwd9qw1 ; НКЦ summary: "…блокируется большее из двух ГО (если… полунетто), либо величина процентного риска (если… нетто)" https://www.nationalclearingcentre.ru/catalog/030902
+27. Moscow Exchange annual report 2022 (partial resumption: OFZ from 21.03, most liquid shares from 24.03.2022; FORTS 2022 volume). https://report2022.moex.com/ru/2/1/index.html
+28. CBR / MOEX on the 2022 halt and partial reopening: MOEX 25.02.2022 (morning sessions cancelled) https://www.moex.com/n42523 ; CBR 23.03.2022 (33 shares, 09:50–14:00, short-sale ban) https://www.cbr.ru/press/pr/?file=23032022_153149SUP_MEAS23032022_143250.htm ; MOEX 24.03.2022 (instrument groups available on FORTS) https://www.moex.com/n45532
+29. RBC 12.06.2024 (MOEX statement: no USD/EUR trading from 13.06.2024; derivatives market "в обычном режиме") https://www.rbc.ru/finances/12/06/2024/6669b9ce9a7947e421421f8a ; Reuters 12.06.2024 https://www.reuters.com/markets/europe/moscow-exchange-stop-trading-dollars-after-latest-us-sanctions-2024-06-12/ ; CBR 13.06.2024 (EUR suspended because EU complies with US sanctions) https://ria.ru/20240613/tsentrobank-1952477028.html
+30. RBC 13.09.2023 (FORTS outage 09:30–13:30 due to trading-and-clearing system failure). https://www.rbc.ru/quote/news/article/65017e4c9a7947284b560701
+31. Vedomosti 19.10.2023 (discrete-auction rule change for non-IMOEX shares, effective 30.10.2023). https://www.vedomosti.ru/investments/news/2023/10/19/1001431-diskretnih-auktsionov
+32. Bank of Russia, "Ключевая ставка Банка России" (14.00% for 15–22.10.2026; series from 17.09.2013; page last updated 22.10.2026). https://www.cbr.ru/hd_base/keyrate/
+33. Bank of Russia press release 11.09.2026 (hold at 14.00%). https://www.cbr.ru/press/keypr/ ; meeting calendar and 13:30 MSK publication time: https://finuslugi.ru/navigator/nakopit-i-sohranit/stat_zasedanie-cb-po-klyuchevoy-stavke-kak-prohodit-i-kogda-sostoitsya-sleduyushee
+34. VIM Investitsii, LQDT product page (total expenses "не более 0,29364% в год"; manager fee 0.21%; other expenses 0.083%). https://www.wealthim.ru/products/bpif/wimfl/ ; fee reductions announced 20.01.2025 and 08.04.2025 https://www.wealthim.ru/press-centre/news/29042359/ , https://investfunds.ru/news/170631/
+35. MOEX ISS, public endpoints used for verification only (no data incorporated): `iss.moex.com/iss/securities/LQDT.json` (ISIN RU000A1014L8, ISSUEDATE 2020-01-20, LISTLEVEL 1); `iss.moex.com/iss/engines/futures/markets/forts/securities/<SECID>.json` (fields including `INITIALMARGIN`, `IMTIME`, `BUYSELLFEE`, `MINSTEP`, `STEPPRICE`, `LASTTRADEDATE`, `HIGHLIMIT`/`LOWLIMIT`); `.../candles.json?interval=1`.
+
+---
+
+## 17. Single request for material (one unresolved statistical method)
+
+I do not need books, channels or libraries. Two items are genuinely blocking a *precise* protocol, and either can be supplied as one document each:
+
+1. **Clark & West (2007)**, "Approximately normal tests for equal predictive accuracy in nested models", *Journal of Econometrics* 138(1):291–311 — needed to fix the exact MSPE adjustment and critical values for comparing a regime variant nested in the baseline. (If unavailable, Hansen, Lunde & Nason 2011 alone is sufficient, at the cost of a less powerful single-comparison test.)
+2. **NКЦ's current methodology document** governing calendar-spread margin on the user's clearing-member configuration (which of "нетто"/"полунетто" applies at the client level), plus the broker's per-contract commission. This is not a research paper but it is the one missing *public* input that determines whether a RUB 30,000 book can hold one spread or two — and therefore whether the design in §3.2 is even feasible.
+
+Everything else in this report can be executed from open sources.

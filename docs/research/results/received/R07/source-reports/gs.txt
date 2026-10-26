@@ -1,0 +1,395 @@
+# R07: Pilot risk, funding liquidity, stress testing and sizing for a MOEX futures-spread pilot
+
+**Research cutoff:** 2026-10-21 (pack prepared 2026-10-07). **Status:** this is independent public-source work. None of R01, R02, R04, R05, R06, R08 or R09 was supplied, so every conclusion that depends on project-specific limits is conditional. I ran no backtests, account checks, legal checks or performance measurements, and I placed no trades. Every RUB figure in the worked examples is **hypothetical** unless a source is cited for it.
+
+---
+
+## 1. Conclusions
+
+1. **As written, the defaults are not coherent with each other. They can be made coherent if one rule leads and the others act as backstops.** The 5k/10k/15k triggers are *monetary path* triggers, but gaps and halts let X jump past a trigger. The rule that actually protects the outer boundary is a continuous stress inequality, `X − L_stress − U ≥ −15,000`. In the hypothetical calibration below, a minimum-lot idea with RUB 6.5k joint stress loss has to start de-risking at about X ≈ −5.25k. That is near the *warning* level, well before the 10k action trigger. The 10k and 15k numbers then serve as backstops, not as the working controls. This is a design choice to adopt explicitly. It does not show the defaults are wrong, but it does mean "act at 10k" cannot be the main defence.
+
+2. **The 50% starting-margin ceiling is not justified for spreads whose margin offsets can be removed.** NCC gives intermonth spreads a discount: the larger of the two legs' GO is blocked (semi-net) instead of the sum. That benefit is cancelled near expiry. Separately, NCC has raised base GO by 1.5×–2.9× in volatility episodes. Combining a removed offset (≈2×) with a 2× hike gives 4×. With a hypothetical RUB 5k reserved for adverse VM and RUB 1k for cash, the starting-margin ceiling falls to about **20% of 30k**. With a 3× hike it falls to about 13%. Fifty percent survives only if there is no offset-removal risk and hikes stay at or below about 1.6×. It should be replaced with the derived formula in §5.
+
+3. **The shared account turns the risk of broker liquidation into risk of recourse to the core holding. This is the single most important feasibility issue.** Under Bank of Russia Directive 6681-U and VTB's unified-account (EBS) design, the broker sees the *whole* portfolio. With >RUB 40m of LQDT on the same EBS, NPR2 or KDS (the broker's margin-sufficiency indicators) will practically never trigger a closure of a RUB 30k futures sleeve. Losses would instead draw on core value or create a debit balance. The internal 30k envelope is invisible to the broker. "No silent core bailout" can therefore be enforced only by internal controls, or by a broker-side segregation the user has not yet confirmed. Unless R01 shows such a control exists, the result is **no live trade**, not an assumed core bailout.
+
+4. **Emergency funding cannot be treated as a risk reducer at entry, and often cannot be counted during stress either.** Funding counts only if *approval + transfer + credit* fits inside the broker's closure deadline. Under 6681-U that deadline is the same trading day or the next day's cut-off time. Under VTB's quoted regulation it was "before the end of the next trading day's session". Arrival times are unknown, so the default is zero.
+
+5. **Some risks cannot be bounded by internal limits:**
+   - exchange halts and "close-only" regimes (Feb–Mar 2022);
+   - settlement outside the price limit (MOEX WTI, April 2020, settled at −$37.63);
+   - evening limit-lock, because automatic corridor expansion is not done after 19:00;
+   - weekend sessions in some contracts.
+
+   The internal limits are action rules. They are not guaranteed maximum losses.
+
+6. **Sizing.** With 30k and integer lots, the only defensible methods are **fixed minimum lots with a threshold filter** and **at most one active idea** unless a joint stress test passes with no diversification credit. Kelly-type sizing is not supported without calibrated probabilities: errors in means matter about 20:2:1 relative to variances and covariances. A "high-risk profile" is a research label only and gives no extra pilot authority.
+
+7. **Scaling to 10–20m.** Pilot profit cannot establish capacity. Promotion needs liquidity and depth evidence at the target size, cost realisation measured against the model, incident-free control of core recourse, and R09-valid out-of-sample evidence.
+
+**No-trade is a live outcome.** It follows if R01 cannot confirm sleeve-level recourse control, or if no minimum-lot spread passes the stress inequality and the liquidity inequality.
+
+---
+
+## 2. Inputs actually read, and what was only proposed
+
+| Item | Status |
+|---|---|
+| R01, R02, R04, R05, R06, R09 | **Not supplied.** Conclusions that depend on them are conditional. |
+| R08 | Not supplied. Execution assumptions (3–90 min, legging) are coordinated only through explicit parameters. |
+| Carver, *Systematic Trading* | **Not read.** Only secondary summaries and the author's blog (§11). No page numbers are claimed. |
+| Primary/official pages read | MOEX (risk management, unified session, calendar spreads, collateral, parameters, weekend risk parameters), NCC (document versions, notices), VTB (KDS, margin indicators, list of liquid property), 6681-U text (via Garant), BCS-Express, Interfax/RBC/Forbes news, MacLean–Thorp–Ziemba (2010). |
+| Proposed but not performed | Historical spread-tail estimation, margin-hike frequency study, minimum-lot stress per contract, depth/capacity measurement, broker confirmation of segregation and arrival times. |
+
+---
+
+## 3. Evidence base: Russian market mechanics that drive the stress paths
+
+### 3.1 Clearing and VM timing after the unified session
+
+MOEX moved derivatives to a unified trading session on **23 March 2026**. Intermediate clearing was cancelled. The main clearing now runs **23:50–00:30**, and settlement is **T+1 at 20:00** without stopping trading ([MOEX](https://www.moex.com/n98363)). The MOEX presentation says that at 20:00 on T+1 "фактическое списание (исполнение) требований/обязательств на сумму, учтенную в МТМ регистрах" (actual debiting of obligations booked in the MTM registers) takes place. The settlement price is the median of 12 snapshots of bid, ask and last taken from 18:58 to 18:59 ([MOEX presentation](https://fs.moex.com/f/22942/prezentacija-dlja-sayta.pdf)).
+
+From **14 July 2026**, weekday trading runs 06:50–23:50. Currency futures joined the weekend session from 18 July, trading 09:50–19:00 within ±3% bounds ([RBC](https://www.rbc.ru/quote/10/07/2026/6a50de6f9a79471c7e1b0461); [Interfax](https://www.interfax.ru/business/1097202)). Weekend sessions also exist for many commodity and index contracts. For the 23 Feb 2026 weekend session, NCC widened the weekend price corridor for BR from 0.04 to 0.0792, TTF from 0.06 to 0.16, SILV from 0.06 to 0.1188, and NG from 0.08 to 0.12 ([MOEX/NCC](https://www.moex.com/n97758)).
+
+**What this means for the pilot:**
+- Cash debits lag the marks by up to about 20 hours.
+- Broker sufficiency checks use real-time indicative VM. VTB's KDS includes «Вар. маржа реал.», computed "в режиме реального времени" ([VTB](https://www.vtb.ru/personal/investicii/tarify/kds/)).
+- So a margin breach happens on the marks, intraday, before any cash leaves.
+- Weekend sessions create P&L while the user may be away.
+
+### 3.2 Price limits, limit-lock and margin hikes
+
+MOEX says that when a price reaches the monitoring zone, the exchange may suspend trading to widen the limits, "Это сопровождается увеличением гарантийного обеспечения" (this comes with higher GO). Between **09:00 and 19:00** the limit widens automatically within 5 minutes if an order sits near the limit. **From 19:00 to 23:50** automatic widening "не осуществляется" (is not done) ([MOEX](https://www.moex.com/s1059)). An evening adverse move can therefore lock a spread leg at the limit until the next session. **The exit window τ must include "limit-locked until morning".**
+
+Historical hikes give scenario anchors, not probabilities:
+- **2016:** GBPU base GO raised from 7% to 20% (≈2.9×) and RTS from 10% to 15% (1.5×) "ввиду повышенной волатильности" (due to elevated volatility) ([NCC](https://www.nationalclearingcentre.ru/catalog/0701/2396)).
+- **22 April 2020:** for the nearest BR and CL contracts, NCC set GO of roughly 73% (seller) and 55–61% (buyer) ([NCC](https://www.nationalclearingcentre.ru/catalog/0701/8239)).
+- **20–21 April 2020:** MOEX halted the expiring WTI contract, which settled at −$37.63. Longs' aggregate losses were estimated at >RUB 1bn ([Interfax](https://www.interfax.ru/business/705323)).
+- **March 2022:** equity and index derivatives traded only via negotiated "Закрытие позиций" (close-only) orders. Currency and commodity contracts traded 10:00–18:45 ([MOEX Telegram](https://t.me/s/MoscowExchangeOfficial?before=875)). On 5, 7 and 8 March there was no trading on any MOEX market ([Forbes](https://www.forbes.ru/investicii/458025-cb-resil-ne-provodit-torgi-na-vseh-rynkah-mosbirzi-s-5-po-9-marta)).
+
+### 3.3 Spread margin offsets and their removal
+
+GO uses portfolio margining. Risks are netted using "известных ценовых взаимосвязей" (known price relationships) ([MOEX](https://www.moex.com/s1573)).
+
+For opposite positions in an intermonth spread group, the larger of the two GOs is blocked under semi-net margining, or the interest-rate risk under net margining. **On the last trading day the benefit for the nearest contract is cancelled** and moves to the next expiry ([Smart-Lab NCC FAQ compilation](https://smart-lab.ru/blog/846671.php)). MOEX confirms that before expiry, under semi-netting, spread GO is computed "без учета положительных рисков (по правилу 'большой ноги')" (without positive risks, by the "big leg" rule) ([MOEX parameters](https://www.moex.com/ru/derivatives/parameters.aspx?tid=1576)). NCC also changes spread-group membership by notice. For example, from 06.02.2025 it changed the window_size parameter and intermonth inclusion for T/TCSI ([NCC](https://www.nationalclearingcentre.ru/catalog/0701/77192)).
+
+MOEX has a native **calendar spread** order (limit, market or FOK) that executes both legs at once. At matching, "Гарантийное обеспечение резервируется в таком же размере, как при сведении 2-х атомарных заявок" (GO is reserved as for two atomic orders) ([MOEX](https://www.moex.com/ru/spreads); [MOEX EN](https://www.moex.com/en/spreads)). **No equivalent native order was found for inter-commodity pairs.** Those need legging, which means temporary single-leg risk.
+
+### 3.4 Broker liquidation rules
+
+**6681-U (Bank of Russia):**
+- If NPR2 < 0 before the restrictive closing time, the broker closes "в течение указанного торгового дня" (within that day). If it happens after, closure is due by the next day's cut-off.
+- Closure goes to NPR1 = 0 for KSUR/KNUR clients and **NPR2 = 0 for KPUR** clients.
+- Closure is not allowed if NPR2 has turned positive, unless the brokerage agreement says otherwise.
+- Futures enter portfolio value through VM computed under the clearing rules.
+
+([Garant, 6681-U](https://www.garant.ru/products/ipo/prime/doc/409252026/))
+
+**VTB:**
+- NPR2 < 0 means "брокер самостоятельно закроет часть позиций" (the broker will close part of the positions) ([VTB](https://www.vtb.ru/personal/investicii/help/marzhinalnoe-kreditovanie/pokazateli-marzhinalnogo-kreditovaniya/)).
+- For derivatives, if KDS < X, VTB closes positions until KDS ≥ Y ([VTB KDS page](https://www.vtb.ru/personal/investicii/tarify/kds/)). A search snippet of the same page states X = 0 and Y = 0.2 ([VTB search result](https://www.vtb.ru/personal/investicii/tarify/kds/)).
+- A VTB reply quoted on Banki.ru cites clause 24.19: positions are closed "до окончания Торговой сессии следующего торгового дня" (before the end of the next trading day's session), including when the exchange raises GO ([Banki.ru](https://www.banki.ru/services/responses/bank/response/10412099/)).
+- In litigation, VTB reportedly called KDS "индикативный" (indicative). The KDS formula was corrected only in the regulation of 07.04.2023 ([Smart-Lab](https://smart-lab.ru/blog/1007700.php)).
+- VTB's EBS (August 2025) allows liquid securities from one section to serve as collateral in another, with a single portfolio result ([RBC](https://www.rbc.ru/quote/news/article/689b24089a79475fc2ac5d2b); [Frank Media](https://frankmedia.ru/214378)).
+
+**BCS:**
+- "При образовании задолженности на срочном рынке в любом размере брокер имеет право закрыть позицию принудительно" (any debt on the derivatives market lets the broker close positions).
+- A reduced-GO service (2× lower, valid 10:00–18:30) exists ([BCS-Express](https://bcs-express.ru/novosti-i-analitika/obuchenie/garantiinoe-obespechenie-na-srochnom-rynke)).
+- Search snippets indicate minimum margin = 0.5 × initial margin from 01.04.2025 and closure to UDS = 0.5 for KPUR ([BCS](https://bcs.ru/margin); [BCS FAQ](https://bcs.ru/faq/category/11/55)). The page bodies did not render, so treat these as unverified.
+
+---
+
+## 4. Separating the risk quantities (Task 1)
+
+| Quantity | Definition used here | Which budget it uses | When it moves |
+|---|---|---|---|
+| **Relative economic result X** | `X = V − B`. B is the matched LQDT counterfactual; it does not mirror pilot-induced core sales. | 15k outer boundary; 10k action | Continuously on synchronized marks (marked to mid; exit costs go into L, never into both) |
+| **Absolute P&L** | Futures VM + fees, ignoring benchmark | None directly. It feeds X. | Intraday marks, cleared at 23:50 |
+| **Benchmark drag** | `30,000 × r_LQDT × t` if sleeve cash earns nothing | X (slow, deterministic) | Daily, including weekends |
+| **Peak drawdown D** | `H − X`, with `H = max past X` | 5k warn; 10k suspend | Only after gains |
+| **Cash / VM path** | Rouble balance after T+1 20:00 debits | Liquidity envelope (30k) | Lags marks by ≈20 h ([MOEX](https://fs.moex.com/f/22942/prezentacija-dlja-sayta.pdf)) |
+| **Broker margin / collateral** | Broker IM/MM (≥ NCC GO), KDS/NPR | Liquidity envelope; closure risk | Real time; jumps on hikes or offset removal |
+| **Gross exposure** | Σ\|notional\| of both legs | Capacity, concentration | With price |
+| **Temporary single-leg risk** | Outright exposure while legging or after a partial fill | Stress loss L (legging term) | Seconds to 90 min (manual) |
+| **Account-wide recourse** | Ability of losses to reach core LQDT | **Must be zero without approval** | Whenever sleeve equity < requirements on a shared EBS |
+
+**Key interaction:** these budgets are drawn at different times. Benchmark drag accrues daily. VM hits marks immediately but cash at T+1 20:00. A margin hike consumes liquidity without any economic loss. The core can absorb a sleeve deficit silently on an EBS. Adding independent best cases understates the risk. The stress scenarios in §6 move price, margin and liquidity together.
+
+---
+
+## 5. Inequalities for entry and continuation (Tasks 2–4)
+
+### 5.1 Notation
+
+- `c_in`: entry costs (fees plus half-spread on both legs), already in X after entry.
+- `L_s`: stressed incremental loss under joint scenario s, over the exit window `τ_s`. It is the sum of:
+  - adverse spread move over τ_s, including a gap or limit-lock to the next session;
+  - legging or partial-fill outright loss;
+  - stressed exit costs on both legs;
+  - benchmark drag over τ_s.
+- `L = max_s L_s`. X is marked at mid, so exit costs are counted once, inside L.
+- `U > 0`: uncertainty buffer covering model error, unmodelled tails and mark disagreement.
+- `E_t`: sleeve-own eligible equity = sleeve cash + sleeve-own eligible collateral after broker haircut + indicative VM − pending T+1 debits. Core LQDT is excluded unless approved.
+- `IM_t`: broker initial requirement. `M_s`: margin-hike multiplier. `O_s`: offset-removal multiplier (≈2 for a semi-net intermonth spread with similar legs; 1 for pairs already margined as the sum).
+- `R`: cash reserve for fees and T+1 timing.
+- `F_s`: emergency funding counted in scenario s. It is **0 at entry**, and otherwise counted only if `t_approve + t_transfer + t_credit ≤ t_broker_deadline` and the lifetime gross remaining is enough.
+
+### 5.2 Proposed rules (proposals, not approved)
+
+**(E1) Economic entry/increase gate (tighter than the default):**
+`X − c_in − L − U ≥ −10,000`.
+*Reason (judgment):* a fresh entry under its own stress scenario should not reach the action level, so ordinary adverse noise does not immediately force an exit.
+
+**(C1) Economic continuation (the default, made continuous):**
+`X_t − L_t − U_t ≥ −15,000` at every reliable mark. If it fails, start orderly de-risking until it holds again. Earlier broker, naked-leg, stale-data or delivery danger overrides this.
+
+**(E2) Liquidity entry gate, with zero emergency funding:**
+for all s: `E_0 − c_in − ΔVM_s − fees_s − IM_0·M_s·O_s ≥ R`.
+
+**(C2) Liquidity continuation:**
+for all s: `E_t + F_s − ΔVM_s − fees_s − IM_t·M_s·O_s ≥ R`. Here F_s = 0 unless approval and arrival timing are evidenced. If it fails, de-risk; it is not a trigger to request funds.
+
+**(A) Aggregate:**
+`L_port = Σ_i L_i`. No diversification credit in stress unless a sourced joint-tail scenario shows otherwise. `IM_port` is summed with offsets removed.
+
+**(R) Recourse gate:**
+a verified mechanism must stop sleeve losses reaching core collateral without approval, or detect it within the reaction time. Otherwise there is no live trade.
+
+### 5.3 Deriving the starting-margin ceiling (replacing "50%")
+
+From E2: `IM_0 ≤ (30,000 − c_in − ΔVM_s − R) / (M_s·O_s)`.
+
+Hypothetical inputs: ΔVM = 5,000, R = 1,000, c_in ≈ 0, which gives a numerator of 24,000.
+
+| M (hike) | O = 1 (no offset to lose) | O = 2 (semi-net offset removed) |
+|---|---|---|
+| 1.5× (RTS 2016 analogue) | 16,000 (53%) | 8,000 (27%) |
+| 2.0× | 12,000 (40%) | 6,000 (20%) |
+| 2.9× (GBPU 2016 analogue) | 8,276 (28%) | 4,138 (14%) |
+
+Hike anchors are from [NCC 2016](https://www.nationalclearingcentre.ru/catalog/0701/2396). Offset removal is from [MOEX parameters](https://www.moex.com/ru/derivatives/parameters.aspx?tid=1576).
+
+**Finding:** 50% is coherent only in the top-left cell. Replace it with the formula. Use a per-family M taken from that contract's own GO history (R06/R04 data), with M ≥ 2 as a floor until history is studied.
+
+### 5.4 Testing the 5k stress-buffer heuristic
+
+From E1 with a candidate `U = max(1,500; 0.5·L)` (a proposal: uncertainty is assumed to scale with the stress estimate):
+- `1.5·L ≤ 10,000 − c_in` gives `L ≤ ≈6,570` for a minimum-lot idea at X = 0.
+- C1 then requires `X ≥ −15,000 + 1.5·L ≈ −5,150`. **With a full-size idea, de-risking starts at about the 5k warning level.**
+
+A fixed "5k buffer" is therefore neither necessary nor sufficient. Its adequacy depends on L, which is set by the contract, the lot, τ, and the halt/limit-lock regime. Replace it with `L + U` computed per idea.
+
+---
+
+## 6. Hypothetical worked ledgers (Task outputs)
+
+**Common hypothetical assumptions (not verified):**
+- r_LQDT = 14%/yr (R05 must supply the actual figure), so drag ≈ 30,000 × 0.14/365 ≈ RUB 11.5/day.
+- Sleeve cash earns nothing on the derivatives position (R01/R05 to confirm).
+- Core LQDT is excluded from E. B = the same account without the pilot.
+- Round-trip fees and slippage RUB 300 per spread (R02 to supply).
+
+### Ledger A: calendar spread via native spread order, normal path
+
+| Day | Event | Futures P&L | Drag | X | H | D | IM (net) | E (sleeve) | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | Entry, 1 spread | 0 | 0 | −150 | 0 | 150 | 5,000 | 29,850 | Active |
+| 30 | Spread converges | +1,800 | −345 | +1,305 | 1,305 | 0 | 5,000 | 31,650 | Active |
+| 60 | Exit | +2,200 | −690 | +1,210 | 1,360 | 150 | 0 | 31,900 | Flat |
+
+The pilot "won" only RUB 1.2k against LQDT. This shows how the benchmark eats small-lot edges.
+
+### Ledger B: joint shock (gap + hike + offset removal) on a shared EBS
+
+| Step | Event | Spread P&L | X | Broker IM (M=2, O=2) | E (sleeve-own) | Sleeve deficit | Broker sees | Status |
+|---|---|---|---|---|---|---|---|---|
+| t0 | Entry; IM_net 6,000 (20% rule passes E2) | 0 | −150 | 6,000 | 29,850 | — | Fine | Active |
+| t1 | Weekend gap −6,000; NCC doubles GO; expiry week removes semi-net | −6,000 | −6,500 | 24,000 | 23,700 | **−300** | NPR2 ≫ 0 (core 40m) | **Liquidity alert → orderly de-risk** |
+| t2 | If IM_0 had been 9,000 (50% rule) | −6,000 | −6,500 | 36,000 | 23,700 | **−12,300** | Still fine | **Sleeve violation; core silently covering = incident if persisted** |
+
+**Highlights:**
+- At t2 the economic result is only at warning level, yet the sleeve is deeply short of liquidity.
+- The broker will not close the position, because the core covers it. Recourse to the core is the spillover.
+- Under C2, emergency funding is admissible only to reach flat, with approval, and if it arrives before a deadline. Here the broker imposes no deadline, so the internal rule must force a flat exit.
+
+### Ledger C: gap through the trigger, with an evening limit-lock
+
+| Step | Event | X | L remaining | U | X − L − U | Status |
+|---|---|---|---|---|---|---|
+| t0 | Running loss | −8,000 | 4,000 | 2,000 | −14,000 | C1 passes (narrowly) → should already be de-risking under §5.4 calibration |
+| t1 (20:30) | Leg hits limit; no auto-expansion after 19:00 ([MOEX](https://www.moex.com/s1059)) | −9,500 | (locked) | — | — | Cannot exit |
+| t2 (07:00 next day) | Opens −4,000 further; exit costs 600 | −14,100 | 0 | — | — | **Action breached; 15k nearly breached** |
+
+**Lesson:** a −10k trigger gives no protection from −9.5k once the position is locked. Only a C1 inequality computed *with the lock scenario in L* would have cut size earlier.
+
+### Ledger D: legging failure on an inter-commodity pair (manual, 3–90 min)
+
+| Step | Event | Outright exposure | X |
+|---|---|---|---|
+| t0 | Leg 1 filled, 1 lot | 1 lot outright | −80 |
+| t0 + 25 min | Leg 2 unfilled; leg 1 moves 2.5σ intraday (hypothetical −3,000) | 1 lot | −3,080 |
+| Policy | Flatten leg 1 at T_leg = 10 min (proposal) | 0 | ≈ −1,300 if executed at 10 min |
+
+L must include the legging term `σ_leg1·√(T_leg + reaction)·z + exit cost`. Pairs without a native spread order need a larger L.
+
+---
+
+## 7. Risk and funding state table
+
+| State | Entry condition | Allowed actions | Funding | Exit from state |
+|---|---|---|---|---|
+| S0 Eligible-flat | All gates (E1, E2, R) pass; data fresh | Enter ≤ 1 idea at min lot | None | Entry → S1 |
+| S1 Active | C1, C2 hold; D < 5k; X > −5k | Hold or exit; scale-in only if E1/E2 still pass for aggregate | None | — |
+| S2 Warning | D ≥ 5k, or C1 headroom < U | Reassess; no adds | None | Recovery doesn't reset H |
+| S3 Liquidity alert | C2 fails in any scenario, or sleeve E < IM | Orderly de-risk now | Request only if needed to avoid disorderly liquidation, and only if arrival < deadline | C2 restored |
+| S4 Action | D ≥ 10k, or C1 fails | Suspend entries; orderly reduction; user review before resuming | Only to avoid disorderly liquidation | User restart approval (separate from funding approval) |
+| S5 Exit-only | X ≤ −10,000 | Orderly exit to flat | Only to reach flat | Flat → review |
+| S6 Breach | X < −15,000 | Flat ASAP; post-mortem | Only to reach flat | Pilot stop pending review |
+| S7 Incident | Unapproved core collateral use; broker closure; naked leg > T_leg | Flatten; record; count core use toward 15k gross | Counts against cap | Review |
+| S8 Unbounded | Halt, close-only, limit-lock, expiry/delivery anomaly | Whatever the venue allows | — | Venue resumes |
+
+Funding cap accounting: each newly earmarked cash or collateral amount counts toward the 15k lifetime gross, as does unapproved broker use of core. A collateral-to-cash conversion is not counted twice. Returned funds do not restore the cap. X, H and funding consumed are never reset.
+
+---
+
+## 8. Parameter table: retain, revise or defer (proposals, not approvals)
+
+| Parameter | Proposal | Basis | Sensitivity | Prerequisite before live use |
+|---|---|---|---|---|
+| 30k all-in envelope | **Retain** as an authority ceiling | User constraint | — | R01: sleeve recourse control |
+| 15k lifetime gross funding | **Retain**; count it as 0 in all entry tests | User constraint; timing unknown | Arrival time vs broker deadline | Documented transfer time; approval protocol |
+| 5k warning (D) | **Retain** | Judgment | Coincides with C1 de-risk start (§5.4) | — |
+| 10k action (D or X) | **Retain as a backstop**, subordinate to C1 | Gaps jump triggers (Ledger C) | — | — |
+| 15k outer boundary | **Retain as a planning boundary**; not a guaranteed maximum | Halts, limit-lock, WTI-type events | Unbounded tails | — |
+| Entry gate | **Add E1**: `X − c_in − L − U ≥ −10k` | Judgment | U form | Per-idea L estimate |
+| U (uncertainty) | **Candidate** `max(1,500; 0.5·L)` | Judgment; replaces fixed 5k | ±50% changes max L by ≈ ±20% | R09 calibration |
+| 50% starting-margin ceiling | **Replace** with the §5.3 formula; M ≥ 2 floor; O = 2 for semi-net spreads | NCC hike history, offset removal | Strong (table §5.3) | Contract GO history (R04/R06) |
+| Max concurrent ideas | **1** (2 only if aggregate E1/E2 pass with Σ L) | Integer lots; 30k | — | — |
+| Legging timeout T_leg | **Candidate 10 min**, then flatten leg 1 | Reaction 3–90 min | Pair-specific | R08 |
+| No holds through closed-venue gaps | **Candidate:** L must include weekend/limit-lock τ | MOEX schedule | — | User availability calendar |
+| Expiry buffer | **Candidate:** exit or roll ≥ 2 sessions before last trading day | Offset cancellation | — | R06 specifications |
+| Human quota | **Candidate:** ≤ 2 entries/day; declared availability windows | Manual reaction | — | User definition |
+
+---
+
+## 9. Sizing methods compared (Task 5)
+
+| Method | Fits 30k integer lots? | Assessment |
+|---|---|---|
+| Fixed minimum (1 spread) + threshold filter | **Yes. Default.** | Carver: if you can hold only 1–2 contracts, "use a threshold filter"; ≥ 4 contracts at max forecast is recommended for continuous sizing ([Carver blog](https://qoppac.blogspot.com/2016/03/diversification-and-small-account-size.html)) |
+| Bounded risk-scaled (volatility target) | Only as a *reject* filter | Carver-style daily cash vol target = annual / 16 ([7 Circles](https://the7circles.uk/systematic-trading-4-volatility-targeting-and-position-sizing/)). At 25% on 30k (≈RUB 470/day), any idea whose 1-lot daily σ exceeds that is **rejected**, not downsized. |
+| Fractional Kelly | **No** without calibrated probabilities | Mean errors dominate about 20:2:1. Betting above Kelly lowers both growth and security ([MacLean, Thorp, Ziemba 2010](https://www.stat.berkeley.edu/~aldous/157/Papers/Good_Bad_Kelly.pdf)). Carver halves Kelly and halves again for negative skew ([7 Circles](https://the7circles.uk/systematic-trading-4-volatility-targeting-and-position-sizing/)). Mean-reverting spreads are often negatively skewed. |
+| Scale-in with a precommitted cap | Only if each step passes E1/E2 on the **aggregate** | Effectively unavailable at 1–2 lots |
+| Low/medium/high profiles | Research labels only | High cannot enlarge authority; all must pass the same gates |
+
+**Illustrative non-Gaussian caveat:** under a driftless Gaussian assumption (which is not a guarantee), a sleeve run at 25% annual vol (σ_90d ≈ 3.75k) touches −10k within 90 days with probability ≈ 2·Φ(−2.67) ≈ 0.8%. Within a year it is ≈ 18%. Real spread tails, halts and margin jumps make these optimistic.
+
+**Correlation:** concurrent spreads in one family (for example two BR calendar spreads) share the same shock. In stress, treat correlation as 1.
+
+---
+
+## 10. The 90-day convention and the giveback rule
+
+**Proposed convention:**
+- Day 0 is the earlier of the first sleeve earmark or the first incremental cost (Moscow date).
+- Review happens on calendar day 90. If that is a non-trading day, any resulting actions happen at the next session.
+- Interim checks every 30 days.
+
+**The review:**
+- re-runs E1, E2, C1, C2 and R on current data;
+- does **not** force profitable ideas to exit;
+- does **not** reset X, H, D or funding consumed.
+
+An idea held past day 90 must keep passing C1/C2, and must exit early if its expiry buffer is reached.
+
+**Opportunity cost of the D ≥ 10k giveback rule:** with per-idea L ≈ 6.5k, H ≥ 10k means substantial success. A 10k retracement is ≈ 1.5·L, and for mean-reverting spreads such pullbacks are typical before convergence. The rule may cut winners. **Test in R09** on matched paths:
+- (a) the rule as written;
+- (b) a giveback tied to current L (for example D ≥ max(5k, 1.5·L));
+- (c) no giveback rule, with C1 only.
+
+Compare X distributions and breach frequencies. Until tested, keep the conservative rule for the pilot (judgment, given the tiny sample).
+
+---
+
+## 11. What could be taken from Carver (library lead)
+
+- **Book:** Robert Carver, *Systematic Trading*, Harriman House, 2015, ISBN 9780857194459, about 325 pages ([AbeBooks](https://www.abebooks.com/first-edition/Systematic-Trading-unique-new-method-designing/32472784352/bd); [chasse-aux-livres](https://www.chasse-aux-livres.fr/prix/0857194453/systematic-trading-robert-carver)). **Not read; no page numbers given.**
+- **From secondary summaries:**
+  - half-Kelly, with a backtested SR of 1.0 marked down to 0.75;
+  - a maximum volatility target of 25% for semi-automatic traders (SR 0.2–0.5);
+  - halve the target for negative skew;
+  - daily target = annual / 16 ([7 Circles](https://the7circles.uk/systematic-trading-4-volatility-targeting-and-position-sizing/)).
+- **Small-lot limitation, from the author's blog:** you can't hold less than one contract; diversification wins for the first few instruments, then discrete-position costs dominate. His table, in USD for his own contract set, is not transferable to MOEX ([qoppac](https://qoppac.blogspot.com/2016/03/diversification-and-small-account-size.html)).
+- **Pilot implication:** the 30k sleeve is in his "threshold / 1-instrument" regime. Continuous risk scaling does not apply.
+
+---
+
+## 12. Future 10–20m scale and promotion gates (Task 6)
+
+At 10–20m, a 1-lot-per-30k design becomes roughly 333–667 lots. Depth, open interest, limit-lock and close-only regimes then dominate. On a shared account with >40m core, sleeve losses at scale could reach millions and draw on the core.
+
+**Promotion gates (all required; proposals):**
+1. **R09-valid evidence:** pre-registered, out of sample, with multiple-testing control, and a minimum count of closed independent ideas across ≥ 2 volatility regimes. Pilot profit alone does not count.
+2. **Realised costs and slippage** within the R02 model band.
+3. **Zero unapproved core-use incidents.** The recourse control has been tested.
+4. **Capacity evidence:** target size ≤ a set fraction of displayed depth and ADV per leg, from R04 data. Stress L recomputed with impact.
+5. **Re-derived limits at scale:** E1/C1/E2/C2 with scale-specific M, O and τ. No linear extrapolation of the 5k/10k/15k numbers.
+6. **Separate approval** for any change of account structure.
+
+---
+
+## 13. Stop, partial-fill and emergency policy, and no-trade criteria
+
+**Policy:**
+- Prefer native calendar spread orders.
+- For legged pairs: flatten leg 1 at T_leg.
+- Count only matched integer pairs. Flatten any unmatched remainder.
+- Avoid resting single-leg stops that can create a naked leg.
+- No new risk after 19:00 unless L includes an evening limit-lock until morning.
+- Emergency funding only to avert disorderly liquidation or to reach flat. It needs explicit approval, never adds exposure, and never counts at entry.
+
+**No-trade if any of the following holds:**
+- the recourse gate (R) is unverified;
+- no minimum-lot spread passes E1 and E2;
+- data are stale or not defensible (R04);
+- KPUR/broker recognition is unconfirmed where it changes closure levels;
+- expiry falls inside the buffer;
+- the user's availability window is shorter than τ;
+- the contract is subject to known close-only or halt conditions.
+
+---
+
+## 14. Conflicts and unknowns
+
+| Item | Conflict or gap |
+|---|---|
+| NCC risk-parameter methodology version | Page lists NCC-P-2026-97 (effective 20.04.2026) ([NCC](https://www.nationalclearingcentre.ru/catalog/0302/296)); a search snippet names NCC-P-2026-161 of 13.07.2026. The current text was not read. |
+| NCC GO Principles | Page shows NCC-P-2025-58 valid to 13.09.2026 ([NCC](https://www.nationalclearingcentre.ru/catalog/0302/281)); a snippet cites NCC-P-2026-221 of 11.09.2026. The new text was not read. |
+| VTB KDS page | Its formula uses intermediate-clearing fields that no longer exist after 23.03.2026, so the page may be stale ([VTB](https://www.vtb.ru/personal/investicii/tarify/kds/)). Clause 24.19 is from a secondary quote. |
+| BCS UDS levels | Snippet only; page bodies did not render. |
+| Collateral eligibility of LQDT for derivatives at VTB/BCS | Not verified (R01). |
+| r_LQDT, fees, tax | R05/R02. Pre-tax only; long-term holding deduction (LDV) excluded. |
+| Funding arrival time; user unavailability | Unknown. Modelled as zero. |
+
+**Retrieval log (2026-10-21):**
+- broker.vtb.ru/tariffs/kds: network failure; the vtb.ru mirror succeeded.
+- bcs.ru FAQ/margin pages: JS shell only.
+- mtsbank.ru PDF: failed.
+- One RBC article: failed.
+
+No bypass was attempted. None of these is decision-critical beyond the items listed above.
+
+---
+
+## 15. What would falsify these conclusions, and possible project changes
+
+**Falsification:**
+- R01 shows broker-enforced sleeve segregation inside the same agreement. This would remove conclusion 3's no-trade default.
+- Contract GO history shows M < 1.5 and no offset removal for a chosen family. This would allow a higher margin ceiling.
+- R09 shows the giveback rule adds no breach protection. This would justify dropping or relaxing it.
+- Documented funding arrival before broker deadlines. This would allow F_s > 0 in C2, but never in E2.
+
+**Possible changes (require user decision):**
+1. A separate brokerage sub-account or agreement for the sleeve. This would change the "same account" choice and must not be done silently.
+2. Restrict the pilot to native calendar spreads.
+3. A no-evening, no-weekend holding rule unless L covers it.
+4. One idea at a time.

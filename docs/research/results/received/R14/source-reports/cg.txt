@@ -1,0 +1,266 @@
+# R14 — Optional text/news, library and channel evidence
+
+**Decision brief | Prepared to the requested information cutoff: 2026-10-07**  
+**Public-source verification performed: 2026-10-22**  
+**Language:** English report; source text is predominantly Russian.  
+**Scope:** Independent public-source research and study design only. No repository, prior report, attachments, broker/account records, private channel export, or Gemini API key was supplied or accessed. No strategy backtest, live trade, quota check inside the user's account, or trading-feasibility test was performed.
+
+> **Cutoff discipline.** Search/index pages inspected on 2026-10-22 can contain posts published after 2026-10-07. Those later posts are not used as historical inputs. Where an undated/live page was used to verify a current handle, that verifies identity only as observed during research; it does not prove the exact historical state of the page or post on 2026-10-07. Dynamic Gemini quotas and model availability require an account-level check at experiment start.
+
+## 1. Decision
+
+**Conditional go for a small extraction/recordkeeping pilot; no claim that text predicts returns.** Prioritize a few high-provenance sources with a clearly named economic mechanism. Test whether text-derived labels add information to (a) price-only references, (b) deterministic event flags from dated formal disclosures, and (c) simple Russian lexical features. Do not start with generic news sentiment, broad Telegram scraping, or model-generated trade opinions.
+
+The most defensible first semantic hypothesis is that **changes in official forward guidance / risk balance** may contain information beyond the numeric policy decision for interest-rate-sensitive spreads, and may matter to FX/index futures through linked macro channels. The caveat is decisive: the Central Bank of Russia's meeting summary can be published days after the meeting (its 11 September 2026 summary was dated 23 September), too late to serve as a 3–90-minute reaction signal for the original meeting. Only source text actually observable at the decision time belongs in that fast window. Later summaries may be tested only as later information, with their actual later timestamp.
+
+The second conditional hypothesis is **issuer/sector operational guidance** (production, exports, outages, logistics, input costs, supply constraints, management forecast changes) for a contract whose economic exposure is explicitly mapped to that issuer/sector. No contract universe was provided, so there is not enough evidence to justify a broad issuer-channel export now.
+
+MOEX technical notices should initially be treated as **execution/eligibility inputs**, not alpha: scheduled system releases, trading calendars, funding calculation changes, risk-parameter changes, and outages are directly structured as event flags. Broker commentary has commercial incentives and should be excluded from the first pass except for a narrowly defined operational-status hypothesis.
+
+No text value or profitability is measured in this report. A release's truth, authority, or publication date does not prove incremental predictive value, historical observability, lawful bulk reuse, or actionable latency.
+
+## 2. Ranked sources, hypotheses and candidate features
+
+Ranking is for **research priority**, not an assertion that the source predicts prices.
+
+| Rank | Source / hypothesis | Candidate feature (not a trade recommendation) | Why it might add value | What the simpler baseline likely captures | Provenance, incentives and feasibility | Initial decision |
+|---:|---|---|---|---|---|---|
+| 1 | **Bank of Russia: dated policy statement / press-conference statement and Q&A**. Hypothesis: change in stated risk balance, conditionality or the hurdle for the next policy move is relevant to a rate-sensitive spread (and only indirectly to other instruments). | Structured labels: direction of stated risk balance; whether next move is described as automatic/conditional; change in emphasis versus the previous *available* statement; named causal channel and time horizon; each label tied to exact evidence spans. Keep fact, forecast and opinion distinct. | Official source, event-specific and economically interpretable. The 11 Sep 2026 statement discusses fuel-driven inflation, risk balance, budget assumptions and future policy conditions; it is materially richer than the 14% decision alone. | Key-rate decision, change in bps, scheduled event, immediate prices, and simple terms such as “инфляционные риски”, “снижение ставки”, “бюджет”. Many useful portions may already be priced by the conference start. | High provenance, but central bank is an interested policy communicator, not an unbiased oracle. Static pages provide a date but may not prove first-observed time/revisions. Use the website archive as primary source; Telegram/video only with post and recording lineage. | **Pilot first**, conditional on timestamp evidence and contract mapping. Use for medium-term text only if that exact text became available later. |
+| 2 | **Issuer's own dated operating release / investor presentation / management forecast**, only after each candidate contract is mapped to issuer/sector exposure. | Quantified direction, amount/range, horizon and confidence of production/export/shipment/capacity changes; unexpected revision versus the preceding available version; fact-versus-forecast flag; supply/logistics/outage mechanism. | A concrete operational revision can be more specific than generic market commentary and may not be summarized by a simple corporate-event flag. | Scheduled results/calendar; keyword counts; already-disclosed fact; underlying/sector price moves. Dividend/corporate-action facts remain in the separate event stream required by the project. | Primary issuer source, but management has disclosure, reputation and promotion incentives. Press/IR pages can be edited or republished; “on date” is not enough for 3–90-minute latency. No issuer is yet linked to a selected contract, so a broad export is unjustified. | **Conditional second phase**; choose sources only after a contract-to-economic-exposure map exists. |
+| 3 | **Official regulator/government text with contract-specific sector exposure** (for example, effective rules or official explanations that materially change product export, supply, production or costs). | Scope/product, effective date, mandatory vs proposed status, affected channel and time horizon; difference from the prior official version; explicit fact/forecast/legal-status tags. | Can distinguish a binding rule, proposal, administrative clarification and a forecast—often lost in a sentiment score. | Binary event flag based on act/release date and effective date; price response; named-policy keyword dictionary. The underlying dated instrument should remain the factual input. | High authority for the agency's own act, but legal status and applicability still need independent checking. Do not infer that a press-release paraphrase is the operative legal text. Exact source selection depends on the future instrument universe. | **Use only on a predeclared sector hypothesis**; otherwise defer. |
+| 4 | **MOEX official futures-market news/RSS and technical calendar**. Hypothesis: operational notices identify execution or contract-definition risks. | Contract affected; change type; effective timestamp; production vs test environment; outage/downtime interval; funding/settlement/risk-parameter change. Use deterministic extraction first. | High source fit for contract mechanics and operational readiness. MOEX provides timestamped category pages and RSS feeds, including a specific futures-news category and a risk-parameters feed. | Event flag is usually enough; exact stated time and affected contract are more important than semantic tone. Technical notices should not be treated as directional alpha. | Primary venue source with visible publication times on news listings. Some items concern *test* environments only, which must not be misclassified as live production. | **Keep as event/operational control**; no Gemini unless deterministic parsing fails. |
+| 5 | **Bank of Russia analytical publications** (enterprise monitoring, inflation reports, regional economy, financial-market reviews), restricted to predeclared channels/exposures. | Change in text-described breadth/persistence of a shock; sector dispersion; supply-vs-demand distinction; explicit revision vs earlier report. | May express causal nuance that a single released statistic misses. | Numeric data release, scheduled calendar, simple direction/surprise features, source-date event flag, and price response. | Official, but often retrospective and published after the underlying observation period. The publication calendar itself says that dates can change. Avoid assuming planned release time is actual first visibility. | **Small comparison set only**; likely lower priority than contemporaneous policy statement. |
+| 6 | **VTB broker channel / other broker commentary**. Hypothesis, if any: service status, margin or session changes affect the ability to execute a signal. | Operational status and exact scope, time and affected instruments; no general “bullish/bearish” or analyst-call feature. | Can alert the user to broker-specific constraints not present in exchange notices. | Broker account/system status, MOEX technical notices, dated service bulletin, and simple keywords. | VTB’s official disclosure page names `https://t.me/brokervtb` and `https://t.me/bankvtb` as its official social accounts for professional-participant services (page says information posted 12 Nov 2025 and current at that page). Content remains commercially motivated; the disclosure does **not** establish that the channels provide a complete technical incident archive. | **Do not export yet**. Query only a bounded set of service/margin/market-hours notices if a concrete gap appears. |
+| 7 | **Generic financial-news / influencer sentiment / analyst calls** | Broad polarity, emotion, certainty or generated “trade thesis”. | Could appear to summarize attention but has a weak causal link to a specific spread and is especially vulnerable to copied reporting, promotional incentives and post-hoc storytelling. | Prices, event flags, simple keyword features; sentiment can mostly be a noisy transformation of the same visible headlines. | Incentives and historical completeness vary; syndication and editing are common. No source identified here justifies a broad export. | **Reject for the initial study.** |
+
+### Evidence anchors for the ranking
+
+* Bank of Russia's policy archive lists the 11 September 2026 decision, the chair's statement and a later “Summary of the discussion” posted 23 September. The archive therefore supports the existence and dates of distinct documents, not a claim that all were visible at the original meeting time. [Official archive](https://www.cbr.ru/dkp/mp_dec/decision_key_rate/); excerpt: “Заседание Совета директоров от 11.09.2026”; statement listed “11.09.2026”; summary listed “23.09.2026”.
+* The dated chair statement itself is available at [CBR event id 32832](https://www.cbr.ru/press/event/?id=32832), marked “11 сентября 2026 года”; it states that inflation accelerated, fuel was a principal driver, and “проинфляционные риски … выросли” (section text, paragraphs 1–3 and risk section). It also includes a Q&A section. Page date is not proof of exact first-visible second/minute.
+* The [CBR publication calendar](https://www.cbr.ru/calendar/) says that publication calendars “могут происходить изменения” (may change). The key-rate calendar states planned release times such as 13:30 MSK and press conference times such as 15:00 MSK; these are **planned times**, not a first-observed log. [CBR key-rate calendar](https://www.cbr.ru/dkp/cal_mp/).
+* MOEX's [news and press-release page](https://www.moex.com/ru/news/) has a futures-market category, date/time listings and a link to RSS. Its [RSS explanation](https://www.moex.com/a40) offers feeds including `https://moex.com/export/news.aspx?cat=100` (all news), `https://moex.com/export/news.aspx?cat=122` (risk parameters), and `https://www.moex.com/export/news.aspx?cat=102` (trading results). The text says news can be “загружаться … автоматически” (loaded automatically).
+* A concrete MOEX IT/news example is [“Плановые релизы ТКС 14 сентября 2026 года”](https://www.moex.com/n104052?nt=107), listed 9 Sep 2026 15:20. It references planned market-system releases and requests test participation. [Another example](https://www.moex.com/n104190) is dated 14 Sep 2026 14:20, but its text explicitly concerns the **test** polygon for the futures market; it must not be mistaken for a production outage.
+* Telegram's official [Channels feature page](https://telegram.org/tour/channels) says channel messages can be edited “regardless of how long ago” and deleted “at any time, for everyone.” A current channel export therefore cannot by itself prove the historical text was the same or even continuously visible.
+* The [Bank of Russia Telegram preview](https://t.me/s/centralbank_russia/) shows the verified display “Банк России” / `@centralbank_russia`. A CBR event announcement dated 10 Feb 2026 also stated that the press-conference transmission would be on the website, Telegram channel and official VK page ([announcement](https://cbr.ru/press/event/?id=28294); search-visible text; direct fetch returned 403 during this research). Identity is therefore verified from official/channel surfaces, but exact historic post visibility remains unproved.
+* VTB's [professional-participant disclosure](https://www.vtb.ru/ir/disclosure/regulatory/) explicitly names `https://t.me/brokervtb` and `https://t.me/bankvtb`; the social-account entry says “Информация размещена 12.11.2025, 9:45”. It verifies identity, not completeness of content history or absence of commercial incentives.
+
+## 3. Timestamping and historical leakage controls
+
+Treat the following as separate fields; never collapse them to a single `date`:
+
+1. **Event time** — when the real-world meeting, production stoppage or policy event occurred.
+2. **Publisher-stated publication time** — as printed on the site/channel, preserving its original timezone and precision.
+3. **First observable time** — first time the study's own capture process or defensible archive proves that exact content was retrievable. This is the earliest safe time for a simulated decision unless stronger evidence exists.
+4. **Ingestion time** — time the study collected it; it can be later than first observation.
+5. **Edit/revision time and lineage** — observed edit marker, revision history, previous snapshot/hash, deletion/republication and any correction notice.
+6. **Effective time** — when a disclosed rule, contract change or operating change takes effect.
+7. **Transcript/media time** — video publication time, video creation/stream time, caption-generation time if known, and time each transcript version became available.
+
+**Minimum event record:** stable source ID; publisher; canonical URL; native post/article/video ID; title; source class (fact, forecast, analysis/opinion, marketing, technical notice); event/publication/first-seen/ingestion/effective timestamps; timezone; capture method; raw text or permitted excerpt; SHA-256 of captured bytes/text; revision and duplicate-group IDs; original language; transcript/caption provenance; model/prompt/version if processed; output JSON; exact supporting spans; latency from first observation to simulated action.
+
+**Historical eligibility rule:**
+
+* A visible article date or a current post timestamp alone is not adequate proof for a 3–90 minute backtest when actual first availability or the version then shown is unknown.
+* Do not backdate text to the date of the event it describes. The CBR summary posted 23 Sep about the 11 Sep meeting is a new 23 Sep information event, not an 11 Sep signal.
+* The current transcript of a video does not prove those words/captions were available during the live conference. YouTube's help page says a transcript is viewable for videos that have captions, but that is a user feature description, not a historical-caption archive or proof of availability time. [YouTube: View video transcripts](https://support.google.com/youtube/answer/15930243).
+* A public channel export is a **lead**, not a time machine. Telegram permits edits and deletion. A contemporaneous collector should save immutable snapshots, native post IDs and observed timestamps. If the only source is a present-day edited page, label it “retrospective text only” and exclude it from the historical 3–90 minute signal test.
+* Preserve source timestamps in original timezone and normalize separately to UTC; Russian source times often display Moscow time. Do not infer timezone from the machine locale. Record whether a listed schedule is planned, announced, actual or collector-observed.
+* Deduplicate cross-posts and wire copies. If an official site, Telegram post and video repeat the same statement, count the information as first available only once and store later copies as syndication. Track corrections as new versions rather than overwriting the original captured bytes.
+
+### Source identity and access findings
+
+| Source | Exact URL/handle and verification | Static timestamp quality / historical problem | Recommendation |
+|---|---|---|---|
+| CBR website policy materials | `https://www.cbr.ru/dkp/mp_dec/decision_key_rate/`; event statement `https://www.cbr.ru/press/event/?id=32832` | Archive distinguishes decision date and later summary date; statement page has the date but not a verified collector first-seen time. One CBR announcement page was 403 to direct fetch during this research, though search indexing exposed its text. | Primary data source. Save exact HTML/PDF/video and first-seen timestamp prospectively; don't use planned conference time as proof. |
+| CBR Telegram | `https://t.me/s/centralbank_russia/`; handle `@centralbank_russia`; public profile currently displays a verification mark. The CBR's 10 Feb 2026 event announcement says the stream would be on its Telegram channel. | Current preview is mutable. Example lead: post `https://t.me/centralbank_russia/3863` links to a video excerpt described as from the 11 Sep 2026 press conference. The static post page exposes the native ID but not a reliable historic edit/availability lineage. **Do not include this episode in an as-of test until its native post timestamp is checked and shown ≤ 2026-10-07.** | Use only to catch a potentially earlier official video clip or channel-specific explanation, and only alongside the website record. No whole-channel historical backtest from current export alone. |
+| MOEX official RSS / futures news | `https://www.moex.com/a40`; all-news RSS `https://moex.com/export/news.aspx?cat=100`; risk parameters `https://moex.com/export/news.aspx?cat=122`; trading results `https://www.moex.com/export/news.aspx?cat=102`; futures category `https://www.moex.com/RU/NEWS/?ncat=112` | Web news listings include clock times. Still need own first-seen logs, version/correction capture and a flag distinguishing live production from test environment. | Best official channel for future event capture. Deterministic parsing first; no general sentiment extraction. No MOEX Telegram identity was verified from the official MOEX source during this bounded search, so do not substitute a guessed handle. |
+| Rosneft issuer channel, **conditional only** | The issuer's website page [warning about fraudulent promotion](https://www.rosneft.ru/Investors/beware/O_preduprezhdenii_moshennicheskih_dejstvij/O_preduprezhdenii_moshennicheskih_dejstvij_svjazannimi_s_prodazhej_kart_lojalnosti/) names `https://t.me/rosneftofficial` as the official channel. This page was found in current web search; an archived copy proving the same identity by 2026-10-07 was not established. | Current source identifies the handle but does not prove old post versions / exact visibility. No specific Rosneft-linked futures contract or event hypothesis is in the task inputs. | Do not export yet. Reverify on the issuer site and select only if an actual candidate contract is causally tied to oil/refining/issuer exposure. |
+| VTB broker accounts | Official VTB disclosure page names `https://t.me/brokervtb` and `https://t.me/bankvtb`; it states the account information was posted 12 Nov 2025 and current from that date. | Identity is documented; complete history, edit lineage and whether technical incidents are consistently posted are not documented. Commercial-service incentives are material. | No generic broker commentary export. If needed, pull only defined margin, session, service outage or order-entry notices and corroborate with MOEX/broker official notices. |
+
+## 4. Bounded export briefs
+
+The task does **not** need a whole-channel export to begin source selection. The following requests are the maximum justified first pass. Excerpts are sufficient; private Telegram, paid-news and account-only material are excluded.
+
+### A. CBR policy statements and conference video — highest-priority prospective capture
+
+**Historical discovery window:** 2026-01-01 through 2026-10-07; sample only the six policy episodes visible in the public archive before the cutoff: **13 Feb, 20 Mar, 24 Apr, 19 Jun, 24 Jul and 11 Sep 2026**. These dates are supported by the dated CBR event pages/search results; the 11 Sep statement's page is `https://www.cbr.ru/press/event/?id=32832`, the 11 Sep announcement is `https://www.cbr.ru/press/event/?id=32828`, and the CBR archive lists its policy materials. For the other dates, use only the corresponding CBR event/statement pages linked from the archive; preserve page IDs exactly when retrieved.
+
+**Request only:** (1) the initial policy decision statement; (2) the chair's prepared statement and Q&A transcript if officially published; (3) the official live stream/video and any CBR Telegram excerpt explicitly linked to that event; (4) the later discussion summary as a *separate later release*. Include one immediately preceding policy-statement episode as comparator, and no general CBR channel dump.
+
+**IDs/links:** Official CBR article IDs from this check include `?id=28294` (13 Feb 2026 conference announcement), `?id=28399` (20 Mar), `?id=28499` (24 Apr), `?id=32622` (19 Jun), `?id=32720` (24 Jul), `?id=32828` (11 Sep announcement) and `?id=32832` (11 Sep chair statement). These URLs identify episodes, **not proof of first-seen time**. Telegram clip lead: `https://t.me/centralbank_russia/3863`; native ID observed, publication date/edit lineage not established from the static post page. Export only if native timestamp and pre-cutoff status can be established.
+
+**For every item capture:** full canonical URL; date/time in site and local formats; the exact page's posted/updated metadata; actual first-observed timestamp (prospectively); whether text is prepared speech, live Q&A, transcript or later summary; video ID and stream start/end; caption/transcript source and creation/edit metadata if exposed; revision/correction flags; duplicates; exact original Russian text; a minimal evidence excerpt; hash. If a page's only timestamp is the date, record timestamp precision as `day`, not `minute`.
+
+**Worth it?** Yes for a small event-aligned semantic/reproducibility audit and prospective collection. Not enough independent meetings to fit a high-dimensional model or claim profit from LLM features by itself. A historic backtest using modern Gemini to parse old statements is a retrospective classification exercise, not clean evidence of what a historical model knew.
+
+### B. MOEX futures RSS and notices — keep it narrow and largely deterministic
+
+**Historical discovery window:** 2026-09-01 to 2026-10-07. Include only posts in the futures, risk-parameter and technical/IT feeds that might change an eligible contract's tradability or mechanics.
+
+**Known locator episodes:**
+
+* Futures news list: `https://www.moex.com/RU/NEWS/?ncat=112`; its dated list includes 11 Sep 2026 09:47, “Об изменении времени начала расчета фандинга по вечным фьючерсам с 14 сентября”, and 4 Sep 2026 21:35, “Об изменении риск-параметров … и Срочном рынке”. Retrieve the individual article URLs by opening those links from the official list before export; do not reconstruct their article IDs from titles.
+* `https://www.moex.com/n104052?nt=107`, listed 9 Sep 2026 15:20, “Плановые релизы ТКС 14 сентября 2026 года”.
+* `https://www.moex.com/n104190`, listed 14 Sep 2026 14:20, describes the **test** futures polygon and should be retained only as a test-environment example.
+* RSS definitions and exact feed URLs: `https://www.moex.com/a40`.
+
+**Export fields:** native article ID and URL; category/feed; original title/body; listed date/time + timezone; first-seen and ingestion timestamps; initial/subsequent versions; contracts/markets affected; `production|test|unknown`; effective date/time; status (`planned|changed|cancelled|actual`); applicable trading session; whether the information is also in a formal contract spec/risk table; duplicate group; exact text and hash.
+
+**Worth it?** Yes for operational safeguards and as a deterministic-event benchmark. Most of this is not a meaningful test of learned text alpha; do not send these notices through Gemini unless a parser cannot reliably extract scope or effective time.
+
+### C. CBR Telegram — a small provenance challenge, not a channel backtest
+
+**Identity:** `https://t.me/s/centralbank_russia/`, handle `@centralbank_russia`, cross-supported by a dated CBR conference announcement. **Historical window:** only posts tied to the six CBR policy episodes above and dated no later than 2026-10-07; exclude every post whose original publication time cannot be independently established. The specific locator `https://t.me/centralbank_russia/3863` is an 11 September conference-video excerpt lead, but its timestamp must be retrieved; do not assume the post number gives the date.
+
+Request only the post IDs, native timestamps, all current visible edit information, content text/caption, media ID, original link to the official CBR webpage/stream and duplicate relationship. If only a current export is available, retain it as an **identity/content locator** but not as a historical feature record. Because Telegram permits edits/deletions and the official website has the speech text, deeper export is **not worth it** unless the channel demonstrably provides earlier first-observed text than the website.
+
+### D. Issuer and broker social channels — no broad export now
+
+**Issuer:** no issuer can be selected fairly without the actual contract list. If a later universe contains a Rosneft/energy-linked exposure, verify the official site again and then restrict the export to named operating updates (supply, refinery availability, logistics, export or management outlook) over a declared date window with a specific economic mechanism. `https://t.me/rosneftofficial` is an identity lead from the issuer's current fraud-warning page, not proof of past post versions. Do not gather promotional posts or reposted news.
+
+**Broker:** the official VTB disclosure lists `https://t.me/brokervtb` and `https://t.me/bankvtb`, but a full export has no justified hypothesis. Only request service outage, margin, session or contract-access bulletins for an exact known incident; include native post ID and URL, publication and first-seen times, edit markers, service scope, start/end/effective times, and cross-check against official MOEX/broker status pages. If those fields aren't present, the channel is unsuitable for event-time simulation.
+
+## 5. Feature extraction: bounded, auditable use of Gemini Flash
+
+Use the model as a **constrained document-to-structured-fields extractor**, not as a market forecaster. The model must receive the exact text known at the simulated decision time, source metadata and only preceding documents that were available then. Disable web/search/grounding in the extraction task. Never ask “what will the market do?” or permit external claims unsupported by the supplied text.
+
+### Suggested output schema
+
+One JSON object per document (or one array with stable source IDs), with strict allowed values and `unknown` where evidence is absent:
+
+```json
+{
+  "source_id": "immutable-id",
+  "document_type": "fact|forecast|analysis_opinion|marketing|technical_notice|unknown",
+  "topics": ["rates", "inflation", "supply", "costs", "logistics", "operations", "market_mechanics", "other"],
+  "stance_change_vs_prior_available_text": "more_tightening_risk|less_tightening_risk|unchanged|mixed|not_comparable|unknown",
+  "risk_balance": "inflationary|disinflationary|balanced|mixed|not_stated|unknown",
+  "conditionality_change": "more_conditional|less_conditional|unchanged|not_stated|unknown",
+  "horizon": "intraday|days|weeks_months|longer|not_stated|unknown",
+  "novelty_vs_prior_available_text": "new|repeated|corrected|unclear|unknown",
+  "affected_entity_or_contract_family": ["only if explicit"],
+  "operational_scope": "production|test|unknown|not_applicable",
+  "evidence_spans": [{"exact_quote": "verbatim source text", "supports": "field_name"}],
+  "unsupported_inference": false
+}
+```
+
+For non-CBR sources, fields that do not fit the document should be `not_applicable`/`unknown`; do not force a directional sentiment label onto an operational bulletin. The exact schema and allowed labels must be frozen before validation. Compare change versus the **last document known then**, not a later “cleaned” summary.
+
+### Baselines, latency and quotas
+
+1. **Baseline A — price-only technical reference** exactly as independently preregistered.
+2. **Baseline B — deterministic event flags** derived from dated formal disclosures and source timestamps, kept separate from text. Corporate/financial events remain their own factual input stream.
+3. **Baseline C — simple Russian lexical feature set**: fixed/manual term lists and counts/ratios for predeclared concepts such as tightening/easing, inflation/supply/demand, outage/production/export, uncertainty/conditionality and corrections. Fit any learned vocabulary only on the training window. Record negation, inflection and ambiguous-context errors. Do not port an English sentiment dictionary and assume it works in Russian.
+4. **Treatment D — Gemini structured output** from the same documents, same as-of text and same folds. Compare each model-only feature and then the combination; hold the feature set and tuning rules fixed.
+
+**Time/cost mapping:** every candidate feature must be available before the simulated action time. Evaluate 3, 15, 45 and 90-minute decision delays separately, using the project’s 3–90-minute manual action distribution as unknown, not as a guaranteed 5–15-minute fill. A document arriving later than the signal is ineligible for earlier decisions. Use identical fee/spread/slippage sets (conservative/base/stress), integer contracts and finite RUB 30,000 all-in test capital for each arm; store stale/rejected/unfilled/partial-fill cases. Apply the matched LQDT counterfactual with identical external flows and do not double-deduct retained-collateral LQDT return, as specified in the project assumptions. The primary metric is **net RUB excess over matched LQDT**, not sentiment accuracy.
+
+**Quota/prompt discipline:** request limits vary by model and active project; Google's official rate-limit page directs users to view active limits in AI Studio and describes RPM, TPM and RPD dimensions. Do not assume the user's reported “free allowance” is fixed, available in the intended region, or unchanged. Reduce cost and variability by batching only small, homogeneous sets, limiting input to one source plus at most one as-of predecessor, limiting output to compact JSON, and caching exact input/output pairs. Record model identifier/version, date, prompt hash, system settings, temperature, response, errors, retries, latency and token counts if shown. A zero-temperature setting does not prove deterministic/reproducible behavior.
+
+**Critical Gemini data-use condition:** Google’s Gemini API Additional Terms effective 23 March 2026 say that on unpaid services (including Google AI Studio and unpaid Gemini API quota) submitted content and generated responses may be used to provide, improve and develop products and machine-learning technologies; human reviewers may read/process API input and output, and Google says not to submit sensitive, confidential or personal information. See [Gemini API Additional Terms, “How Google Uses Your Data”](https://ai.google.dev/gemini-api/terms?hl=en), lines/section “How Google Uses Your Data”. Free pricing tables also indicate use to improve products. Submit only small, public, permitted excerpts after checking source terms; do not upload private account files, non-public Telegram exports, proprietary source libraries, credentials or confidential notes. Free access is not equivalent to confidential processing. The exact account quota, supported model, regional availability and current terms were not verified inside the user's account; check them at the study start. No API calls were made for this report.
+
+### Pretrained-knowledge contamination and reproducibility
+
+A prompt instructing Gemini to rely only on supplied text does **not** erase pretrained knowledge. A 2026 model processing a 2020 announcement may have seen later coverage, a later version of the release, commentary or the event outcome during training. This makes retrospective generated labels vulnerable to future-knowledge contamination even when the input text is truncated correctly. Therefore:
+
+* Historical model extraction is a **diagnostic of extraction feasibility**, not evidence that the same feature existed in a real-time system in 2020.
+* Stronger evidence must be prospective: capture source text and timestamp first; then run the frozen model/prompt on the saved item after the known observation time, with immutable logs. Report that it is a live-prospective pipeline only after its model version and data-access rules are actually fixed.
+* Never rerun old data and silently replace outputs. Preserve first output, later retries and version changes separately. Re-run only as an explicitly named robustness analysis.
+* If provider/model ID changes, break the series; do not combine model generations without a preregistered compatibility experiment.
+* Require each nontrivial label to cite literal source spans. Human audit a blind sample for label accuracy, evidence support, Russian negation/conditionality and duplicate sensitivity. Model claims not entailed by the text must be marked unsupported and rejected.
+
+## 6. Leakage-aware validation and ablation protocol
+
+### Stage 0 — source and timestamp gate (no trading inference)
+
+1. Freeze a contract-universe map, per-contract causal hypotheses and the eligible source families. Each source family must have a named, falsifiable hypothesis; do not invent a foreign-language expansion unless a selected contract has a clear causal link to a specific foreign issuer/event. No Chinese-source expansion is justified on the current inputs.
+2. For each selected source, test a small handful of pages/posts for exact identity, accessibility, timestamp fields, edit lineage, duplicate rate and terms of use. Do not use a specialist or bypass tool absent a documented failure to retrieve an essential **lawfully public** primary page with a normal fetch or official mirror.
+3. Make an immutable snapshot log from day one. If the historical content version and first-visible time cannot be proven, exclude it from fast historical testing; do not set missing time or cost to zero.
+4. Obtain the precise allowed excerpt and reuse status for any text not clearly reusable. Public accessibility alone does not automatically establish unrestricted bulk-reuse rights.
+
+### Stage 1 — extraction reliability pilot
+
+Use approximately 30–50 manually selected **independent** documents as a practical small pilot (this is a design target, not a power calculation): mix factual releases, forecasts/opinions and technical notices, but keep the classes separate. Include hard cases with copied headlines, changes/corrections, negation, ambiguous wording and test-vs-production scope. Two human passes or one human pass plus a blind second review should determine whether outputs are correct, evidence-grounded, stable and auditable. Repeated copies of the same underlying event do not count as independent documents.
+
+Pass only if: (a) at least 95% of required output records parse under the fixed schema; (b) all feature values in a manually checked sample are supported by quoted source spans or explicitly unknown; (c) no future or unsupplied facts are relied on; (d) edit/duplicate and timezone handling is reproducible; and (e) measured API usage fits a tested allowance with retries and batch failures included. The numerical acceptance bars here are proposed engineering gates, not sourced standards. If they fail, simplify to deterministic parsing or lexical features.
+
+### Stage 2 — historical ablation, only for eligible archived text
+
+* Chronological walk-forward splits; preprocessing, dictionaries, cutoffs, labels and thresholds fitted only with information available by each decision date.
+* At each timestamp, the only permissible inputs are the captured version available by then, previous versions already seen, prices that had already arrived, and event flags already public. A subsequent source edit may generate a *new* observation from edit time onward, never rewrite the earlier observation.
+* Compare A, B, C and D on identical time ranges, eligible opportunities, contract sets, delays, capital constraints and cost scenarios. Report source attrition due to timestamp/version uncertainty and number of independent events, not just trade count.
+* Log every tried source, feature, prompt, model, threshold, split and failure. Retain the final chronological holdout untouched until schema, hypotheses and transformations are frozen. Use robustness tests that account for multiple model/feature tries; White's Reality Check addresses data-snooping in model selection, and backtest-overfitting research cautions that a simple holdout alone may be unreliable after extensive repeated strategy selection.
+* If archived content lacks a defensible as-of version or precise availability time, historical treatment D is omitted for that source; do not compensate with a modern model guess.
+
+### Stage 3 — prospective shadow evaluation
+
+After the protocol and feature schema are frozen, collect only predeclared sources and score them after first observation. No production probing/deployment is part of this task. Every eligible signal is logged in a single realistic virtual portfolio without discretionary omission; record stale/rejected/unfilled/partial fills and capital competition. Establish actual human intervention capacity and emergency response availability before interpreting a trade-simulation result. Do not allow the optional text layer to loosen any funding or risk gate.
+
+Use the requested primary performance measure: net RUB excess relative to matched LQDT under identical external flows. Use the same conservative/base/stress cost scenarios and action delays as other arms. The user’s RUB 5,000 warning, RUB 10,000 action trigger, RUB 15,000 outer shortfall boundary and 90-calendar-day review rule remain provisional controls, not guarantees; text features cannot modify/reset them.
+
+## 7. Falsification and project-change rules
+
+Reject or defer a source/model feature if any of the following holds:
+
+1. No provable exact source identity, native ID/URL, permitted access route or first-observed time; post edits/deletions/revisions cannot be resolved; transcript appears only later than the action window.
+2. After the event is deduplicated, most extracted features are duplicates of the formal event flag, title keywords, numbers already released or price reaction.
+3. The feature only “works” when applied before publication, using a later transcript/revision, using text posted on event date rather than first visibility, or using contemporary Gemini to label historical text.
+4. Extracted labels drift materially across repeated runs/model versions, lack literal evidence, misclassify forecast as fact, or fail Russian negation/conditionality checks.
+5. Incremental effect disappears on walk-forward/untouched holdout, at 15–90-minute delays, or under base/stress execution costs; it relies on one event or one contract; or result selection ignores prior tested sources/features.
+6. Net RUB excess versus matched LQDT does not improve, after the same cost and account-flow accounting, relative to the best simpler baseline. Statistical or direction-label improvement without economic incremental value is not a pass.
+7. The free tier/terms are incompatible with the project's privacy/reuse requirements or not stable enough to reproduce, and there is no approved alternative.
+
+Possible project change after rejection: keep source monitoring as **human-readable situational context or operational veto only**, not a trade trigger. If text has no trustworthy fast timestamps, restrict it to a slower, explicitly lagged medium-term regime feature, or do not model it at all. If MOEX structured notices are machine-readable, handle them via simple deterministic rules. If the contract universe remains broad and causal mappings cannot be written in advance, stop issuer-specific research rather than searching more channels.
+
+## 8. Targeted library retrieval plan
+
+No library documents were supplied or read. The following are **targeted retrieval requests** for the specific unresolved method questions; they are not summaries of books that were not accessed. Retrieve the full paper or lawful author version only if the corresponding stage is reached.
+
+| Retrieval priority | Exact title / bibliographic reference | Retrieve for this question | Do not overgeneralize |
+|---:|---|---|---|
+| 1 | Tim Loughran & Bill McDonald (2011), “When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks,” *The Journal of Finance* 66(1), 35–65. DOI: [10.1111/j.1540-6261.2010.01625.x](https://doi.org/10.1111/j.1540-6261.2010.01625.x). | Full method/dictionary construction and results, especially their comparison of a general negative-word list with financial-context word lists. The abstract reports that nearly three-quarters of Harvard Dictionary negative words in their US 10-K sample were words not typically considered negative in financial contexts. | Evidence is about English-language US 10-K filings and cannot validate a Russian lexicon or Russian futures-spread alpha. Use to justify domain validation, not to import its dictionary blindly. |
+| 2 | Yi Yang, Mark Christopher Siy Uy & Allen Huang (2020), “FinBERT: A Pretrained Language Model for Financial Communications,” arXiv:2006.08097. [arXiv record](https://arxiv.org/abs/2006.08097). | Read abstract and methods for training corpus, task setup, and financial-classification evaluation; use as a comparison point for domain-specific text models. | It is not evidence that Gemini performs correctly on Russian central-bank or issuer text, and it does not resolve pretrained-knowledge leakage in this project. |
+| 3 | Halbert White (2000), “A Reality Check for Data Snooping,” *Econometrica* 68(5), 1097–1126. DOI: [10.1111/1468-0262.00152](https://doi.org/10.1111/1468-0262.00152). | Method for accounting for data reuse/model-selection search when comparing the best feature among many tried alternatives. | Use only after the search log contains all tried features/strategies; it does not repair unrecorded leakage or invalid timestamps. |
+| 4 | David H. Bailey, Jonathan Borwein, Marcos López de Prado & Qiji Jim Zhu (2017), “The Probability of Backtest Overfitting,” *The Journal of Computational Finance*. DOI: [10.21314/JCF.2016.322](https://doi.org/10.21314/JCF.2016.322). | Retrieve the methodological sections describing probability-of-backtest-overfitting / combinatorially symmetric cross-validation for a robustness review after the chronological protocol is set. | This paper warns that ordinary holdout practices can be unreliable in investment backtests; it is a complement to, not a replacement for, chronological walk-forward validation and an untouched final holdout. |
+
+Do not request full-book summaries at this stage. The actionable questions are narrow: (i) how to label Russian financial text without domain/negation errors, (ii) how to bound repeated model/feature searches, and (iii) how to test whether any text feature beats the supplied baselines after realistic latency and costs. No particular book, page number, transcript collection or private library title is assumed available.
+
+## 9. Material unknowns and dependencies
+
+* No candidate contract list or contract-pair hypotheses were supplied. Consequently, issuer/foreign-source choices cannot be narrowed to a causal universe; no Chinese or other foreign-language branch was opened.
+* No as-of archive, historic Telegram export, raw YouTube subtitle version, or first-observed capture log was supplied. Existing publicly visible posts and official dates are not enough to prove historic visibility/edit state.
+* No Gemini project, API key, model ID, exact quota, allowed region, billing state or settings were accessible. Official docs make rate limits model- and project-dependent and describe data-use consequences for unpaid service; active values must be checked by the operator.
+* Source permissions and long-term storage/reuse terms were not legally reviewed. The study must check each source's terms, use only permitted public excerpts and avoid paid/private/account-only content.
+* No backtest, output-quality run, costs, broker execution checks, tax/collateral/account conditions, or trading-feasibility claim were established in this task.
+* A current public page may have changed since its initial publication. For historical testing, preserve and compare contemporaneous snapshots; where that evidence is absent, exclude the historical feature rather than presume no edits.
+
+## 10. Source register (primary pages and methodological literature)
+
+1. **Bank of Russia**, “Materials following Board of Directors meetings on the key rate,” ongoing archive; entry dates include 11 Sep and summary on 23 Sep 2026. URL: https://www.cbr.ru/dkp/mp_dec/decision_key_rate/. Supporting excerpt: “Заседание Совета директоров от 11.09.2026”; the summary is separately dated 23.09.2026.
+2. **Bank of Russia**, Chair Elvira Nabiullina's statement following the 11 Sep 2026 Board meeting, 11 Sep 2026. URL: https://www.cbr.ru/press/event/?id=32832. Supporting excerpt: “проинфляционные риски … выросли”; the page also contains “Сессия вопросов и ответов”.
+3. **Bank of Russia**, 11 Sep 2026 press-conference announcement, published 8 Sep 2026. URL: https://www.cbr.ru/press/event/?id=32828. Supporting excerpt: the press conference was scheduled for “11 сентября в 15:00”; livestream would be on the website and official VK page. This is a scheduled time, not a collector timestamp.
+4. **Bank of Russia**, key-rate decision calendar, ongoing page. URL: https://www.cbr.ru/dkp/cal_mp/. Supporting excerpt: “Предполагаемое время публикации пресс-релиза” and “Предполагаемое время начала пресс-конференции”.
+5. **Bank of Russia**, publication calendar, ongoing page. URL: https://www.cbr.ru/calendar/. Supporting excerpt: “в календарях … могут происходить изменения”.
+6. **Bank of Russia**, Telegram public preview, handle `@centralbank_russia`; current display shows verified “Банк России”. URL: https://t.me/s/centralbank_russia/. Supporting source-level evidence is current channel identity and visible posts; it is not a frozen historic archive.
+7. **Bank of Russia**, conference announcement 13 Feb 2026, posted 10 Feb 2026. URL: https://cbr.ru/press/event/?id=28294. Search-result excerpt: transmission available on website, Telegram and official VK page. Direct page fetch returned 403 in this research; no protected-content bypass was attempted.
+8. **Moscow Exchange**, “All news” and categories, ongoing archive. URL: https://www.moex.com/ru/news/. Supporting excerpt: category links include “Срочный рынок”, “Риск-параметры”; visible listings contain date and time.
+9. **Moscow Exchange**, “Moscow Exchange news in RSS,” ongoing page. URL: https://www.moex.com/a40. Supporting excerpt: describes automatic RSS loading and lists feeds for all news, risk parameters and trading results.
+10. **Moscow Exchange**, futures-market news, ongoing archive. URL: https://www.moex.com/RU/NEWS/?ncat=112. Supporting example listing: 11 Sep 2026 09:47, change to funding calculation time effective from 14 Sep; 4 Sep risk-parameter notice.
+11. **Moscow Exchange**, “Planned TKS releases for 14 September 2026,” 9 Sep 2026 15:20. URL: https://www.moex.com/n104052?nt=107. Supporting excerpt: planned releases and test information.
+12. **Moscow Exchange**, “Updating T0 test polygon of the Derivatives Market to TKS SPECTRA 9.9,” 14 Sep 2026 14:20. URL: https://www.moex.com/n104190. Supporting excerpt: “тестовый полигон … будет недоступен” (test polygon unavailable); do not infer live trading unavailability.
+13. **Telegram**, “Telegram Channels,” ongoing platform feature page. URL: https://telegram.org/tour/channels. Supporting excerpt: channels can have messages edited regardless of time and deleted for everyone.
+14. **YouTube Help**, “View video transcripts,” current help page. URL: https://support.google.com/youtube/answer/15930243. Supporting excerpt: transcript is available for videos that have captions; this does not establish historical caption version time.
+15. **VTB Bank**, disclosure of information by a professional securities-market participant, page entry posted 12 Nov 2025. URL: https://www.vtb.ru/ir/disclosure/regulatory/. Supporting excerpt: official website and social accounts include `https://t.me/brokervtb` and `https://t.me/bankvtb`.
+16. **PJSC Rosneft**, warning regarding fraudulent promotions; current search-visible official page names `https://t.me/rosneftofficial`. URL: https://www.rosneft.ru/Investors/beware/O_preduprezhdenii_moshennicheskih_dejstvij/O_preduprezhdenii_moshennicheskih_dejstvij_svjazannimi_s_prodazhej_kart_lojalnosti/. Use as prospective identity lead only pending an as-of archive check; page fetch returned 502 in this research.
+17. **Google**, Gemini API rate limits, dynamic official documentation. URL: https://ai.google.dev/gemini-api/docs/rate-limits. Supporting excerpt: active limits can be viewed in AI Studio and may be measured by RPM, TPM and RPD; limits vary by model/project.
+18. **Google**, Gemini API Additional Terms, effective 23 Mar 2026. URL: https://ai.google.dev/gemini-api/terms?hl=en, section “How Google Uses Your Data”. Supporting excerpt: for unpaid services, Google uses submitted content and generated responses to provide/improve/develop products and machine-learning technologies; human reviewers may read/process inputs/outputs; do not submit sensitive, confidential or personal information.
+19. **Google**, Gemini Developer API pricing, dynamic official pricing page. URL: https://ai.google.dev/gemini-api/docs/pricing. Supporting excerpt: Free tier lists free input/output tokens and “Content used to improve our products”; exact model-specific quotas remain active-account questions.
+20. **Loughran, Tim & Bill McDonald (2011)**, “When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks,” *The Journal of Finance* 66(1), 35–65. DOI: https://doi.org/10.1111/j.1540-6261.2010.01625.x. The abstract explains that general-purpose negative word lists can misclassify financial text.
+21. **Yang, Yi; Mark Christopher Siy Uy; Allen Huang (2020)**, “FinBERT: A Pretrained Language Model for Financial Communications,” arXiv:2006.08097. URL: https://arxiv.org/abs/2006.08097. Abstract and model-methodology lead only; no Russian performance inference made.
+22. **White, Halbert (2000)**, “A Reality Check for Data Snooping,” *Econometrica* 68(5), 1097–1126. DOI: https://doi.org/10.1111/1468-0262.00152. Abstract concerns data reuse/model selection and predictive-superiority testing.
+23. **Bailey, David H.; Jonathan Borwein; Marcos López de Prado; Qiji Jim Zhu (2017)**, “The Probability of Backtest Overfitting,” *The Journal of Computational Finance*. DOI: https://doi.org/10.21314/JCF.2016.322. Abstract/methodology lead for model-selection and holdout weaknesses in investment backtests.
+
+---
+
+**Bottom line:** First improve source-time integrity and deterministic event extraction. Give Gemini a very small, source-grounded semantic-label pilot only for contract-linked questions. The bar for keeping text is incremental net RUB excess over matched LQDT after delayed manual action and stress costs, on identical walk-forward data, without future text versions or model-knowledge contamination. Until such a controlled test exists, text value is **unmeasured**.

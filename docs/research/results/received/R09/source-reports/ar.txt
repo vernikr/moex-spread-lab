@@ -1,0 +1,540 @@
+# R09 — False discoveries, point-in-time testing and evidence thresholds
+
+**How to evaluate broad pair / strategy / parameter search honestly when trades are sparse, medium-term, overlapping, and the market is non-stationary (MOEX stock-index and single-stock futures).**
+
+Report type: validation-methodology research (no software, no trading or investment recommendation).
+Research date / facts cutoff: **2026-10-08** (pack prepared 2026-10-07). All URLs were accessed on 2026-10-08 unless stated otherwise.
+Scope note: no dataset, backtest or account access was provided or used. Nothing in this report is an empirical result about any strategy. Every number that looks like a result is either (a) quoted from a cited source, or (b) explicitly labelled **illustrative arithmetic** with its inputs stated.
+
+---
+
+## 0. What was actually read, and how confident you should be in each part
+
+I distinguish three evidence levels. This matters because the task explicitly asks me not to claim checks I did not perform.
+
+| Level | Meaning | Where used below |
+|---|---|---|
+| **R** (read) | Primary document fetched and read by me at the URL given | DSR 2014 preprint; PBO preprint (partly — see below); MOEX pages/ISS responses; CBR key-rate page |
+| **V** (verified record) | Bibliographic record, abstract and/or publisher page verified by me; body text not read | Most journal papers cited here |
+| **S** (secondary) | Read only through news, summaries or third-party implementations; chronology may need re-verification from the issuer | Parts of the MOEX 2022–2024 event timeline; LQDT fund mechanics |
+
+**Read in full or in substantial part (R):**
+
+- Bailey, D. H., & López de Prado, M., *The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality*, author PDF dated 31 Jul 2014 ("Journal of Portfolio Management, Forthcoming, 2014"), `https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf`. I read the front matter, the abstract, sections on multiple testing, selection bias, backtest overfitting, holdout, general approaches to multiple testing, expected Sharpe ratios under multiple trials (Eq. 1), the DSR definition (Eq. 2), the numerical example, and "When should we stop testing?". I did **not** read the appendices or the reference list (chunks 4–6 of 7).
+- Bailey, D. H., Borwein, J. M., López de Prado, M., & Zhu, Q. J., *The Probability of Backtest Overfitting* (revised Feb 2015), `https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf` — **partially read** (introduction, definition of PBO, the CSCV construction, the four complementary analyses, and the "Limitations and misuse" discussion surfaced in §5). I have not read the numerical appendix.
+- MOEX primary sources (full page reads): futures-market tariffs page (`moex.com/s93`); corporate-actions handling on the derivatives market (`moex.com/s3715`); press release on 28 Feb 2022 trading (`moex.com/n43241`); the MOEX ISS HTTP API (live probes — §3.7).
+- Bank of Russia key-rate series page `https://www.cbr.ru/hd_base/KeyRate/` (daily series; page states availability from 17.09.2013 to 07.10.2026; value 14.00% on 07.10.2026, 14.25% on 24.07.2026).
+- *Advances in Financial Machine Learning* (AFML): **I read the table of contents with page numbers, not the body.** Source: publisher TOC PDF hosted by ETH Library, `https://toc.library.ethz.ch/objects/pdf03/e01_978-1-119-48208-6_01.pdf`, and Wiley's product TOC `https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086` (1st ed., Feb 2018, ISBN 978-1-119-48208-6, 400 pp.). Statements I attribute to AFML below are therefore limited to chapter/section titles and the concepts those titles denote; I do not quote its body text. §10 lists exactly which pages you (or I, given lawful access) should read.
+
+**Verified records (V), body not read:** Harvey & Liu (2015, JPM); Harvey, Liu & Zhu (2016, RFS); Harvey & Liu (2020, JF); Jensen, Kelly & Pedersen (2023, JF); Bajgrowicz & Scaillet (2012, JFE); Sullivan, Timmermann & White (1999, JF); White (2000, Econometrica); Hansen (2005, JBES); Romano & Wolf (2005, Econometrica); Benjamini & Yekutieli (2001, AoS); Giglio, Liao & Xiu (2021, RFS); Lo (2002, FAJ); Bailey & López de Prado (2012, *Journal of Risk* — "The Sharpe Ratio Efficient Frontier"); Kaufman, Rosset, Perlich & Stitelman (2012, TKDD); Dwork et al. (2015, Science); Arian, Norouzi Mobarekeh & Seco (2024, *Knowledge-Based Systems*); Gneiting, Balabdaoui & Raftery (2007, JRSS-B); Dawid (1982, JASA); Politis & Romano (1994, JASA); Perold (1988, JPM); Inclán & Tiao (1994, JASA); Chu, Stinchcombe & White (1996, Econometrica). Full register with URLs in `sources_register.csv`.
+
+**Secondary (S) and flagged where used:** the Feb–Jun 2022 MOEX market-closure and short-sale-ban chronology (RBC, Vedomosti, Rossiyskaya Gazeta, Interfax, Kommersant, RIA); the 12 Jun 2024 OFAC sanctions and USD/EUR trading halt (RIA, RBC, Kommersant, Interfax); discrete-auction mechanics (Interfax, Vedomosti, AK&M); LQDT fund characteristics (fund-manager press release via `wealthim.ru`, ISS security record, third-party fund pages).
+
+**Not done / not claimed:** no backtest, no account or broker check, no legal or tax verification, no measurement of MOEX bid-ask spreads or of the user's reaction-time distribution, no broker tariff confirmation for VTB/BCS, no verification of KPUR/qualified-investor consequences, no verification that LQDT is accepted as margin collateral, no test of whether ISS retrieval for this purpose complies with MOEX information rules. Each of these is an open item, listed in §11.
+
+---
+
+## 1. Executive answer
+
+**1.1** With sparse medium-term spread trades, the honest question is not "is my Sharpe ratio significant?" but "**how many independent economic episodes have I actually observed, and how much of the apparent edge survives every conservative adjustment I can pre-commit to?**" Those are different questions, and the second one is answerable while the first one usually is not. Lo's standard-error result makes this concrete: larger Sharpe ratios have larger standard errors (Lo 2002 reports SE = 0.188 for SR = 1.50 versus 0.303 for SR = 3.00 in a 60-observation sample), and the minimum track-record length needed for confidence grows with non-normality (Bailey & López de Prado 2012, MinTRL).
+
+**1.2** The corrections that dominate the literature (Deflated Sharpe Ratio, PBO/CSCV) are **ceilings on how impressed you are allowed to be**, not proofs of validity. The authors say so themselves. The PBO paper warns: "we must warn the reader against applying CSCV to guide the search for an optimal strategy... Any counter-overfitting technique used to select an optimal strategy will result in overfitting"; and "this procedure does nothing to evaluate the correctness of a backtest. If the backtest is flawed due to bad assumptions, such as incorrect transaction costs or using data not available at the moment of making a decision, our approach will be making an assessment based on flawed information" (PBO preprint, §5). The DSR paper's own framing is that "a backtest where the researcher has not controlled for the extent of the search involved in his or her finding is worthless, regardless of how excellent the reported performance might be."
+
+**1.3** Therefore the load-bearing work is **leakage prevention and point-in-time discipline**, followed by **search accounting**, and only then by correction statistics. For this project the practical ranking of what will actually mislead you is: (1) a contaminated dataset (survivorship, roll adjustment, dividend/event timing, last-trading-day prices, revised settlement data); (2) an unaccounted search across pairs/parameters/cost scenarios; (3) cost and delay assumptions chosen after seeing results; (4) non-stationarity that makes any long history only partially relevant; (5) the correction formulas, which are the smallest of the five problems but the easiest to compute and thus the most tempting to over-trust.
+
+**1.4** A 90-day pilot **cannot** establish profitability at the effect sizes this project hopes for, and it should not be asked to. With annualized Sharpe 1 and one quarter of exposure, the t-statistic is ≈ 0.5 and two-sided 5% power is ≈ 7%; to reach ~50% power within 90 days you would need a Sharpe of roughly 4 (illustrative arithmetic, i.i.d. daily marks; formula from Lo 2002 / standard SE ≈ √((1+SR²/2)/T)). The pilot's legitimate and sufficient purpose is **operational validation** (execution, margin mechanics, monitoring, error handling, reaction-time distribution) plus pre-registered incident logging. Any profit claim must come from a longer prospective sample — and the framework below is designed so that the prospective sample is spent once, correctly.
+
+**1.5** For MOEX specifically, non-stationarity is not a modelling nuisance; it is documented market infrastructure change inside the recent sample: a multi-week equity-market closure in Feb–Mar 2022 with clearing still run on non-trading days; a short-sale ban from 24 Feb 2022 lifted only in stages (31 Mar 2022 for 83 names for clearing members; 1 Jun 2022 for broker clients); a ±20%/10-minute discrete-auction regime extended to *all* shares from 5 Jun 2023; the 12 Jun 2024 OFAC designation of MOEX/NCC/NRD that ended on-exchange USD/EUR trading from 13 Jun 2024 while derivatives continued normally; and a policy rate that moved from 20% (28 Feb 2022) to 21% (25 Oct 2024) to 14.00% (07 Oct 2026). Any spread that lives on the basis between futures and spot, or between two expiries, is mechanically repriced by that rate path. See §3.3 and §8.4.
+
+**1.6** Recommended posture, in one line: **few hypotheses, wide search logged in full, causal-only data construction, purge/embargo sized to actual overlap, one sealed confirmation block, cost-stressed and delay-stressed decision gates, prospective shadow trading as the only pristine sample, and a pilot that is judged on operations rather than on profit.** Details in §4–§8.
+
+---
+
+## 2. The statistical problem, stated precisely
+
+**2.1 What a "sample" is here.** Three different denominators are routinely confused:
+
+| Frame | Counts | Why it inflates significance |
+|---|---|---|
+| **Bars / days** | every trading day of the evaluation window | overlap: one 20-day episode contributes 20 correlated observations |
+| **Trades / legs** | every order-fill leg | a calendar-spread that rolls = 2–4 fills per episode; fills on the same day across roots are correlated |
+| **Economic episodes** | a distinct dislocation/cycle with one rationale | the only frame in which "independent-ish" is defensible |
+
+Report all three, and run inference on the third, with weights (AFML ch. 4, §4.2 "Overlapping Outcomes", §4.3 "Number of Concurrent Labels", §4.4 "Average Uniqueness of a Label", pp. 59–61 — cited as located in the TOC, not read).
+
+**2.2 The arithmetic of "how many do I need".** For a per-episode Sharpe `SR_ep` and `n_eff` effective independent episodes, `t ≈ SR_ep · √n_eff`. Required `n_eff` for t = 2:
+
+| SR per episode | 0.2 | 0.3 | 0.5 | 0.7 |
+|---|---|---|---|---|
+| `n_eff` needed for t=2 | 100 | 44 | 16 | 8 |
+
+**This is why "30 trades" is not a rule.** The threshold depends on the effect size, on the dependence structure, and on how many trials you ran to find the one you are testing. A fixed 30-trade minimum is arbitrary in both directions: 30 independent episodes with per-episode SR 0.5 is decent evidence; 30 overlapping fills of four trades is almost none.
+
+**2.3 Non-stationarity changes what "history" means.** If the data-generating process changes at documented dates (§3.3), then pre-break data are not an unbiased sample from the same population. This does not license cherry-picking a start date; it requires that **regime conditioning be declared ex ante from documented events**, not chosen because a period looked bad. A defensible structure is: full history for mechanism plausibility and structural-break diagnostics; a *declared* estimation window for anything microstructure- or fee-sensitive; a stress window (Feb–Mar 2022; Jun 2024) used only to test robustness, never to fit.
+
+**2.4 Overlapping positions.** If several spreads are open simultaneously, the correct evaluation object is the **daily marked portfolio**, not the average of per-trade outcomes. Per-trade attribution with overlapping holds mixes episodes, double-counts common shocks and hides the path. The delegated RUB thresholds (warning at 5,000; action at 10,000) are path-based and therefore require the portfolio-level excess curve anyway (§7.1).
+
+---
+
+## 3. Leakage inventory for this project
+
+### 3.1 The pathways
+
+| # | Pathway | Concrete mechanism on MOEX futures | Prevention | Test that catches it |
+|---|---|---|---|---|
+| L1 | **Survivorship / universe selection** | You build the pair list from today's contract or stock list. Names that were halted, delisted, restructured or had their futures suspended are absent. Dead/later-delisted roots look systematically "tradable". | Point-in-time instrument lists (ISS exposes listing/history windows per board; MOEX has moved machine-readable listing data into ISS and publishes dated archives — `moex.com/n32224`). Include dead contracts and adjusted/renamed ones. | Reconstruct the universe as of three past dates from archived files; diff against today's list. Any F-utures root present in the old list and absent now must be present in the dataset. |
+| L2 | **Continuous-contract roll adjustment** | A back-adjusted continuous series carries the roll adjustment inside the price level. Any price-level feature (basis, z-score of spread, "distance to mean") inherits a synthetic drift; differences/ratios differ by construction method (difference vs ratio vs Panamanian/unadjusted). AFML addresses the roll explicitly at §2.4.3 "Single Future Roll", p. 36. | Never store one continuous series. Store per-contract candle/settlement series + an explicit contract map + the roll rule (date, method, weights). Derive continuous series on the fly inside the training window only. | Recompute the whole test with (a) difference-adjusted, (b) ratio-adjusted, (c) unadjusted concatenation. If sign or magnitude of the edge flips, the feature is an artefact of the roll; keep unadjusted for level logic, adjusted only for return aggregation. |
+| L3 | **Roll-date pseudo-signal** | Because liquidity migrates to the next contract over the last days of a contract, spread levels and quotes change mechanically near expiry; a rule can "fire" only in the roll window. | Roll dates and their ±n-day windows are explicit event flags (per contract, from `LSTTRADE` in the ISS contract description; e.g. SRZ6: first trade 2025-12-04, last trade 2026-12-17, expiry 2026-12-18). | Re-estimate with roll-window days dropped, and separately with the *previous* contract's roll schedule. Also test "edge entirely inside roll ±3 days". |
+| L4 | **Labels overlapping training/test** (the classic leakage) | A 20-trading-day holding period sampled daily means each label spans ~20 near-identical futures paths. A random k-fold split puts t in train and t+1 in test and the training label already contains most of the test label. | Purged, embargoed splits with intervals taken from the *actual* decision and holding logic, not from a fixed bar count (§5). | Deliberate "null test": run the identical pipeline on shuffled/random labels or on a synthetic random walk with the same volatility. Any positive result means leakage in the pipeline. This is the single highest-value test in this document. |
+| L5 | **Feature lookback leaking backward across the split** | Even with purged labels, if a feature uses a 60-day lookback, a test-window day's *features* still see training-window data — fine — but the reverse also occurs: training rows immediately after the test window have features reaching *back into* the test window. | Embargo must be ≥ max(holding horizon, longest feature lookback, event-documentation lag), applied **after** the test interval, plus purge before it. | Instrument the splitter to assert, per fold, that no training row's feature window intersects the test interval. Assert in code, log the assertion. |
+| L6 | **Future parameters / events / dividends** | Dividend announcements, index reconstitutions, corporate actions changing contract terms. MOEX may change the last trading day, execution date, lot, tick value, underlying, terminate delivery obligations, or change the settlement price and variation-margin procedure (`moex.com/s3715`, quoted in §3.2). | An event table built with **information-availability timestamps** (announcement date, not event date), and a rule that a decision at time *t* may only use events announced ≤ *t*. Keep dividends as data, not as a filter chosen later. | Re-run the strategy with each event-flag group excluded; check whether the edge is carried by announcement→effective windows (a classic revion/dividend artifact). |
+| L7 | **Dividend jump treated as signal** | A quarterly stock future on a dividend payer follows the underlying through the ex-date: the price gaps down by roughly the dividend while the spread of two expiries reprices. Unlike the perpetual futures on stocks (which explicitly credit a dividend adjustment, `moex.com/a8805`), the standard quarterly contracts do not adjust the P&L for the dividend. | Flag every ex-date; separate "event-modulated" and "event-free" episodes; pre-declare how the rule behaves on ex-dates. | Compare distribution of episode P&L with and without ex-date overlap; require the edge to survive on non-event episodes. |
+| L8 | **Last-trading-day / stale-price artifacts** | In the ISS daily history for the expired contract SRM4, the final row (2024-06-21) has `OPEN/LOW/HIGH/CLOSE = null`, zero volume and only `SETTLEPRICE` — i.e., the last observation is a settlement print, not a tradable price. Using it to compute returns or fills fabricates prices. | Truncate each contract's usable series at `LSTTRADE − k` days (k to be justified by measured liquidity decay); record the truncation rule per contract. | Count rows with null OHLC per contract; assert none enter any computation. Re-run the pipeline with an extra +3-day truncation; if results move materially, the edge lives in illiquid tail days. |
+| L9 | **Late / revised price data** | Exchanges restate settlement and clearing data (and cancel erroneous trades — MOEX's own tariff page lists a fee "за ошибочные транзакции"). A backtest run today uses post-revision values that were not what a decision-maker saw. | Snapshot the data with a retrieval timestamp in the registry; for anything used live, keep the original capture and never overwrite it. | Re-pull a past date and diff against the earlier snapshot (version diff log). Any non-zero diff becomes an explicit "revision" note on affected episodes. |
+| L10 | **Reused final holdout** | The final window is looked at, a parameter is changed, it is looked at again. Dwork et al. (2015) formalise why this destroys validity: each adaptive query leaks information from the holdout. | One sealed block per model-family version; usage logged. If you look, look once, and the model is frozen forever after. A "holdout budget" (k peeks, pre-declared) is the alternative — see §5.4. | Registry field "holdout_uses" must be 0 until the single frozen evaluation; any post-hoc model change increments it to 1 and consumes the block. |
+| L11 | **Post-hoc transaction costs** | Costs are benchmarked after results are known: the chosen fee tier, the chosen slippage, the chosen participation rate. | Cost model is part of the pre-registration, with base/stress scenarios fixed in advance. Worst plausible scenario carries the decision. | Report the cost level at which the edge is exactly zero ("breakeven cost"). If breakeven cost is inside the plausible measurement range, the strategy is inconclusive, not accepted. |
+| L12 | **Choosing the best reported delay scenario** | Results are computed for 0/5/15/30-minute execution delays and the flattering one is reported. This is the "garden of forking paths" in miniature (Gelman & Loken 2013). | Pre-register the *feasible* delay from the measured manual reaction distribution (which is itself an output of the pilot — so for the research phase use a conservative assumed delay, and report all scenarios). | Decision must hold at the worst delay consistent with the observed reaction-time distribution (e.g. 90th percentile), not at the best. |
+| L13 | **Corporate-action-driven contract discontinuity** | Contract terms can be changed mid-life (§3.2). A pair constructed across such a change is not one economic object. | Per-contract change log from MOEX news/corporate actions pages; contracts with material changes flagged or excluded from level-based features. | Segment the series at change dates; test the feature's stability across the segment. |
+| L14 | **Regime labels fitted on the full sample** | A 2-state volatility regime model estimated on all data assigns regime labels using future information. | Regime labels must be either causal (recursive/online: CUSUM, fitted only on data up to *t*) or replaced by documented-event calendars. AFML ch. 17 (CUSUM-type structural-break tests, pp. 249–261) is the structural reference; Inclán & Tiao (1994) and Chu, Stinchcombe & White (1996) are the primary sources for retrospective and monitoring CUSUM tests respectively. | Fit regimes recursively; compare with full-sample labels; the labels must be identical for all dates ≤ t. |
+
+### 3.2 Worked hypothetical examples (no performance figures implied)
+
+**Example A — "my continuous spread series has a nice mean-reverting basis".**
+You concatenate front contracts with difference adjustment. Over 2019–2021 the front-month basis "Mean" trends upward, because the adjustment injects the roll yield into the level. A z-score rule flags long-spread at −2σ. The rule's backtest looks strong. *Prevention test:* rebuild with ratio adjustment and with unadjusted contracts; compute the fraction of signals that fall in roll ±3 days; compute the sign of the relationship between the basis z-score and the subsequent 10-day spread return in each of the three constructions. If the sign is not stable across constructions, the feature is a construction artefact. **No result is claimed here — the point is the test, run before any performance number is reported.**
+
+**Example B — "the strategy works, except in 2022".**
+You notice the equity curve is flat/negative in Feb–Mar 2022 and propose to start the sample in 2023. That is a post-hoc choice with two distinct components: (i) legitimate — the market infrastructure and rules were demonstrably different (closures, short-sale ban, discrete auctions, capital controls); (ii) illegitimate — you learned about it from your own P&L. *Resolution:* the exclusion rule must be written from the *documented event calendar alone* and applied identically to all strategies including the ones you reject, and it must be declared before the performance run. The Feb–Mar 2022 window is then kept as a mandatory stress report, not as a training exclusion you discovered. (Sources for the events: §3.3.)
+
+**Example C — "one more parameter and it's profitable".**
+Every time you look at the validation window and change a threshold, you spend validity (Dwork et al. 2015). *Prevention:* the validation window has a `holdout_uses` counter; after a change, the window is retired and only prospective data can validate the new version. In practice, with a retail research budget, this means: **the parameter grid is frozen before the sealed block is unsealed**, and the sealed block is used exactly once per family.
+
+**Example D — "the delay doesn't matter".**
+You execute at the next-day open in the backtest because it is easy to code, but you know that in practice you react in 5–15 minutes and that some signals decay within the hour. *Prevention:* measure the reaction-time distribution during the pilot and pre-register a decision rule such as "the strategy is acceptable only if, at the 90th-percentile reaction delay, the cost-stressed excess remains positive". Report the full delay grid anyway; *the decision* uses the conservative cell.
+
+**Example E — "dividends are not part of my strategy".**
+Your calendar spread on a dividend payer shows a stable profit in Q2 of several years. Inspection: the profit concentrates in the days around ex-dividend dates, when the near/far relative pricing adjusts. Even if real, this is a *dividend-harvesting* strategy with different risks (announcement risk, cancellation risk, tax treatment of the underlying) and it must be classified and tested as such — not as a generic spread edge. *Prevention test:* recompute with all ex-date windows (±2 days) removed; the surviving edge is the generic component.
+
+**Example F — "the null test".**
+Run the identical pipeline on (i) labels shuffled in time within each regime, (ii) a synthetic random-walk price series matched to each contract's volatility and roll schedule, (iii) the signal with sign flipped. Expected outcome: no significance. If any of the three produces a "profitable" strategy, the pipeline leaks or the search is unaccounted for. This test costs one afternoon and should be mandatory before any performance discussion.
+
+### 3.3 Documented MOEX non-stationarity to design around (secondary sources; re-verify from issuers before use)
+
+| Date | Event | Consequence for a spread book |
+|---|---|---|
+| 24 Feb 2022 | Bank of Russia orders brokers to suspend short sales from 11:00 MSK (RBC, 25 Feb 2022, quoting the CBR order). MOEX index −33.28% on the day (RBC, 25 Feb 2022); discrete auctions were also used around these sessions (Vedomosti, 25 Feb 2022). | A spread requiring a short leg was not executable for brokers' clients. |
+| 28 Feb 2022 | MOEX: "торги на фондовом, срочном рынках и рынке СПФИ Московской биржи проводиться не будут. На срочном рынке будут проведены процедуры промежуточного и вечернего клирингов" (`moex.com/n43241`). | Positions could not be closed; margin still cleared. Path risk absent from any backtest that assumes free daily trading. |
+| 28 Feb – 23 Mar 2022 | Equity market closed (Vedomosti, 28 Feb 2022: "Торгов на фондовом рынке... нет с 28 февраля"; press reports of restricted reopening on 24 March). | Multi-week gap; risk models calibrated on continuous trading are invalid here. |
+| 31 Mar 2022 → 1 Jun 2022 | Short-sale ban lifted in stages: 31 Mar for clearing members on 83 names (RIAm24/bankstoday, 30–31 Mar 2022); from 1 Jun for clients (Rossiyskaya Gazeta, 20 May 2022, citing the CBR). | The *feasible trade set* changed mid-sample; a backtest over 2022 mixes regimes of executability. |
+| 5 Jun 2023 | Discrete auctions extended from IMOEX constituents to all shares and depositary receipts; trigger ±20% vs previous close within 10 consecutive minutes; three 10-minute auctions; max two per security per day; none after 16:40 MSK (Interfax, 30 May 2023; AK&M; Vedomosti, 28 Aug 2023). | Quote quality and continuous-price assumption degrade exactly when a spread would be most attractive. |
+| 12–13 Jun 2024 | OFAC designates MOEX, NCC and NRD; MOEX announces that from 13 Jun 2024 currency pairs with USD/EUR are not traded on the exchange while "на срочном рынке торги будут проводиться в обычном режиме" (RIA, RBC, Kommersant, Interfax, 12–13 Jun 2024); the CBR moves official USD/EUR rates to an OTC-bank-reporting basis. | An entire candidate family (currency futures spreads) is delisted; any historical study of it is no longer implementable. |
+| 2022–2026 | Key rate: 20% (28 Feb 2022, RIA); 16% (Dec 2023–Jul 2024), 18% (Jul 2024), 19% (Sep 2024), 21% (25 Oct 2024, effective 28 Oct 2024, RIA/Expert); 14.25% on 24.07.2026 and 14.00% on 07.10.2026 (CBR key-rate page, accessed 2026-10-08). | Futures basis ≈ spot carry = (rate − dividend yield) × time. The same spread has a different fair value and different required return in each regime. A "constant edge" claim across 2022–2026 is mechanically implausible. |
+
+### 3.4 Data-availability facts I verified directly (so that feasibility claims are not invented)
+
+Probes executed 2026-10-08 against `iss.moex.com` **without authentication**:
+
+| Probe | Result |
+|---|---|
+| Daily history of the expired contract `SRM4` (SBRF-6.24), 2024-06-01…2024-06-21 | Returned 14 daily rows: OHLC, `SETTLEPRICE`, `WAPRICE`, open interest, volume, number of trades. Final row (2024-06-21): all OHLC null, `NUMTRADES=0`, `SETTLEPRICE=31350`. |
+| `…/SRM4/candles.json?interval=1` and `?interval=24` for a 2024 date range | Identical daily-row payloads (the daily-history column set) and no per-minute rows for the expired contract. So **historical intraday candles for an expired futures contract were not retrievable via this path in this test.** |
+| `…/securities/AFZ6/candles.json?interval=1` (a live contract) | Returned genuine 1-minute candles with `begin`/`end` timestamps from the contract's first trades (2026-06-09) onwards. So **minute data for live contracts is retrievable free, and can be accumulated forward**; it is not a back-history archive in this endpoint. |
+| `…/securities/SRZ6.json?iss.only=description` | Contract parameters incl. `FRSTTRADE 2025-12-04`, `LSTTRADE 2026-12-17`, `LSTDELDATE 2026-12-18`, `LOTSIZE 100`, `EXECTYPE "Поставочный"`, `ASSETCODE SBRF`, and the delivery description text. |
+| `/iss/security/LQDT` description | `ISSUEDATE 2020-01-20`, ISIN `RU000A1014L8`, "БПИФ Ликвидность УК ВИМ", listing level 1, not restricted to qualified investors, admitted to morning/evening/weekend sessions; boards include repo-with-CCP modes (`EQRP`, `PSRP`), and the primary trading board moved from `TQTF` (ETF board, from 2022-07-22) to `TQBR` on 2026-06-22. |
+
+*Interpretation and limits:* these are single spot checks on one day; ISS endpoints, throttling and retention windows can change, and MOEX's rules for using exchange information must be checked separately (the ISS developer guide states that on-line market data and итоги торгов are subscription-based; my probes show that historical daily-result endpoints answered without authentication on 2026-10-08). Practical consequence for this project: **daily resolution is the defensible free historical base; intraday data must be captured forward from live contracts during shadow mode**, which is exactly where execution-cost and capacity measurement belongs anyway. Treat "finest free defensible timeframe" as a research question with an operational answer, not a given.
+
+---
+
+## 4. Validation architecture
+
+### 4.1 Timeline (the split logic, in time order)
+
+```
+ PAST ──────────────────────────────────────────────────────────────► NOW ──────► FUTURE
+│                                                                                │
+├─ A. Hypothesis & mechanism (no performance data looked at)                       │
+│    write: mechanism, why it should be priced, instrument families,               │
+│    event calendar, registry rows, decision gates          [pre-registration]     │
+│                                                                                  │
+├─ B. DEVELOPMENT window  [t0 ......... tD]                                        │
+│    expanding-window walk-forward; inside each train window: purged K-fold        │
+│    for hyperparameters; ALL transforms/hedge ratios/regime labels fit in-window  │
+│    ├── train ──┤|purge|├── test ──┤|embargo|  (repeat, roll forward)              │
+│    every configuration evaluated is logged, including failures                   │
+│                                                                                  │
+├─ C. SEALED CONFIRMATION block  [tD+1 ......... tC]   ← used ONCE, per family ver.│
+│    unsealing is an event in the registry; model frozen at that moment            │
+│                                                                                  │
+├─ D. PROSPECTIVE SHADOW  [tC+1 ......... ]                                        │
+│    every eligible signal recorded in real time: signal ts, book snapshot,        │
+│    decision ts, hypothetical fill under pre-declared cost model.                 │
+│    This is the ONLY pristine sample. Never re-run it.                            │
+│                                                                                  │
+└─ E. LIVE PILOT (90 days) — operational validation, weak confirmation            │
+     real money, real fills, incident log; not evidence of profitability           │
+```
+
+**Where the breaks sit.** With the events in §3.3, the *declared* estimation window should not straddle Feb–Mar 2022 for anything microstructure- or rule-sensitive; a defensible default is "estimation window = data from 2023-01 onward, with 2022 used as a mandatory stress report and 2019–2021 used only for mechanism/orientation checks". This default must be written into the pre-registration as a *rule stated before results*, applied identically to rejected strategies. (Exact data availability is an input from the separate data-feasibility work; treat this as conditional.)
+
+### 4.2 Purging and embargo sized to the actual overlap
+
+For a sample with decision time `t`, label end `e` (exit), feature lookback `w_f`, and event-documentation lag `w_doc`:
+
+- **Purge.** Remove from training every observation whose label interval `[t_j, e_j]` overlaps the test interval `[t_i, e_i]` (extended by any event the test label consumes). This is the AFML §7.4.1 concept ("Purging the Training Set", p. 105 — located in the TOC, not read).
+- **Embargo.** After each test block, drop training observations whose *feature windows* reach back into it: `embargo ≥ max(holding horizon, w_f, w_doc)`. AFML §7.4.2 ("Embargo", p. 107). A 20-day holding period and a 60-day lookback imply an embargo of **at least 60 days**, not "1% of the sample"; the widely used 1%-of-T default is not a theory of your data.
+- **Why actual, not fixed-bar.** Your holding period is a *decision variable*; if it is optimised, the purge width becomes the maximum holding period **evaluated anywhere in the search**, otherwise shorter-holding trials leak through the wider label intervals of other trials.
+- **Assertion, not intention.** The splitter must raise an error if any (train feature window ∪ train label interval) intersects any test interval. Log the assertion result per fold.
+
+### 4.3 Comparison of chronological walk-forward, purged K-fold, CPCV, CSCV
+
+| Method | What it is good for | Failure mode in this project | Verdict |
+|---|---|---|---|
+| Plain walk-forward (expanding/rolling) | Causal by construction; mirrors the deployment sequence; produces a single realistic P&L path with the actual order of regimes | One path only → the verdict has the variance of a single history; very sensitive to which regime falls in the test window; parameter choices can still be tuned by peeking at the path | **Use for the decision**, with purge/embargo at the seams |
+| Purged K-fold + embargo (AFML §7.4, pp. 105–108) | Efficient use of a short history for hyperparameter selection; removes label-overlap leakage | Not chronological: training folds contain future data relative to test folds → the *score* is honest about overlap but not about regime timing; test folds share one regime each | **Use inside training windows only** (hyperparameters, feature selection) |
+| Combinatorial Purged CV (AFML §12.4, pp. 163–166) | Many train/test paths → a *distribution* of OOS outcomes; supports PBO-style diagnostics | With sparse trades, all combinatorial paths are combinations of the *same few episodes*: the apparent path-count (C(S, S/2)) overstates independent information. Path diversity ≠ sample diversity | **Use as a diagnostic** (spread of outcomes, rank stability), not as the acceptance test |
+| CSCV / PBO (Bailey et al. 2015) | Judges the *selection procedure*: does the IS winner tend to underperform the median OOS? Generates PBO, performance degradation, probability of loss, stochastic dominance | Needs all trials in the matrix; assumes the blocks are exchangeable enough (the paper's own §5.1 flags strong autocorrelation); "does nothing to evaluate the correctness of a backtest"; must not be used as an objective | **Report it**, as a ceiling on confidence |
+| Nested selection (outer chronological, inner purged CV) | Keeps model selection inside the training data; the outer loop measures selection *and* fitting | Expensive; with short histories the inner folds get small | **Adopt**: outer = walk-forward/climate blocks; inner = purged K-fold; sealed block outside both |
+
+**Evidence on method ranking, with its caveats.** Arian, Norouzi Mobarekeh & Seco (2024), *Knowledge-Based Systems* 305:112477, compare K-Fold, purged K-Fold, walk-forward and CPCV in a synthetic controlled environment (Heston stochastic volatility, Merton jump-diffusion, regime switching) and report "marked superiority of the Combinatorial Purged (CPCV) method in mitigating overfitting risks... evidenced by its lower Probability of Backtest Overfitting (PBO) and superior Deflated Sharpe Ratio (DSR)" and that "Walk-Forward... exhibits notable shortcomings in false discovery prevention, characterized by increased temporal variability and weaker stationarity". Two limits on transferring this: (i) it is a synthetic environment, and the walk-forward variant tested is not necessarily purged/embargoed; (ii) it evaluates ML classifiers on dense bar data, not sparse discretionary spread episodes — where the number of *independent* episodes, not the number of splits, binds. So: adopt CPCV as a diagnostic, keep the chronological path as the decision object, and do not let a good PBO substitute for enough episodes.
+
+---
+
+## 5. Search accounting: registry, corrections, and what they can/cannot prove
+
+### 5.1 Experiment registry (fields)
+
+A minimal registry is provided as a CSV template (`experiment_registry_template.csv`). Required columns, with rationale:
+
+`run_id`; `utc_timestamp`; `hypothesis_id`; `family` (e.g. calendar basis / cross-root relative value / event-driven); `roots_involved`; `data_snapshot_id` + `retrieval_utc` + `endpoint`; `contract_map_version`; `universe_rule`; `feature_set_version`; `transform_fit_window`; `signal_definition_verbatim`; `parameter_grid_full`; `n_configurations_evaluated`; `selection_metric`; `selection_rule_verbatim`; `split_spec` (train/test/purge/embargo); `event_flags_used`; `cost_model_version` + `cost_scenarios`; `delay_scenarios`; `preregistered` (Y/N) + `preregistration_ref`; `preregistered_decision_gate`; `trials_count_at_selection`; `result_metrics` (excess, capital-time, max drawdown of excess curve, episodes, ESS, turnover); `uncertainty_method`; `outcome` (accept-for-shadow / reject / inconclusive); `deviations_from_preregistration`; `holdout_uses`; `code_commit`; `notes`.
+
+Two hard rules make the registry worth keeping:
+1. **Failed experiments are entries, not omissions.** DSR's N is the number of trials attempted, not the number reported; CSCV ranks only what is in the matrix. Omit trials and both numbers become fiction.
+2. **The registry is append-only.** Corrections are new rows with a reference to the superseded row.
+
+### 5.2 What the corrections actually buy you
+
+| Method | Controls | Assumption that matters here | Practical use in this project |
+|---|---|---|---|
+| Bonferroni / Holm (FWER) | P(at least one false positive) | Independence (Bonferroni) / any dependence (Holm) | Will kill almost everything with ≥ 20 trials and sparse data. Use as a *sanity ceiling*, not as the acceptance gate |
+| Benjamini-Hochberg FDR | Expected proportion of false discoveries | Independence or PRDS | Usable if you have many tests with a meaningful null distribution; with 5–20 correlated configurations, weak |
+| Benjamini-Yekutieli | FDR under arbitrary dependence | Nothing about dependence; costs power | Relevant because your trials *are* dependent (same pairs, overlapping periods) |
+| White Reality Check / Hansen SPA | "Is the best rule better than a benchmark, accounting for the whole universe searched?" | Stationary/bootstrap-able return series | The most natural test for "does this family contain anything better than the baseline at all"; Hansen (2005) is more powerful and less sensitive to poor alternatives than White (2000) |
+| Romano-Wolf stepwise | Which rules are superior, controlling FWER, using the dependence structure | Bootstrap stationarity | Right tool if you keep a large rule universe and want a shortlist rather than a single winner |
+| Storey q-values | FDR with estimated proportion of true nulls | Many tests | Requires scale you do not have |
+| **Deflated Sharpe Ratio** | Selection bias under N trials + non-normality + sample length | Independent trials (or an effective-N estimate); normal-EVT approximation for the expected maximum | Report it using an *estimated effective* N (§5.3). Treat DSR < 0.95 as "not proven", not as "disproven" |
+| **PBO/CSCV** | Does the *selection procedure* add value (IS winner vs OOS median) | Block exchangeability; all trials present | Report PBO and the stochastic-dominance comparison; never optimise it |
+
+**Sullivan, Timmermann & White (1999, *JF* 54(5), 1647–1691)** and **Bajgrowicz & Scaillet (2012, *JFE* 106(3), 473–491)** are the empirical precedents worth internalising: the first showed that calendar effects which look individually significant lose significance once evaluated against the full universe from which they were drawn; the second showed that, even with a more powerful FDR technique, "an investor would never have been able to select ex ante the future best-performing rules" and that "even in-sample, the performance is completely offset by the introduction of low transaction costs". That is exactly the failure mode a pair-search project faces.
+
+**Methodological counterweight.** Harvey & Liu (2020, *JF* 75(5), 2503–2553) argue that FDR/FWER-style hurdles, applied without regard to test power, produce systematic *missed* discoveries, and propose double-bootstrap calibration of both Type I and Type II errors. Jensen, Kelly & Pedersen (2023, *JF* 78(5), 2465–2518) go further with a Bayesian hierarchical model and argue that "the majority of asset pricing factors can be replicated" and that "the number of factors can be understood as multiple versions of a smaller number of themes". **What this means for you:** the honest reading of the literature is *not* "everything is false"; it is "a small number of theory-anchored *themes* tends to survive, while the population of individually-selected variants does not". So bet the research effort on 2–4 economically motivated spread themes, and treat every additional parameter as a cost paid in validity, not as free optionality. Note the scope limit: the replication-crisis debate is about cross-sectional equity factors with enormous breadth and long histories; a 3–6 pair MOEX spread book has neither.
+
+### 5.3 Effective number of trials (N_eff) — do this explicitly
+
+The DSR paper's own Appendix 3 addresses dependent trials ("Appendix 3 shows how N can be determined when the trials are not independent", per the text of the section "Expected Sharpe Ratios under Multiple Trials"), and the workaround it suggests is dimension reduction (e.g. principal components) of the trial set. Practical recipe:
+1. Build the matrix of trial returns (all configurations, including failures) on the common evaluation window.
+2. Compute the correlation matrix of trial return series; run PCA; estimate the number of effective independent trials as the number of components explaining, say, 90–95% of variance, or use a simpler rule such as `N_eff ≈ N / (1 + (N−1)·ρ̄)` with the average pairwise correlation.
+3. Report DSR with both N (raw) and N_eff (clustered) — they bracket the honest region.
+4. Log both in the registry, per run.
+
+**Worked reference point from the DSR paper itself** (their own example, quoted, not ours): a strategy with annualized SR 2.5 over T = 1,250 daily observations (5 years), N = 100 independent trials, variance of trial SRs ½, skewness −3 and kurtosis 10 yields DSR = 0.9004. With N = 46 trials the same evidence yields DSR = 0.9505; with normal returns it takes N = 88 trials to fall to 0.9505. Two lessons: (a) the penalty for search is large and quantifiable; (b) non-normality (fat tails, negative skew) costs as much as roughly doubling the trial count.
+
+### 5.4 Pre-registration and when the holdout is consumed
+
+- **What to pre-register** (before looking at performance): hypothesis and mechanism; universe rule; the full parameter grid; the selection rule; the metrics; the cost and delay scenarios; the decision gates (§8); the exclusion rules (documented-event based); the number of permitted holdout uses.
+- **How** (lightweight is fine): a timestamped file committed to version control, or an OSF/AsPredicted entry — the CASRAI definition captures the requirement: recording "hypotheses, design, sample, and analysis plan in a time-stamped registry before data collection or... before data access, in order to distinguish pre-specified from post-hoc analyses"; anything not in the plan is reported as *exploratory*.
+- **When the holdout becomes consumed**: (i) any performance computation on it, (ii) any change to the model/parameters/universe informed by it, (iii) any change to the cost or delay scenario informed by it. Consumption is one-shot per family version. If you need more looks, switch to forward shadow data; the alternative (k-peek budget) requires pre-declared alpha spending and is strictly harder to defend with this little data.
+
+---
+
+## 6. Metrics
+
+### 6.1 The LQDT counterfactual — the operational recipe
+
+Define, on the *same account*, a shadow ledger with daily rows. Let `F_t` be the true external flow into/out of the test sub-portfolio (as recorded by the broker), `NAV_t` the test sub-portfolio's marked value, `P_t` the LQDT price:
+
+```
+shadow_units_t = shadow_units_{t-1} + F_t / P_t                 (same-flow LQDT shadow)
+excess_ret_t   = (NAV_t − NAV_{t−1} − F_t) / NAV_{t−1} − (P_t / P_{t−1} − 1)   (TWR, chain-linked)
+excess_rub_t   = (NAV_t − NAV_{t−1} − F_t) − shadow_units_{t−1} · (P_t − P_{t−1})
+cum_excess_rub = Σ_t excess_rub_t
+```
+
+Notes that matter for this project:
+- **Both series are reported.** The delegated action thresholds (5k / 10k / 15k RUB) are naturally expressed in `cum_excess_rub`; the TWR excess is the comparable-rate version across periods of different funding.
+- **Collateral continuation is not double-counted.** The comparison object is "test sub-portfolio vs. an LQDT position of the same size", so LQDT yield on the *retained* core holding never enters either side. Run the same computation per unit of diverted capital.
+- **One definitional decision is unresolved and must be made explicitly**: if (and only if) LQDT is accepted as margin collateral at the broker, its yield continues to accrue on the blocked GO and nothing further is charged. If only cash can serve as GO, then the blocked GO loses LQDT yield and that forgone yield is a *strategy* cost; it must appear on the strategy side of the ledger. `[OPEN — verify LQDT/GO eligibility and the broker's collateral rules with VTB; not verifiable in public sources I read.]`
+- **Flow timing.** Flows are booked at the price actually obtainable at the flow moment (use the day's LQDT close if the flow is intraday and small; state the convention). At ~14% p.a. the daily LQDT return is ≈ 0.038% (illustrative arithmetic at the 07.10.2026 rate of 14.00%), so the price-choice convention is second-order unless a flow coincides with a rate change.
+- Do not deduct the loss of the LQDT long-term holding deduction (given as your convention); note it in the report as an excluded, non-modelled item since tax residence/account treatment is unknown.
+
+### 6.2 Metric set (each with its purpose)
+
+| Metric | Definition | Why | Report as |
+|---|---|---|---|
+| Cumulative RUB excess vs matched LQDT | §6.1 | Matches your thresholds | RUB + date range |
+| Excess curve drawdown from HWM, and time under water | Running max of `cum_excess_rub` minus current | Matches your 5k/10k triggers; stress-path visibility (AFML §14.5.2 "Drawdown and Time under Water", p. 201) | RUB, days |
+| Capital-time usage | Σ over days of capital committed (margin blocked + unrealised-loss buffer), in RUB·days | A strategy that is right but idle 95% of the time has a different value than one always exposed | RUB·days and utilization % |
+| Excess per capital-day | `Σ excess_rub / Σ capital_days` | The only scale-free way to compare sparse and dense strategies; convert to % only with a stated annualisation assumption | RUB per RUB·day |
+| Episodes and effective sample size | count of episodes; `n_eff` via uniqueness weights or block structure | Inference denominator | integer + n_eff |
+| Holding duration | median and distribution, in trading days | Determines purge/embargo width; affects overlap | days |
+| Turnover | Σ|traded notional| / average committed capital, per quarter | A hidden cost driver, especially with rolls | ratio |
+| Net costs | realised implementation shortfall vs decision price, split into commission / half-spread / delay (Perold 1988; AFML §14.6, p. 202) | Separates a modelling error from an execution reality | bp of notional, per leg |
+| Capacity | notional tradable within a pre-set participation cap (e.g. ≤ x% of ADV) with price impact ≤ threshold | The pilot size (30k) and the future scale (10–20m) are different problems | RUB, per root |
+| Win-probability calibration | only if reported (§6.4) | Prevents an unearned probability claim | reliability table + interval |
+| Operational metrics | stale-signal count, unfilled/partial count, reaction-time distribution, incidents | The pilot's actual deliverable | counts, percentiles |
+
+### 6.3 Bars, trades, episodes, effective sample size — how to report without lying
+
+Report a table with one row per frame: bars (n), trade legs (n), trades (n), episodes (n), and `n_eff`; then state that inference uses `n_eff`, with the estimator named (`1/(1+(k−1)ρ̄)` cluster adjustment, uniqueness weights per AFML ch. 4, or block bootstrap by episode). Where a figure depends on the frame (a hit rate, a Sharpe), show it in at least two frames.
+
+### 6.4 Probability calibration, or the decision not to show probabilities
+
+- If you report "probability of a profitable trade", you must state the **horizon** (per trade? per 30-day episode?) and the **conditioning set** (family, regime, event flags).
+- Calibration is testable: bin predicted probabilities and compare with realised frequencies (reliability diagram), report the Brier score and its decomposition, and plot the probability integral transform histogram (Dawid 1982; Gneiting, Balabdaoui & Raftery 2007 define calibration vs sharpness and give the PIT/marginal-calibration tools).
+- **Decision rule I recommend:** do not display probabilities unless you have on the order of hundreds of resolved, effectively independent observations and a reliability plot that is not degenerate; for sparse spread episodes you will not. Instead display: counts, percentiles of episode P&L in RUB, the excess curve, and intervals. If a probability is required for an interface, show it as an interval with the sample size permanently attached, and label it "model-implied, uncalibrated".
+
+---
+
+## 7. Decision rules: acceptance, rejection, inconclusive
+
+### 7.1 Proposed gates (defaults to be accepted or replaced by you; all are unvalidated defaults)
+
+| Gate | Reject | Inconclusive | Accept for **shadow** only |
+|---|---|---|---|
+| Leakage audit (§3) | any pipeline assertion fails; sign unstable across contract-construction variants; null tests produce positives | assertions pass but one pathway is only partially testable | all pathway tests pass, executed and logged |
+| Out-of-sample (sealed block) | excess ≤ 0 in the base cost scenario | excess > 0 in base but ≤ 0 in stress | excess > 0 in **stress** cost/delay scenario |
+| Selection | PBO ≥ 0.5 or DSR (with N_eff) < 0.90 | PBO 0.25–0.5 | PBO < 0.25 and DSR(N_eff) ≥ 0.95 |
+| Episodes | < 8 independent episodes | 8–15 episodes | ≥ 15 episodes with ≥ 3 distinct regimes |
+| Concentration | top-2 episodes carry > 70% of excess | top-2 carry 40–70% | top-2 carry < 40% |
+| Cost margin | breakeven cost below the measured base cost | breakeven cost inside the measurement uncertainty band | breakeven cost above the stress cost with margin |
+| Operations | any unfixable operational blocker (cannot place/close the leg, margin call mechanics unclear) | one blocker with a defined fix and a date | none |
+
+Interpretation: "accept for shadow" means permission to spend *time*, not capital. Capital allocation requires shadow-mode passage plus the pilot.
+
+### 7.2 Using your delegated thresholds without abusing them
+
+Your defaults (warning 5,000; action at 10,000 excess drawdown from HWM or 10,000 cumulative shortfall; outer boundary 15,000; formal review at 90 days without resetting) are **action rules**, not evidence thresholds — and they are sensibly more conservative than a statistical test. Two ways to keep them honest:
+
+1. **Do not let a favourable path retro-justify the strategy.** A pilot can be profitable by luck and still tell you nothing; equivalently, a pilot that hits an action threshold is informative about *risk control*, not about whether the eventual edge exists. Log which one you are acting on.
+2. **Treat interim review correctly.** Checking the excess curve daily is fine for risk control, but repeated hypothesis testing on the same accumulating sample inflates false positives (that is what group-sequential theory exists for — Lan & DeMets 1983 is the standard reference for pre-specified, alpha-spending monitoring boundaries). The safe structure: the 5k/10k/15k levels are *operational* boundaries pre-declared now; the *statistical* verdict is made only at pre-declared dates (e.g. pilot day 90 and thereafter quarterly), and no statistical claim is made at interim looks.
+
+### 7.3 Baselines and falsification tests (all cheap, all required)
+
+| Baseline / test | Purpose |
+|---|---|
+| B0: shadow LQDT with identical flows | The benchmark the excess is measured against |
+| B1: hold the relevant underlying exposure (e.g. nearest index/stock future) | Separates "edge" from "direction" |
+| B2: naive mechanical roll (always long near/short the next contract on a fixed schedule) | Tests whether the signal adds anything over the carry structure |
+| B3: random-entry with matched holding-time distribution and the same cost model | The honest null for a sparse strategy |
+| T1: sign-flipped signal | Symmetry check — a good edge should not appear on both sides |
+| T2: entry delayed by 1 day (and by the pilot's 90th-percentile reaction time) | Information-timing check |
+| T3: null-data test (shuffled labels; matched synthetic random walk) | Pipeline leakage check (§3.2 Ex. F) |
+| T4: contract-construction variants (difference / ratio / unadjusted) | Roll-artifact check |
+| T5: cost-stress (×2 spread, +1 tick delay, both-legs-taker) | Economic robustness |
+| T6: regime-split report (pre-2023 orientation only; 2023–2024; post-Jun-2024) | Non-stationarity visibility |
+
+### 7.4 What the 90-day pilot can and cannot show (with the arithmetic)
+
+For an annualized excess Sharpe `SR` over `T` years of exposure, `t ≈ SR·√T`. Over 90 calendar days (~0.25 years), with i.i.d. daily portfolio marks:
+
+| True annualized excess Sharpe | Expected t at 90 days | Two-sided 5% power |
+|---|---|---|
+| 1 | 0.50 | ≈ 7% |
+| 2 | 1.00 | ≈ 17% |
+| 4 | 2.00 | ≈ 52% |
+
+*Illustrative arithmetic under stated assumptions; not a result about any strategy.* The pilot therefore validates operations (does the signal arrive, can you place both legs, does margin behave, are fills and errors as expected, what is your reaction-time distribution) and possibly detects gross misfit. It cannot establish a Sharp-1 edge. State this in the pre-registration, so that a null-looking 90-day result cannot be spun either way.
+
+---
+
+## 8. How cost, benchmark and model uncertainty move the decision threshold
+
+### 8.1 The hurdle waterfall (compute it explicitly, before results)
+
+```
+required gross edge per episode
+ ≥  commissions (both legs, both sides, from the tariff schedule)
+  + measured half-spread × 2 (entry/exit) × legs
+  + delay slippage at the pre-registered conservative delay
+  + LQDT hurdle over the holding period  (≈ (RUSFAR − fund TER) × days/365)
+  + margin/funding wedge (any GO that does not earn, or earns less — see §6.1)
+  + model-uncertainty haircut (search deflation: DSR/PBO-based discount to the estimated edge)
+  + operational reserve (errors, rejected orders, stale signals)
+```
+
+### 8.2 Deterministic components, verified from primary sources
+
+MOEX futures-market tariffs (`moex.com/s93`, accessed 2026-10-08) state an **asymmetric model: the maker pays zero, only the taker pays**, with base rates for **безадресные (anonymous) taker** orders: **stock contracts 0.01980%**, index contracts 0.00660%, commodity 0.01320%, FX 0.00462%, perpetual stock futures 0.03000%; for **адресные (addressed)** orders: stock 0.00660%, index 0.00220%; "Комиссия не может быть меньше 1 копейки". Clearing/execution commission is a separate schedule (stock contracts 0.00660%, index 0.00220%) set in the Clearing Centre tariffs to which the page links. Critically for this project: **"Комиссия по календарному спреду равна сумме комиссий по каждому фьючерсу"** — the calendar-spread order type is a single instrument for execution purposes but carries no fee discount.
+
+*Illustrative arithmetic* for a two-leg stock-futures calendar spread with ~30,000 RUB notional per leg: entry as taker on both legs ≈ 2 × 30,000 × 0.0198% ≈ **11.9 RUB**; a full round trip (entry + exit, both legs, all taker) ≈ **23.8 RUB**; plus the broker's per-contract fee, which must be confirmed for the actual VTB/BCS tariff (third-party comparisons list ~1 RUB/contract for VTB and tiered 0.10–1 RUB for BCS as of 2024 — **verify with the broker**, do not rely on that survey). The market-spread and delay components must be *measured*, not assumed.
+
+### 8.3 Benchmark uncertainty is actually low — use that
+
+LQDT's return is an observable daily series that tracks a money-market index; its uncertainty over a 30–90 day window is small relative to strategy P&L. So the *benchmark* is the well-measured side of the comparison, and the strategy is the noisy side. Consequence: **do not allow a "but LQDT could underperform" argument to soften the hurdle.** The hurdle is nearly deterministic; the edge is not.
+
+### 8.4 The hurdle itself is regime-dependent
+
+At the 07.10.2026 key rate of 14.00% (CBR page), 30,000 RUB held at risk for 90 days must earn ≈ 30,000 × 0.14 × (90/365) ≈ **1,036 RUB** in excess just to match LQDT (illustrative arithmetic; excludes TER and financing wedges). At the 21% policy rate of Oct 2024 the same hurdle would be ≈ 1,553 RUB. This is why the *excess* frame is mandatory and why any "the strategy made money" statement in 2026 is close to meaningless: a long futures position funded at the risk-free rate earns that rate mechanically, and only the excess over the matched LQDT shadow is evidence.
+
+### 8.5 Model uncertainty → a discount, expressed in the same units
+
+Practical translation: use the DSR/PBO machinery to convert "search effort" into a **haircut on the estimated excess**, then require the *haircut* excess to clear the hurdle. Concretely: (i) compute the estimated excess per episode and its interval; (ii) apply the DSR-style deflation at `N_eff` trials; (iii) subtract the cost-stress delta and the funding wedge; (iv) if the residual is not positive with margin, reject. When the residual's sign depends on the choice of `N_eff` or on the cost scenario, the honest verdict is **inconclusive**, and the correct action is to keep the strategy in shadow and gather episodes rather than to allocate capital.
+
+---
+
+## 9. Separation of the five gates (do not let one stand in for another)
+
+| Gate | Question | Evidence that can answer it | What it does **not** license |
+|---|---|---|---|
+| G1 Data feasibility | Can I build point-in-time, leakage-free series (daily now; intraday forward) for the candidate roots, with costs measurable? | §3.4 probes + data snapshots + contract maps | Any statement about profitability |
+| G2 Statistical evidence | Does the excess survive search deflation, cost stress, delay stress, on data the model never saw? | sealed block + shadow accumulation + DSR/PBO report | Any statement about live execution |
+| G3 Operational feasibility | Can I actually place, monitor, roll and close the positions with my tools and time? | pilot incident logs, reaction-time distribution, margin behaviour | Any statement about the 10–20m future scale |
+| G4 Small live test | Do real fills, margin and sequencing correspond to the model? | 90-day pilot ledger vs shadow ledger | Proof of profitability (§7.4) |
+| G5 Scaling | Does capacity survive? | measured depth/impact at the intended size; participation caps | Retroactive justification of prior losses |
+
+A clean handoff between gates prevents the most common self-deception in this kind of project: using a successful pilot (G4) as evidence for G2, or using a clean dataset (G1) as evidence for G3.
+
+---
+
+## 10. Targeted reading: DSR and AFML, with an honest applicability critique
+
+### 10.1 Bailey & López de Prado, *The Deflated Sharpe Ratio* (read)
+
+Edition read: author-hosted preprint, "First version: April 15, 2014; This version: July 31, 2014", marked "Journal of Portfolio Management, Forthcoming, 2014" (`davidhbailey.com/dhbpapers/deflated-sharpe.pdf`). The published version is *JPM* 40(5), 94–107.
+
+Key content, as read:
+- **Multiple testing framing.** Two error types; the ASA ethical guideline #8 quoted in the paper: "Running multiple tests on the same data set at the same stage of an analysis increases the chance of obtaining at least one invalid result... Failure to disclose the full extent of tests and their results in such a case would be highly misleading."
+- **Holdout is not a defence.** "Holdout assesses the generality of a model as if a single trial had taken place... If we apply the holdout method enough times (say 20 times for a 95% confidence level), false positives are no longer unlikely: They are expected."
+- **Memory effects make overfitting worse than neutral.** "Backtest overfitting tends to identify the trading rules that would profit from the most extreme random patterns in sample. In presence of memory effects, those extreme patterns must be undone, which means that backtest overfitting will lead to loss maximization."
+- **The expected maximum Sharpe under N trials** (Eq. 1): `E[max ŜR_n] ≈ E[ŜR_n] + √V[ŜR_n]·((1−γ)Z⁻¹[1−1/N] + γZ⁻¹[1−(1/N)e⁻¹])`, γ ≈ 0.5772.
+- **The DSR** (Eq. 2) is the Probabilistic Sharpe Ratio evaluated at the deflated threshold `ŜR₀ = √V[ŜR_n]·((1−γ)Z⁻¹[1−1/N] + γZ⁻¹[1−(1/N)e⁻¹])`, i.e. it adds to the base SR test: skewness and kurtosis of the selected strategy's returns, the sample length T, the variance across trial SRs, and the number of independent trials.
+- **Worked example (their numbers).** SR = 2.5 annualized over 5 years (T = 1,250 daily observations), N = 100, V[ŜR_n] = ½, skew −3, kurtosis 10 → DSR ≈ 0.9004, so the investor declines. At N = 46 the DSR would be 0.9505; with normal returns, N = 88 gives 0.9505.
+- **A rule of thumb on how much to search** (from the optimal-stopping/"secretary problem" analogy): sample ≈ 1/e (≈37%) of the theoretically justifiable configurations at random, then keep drawing and take the first that beats all previous ones. Use it as a discipline on *how many* configurations you are entitled to explore, not as a licence to explore more.
+- Complementary rather than rival to Harvey & Liu's framework: the paper explicitly says DSR "could also be computed on HL's threshold" and encourages doing both.
+
+**Applicability critique for sparse medium-term spread trades (my assessment):**
+
+1. **It measures search, not truth.** DSR answers "how surprising is this Sharpe given how much I searched?" It is silent on leakage, cost realism, and whether the mechanism is real. The CSCV paper states the analogous limitation explicitly.
+2. **N and V[ŜR_n] are the weakest inputs, and they are exactly what you must guess.** With 5–20 correlated configurations across a few roots, the variance across trial SRs is estimated from a handful of numbers, and the "independent trials" assumption is violated by construction. Use N_eff (§5.3) and report the DSR under both raw and effective N.
+3. **The EVT approximation is asymptotic in N.** Equation 1 is an extreme-value approximation justified for large N; with N = 5–20 it is crude. Treat DSR as an order-of-magnitude discount, not a probability.
+4. **No serial-correlation adjustment.** DSR uses sample length T and the four moments, not the autocorrelation structure. Sparse strategies with multi-week holds have strongly autocorrelated daily marks, which inflates effective confidence. Lo's serial-correlation-robust standard errors (Lo 2002, §"Time Aggregation") are the natural substitute or supplement; AFML §14.7.3 (p. 204) presents the DSR in the same chapter as the other backtest statistics.
+5. **Moment estimates are unreliable exactly where the strategy is most interesting.** Fat-tailed, negatively skewed spread P&L (gap risk from a dividend, a rule change, a limit move) has skew/kurt estimated from a few episodes; the denominator of the DSR can then move more than the numerator.
+6. **It cannot distinguish "no edge" from "no power".** Harvey & Liu (2020) show the FWER/FDR family of corrections, applied mechanically, systematically produces missed discoveries — a design question (how much evidence to demand given the cost of being wrong) that DSR does not address.
+
+**Bottom line:** use DSR as one column in the report, with N and N_eff shown, and never as the acceptance gate alone.
+
+### 10.2 AFML — located passages, and what to take from each
+
+Edition: 1st, Wiley, Feb 2018, ISBN 978-1-119-48208-6, 400 pp. **I read the TOC with page numbers, not the body.** What follows is a map, not a summary of text I have not read:
+
+| Location | Relevance to this project |
+|---|---|
+| ch. 2, §2.4.3 "Single Future Roll", p. 36 | The roll problem as a data-construction problem (L2/L3) |
+| ch. 3 "Labeling" pp. 43–56; §3.4 Triple-Barrier p. 45; §3.6 Meta-Labeling p. 50 | Label design; the label *is* a holding-period policy — the direct source of overlap leakage |
+| ch. 4 "Sample Weights" pp. 59–73; §4.2 Overlapping Outcomes p. 59; §4.3 Number of Concurrent Labels p. 60; §4.4 Average Uniqueness p. 61 | The formal treatment of overlapping labels → sample uniqueness, which is exactly the "how many independent episodes do I have" question |
+| ch. 7 "Cross-Validation in Finance" pp. 103–111; §7.3 why K-fold fails p. 104; §7.4 Purged K-Fold p. 105; **§7.4.1 Purging p. 105**; **§7.4.2 Embargo p. 107** | The split logic of §4.2 above |
+| ch. 9 "Hyper-Parameter Tuning with Cross-Validation" pp. 129–136 | Nested selection; hyperparameters must be tuned inside training folds only |
+| ch. 11 "The Dangers of Backtesting" pp. 151–159; §11.4 "Backtesting Is Not a Research Tool" p. 153; §11.6 "Strategy Selection" p. 155 | The framing discipline: backtests test hypotheses, they do not generate them |
+| ch. 12 "Backtesting through Cross-Validation" pp. 161–168; §12.2 walk-forward p. 161; §12.2.1 pitfalls p. 162; **§12.4 CPCV p. 163**; §12.5 how CPCV addresses overfitting p. 166 | The comparison in §4.3 |
+| ch. 14 "Backtest Statistics" pp. 195–209; §14.4.1 Time-Weighted Rate of Return p. 198; §14.5.2 Drawdown and Time under Water p. 201; §14.6 Implementation Shortfall p. 202; **§14.7.3 Deflated Sharpe Ratio p. 204** | The metric set of §6 (TWR for the counterfactual, time-under-water for the path, implementation shortfall for costs) |
+| ch. 15 "Understanding Strategy Risk" pp. 211–220; §15.4 Probability of Strategy Failure p. 216 | Symmetric vs asymmetric payouts — relevant to spread P&L with nonlinear tails |
+| ch. 17 "Structural Breaks" pp. 249–261; §17.3.1 Brown-Durbin-Evans CUSUM p. 250; §17.3.2 Chu-Stinchcombe-White CUSUM on levels p. 251; §17.4.2 SADF p. 252 | Non-stationarity monitoring; the underlying primaries are Inclán & Tiao (1994) and Chu, Stinchcombe & White (1996) |
+
+**If you have lawful library access**, the two excerpts worth requesting are §7.4.1–§7.4.2 (pp. 105–108: purging, embargo) and §12.4 (pp. 163–166: combinatorial purged CV) — plus §4.2–§4.4 (pp. 59–61) if you intend to weight episodes by uniqueness. I cannot quote or summarise their body text because I have not read it; anything I have said about purging/embargo above comes from the section titles as located plus public implementations and the CSCV/DSR papers, and is marked accordingly. Wiley offers a free sample chapter (chapter 01) on the product page; that chapter is the preamble, not the validation chapters.
+
+---
+
+## 11. Conflicts, unknowns, falsification criteria, and possible changes to the project
+
+### 11.1 Material conflicts in the literature
+
+| Conflict | Sides | How to live with it here |
+|---|---|---|
+| "Most findings are false" vs "most factors replicate" | Harvey, Liu & Zhu (2016): t > 3.0 hurdle, "most claimed research findings in financial economics are likely false" — vs Jensen, Kelly & Pedersen (2023): the majority of factors replicate; "the number of factors can be understood as multiple versions of a smaller number of themes" | Both are consistent with: *themes with economic rationale survive; individually selected variants do not.* Reduce the search to a few themes; do not extrapolate the replication-crisis literature (breadth: 153 characteristics × 93 countries) to a 3–6 pair MOEX book |
+| FWER/FDR vs power | Harvey & Liu (2020): current methods "lack power to detect outperforming managers"; proposed double-bootstrap calibrates both error types | Pre-declare the cost asymmetry of your errors (the pilot's cap is ~10–15k RUB; the opportunity cost of a missed small edge is smaller), and let that asymmetry set the gate — rather than importing a t > 3 standard blindly |
+| CPCV vs walk-forward | Arian et al. (2024): CPCV superiority in synthetic environments — vs the operational fact that the deployed strategy lives one chronological path | Use both, with different roles (§4.3) |
+| DSR/PBO as validation | Popular usage treats them as validation tests — vs the authors' own warnings (CSCV must not guide the search; a flawed backtest yields a flawed PBO) | Report them, gate with them only as one input |
+
+### 11.2 Unknowns that block or condition conclusions
+
+1. LQDT eligibility as margin collateral (GO) and the associated funding wedge — legal/broker fact; **do not assume**.
+2. Actual broker tariffs (VTB now; BCS later), including per-contract fees and whether the calendar-spread order type is available to you as a qualified investor.
+3. Data availability and permitted use of MOEX ISS for this purpose; retention of history for expired contracts; licences for redistribution.
+4. Whether the specific instruments/structures require qualified-investor status, and whether your current KPUR status covers them.
+5. Tax treatment (long-term holding deduction, treatment of futures P&L, account type) — excluded by your convention, but it must appear as an explicit assumption in every report.
+6. Your actual reaction-time distribution and your trading/intervention quota per week (still undefined per the brief) — needed to fix the pre-registered delay scenario.
+7. Whether the pilot's 30,000 RUB can hold the intended number of legs simultaneously (margin computation per contract) — arithmetic dependent on GO values I did not retrieve for the specific contracts.
+8. Historical data start dates and quality per root (from the separate data-feasibility work).
+
+### 11.3 Falsification criteria for the methodology itself (not just the strategy)
+
+- If the null tests (T3) ever produce a "profitable" pipeline output, the validation architecture has failed and must be fixed before any further results are believed.
+- If the IS→OOS rank relationship across your trials is not positive (the stochastic-dominance comparison in the CSCV framework), then the *selection procedure* adds no value: stop searching, not just the strategy.
+- If the pre-registered gates can be met only by choosing a favourable cost or delay cell, the gates are mis-specified — fix the gates, then re-run prospectively.
+- If a strategy's edge concentrates in one regime or two episodes, the correct conclusion is "not yet identified", not "identified with low confidence".
+
+### 11.4 Possible changes to the project design implied by all of the above
+
+1. **Shrink the search to 2–4 theory-anchored themes** and adopt the 1/e-style discipline from the DSR paper: enumerate the justifiable configurations, sample ≈37% of them at random for a first pass, then take the first that beats all previous ones.
+2. **Treat intraday data as a forward-capture project** during shadow mode (§3.4), since the free historical base appears to be daily for expired contracts. This also produces the execution-cost and capacity measurements the pilot needs.
+3. **Reframe the 90-day pilot's success criteria** as operational (G3/G4), with profitability claims explicitly deferred and the power arithmetic pre-registered (§7.4).
+4. **Pre-commit the exclusion rule for the Feb–Mar 2022 period** from the documented event calendar only, and keep that window as a mandatory stress report.
+5. **Consider widening the episode count** (more roots, longer periods, both calendar and cross-root relative value) rather than deepening the parameter search — with sparse episodes, breadth in *episodes* is the only thing that buys statistical power. This trades against the user's "selective, zero-trade days acceptable" preference; the trade-off should be made explicitly.
+6. **Decide the GO/collateral question before the pilot**, because it changes the hurdle materially (§6.1): if LQDT cannot serve as margin collateral, the strategy is charged the forgone LQDT yield on blocked GO, which at 14% is a large fixed cost for a small book.
+
+---
+
+## 12. Appendices
+
+### A. Minimal reproducible validation protocol (one page)
+
+```
+1. REGISTRY. Create the experiment registry (CSV template supplied). Every configuration
+   evaluated gets a row, including failures. Append-only.
+2. POINT-IN-TIME DATA. Per contract: candles + settlements + a contract map with
+   FRSTTRADE/LSTTRADE/LSTDELDATE. Universe rules from archived listing files, not the
+   current list. Snapshot every pull with a retrieval timestamp.
+3. EVENT TABLE. Corporate actions, dividends with announcement dates, index events,
+   contract-term changes, market-rule changes. Availability timestamps, not event dates.
+4. LABELS. Define the decision time and the label interval explicitly per sample.
+   Overlap allowed, but its extent must be measured and reported.
+5. SPLITS. Outer: expanding walk-forward over the declared estimation window.
+   Inner: purged K-fold for hyperparameters. Purge = label-interval overlap;
+   embargo >= max(holding horizon, feature lookback, event-doc lag).
+   Assert no cross-contamination per fold; log assertions.
+   SEALED BLOCK: one per family version, unsealed once. holdout_uses logged.
+6. FIT SCOPE. Transformers, scalers, vol estimates, hedge ratios, regime labels, liquidity
+   filters and the universe rule are fit only inside training windows; regime labels
+   causal or event-based. No exceptions.
+7. SEARCH ACCOUNTING. Report n trials, N_eff, variance of trial SRs, PBO (CSCV),
+   DSR at N and at N_eff. Never optimise any of them.
+8. COSTS AND DELAYS. Cost model versioned; base + stress scenarios frozen before
+   results. Delay grid reported in full; decision uses the pre-registered conservative cell.
+9. METRICS. Matched-LQDT shadow ledger; cumulative RUB excess; excess-curve drawdown
+   and time under water; capital-days and excess per capital-day; episodes + n_eff;
+   duration; turnover; implementation shortfall decomposition; capacity estimate.
+10. BASELINES AND NULLS. B0–B3 and T1–T6 (see §7.3) are mandatory outputs.
+11. GATES. Accept-for-shadow / reject / inconclusive, using §7.1 with your chosen numbers,
+    written down before the sealed block is opened.
+12. PROSPECTIVE. Shadow run in real time with real timestamps. This sample is the only
+    clean one; never regenerate it, never re-optimise on it.
+13. PILOT. 90 days, operational focus, pre-declared interim action levels (no interim
+    statistical claims), post-pilot report separating operational findings from
+    the (weak) statistical ones.
+```
+
+### B. Experiment registry fields
+
+Supplied as `experiment_registry_template.csv` (columns and one illustrative empty row).
+
+### C. Formulas used above (with sources)
+
+- Sharpe standard error (i.i.d. normal): `SE(SR) ≈ √((1 + SR²/2)/T)` — Lo (2002), *FAJ* 58(4) 36–52, Eq. (9) region; Lo also provides serial-correlation-robust versions and reports SE = 0.188 at SR = 1.50 and 0.303 at SR = 3.00 for a 60-observation sample.
+- Minimum Track Record Length for "SR is above a threshold with confidence": Bailey & López de Prado (2012) `MinTRL = 1 + [1 − γ₃·SR + ((γ₄−1)/4)·SR²]·(Z_α/(SR − SR*))²` (as presented in the authors' public deck; the deck's example: a 2.73-year track record is required for an annualized SR of 2 to be considered greater than 1 at 95% confidence, daily i.i.d. normal returns).
+- Expected maximum Sharpe under N independent trials and the DSR threshold: Eq. (1) and Eq. (2) of the DSR paper (§10.1 above).
+- Minimum Backtest Length: `MinBTL < 2·ln(N) / E[max ŜR_n]²` years (as stated in Bailey, Borwein, López de Prado & Zhu, *Pseudo-Mathematics and Financial Charlatanism*, *Notices of the AMS*, May 2014, `https://www.ams.org/notices/201405/rnoti-p458.pdf`) — verified as a formula in the paper, not re-derived.
+- Cluster-adjusted effective sample size: `n_eff ≈ n / (1 + (k−1)·ρ̄)` — standard clustering adjustment; state `k` (average cluster size) and `ρ̄` (average within-cluster correlation) in every report.
+- Required n_eff for a t-statistic: `n_eff = (t / SR_episode)²`.
+
+### D. Scope limits of this report
+
+No empirical validation was performed. All strategy-level statements are conditional on data, costs and instruments that I did not inspect. The MOEX chronology in §3.3 relies on press reporting (level **S**) except where a MOEX page is quoted; re-verify each date at the issuer before using it in a pre-registration. The data-availability findings in §3.4 are single-day spot checks, not a survey. The "no universal 30 trades" claim is a statistical statement about t-statistics under dependence, not a regulatory threshold. Nothing here should be read as a recommendation to trade, or as a statement that any spread strategy on MOEX is viable.

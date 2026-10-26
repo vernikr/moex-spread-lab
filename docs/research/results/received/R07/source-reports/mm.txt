@@ -1,0 +1,489 @@
+# Pilot Futures-Spread Risk, Funding Liquidity and Sizing on MOEX
+
+## 1. Overall Assessment and Main Conclusions
+
+The delegated pilot defaults are only partially coherent for integer MOEX futures spreads with a 3–90 minute human reaction window. They are directionally conservative on monetary loss (`X` floor at –15k vs. initial 30k) but under‑specified on **funding path and margin mechanics**, and they assume a stress buffer (5k) that is small relative to plausible joint price–margin shocks on even mini index contracts.
+
+Under current information and using MOEX/NCC rules as of 2026‑10‑07, a **strictly feasible pilot** for calendar spreads on liquid mini index contracts (RTSM, MXI, IMOEXF) can be defined, but only with materially tighter per‑trade risk and margin‑use ceilings than the provisional 50%‑of‑funds rule, and only if:
+
+- Each live spread uses **no more than ~15–20% of the 30k envelope in IM** under a no‑offset assumption.
+- The project enforces **at most one spread position at a time** in the early pilot, or a very small set of weakly correlated spreads with aggregate IM and stressed VM explicitly tested against the `X` inequality.
+- `X - stressed_loss - uncertainty_buffer ≥ -15,000` is evaluated **with broker‑specific half‑netting potentially withdrawn, NCC stress moves, and end‑of‑day VM timing** all modelled, rather than assuming gentle intraday behaviour.
+
+If these conditions cannot be met for a candidate spread (at minimum lot size), the correct conclusion for this pilot is “no‑trade”.
+
+The most actionable outcome is therefore:
+
+> **Promote a narrow “low‑risk” profile for the pilot: single‑contract RTSM/MXI/IMOEXF calendar spreads, hard caps on margin usage (~25–30% of 30k), and a stress design based on NCC 99% VAR plus a user‑chosen tail multiplier. Treat the 5k buffer and 50% margin hypothesis as rejected or strictly upper‑bound test values, not operating rules.**
+
+---
+
+## 2. Structural Features of MOEX Margining and Liquidity Relevant to the Pilot
+
+**MOEX/NCC margin rules imply that calendar spreads are less risky in margin terms than two separate legs, but this benefit is fragile from the broker’s perspective.** NCC sets initial margin (IM) and spread treatment for derivatives, using a portfolio VAR approach at 99% confidence; IM is set as a percentage of the contract’s notional and can exceed the simple percentage when FX is involved.[1][2][3][4][68] NCC explicitly grants IM benefits for inter‑month and inter‑contract spreads (half‑netting and full netting), where spread IM is the greater of the two leg IMs in half‑netting mode or even lower in full‑netting mode.[5][23][28][29] However, MOEX’s calendar spread matching documentation states that at the moment of trade matching, margin is reserved as if two atomic orders had been matched, i.e. without offset.[22][6][15][29] Brokers may also choose conservative risk‑parameter settings at the firm portfolio level that partially or fully cancel spread savings.[29][30][25][40]
+
+**For this pilot, the prudent assumption is: at entry you must be able to fund the *sum* of leg IMs, with any NCC spread benefit treated as upside, not as a sizing input.** This aligns with the user’s requirement to assume that “existing margin offsets may be removed” and avoids relying on a broker configuration you cannot contractually verify ex‑ante.
+
+**Variation margin (VM) realization timing reduces intraday funding pressure but concentrates risk into the clearing window.** MOEX’s official documentation on the derivatives market states that variation margin for futures is calculated once per day during the night clearing session (23:50–00:30), not continuously intraday.[32][19][31][33] This means:
+
+- Intraday adverse moves during the 3–90 minute human reaction window will not by themselves generate margin calls if IM coverage is maintained; they erode economic value but only hit margin requirements at clearing.
+- End‑of‑session P&L crystallization can create **step changes in required cash**, particularly if prices gap into the clearing window.
+
+The pilot therefore needs **two distinct stress lenses**: intraday (economic X drawdown and potential increase in required IM) and end‑of‑day (VM crystallization plus possible IM re‑parameterization by NCC). NCC periodically updates risk parameters, including minimum risk rates, concentration limits and spread stress parameters, via official notices.[10][11][12][67] These changes can raise IM overnight without prior broker‑specific warning.
+
+**Margin‑call mechanics and broker recourse introduce an uncontrolled timing risk that must be absorbed by your buffer, not assumed away.** General Russian‑broker explanations (including BCS and generic investor education by Russian financial portals) describe margin calls as broker notices when the portfolio value or collateral falls below maintenance levels, requiring the client to either replenish funds or reduce positions.[59][61][67] These explanations emphasize that:
+
+- A margin call **does not guarantee a grace period**; brokers can start forced liquidations at any point after the threshold breach if the client does not act.[62][63]
+- MOEX’s own FAQ states that margin calls must be performed by 17:30, but that the “Single Limit” is recalculated on each position change, tying risk control to dynamic portfolio valuation.[64]
+
+No public documentation was found describing VTB or BCS standing facilities to automatically bridge margin deficits for retail/qualified clients. This must be treated as a structural unknown: **emergency funding is not contractually available by default**.[66][67]
+
+---
+
+## 3. Contract Universe Geometry and Minimum‑Lot Risk
+
+**Mini index contracts (MXI, RTSM, IMOEXF) are structurally aligned with the 30k envelope; standard contracts are not.** As of 2026‑10‑21:
+
+- MXI (MOEX Russia Index mini) futures for Dec‑2026 have price around 2,418–2,496 index points; with a 10 RUB/point multiplier, this implies a notional of roughly 24–25k RUB per contract. The initial margin at the first concentration limit level is about 2.8k RUB/contract (~12% of notional).[42][44][46][48]
+- RTSM (mini RTS) futures for Mar‑2027 have a tick of 0.5 index points, a tick value of 8.35588 RUB, and a first‑level IM of 2,432.75 RUB per contract, with a client‑risk‑based IM of 5,583.52 RUB.[34][35][78][82]
+- IMOEXF, the perpetual daily MOEX Index futures, has lot size 10, tick size 0.5 points, tick value 5 RUB, and a first‑level IM near 2,425 RUB/contract.[43][3][21]
+
+Even under the conservative assumption that a calendar spread IM equals the sum of leg IMs with no offset, **a one‑contract spread of MXI, RTSM or IMOEXF uses ~5–6k RUB margin**, clearly below the 30k ceiling and leaving space for VM swings and reserves.
+
+Standard RTS index futures (RTS‑12.26) trade around 94k index points with a 10 RUB/point multiplier, implying a ~940k RUB notional and a first‑level IM near 23–25k RUB/contract.[32][33][8][27] A two‑leg calendar spread would therefore demand roughly 45–50k RUB of IM under a no‑offset assumption, **already exceeding or saturating the 30k envelope**. Currency futures on USD/RUB (Si or USDRUBF) exhibit a similar IM magnitude (roughly 12–13k RUB per contract as of mid‑2026) and hence a two‑leg spread uses ~25k RUB IM before stress, leaving only a narrow funding buffer.[4][14][15][16][24] In a previous Si spread scenario, historical drawdown analysis for a two‑leg position produced a worst realised loss of ~10–11k RUB versus a remaining IM buffer of only ~5k, suggesting realistic margin‑call risk without additional liquidity.
+
+**Equity single‑name futures present heterogeneous opportunities, but liquidity and IM can change abruptly.** Examples:
+
+- Gazprom (GAZR) futures around 2025–26 carried IM around 1.8–2.1k RUB per contract, with some maturities displaying high daily volumes (e.g. >500k contracts traded and multi‑billion RUB turnover for certain expiries).[7][8][11][14]
+- VTBR stock futures in 2026 showed IM in the sub‑1k–1.7k RUB range for different expiries.[18][19][2][20]
+
+However, liquidity is not uniform: some contracts for the same underlying show zero trades or negligible volume, and volume may collapse near expiry. Conflicting reports for the same VTBR maturity (0 daily volume vs hundreds of thousands of contracts) underline the need for **direct MOEX/ISS or broker feed checks for each contract/month**, not generic assumptions.[23] For a human‑driven system with 3–90 minute reaction windows, **scheduled low‑liquidity patches around roll dates or holidays can completely invalidate stop‑loss assumptions**, particularly for integer‑sized, non‑diversified positions.
+
+**Carver’s “Systematic Trading” framing underscores that large minimum contract sizes dominate small‑account risk.** Secondary sources summarising Robert Carver’s book stress that:
+
+- Position size should be expressed in **risk units**, not notional, typically via volatility targeting and a cap on per‑trade risk as a fraction of equity (commonly around 0.5% in his small‑account examples).[35][37]
+- Large minimum sizes can prevent proper scaling and diversification, making some strategies structurally unsuitable for small portfolios.[41][45]
+
+Translating this to the pilot: with 30k RUB, a **single MXI, RTSM or IMOEXF contract already represents ~80% of equity in notional terms and several percent of equity in a plausible 1‑day stress move**, even if daily sigma is modest, which is materially above the 0.5–1% “risk per trade” Carver uses for robust small‑account examples.
+
+---
+
+## 4. Funding Path, VM and the `X` Inequality
+
+### 4.1 Dimensions of Risk and Funding to Separate
+
+The pilot question explicitly requires separating:
+
+- **Relative economic loss X** vs. **absolute account P&L**: X is defined as wealth with the strategy minus wealth of the LQDT counterfactual, with identical true external flows and core actions. Core sales forced by broker recourse are incidents in X even if the overall account remains solvent.
+- **Peak drawdown D** on X vs. raw P&L swings: drawdown is measured from the high‑water mark of X, not nominal account equity.
+- **Cash/VM path vs. economic MTM**: VM crystallization is a timing event; a mark‑to‑market intra‑session reserve may be needed even if VM is only debited at clearing.
+- **Broker margin/collateral and gross exposure**: IM is set by NCC risk parameters; brokers cannot go below NCC but can apply overlays. Concentration limits constrain contract counts, and margin offsets may be disabled.[40][5][70]
+- **Temporary single‑leg risk**: during manual scaling or imperfect calendar spread fills, you may be long or short one leg for up to the 3–90 minute reaction window, facing the full volatility of the underlying contract and potentially higher IM if net exposure increases before the offsetting leg trades.
+- **Account‑wide recourse**: in a shared account, the broker may use >40m of LQDT as collateral to prevent clearing‑level default, effectively consuming part of the 15k “emergency allocation” without explicit approval.
+
+These dimensions must enter the `X - stressed_loss - buffer ≥ -15,000` test as separate terms; bundling them into a single “worst‑case P&L” number hides path dependence.
+
+### 4.2 VM and IM in the Inequality
+
+The operative inequality is:
+
+> **At entry and each validated review:**  
+> `X - L_stress - B_uncertainty ≥ -15,000`  
+> where `L_stress` includes both **incremental VM realization and any IM increases or single‑leg risk** induced by the trade during the relevant horizon, and `B_uncertainty` is a strictly positive discretionary buffer.
+
+Because MOEX calculates variation margin at the end of the day, a practical design is:
+
+- Define an **intraday horizon H₁** (your 3–90 minute reaction window within the trading day) where:
+  - Price shocks affect economic MTM and may influence future NCC risk parameters, but **do not yet generate VM flows**.
+  - However, brokers may apply dynamic IM overlays intra‑day or restrict orders if IM coverage deteriorates (this is imperfectly documented and must be treated as a risk).
+- Define an **overnight horizon H₂** (from last intraday check to the next clearing session) where:
+  - VM for the closing level is debited/credited once.
+  - NCC may adjust IM percentages (risk parameters) between days.
+
+Then, **L_stress must be at least:**
+
+1. **Economic MTM loss under a joint intraday + overnight price shock** for the position at integer minimum size.
+2. **Any incremental IM requirements** if NCC raises IM percentage or removes spread benefits (e.g. moving from half‑net back to full‑margin or increasing base IM by several percentage points).
+3. **Liquidation slippage and cost** if the stress scenario forces an exit before clearing.
+
+Because we lack a broker‑specific statistical history, a defensible approach is to **anchor L_stress to NCC’s own VAR design (99% over the clearing horizon) and apply an extra factor for pilot purposes**. NCC states that its IM model is a VAR‑like model with a 99% confidence level over relevant risk horizons.[5][4][68] A conservative but still evidence‑linked rule is:
+
+- Treat **1× IM** as roughly a 99%‑level 1‑day loss plus some structural cushion.
+- For the pilot, treat **2× IM** as an approximate 99.9%‑style tail bound for a single day, acknowledging that this is not a formal statistical guarantee but a risk‑based heuristic.
+
+For a one‑contract MXI or RTSM calendar spread under the no‑offset assumption (IM ≈ IM₁ + IM₂ ≈ 5–6k), 2× IM would be ~10–12k, which **already consumes most of the outer –15k X budget** if a single spread is allowed to run at that risk.
+
+---
+
+## 5. Stress Design: Price, Margin and Liquidity Shocks
+
+### 5.1 Price Stress Anchors
+
+Historical data show that the RTS index experienced a **30–39% intramonth crash in March 2022 during sanctions**, as documented in public market summaries and Wikipedia’s RTS Index entry.[38][40][76] MOEX’s own volatility index (RVI) captures 30‑day implied volatility from RTS options, but does not itself provide intraday or single‑day empirical quantiles.[24][37][21] Nonetheless, a one‑day 20–30% tail move is clearly within the realm of historical experience for Russian equities during crises.
+
+For mini index contracts with notional ~24–25k RUB (MXI, RTSM, IMOEXF):
+
+- A **30% index move** implies an MTM change of roughly 7.2–7.5k RUB per contract.
+- Given IM of ~2.5–3k, this is a **multiple of IM and a material fraction of the total 30k envelope**.
+
+Therefore, a **5k stress buffer is not enough** to absorb a 30% one‑day tail on a single mini contract, let alone a two‑leg spread where the legs might not move perfectly together (basis risk). This directly undermines the 5k buffer heuristic.
+
+### 5.2 Margin and Parameter Shocks
+
+NCC regularly revises risk parameters for derivatives, including minimum risk rates, concentration limits, and spread stress metrics.[10][11][12][14][67] Historical parameter changes have included substantial increases in the NCl parameter (a spread risk parameter) for instruments such as natural gas futures (from 50 to 500), and adjustments to inter‑month spread risk rules that effectively raised the IM required for calendar spreads.[7][8][20][21] MOEX documentation indicates that:
+
+- Risk parameter changes can raise IM by large percentages between trading days.
+- Spread “benefits” can be scaled back via higher stress parameters or moving from full‑net to half‑net modes.[25][33][20]
+
+In pilot terms, **IM jumps of 50–100% are a realistic design stress**. For a 5–6k notional IM, this is an incremental 2.5–6k cash requirement, which must be funded from the 30k envelope or, if unavailable, from the broker’s recourse to core LQDT (counting under the 15k emergency cap).
+
+### 5.3 Liquidity and Execution Shocks
+
+Calendar spreads are traded as independent instruments with their own order books and historical quotes on MOEX.[52][77][79][80][81][84] However:
+
+- There is no guarantee of **continuous depth at tight spreads**. Spread books can be thin, particularly away from roll windows.
+- If a spread order only partially fills or if one leg is entered manually due to technical or operational constraints, you can face **temporary outright exposure** with potentially wider bid/ask and larger tick value (e.g. RTSM tick value 8.35588 RUB with price limits spanning 797.5–918.5 points for March‑2027).[34][35]
+
+Given a 3–90 minute reaction window and free data delayed by 15 minutes on most public feeds, the pilot must treat **“no fill” or “bad fill” as explicit stress states**. For example, exit slippage equivalent to 10–20 ticks on a mini contract (≈80–170 RUB) is a modest addition to the 7k price shock, but for illiquid single stocks or commodity spreads, bid–ask spreads of multiple ticks are plausible.
+
+---
+
+## 6. Scenario Analysis: When the Defaults Fail
+
+### Scenario A: Quiet Markets, Single Mini‑Index Spread, No Parameter Shock
+
+- Position: 1× long/short RTSM or MXI calendar spread, 5–6k IM (sum of legs).
+- Price behaviour: daily index moves mostly within ±2–3% (~500–700 RUB per contract).
+- NCC parameters: stable IM; no spread rule changes.
+- Execution: fills obtained in both directions within seconds or minutes; no forced legging.
+
+In this benign regime, the **5k buffer and 50% margin‑use ceiling are not binding**, and the 30k account experiences relatively small VM swings (perhaps a few hundred RUB per day). The pilot defaults appear “coherent” ex‑post. However, this scenario is **not diagnostic**: any sizing rule looks safe when volatility remains low.
+
+### Scenario B: Single Tail Event with 20–30% Index Shock
+
+- Position as above (1× mini spread).
+- Price: one‑day drop of 20–30% on the index, potentially combined with elevated intraday volatility.
+- IM: NCC responds by raising index IM by, say, 50–100% effective next day.
+
+Then:
+
+- Even if the two legs move largely together, a 20–30% index move can **produce a 3–7k RUB loss** on the spread due to imperfect hedge and term basis shifts.
+- IM per leg may rise from ~2.8k to >4k each, so IM for the spread climbs from ~5.6k to >8k.
+- Aggregate impact on X includes both the **realized loss** and the **incremental IM requirement**, plus LQDT opportunity cost during the stress window.
+
+Under this scenario, the **total impact on `X` can easily exceed 10k**, pushing close to the –15k threshold with just one spread. If multiple correlated spreads are open, `X` could breach –15k before any emergency funding can be arranged. The 5k buffer and 50% IM ceiling are therefore **insufficient as universal design rules**.
+
+### Scenario C: Broker Recourse Engaged, Emergency Funding Delayed or Denied
+
+Suppose:
+
+- Two mini index spreads are open, each with IM ~5–6k (sum of legs; total ~10–12k IM).
+- A 15–20% adverse market move occurs, generating an unrealized loss of 4–5k per spread.
+- NCC raises IM by 50%, adding ~5–6k IM across the two spreads.
+
+If the account’s free cash plus the 30k envelope cannot cover the combined IM and VM, the broker may liquidate part of the spreads or **tap core LQDT as collateral**, effectively consuming a significant fraction of the 15k emergency budget. Because this is **broker‑driven**, the event is likely to occur at unfavourable prices and without an opportunity to “trade out” via calendar spreads.
+
+This scenario illustrates that the **15k emergency cap is necessary but not sufficient**: without broker‑level recourse controls, you cannot guarantee that pilot‑specific limits are respected.
+
+---
+
+## 7. Sizing Rules: Comparisons and Pilot‑Feasible Profiles
+
+### 7.1 Fixed Minimum‑Contract Sizing
+
+For this pilot, the minimum spread size is **1 calendar spread contract** (1× long near, 1× short far or vice versa). Given minimum block sizes and your small test capital, **fractional contracts are impossible**, making fixed minimum positions the natural base case.
+
+Advantages:
+
+- Easy to reason about funding: IM and VM per spread are deterministic functions of contract IM and price moves.
+- Operationally simple to implement manually.
+
+Disadvantages:
+
+- For 30k equity, minimum one‑spread positions can still represent **several percent of capital in 1‑day tail risk**, especially on index underlyings.
+- No room to further resize for particularly volatile conditions; the “volume knob” is discrete.
+
+### 7.2 Fractional‑Kelly‑like or Volatility‑Scaled Sizing
+
+Kelly‑style or volatility‑targeting schemes (as advocated by Carver) allocate size proportional to expected edge/variance and capital.[23][24][41][59] In principle, one would choose:
+
+`position_size ∝ f * (μ / σ²) * equity`
+
+where `f` is a risk fraction, μ is expected edge per contract, and σ² is variance of contract returns.
+
+For this pilot, such schemes are **not operationally implementable** because:
+
+- **Edge and calibration are not yet quantified** (R09 covers leakage and multiple testing; this pilot is still at pre‑backtest stage).
+- **Integer contracts and high minimum size** relative to capital completely dominate the formula. For MXI/RTSM, even if f is set as low as 0.5% of equity in expected loss, integer rounding pushes you to 1 contract or 0, eliminating gradations.
+
+A bounded “Kelly‑like” rule might still be useful as a **sanity bound**: for instance, set a hard limit that the **95th‑percentile 1‑day loss for any position not exceed 1–2% of equity**, as Carver suggests. Applied here, that would limit worst‑case 1‑day loss to 300–600 RUB, which is **far lower than the observed 7k tail risk for a single mini contract** under a 30% move. By this standard, **any equity‑index spread is too large for the 30k envelope** unless one redefines the risk horizon and tail measure.
+
+### 7.3 Scale‑ins with Pre‑Committed Caps
+
+Scale‑in strategies (starting with 1 spread, then adding on favourable moves) are theoretically attractive but **dangerous in this pilot**:
+
+- Each added spread increases IM and tail risk discretely; a two‑spread position roughly doubles L_stress without diversifying much.
+- Scale‑ins often rely on **mean‑reversion assumptions** that are untested and can conflict with the no‑averaging‑down funding rule.
+
+Given the fragile IM and emergency‑funding constraints, the early pilot should **avoid multiple simultaneous spreads** until the team has:
+
+- Robust historical stress analysis for the specific contract pair.
+- A validated operational playbook for reducing exposure quickly when X approaches –10k or D approaches 10k.
+
+### 7.4 Low/Medium/High Risk Profiles for the Pilot
+
+**Low‑risk profile (recommended starting mode)**
+
+- Universe: mini index calendar spreads (RTSM, MXI, IMOEXF) with audited liquidity and transparent IM.
+- Sizing: at most **1 spread contract** at any time.
+- IM rule: **IM_sum(legs) ≤ 0.25 × 30k = 7.5k** at entry under no‑offset assumption.
+- Stress rule: use `L_stress = max(2×IM_sum, historical 99th‑percentile spread move × contract multiplier)`. Require `X - L_stress - B_uncertainty ≥ -15k` with **B_uncertainty at least 2k**.
+- Drawdown rules: keep current 5k warning / 10k action / 15k breach, but acknowledge that they may all be touched by a single tail event; do not treat them as “never to be hit”.
+
+**Medium‑risk profile (only after data and process hardening)**
+
+- Universe: as above, plus 1–2 carefully chosen single‑stock futures spreads with high and stable volume.
+- Sizing: at most **2 concurrent spreads**, with aggregate IM_sum(legs) ≤ 0.4×equity.
+- Stress: `L_stress` computed across portfolio with correlation assumptions; require `X - L_stress - B_uncertainty ≥ -12k` (tighter), noting that the outer –15k is a hard limit but not a soft design target.
+
+**High‑risk profile (out of scope for this pilot)**
+
+- Multiple correlated spreads, larger IM usage (>50% of capital) and assumption of emergency funding reliability are incompatible with the current 30k/15k structure and should be explicitly excluded from Stage 1.
+
+---
+
+## 8. Worked Hypothetical Ledger and Risk/Funding State Table
+
+### 8.1 Hypothetical RTSM Calendar Spread Trade
+
+Assumptions (all approximate):
+
+- Account: 40m+ LQDT core, 30k pilot sleeve tracked separately.
+- Instrument: RTSM‑3.27 vs RTSM‑6.27 calendar spread, 1 contract per leg.
+- IM per leg at 1st concentration level: 2,433 RUB.[34][78]
+- Pilot uses conservative rule: **IM_spread = 2 × 2,433 ≈ 4,866 RUB** (no offset).
+- NCC 2×IM stress: 2 × 4,866 = 9,732 RUB.
+- Uncertainty buffer: 2,000 RUB.
+
+#### Entry
+
+- Time 0: X = 0 (no trades yet); B path defined.
+- Place calendar spread order and both legs fill simultaneously.
+- Sleeve ledger:
+  - Debit 4,866 RUB to IM.
+  - Remaining pilot free capital: 30,000 – 4,866 = 25,134 RUB.
+- Pre‑trade inequality:  
+  `X - L_stress - B_uncertainty = 0 - 9,732 - 2,000 = -11,732 ≥ -15,000` → holds.
+
+#### Moderate Adverse Move (Non‑tail)
+
+- Spread moves against you, unrealized economic loss 2,000 RUB.
+- No change in NCC IM.
+- During day: no VM booking; IM still 4,866, free capital 25,134; economic pilot X ≈ –2,000.
+- Pre‑clearing inequality:  
+  `X - L_stress - B_uncertainty = (-2,000) - 9,732 - 2,000 = -13,732 ≥ -15,000` → still holds; you can maintain position.
+
+#### Tail Move and IM Shock
+
+- Next day, index gap and parameter update:
+  - Spread MTM loss increases to 6,000 RUB (cumulative).
+  - NCC raises IM per RTSM leg by 50% to ~3,650 RUB ⇒ IM_spread ≈ 7,300 RUB.
+  - Additional IM required: 2,434 RUB.
+- New sleeve:
+  - IM blocked: 7,300 RUB.
+  - Economic X from trading: –6,000 RUB.
+  - Pilot free capital ignoring VM for now: 30,000 – 7,300 = 22,700 RUB, but economic X = –6,000 vs LQDT.
+
+Test inequality at this point:
+
+- If you **hold the trade**, set `L_stress` to *incremental* worst‑case from here. Suppose you maintain the same 2×IM rule, now 2×7,300 = 14,600 RUB.
+- Then:  
+  `X - L_stress - B_uncertainty = (-6,000) - 14,600 - 2,000 = -22,600 < -15,000` → violation.
+
+Therefore, under this rule, **you cannot justify maintaining the position at this point**; you must flatten before, or at latest when, such a combined price–IM shock is suspected. This illustrates that **a single mini spread nearly saturates the –15k bound once IM is shocked and losses accumulate**, supporting a policy of **only one mini spread at a time and proactive de‑risking well before NCC updates**.
+
+### 8.2 Risk/Funding State Classification
+
+| State | X relative to H | D (drawdown) | IM used (sum legs) | Funding path risk | Policy implication |
+|-------|-----------------|--------------|--------------------|-------------------|--------------------|
+| Safe | X ≥ 0, D < 5k | <5k | ≤25% of 30k | Ample free cash vs IM, no signs of NCC stress | Entries allowed under inequality; one mini spread max |
+| Caution | X possibly positive, D 5–10k | 5–10k | 25–40% of 30k | Some IM concentration, price volatility rising | New risk suspended; reduce exposure on unfavourable signals |
+| Danger | X ≤ –10k or D ≥ 10k | ≥10k | >40% of 30k | Combined IM and VM shocks threaten –15k | Begin orderly exit; no new entries; evaluate X inequality daily |
+| Breach | X < –15k | >15k | Any | Broker may draw on core, risk of forced liquidation | Pilot ended; review design and capacity before any restart |
+
+---
+
+## 9. Parameter Table: Defaults vs. Proposed Revisions
+
+| Parameter / Rule | Original default | Evidence / logic basis | Proposed pilot test value | Sensitivity / comments |
+|------------------|------------------|------------------------|---------------------------|------------------------|
+| Initial pilot allocation | 30k RUB | User spec | **Retain** | Adequate for 1 mini spread; too small for standard RTS/Si. |
+| Lifetime gross extra funding | 15k RUB cap (45k total) | User spec | **Retain as hard cap** | Do not assume availability; treat broker recourse as consuming cap. |
+| IM usage ceiling at entry | 50% of initial funds (15k) | Heuristic | **Tighten to 25–30%** (7.5–9k) of 30k | 25% is aligned with 1 mini spread under no‑offset assumption. |
+| 5k “stress buffer” | 5k RUB | Heuristic | **Replace** with `L_stress = max(2×IM_sum, empirical 99% tail)` | 5k is small vs. 30% index shock; drive buffers from IM and history. |
+| Warning level D | 5k drawdown | User spec | **Retain threshold**, but treat as soft subjective review | In tail events, can be hit in one day even for 1 spread; do not trade to “avoid” hits. |
+| Action level D / X | 10k drawdown or X ≤ –10k | User spec | **Retain but clarify**: new risk prohibited, de‑risk existing | Ensure inequality `X - L_stress - B_uncertainty ≥ -15k` checked before maintaining positions. |
+| Outer boundary | X < –15k not allowed | User spec | **Retain as hard breach** | Our analysis shows 1 mini spread can approach this; treat as true “no‑go” constraint. |
+| Per‑trade risk profile | Implicit | — | **Target L_stress for any new position ≤ 7–8k** | Gives headroom vs –15k outer bound and concurrent positions. |
+| Number of concurrent spreads | Not specified | — | **Max 1 in Stage 1** | Only after R09 validation, consider 2 with aggregate tests. |
+| 90‑day review | Formal review at 90 days without resetting losses | User spec | **Retain** but explicitly: no forced liquidation if positions safe; X/H not reset | Use 90 days as governance checkpoint, not time stop. |
+
+---
+
+## 10. 90‑Day Review and Peak Giveback
+
+The 90‑day review requirement is logically sound as a governance device but must **not be treated as a time‑based exit**. Positions with long‑dated maturities (e.g. Mar/Jun/Dec contracts) may remain open beyond 90 days if:
+
+- X remains within acceptable bounds (`X > –10k`, D < 10k).
+- The `X - L_stress - B_uncertainty ≥ -15,000` inequality holds.
+- There are no imminent delivery or roll risks.
+
+The **opportunity cost of strict 90‑day exits** is potentially large for slow‑moving term‑structure trades. For instance, a calendar spread that is structurally mis‑priced might revert over 6–9 months; forcing closure at 90 days on modest profit (or small drawdown) reduces expected edge.
+
+Instead:
+
+- Use the 90‑day mark to **re‑estimate volatility, IM, and any model drift**, and to reassess if the strategy still passes the X inequality with updated L_stress and B_uncertainty.
+- Do not reset X, H, or D; cumulative results and drawdowns remain continuous.
+
+Similarly, peak giveback rules (e.g. stop trading after giving back >5k from a previous X high) can **truncate the right tail** of strategy returns if they are too tight for the natural cycle of spreads. Given that the pilot’s **outer loss objective is far more critical** than maximizing profit, the present 5k/10k thresholds are acceptable as **prudential stops**, but they should be recognized as leaving **non‑trivial upside on the table** if the strategy exhibits large swings.
+
+---
+
+## 11. Criteria for “No‑Trade”
+
+A candidate integer futures spread should be rejected for live pilot trading if **any** of the following holds at minimum contract size:
+
+1. **Funding inequality fails at entry**: For the position at minimum lot, with no offset in IM and with reasonable L_stress (e.g. 2×IM or historical 99% tail),  
+   `X(current) - L_stress - B_uncertainty < -15,000`.
+2. **Required IM exceeds 30% of 30k**, or >9k RUB under worst‑case (no‑offset) margin.
+3. **Empirical or NCC‑implied 1‑day tail loss exceeds 50% of the remaining budget between X and –15k.**
+4. **Historical liquidity** (volume, bid/ask) indicates that exiting 1 spread within 90 minutes would have required price concessions exceeding the `B_uncertainty` plus planned liquidation costs, in more than a small number of recent stress episodes.
+5. **Broker configuration uncertainty**: if you cannot confirm that calendar spread instruments are tradable under your tariff and that margin treatment is at least as favourable as our conservative assumption, treat as no‑trade until verified.
+6. **Account‑wide recourse controls not in place**: if you cannot obtain or configure per‑sleeve margin and liquidation controls preventing LQDT being silently pledged beyond the planned 15k cap, the shared‑account pilot is effectively unbounded in economic recourse and must not advance to live trading.
+
+---
+
+## 12. Recommendations and Next Steps
+
+### Immediate (Pre‑Stage‑2 Research)
+
+1. **Parameterize the X inequality concretely** for 1‑contract MXI, RTSM, and IMOEXF spreads:
+   - Extract current IM values for near and far contracts from MOEX or broker XML.[1][42][78]
+   - Compute IM_sum(no offset) per spread.
+   - Use NCC’s 99% VAR basis to set `L_stress = 2×IM_sum` (as provisional) and choose `B_uncertainty ≥ 2k`.
+   - Verify the inequality for X = 0, and then under a hypothetical –3k and –6k P&L history.
+
+2. **Reject standard RTS and Si calendar spreads for this pilot**:
+   - Standard RTS requires per‑leg IM in the 20–25k RUB range; spreads require ~50k IM under no‑offset, violating the 30k envelope.[2][7][27]
+   - Si/USDRUBF spreads at 25k RUB IM leave too little headroom relative to a historically plausible 10k drawdown.
+
+3. **Define a one‑spread‑only rule for Stage 1**:
+   - Allow only one MXI/RTSM/IMOEXF calendar spread open at any time.
+   - No partial fills (if technical limitations prevent atomic spreads, treat as no‑trade until automation is ready).
+
+4. **Clarify broker margin/loss recourse on the shared account**:
+   - Obtain and read VTB and BCS risk documentation detailing when and how they can use third‑party collateral, including LQDT, to cover futures margin deficits.[35][37][40][46]
+   - If they cannot logically separate the 30k pilot sleeve, raise the required internal buffers or reconsider the shared‑account design.
+
+### Short‑Term (Within the Pilot’s First 90 Days)
+
+5. **Collect empirical intraday and daily spread returns** for candidate calendar spreads using MOEX archives and ISS API (even with 15‑minute delay).[66][75][57][51]
+   - Estimate empirical 95th and 99th percentile 1‑day spread moves.
+   - Re‑calibrate L_stress away from the crude 2×IM rule once sufficient data accumulate.
+
+6. **Implement an internal “liquidity log”**:
+   - For each day, record best bid/ask size and spread for the live or virtual spread around entry and at hypothetical exit times.
+   - Use this to refine B_uncertainty for each contract.
+
+7. **Explicitly track broker margin‑call events and close shaves**:
+   - If during the pilot IM + VM ever come within, say, 20% of the projected hard ceiling (30k or broker‑defined maintenance thresholds), treat this as a governance event and re‑run the X inequality stress.
+
+### Longer‑Term and Capacity Considerations (10–20m Scale)
+
+At future scale (10–20m allocated), the tail dynamics and funding concentration change qualitatively:
+
+- Absolute IM per spread scales linearly; 1 mini MXI spread is negligible, but **50 or 100 contracts** accumulate IM and stress loss comparable to millions of RUB.
+- The **FSB’s guidance on margin‑call liquidity preparedness** stresses that non‑bank participants must plan for high‑frequency, large collateral calls and ensure diversified liquidity sources in stress scenarios.[66] A concentrated 10–20m strategy in correlated MOEX index spreads is inherently exposed to systemic Russian equity shocks.
+
+Before promoting the strategy, define **promotion gates** that require:
+
+1. **Statistically validated edge and risk estimates** (per R09), including out‑of‑sample periods containing March‑2022‑type events where possible.
+2. **Documented capacity tests**: show that the spread order book can absorb 10–20m equivalent notional in your time horizons without excessive price impact.
+3. **Robust multi‑day liquidity and IM backtests** under realistic NCC parameter schedules.
+
+Pilot profitability alone—even at high Sharpe—cannot establish such capacity or tail safety.
+
+---
+
+## 13. References
+
+[1] Derivatives Market. Risk Parameters. https://www.moex.com/en/derivatives/riskparams.aspx  
+[2] Initial Margin info for Futures. https://www.moex.com/en/derivatives/go.aspx  
+[3] Derivatives market. Initial Margin Calculation. https://www.moex.com/en/documents/1023  
+[4] The Principles and Parameters of Initial Margin Calculation. https://www.moex.com/en/documents/2018  
+[5] Initial margin benefits for spreads. https://www.nationalclearingcentre.com/catalog/530902  
+[6] Календарный спред на срочном рынке Московской Биржи. https://www.moex.com/ru/derivatives/spreads.aspx  
+[7] Межмесячные и межконтрактные спреды. https://www.moex.com/ru/derivatives/parameters.aspx  
+[8] Изменение параметров риска по срочному рынку. https://www.nationalclearingcentre.com/news  
+[9] MOEX ISS API Developer Manual v1.4. https://www.moex.com/a2193  
+[10] Risk parameters change on Derivatives markets from June 25, 2026. https://www.nationalclearingcentre.com/newsitem/June-25-2026  
+[11] Risk parameters change on Derivatives and FX markets from October 13, 2026. https://www.nationalclearingcentre.com/newsitem/Oct-13-2026  
+[12] Static Risk Parameters. https://www.nationalclearingcentre.com/catalog/5309  
+[13] RTS Standard Index Futures contract specification. https://www.moex.com/en/contract.aspx?code=RTS-12.26  
+[14] USDRUBF futures contract specification. https://www.moex.com/en/contract.aspx?code=USDRUBF  
+[15] USDRUBF guarantee amount example. https://www.tbank.ru/investments/futures/USDRUBF  
+[16] USDRUBF guarantee on smart-lab. https://smart-lab.ru/q/futures/USDRUBF  
+[17] RTS‑12.26 margin on smart-lab. https://smart-lab.ru/q/futures/RIz6/  
+[18] VBZ6 futures guarantee amount (Tinkoff). https://www.tbank.ru/investments/futures/VBZ6  
+[19] VBZ6 and VBM6 margin examples. https://invest-ira.ru/futures/vbz6-vbm6  
+[20] Изменение параметра NCl для природного газа. https://www.moex.com/ru/news/8303  
+[21] Futures inter-month spread halfnetting rule. https://www.moex.com/ru/derivatives/parameters.aspx?type=F  
+[22] Synthetic matching of calendar spreads. https://www.moex.com/ru/derivatives/spreads/synthetic.aspx  
+[23] RTSM-3.27 contract specification. https://www.moex.com/en/contract.aspx?code=RTSM-3.27  
+[24] Russian Volatility Index (RVI). https://www.moex.com/en/index/RVI  
+[25] SPECTRA update – calendar_spread_margin_type. https://fs.moex.com/files/6523  
+[26] NCC documentation on ics_margin_type. https://www.nationalclearingcentre.com/files/ics_margin_type.pdf  
+[27] RTS-9.26 contract specification. https://www.moex.com/en/contract.aspx?code=RTS-9.26  
+[28] Copper futures (Co) specification. https://www.moex.com/en/contract.aspx?code=Co-12.26  
+[29] MOEX Russia Index Futures, MIX and MXI. https://www.moex.com/en/contract.aspx?code=MIX-12.26  
+[30] Calendar spreads list (MIX, MXI, MOEX). https://www.moex.com/en/derivatives/spreads.aspx  
+[31] The procedure for calculation of the Variation Margin on the FORTS Derivatives Market. https://www.moex.com/en/documents/2826  
+[32] RTS Index Futures (RTS-12.26) limits. https://www.moex.com/en/contract.aspx?code=RTS-12.26  
+[33] RTS Index Futures (RTS-9.26) limits. https://www.moex.com/en/contract.aspx?code=RTS-9.26  
+[34] RTSM-3.27 Initial Margin Long. https://www.moex.com/en/contract.aspx?code=RTSM-3.27  
+[35] BCS risk and margin FAQ. https://bcs.ru/faq/category/8/57  
+[36] VTB margin lending overview. https://broker.vtb.ru/margin/  
+[37] BCS regulatory documents. https://bcs.ru/rules  
+[38] Russian Trading System (RTS Index) – sanctions period. https://en.wikipedia.org/wiki/RTS_Index  
+[39] RTS futures price and margin snapshot (Smart-lab). https://smart-lab.ru/q/futures/RIU6/  
+[40] Russian markets review – March 2022 drop. https://www.rbk.ru/finances/2022  
+[41] Systematic Trading – Amazon listing. https://www.amazon.com/Systematic-Trading-designing-trading-investing-ebook/dp/B0H4JFVFZ7  
+[42] MXI-12.26 margin and tick value. https://www.moex.com/en/contract.aspx?code=MXI-12.26  
+[43] MXI concentration limits. https://www.nationalclearingcentre.com/catalog/5701/66109  
+[44] MXI-12.26 current price and margin (Porti). https://porti.ru/futures/MXI-12.26  
+[45] Summary of Carver position sizing. https://aligrithm.com/the-traders-real-job-control-losses-not-predict-everything/  
+[46] IMOEXF contract specification. https://www.moex.com/en/contract.aspx?code=IMOEXF  
+[47] MOEX ISS API overview. https://iss.moex.com/iss/reference  
+[48] MOEX historical data archive. https://www.moex.com/a2863  
+[49] MOEX spreads archive – RTSM-6.26-9.26. https://www.moex.com/en/derivatives/spreads/archive-spreads.aspx?code=RTSM-6.26-9.26  
+[50] Calendar spread parameters – RTSM-9.24-12.24. https://www.moex.com/en/derivatives/spreads/spread-info.aspx?code=RTSM-9.24-12.24  
+[51] Calendar spread parameters – RTSM-6.25-9.25. https://www.moex.com/en/derivatives/spreads/spread-info.aspx?code=RTSM-6.25-9.25  
+[52] Archive of spread values – MOEX spreads. https://www.moex.com/en/derivatives/spreads/archive-spreads.aspx  
+[53] BCS tariffs (futures). https://bcs.ru/tariffs  
+[54] Comparison of broker futures commissions. https://www.sravni.ru/invest/brokerskoe-obsluzhivanie/broker/bks-mir-investiciy/  
+[55] MOEX commission rates (commodity contracts). https://www.moex.com/en/tariffs  
+[56] VTB broker tariffs. https://broker.vtb.ru/tariffs  
+[57] LQDT ETF (БПИФ Ликвидность УК ВИМ). https://www.moex.com/ru/issue.aspx?board=TQTF&code=LQDT  
+[58] LQDT fund card and benchmark. https://vimfunds.ru/funds/lqdt  
+[59] RUONIA description – Bank of Russia. https://www.cbr.ru/hd_base/ruonia/  
+[60] LQDT on investing.com. https://www.investing.com/etfs/lqdt-etf  
+[61] LQDT discussion (Smart-lab). https://smart-lab.ru/forum/topic/LQDT  
+[62] Moscow Exchange Fees – Futures. https://www.moex.com/en/derivatives/fees.aspx  
+[63] VTB futures commission examples. https://finuslugi.ru/navigator/investirovat/stat_sberbank_vs_vtb_sravnenie_tarifov_brokerskogo_obsluzhivaniya  
+[64] Smart-lab post on VTB’s zero futures commissions. https://smart-lab.ru/blog/1289613.php  
+[65] BCS futures commission discussion. https://smart-lab.ru/blog/1127921.php  
+[66] Enhancing the liquidity preparedness of non-bank market participants for margin and collateral calls. Financial Stability Board. https://www.fsb.org/uploads/P101224-1.pdf  
+[67] What is a margin call? https://www.cbr.ru/finmkts/faq/margincall/  
+[68] MOEX press release – indicative risk rates and IM model. https://www.moex.com/en/n2199  
+[69] MXI and MOEX Intermonth Spreads list. https://www.moex.com/en/derivatives/parameters.aspx?type=F&code=MXI  
+[70] MXI maximum trade and concentration limits. https://www.moex.com/en/derivatives/parameters.aspx?type=F&code=MXI-12.26

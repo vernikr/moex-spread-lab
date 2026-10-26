@@ -1,0 +1,441 @@
+# R07 — Pilot risk, funding liquidity, stress and sizing
+
+**Research date / evidence cutoff:** 2026-10-22. The pack was prepared 2026-10-07; no later material events are assumed.
+**Inputs actually read:** No R01/R02/R04/R05/R06/R09 reports, no R08 coordination, no books/transcripts/exports, no account statements, no broker confirmations, no repository. All project-specific conclusions below are therefore **conditional** on absent dependencies. Public primary and secondary sources are cited; hypothetical numbers are labelled as hypothetical and are not verified account parameters or test results.
+
+---
+
+## 1. Conclusions first
+
+1. **The delegated defaults are directionally coherent but not proven feasible as written.** The 30,000 RUB all-in allocation can support a *single mini-contract spread* only if initial margin, a stressed adverse move over the 3–90 minute reaction window, exit costs and variation-margin calls all fit inside 30,000 with a positive uncertainty buffer. For many full-size MOEX futures spreads the minimum lot’s margin alone approaches or exceeds 30,000, making the pilot **no-trade by arithmetic**, not by judgment.
+
+2. **The 5,000 warning and 10,000 action triggers are not conservative for a 30,000 account if they are measured on the excess curve before exit costs and variation margin.** MOEX/NCC margin is SPAN-like and can rise; VTB can close positions at or before the end of the next trading day; forced liquidation may occur at wide or gapping prices. The 5,000 distance from action to the 15,000 outer boundary is **not a demonstrated reserve** for a joint price/margin/liquidity shock.
+
+3. **The 15,000 lifetime gross additional-funding cap is a hard authority limit, not a liquidity solution.** It raises gross contributed funding to at most 45,000, but the additional 15,000 is only 50% of the original envelope and may be consumed by a single gap plus exit costs before any approval or transfer arrives. Emergency funding is not assumed timely or authorized at entry; the 45,000 ceiling is not a broker-recourse or notional limit.
+
+4. **The 50%-of-initial-funds starting-margin ceiling and the 5,000 stress-buffer heuristic are plausible starting hypotheses but should not be retained uncalibrated.** For a tiny integer-lot account, a **tighter** starting-margin ceiling (e.g. 20–30% of the 30,000 envelope) and a **larger** stress buffer are likely necessary to keep the 10,000 action level from being hit by normal variation-margin noise. The correct buffer is a joint stress result, not a fixed 5,000.
+
+5. **No-trade is a valid outcome for any spread whose minimum lot does not pass the entry inequality with zero emergency funding and a separately viable cash/margin path.** The pilot should not “scale down” below one spread by assuming fractional contracts or by treating core LQDT collateral as test money.
+
+6. **A 90-day review must not force profitable long-held ideas to exit mechanically.** The review is a limit-review and continuation gate, not an expiration clock. The peak-giveback rule has a real opportunity cost and should be tested against a continuation rule with no reset.
+
+7. **Carver’s framework is useful for discipline but its illustrative parameters are not transferable to a 30,000 RUB account.** The book’s worked examples assume large capital, minimum position blocks and instruments where one contract is a small fraction of the account. A tiny account is dominated by integer rounding, minimum lots and fixed costs; volatility targeting cannot manufacture a feasible position when one contract is already too large.
+
+---
+
+## 2. Evidence base and scope limitations
+
+### 2.1 What was actually verified
+
+| Claim | Source and date | Supporting excerpt / location |
+|---|---|---|
+| MOEX derivatives margin is calculated by a portfolio, SPAN-like scenario methodology; calendar and inter-contract spread offsets exist. | CFTC filing by MOEX/NCC, “Evaluation by the NCC of the risk for non-fulfillment of obligations” (document dated 2017), pp. 7–8, 26 | “The margin requirement is calculated using a scenario analysis methodology (SPAN-like methodology).” “Initial margin (IM) benefits apply to inter-contract and inter-month spreads contracts.” |
+| NCC margin calls must be satisfied **no later than 45 minutes before the next intraday or evening clearing session**; if not, MOEX suspends contract execution, cancels orders and **mandatorily closes positions**. | Same CFTC filing, p. 26 | “Clearing Members need to satisfy Margin Calls not later than 45 (forty five) minutes prior to the beginning of the next intraday or evening clearing session… the NCC mandatory closes positions under the Settlement Code on which the unfulfilled Margin Call is registered.” |
+| VTB’s regulation distinguishes a margin-adequacy ratio (УДС/КДС) and provides for forced closure of client positions when the ratio breaches the bank’s threshold; closure may occur by the end of the next trading session, and the bank may cancel orders that increase the uncovered position. | VTB “Регламент оказания услуг на финансовых рынках”, clauses 28.5–28.6, 29.1 (document dated 24.07.2023) | “Если НПР2 Клиента… станет меньше нуля (УДС <0)… Банк совершает действия по закрытию позиций Клиента”; “открытые позиции Клиента по срочным инструментам закрываются Банком до окончания Торговой сессии следующего торгового дня” |
+| The full RTS index futures contract has a large minimum margin relative to the pilot; the mini RTSM contract is 10× smaller in notional and collateral. | MOEX RTSM-3.27 contract page (data as of 2026-10-10); MOEX launch notice 22.07.2021; utilix calculator showing ~28,000 RUB for full RTS | RTSM-3.27: “Initial Margin Long at the First Level of Concentration Limit, RUB/Contract 2,474.17; Based on Client’s Level of Risk 5,684.45”. Full RTS contract example: “RTS RTM6 … 28 000 ₽”. “contract’s volume ten times less than that of RTS Index futures contract”. |
+| RTS index suffered extreme intraday gaps in 2022; MOEX halted trading repeatedly and the RTS fell roughly 49% intraday on 2022-02-24 before partial recovery. | Chinese financial press reports dated 2022-02-24, citing MOEX/RTS data | “俄罗斯RTS指数和MOEX指数盘中最低分别跌49.3%和45.5%” (“RTS and MOEX intraday lows fell 49.3% and 45.5% respectively”); trading was suspended and resumed at lower levels. |
+| MOEX futures price limits are **not** a simple fixed ±40% guarantee for all contracts; the price band is calculated from risk parameters and can be widened, and the ±40% limit in the trading rules concerns securities in the main mode, not a universal derivatives circuit-breaker. | MOEX trading rules excerpt (document 43139), clauses 5.3–5.9; MOEX/NCC “Settlement price and limits” | “Лимит отклонения цены… в первый день их обращения… ±40%” applies to securities in the main trading mode. For futures, “L – price limit, which is calculated as basic initial margin divided by 2… Administrator will increase trading limits by 1.5 times”. |
+| RTSM’s minimum tick is also its minimum spread in practice, making market orders and forced exits relatively costly. | smart-lab user reports and MOEX RTSM page; secondary, dated 2023 | “минимальный шаг цены, он же минимальный спред в RTS mini в 5 раз больше чем у большого RTS”. This is a liquidity observation, not an official execution guarantee. |
+| Carver’s worked examples assume large capital and minimum position blocks; tiny-account rounding is material. | Secondary summaries of Robert Carver, *Systematic Trading* (2015), chapters 9–10 | Example: £100K capital, bets of £1–£10 per point, “any position should be a minimum of four instrument blocks”. Position sizing is volatility-scaled and then rounded to integer contracts. |
+
+### 2.2 What remains unverified or conditional
+
+- **R01 (broker rules, KPUR, collateral, liquidation):** not available. VTB’s general regulation was read, but the client-specific KPUR recognition, exact УДС thresholds, intraday liquidation timing, and whether core LQDT collateral is eligible for futures margin are **unverified**. The analysis below therefore treats VTB’s public rules as indicative, not as confirmed account parameters.
+- **R02 (full costs):** not available. Commissions, exchange fees, clearing fees, and the cost of forced liquidation are not quantified; only public fee hints (e.g. registration fee 0.96 RUB/contract on RTSM) are visible. All cost figures below are hypothetical.
+- **R04 (data fields, intervals, history):** not available. The finest defensible free timeframe, historical coverage and data quality are unknown. Intraday tail estimates below are illustrative and are **not** claimed to be calibrated test results.
+- **R05 (LQDT benchmark and tax):** not available. The counterfactual B(t) and tax sensitivity are not constructed here; the X-curve examples are therefore abstract.
+- **R06 (contract universe and specifications):** not available. Only RTS/RTSM examples are used because they are publicly visible; no claim is made that RTS is the best or only candidate.
+- **R08 (delayed execution and virtual portfolio):** not available. The 3–90 minute reaction window is taken from the brief; its actual fill and slippage distribution is unknown.
+- **R09 (validation and multiple testing):** not available. Any sizing rule proposed here is a **test candidate**, not a validated strategy.
+
+**Important:** The absence of these reports means the report cannot certify “actual trading feasibility.” It can only test the internal arithmetic of the delegated defaults against public margin, liquidation and gap mechanics, and specify what must be measured before live trading.
+
+---
+
+## 3. Risk and funding state separation
+
+The brief requires separating concepts that are often conflated. The table below defines the state variables used in this report and the budget each consumes.
+
+| Concept | Definition in this report | What it consumes / does **not** consume | Measurement issue |
+|---|---|---|---|
+| **Relative economic loss** | Decrease in X = V − B, where V is strategy-enabled wealth and B is the matched no-pilot LQDT counterfactual with identical true external flows | Consumes the lifetime 10,000/15,000 authority budgets; does **not** consume broker collateral unless realized | B must mirror external flows but **not** pilot-induced core sales; core sales are not external flows and sale proceeds are not the economic loss. |
+| **Absolute P&L** | Change in the market value of the pilot sleeve, including fees and funding | Can be positive while X is negative if B outperforms; **not** the trigger variable by itself | Must use synchronized marks and consistent estimated exit costs; do not double-count VM if already in X. |
+| **Peak drawdown** | D = H − X, where H = max(0, past X) | Drives the 5,000 warning and 10,000 action triggers | H must not be reset on review, funding, restart or withdrawal. |
+| **Cash / variation-margin path** | Daily and intraday cash calls from NCC/VTB; negative VM debits; positive VM credits | Consumes **available liquidity**, not necessarily X; a negative VM can force funding even if X is unchanged | VM timing is not the same as economic loss timing; a temporary VM debit can trigger a broker call before the strategy exit is complete. |
+| **Broker margin / collateral** | Initial margin (IM), minimum margin, УДС/КДС, collateral eligibility and haircuts | Consumes **broker-recognized collateral**, which may include or exclude core LQDT | IM can rise; offsetting spread margin can be removed; core collateral may be broker-recognized without being “test funds.” |
+| **Gross exposure** | Sum of absolute notional or margin of all legs, before netting | **Not** a loss limit; the 45,000 gross funding cap is not a gross-notional cap | A market-neutral spread can have large gross notional and small net risk; a single-leg disruption can make gross exposure dangerous. |
+| **Temporary single-leg risk** | The interval between filling one leg and the other, or after one leg is closed/liquidated | Consumes margin and price risk **without** spread offset | This is a distinct risk from the intended spread; it is especially relevant at entry and at forced liquidation. |
+| **Account-wide recourse** | Broker’s right to use other account assets, including core LQDT, to satisfy pilot obligations | Can convert a pilot loss into a core-portfolio event; counts as an **incident** if broker-initiated and unapproved | Internal limits do not ring-fence the account; the 45,000 gross contributed funding cap is not a broker-recourse limit. |
+
+**Key implication:** The 30,000 envelope is not a single fungible “risk budget.” It must simultaneously cover IM, a stressed VM path, exit costs, and a positive uncertainty buffer. The 10,000 X-action trigger and the 15,000 X-boundary are **economic-loss** limits; they do not by themselves prevent a **liquidity** event in which the broker closes positions before X reaches those levels.
+
+---
+
+## 4. Worked hypothetical ledgers
+
+All amounts below are **hypothetical** and are used only to expose arithmetic. They are not verified margin parameters, historical test results, or recommendations.
+
+### 4.1 Ledger A — Single RTSM spread, no gap, normal exit
+
+Assumptions (hypothetical, chosen to be plausible but **not** validated):
+- Account envelope: 30,000 RUB.
+- Instrument: one RTSM calendar spread (long one expiry, short another).
+- Initial margin with spread offset: **8,000 RUB** (hypothetical; the public RTSM first-level IM is ~2,474 RUB per contract, but spread margin depends on the offset and the client risk level; 8,000 is used to stress the arithmetic).
+- Adverse spread move over the holding period: **−2,000 RUB** before exit.
+- Exit costs (commissions + slippage on two legs): **1,000 RUB**.
+- No emergency funding, no core collateral use.
+
+| Line | Amount (RUB) | Running cash / margin | X (relative to B) | D = H − X | Status |
+|---|---:|---:|---:|---:|---|
+| Start | 30,000 | 30,000 cash; 8,000 IM blocked; 22,000 free | 0 | 0 | OK |
+| Adverse move (MTM) | −2,000 | 20,000 free before exit costs; IM still 8,000 | −2,000 | 2,000 | Below 5,000 warning |
+| Exit costs | −1,000 | 19,000 free after costs | −3,000 | 3,000 | Below warning |
+| Flat | — | 27,000 cash | −3,000 | 3,000 | No action trigger; underperformance vs LQDT = 3,000 |
+
+**Conclusion:** A normal single-spread loss can be absorbed, but the 5,000 warning is only 2,000 RUB away after a modest 2,000 RUB adverse move plus 1,000 RUB exit costs. If the spread move were −4,000 instead, D would be 5,000 and the warning would trigger before any funding decision.
+
+### 4.2 Ledger B — Gap through the 10,000 action level with delayed exit
+
+Hypothetical assumptions:
+- Same 8,000 RUB IM.
+- A gap causes a **−9,000 RUB** spread MTM loss.
+- Exit is delayed by 30 minutes; during the delay the spread moves a further **−2,000 RUB**.
+- Exit costs: **1,500 RUB** (wider spread, forced selling).
+- No additional funding has arrived.
+
+| Line | Amount (RUB) | Running cash / margin | X | D | Status |
+|---|---:|---:|---:|---:|---|
+| Start | 30,000 | 8,000 IM; 22,000 free | 0 | 0 | OK |
+| Gap MTM | −9,000 | 13,000 free | −9,000 | 9,000 | Below 10,000 action but close |
+| Further adverse move during delay | −2,000 | 11,000 free | −11,000 | 11,000 | **10,000 action breached**; entries must be suspended and orderly exit begun |
+| Exit costs | −1,500 | 9,500 free | −12,500 | 12,500 | Still above −15,000 outer boundary, but buffer is only 2,500 |
+
+**Conclusion:** A gap plus a 30-minute delay plus exit costs moves X from −9,000 to −12,500. The 5,000 distance from the 10,000 action to the 15,000 boundary is reduced to **2,500** before any further adverse move. This is the core falsification of the “5,000 is enough” assumption: it is not a reserve for joint price/liquidity shocks.
+
+### 4.3 Ledger C — Gap through the 15,000 outer boundary with broker liquidation
+
+Hypothetical assumptions:
+- Same 8,000 RUB IM.
+- A severe gap causes a **−14,000 RUB** MTM loss.
+- The broker’s УДС falls below its threshold; VTB begins forced closure. Because the exit is forced, slippage is **3,000 RUB** rather than 1,500.
+- No additional funding approved or arrived.
+
+| Line | Amount (RUB) | Running cash / margin | X | D | Status |
+|---|---:|---:|---:|---:|---|
+| Start | 30,000 | 8,000 IM; 22,000 free | 0 | 0 | OK |
+| Severe gap MTM | −14,000 | 8,000 free | −14,000 | 14,000 | Below −15,000, but broker margin may already be breached |
+| Broker liquidation slippage | −3,000 | 5,000 free (before any debit) | −17,000 | 17,000 | **Outer boundary breached**; loss exceeds 15,000 |
+| Broker recourse to core collateral (unapproved) | Incident | — | Potentially larger than X | — | **Account-wide spillover**; counts toward the 45,000 gross cap as an incident |
+
+**Conclusion:** A single severe gap plus forced-liquidation slippage can breach the 15,000 boundary **before** any orderly exit is possible. The 15,000 boundary is therefore not a guaranteed maximum realized loss; it is an authority limit that can be overshot by execution and liquidation mechanics.
+
+### 4.4 Ledger D — Funding timing failure
+
+Hypothetical:
+- X reaches −10,000 (action trigger). The user approves 10,000 additional funding, but the transfer arrives after the next clearing session.
+- The broker’s margin call deadline is 45 minutes before clearing; the transfer misses the deadline.
+- Broker closes the position at a further loss.
+
+| Time | Event | Cash / margin | X | Funding consumed | Status |
+|---|---|---|---:|---:|---|
+| T0 | X = −10,000; entries suspended | 20,000 cash | −10,000 | 0 | Action trigger |
+| T0 + 10 min | User approves 10,000, initiates transfer | 20,000 cash | −10,000 | 0 committed, 0 arrived | Approval ≠ availability |
+| T0 + 45 min | Broker margin call deadline passes; transfer not credited | 20,000 cash; УДС below threshold | −10,000 | 0 arrived | **Liquidity event** |
+| T0 + 60 min | Broker closes at additional −3,000 slippage | 17,000 cash | −13,000 | 0 arrived | Actual loss larger than X at approval time |
+
+**Conclusion:** Approval and arrival are separate. The 15,000 lifetime cap is not a promise that 15,000 can be deployed in time to prevent liquidation. The entry test must assume **zero emergency funding**; the funding cap is a contingent authority, not a liquidity backstop.
+
+---
+
+## 5. Evaluation of each delegated default
+
+### 5.1 Initial 30,000 RUB all-in allocation
+
+**Assessment: potentially too small for many integer spreads; feasible only for a narrowly selected subset with strict conditions.**
+
+The pilot must hold at least one spread. For a full-size RTS futures spread, the public example IM for a single RTS contract is around 28,000 RUB. Even if calendar-spread offsetting reduces the combined IM, the remaining IM plus a stressed VM path plus exit costs can exhaust 30,000 quickly. For RTSM, the first-level IM is ~2,474 RUB per contract and the client-risk-level IM is ~5,684 RUB per contract; a two-leg spread with a conservative offset could plausibly require 8,000–12,000 RUB, leaving 18,000–22,000 for VM and buffer. That is tight but not impossible.
+
+**Retained/revised:** Retain 30,000 as the **maximum gross contributed funding before emergency funding**, but add an entry filter: **the minimum-lot spread must require initial margin ≤ 30% of 30,000 (≤9,000 RUB)** and must pass the stressed-loss inequality in §6 with a positive buffer. If the minimum spread cannot satisfy this, **no-trade**.
+
+### 5.2 15,000 lifetime gross additional-funding cap (45,000 gross total)
+
+**Assessment: internally coherent as an authority cap, but not a feasible liquidity solution for a gap.**
+
+The cap is a limit on **gross contributions**, not a loss limit and not a broker-recourse limit. It provides at most a 1.5× increase over the initial envelope. Ledger C shows that a severe gap plus forced-liquidation costs can produce a loss larger than 15,000 even without additional funding. Additional funding can **avert disorderly liquidation** only if it arrives before the broker’s deadline; the cap cannot guarantee that.
+
+**Retained/revised:** Retain the 15,000 lifetime cap as a hard authority limit, but add two rules:
+1. **No entry may rely on the 15,000 to pass the entry inequality.** The entry must pass with zero emergency funding.
+2. **Any use of additional funding must be modeled with an arrival-time scenario.** If the user cannot demonstrate a credible path for funds to arrive before the broker’s 45-minute deadline in the relevant clearing session, the funding cap is not a viable rescue mechanism for that position.
+
+The 45,000 gross total is **not** a notional, equity or loss cap. It must not be treated as “money available for the strategy.”
+
+### 5.3 5,000 warning
+
+**Assessment: plausible as an early-warning line, but likely too tight for a 30,000 account if measured before exit costs and VM noise.**
+
+If the account holds a spread with 8,000–10,000 RUB IM and a normal daily VM range of ±2,000–3,000 RUB, a 5,000 X-drawdown warning can be reached by a combination of an adverse MTM move and normal exit costs without any tail event. That is not necessarily wrong — early warning is desirable — but it means the warning will be noisy and may trigger reassessment frequently.
+
+**Retained/revised:** Retain 5,000 as a **soft warning/reassessment trigger**, but do not treat it as a risk limit. Pair it with a **stressed buffer test** (§6) that requires a larger distance between the entry point and the 10,000 action level than 5,000 if the instrument’s 90-minute adverse move distribution is wide.
+
+### 5.4 10,000 drawdown / cumulative-shortfall action
+
+**Assessment: directionally correct, but the trigger definition needs tightening.**
+
+The brief defines D = H − X and a cumulative LQDT shortfall of 10,000. Both are economic-loss measures. The danger is that the **action** (suspend entries, reduce risk) may occur after a broker margin call has already occurred, because broker margin and X move on different clocks. Ledger B shows X at −11,000 after a gap and delay; if the broker’s УДС has already breached, the broker may act before the user’s orderly reduction.
+
+**Retained/revised:** Retain 10,000 as the **economic action trigger**, but add a **liquidity pre-trigger**: if the broker’s УДС or free margin falls below a pre-agreed buffer (to be defined with R01), the user must reduce risk **before** the economic trigger, because broker action overrides monetary triggers. The action must be “suspend entries and begin orderly reduction,” not “wait for X to reach 10,000.”
+
+### 5.5 15,000 outer LQDT shortfall boundary
+
+**Assessment: a reasonable outer authority boundary, but not a proven maximum loss.**
+
+The boundary is a **breach**, not a permitted overshoot. Ledger C shows that a gap plus forced liquidation can produce a realized loss above 15,000. The boundary therefore should be treated as an **ex-ante stop on authority**, not an ex-post guarantee.
+
+**Retained/revised:** Retain 15,000 as the outer boundary, but state explicitly that **realized loss can exceed it** due to gaps, forced liquidation and slippage. The review must record the excess as a breach and an incident if broker-initiated core use occurs.
+
+### 5.6 5,000 gap between action and outer boundary
+
+**Assessment: not proved sufficient. This is the most fragile numerical default.**
+
+The 5,000 gap is less than the hypothetical exit-cost plus delay slippage in Ledger B (3,500 RUB) and far less than the forced-liquidation slippage in Ledger C (3,000 RUB on top of a 14,000 RUB gap). A joint price/margin/liquidity shock can consume the entire 5,000 gap **before** the user can reduce risk.
+
+**Retained/revised:** **Do not retain 5,000 as a validated reserve.** Replace it with a **calculated stress gap**:
+\[
+\text{Required distance from action to outer boundary} = \text{stressed 90-min adverse move} + \text{exit costs} + \text{positive uncertainty buffer}.
+\]
+The 5,000 heuristic may be used only as a **lower bound** if the calculated stress gap is smaller; if the calculated gap is larger, the position must be smaller or rejected.
+
+### 5.7 50%-of-initial-funds starting-margin ceiling and 5,000 stress buffer
+
+**Assessment: both should be tested, not assumed. The 50% ceiling is likely too loose for a tiny account; the 5,000 buffer is likely too small.**
+
+A 50% starting-margin ceiling on 30,000 permits 15,000 of IM, leaving only 15,000 for VM and exit costs. For a spread with a 90-minute adverse move of 5,000–10,000, that is not a robust buffer. The 5,000 stress buffer is smaller than the hypothetical gap-plus-cost scenarios above.
+
+**Retained/revised:** Treat both as **test candidates**:
+- **Starting margin ceiling:** test 20%, 25% and 30% of the 30,000 envelope (i.e. 6,000, 7,500 and 9,000 RUB). The 50% ceiling should not be approved for live trading unless a specific spread’s stress test proves that 15,000 of free equity is sufficient after the stress loss and exit costs.
+- **Stress buffer:** calculate it from the joint stress scenario; do not fix it at 5,000. The buffer must be positive **after** stressed loss and exit costs, and must be large enough to cover the uncertainty in the stress estimate.
+
+---
+
+## 6. The entry/continuation inequality
+
+At entry and at every reliable review, the following must hold:
+
+\[
+X - L_{\text{stress}} - C_{\text{exit}} - U \ge -15{,}000
+\]
+
+where:
+- \(X\) is the current excess result (V − B), using synchronized marks.
+- \(L_{\text{stress}}\) is the **stressed incremental loss** over the delay/exit window, not a best-case or independent-additive sum. It should be a joint scenario: price gap + margin increase + liquidity deterioration + single-leg risk.
+- \(C_{\text{exit}}\) is the estimated cost of exiting the spread, including commissions, bid–ask spread and slippage. **Do not double-count** exit costs if they are already embedded in X; choose one convention and apply it consistently.
+- \(U\) is a **positive uncertainty buffer** for model error, parameter error and execution uncertainty. \(U\) must be strictly positive; it cannot be set to zero by assumption.
+
+A **tighter** continuation rule is recommended:
+
+\[
+X - L_{\text{stress}} - C_{\text{exit}} - U \ge -10{,}000
+\]
+
+because the 10,000 level is the action trigger. If the stressed inequality only passes at −14,000, the position is one gap away from breaching the outer boundary and should be reduced or not entered.
+
+**Feasible entry condition with zero emergency funding:**
+
+\[
+\text{Available free equity after entry IM} \ge L_{\text{stress}} + C_{\text{exit}} + U + \text{broker margin-call buffer}
+\]
+
+where the broker margin-call buffer is the additional collateral needed to keep УДС above the broker’s threshold under the stress scenario. If this inequality fails with zero emergency funding, the trade is **rejected**, even if the economic X-boundary inequality would pass with a hypothetical future top-up.
+
+**Integer-lot constraint:**
+
+\[
+N = \left\lfloor \frac{\text{risk budget per idea}}{\text{stressed loss per minimum lot}} \right\rfloor
+\]
+
+If \(N < 1\), **no-trade**. There is no fractional contract. The risk budget per idea must be defined by the user; it is not the entire 30,000. A reasonable starting test candidate is **≤5,000 RUB stressed loss per idea**, but this is a judgment, not a validated limit.
+
+---
+
+## 7. Proposed bounded sizing/risk rules to test
+
+The table below separates **retained** defaults, **revised** proposals and **deferred** items. None of the revisions are approved; they are test candidates requiring R01/R02/R04/R06/R09 inputs and, ultimately, the user’s explicit approval.
+
+| Parameter / rule | Status | Proposed value / test range | Evidence / judgment basis | Live-trading prerequisite |
+|---|---|---|---|---|
+| Initial all-in allocation | Retained with condition | 30,000 RUB maximum gross contributed funding before emergency funding; **entry filter:** minimum-lot spread IM ≤ 30% of 30,000 (≤9,000 RUB) | Arithmetic from RTSM IM and full RTS IM examples; tiny-account rounding | R01 margin confirmation; R02 cost confirmation; R06 universe |
+| Lifetime additional funding | Retained | 15,000 RUB gross, cumulative; 45,000 gross total; **not** a loss/notional/recourse cap | Policy arithmetic; broker liquidation timing shows funding is not guaranteed to arrive | R01 funding/collateral rules; explicit user approval process |
+| Warning | Retained as soft trigger | 5,000 RUB excess-curve drawdown; reassess, do not auto-liquidate | Early warning is cheap; but noisy for tiny accounts | Define “reliable review” with R08 |
+| Action trigger | Retained with clarification | 10,000 RUB drawdown from H or cumulative LQDT shortfall; suspend entries and begin orderly reduction | Economic loss limit; but broker action can precede it | R01 УДС threshold and liquidation timing |
+| Outer boundary | Retained as authority breach | 15,000 RUB; realized loss may exceed due to gaps and forced liquidation | Ledger C demonstrates overshoot | Incident reporting and review |
+| Action-to-boundary gap | **Revised** | Replace fixed 5,000 with calculated stress gap: \(L_{\text{stress}} + C_{\text{exit}} + U\); 5,000 is a lower bound only | Ledger B shows 3,500 RUB consumed by delay + exit; 5,000 is not proved | R04 intraday tail data; R02 exit costs |
+| Starting margin ceiling | **Revised/test** | Test 20%, 25%, 30% of 30,000; reject 50% unless stress test proves 15,000 free equity is sufficient | 50% leaves too little for VM and buffer; tiny account | R01 actual IM; R06 minimum lots |
+| Stress buffer | **Revised/test** | Calculate from joint stress; minimum positive value; test 3,000–8,000 RUB depending on instrument volatility | 5,000 is not grounded; joint shocks are larger | R04 historical 90-min moves; R08 execution delay |
+| Per-idea stressed loss cap | **Deferred/test** | Start with ≤5,000 RUB stressed loss per idea; calibrate after R04/R06 | Judgment; no validated data | R04/R06/R09 |
+| Aggregate concurrent risk | **Deferred** | Cap total stressed loss across concurrent ideas at ≤10,000 RUB (action level) | Correlated trades can compound; integer lots make diversification coarse | R06 correlation data; R09 multiple-testing |
+| Sizing method | **Deferred** | Fixed minimum contracts first; bounded risk-scaled sizing only after probabilities are calibrated; fractional Kelly **not** approved | Carver’s framework requires volatility estimates and integer rounding; tiny account may have N=1 or 0 | R09 calibration; R04 data |
+| Scale-ins | **Deferred** | Only with precommitted aggregate cap; no averaging down after a loss; no reset of H/X | Policy prohibits using emergency funding for averaging down | Define aggregate cap with R01/R02 |
+| Emergency funding use | Retained | Only to avert disorderly liquidation/complete de-risking, never fresh exposure; separate approval AND arrival-time confirmation | Funding approval is not arrival; Ledger D | R01 broker deadline; user process |
+| High-risk research profile | **Not applicable** | Cannot enlarge this pilot’s authority | Policy | — |
+
+---
+
+## 8. Joint stress scenarios to test
+
+The pilot should not rely on additive independent best cases. The following joint scenarios should be run for every candidate spread **before entry** and at every review. All numbers are hypothetical stress magnitudes pending R04 data.
+
+| Scenario | Price / spread shock | Margin shock | Liquidity / exit shock | Single-leg risk | What it tests |
+|---|---|---|---|---|
+| **Normal adverse** | Spread −2,000 RUB | IM unchanged | Exit cost 1,000 RUB | None | Whether the 5,000 warning is reached by ordinary noise |
+| **Gap + delay** | Spread −9,000 RUB, then −2,000 RUB during 30-min delay | IM may rise 20–50% | Exit cost 1,500 RUB | Temporary naked leg if one leg fills first | The 10,000 action trigger and the 5,000 gap |
+| **Severe gap + forced liquidation** | Spread −14,000 RUB | УДС breach | Forced exit slippage 3,000 RUB | Broker liquidates one leg or both at bad prices | Whether 15,000 outer boundary can be breached |
+| **Margin offset removal** | Spread unchanged | IM rises to sum of both legs (e.g. 8,000 → 20,000) | Forced reduction to meet margin | Potential naked leg during reduction | Whether broker margin, not X, forces the exit |
+| **Funding non-arrival** | Spread −10,000 RUB | Margin call | Transfer misses 45-min deadline | Forced liquidation | Whether the 15,000 cap is usable in time |
+| **Correlated concurrent trades** | Two spreads both −5,000 RUB | IM rises on both | Exit costs rise; liquidity thins | Both spreads stressed simultaneously | Whether aggregate risk exceeds the single-idea cap |
+
+**Falsification criterion:** If any scenario produces a **realized** loss above 15,000, or a broker-initiated core-collateral use, or a forced liquidation before the user can act, the current sizing rule is falsified for that instrument and must be tightened or the trade rejected.
+
+---
+
+## 9. Stop, partial-fill and emergency policy
+
+### 9.1 Stop policy
+
+- **Economic stop (X-based):** At D ≥ 10,000 or X ≤ −10,000, suspend new entries and begin orderly reduction. Do not wait for the 15,000 boundary.
+- **Liquidity stop (broker-based):** If УДС or free margin falls below the pre-agreed buffer, reduce risk **immediately**, even if X is above −10,000. Broker action overrides monetary triggers.
+- **Time stop:** The 90-day review is a **review**, not a forced exit. Positions that remain economically valid and pass the continuation inequality may continue, with no reset of H/X/funding consumed.
+
+### 9.2 Partial fills
+
+- A partially filled spread is a **temporary single-leg position** and consumes more margin and price risk than the intended spread. The pilot must record the single-leg interval, the margin during that interval, and the cost of completing or unwinding.
+- If the second leg cannot be filled within a pre-agreed window (e.g. 15 minutes), the first leg should be reduced or closed unless the user explicitly accepts the naked risk. The window must be defined before live trading; it is not assumed here.
+- Virtual execution must not assume fills that did not occur. R08 must supply the stale/rejected/unfilled outcome distribution.
+
+### 9.3 Emergency policy
+
+- **Zero emergency funding at entry.** Entry must pass with the 30,000 envelope alone.
+- **Separate approval and availability.** Additional funding requires explicit approval **and** confirmation that funds can arrive before the broker’s deadline. Absent confirmation, default to no funding.
+- **Use only to reach flat.** Emergency funding may not fund fresh exposure, averaging down, or a reset of losses.
+- **Broker-initiated core collateral use is an incident.** It counts toward the 45,000 gross cap and must be reported and reviewed, even if it prevents a larger loss.
+- **No guarantee of orderly exit.** The policy must state that forced liquidation can occur at prices worse than the stress estimate; the 15,000 boundary is not a guaranteed maximum.
+
+---
+
+## 10. The 90-day review convention
+
+The 90-day review should be a **limit-review and continuation gate**, not an expiration clock.
+
+**Recommended convention:**
+1. At day 90, compute X, H, D, funding consumed, and the continuation inequality for every open position.
+2. **Do not reset** H, X, or the lifetime funding consumed.
+3. A position may continue if it passes the **same entry/continuation inequality** with the **remaining** risk budget and available liquidity. There is no “90-day exemption” from the stress test.
+4. A position that no longer passes the inequality must be reduced or closed in an orderly way.
+5. The review must document whether the pilot has hit the 10,000 action or 15,000 boundary, and whether any broker-initiated incident occurred.
+6. The review must not force profitable long-held ideas to exit solely because 90 days have elapsed. If the idea remains economically valid and the stress test passes, continuation is allowed.
+
+**Peak-giveback rule and opportunity cost:** A rule that reduces risk after a large peak giveback can protect against reversal, but it also exits profitable trends early. The pilot should **test** a giveback rule against a continuation rule with no reset. The test should measure:
+- The opportunity cost of exiting positions that later recover.
+- The reduction in tail loss from earlier de-risking.
+- The number of false triggers caused by normal variation margin.
+
+The giveback rule should not be approved universally until this test is completed.
+
+---
+
+## 11. Future 10–20 million capacity and promotion gates
+
+The 30,000 pilot is not a miniature version of a 10–20 million book. The following are **promotion gates**, not automatic scale-up:
+
+| Gate | Requirement | Why it cannot be inferred from pilot profit |
+|---|---|---|
+| **Margin scalability** | R01 confirms that 10–20 million of spread positions can obtain the same or better margin offsets without concentration-limit increases | Pilot IM is too small to test concentration limits and broker-specific offsets. |
+| **Liquidity scalability** | R04/R08 show that the strategy’s size can be executed within a defined participation rate and slippage budget | RTSM liquidity is thin; pilot fills do not prove capacity. |
+| **Funding concentration** | The 10–20 million book must not rely on a single broker, a single collateral asset, or a single funding path | The pilot’s shared account with core LQDT is a concentration risk, not a diversification proof. |
+| **Joint impact** | Stress tests at 10–20 million must include account-wide recourse, core-collateral spillover, and correlated concurrent trades | Pilot arithmetic does not scale linearly; margin offsets and liquidation costs change with size. |
+| **Tail safety** | The stressed loss at 10–20 million must fit inside a separately approved loss budget, not the pilot’s 15,000 boundary | The pilot’s boundaries are authority limits for 30,000, not a template for 20 million. |
+| **Operational reliability** | R08 confirms that delayed execution, stale data and manual reaction do not produce unacceptable slippage at scale | Pilot’s 3–90 minute window may be acceptable for one spread; it may be unacceptable for a larger book. |
+
+**Tiny pilot profit alone cannot establish any of these gates.** A profitable pilot is necessary but not sufficient; the gates must be tested directly with the larger size, or with a staged increase that preserves the same stress discipline.
+
+---
+
+## 12. Carver’s *Systematic Trading*: applicable assumptions and tiny-lot limitations
+
+**Bibliographic note:** The edition was not supplied and was not read in full. The following is based on secondary summaries and search results, not on a verified page-by-page reading of the book. The user should treat this as a lead, not a substitute for the text.
+
+**Applicable assumptions (as summarized):**
+- Risk is targeted via a volatility scalar: position size is proportional to the target cash volatility divided by the instrument’s cash volatility.
+- Position sizing should be separated from trading rules and stop losses; the volatility target depends on account size and pain threshold.
+- A stop-loss can be set at a multiple of daily volatility (e.g. four volatility units), corresponding to a holding period and cost budget.
+- Diversification across instruments and a maximum number of bets can reduce risk, but the framework assumes enough capital to hold meaningful integer positions.
+
+**Tiny-lot limitations:**
+- Carver’s illustrative examples use £100K capital and minimum bets of £1–£10 per point, with a minimum of four instrument blocks. A 30,000 RUB account cannot replicate this granularity.
+- After volatility scaling, the position size is rounded to an integer number of contracts. For a tiny account, rounding can move the position from “slightly too large” to “much too large” or to zero.
+- The framework’s risk targeting does **not** solve the problem that one minimum lot may already exceed the account’s risk budget. In that case, the correct output is **no-trade**, not a fractional contract or a hope that volatility will fall.
+- Carver’s approach assumes reasonably continuous liquidity and executable stops. MOEX gap risk, price-band expansion and forced liquidation are outside the book’s illustrative assumptions.
+
+**Applicable lesson for this pilot:** Use the volatility-targeting logic to **size down or reject** a trade, not to justify a position that the minimum lot cannot support. The integer constraint is a binding feasibility condition, not a rounding detail.
+
+---
+
+## 13. What cannot be bounded and why internal limits are not guaranteed maxima
+
+The following cannot be bounded with the available inputs:
+
+- **Maximum gap size:** MOEX futures can gap through price bands; historical 2022 moves show intraday RTS declines of roughly 49%. A future gap could be larger or faster than any historical sample. No Gaussian or historical-tail guarantee is valid.
+- **Broker liquidation price:** Forced liquidation may occur at market prices, at widened spreads, or through mechanisms the user does not control. The 45-minute margin-call deadline and VTB’s right to close by the next session mean the user may not have time to execute an orderly exit.
+- **Margin offset removal:** Existing spread offsets may be reduced or removed by NCC/broker risk-parameter changes. The public RTSM margin levels are not a guarantee of future IM.
+- **Funding arrival time:** The user’s actual emergency-funding origin and arrival time are unknown. The 15,000 cap is an authority limit, not a liquidity guarantee.
+- **Core-collateral eligibility and recourse:** Without R01, it is unknown whether the core LQDT is eligible collateral, whether the broker can use it without approval, and how a broker-initiated use would be treated. Internal limits do not ring-fence the account.
+- **Execution delay distribution:** The 3–90 minute manual reaction window is a brief, not a measured distribution. R08 is required to estimate stale/rejected/unfilled outcomes.
+
+**Therefore:** The 5,000/10,000/15,000 defaults are **action rules**, not guaranteed bounds. They are internally coherent as a graduated authority framework, but they are not a substitute for a separate liquidity path, a positive uncertainty buffer, and a no-trade decision when the minimum lot does not fit.
+
+---
+
+## 14. Falsification criteria and possible project changes
+
+### 14.1 Falsification criteria for the delegated defaults
+
+The defaults should be considered falsified for a given spread if any of the following occurs in stress testing or paper trading:
+
+1. A joint price/margin/liquidity scenario produces a **realized loss above 15,000** before the user can act.
+2. A **broker margin call or forced liquidation** occurs before X reaches −10,000, because the broker’s УДС falls faster than the economic loss.
+3. A **funding transfer** approved at the 10,000 trigger cannot arrive before the broker’s deadline in the relevant clearing session.
+4. The **minimum-lot spread** requires IM > 30% of 30,000 after spread offsetting, leaving insufficient free equity for the stress loss and exit costs.
+5. The **5,000 action-to-boundary gap** is consumed by a combination of normal exit costs and a 30-minute delay, without any extreme gap.
+6. **Core collateral** is used by the broker without explicit approval, even if the pilot’s X remains within limits.
+7. The **90-day review** forces the exit of a position that still passes the continuation inequality, demonstrating that the review convention is mechanically destructive rather than risk-based.
+
+### 14.2 Possible project changes if falsified
+
+- **Narrow the universe** to instruments whose minimum lot passes the entry inequality with a positive buffer (possibly only RTSM or other mini contracts, if liquidity is acceptable).
+- **Tighten the starting-margin ceiling** to 20% and the per-idea stressed-loss cap to 3,000–4,000 RUB.
+- **Increase the required action-to-boundary gap** above 5,000 based on measured 90-minute adverse moves.
+- **Pre-arrange a funding path** (e.g. a standing transfer instruction with a documented arrival time) before any live trade, or explicitly accept that no emergency funding is available and size accordingly.
+- **Reject the pilot** if no integer spread can satisfy the zero-emergency-funding entry inequality with a positive buffer. This is a valid and evidence-backed outcome.
+
+---
+
+## 15. Final answer to the question
+
+**Are the delegated pilot defaults internally coherent and feasible for integer futures spreads with 3–90 minute reaction?**
+
+They are **internally coherent as a graduated authority framework** — the separation of warning, action and outer boundary is logical, and the lifetime funding cap is a clear limit. But they are **not proven feasible** for the 30,000 envelope with integer spreads and a 3–90 minute reaction window:
+
+- The **30,000 allocation** may be too small for a meaningful spread once IM, stressed VM and exit costs are included. The mini RTSM contract makes feasibility possible, but not guaranteed.
+- The **5,000 warning** is likely noisy and the **5,000 action-to-boundary gap** is not a sufficient reserve for a joint gap/liquidity shock.
+- The **15,000 lifetime additional funding** is an authority cap, not a liquidity solution; approval and arrival are separate, and the broker’s 45-minute deadline can precede the user’s ability to fund.
+- The **50% starting-margin ceiling** and **5,000 stress buffer** should be replaced by tested, instrument-specific limits.
+
+**Bounded sizing/risk rules to test:**
+- Minimum-lot spread IM ≤ 30% of 30,000 (≤9,000 RUB); preferably ≤20–25%.
+- Entry must pass \(X - L_{\text{stress}} - C_{\text{exit}} - U \ge -10,000\) with **zero emergency funding** and a **positive uncertainty buffer**.
+- Per-idea stressed loss ≤ 5,000 RUB (test range 3,000–5,000), with integer rounding; if \(N<1\), no-trade.
+- Calculate the action-to-boundary gap from a joint stress scenario; do not retain 5,000 as a validated reserve.
+- Treat broker УДС/free margin as a **liquidity pre-trigger** that overrides X-based triggers.
+- Keep the 15,000 lifetime cap as a hard authority limit; model funding arrival explicitly; never assume timely rescue.
+- Review at 90 days without resetting H/X/funding consumed; allow continuation if the stress test passes.
+
+**No-trade is a valid result.** If no minimum-lot spread fits the entry inequality with a positive buffer and a separately viable cash/margin path, the pilot should not trade. The correct response to a binding integer constraint is not to relax the buffer or rely on core collateral; it is to narrow the universe, reduce the size, or stop.

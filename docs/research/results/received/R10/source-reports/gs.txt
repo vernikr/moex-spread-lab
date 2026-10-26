@@ -1,0 +1,1313 @@
+# R10 — Deterministic spread hypotheses, continuation and opportunity cost
+
+**Research cutoff and access date: 22 October 2026.** The supplied pack date, 7 October 2026, is context—not the cutoff for this report.
+
+**Deliverable:** a ranked hypothesis and validation plan. This is **not** a conducted backtest, a finding of trading feasibility, a selected strategy, or an investment recommendation.
+
+## Executive conclusion
+
+The project should begin with **five tightly bounded hypothesis families**, not a broad search for attractive historical pairs:
+
+1. **Carry-adjusted financial calendar spreads.**
+2. **Economically related, same-issuer equity-futures spreads.**
+3. **Commodity calendar spreads with explicit tenor and seasonal controls.**
+4. **Currency-identity baskets**, conditional on compatible settlement definitions.
+5. **Dated-versus-daily-auto-prolonging futures**, conditional on complete historical funding records.
+
+This is a **research-priority ranking**, not a ranking of expected returns. The first experiments should determine whether any minimum integer spread can satisfy the RUB 30,000 funding constraint, survive conservative costs and delayed execution, and offer positive net RUB excess over the matched LQDT counterfactual. **An empty feasible universe is a valid result.**
+
+Three findings materially constrain the plan:
+
+- **Calendar-spread execution is not an economic edge.** MOEX provides coordinated execution across maturities, including synthetic matching, but that does not establish favourable carry, sufficient liquidity, acceptable costs or an affordable position. MOEX describes the service as simultaneous opposite transactions in futures on one underlying with different maturities. [MOEX, “Календарные спреды,” service description, undated live page, accessed 2026-10-22](https://www.moex.com/ru/spreads)
+- **Free access does not establish permitted trading use.** MOEX’s ISS page distinguishes delayed access without subscription from real-time subscription, but also states that information is for familiarisation and other use requires an agreement. Therefore, “free EOD research input” remains a conditional planning assumption, not established permission for a screener or trading workflow. [MOEX, “Программный интерфейс АПИ к ИСС,” access and use paragraphs, undated live page, accessed 2026-10-22](https://www.moex.com/a2193)
+- **Current specifications cannot safely be projected backwards.** For example, MOEX’s GL launch notice names RUGOLD as the settlement reference, while its current GL product page names GOLDFIXME. The effective specification history must resolve that difference before an identity or convergence test can be trusted. [MOEX, GL launch notice, contract-parameter section, launch stated as 2023-06-28](https://www.moex.com/n56918) [MOEX, GL product page, “Цена исполнения,” accessed 2026-10-22](https://www.moex.com/ru/derivatives/gold)
+
+**Continuation should be judged on conditional future value from the present state**, including remaining costs, cash requirements, exit-time uncertainty, expiry risk and realistic alternatives. Neither a long holding period nor a sunk loss is, by itself, a reason to exit or continue.
+
+**Flexible sizing, scale-ins and opportunity-aware exits are optional experiments.** Missing evidence must not turn them into required architecture.
+
+---
+
+## 1. Scope, inputs actually read and evidence standard
+
+### 1.1 What was actually used
+
+The only project-specific input read was the complete prompt. There were **no attachments, repository files, earlier investigations, broker statements, tariff schedules, historical datasets or account confirmations**.
+
+Independent public-source work covered:
+
+- MOEX calendar-spread execution, fees, ISS access, historical-data services, expiry information and instrument examples;
+- the LQDT issuer’s product description;
+- original research on carry, pairs trading and backtest overfitting;
+- publisher/author contents information for the three requested books.
+
+No trades, account checks, data downloads at scale, backtests, performance measurements, production probes or legal verification were performed.
+
+### 1.2 How to read the proposals
+
+Unless explicitly identified as a sourced fact, every threshold, model choice, scenario and rejection rule below is a **proposed preregistration choice**. It has not been validated.
+
+The project’s funding, reaction-time and intervention assumptions are treated as **user-supplied hypotheses dated to this report**, including:
+
+- RUB 30,000 initial pilot allocation;
+- a maximum RUB 15,000 cumulative **gross** emergency allowance;
+- manual reaction between 3 and 90 minutes, with a reported typical median around 5–15 minutes;
+- the stated warning, action, outer-shortfall and 90-day review rules;
+- the large core LQDT holding on the same account.
+
+These are not independently confirmed account capabilities or enforceable loss limits.
+
+### 1.3 Source dates are not interchangeable
+
+For every dataset or rule subsequently used, retain four distinct fields:
+
+1. **Publication date** of the source.
+2. **Availability time** when the information could first have entered a decision.
+3. **Effective interval** during which the rule or specification applied.
+4. **Access date** when the researcher obtained it.
+
+An edited current page establishes neither historical content nor historical availability. Where the accessible source lacked a date, this report says so rather than assigning one.
+
+---
+
+## 2. Evidence that changes the experiment design
+
+The following are the principal externally supported facts. Short excerpts identify the support without implying that complete legal or contract documentation was verified.
+
+| Evidence | Primary source, location and date | Supporting excerpt | Consequence for R10 |
+|---|---|---|---|
+| Coordinated calendar execution exists | **MOEX, “Календарные спреды,” definition and synthetic-matching sections.** Undated live page; accessed 2026-10-22. | “одновременно совершать противоположно направленные сделки” — “simultaneously execute opposite-direction transactions.” | Test a native calendar-order route where broker support is confirmed; separately model legged execution. [Source](https://www.moex.com/ru/spreads) |
+| Calendar execution does not itself establish a special margin saving | Same page, margin paragraph. | Margin is reserved “в таком же размере” as execution of the two constituent atomic orders. | Do not assign an extra margin discount merely because the order is submitted as a calendar spread. Actual portfolio margin and broker treatment remain separate inputs. [Source](https://www.moex.com/ru/spreads) |
+| Exchange fees are not a verified broker tariff | **MOEX, “Тарифы срочного рынка,” commission and calendar-spread sections.** Undated current page; accessed 2026-10-22. | “Комиссия по календарным спредам равна сумме комиссий по каждому фьючерсу.” | Charge the appropriate constituent fees; do not model a spread as one free or flat-fee ticket. The page also describes maker/taker asymmetry, but manual fills must not automatically receive maker treatment. [Source](https://www.moex.com/s93) |
+| ISS contains relevant data types, but use restrictions matter | **MOEX, “Программный интерфейс АПИ к ИСС,” data, access and use paragraphs.** Undated; accessed 2026-10-22. | “с задержкой (без подписки)” and “Любое использование информации (кроме ознакомления) возможно только по договору”. | Delayed accessibility does not establish depth, completeness or permission for the intended use. [Source](https://www.moex.com/a2193) |
+| A subscription historical-data service is a different product | **MOEX, “Historical Data: Service description,” Type C and subscription sections.** Undated; accessed 2026-10-22. | “The data are provided under subscription…” | Paid archive coverage cannot be cited as proof of equivalent free ISS coverage. [Source](https://www.moex.com/a2863) |
+| Expiry requires contract-specific verification | **MOEX, “Исполнение фьючерсов,” introductory instructions.** Page lists an execution workbook dated **2026-10-06**; accessed 2026-10-22. | “Уточнить дату исполнения конкретного фьючерса…” — “Clarify the execution date of the specific future…” | Contract calendar, settlement type and broker cutoff must be inputs, not generic assumptions. The workbook’s contents were not analysed. [Source](https://www.moex.com/s126) |
+| GL is a small-unit RUB gold future, but settlement references conflict across accessible pages | **MOEX, current GL product page**, parameter table; and **GL launch notice**, contract parameters. Accessed 2026-10-22. | Current page: “Лот: 1 грамм”; settlement “GOLDFIXME.” Launch notice: settlement “RUGOLD.” | Useful normalization example, but no historical identity/convergence assumption until the effective specification chain is obtained. [Current page](https://www.moex.com/ru/derivatives/gold) [Launch notice](https://www.moex.com/n56918) |
+| Same-issuer common/preferred futures exist as a test lead | **MOEX, “Фьючерсы на акции,” Sberbank contract groups.** Live directory; accessed 2026-10-22. | Separate listings for futures on ordinary and preferred shares of ПАО Сбербанк. | SBRF/SBPR is a defensible candidate to investigate, not evidence of fungibility, convergence or execution capacity. [Source](https://www.moex.com/s3809) |
+| Relevant currency legs are listed | **MOEX, currency futures page**, available-pairs section. Undated; accessed 2026-10-22. | Lists USD/RUB, CNY/RUB and USD/CNY. | A currency-identity basket can be investigated, subject to matching maturities, fixing conventions and integer sizes. [Source](https://www.moex.com/s3811) |
+| Daily-auto-prolonging futures have funding mechanics | **MOEX, “Вечные фьючерсы на валютные пары,” funding and prolongation sections.** Live page; accessed 2026-10-22. | “покупатели уплачивают фандинг, продавцы получают фандинг” when positive funding applies. | Price bars alone are insufficient for dated-versus-perpetual tests; funding and effective rule history are mandatory. [Source](https://www.moex.com/a8141) |
+| LQDT is not a constant-rate cash proxy | **WIM Investments, “Ликвидность,” investment strategy.** Undated current page; accessed 2026-10-22. | Invests in short-term money-market instruments whose expected yield is “близка к ключевой ставке”. | Use observed LQDT wealth changes and applicable transaction costs, not the key rate as a realised-return substitute. [Source](https://www.wealthim.ru/products/bpif/wimfl/) |
+
+### Methodological evidence—and its limits
+
+Koijen, Moskowitz, Pedersen and Vrugt distinguish carry from expected price appreciation. Their author-hosted **July 2012 preliminary version**, *Carry*, defines carry as expected return “assuming its price does not change”; its commodity discussion uses nearby and next-nearby futures. This motivates separating curve carry from a directional forecast, **not** treating a calendar-spread slope as assured profit. The institutional record for the **August 2013 NBER working paper 19325** also notes periods when carry strategies across asset classes perform poorly. These are different versions, not interchangeable historical documents. [Author-hosted paper, definition and commodity-carry discussions](https://pages.stern.nyu.edu/~lpederse/papers/Carry.pdf) [CBS research record, abstract and publication metadata](https://research.cbs.dk/en/publications/carry/)
+
+Gatev, Goetzmann and Rouwenhorst’s *Pairs Trading: Performance of a Relative Value Arbitrage Rule*, **NBER working paper 7032, March 1999**, studies daily US equity data and explicitly acknowledges possible market-microstructure effects. It supplies a simple distance-based comparator and a warning about execution artefacts; it does **not** establish an edge in MOEX futures. [NBER, abstract and bibliographic record](https://www.nber.org/papers/w7032)
+
+Bailey, Borwein, López de Prado and Zhu’s *The Probability of Backtest Overfitting*, **27 February 2015 version**, explains that a holdout does not account for the number of configurations tried. The relevant discussion is in **Section 1, “Comparisons to other approaches,” reported PDF p. 7**: “does not take into account the number of trials attempted.” Accordingly, chronological testing and an untouched final period must be accompanied by a complete trial ledger. [Author-hosted paper](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf)
+
+---
+
+## 3. The common measurement framework
+
+## 3.1 Primary outcome: matched LQDT excess in RUB
+
+Let:
+
+- \(W_t^A\): actual-policy account wealth, including retained LQDT, cash, futures variation margin and other assets, less liabilities and incurred costs;
+- \(W_t^L\): matched counterfactual wealth;
+- \(F_t\): true external cash flows, identical in both paths.
+
+Define:
+
+\[
+X_t=(W_t^A-W_t^L)-(W_0^A-W_0^L).
+\]
+
+The counterfactual follows the stated core LQDT policy and keeps any LQDT diverted to the pilot invested. Approved emergency external contributions enter **both** paths at the same time; the counterfactual invests them according to its predefined LQDT policy. Internal sales of core LQDT are **not** external contributions.
+
+This full-account comparison is necessary because the pilot and core holding share one account. The unchanged core position should largely cancel economically, but the ledger must retain any differences caused by collateral use, asset sales, fees, taxes or liquidation.
+
+**Do not calculate excess as futures P&L minus interest on all posted collateral.** If eligible collateral remains invested in LQDT and continues earning its return, that return is already in \(W^A\). Deducting the same return again would double-count opportunity cost.
+
+A useful reconciliation is:
+
+\[
+X_t =
+\text{futures P\&L}
++\text{other actual-minus-counterfactual asset returns}
+-\text{incremental costs}
+-\text{incremental tax effects}.
+\]
+
+It is a reconciliation identity, not a replacement for the matched ledgers.
+
+### Required accounting conventions
+
+- Use identical valuation times and consistent marking conventions.
+- Include the costs of opening, rehedging, rolling, closing, failed execution and forced de-risking.
+- Report terminal results after liquidation.
+- Track a separate **liquidation-adjusted excess** estimate for risk monitoring.
+- Do not charge estimated closing costs twice—once in liquidation marking and again as an additional expense.
+- Use market-price returns where the counterfactual could transact; NAV can be a diagnostic, not an automatic executable price.
+- Fund-level costs embedded in observed LQDT returns must not be subtracted again.
+
+**Tax limitation:** only the loss of the LQDT long-term holding deduction is excluded by instruction. Residence, account treatment, timing of taxes and loss-offset rules are unknown. Until resolved, label results **net of modeled trading costs, before unresolved investor-specific tax effects**—not after-tax excess.
+
+## 3.2 Pilot authority and intervention rules
+
+The simulation must enforce the supplied rules without treating internal budgets as broker ring-fencing.
+
+| Constraint | Required treatment |
+|---|---|
+| Initial allocation: RUB 30,000 | Includes initial margin, variation-margin liquidity and reserves. |
+| Emergency allowance: RUB 15,000 cumulative gross | No replenishment after repayment; no netting of earlier emergency uses against recoveries. |
+| Maximum gross contributed funding: RUB 45,000 | Not an entry budget. Entry must pass with **zero emergency funding**. |
+| Emergency purpose | Only avert disorderly liquidation or complete de-risking of existing exposure; explicit approval required. |
+| At RUB 10,000 cumulative shortfall | Any additional funding is solely to reach flat. |
+| Core collateral used by broker | Counts toward gross emergency allowance; unapproved use is an incident. |
+| Core asset sale proceeds | Funding/collateral event, not automatically an economic loss in \(X\). |
+| Review after 90 calendar days | No resetting losses, high-water marks or lifetime emergency allowance. |
+
+For the provisional rules:
+
+\[
+H_t=\max(0,\max_{u\leq t}X_u),\qquad DD_t=H_t-X_t.
+\]
+
+Apply:
+
+- warning at \(DD_t\geq\) RUB 5,000;
+- action at \(DD_t\geq\) RUB 10,000 **or** \(X_t\leq-\)RUB 10,000;
+- outer cumulative-shortfall boundary at \(X_t\leq-\)RUB 15,000.
+
+A faithful proposed action response is: **cancel new exposure, cancel unfilled additions, initiate orderly de-risking and seek required approval for any emergency funding.** The action sequence and emergency availability still require user confirmation.
+
+These are intervention triggers, **not guaranteed bounds**. Gaps, locked markets, margin changes, delayed human response and partial fills may carry losses beyond them.
+
+---
+
+## 4. Common normalization, hedge estimation and execution rules
+
+## 4.1 Separate the economic signal from the tradable P&L
+
+For leg \(i\), retain:
+
+- raw quote \(P_{i,t}\);
+- quote unit and underlying unit;
+- contract quantity \(Q_{i,t}\);
+- tick size \(\tau_{i,t}\);
+- RUB tick value \(v_{i,t}\);
+- settlement and variation-margin formula;
+- any conversion rate and its fixing time;
+- effective specification version.
+
+For an appropriate locally linear contract:
+
+\[
+\Delta\Pi_i \approx
+n_i\frac{v_{i,t}}{\tau_{i,t}}\Delta P_i.
+\]
+
+This is only a diagnostic approximation. Actual P&L must use the applicable contract formula, including conversion, rounding and settlement adjustments. In particular, **a USD quote is not permission to model the contract as a simple USD cash asset**.
+
+Signals may use normalized economic prices \(p_i\), log ratios or curve slopes. Accounting must use actual contract cash flows.
+
+### Three distinct hedge concepts
+
+1. **Physical-unit hedge:** match units of the same underlying across maturities.
+2. **Value or delta hedge:** match local economic sensitivities.
+3. **Statistical hedge:** estimate a residual relation from training data.
+
+They are not interchangeable. Equal contract counts do not necessarily mean equal units, and a statistically quiet spread need not be economically neutral.
+
+## 4.2 Robust residual and standardized signal
+
+For a two-leg relationship:
+
+\[
+s_t=\log p_{A,t}-\alpha-\beta\log p_{B,t}.
+\]
+
+A simple robust standardized residual is:
+
+\[
+z_t=
+\frac{s_t-\operatorname{median}_{\mathcal T}(s)}
+{\max(1.4826\,MAD_{\mathcal T}(s),\sigma_{\min})},
+\]
+
+where \(\mathcal T\) contains **training observations only**. A residual scale floor \(\sigma_{\min}\) prevents stale or almost constant prices from generating enormous artificial signals.
+
+For a log spread, local implementation sensitivities are proportional to:
+
+\[
+\frac{\partial s}{\partial p_A}=\frac{1}{p_A},
+\qquad
+\frac{\partial s}{\partial p_B}=-\frac{\beta}{p_B}.
+\]
+
+Therefore, \(\beta\) must be translated into economic quantities and then contract counts; it is **not automatically a contract ratio**.
+
+### Why z-scores, correlation and stationarity are insufficient
+
+- **Correlation** measures co-movement, not a force restoring a price relationship.
+- **A z-score** measures historical unusualness, not the probability or speed of recovery.
+- **A stationarity test** depends on sample length, breaks and specification. Repeated testing also creates selection opportunities.
+- A stationary quoted residual can coexist with negative net excess after costs, slow exits, unaffordable integer positions or untradeable marks.
+- A two-maturity spread does not necessarily converge to zero when the near contract expires: the far contract still has remaining maturity.
+
+Statistical diagnostics are filters and falsification tools—not substitutes for an economic mechanism and executable cash-flow model.
+
+## 4.3 Hedge estimation: deliberately restricted
+
+Proposed baseline hierarchy:
+
+1. Use an identity/physical hedge where justified.
+2. Otherwise use **one robust static regression per training fold**.
+3. Freeze the hedge during the trade.
+4. Re-estimate only at scheduled training updates while flat, unless a separately registered rehedging variant is tested.
+
+Do not begin with Kalman filters, continuously changing hedge ratios or pair-specific bespoke models. They add turnover, estimation choices and paths for fitting away a structural break.
+
+### Integer mapping
+
+Enumerate a small set of integer baskets \(n\), including **no trade**, and minimize:
+
+\[
+\|Dn-a^*\|_W^2+\lambda\,\widehat{\operatorname{Var}}(\Delta\Pi(n)),
+\]
+
+subject to:
+
+- funding and stressed liquidity limits;
+- residual factor-exposure caps;
+- maximum contracts and concurrent positions;
+- permitted settlement/expiry exposure;
+- minimum hedge quality;
+- human execution constraints.
+
+Here \(D\) maps contracts into economic sensitivities, and \(a^*\) is the desired exposure vector.
+
+**Reject the signal if no acceptable integer basket exists. Do not round up merely to obtain a position.** Carver’s small-account discussion identifies precisely the conflict between indivisible futures and diversification: “you can’t own less than one futures contract.” This is a methodological warning, not a MOEX capital estimate. [Robert Carver, “Diversification and small account size,” March 2016, fractional-contract discussion](https://qoppac.blogspot.com/2016/03/diversification-and-small-account-size.html)
+
+## 4.4 Shared proposed parameter menu
+
+These are starting candidate ranges, **not a Cartesian grid to exhaust**:
+
+| Component | Proposed candidates |
+|---|---|
+| Residual estimation window | 60, 120 or 250 joint trading observations |
+| Entry magnitude | \(|z|\): 1.5, 2.0 or 2.5 |
+| Residual exit band | \(|z|\leq 0.25\) or 0.5 |
+| Maximum intended holding | 10, 20 or 40 joint trading sessions |
+| No-entry expiry buffer | 5 or 10 applicable trading sessions, enlarged for broker cutoffs/closure risk |
+| Statistical diagnostic | Robust fixed hedge; identity hedge where available |
+| Structural-break checks | Residual displacement, hedge instability, reference-rule change and data-quality failure |
+
+**Trial budget:** preregister at most **12 complete configurations per family** for the first pass, chosen for interpretable contrasts. Do not silently test every combination above. All discarded configurations, later changes and family variants enter the trial ledger.
+
+Hard financial and expiry limits override signal thresholds.
+
+---
+
+## 5. Candidate hypothesis cards
+
+All five cards inherit the common funding, cost, counterfactual, validation and execution requirements.
+
+## H1 — Carry-adjusted financial calendar residual
+
+**Research priority: 1.**
+
+### Economic story and instruments
+
+Investigate whether unusual deviations in the curve between two futures on the **same financial underlying** subsequently normalize enough to exceed costs and LQDT opportunity cost.
+
+Initial leads: adjacent, compatible maturities of currency futures, or financial contracts with a clearly documented financing relationship. MOEX lists the relevant currency families, but listing alone establishes neither depth nor affordability. [MOEX, currency futures, available-pairs section, accessed 2026-10-22](https://www.moex.com/s3811)
+
+This is **not** “sell contango because it must disappear.” Currency forward slopes may reflect interest differentials, segmentation and other persistent conditions.
+
+### Data and calendar prerequisites
+
+- Contract-specific daily prices, volume and OI where actually published.
+- Overlapping history for both maturities, including expired contracts.
+- Quote units, settlement formula, fixing source and rule history.
+- Actual exchange calendars, settlement calendars and broker cutoffs.
+- Point-in-time rate/financing inputs **only if** the model explicitly uses them.
+- Synchronized quotes later, if execution sensitivity proves material.
+
+### Formula and units
+
+For comparable normalized prices:
+
+\[
+c_t=
+\frac{\log(F_{f,t}/F_{n,t})}{(T_f-T_n)/365},
+\]
+
+in annualized log-price units.
+
+Fit a parsimonious training-only curve benchmark \(m(\cdot)\), for example a robust median by tenor bucket:
+
+\[
+e_t=c_t-m(\text{tenor bucket, permitted state variables}).
+\]
+
+The first baseline should omit rate inputs rather than manufacture historical forecasts. A rate-adjusted version is a **separate logged variant**, using only rates and publication times available then.
+
+### Selection, entry, continuation and exit
+
+- Choose one shared configuration across eligible contracts where possible.
+- Enter opposite the residual only if historical conditional forward outcomes—not slope alone—support positive conservative incremental excess.
+- Match physical/economic exposure, not arbitrary one-for-one contract counts.
+- Continue under the forward-value test in Section 7.
+- Exit at the registered residual band, holding limit, expiry buffer or risk trigger.
+- Treat each roll as a new, fully costed exposure decision.
+
+### Invalidate and expected failure
+
+Invalidate on fixing changes, broken unit compatibility, reference-market discontinuities, severe hedge residuals or absent usable overlapping history.
+
+Expected failure: the “dislocation” is a persistent financing premium; observed daily prices are asynchronous; or the near-leg expiry does not deliver the supposed convergence.
+
+### Validation and rejection
+
+Use chronological folds separated by actual signal/holding overlap. Report contribution by maturity bucket and market regime.
+
+Reject for the pilot if minimum integer sizing fails, the conservative cost frontier is below plausible execution costs, or performance depends on one expiry episode. **Insufficient independent events means inconclusive, not profitable.**
+
+---
+
+## H2 — Commodity calendar residual with tenor and seasonal controls
+
+**Research priority: 3.**
+
+### Economic story and instruments
+
+Investigate deviations from a commodity’s own curve structure, allowing for storage economics, seasonal demand and benchmark-specific settlement.
+
+Start with only one or two independently justified commodity families—not every available commodity. Gold and energy contracts are leads, subject to specifications and data.
+
+The carry literature motivates studying nearby/next-nearby curve information, but does not establish that a particular MOEX calendar position earns it. [Koijen et al., *Carry*, July 2012 preliminary version, commodity-carry discussion](https://pages.stern.nyu.edu/~lpederse/papers/Carry.pdf)
+
+### Data and calendar prerequisites
+
+H1 inputs, plus:
+
+- benchmark location, quality and settlement reference;
+- contract month and season;
+- benchmark publication calendar and time;
+- point-in-time specification changes;
+- adequate repeated seasonal cycles for a seasonal model;
+- explicit treatment of non-positive prices if encountered.
+
+Do not use logs through non-positive observations. An alternative difference normalization would require a separately frozen specification.
+
+### Formula and units
+
+For positive prices:
+
+\[
+s_t=\log F_{f,t}-\log F_{n,t},
+\]
+
+\[
+e_t=s_t-
+m(\text{tenor bucket},\text{contract-month pair}).
+\]
+
+Use a **no-seasonality robust baseline first**. Add a coarse seasonal effect only if training history contains repeated cycles sufficient to estimate it. Avoid twelve free monthly parameters on a short history.
+
+### Selection, entry, continuation and exit
+
+- Share parameters within the family.
+- Enter only where residual normalization has a supported conditional forward payoff after costs.
+- Carry slope is a state variable, not a guaranteed cash receipt.
+- Continue only while the original benchmark relationship remains valid and forward value clears the continuation hurdle.
+- Exit before the near-leg risk window unless settlement exposure was explicitly part of a later, separately approved test.
+
+### Invalidate and expected failure
+
+Invalidate on benchmark replacement, changed delivery/settlement economics, missing seasonal history, insufficient overlapping maturities or contract-rule ambiguity.
+
+Expected failure: a shortage or inventory regime permanently changes the curve; a recurring seasonal premium is mistaken for mispricing; or the reference commodity does not behave like the MOEX contract.
+
+### Validation and rejection
+
+Hold out entire seasonal/expiry episodes where possible. Compare:
+
+1. no seasonal adjustment;
+2. one coarse seasonal adjustment;
+3. no-trade LQDT counterfactual.
+
+Reject if the seasonal variant earns its apparent advantage from one event, a foreign-market backtest, or an unverified settlement assumption.
+
+**Specific GL gate:** the accessible historical launch notice and current product page disagree on the named settlement reference. Do not infer the transition date or assume equivalence. [MOEX launch parameters](https://www.moex.com/n56918) [MOEX current GL parameters](https://www.moex.com/ru/derivatives/gold)
+
+---
+
+## H3 — Robust same-issuer common/preferred equity-futures spread
+
+**Research priority: 2.**
+
+### Economic story and instruments
+
+A same-issuer relationship provides a more defensible starting point than selecting unrelated securities for high correlation. A candidate example is matched-maturity Sberbank ordinary/preferred futures, listed separately by MOEX. [MOEX, equity-futures directory, Sberbank sections, accessed 2026-10-22](https://www.moex.com/s3809)
+
+However, **common and preferred shares are not assumed fungible**. Their relative valuation can change persistently. The hypothesis is conditional relative-value mean reversion, not a contractual convergence trade.
+
+### Data and calendar prerequisites
+
+- Matched-maturity futures histories.
+- Point-in-time underlying share definitions and contract multipliers.
+- Corporate-action notices and dividend announcements with availability times.
+- Settlement method, corporate-action adjustment rules and expiry cutoffs.
+- Underlying share prices as diagnostics if lawfully available.
+- No future announced dividend inserted into an earlier observation.
+
+### Formula and units
+
+Normalize futures into comparable underlying-share prices:
+
+\[
+s_t=\log p_{\text{ordinary},t}
+-\alpha-\beta\log p_{\text{preferred},t}.
+\]
+
+Primary baseline: \(\beta=1\), robust center and scale.
+
+One additional variant: robust training-only \(\beta\), frozen during the position.
+
+Economic quantities must be translated into actual contract counts; any residual issuer-market exposure is measured separately.
+
+### Selection, entry, continuation and exit
+
+- Enter on a preregistered robust residual threshold only if conservative expected excess is positive.
+- Compare including versus excluding predefined corporate-event windows. Neither treatment may be chosen after seeing the event outcome.
+- Continue using current conditional value, dividend/event state and remaining risk.
+- Exit on normalization, time limit, impending expiry or account trigger.
+
+### Invalidate and expected failure
+
+Invalidate on changed share rights, corporate restructuring, incompatible corporate-action treatment, unstable hedge or an event that removes the original economic story.
+
+Expected failure: a permanent relative repricing is mistaken for temporary divergence; a missing dividend expectation drives the spread; the preferred leg is stale or costly.
+
+### Validation and rejection
+
+Compare the fixed economic hedge against the robust statistical hedge under identical splits and costs. Record how much “alpha” disappears when stale observations and event windows are handled.
+
+Reject if profitability requires frequent hedge refits, one dividend event, continuous position averaging or an unverified corporate-action adjustment.
+
+---
+
+## H4 — Currency-identity basket
+
+**Research priority: 4; conditional three-leg experiment.**
+
+### Economic story and instruments
+
+For consistent spot definitions:
+
+\[
+\frac{\text{RUB}}{\text{USD}}
+=
+\frac{\text{RUB}}{\text{CNY}}
+\times
+\frac{\text{CNY}}{\text{USD}}.
+\]
+
+MOEX lists USD/RUB, CNY/RUB and USD/CNY futures families. That supports investigating a three-leg relationship, but does not prove that their futures settlement references, fixing times or sizes form a tradeable identity. [MOEX, currency futures, available-pairs section](https://www.moex.com/s3811)
+
+### Data and calendar prerequisites
+
+- Compatible maturity dates and reference periods.
+- Each leg’s fixing source, timestamp and fallback rules.
+- Correct quote orientation and contract quantity.
+- RUB variation-margin conversion rules.
+- Synchronized executable quotes for later validation.
+- An explicit account of differences between the futures and the underlying spot identity.
+
+### Formula and units
+
+After conversion into the stated units:
+
+\[
+r_t=\log F_{\text{RUB/USD},t}
+-\log F_{\text{RUB/CNY},t}
+-\log F_{\text{CNY/USD},t}.
+\]
+
+The zero benchmark is admissible **only if contractual compatibility is demonstrated**. Otherwise, fit a restricted training-only residual center and identify the remaining basis risks.
+
+Use the basket Jacobian to derive local hedge quantities; three futures contracts do not automatically produce a currency-neutral basket.
+
+### Selection, entry, continuation and exit
+
+- Start with the identity hedge, not a regression search.
+- Enter only outside a full three-leg cost-and-uncertainty band.
+- Continue while compatible reference economics remain and expected forward value exceeds flattening/reallocation value.
+- Exit on normalization, loss of a leg, fixing-window risk, expiry constraints or account rules.
+
+### Invalidate and expected failure
+
+Invalidate if settlement references are incompatible, one leg is unavailable, or integer mapping leaves excessive residual currency exposure.
+
+Expected failure: daily timestamps create artificial deviations; a fixing basis is persistent; three-leg costs exceed the residual; manual delay destroys the opportunity.
+
+### Validation and rejection
+
+EOD data can reject grossly incompatible economics. It **cannot establish executable identity arbitrage**.
+
+Reject from the manual pilot if the advantage is concentrated in short-lived discrepancies, coordinated execution is unavailable, or legging stress requires core collateral.
+
+**Deferred alternatives:** MOEX/RTS/FX and RUB-gold/USD-gold/FX baskets belong to this structural class, but are not additional first-pass searches. The official 2017 index notice described MOEX and RTS as sharing a calculation base in different currencies; that historical statement does not establish current futures equivalence. [MOEX, index-base notice, effective 2017-12-22](https://www.moex.com/n17878)
+
+---
+
+## H5 — Dated-versus-daily-auto-prolonging futures
+
+**Research priority: 5; data-intensive conditional experiment.**
+
+### Economic story and instruments
+
+Investigate whether the dated-futures basis versus a daily-auto-prolonging contract compensates for cumulative funding, remaining price risk and costs.
+
+MOEX’s currency-futures explanation describes daily prolongation and a funding transfer dependent on the relationship to spot. The public explanation is not a substitute for the effective contract specification. [MOEX, “Вечные фьючерсы на валютные пары,” prolongation and funding sections](https://www.moex.com/a8141)
+
+### Data and calendar prerequisites
+
+- Both price histories.
+- Actual historical funding accruals/payments.
+- Funding determination windows and payment timing.
+- Effective bands, caps, formulas and conversion rules.
+- Quarterly transition/termination provisions.
+- Broker support and cutoffs.
+- Cash-liquidity implications of funding plus VM.
+
+### Formula and units
+
+For appropriately matched quantities:
+
+\[
+\Pi_{t\to u}
+=
+\Pi^{dated}_{t\to u}
++\Pi^{daily}_{t\to u}
++\sum_{d=t}^{u} \text{signed funding}_d
+-C_{t\to u}.
+\]
+
+A basis signal may be:
+
+\[
+b_t=\log F^{dated}_t-\log F^{daily}_t.
+\]
+
+Forecasting must distinguish basis change from future funding. The realised funding sequence may be used to score a completed test, **not to decide the earlier entry**.
+
+### Selection, entry, continuation and exit
+
+- Compare a simple persistence forecast of funding with a zero-predictability benchmark.
+- Use only past observations and then-effective rules.
+- Enter only when conservative projected net excess is positive after funding uncertainty.
+- Re-evaluate continuation as funding conditions change.
+- Exit before rule/quarterly-transition uncertainty or a registered risk limit.
+
+### Invalidate and expected failure
+
+Invalidate on missing funding history, ambiguous sign conventions, incomplete rule versions or broker limitations.
+
+Expected failure: funding reverses, caps alter the price-adjustment mechanism, or the basis moves against the hedge.
+
+### Validation and rejection
+
+Reject the initial experiment if only daily OHLC bars are available. A price-only backtest would omit a defining cash flow and is not an acceptable substitute.
+
+---
+
+## 6. Compatibility matrix and ranked experiments
+
+### 6.1 Pair-family / strategy compatibility
+
+**✓** natural candidate; **△** conditional; **—** poor fit or not proposed.
+
+| Pair or basket class | Carry-adjusted calendar | Robust residual MR | Identity-band model | Funding model | Principal limitation |
+|---|---:|---:|---:|---:|---|
+| Same underlying, financial maturities | ✓ | ✓ | — | — | Financing premium may persist |
+| Same commodity, different maturities | △ | ✓ | — | — | Seasonality, inventory and benchmark regime |
+| Same issuer, common/preferred futures | — | ✓ | — | — | No contractual convergence assumed |
+| Different issuers in one sector | — | △ | — | — | Economic link too weak for first-pass admission |
+| USD/RUB–CNY/RUB–USD/CNY | — | △ | ✓ | — | Three-leg fixing and execution compatibility |
+| MOEX/RTS/FX or gold/FX baskets | — | △ | △ | — | Specification and reference-basis audit first |
+| Dated / daily-auto-prolonging | △ | △ | — | ✓ | Funding history and rule versions |
+| Arbitrary highly correlated pairs | — | — | — | — | Excluded: correlation is not an admission mechanism |
+
+“Carry” and “MR” should not become two names for whichever rule performed better. Any distinct directional carry rule must be registered as another candidate family.
+
+### 6.2 Experiment order and resource estimates
+
+These are **desk-work planning estimates**, not measured runtimes or vendor quotations. They assume reusable accounting and validation definitions. Data cleaning or missing specifications can dominate the work.
+
+| Rank | Experiment | Minimum evidence/data | Estimated additional research effort | Cost/resource posture |
+|---:|---|---|---|---|
+| 0 | Permission, accounting and integer-feasibility gate | Data-use terms; contract versions; tariff variables; LQDT ledger design | 1–3 researcher-days | Public read-only work first. No execution result if fees remain unknown. |
+| 1 | H1 financial calendars | Two-leg EOD panels, specifications and calendars | 2–4 days for initial family audit | Low data volume; snapshot upgrade only if cost/delay frontier warrants it. |
+| 2 | H3 same-issuer spread | Two-leg panel plus corporate-event history | 2–4 days | Event reconstruction is the main incremental burden. |
+| 3 | H2 commodity calendar | Repeated tenor/seasonal history and benchmark rules | 3–6 days | Longer history may be necessary; do not purchase broad intraday archives first. |
+| 4 | H4 identity basket | Three compatible references and synchronized quotes | 3–6 days after specification audit | Higher execution burden; EOD is mainly a rejection screen. |
+| 5 | H5 dated/daily | Funding ledger and rule history | 3–6 days after obtaining complete funding inputs | No price-only fallback. |
+| 6 | Sizing / exit ablations | At least one credible base hypothesis | 2–4 days | Reuse identical data and event streams. |
+
+No mandatory paid purchase is identified. **This is not a claim that the required data or permitted use is available free.**
+
+For planning data volume, if \(N\) contracts each have \(D\) daily rows and \(K\) numeric fields, the raw numeric component is roughly \(8NDK\) bytes under an eight-byte representation; metadata and working copies add overhead. That calculation is not a measured memory benchmark.
+
+Use the laptop for later research batches. Do not infer that the shared VPS budget can support the workflow. No screener, Telegram service, deployment or production technology selection is necessary to resolve R10.
+
+---
+
+## 7. Entry versus continuation: a forward decision
+
+## 7.1 The relevant comparison
+
+At time \(t\), define feasible policies:
+
+- **F:** flatten and follow the LQDT/cash policy;
+- **H:** hold the current basket under its exit rules;
+- **R:** flatten/reduce and allocate to a currently observable alternative;
+- **W:** flatten and wait for future opportunities under a past-information arrival model.
+
+All policies start from the **same present economic state** and are evaluated over a common horizon with a terminal liquidation convention.
+
+For action \(a\):
+
+\[
+V_t(a)=
+E_t[\Delta W^a-\Delta W^L]
+-\text{risk/uncertainty penalty}_t(a).
+\]
+
+A proposal to continue must beat the feasible alternative:
+
+\[
+V_t(H) >
+\max\{V_t(F),V_t(R),V_t(W)\}+\delta,
+\]
+
+where \(\delta\) is a preregistered switching/estimation buffer.
+
+This need not be an elaborate optimizer. The first version can be a conservative lookup based on residual state, trade age and time to expiry.
+
+### Costs must be compared consistently
+
+- Paid entry fees and past slippage are sunk.
+- Future close costs, funding, rehedging and liquidation costs remain relevant.
+- Immediate flattening incurs close costs now.
+- Holding usually incurs close costs later, potentially in a different liquidity state.
+- If wealth is already liquidation-adjusted, reconcile that adjustment rather than charging it twice.
+- A switch pays current exit costs **and** new entry costs.
+
+**Do not subtract a round trip from continuation when the entry half has already happened. Do not ignore the exit half because the position already exists.**
+
+## 7.2 What the continuation forecast must contain
+
+At each scheduled decision:
+
+1. Conditional expected remaining RUB payoff.
+2. Remaining cost range.
+3. Expected LQDT wealth difference from funds still diverted.
+4. Distribution of time to exit.
+5. Probability of loss-trigger exit, expiry-buffer exit and non-normalization.
+6. Remaining VM liquidity needs and possible margin increases.
+7. Residual unhedged exposures.
+8. Value of feasible current alternatives.
+9. Uncertainty due to small samples or changed economics.
+
+Use coarse training-only state bins, for example:
+
+- residual magnitude;
+- trade age;
+- days to expiry;
+- normal versus stressed liquidity.
+
+Avoid finely partitioned state tables containing only a handful of completed trades.
+
+### Exit time is not just “average days held”
+
+For remaining holding time \(T\), report:
+
+\[
+\Pr(T>h\mid\mathcal I_t)
+\]
+
+at selected horizons, plus:
+
+- median and upper quantiles;
+- probability of reaching the expiry buffer;
+- probability of no economic normalization before forced exit;
+- mark-to-market outcomes of positions still open at evaluation boundaries.
+
+Right-censored trades must not disappear from the sample. If the evidence cannot estimate the tail reliably, retain the simpler fixed holding/expiry rules.
+
+## 7.3 Long holding periods and sunk losses
+
+A long-lived trade may still be worth holding if expected remaining excess is positive, liquidity needs are manageable and alternatives are weak. Conversely, a recently opened trade may deserve immediate exit after a structural change.
+
+A sunk loss cannot justify continuation. However, past losses reduce the pilot’s **remaining lifetime loss and funding authority**. Thus:
+
+- sunk P&L does not increase expected recovery value;
+- the resulting account state legitimately restricts future actions.
+
+This distinction prevents both “wait until breakeven” and “exit because it has been open too long” from masquerading as economic rules.
+
+### Illustrative arithmetic—not a forecast
+
+Suppose a position is down RUB 2,000. From now:
+
+- expected additional gross payoff: RUB 900;
+- remaining costs: RUB 250;
+- incremental LQDT foregone return: RUB 200.
+
+Expected continuation excess is RUB 450 before the uncertainty/risk penalty. The sunk RUB 2,000 does not change that arithmetic. Continuation may still be prohibited by the loss rules, expiry risk or insufficient confidence.
+
+If a currently feasible replacement has greater net value over the same horizon **after switching costs**, switching can dominate. The replacement may not be chosen using its later realised return.
+
+---
+
+## 8. Fair comparison of sizing policies
+
+The comparison must use the same:
+
+- signal specifications and train/test boundaries;
+- initial capital and maximum authority;
+- execution-delay paths;
+- cost scenarios and liquidity assumptions;
+- loss rules;
+- calendars and corporate-event information;
+- signal-arrival ledger.
+
+Use paired comparisons on the same market path. Do not give adaptive sizing better forecasts or additional capital.
+
+| Policy | Definition | Main question |
+|---|---|---|
+| **S0: fixed minimum** | One minimum acceptable integer basket for each accepted opportunity | Does the economic hypothesis work without sizing sophistication? |
+| **S1: capped adaptive** | Position size responds to a frozen forecast/risk rule, then maps to integers | Does forecast-strength information improve net excess after granularity and turnover? |
+| **S2: preplanned scale-in** | Initial tranche plus at most one scheduled conditional addition | Does staged exposure add value beyond equivalent authority and timing controls? |
+
+### 8.1 Fixed minimum sizing
+
+Use the smallest basket satisfying hedge and risk constraints. If it cannot fit, reject the signal. It is not acceptable to take a badly hedged “one contract each” position merely because it fits the nominal allocation.
+
+### 8.2 Capped adaptive sizing
+
+A simple proposed continuous target is:
+
+\[
+k_t^*=
+\min\left(
+k_{\max},
+\frac{B_{\text{risk}}}{L_{\text{stress,unit}}},
+\frac{B_{\text{funding}}}{M_{\text{stress,unit}}}
+\right)
+g(|z_t|),
+\]
+
+where \(g\) is a preregistered capped monotone function.
+
+Map \(k_t^*\) to acceptable integer baskets, with a no-trade region. Use a volatility floor and stress-loss constraint so quiet historical periods do not produce uncontrolled leverage.
+
+Keep rebalancing coarse. A daily fractional target that repeatedly rounds between zero and one may add costs without useful risk control.
+
+### 8.3 Preplanned scale-ins
+
+The scale-in experiment may use one additional tranche, with:
+
+- maximum final exposure defined at initial entry;
+- total maximum funding and stressed liquidity reserved before entry;
+- no emergency allowance included;
+- no addition after a warning/action state;
+- no addition after invalidation;
+- the same expiry and intervention constraints.
+
+Proposed comparison:
+
+1. One-shot full authorized basket.
+2. Initial smaller basket, never add.
+3. Initial smaller basket, add only when the preregistered condition remains valid.
+
+An adverse price move alone is **not** sufficient justification to add. If the rule deliberately adds on a larger residual, it must also require positive conditional marginal value, valid economics and adequate remaining loss capacity.
+
+At minimum integer size, fractional staging may be impossible. That is a genuine reason to reject scale-ins for this pilot.
+
+### 8.4 Equal authority, not artificially identical utilisation
+
+The policies may use different amounts of capital at different times—that is part of the question. They must share the same **ceiling**, not be forced to hold equal exposure.
+
+Report both:
+
+- total net RUB excess;
+- exposure, margin, funding and risk utilisation.
+
+Additional capital has an LQDT counterfactual. It is not free merely because it was approved.
+
+---
+
+## 9. Opportunity arrival and reallocation without an oracle
+
+## 9.1 Maintain an as-of opportunity ledger
+
+Each signal should produce a record containing:
+
+- detection and information-availability times;
+- family, instruments and specification versions;
+- forecast and uncertainty interval as known then;
+- proposed integer basket;
+- expected costs and capital requirement;
+- signal expiry/staleness rule;
+- contemporaneous rank;
+- accepted, stale, rejected, unfilled or partially filled status;
+- reason for rejection;
+- human actions required;
+- executable outcome where observable.
+
+Include candidates rejected for insufficient capital, margin, stale data, expiry, human quota and execution constraints.
+
+The realistic portfolio **processes every eligible signal**, but finite capital and rules determine which orders are attempted. It must not retrospectively omit inconvenient opportunities.
+
+A rejected idea may be followed as a clearly labelled shadow observation where data permit. Its later outcome must not enter an earlier forecast or be mistaken for an executable fill.
+
+## 9.2 Start with a ranked queue
+
+The baseline queue is:
+
+1. Remove invalid, stale and unaffordable candidates.
+2. Rank currently visible candidates using a frozen conservative expected-excess score.
+3. Apply a fixed tie-breaker.
+4. Allocate within available authority.
+5. Retain cash/LQDT when no candidate clears the hurdle.
+
+A practical score can combine:
+
+\[
+\text{conservative expected RUB excess}
+\quad\text{and}\quad
+\text{committed funding-days},
+\]
+
+but expected excess divided by expected holding time should be **only a heuristic**. It ignores exit-time tails and interactions between capital release and future arrivals.
+
+Use a no-signal/no-trade outcome as a normal state, not an operational failure.
+
+## 9.3 Arrival model: add only if justified
+
+Estimate arrivals using only prior ledger history. A first candidate is a rolling count model by family; test whether clustering and regime shifts make even that unreliable.
+
+Forecast:
+
+- probability of at least one eligible opportunity in a fixed future window;
+- its likely capital requirement;
+- conservative value distribution.
+
+Include stale/rejected opportunities when defining the observable opportunity process. Separately distinguish:
+
+- signals detected;
+- economically eligible opportunities;
+- executable opportunities;
+- opportunities affordable to this portfolio.
+
+Do not replace these with the ex-post number of profitable trades.
+
+## 9.4 Opportunity-aware exit
+
+For a current position \(j\):
+
+\[
+\text{switch only if}\quad
+\widehat V_t(\text{feasible replacement})
+-\widehat V_t(\text{continue }j)
+>\delta_{\text{switch}},
+\]
+
+after all switching costs and uncertainty.
+
+A forecast of future arrivals can justify a value for waiting, but **not an assumed future winner**. Test it against:
+
+- no early reallocation;
+- current-opportunity ranked queue;
+- fixed holding/expiry rules.
+
+If the queue performs similarly, reject the more complex arrival model.
+
+---
+
+## 10. Costs, delay and free-data adequacy
+
+## 10.1 Explicit cost model
+
+For fill \(j\) in leg \(i\):
+
+\[
+C_{ij}
+=
+|n_{ij}|
+\left[
+b_{ij}+e_{ij}
++v_{ij}(h_{ij}+s_{ij})
+\right],
+\]
+
+where:
+
+- \(b\): broker fee per contract;
+- \(e\): applicable exchange/clearing fee;
+- \(h\): adverse half-spread distance in ticks;
+- \(s\): additional slippage in ticks;
+- \(v\): RUB tick value.
+
+If actual executable bid/ask prices are used, do not add the same half-spread again.
+
+Add separately where applicable:
+
+- settlement/execution charges;
+- forced-liquidation charges;
+- failed-leg unwinds;
+- rehedging and rolls;
+- funding cash flows;
+- collateral/cash financing;
+- incremental LQDT trading costs;
+- unresolved tax effects.
+
+MOEX’s tariff page describes calendar commission as the sum of constituent futures commissions. It does not verify the user’s VTB or BCS schedule. [MOEX, derivatives tariffs, calendar-spread section](https://www.moex.com/s93)
+
+### Proposed synthetic scenarios
+
+These are **sensitivity probes**, not estimates of MOEX spreads.
+
+| Scenario | Half-spread \(h\), per side | Additional slippage \(s\), per side | Fees |
+|---|---:|---:|---|
+| Base | 1 tick | 1 tick | Applicable \(b,e\), once verified |
+| Conservative | 2 ticks | 2 ticks | Applicable \(b,e\), plus identified adverse tariff conditions |
+| Stress | 4 ticks | 6 ticks | Applicable stressed charges, forced-exit and legging scenarios |
+
+Observed worse conditions override these values. A wide or illiquid leg must not be capped at this synthetic stress.
+
+Unknown fees remain symbolic or interval-valued. **No net-return result may silently set them to zero.**
+
+## 10.2 Required survival frontier
+
+For every family and sizing policy, report:
+
+- fee range;
+- half-spread/slippage range;
+- delay conditions;
+- fill/rejection assumptions;
+- resulting net \(X\);
+- the boundary at which the hypothesis ceases to pass.
+
+For a simple sensitivity decomposition:
+
+\[
+X(\theta)=G-OC-C(\theta),
+\]
+
+where \(G\) includes the appropriate futures/funding cash flows and \(OC\) is the actual-minus-counterfactual LQDT effect.
+
+The cost budget is:
+
+\[
+C_{\max}=G-OC,
+\]
+
+before any additional robustness hurdle. In practice, estimate the frontier over full portfolio paths because costs also change sizing, rejections and subsequent opportunities.
+
+**No numerical survival range can be reported now:** no historical execution results or verified tariffs were supplied or measured.
+
+## 10.3 What EOD can and cannot establish
+
+EOD data can support:
+
+- specification and unit checks;
+- broad residual and curve hypotheses;
+- low-frequency holding-time analysis;
+- preliminary integer feasibility;
+- rejection of effects too small to survive coarse costs.
+
+EOD OHLC bars do not establish:
+
+- simultaneous executable two- or three-leg prices;
+- bid/ask spreads;
+- fill probability or partial fills;
+- the path between high and low;
+- performance after a 3–90-minute reaction delay;
+- availability of margin offsets during legging.
+
+A defensible first proxy is: **form signals only after the required EOD information is available, then attempt execution at a predefined point in the next joint trading session.** A next-session open is still a proxy, not a demonstrated fill.
+
+Do not construct an executable spread high from one leg’s daily high and the other’s daily low.
+
+With later synchronized quote data, test fixed delays such as 3, 15 and 90 minutes. Do not assign probabilities matching the user’s reported median until actual reaction observations exist. A one-day delay test is **not a mathematical upper bound** on every intraday-delay outcome.
+
+MOEX’s ISS documentation confirms the existence of candles and historical data types, but not the required free depth, expired coverage or permissions. Its subscription archive description must not be used to fill those gaps. [ISS documentation](https://www.moex.com/a2193) [Historical-data service](https://www.moex.com/a2863)
+
+---
+
+## 11. Chronological validation and falsification
+
+### 11.1 Register the universe before outcomes
+
+Admission requires a documented economic relationship. Retain expired, inactive and failed candidates where data permit; do not build the historical universe from current survivors alone.
+
+Record all five families and all rejected leads, including:
+
+- arbitrary correlation-selected pairs: excluded;
+- foreign commodity backtests: methodological leads only;
+- GL cross-currency identity: deferred pending specification reconciliation;
+- index/FX identity: deferred pending current methodology and futures audit;
+- China extension: not activated;
+- funding spread without funding history: inadmissible.
+
+### 11.2 Walk-forward procedure
+
+1. Reserve a final untouched evaluation period.
+2. Fit parameters, hedges, filters, cost calibration and queue rules using training data only.
+3. Select among the preregistered configurations within training/inner chronological validation.
+4. Freeze the configuration for the next test interval.
+5. Purge observations whose outcome/holding intervals overlap the next evaluation boundary.
+6. Size gaps using the **actual maximum signal and holding overlap**, including label construction.
+7. Advance chronologically and repeat.
+8. Evaluate the final holdout once, after design freeze.
+
+If the available history cannot support meaningful independent folds and an untouched final period, report **insufficient evidence**. Do not shrink the holdout repeatedly until a favourable result appears.
+
+Historical holdouts are imperfect when researchers already know the period. An explicitly prospective final evaluation is preferable where practical. The trial ledger remains necessary because holdout alone does not account for repeated configuration search. [Bailey et al., *The Probability of Backtest Overfitting*, February 2015 version, Section 1](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf)
+
+### 11.3 Position and boundary treatment
+
+Predefine whether positions may cross retraining boundaries. A simple first choice is:
+
+- retain the old frozen trade rule until exit;
+- apply the new model only to new trades;
+- prohibit retroactive hedge changes.
+
+At evaluation boundaries, mark all open positions and disclose censored outcomes. Use a common terminal-liquidation convention for portfolio comparisons.
+
+### 11.4 Required reports
+
+Primary:
+
+- terminal and time-path net RUB \(X\);
+- excess high-water drawdown;
+- cumulative LQDT shortfall.
+
+Supporting:
+
+- gross/fee/spread/slippage/funding/LQDT reconciliation;
+- completed and censored trades;
+- time-to-exit distribution;
+- maximum margin and cash demand;
+- emergency gross usage and incidents;
+- stale, rejected, partial and unfilled counts;
+- human interventions and leg tickets;
+- results by fold, family, expiry and cost/delay scenario;
+- contribution concentration;
+- stress liquidation outcomes.
+
+Do not make Sharpe ratio or trade win rate the selection criterion.
+
+### 11.5 Proposed pass, reject and inconclusive categories
+
+**Eligible for further research**, not live deployment:
+
+- economically valid specifications;
+- acceptable integer positions;
+- positive net excess under base and conservative modeled conditions;
+- no dependence on a single event;
+- uncertainty analysis consistent with a genuine effect;
+- no hidden core-collateral dependence;
+- acceptable manual and cash demands.
+
+For inference, preregister dependence-aware confidence analysis using blocks long enough to reflect holding/expiry clustering. Report sensitivity to block choice. A confidence bound is not a guaranteed future outcome.
+
+**Reject for this pilot** if:
+
+- minimum basket fails funding/risk constraints;
+- edge survives only at implausibly cheap costs or instantaneous fills;
+- a missing cash flow is essential;
+- settlement economics invalidate the supposed relationship;
+- complexity merely leverages one favourable episode;
+- ordinary execution relies on emergency funding.
+
+**Inconclusive** if sample size, rules, costs or permitted data are insufficient. Do not relabel inconclusive as successful.
+
+---
+
+## 12. Ablation plan: complexity must earn its place
+
+Use common signal streams, cost paths and training/test periods.
+
+| Comparison | Hold fixed | Isolated question |
+|---|---|---|
+| Fixed minimum vs capped adaptive | Entry/exit model, authority and execution | Does flexible size add net value? |
+| One-shot vs staged exposure | Maximum authorized basket and reserved liquidity | Does staging improve timing rather than merely add exposure? |
+| Smaller initial basket with/without addition | Same initial tranche | Is the addition itself valuable? |
+| Fixed residual/time exit vs forward continuation | Entry and sizing | Does conditional continuation improve decisions? |
+| Continuation vs current-opportunity switching | Forecast model and sizing | Does a visible alternative justify switching costs? |
+| Ranked queue vs arrival-aware allocator | Eligible ledger and total authority | Is future-arrival modeling necessary? |
+| Identity/static hedge vs refitted hedge | Entry family and costs | Does hedge flexibility add value after turnover? |
+| No seasonal adjustment vs coarse seasonality | Commodity family and folds | Does seasonal structure generalize? |
+
+Avoid launching a large factorial search. Test the simplest viable baseline first, then a small number of one-factor changes. Any later combined configuration is a new logged trial.
+
+A complexity feature should be rejected if it:
+
+- adds no stable net excess after costs;
+- worsens cash/shortfall tails;
+- relies on a few observations;
+- increases human actions beyond capacity;
+- cannot be distinguished from integer-rounding or exposure effects.
+
+If adaptive size and scale-ins collapse to the same one-basket position under RUB 30,000, record them as **economically indistinguishable**, not as separate successful features.
+
+---
+
+## 13. Targeted library leads: contents inspected, text not yet read
+
+No complete book or chapter text was read. The requests below are optional and limited to sections identified from contents. They are **questions for extraction**, not findings attributed to unread chapters.
+
+### 13.1 [Ganapathy Vidyamurthy — *Pairs Trading: Quantitative Methods and Analysis*](https://www.wiley-vch.de/en/areas-interest/finance-economics-law/finance-investments-13fi/finance-investments-special-topics-13fiz/pairs-trading-978-0-471-46067-1)
+
+**Bibliographic identification:** Wiley, September 2004; ISBN 978-0-471-46067-1. The publisher contents were successfully inspected. Relevant exact headings include “Testing Residual for Tradability,” “Band Design for White Noise,” “Spread Dynamics,” “Nonparametric Approach” and “Regularization.” [Wiley-VCH, bibliographic details and contents](https://www.wiley-vch.de/en/areas-interest/finance-economics-law/finance-investments-13fi/finance-investments-special-topics-13fiz/pairs-trading-978-0-471-46067-1)
+
+**Request only:**
+
+- Chapter 5, **“Cointegration”** and **“Road Map for Strategy Design.”**
+- Chapter 6, **“Common Trends Cointegration Model”** and **“Reconciling Theory and Practice.”**
+- Chapter 7, **“Estimating the Linear Relationship: The Regression Approach”** and **“Testing Residual for Tradability.”**
+- Chapter 8, **“Band Design for White Noise,” “Spread Dynamics,” “Nonparametric Approach,” “Regularization.”**
+
+**Extract:**
+
+- assumptions linking residual statistics to a trading rule;
+- counterexamples where statistical fit is not tradability;
+- band-design sensitivity to dependence and costs;
+- whether estimated hedge relationships remain valid through breaks;
+- what changes when equities are replaced with expiring futures.
+
+**Do not initially request:** the merger-risk-arbitrage part or Kalman-filter chapters. Their mechanisms and complexity are not prerequisites for the proposed first baselines.
+
+### 13.2 [Ernest P. Chan — *Algorithmic Trading: Winning Strategies and Their Rationale*](https://www.wiley.com/en-us/Algorithmic+Trading%3A+Winning+Strategies+and+Their+Rationale-p-9781118460146)
+
+**Bibliographic identification:** Wiley, 2013; ISBN 978-1-118-46014-6. Publisher search results exposed contents, and the Wiley Online Books record returned bibliographic/contents metadata through a fallback rather than readable chapter text. Relevant contents: Chapter 1 starts p. 1; Chapter 2 p. 39; Chapter 3 p. 63; Chapter 5 p. 107; Chapter 8 p. 169. [Wiley book page](https://www.wiley.com/en-us/Algorithmic+Trading%3A+Winning+Strategies+and+Their+Rationale-p-9781118460146) [Wiley Online Books record and contents metadata](https://onlinelibrary.wiley.com/doi/book/10.1002/9781118676998)
+
+**Request only:**
+
+- Chapter 1, **“Backtesting and Automated Execution,”** relevant backtest/execution limitations.
+- Chapters 2–3, **“The Basics of Mean Reversion”** and **“Implementing Mean Reversion Strategies,”** only the sections supporting stationarity, hedge estimation and holding rules.
+- Chapter 5, **“Mean Reversion of Currencies and Futures,” pp. 107–131.**
+- Chapter 8, **“Risk Management,”** relevant position and loss-control assumptions.
+
+**Extract:**
+
+- failed or unstable examples, not just successful ones;
+- assumptions behind estimated half-life and exit rules;
+- asynchronous-price and transaction-cost issues;
+- treatment of futures rolls, carry and currencies;
+- conditions under which averaging or leverage invalidates the argument.
+
+**Do not request:** momentum chapters unless the research scope is explicitly expanded and the new family is logged.
+
+### 13.3 [Robert Carver — *Systematic Trading*](https://www.harriman-house.com/authors/robert-carver/systematic-trading/9780857194459)
+
+**Bibliographic identification:** Harriman House, **14 September 2015**; ISBN 9780857194459. Relevant contents were visible through the author’s indexed contents page: Chapter 3 **“Fitting”**; Chapter 9 **“Volatility targeting”**; Chapter 10 **“Position sizing”**; Chapter 11 **“Portfolios”**; Chapter 12 **“Speed and Size.”** The rendered crawl did not consistently expose the full contents, so this is a contents-level lead, not full-text verification. [Publisher details](https://www.harriman-house.com/authors/robert-carver/systematic-trading/9780857194459) [Author contents page](https://www.systematicmoney.org/systematic-trading-information)
+
+**Request only those five chapters’ relevant sections**, plus applicable errata from the author’s resources page. [Author resources and errata lead](https://www.systematicmoney.org/systematic-trading-resources)
+
+**Extract:**
+
+- fitting choices that do not generalize;
+- sensitivity to volatility estimates;
+- integer-contract granularity;
+- cost-versus-speed trade-offs;
+- diversification claims that fail at small capital;
+- examples where doing less or not trading is preferable.
+
+The author’s public March 2016 small-account article can be read first; its conclusions must not be transplanted as numerical MOEX capital requirements. [Carver, “Diversification and small account size”](https://qoppac.blogspot.com/2016/03/diversification-and-small-account-size.html)
+
+For any supplied section, retain edition, page, exact assumption, counterexample and R10 consequence. Generic summaries are insufficient.
+
+---
+
+## 14. Data limitations, retrieval failures and unresolved conflicts
+
+### 14.1 Decision-critical limitations
+
+| Item not verified | Evidence/fallback actually used | Date/year and consequence |
+|---|---|---|
+| Free EOD depth, expired coverage, delisted coverage and OI completeness | ISS description; subscription archive description | Accessed 2026-10-22; neither establishes the assumed free dataset. |
+| Permission for proposed research/screener use | Published ISS restriction | Undated current wording, accessed 2026-10-22; agreement/alternative permission remains a gate, not a legal conclusion. |
+| VTB/BCS fees, calendar-order support and client permissions | MOEX exchange/service pages only | Current exchange information is not a broker confirmation. |
+| LQDT collateral eligibility, haircut, cash conversion and liquidation order | No account-specific evidence | Unknown; core holding cannot be assumed usable pilot capital. |
+| Historical GL settlement reference | 2023 launch notice versus current product page | RUGOLD/GOLDFIXME conflict unresolved; no inferred change date. |
+| Daily-futures effective funding specification | Public explanatory page | Current explanation only; historical parameters and full specification unverified. |
+| Investor-specific taxation | No tax/account evidence | All relevant years unresolved; only the instructed long-term-deduction exclusion is applied. |
+| Reaction distribution and intervention quota | User-supplied assumptions | Dated to this report; not measured. |
+| Current instrument liquidity and executable spreads | Listings and illustrative pages | No execution measurements; no quoted prices used as feasibility evidence. |
+| Book chapter arguments | Contents, metadata and one public author article | 2004/2013/2015 books; chapter text not read. |
+
+### 14.2 Retrieval log
+
+All attempts below occurred on **2026-10-22**.
+
+| Target | Failure type / outcome | Lawful fallback and remaining limitation |
+|---|---|---|
+| [MOEX daily-currency specification link](https://fs.moex.com/files/24291/) | Returned an “outdated browser” notice, not the specification | Read the official explanatory page; full specification remains unverified. |
+| [MOEX GL specification](https://www.moex.com/files/25655) | No usable content; tool reported network/timeout/unsupported-type possibilities | Used official current product and launch pages; conflict remains open. |
+| [MOEX GL one-page PDF](https://fs.moex.com/f/23689/onepager-raschetnye-fjuchersy-na-zoloto-v-rublja.pdf) | Binary content returned without readable extraction | Not used to establish parameters. |
+| [MOEX daily-futures presentation PDF](https://fs.moex.com/f/23699/prezentacija-ispolnenie-i-fanding-v-vechnyh-fjuc.pdf) | Binary content returned without readable extraction | Official HTML explanation only; presentation contents not claimed. |
+| [NBER carry PDF](https://www.nber.org/system/files/working_papers/w19325/w19325.pdf) | Binary extraction failed | Lawful author-hosted July 2012 version and institutional August 2013 abstract; versions explicitly separated. |
+| [Wiley Online Books, Chan](https://onlinelibrary.wiley.com/doi/book/10.1002/9781118676998) | Publisher page unreadable; tool supplied metadata/contents fallback | Used as contents metadata, not full-text evidence. |
+| Author contents page for Carver | Rendered crawl incomplete; indexed search exposed relevant chapter headings | Limited requests based on headings; no chapter-content claims. |
+
+No specialist bypass, authentication workaround or paywall circumvention was attempted. A readable public specification or user-supplied lawful copy is the appropriate next step.
+
+### 14.3 Chinese-language extension
+
+**Not activated.** The investigated official copper page mentions China in historical global-demand discussion, but does not establish a Chinese settlement benchmark or a specific export-flow link for the proposed MOEX spread. Its background figures refer to older years and were not used as current facts. [MOEX, copper contract overview, historical consumption discussion](https://www.moex.com/ru/derivatives/commodity/copper/)
+
+CNY currency exposure alone does not satisfy the prompt’s commodity benchmark/export-flow condition. No relevant commodity connection was established within this bounded search; this is not a claim that none could exist.
+
+If a demonstrably connected contract is later admitted, register the new lead, translate source terminology and separate Chinese contract economics from MOEX rules and performance.
+
+---
+
+## 15. Decision gates and possible project changes
+
+The test plan should permit the project to become simpler—or stop.
+
+| Finding | Appropriate project change |
+|---|---|
+| No acceptable integer basket within RUB 30,000 | Retain a virtual study; narrow the universe. Do not automatically enlarge capital. |
+| Data-use terms do not cover the intended workflow | Obtain written clarification/agreement or a permitted alternative before implementation. |
+| Effects disappear under conservative costs | Reject those hypotheses; do not assume automation will repair them. |
+| EOD results depend on short-lived deviations | Obtain narrowly targeted synchronized data, or reject for manual execution. |
+| Funding/specification history is incomplete | Exclude the dependent family. |
+| Adaptive size adds little after integer mapping | Keep fixed minimum sizing. |
+| Scale-ins need emergency resources | Reject scale-ins for this pilot. |
+| Ranked queue matches complex allocation | Keep the queue. |
+| Continuation forecast is too sparse | Retain fixed residual/time/expiry exits. |
+| Manual capacity is inadequate | Reduce cadence/universe or remain virtual; do not conceal discretionary omissions. |
+| Future RUB 10–20 million scale becomes relevant | Run a new capacity, market-impact, collateral and operational study; do not extrapolate the small pilot. |
+
+### Minimal materials needed next
+
+The next decision does **not** require another broad strategy search or an entire book library.
+
+The smallest useful next package is:
+
+1. **A permitted-data route and a small representative contract-history sample**, including one expired contract and its specifications.
+2. **The applicable broker tariff and collateral/execution terms** for the actual account.
+3. **Effective specifications resolving the selected family’s cash flows and expiry rules.**
+4. A defined human intervention quota and emergency-response availability before realistic execution simulation.
+
+Book sections remain optional and targeted.
+
+## Bottom line
+
+R10 supports a **small, economically admitted hypothesis set with strict accounting and falsification**, not a chosen strategy.
+
+The decisive sequence is:
+
+**specification and permission → integer/cash feasibility → simple delayed-execution baseline → net LQDT excess → continuation and sizing ablations → untouched evaluation.**
+
+Until those tests are conducted, the justified conclusion is neither “spreads will beat LQDT” nor “holding capital is wasteful.” It is that **every new entry, continuation, addition and switch must earn its place against the same feasible LQDT alternative, under the same finite authority and without hindsight.**

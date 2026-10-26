@@ -1,0 +1,240 @@
+# Evidence-Backed Report: Deterministic Strategy Hypotheses, Continuation, and Opportunity Cost in MOEX Futures Spreads
+
+## Executive Summary & Operational Boundaries
+
+This report establishes a rigorous, falsifiable hypothesis and test plan for a private MOEX futures-spread project. Operating under strict capital constraints—a test allocation of $\text{RUB } 30,000$ alongside a core $\text{LQDT}$ holding exceeding $\text{RUB } 40\text{ million}$, with an emergency gross cap of $\text{RUB } 15,000$—every strategy variant is evaluated against a matched $\text{LQDT}$ cash counterfactual.
+
+The core architectural principles governing this framework are:
+
+1. **Economic First Principle:** Statistical cointegration or high correlation without an underlying cash-and-carry, seasonal storage, or supply-chain linkage is rejected as spurious.
+2. **Strict Capital Conservation:** No emergency funding or core collateral drawdown may be used for averaging down or funding fresh exposure; all positions must respect integer contract constraints and transaction cost hurdles.
+3. **Chronological Walk-Forward Validation:** All parameter optimization is strictly confined to training partitions, holding out untouched test periods to prevent look-ahead bias and overfitting.
+
+---
+
+## Task 1: Economic vs. Statistical Baselines & Critique of Raw Metrics
+
+### Critique of Raw Z-Scores, Correlation, and Stationarity
+
+Relying solely on statistical metrics—such as Pearson correlation ($r$), rolling z-scores of price ratios, or Augmented Dickey-Fuller (ADF) tests on raw price spreads—fails as a trading strategy for three fundamental reasons:
+
+* **Spurious Stationarity and Non-Stationary Drift:** Financial price series frequently exhibit spurious cointegration over finite historical samples. A stationary ADF test on historical price differences often reflects a temporary structural regime (e.g., matching monetary policy cycles or synchronized inflation shocks) rather than a durable economic attractor.
+* **Absence of Economic Gravitational Pull:** Statistical mean-reversion assumes a restorative force. Without an explicit economic mechanism—such as arbitrage bounds governed by storage costs, financing rates, delivery mechanics, or substitution elasticities—a wide z-score may simply represent a permanent structural break (e.g., regulatory shifts, sanctions, or permanent delivery asset impairment on MOEX).
+* **Non-Constant Variance and Regime Shifts:** Spread volatility ($\sigma_S$) is time-varying. Fixed z-score entry/exit thresholds (e.g., $\pm 2.0$) applied to a non-stationary or heteroskedastic spread generate excessive false breakouts and catastrophic drawdowns when volatility expands during market stress.
+
+### Compact Family of Economic/Statistical Baselines
+
+To replace raw statistical dredging, we define three distinct economic spread classes tailored to MOEX contract structures:
+
+1. **Financed Carry / Cost-of-Carry Basis ($\text{Basis}_{t}$):**
+* **Economic Story:** Governs the relationship between a spot-linked index future (e.g., MX or index options/futures) and its constituent delivery months, or commodity futures (e.g., Brent oil BR or gold GD) where the fair-value forward price is anchored by financing costs, storage, and convenience yields.
+* **Formula:** $\text{Basis}_t = F_{t, T_2} - F_{t, T_1} - \text{FinancingCost}(T_1, T_2)$
+* **Baselines:** The theoretical boundary is bounded by storage and borrowing rates. Deviations beyond transaction and funding friction costs trigger cash-and-carry or reverse cash-and-carry hypotheses.
+
+
+2. **Inter-Expiry Calendar Spreads:**
+* **Economic Story:** Near-term versus deferred contracts of the same underlying asset (e.g., Si currency futures or BR oil futures across adjacent expiry months). The spread reflects the cost of carry over the inter-delivery period, liquidity premia, and rolling pressures.
+* **Formula:** $S_t = F_{t, \text{near}} - F_{t, \text{deferred}}$
+* **Baselines:** Mean-reversion around the implied financing rate plus physical storage/convenience differential.
+
+
+3. **Inter-Commodity / Cross-Asset Economic Parity:**
+* **Economic Story:** Structural relationships between related underlying assets, such as Brent-denominated oil futures versus Russian export-linked proxies, or currency crosses where monetary policy differentials dictate theoretical bounds.
+* **Formula:** $S_t = P_{A, t} - \beta P_{B, t}$ where $\beta$ is derived from fundamental conversion ratios or regression on rolling training windows.
+
+
+
+---
+
+## Task 2: Operational Specifications & Pipeline Architecture
+
+Executing futures spreads on MOEX requires a strict, point-in-time data and execution pipeline.
+
+```
+[Raw EOD OHLCV + OI] 
+       │
+       ▼
+[Point-in-Time Alignment & Expiry Tracking]
+       │
+       ▼
+[Rolling Training Window (Fit Hedge Ratio & Volatility)]
+       │
+       ▼
+[Spread Normalization & Integer Lot Mapping]
+       │
+       ▼
+[Cost-Hurdle Filter & Execution Logic]
+
+```
+
+### 1. Point-in-Time Inputs & Expiry Handling
+
+* **Data Prerequisite:** Daily EOD bars (Open, High, Low, Close, Volume, Open Interest) alongside historical contract specification tables (expiry dates, contract multipliers, tick sizes).
+* **Roll-Over Protocol:** Futures contracts on MOEX have discrete expiration dates (typically quarterly: March, June, September, December). The pipeline must handle contract rolls by constructing continuous back-adjusted series using volume-weighted or fixed-offset rolling windows, while tracking physical expiration to prevent holding expired contracts into settlement unless intended.
+
+### 2. Hedge Estimation & Spread Normalization
+
+* **Hedge Ratio ($\beta$):** Estimated exclusively on training windows using OLS regression or rolling cointegration vectors (Engle-Granger / Johansen), or fixed economic parity ratios:
+
+$$\beta_{\text{train}} = \frac{\text{Cov}(P_{A, \text{train}}, P_{B, \text{train}})}{\text{Var}(P_{B, \text{train}})}$$
+
+
+* **Normalization:** To convert raw price spreads into dimensionless decision variables, standardize using rolling volatility of the spread over a lookback window $N$:
+
+$$z_t = \frac{S_t - \mu_{S, \text{train}}}{\sigma_{S, \text{train}}}$$
+
+
+
+### 3. Integer Mapping & Lot Constraints
+
+Because MOEX futures are discrete contracts, continuous hedge ratios must be mapped to integer multipliers.
+
+* Let contract sizes be $M_A$ and $M_B$. For a target capital allocation, the integer contract quantities $(N_A, N_B)$ solve:
+
+$$N_A M_A P_A \approx \beta N_B M_B P_B$$
+
+
+* Constraints: The total margin requirement for $(N_A, N_B)$ must not exceed the $\text{RUB } 30,000$ test allocation, incorporating initial margin (IM) and variation margin (VM) buffers.
+
+### 4. Entry, Exit, and Structural Break Rules
+
+* **Entry Trigger:** $\vert{}z_t\vert{} > z_{\text{entry}}$ *and* estimated spread profit exceeds 3× total round-trip transaction costs (broker fees, exchange fees, and bid-ask slippage).
+* **Exit Trigger:** $z_t crosses 0$ (mean reversion) or $\vert{}z_t\vert{} < z_{\text{exit}}$, or stop-loss triggered by structural divergence.
+* **Failure / Structural Break Check:** If the spread breaches outer boundaries ($\vert{}z_t\vert{} > z_{\text{stop}}$, e.g., $4.5\sigma$) or open interest in the legs collapses by more than $50\%$ over 5 days, declare a structural break, force liquidating all legs, and log a permanent strategy failure for that pair.
+
+---
+
+## Task 3: Entry vs. Continuation Decision Framework
+
+When evaluating an open spread position at time $t$, the decision to **continue** holding versus **exiting immediately** depends on the conditional expected incremental value compared to alternative capital deployment (including the $\text{LQDT}$ counterfactual).
+
+### Mathematical Decision Rule
+
+Let $V_{\text{cont}}$ be the expected net present value of continuing the position, and $V_{\text{exit}}$ be the net liquidation value after accounting for remaining transaction costs and slippage.
+
+* **Expected Continuation Value:**
+
+$$V_{\text{cont}} = \mathbb{E} \left[ \pi_{t \to \text{exit}} - \text{Cost}_{\text{holding}} - \text{RiskPenalty} \mid \mathcal{F}_t \right]$$
+
+
+* **LQDT Opportunity Cost:** Retaining capital in a stagnant or slowly mean-reverting spread incurs an opportunity cost equal to the forgone $\text{LQDT}$ daily yield ($\gamma_{\text{LQDT}}$) plus the risk of variation margin drawdowns eating into the $\text{RUB } 30,000$ test cap.
+
+### Sunk Cost Fallacy & Exit Discipline
+
+* **No Sunk Cost Effect:** Previous losses or margin drains are strictly sunk. The decision to hold must depend solely on the forward-looking Sharpe ratio of the remaining trajectory.
+* **Time-to-Exit Distribution:** If empirical validation shows that $80\%$ of mean-reversions occur within $K$ days, any trade exceeding $1.5K$ days without reversion triggers mandatory liquidation, freeing funds for alternative opportunities or returning to $\text{LQDT}$.
+
+---
+
+## Task 4: Capital Allocation, Sizing Rules & Scale-In Constraints
+
+Given the strict $\text{RUB } 30,000$ test cap and the prohibition against averaging down using emergency funds, sizing rules must be deterministic and conservative.
+
+| Sizing Rule | Description | Pros | Cons under MOEX Constraints |
+| --- | --- | --- | --- |
+| **Fixed Minimum Sizing** | Always deploy the minimum possible integer contract lot (e.g., 1 spread unit). | Preserves capital; minimizes margin exposure; respects $\text{RUB } 30k$ limit. | Low profit potential if spread moves favorably on small size. |
+| **Capped Adaptive Sizing** | Size varies inversely with estimated spread volatility, capped at margin limits. | Optimizes risk-adjusted return per unit of volatility. | Prone to parameter estimation error; high turnover in volatile regimes. |
+| **Preplanned Scale-Ins** | Split entry into 2-3 tranches at predefined z-score increments (e.g., $2.0\sigma$, $2.5\sigma$). | Captures better average entry price on deepening mispricings. | **Prohibited for Averaging Down:** Scale-ins are only permitted if planned *ab initio* for initial entry; adding to a losing position ("averaging down") using emergency funds is strictly banned. |
+
+---
+
+## Task 5: Opportunity-Arrival Modeling & Queue Management
+
+To prevent look-ahead bias and "oracle" selection bias (choosing the ex-post best trade), opportunity-arrival modeling must reflect realistic operational constraints.
+
+* **Past Available Queue:** The simulator maintains a historical log of all generated signals, including stale, rejected, unfilled, and partially filled orders.
+* **Execution Latency & Manual Friction:** Given the manual execution window of 5–15 minutes (up to 90 minutes), limit orders or signal triggers must incorporate realistic slippage and queue position decay. If a signal's expected profit degrades below total costs due to latency, the signal is classified as "stale/rejected."
+* **Ranked Queue Alternative:** Instead of complex optimization, employ a simple ranked queue based on:
+
+$$\text{Score}_t = \frac{\mathbb{E}[\text{Return}]}{\text{Estimated Volatility} \times \text{Transaction Cost Ratio}}$$
+
+
+
+The system evaluates opportunities sequentially and allocates available test capital to the highest-scoring eligible spread that passes transaction cost hurdles.
+
+---
+
+## Required Outputs
+
+### 1. Candidate Hypothesis Cards
+
+#### Hypothesis Card 1: Inter-Expiry Currency Basis (Si Contracts)
+
+* **Economic Story:** Near-term versus next-quarter USDRUB/CNYRUB futures reflecting the risk-free rate differential and carry cost between spot and forward currency markets.
+* **Instruments:** $\text{Si}_{\text{near}}$ vs. $\text{Si}_{\text{deferred}}$ (USD/RUB futures).
+* **Data:** EOD OHLCV, Open Interest, contract expiry schedules.
+* **Formulas / Units:** $S_t = F_{\text{near}} - F_{\text{deferred}}$, normalized via rolling 60-day z-score.
+* **Parameter-Selection Procedure:** Training window = 252 trading days; optimize entry threshold $z_{\text{entry}} \in [2.0, 2.5]$, exit threshold $z_{\text{exit}} \in [0.0, 0.5]$.
+* **Entry / Continue / Exit / Invalidate:**
+* *Entry:* $\vert{}z_t\vert{} > 2.2$ and expected spread profit $> 3 \times$ fees.
+* *Continue:* $\vert{}z_t\vert{}$ decreasing toward 0 within 30 days.
+* *Exit:* $z_t \le 0.2$ or time $> 45$ days.
+* *Invalidate:* Spread breaches $4.0\sigma$ or open interest drops below exchange minimum liquidity thresholds.
+
+
+* **Expected Failure Mode:** Structural currency peg shifts, severe liquidity dry-up in deferred contracts, or sudden regulatory capital controls.
+* **Validation Design:** Chronological walk-forward (1 year train, 3 months test); evaluate net RUB excess over matched $\text{LQDT}$ counterfactual.
+* **Decision to Reject:** Reject if net return fails to beat $\text{LQDT}$ after deducting MOEX exchange/broker fees across base and stress cost scenarios.
+
+#### Hypothesis Card 2: Commodity Calendar Spread (Brent Oil Futures - BR)
+
+* **Economic Story:** Storage cost and inventory cycle anchoring inter-month Brent crude futures traded on MOEX.
+* **Instruments:** $\text{BR}_{\text{near}}$ vs. $\text{BR}_{\text{deferred}}$ (Brent futures).
+* **Data:** Daily settlement prices, storage cost estimates, open interest.
+* **Formulas / Units:** $S_t = \ln(F_{\text{near}}) - \ln(F_{\text{deferred}})$.
+* **Parameter-Selection Procedure:** Rolling 180-day training window for regression hedge ratio and volatility normalization.
+* **Entry / Continue / Exit / Invalidate:**
+* *Entry:* $\vert{}z_t\vert{} > 2.5$.
+* *Continue:* Holding while convergence is active.
+* *Exit:* $z_t = 0$ or stop-loss at $3.5\sigma$.
+* *Invalidate:* Geopolitical structural shocks causing permanent backwardation/contango regime shifts.
+
+
+* **Expected Failure Mode:** Extreme inventory squeezes or structural backwardation persistence.
+* **Validation Design:** Walk-forward split with transaction cost modeling.
+* **Decision to Reject:** Reject if slippage in less liquid deferred BR contracts outweighs carry yield.
+
+---
+
+### 2. Pair-Family / Strategy Compatibility Matrix & Ranked Experiments
+
+| Family / Strategy | Economic Foundation | Data & Complexity | Capital Efficiency ($\text{RUB } 30k$) | Cost Resilience | Ranked Priority |
+| --- | --- | --- | --- | --- | --- |
+| **1. Si Inter-Expiry Basis** | Interest rate parity / Carry | Low (EOD bars, 2 contracts) | High (fits margin easily) | Moderate (tight spreads) | **1 (Top Priority)** |
+| **2. BR Calendar Spread** | Storage & Convenience yield | Low (EOD bars, 2 contracts) | Moderate (higher margin volatility) | Low-Moderate (wider slippage) | **2** |
+| **3. Cross-Asset Equity/FX** | Statistical parity | Medium (Multivariate regression) | Low (complex integer mapping) | Low (high transaction drag) | **3 (Low Priority)** |
+
+---
+
+### 3. Ablation Plan
+
+To isolate the contribution of architecture components and prevent unjustified complexity:
+
+* **Baseline Model ($M_0$):** Fixed minimum sizing, single entry threshold ($2.0\sigma$), zero scale-ins, rigid time-stop (30 days).
+* **Experiment 1 ($M_1 = M_0 + \text{Opportunity-Aware Exits}$):** Test whether dynamic profit-taking improves net return over fixed time-stops.
+* **Experiment 2 ($M_2 = M_1 + \text{Capped Adaptive Sizing}$):** Evaluate whether volatility-adjusted sizing outperforms fixed minimum sizing within the $\text{RUB } 30,000$ limit.
+* **Ablation Criterion:** Complexity is retained *only* if the net excess return over $\text{LQDT}$ statistically improves by at least $1.5\times$ the added transaction and slippage cost. Otherwise, drop to $M_0$.
+
+---
+
+### 4. Targeted Library Leads Analysis
+
+* **Vidyamurthy, *Pairs Trading: Quantitative Methods and Analysis*:**
+* *Assumptions & Counterexamples:* Relies heavily on cointegration and Ornstein-Uhlenbeck processes. Vidyamurthy assumes constant mean-reversion parameters ($\lambda$ and $\sigma$). *Counterexample:* In MOEX futures, regulatory interventions and macro shocks cause $\lambda$ to collapse to zero, turning mean-reverting spreads into permanent directional trends.
+
+
+* **Chan, *Algorithmic Trading: Winning Strategies and Their Rationale*:**
+* *Assumptions & Counterexamples:* Advocates ADF tests and half-life of mean-reversion calculations. *Counterexample:* Chan's backtests often omit realistic exchange fees and bid-ask bounce in secondary contract months. Applying Chan's rules directly without MOEX-specific fee haircuts leads to negative net performance relative to $\text{LQDT}$.
+
+
+* **Carver, *Systematic Trading*:**
+* *Assumptions & Counterexamples:* Emphasizes annualized Sharpe ratios, position sizing via volatility parity, and portfolio diversification. *Counterexample:* Carver's framework assumes liquid capital scaling and continuous rebalancing, which is incompatible with a $\text{RUB } 30,000$ micro-allocation constrained by integer contract lots and severe margin limits.
+
+
+
+---
+
+## Falsification Criteria & Project Progression
+
+* **Falsification Threshold:** If cumulative net underperformance versus the matched $\text{LQDT}$ counterfactual reaches $\text{RUB } 5,000$, issue an internal warning. If it reaches $\text{RUB } 10,000$ (or a drawdown from the excess-result high-water mark of $\text{RUB } 10,000$), trigger mandatory de-risking to flat.
+* **Project Termination:** If preliminary walk-forward tests across both Si and BR hypotheses fail to clear transaction costs and beat $\text{LQDT}$ on an out-of-sample basis, terminate the futures-spread project and maintain core capital entirely in $\text{LQDT}$.

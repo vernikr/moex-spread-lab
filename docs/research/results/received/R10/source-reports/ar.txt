@@ -1,0 +1,913 @@
+# R10 — Deterministic Strategy Hypotheses, Continuation & Opportunity Cost
+
+**Pilot: private MOEX futures-spread desk. Qualified investor, KPUR-reported. Manual execution (VTB), future BCS. Test book RUB 30k on same account as >RUB 40m LQDT core. Pack date: 2026-10-07. Current-facts cutoff for this research: 2026-10-22 (Europe/Moscow). All prices/dates verified live where noted.**
+
+> **Nature of this document:** Evidence-backed **hypothesis and test plan**, not a backtest, not a parameter choice, not an investment recommendation. No position taken. No positive excess return promised. All performance expectations are ex-ante hypotheses to be falsified. Past availability ≠ historical provability. Every numeric cost/performance illustration is a modeled scenario, not a measured result.
+
+> **Inputs read:** No repository attachments supplied with this task. No predecessor reports were attached. Working assumptions below are treated as dated hypotheses and verified against public primary sources where cited. Books are used as targeted leads, not as assumed prior reads.
+
+> **Language note:** English body. Russian terms quoted verbatim for MOEX/broker economics. Chinese extension considered and rejected (see §10 — no qualifying China-linked MOEX contract found whose carry/basis is demonstrably tied to a Chinese benchmark price/settlement).
+
+---
+
+## Table of Contents
+
+1. [Executive Summary & Ranked Queue](#1-executive-summary--ranked-queue)
+2. [Decision Architecture: What This Plan Must Falsify](#2-decision-architecture-what-this-plan-must-falsify)
+3. [Project Constraints Translated to Research Constraints](#3-project-constraints-translated-to-research-constraints)
+4. [Data Foundations Verified 2026-10-22](#4-data-foundations-verified-2026-10-22)
+5. [Cost Model: Three Scenarios (Not Three Forecasts)](#5-cost-model-three-scenarios-not-three-forecasts)
+6. [LQDT Counterfactual & Excess Metric X(t) — No Double-Count](#6-lqdt-counterfactual--excess-metric-xt--no-double-count)
+7. [Why z-Scores / Correlation / ADF Are Not a Trade](#7-why-z-scores--correlation--adf-are-not-a-trade)
+8. [Spread Taxonomy for MOEX](#8-spread-taxonomy-for-moex)
+9. [Common Machinery: Normalization, Hedge, Integer Mapping, Expiry, Breaks](#9-common-machinery-normalization-hedge-integer-mapping-expiry-breaks)
+10. [Candidate Hypothesis Cards H1–H6](#10-candidate-hypothesis-cards-h1h6)
+11. [Compatibility Matrix & Experiment Design](#11-compatibility-matrix--experiment-design)
+12. [Entry vs Continuation: Conditional Value, Not Sunk Cost](#12-entry-vs-continuation-conditional-value-not-sunk-cost)
+13. [Sizing Compared on Same Splits: Fixed vs Capped Adaptive vs Scale-Ins](#13-sizing-compared-on-same-splits-fixed-vs-capped-adaptive-vs-scale-ins)
+14. [Opportunity-Arrival Model: Ranked Queue vs Oracle (Anti-Oracle Test)](#14-opportunity-arrival-model-ranked-queue-vs-oracle-anti-oracle-test)
+15. [Validation Discipline: Walk-Forward, Gaps, Logs, Hold-Out](#15-validation-discipline-walk-forward-gaps-logs-hold-out)
+16. [Risk, Governance & Emergency-Funding Protocol](#16-risk-governance--emergency-funding-protocol)
+17. [Resource Budget: VPS, MacBook, Data, Timeframes](#17-resource-budget-vps-macbook-data-timeframes)
+18. [Ablation Plan: Isolating Flex Size / Scale-Ins / Opportunity-Aware Exits](#18-ablation-plan-isolating-flex-size--scale-ins--opportunity-aware-exits)
+19. [Library Leads: Vidyamurthy / Chan / Carver — What to Extract](#19-library-leads-vidyamurthy--chan--carver--what-to-extract)
+20. [Falsification Criteria & Project Gates](#20-falsification-criteria--project-gates)
+21. [What Was Verified, What Is Still Conditional](#21-what-was-verified-what-is-still-conditional)
+22. [Bibliography & Primary Sources](#22-bibliography--primary-sources)
+23. [Appendices](#23-appendices)
+
+---
+
+## 1. Executive Summary & Ranked Queue
+
+**One-line verdict to test:** The only plausible path to positive net RUB excess **X(t)** vs the matched LQDT counterfactual on RUB 30k, with manual 5–15 min median latency and zero emergency funding at entry, is **very low-turnover, economically-explained spreads** whose edge is carry/roll or deliverable-forcing — not generic statistical co-movement.
+
+**Ranked queue (test order = cheap-to-falsify first, not expected-return order):**
+
+| Rank | Hypothesis | Short economic story | Instruments (1× lot) | Why first/last |
+|------|------------|----------------------|----------------------|----------------|
+| **1** | **H2a — CNY calendar carry** | Domestic RUB curve & FX funding carry between two CNY/RUB expiries; spread = carry yield less roll-risk. | CRZ6 (2026-12-17) vs CRH7 (2027-03-18) | Highest liquidity (7.2 m contracts/day on CRZ6), lowest IM (RUB 1,185+1,281), lowest round-trip friction (RUB 9.5 / 15.3 / 30.3 Base/Cons/Stress incl. broker), portfolio-margin eligible (MKS gr.3, MMS to 4th quarter for Si but 2nd for CNY — see §4). Clean daily EOD history; no commodity seasonality. Cheap to falsify. |
+| **2** | **H1a — CNY perpetual-vs-quarter funding** | Perpetual swaprate (daily funding in RUB/1,000 CNY) vs quarterly price = measurable carry dislocation plus roll-down. | CNYRUBF (lot 1,000 CNY, funding RUB 0.00571/1,000/day on 2026-10-21) vs CRZ6 | Large perpetual book (OI 20.1 m, vol 4.3 m/day). Directly observes swaprate — not inferred. Tests “perpetual premium” hypothesis cleanly. MKS-eligible. Slightly noisier than pure calendar due to intraday funding formula. |
+| **3** | **H3a — BR mini calendar (full lot)** | BR curve slope = storage/insurance/tightness; monthly Brent calendar is closest to textbook calendar-spread; mini (1 bbl) fits RUB 30k better than full BR (10 bbl). | BMX6 (2026-11-02) vs BMZ6 (2026-12-01) [+ full BR as cross-check] | Global benchmark with published roll logic. Observed 1-mo spread ~ USD 4.0/bbl on 2026-10-22. But 1-month horizon, expiry-forced, and BRM liquidity thinner (24k vs 51k full). Tested after H2a/H1a pass. |
+| **4** | **H3b — NGM micro calendar** | Henry Hub 6-month carry strip; micro (1 MMBtu) enables sizing granularity vs full NG (100 MMBtu). | NRX6 (2026-11-25) vs NRZ6 (2026-12-29) | Excellent pilot sizing: Gross IM for 5× micro = RUB 718 (MKS ~RUB 372). Lowest friction absolute. But spread economics are physical-gas seasonality — needs seasonal baseline, not plain mean-reversion. Lower priority than BR. |
+| **5** | **H4a — SBRF vs SBPR** | Same issuer, same economics; differential reflects voting/control & dividend-class expectations — narrowest theoretical band, but also narrowest edge. | SRZ6 vs SPZ6 (both 2026-12-17) | Large IM (RUB ~11k gross) → at most 1× spread on RUB 30k after haircut; observed SBPR spread 9 ticks wide. Good falsifier for “equity-pair hope” — likely rejected on cost. Kept as negative control. |
+| **6** | **H5a — GOLDM vs SILVM** | Precious-metal beta spread; economically justifiable only as “gold-beta hedge” not tight cointegration. | GNZ6 (2×) vs S1Z6 (3× micro silver) | Commodity cross needs explicit β; high basis risk. Included for taxonomy completeness, tested only if H1–H3 survive cost. |
+
+**H2b/H1b (gold perp/quarter) and H1c (index perp/quarter) are deprioritized** — perp-quarter funding edge is smaller vs equity/gold volatility (Base RTC RUB 11–19, but 15-day LQDT drag on full-cash C0 is RUB 19–42, implying hurdle ~0.7–1.3% per fortnight). They remain as second-wave candidates.
+
+> **Cost-aware triage rule embedded:** Any hypothesis whose **Base-scenario round-trip cost (exchange + broker + full half-spread each way + 0.5 tick/side slippage)** exceeds ~ RUB 35 on RUB 30k gross, or whose **Required mean reversion amplitude < 2× Base RTC**, is queued last — it cannot survive Conservative/Stress.
+
+---
+
+## 2. Decision Architecture: What This Plan Must Falsify
+
+This project fails safely only if it can **reject** bad ideas cheaply. The decision hierarchy is:
+
+1. **Is there an economic mechanism?** — carry, convenience yield, dividend/forecast, funding-rate, deliverable supply. If story is “correlation = 0.8 so it reverts” → reject without trade (see §7).
+2. **Can EOD bars define the signal?** — If hypothesis requires minute-level queue or live spread-book → parked until EOD version is rejected and cost of upgrade is justified.
+3. **Does net X survive cost?** — Base → Conservative → Stress. Failure at Base = hard reject. Survival only at Base with failure at Conservative = “fragile, manual-latency-sensitive” tag.
+4. **Does one portfolio beat LQDT with finite capital & queue?** — Single virtual portfolio, no oracle, respecting IM, VM calls, rejected fills, and 3–90 min latency. If only cherry-picked individual spreads beat LQDT → reject architecture.
+5. **Does simplicity beat complexity?** — Fixed-minimum sizing + ranked queue must be beaten by adaptive/size/scale-in variants in ablation, on same splits/delays, before any complexity is adopted.
+
+**Deliverable is a ranked test plan, not a chosen strategy.** No backtest claimed below. Where numbers appear they are **verified contract/fee/margin facts** or **deterministic cost arithmetic**, never PnL.
+
+---
+
+## 3. Project Constraints Translated to Research Constraints
+
+| Pilot fact (from prompt) | Research encoding |
+|---------------------------|-------------------|
+| RUB 30k incl. margin + VM buffer, same account as >RUB 40m LQDT core | Test book **C = RUB 30k** (external flows). LQDT core is **collateral pool, not test return to double-count**. See §6 for C1 (segregated) vs C0 (full-account) accounting. |
+| Future scale RUB 10–20m | Sizing rule must be **scale-linear** (position ∝ C × forecast / IM) with same fractional rule; report RUB 30k numbers **and** per-RUB-million. |
+| Acceptable underperformance RUB 10–15k over months; warning 5k; action 10k drawdown or 10k shortfall; outer 15k; 90-day review | These are **action triggers, not risk limits**: research must simulate “10k cumulative-shortfall → fund-only-to-flat” vs “continue trading” as separate policy branches; emergency funding ≠ new entry. |
+| Emergency top-up ≤ RUB 15k gross (total ≤ RUB 45k), only to avert disorderly liquidation, never to average down; broker use of core collateral counts | Any backtest that **adds size on drawdown** is forbidden in primary branch; scale-in hypothesis tested only as explicit variant with hard cap and its abuse flagged. |
+| Manual 3–90 min, median 5–15 min | Every signal has **execution delay distribution** (primary: +10 min to next settlement/EOD price; stress: +60 min + 1 extra tick slippage). No zero-latency fill. |
+| One realistic virtual portfolio, zero discretionary omission | Single **ranked queue** of eligible signals; ties broken deterministically (e.g., lower IM first); rejected/stale fills logged as opportunity cost. |
+| VTB now, BCS later; fee schedule unverified | Cost param **broker_fee ∈ {0, 0.30, 1.00, 3.00} RUB/contract/leg** spans VTB promo 0 until 31-12-2026, BCS Trader 30–80m tier 0.30, VTB Professional 1.00 post-promo, and stress 3.00. Never assume 0 permanently. |
+| KPUR status reported | Relevant to **IM tier**: MOEX transmits 4 GO levels (KНУР/KСУР/KПУР/КОУР) from 2025-04-01; research must note that pilot IM quoted here is **KПУР tier** (smallest) and that KНУР is ~1.8–2.4× larger → would halve capacity. Unverified broker recognition = conditional. |
+| Dark screener, Telegram alerts only | No signal assumes live order-book scraping; alert → manual ticket. |
+
+---
+
+## 4. Data Foundations Verified 2026-10-22
+
+### 4.1 What free EOD history actually contains
+
+ISS History endpoint for any FORTS contract (verified live):
+
+```
+GET https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/<SECID>.json
+  ?from=YYYY-MM-DD&till=YYYY-MM-DD
+```
+
+Returns per-calendar-day (no weekend gap issue): `BOARDID, TRADEDATE, SECID, OPEN, LOW, HIGH, CLOSE, OPENPOSITIONVALUE, VALUE, VOLUME, OPENPOSITION, SETTLEPRICE, SWAPRATE, WAPRICE, CHANGE, QTY, NUMTRADES, SHORTNAME, ASSETCODE, SWAPRATE_CURR` — verified columns on CRZ6 2026-10-21 and expired CRU6 2026-09-17. `SETTLEPRICE` and `OPENPOSITION` are daily settlement and OI; `SWAPRATE` in RUB per contract per day carries funding for perpetuals.
+
+**Coverage checked 2026-10-22:**
+
+* Active contracts return full OHLCV + OI (e.g., CRZ6: 2026-10-21 CLOSE 12.404, SETTLE 12.419, OI 33.9 m contracts, VOLUME 6.59 m).
+* Expired contracts remain queryable after last trade (CRU6 last day 2026-09-17: SETTLE 12.5876, OPENPOSITION 0, volume 2.29 m) — delisted history **is** available, but **contract specification history is not** via this endpoint; point-in-time lot/step/IM must come from daily securities snapshots.
+* Perpetuals are perpetual in name and infinite-dated in practice (`LASTTRADEDATE = 2100-01-01` for CNYRUBF/GLDRUBF/etc.), but their **funding series** is the extra `SWAPRATE` column — already in EOD.
+
+**Limitations that must be modeled:** No intraday OHLCV in this source; no spread-book history; no per-contract historical IM/step series in one call — must be scraped/archived daily. No corporate-action-adjusted stock-future series flag.
+
+### 4.2 Contract facts live on 2026-10-22 (RFUD board, KPUR tier)
+
+Source: `GET https://iss.moex.com/iss/engines/futures/markets/forts/securities.json` at ~14:00 MSK 2026-10-22. Verified tick/IM/lot/fee and live BBO:
+
+| Bucket | Contract | Lot | Min step | Step price (RUB) | IM KPUR (RUB) | Exchange fee taker (RUB) | Last trade date | Prev settle | Live bid/ask (spread ticks) | OI (contracts) |
+|--------|----------|-----|----------|-----------------|---------------|--------------------------|-----------------|-------------|------------------------------|----------------|
+| FX perp | CNYRUBF | 1,000 CNY | 0.001 RUB | 1.00 | 981.98 | 0.56 | 2100-01-01 | 12.23 | 12.188 / 12.189 (1t) | 20.1 m |
+| FX quart | CRZ6 (2026-12-17) | 1,000 CNY | 0.001 | 1.00 | 1,185.50 | 0.57 | 2026-12-17 | 12.419 | 12.369 / 12.370 (1t) | 33.3 m |
+| FX quart+1 | CRH7 (2027-03-18) | 1,000 CNY | 0.001 | 1.00 | 1,281.17 | 0.59 | 2027-03-18 | 12.624 | 12.567 / 12.570 (3t) | 4.48 m |
+| FX perp | USDRUBF | 1,000 USD | 0.01 | 10.00 | 12,311.59 | 3.79 | 2100-01-01 | 81.97 | 81.37 / 81.38 (1t) | 824k |
+| Si quart | SiZ6 | 1,000 USD | 1 RUB | 1.00 | 13,172.91 | 3.81 | 2026-12-17 | 82,516 | 82,060 / 82,061 (1t) | 9.84 m |
+| Gold perp | GLDRUBF | 1 unit | 0.1 (RUB) | 0.10 | 1,090.76 | 1.43 | 2100-01-01 | 10,858.5 | 10,621.4 / 10,623.4 (20t) | 1.55 m |
+| Gold quart | GLZ6 | 1 unit | 0.1 | 0.10 | 1,273.87 | 1.46 | 2026-12-17 | 11,075.1 | 10,822.5 / 10,824.6 (21t) | 1.44 m |
+| Gold phys | GDZ6 | 1 unit | 0.1* | *8.197 USD | 27,579.64 | 45.24 | 2026-12-18 | 4,180.7 | 4,103.2 / 4,103.5 (3t) | 348k |
+| Index perp | IMOEXF | lot 10 | 0.5 idx pts | 5.00 | 2,454.25 | 1.62 | 2100-01-01 | 2,447 | 2,435.5 / 2,436 (1t) | 2.45 m |
+| Index quart (mini) | MMZ6 | lot 1 | 0.05 | 0.50 | 2,883.40 | 1.63 | 2026-12-17 | 2,464.3 | 2,449.4 / 2,449.5 (2t) | 321k |
+| Index quart (full) | MXZ6 | lot 1 | 25 | 25.00 | 28,833.42 | 16.26 | 2026-12-17 | 246,425 | 244,950 / 244,975 (1t) | 385k |
+| Oil mini | BMX6 (11-26) | 1 bbl | 0.01 USD | 0.81974 RUB | 1,875.28 | 1.17 | 2026-11-02 | 108.37 | 111.71 / 111.73 (2t) | 270k |
+| Oil mini | BMZ6 (12-26) | 1 bbl | 0.01 USD | 0.81974 | 2,080.38 | 1.13 | 2026-12-01 | 104.78 | 107.73 / 107.77 (4t) | 76k |
+| Oil full | BRX6 | 10 bbl | 0.01 USD | 8.19739 | 18,754.45 | 11.72 | 2026-11-02 | 108.38 | 111.75 / 111.77 (2t) | 505k |
+| Gas micro | NRX6 (11-26) | 1 MMBtu | 0.001 USD | 0.081974 | 69.34 | 0.03 | 2026-11-25 | 3.244 | 3.194 / 3.195 (1t) | 1.80 m |
+| Gas micro | NRZ6 (12-26) | 1 MMBtu | 0.001 USD | 0.081974 | 74.34 | 0.04 | 2026-12-29 | 3.685 | 3.644 / 3.645 (1t) | 234k |
+| Gas full | NGX6 | 100 MMBtu | 0.001 USD | 8.19739 | 6,933.69 | 3.51 | 2026-11-25 | 3.24 | 3.192 / 3.193 (1t) | 394k |
+| Gold mini | GNZ6 | 2 units | 0.1 | 0.81974 | 2,758.50 | 4.52 | 2026-12-18 | 4,181.5 | 4,104.3 / 4,104.5 (2t) | 56k |
+| Silver mini | S1Z6 | 1 unit | 0.01 | 0.81974 | 796.21 | 0.63 | 2026-12-18 | 58.43 | 56.14 / 56.15 (1t) | 356k |
+| Stock fut | SRZ6 (SBER ord) | 100 sh | 1 RUB | 1.00 | 5,497.50 | 5.90 | 2026-12-17 | 29,788 | 29,760 / 29,761 (1t) | 616k |
+| Stock fut | SPZ6 (SBER pref) | 100 sh | 1 RUB | 1.00 | 5,499.16 | 5.90 | 2026-12-17 | 29,784 | 29,741 / 29,750 (9t) | 11.9k |
+| Metal | CEZ6 (copper) | 10 kg | 1 USD | 0.81974 | 1,490.84 | 1.56 | 2026-12-15 | 14,402 | 14,163 / 14,171 (8t) | 85k |
+
+* GD is USD-denominated physical gold (step-price in USD equiv); not prioritized for RUB 30k pilot due to RUB 27.6k IM.
+* Perpetual swaprate that day: CNYRUBF RUB 0.00571 per 1,000 CNY per day (= RUB 5.71 per contract-day), GLDRUBF analog negligible intraday.
+
+**Why this table matters:** IM sets hard position cap (RUB ~13k per FX contract ⇒ at most 2 contracts with 1.5× buffer on RUB 30k). Fee sets floor: cheapest 4-leg round-trip exchange fee is RUB 1.40 (5× NR), typical is RUB 2.3–6.5. Spread + slippage dominates exchange fee by 2–10×.
+
+### 4.3 Calendar-spread and portfolio-margin privileges (where leverage on spread is granted)
+
+Verified via MOEX parameters page https://www.moex.com/a215 (accessed 2026-10-22):
+
+* **Межмесячные спреды (MMS):** reduced margin for *same underlying, different expiries*. Max eligible maturity:
+  * CNY — **второй квартальный срок** (i.e., current quarter + next quarter; currently CRZ6+CRH7 eligible, not CR beyond). Si — 4th quarter. NG/NGM — 6th monthly. BR/BRM — 2nd monthly. Gold (physical) — 2nd quarter, etc.
+  * Implication: H2a (CRZ6 vs CRH7) **is** inside MMS window, so clearing gives spread discount (effective SPAN-like “half-netting”). H3a’s second leg must be *next month* only; far calendar (e.g., 11-26 vs 01-27) would **not** get MMS.
+* **Межконтрактные спреды (MKS, 21 groups):**
+  * Gr.1: index family (RTS/MIX/MXI/MOEXCNY + perps)
+  * Gr.2: gold (perp + quarterly)
+  * Gr.3: FX (Si + Eu + CNY + perps cross)
+  * Gr.9–10: NG/NGM and BR/BRM families
+  * Gr.4: precious physical (GOLD↔GOLDM↔SILV↔SILVM) etc.
+  * Implication: H1a and H1b sit in **MKS Gr.3 / Gr.2** ⇒ perpetual↔quarter also gets discount.
+* **Netting rules:** “all terms ≤ max are included; for PLZL/PLT/PLD families with полунеттинг, GO computed by ‘large leg’ (большой ноги) rule pre-expiry” — quoted verbatim from MOEX page.
+* **Calendar-spread book:** Synthetic matching (“синтетический матчинг”) fee discount **Fee_CS = T × F × (1−K)** with K=0.2 during marketing period (6 months per underlying, 18 for OFZ basket). Source: https://www.moex.com/ru/spreads and https://www.moex.com/s93 tariff page. BUT this discount applies only to orders submitted via **“Календарный спред” order type**, not two atomic legs. Manual pilot at VTB web/mobile likely **cannot** use this order type (needs QUIK/TWIME/Spectra) — so baseline costing assumes atomic legs; discount is upside case.
+
+### 4.4 Funding / RUSFAR & LQDT facts
+
+* RUSFAR (REPO-with-CCP indicator) on 2026-10-21 = **13.97% pa** (source: `iss/history/engines/stock/markets/index/securities/RUSFAR.json`). This is the fair secured-money rate LQDT tracks.
+* LQDT (ISIN RU000A1014L8, BPIF “Ликвидность”, board TQBR): 2026-10-21 CLOSE **RUB 2.1141**, WAPRICE same, volume 1.2 bn units, value RUB 2.5 bn — highly liquid. Tracks RUSFAR ON minus TER; TER ~ 0.29–0.43% cited by VTB/BCS factsheets — net accretion ~ 13.5–13.7% pa at current rates.
+* Futures settlement uses MOEX indicative FX: USD/RUB ~81.97 settlement → step-price FX conversion already embedded in `STEPPRICE`.
+
+### 4.5 Corporate-action & expiry calendar
+
+Stock futures (SBRF/SBPR etc.) expire quarterly (3rd Thu month, settlement T+1 on spot), with automatic delivery on EDS — position becomes stock position next day; margin released. Oil/gas monthly with last-trade 2–3 days before calendar expiry. All hypotheses include **hard exit by lastT-2 trading days** to avoid exercise/physical risk.
+
+---
+
+## 5. Cost Model: Three Scenarios (Not Three Forecasts)
+
+Unknown fees = unknown, not zero. Every hypothesis is evaluated under **all three**:
+
+| Scenario | Label | Broker (RUB/contract/leg) | Exchange (per contract/side) | Spread (observed) | Slippage ticks/leg/side | LQDT drag applied | Interpretation |
+|----------|-------|---------------------------|------------------------------|-------------------|-------------------------|-------------------|----------------|
+| **B** | **Base** — verified favorable | **0.30** (BCS Trader 30–80m tier; VTB promo 0.00 is even cheaper — shown as memo) | 100% taker (table above) | **1.0×** observed BBO 2026-10-22 | **0.5** | Full-account C0 *and* segregated C1 reported side-by-side | “If manual taker on both legs, promo/bulk tier, clean fill” |
+| **C** | **Conservative** — routine friction | **1.00** (VTB “Профессиональный” post-promo / BCS default) | 100% taker | **1.25×** | **1.0** | Same | “Post-promo fees + mild latency” |
+| **S** | **Stress** — adverse manual | **3.00** (voice/urgent/2nd attempt + BCS Investor short-leg 0.1% trap if triggered) | 100% taker | **2.0×** | **2.0** | Same | “30–90 min delay into volatile book” |
+
+Round-trip cost (RTC) for a spread with `n1` contracts leg1, `n2` leg2:
+
+```
+RTC = 2*(n1*fee_ex1 + n2*fee_ex2) + (n1+n2)*2*fee_broker
+      + spread_entry + spread_exit          [= 1.0 * (n1*sp1*tv1 + n2*sp2*tv2) * mult]
+      + slippage_entry + slippage_exit      [= 2 * (n1*tv1 + n2*tv2) * ticks * mult]
+```
+
+Spread is `0.5 bid-ask each side` (crossing half-spread in, half out = one full spread total). Slippage is extra ticks beyond BBO mid.
+
+**Deterministic RTC on 2026-10-22 (RUB, 1× spread round-trip):**
+
+| Hypothesis (1×) | Gross IM (sum) | MKS/MMS IM* | Exchange fee 4-leg | RTC **Base** | RTC **Conservative** | RTC **Stress** | 15-day LQDT drag C1 (0.5×IM) / C0 (1.5×IM) |
+|-----------------|----------------|-------------|--------------------|--------------|----------------------|----------------|-------------------------------------------|
+| H1a CNYRUBF×1 vs CRZ6×1 | 2,168 | ~1,250 | 2.26 | **7.5** | 12.8 | 26.3 | 5.7 / 17.1 |
+| H1b GLDRUBF×1 vs GLZ6×1 | 2,365 | ~1,350 | 5.78 | **11.3** | 15.3 | 26.8 | 6.2 / 18.7 |
+| H1c IMOEXF×1 vs MMZ6×1 | 5,338 | ~2,950 | 6.50 | **19.2** | 29.0 | 52.5 | 14.1 / 42.2 |
+| H2a CRZ6×1 vs CRH7×1 | 2,467 | ~1,281 | 2.32 | **9.5** | 15.3 | 30.3 | 6.5 / 19.5 |
+| H3a BMX6×1 vs BMZ6×1 | 3,956 | ~2,080 | 4.60 | **12.4** | 18.0 | 33.0 | 10.4 / 31.3 |
+| H3b NRX6×5 vs NRZ6×5 (micro) | 718 | ~372 | 0.70 | **8.3** | 23.4 | 65.6 | 1.9 / 5.7 |
+| H3c NG full 1×1 (for scale-up) | 14,365 | ~7,431 | 14.98 | **49.0** | 72.3 | 125.4 | 37.9 / 113.6 |
+| H4a SRZ6×1 vs SPZ6×1 | 10,997 | ~5,600 | 23.60 | **36.8** | 44.1 | 63.6 | 29.0 / 87.0 |
+| H4b TTZ6×1 vs TPZ6×10 | 24,826 | ~13,500 | 49.44 | **222.0** | 287 | 469 | 65.4 / 196.3 |
+| H5a GNZ6×2 vs S1Z6×3 | 7,906 | ~5,600 | 21.86 | **34.7** | 47.2 | 79.7 | 20.8 / 62.5 |
+
+*MKS/MMS IM is modeled “large leg” estimate consistent with MOEX groups; real SPAN charge must be read from daily `go_futures` snapshot — unverified intraday, so gross sum is conservative ceiling.
+
+**Reading the table:** A 15-calendar-day hold of H1a on RUB 30k must clear **~RUB 13–27 RTC** plus **RUB 6–17 LQDT drag** (depending on collateral accounting, §6) before it prints positive X. That implies required mean-reversion amplitude **> RUB 20–44** just to break even — which for CNY (tick = RUB 1) is **20–44 ticks** of spread move, i.e., ~0.16–0.36% of notional, or roughly **2–5 days of typical carry** at current funding (see H1a card). This alone filters hypotheses.
+
+**Why three scenarios:** Base survival proves *possibility* under favorable execution; Conservative survival proves *routine viability*; Stress survival proves *manual-latency robustness*. **No hypothesis is “approved” on Base alone** — ranking (§1) is by Conservative RTC / hurdle ratio.
+
+> **Calibration vs “zero”:** VTB promo 0.00 RUB/contract (until 31-12-2026) would cut Base by RUB 1.2–6.6; calendar-spread order 20% discount (K=0.2) would cut exchange fee by ~20% *if* accessible via Spectra/QUIK — both are disclosed as **upside memo, not base case**, because future execution at BCS (0.08–1.20 RUB/contract tiered) and post-promo VTB (1.00 RUB/contract) will not be zero.
+
+---
+
+## 6. LQDT Counterfactual & Excess Metric X(t) — No Double-Count
+
+### 6.1 Principle
+
+Every ruble diverted from LQDT (test cash), every ruble of VM paid/received, and every ruble of IM locked must have a **matched LQDT counterfactual** with identical external flows. The test P&L is **excess**:
+
+```
+X(t) = NAV_test(t) − NAV_counterfactual(t)
+NAV_test = test_cash + VM_cum − fees − slippage + value_of_open_positions(MTM)
+NAV_cf   = same external flows compounded in LQDT (+ collateral yield counted once)
+```
+
+**Two collateral modes reported for every backtest:**
+
+* **C1 — Segregated:** Test book is fenced. LQDT core (RUB 40m+) stays fully invested; test cash RUB 30k is the *only* capital whose LQDT return is foregone. Excess = test P&L − (30k × LQDT_return) − costs. This is the **primary pilot metric** (isolates strategy skill).
+* **C0 — Full-account (with EDP):** Single settlement account where LQDT *can* be posted as collateral and continues earning. Here **never deduct LQDT return twice**: the yield on collateral still posted is *retained* in both test and counterfactual (so it cancels). Only the *incremental* cash diverted to IM/VM buffer loses LQDT accrual. Research must publish both C1 and C0; if broker’s Single Cash Position (EDP / единый денежный пул) allows LQDT-as-collateral with haircut, C0 excess will be **higher** than C1 by the retained yield — must not be misread as strategy alpha.
+
+### 6.2 LQDT daily hurdle at current rates
+
+RUSFAR 13.97% pa ⇒ LQDT net ~13.5–13.7% pa after TER ⇒ daily log hurdle **~0.035%/day**, i.e. **RUB 10.5/day on RUB 30k** (≈ RUB 73/week, ~RUB 157/fortnight). Any spread held 15 days drags ~ RUB 17 (C0) of foregone compounding; a 60-day hold drags ~RUB 69 (C0). Shorter holds are therefore structurally favored — long “hope” trades must earn carry, not just wait.
+
+### 6.3 Tax/fee exclusions per prompt
+
+Exclude only **long-term holding (LTH) benefit** of LQDT (0% on 3y+ for Russian retail). All other taxes (13% on VM/futures PnL, fund distributions) are **identical in test and counterfactual** and cancel in excess — model as zero at pilot scale. Residence/account wrapper unknown → mark as conditional.
+
+---
+
+## 7. Why z-Scores / Correlation / ADF Are Not a Trade
+
+This section is the research team’s shared rejection checklist. Every candidate that relies solely on:
+
+* Pearson correlation > 0.8
+* “Cointegration p < 0.05” (ADF on residuals)
+* z = (spread − μ)/σ crossing ±2
+* “Hurst < 0.5” or “stationary by KPSS”
+* “Half-life = 5 days so we hold 5 days”
+
+…is **flagged as non-economic** and must pass five extra gates before costing logic runs:
+
+| Gate | Why alone it fails | What economics must add |
+|------|--------------------|-------------------------|
+| **1. Mechanism** | Correlation ≠ deliverable linkage; two tech stocks can correlate in risk-on then diverge on earnings. | Carry, convenience yield, dividend forecast, funding arbitrage, index arbitrage — state the cash-flow that enforces mean-reversion or its band. |
+| **2. Stationarity fragility** | ADF/KPSS are low-power on short, heteroskedastic samples; regime shifts (2022 sanctions, 2024 rate regime, 2025 FX controls) break parameters. Book counter-examples: Lopez de Prado (2018) shows ADF false-positive rate rises with volatility clustering. | Require walk-forward parameter stability; break test (Chow/Bai-Perron) on train; Chow p < 0.05 ⇒ invalidate, not re-fit. |
+| **3. Tradability gap** | z at close ignores spread of spread, integer lot, IM, expiry. A 2σ = RUB 8 move that costs RUB 27 to enter/exit is noise. | Map to integer lots with IM check; simulate settlement-price fill + slippage; reject if amplitude < 1.5× Conservative RTC. |
+| **4. Horizon mismatch** | Half-life from AR(1) on daily closes assumes AR(1) DGP — rarely true for calendar strips with roll jumps. | Estimate half-life **after** removing deterministic roll/carry; report confidence interval; require holding period < 1/3 time-to-expiry. |
+| **5. Selection bias** | Testing 200 pairs × 5 z thresholds × 3 windows = 3,000 chances; one p=0.01 is expected. | Pre-register candidate ranges; log every trial; apply Benjamini-Hochberg or Deflated Sharpe; hold-out set untouched. |
+
+> **Literature anchors:**
+> * Chan, E. *Algorithmic Trading* (2013), Ch. 2–6 — ADF/Hurst/VR/Johansen taxonomy, but Ch. 6.6–6.8 explicitly warn “cointegration does not imply mean-reversion at tradeable horizon” and demonstrate **calendar spreads often drift due to term-structure shift**, not revert.
+> * Vidyamurthy, G. *Pairs Trading* (2004), Ch. 3, 7–9 — distinguishes *distance* (non-parametric) vs *cointegration* (common-trends) vs *stochastic spread* (OU); Ch. 7 “Testing for Tradability” requires **spread variance bounded and trade-trigger feasible** beyond unit-root test; Ch. 8 shows **band optimization needs explicit transaction-cost function**.
+> * Carver, R. *Systematic Trading* (2015), Ch. 1–4, 10–12 — “forecast must have economic rationale” and “cost-aware sizing” (cost per trade vs forecast strength) — raw signal strength ≠ position.
+
+---
+
+## 8. Spread Taxonomy for MOEX
+
+Four economic families, not stat clusters:
+
+| Family | Economic driver | Typical half-life | Expiry pressure | Pilot fit |
+|--------|-----------------|-------------------|-----------------|-----------|
+| **A. Funding / carry** | Perp funding vs spot/quarter (swaprate), FX implied carry (CNY, USD) | Hours–days (funding) to weeks (implied yield) | Perp none; quarter hard | **Best pilot fit** — low IM, tight spread, daily observable funding |
+| **B. Calendar commodity** | Storage cost + convenience yield + delivery optionality (BR/NGL/metal) | Days–weeks (seasonal) to never (secular contango shift) | **Hard** — monthly expiry, physical squeeze risk | Second tier; needs seasonal baseline |
+| **C. Same-issuer equity** | Voting premium, dividend-class, liquidity clientele (SBER ord/pref, Tatneft ord/pref) | Weeks–months; arbitrage only at tender/squeeze | Quarterly | Large IM; narrow but rare dislocation → poor pilot breadth |
+| **D. Cross-asset β** | Beta to common factor (gold/silver, oil/ruble, index components) | Unstable; correlation-break sensitive | Mixed | Weak pilot — β drift dominates |
+
+This plan tests **one card per family** (H1=H A, H2≈A/B boundary, H3≈B, H4=C, H5=D) so breadth does not collapse to one stat artifact.
+
+**China-linked extension considered:** MOEX lists no CNY-settled commodity future benchmarked to SHFE/DCE (e.g., SHFE copper) and no CNY-quoted metal contract whose spec references Chinese grade/warehouse. Copper futures (CEZ6) settle vs LME, not SHFE. Therefore the prompt’s conditional Chinese-calendar/basis extension has **no qualifying underlying** under “demonstrably tied to a Chinese benchmark or export flow.” Parked — revisit only if MOEX lists SHFE-linked copper/alumina.
+
+---
+
+## 9. Common Machinery: Normalization, Hedge, Integer Mapping, Expiry, Breaks
+
+> **Rule: Every threshold below is a *pre-registered candidate range* until walk-forward selects; training data only. No “best ex-post” threshold in final report.**
+
+### 9.1 Normalization
+
+Per hypothesis, one canonical spread price in **RUB per spread unit**, tick-aligned:
+
+* **Dollar-valued legs** (BR, NGM): Convert each leg to RUB via `RUBprice = FX * USD_price * lot` where FX = MOEX USD/RUB settlement (used by clearing for step-price). Use same FX for both legs at same timestamp to avoid FX noise.
+* **Calendar (same lot):** `S_cal = P_far − P_near − carry_fair` (H2/H3). `carry_fair` is model carry (see cards); if none, S is raw difference but validated against forward curve.
+* **Perp-quarter:** `S_perp = P_perp − P_quarter − cum_funding_fair` or directly `z_fund = swaprate − fair_funding`.
+* **Cross (gold/silver etc.):** `S_x = P_a − β·P_b` with β in price units; alternatively `S_log = log P_a − β_log·log P_b` (Carver/Chan log-spread); choose per family and keep consistent.
+
+Standardize to **risk units**: `s = S / σ_S` where σ is rolling SD of *residual* (not raw S) over lookback L. But `s` never triggers alone — trigger needs `|S|` in RUB > cost floor.
+
+### 9.2 Hedge / β estimation
+
+Three estimators, **chosen per family and frozen**:
+
+1. **Carry-implied** — β=1 (or lot-ratio) from spec. Used for all calendars (H2/H3) and perp-quarter (H1). No regression.
+2. **Rolling OLS** — `β = Cov(P_a, P_b)/Var(P_b)` over formation window, with Newey-West, winsorized, outlier-capped. For H5 only; requires 60–120 day formation.
+3. **Kalman β(t)** — state-space `P_a(t) = α(t) + β(t) P_b(t) + ε`, random-walk β. Chan Ch. 6 endorses Kalman for time-varying hedge but warns of overfit if noise ratio tuned in-sample. Pre-register `Q/R` ratio range; validate stability.
+
+**No hedge is updated on test data.** Walk-forward refits only at train→test boundary with gap.
+
+### 9.3 Integer lot mapping
+
+A theoretical ratio `r = n1_continuous / n2_continuous` is mapped to feasible integer `n1,n2` by:
+
+```
+min  | r − n1/n2 |   s.t.  n1*IM1 + n2*IM2 ≤ C_avail / buffer
+                   and  max(n1,n2) ≥1
+                   and  cost(RTC) < trigger_gap
+```
+
+Buffer = 1.5× gross IM (pilot prudence; backtests also show 1.2× and 2.0× sensitivity). For RUB 30k, most hypotheses bind at 1×; BR full or TT×TP bind at 0 (rejected for size).
+
+### 9.4 Entry / exit / invalidate / expiry logic
+
+All hypotheses share this state machine; parameters differ:
+
+```
+FLAT ──[z_entry breached AND |S|>cost_floor AND days_to_expiry>min AND OI/volume filters pass]──► OPEN
+OPEN ──[TP hit OR mean-revert to exit band OR time stop OR structural-break OR margin call]──► FLAT
+ANY  ──[break test fires OR expiry-2d OR IM spike >1.5× OR OI collapse <20th pct]──► FORCED FLAT (at market + stress slippage)
+```
+
+* **Filters pre-entry:** `VOLTODAY > 5k contracts & OI > 10k` per leg (or perp equiv) on both legs; spread BBO spread-ticks < 10; no entry on expiry day itself.
+* **Structural-break invalidate:** 5-day rolling Chow on formation-window β; or sequential CUSUM on spread residual; or ADF-on-rolling-window stability. Any break ⇒ **no new entry** for cool-down N days; existing position **tightens TP** or forced-flats depending on severity.
+* **Expiry handling:** Hard flat **T-2 trading days** before `LASTTRADEDATE`. Calendar roll is **not** automatic; roll = close old spread + open new spread as two independent decisions, each paying RTC again. Perpetual leg never expires.
+
+### 9.4a “Dark” reality adaptation
+
+Prompt says execution can be manual at VTB with “dark-only future screener + Telegram alerts.” Research must model:
+
+* Signal computed on **settlement price** (SETTLEPRICE) at evening clearing (~23:50 MSK) or daily close — not intraday snapshot.
+* Alert latency 3–90 min → fill simulated at **next day’s WAPRICE or OPEN+slippage**, not same-bar close. Sensitivity column “+60 min” mandatory.
+
+### 9.5 Point-in-time inputs
+
+Required daily snapshot (archived, not live-regenerated):
+
+* Contract table: SECID, ASSETCODE, LOTVOLUME, MINSTEP, STEPPRICE, LASTTRADEDATE, SETTLEPRICE, INITIALMARGIN (per KPUR/KSUR/KNUR tier), BUYSELLFEE.
+* Marketdata: BID/OFFER/BIDDEPTH/OFFERDEPTHT/SETTLEPRICE/OPENPOSITION/VOLTODAY (to estimate spread cost and filters).
+* Corporate actions / splits for stock-futures underlying (MOEX corporate-action feed).
+* RUSFAR ON + LQDT TQBR CLOSE for hurdle.
+* Perp swaprate history (already in FORTS history `SWAPRATE`).
+
+All “as of T” inputs must be timestamped ≤ T close; no using T+1 IM.
+
+---
+
+## 10. Candidate Hypothesis Cards H1–H6
+
+Each card follows: **Story → Instruments → Data → Formula/Units → Param-selection → Entry/Continue/Exit/Invalidate → Failure mode → Validation → Reject decision.** Thresholds are **ranges**, not points.
+
+### H1a — CNY Perpetual Funding vs Quarterly Carry (Family A)
+
+**Economic story:** CNYRUBF is a 1-day auto-rollover future whose price is anchored to CNY/RUB spot via daily **funding (swaprate)**. The quarterly CRZ6 price embeds **implied RUB carry** (interest-rate differential + FX basis) to Dec expiry. When `P_perp − P_quarter` deviates from fair carry by more than funding + carry uncertainty, a spread mean-reverts as funding accrues or roll-down realizes. This is **cash-flow enforced**, not stat arb.
+
+**Instruments:** Long 1× CNYRUBF + Short 1× CRZ6 (or inverse). Hedge 1:1 notional (both 1,000 CNY). Margin benefit MKS Gr.3 (FX family). Tick 1 RUB both legs.
+
+**Data:** Daily FORTS history (both contracts), perpetual `SWAPRATE` (RUB/1,000 CNY/day), RUSFAR ON, FX settlement, IM snapshots. Formation: 60–90 days.
+
+**Formula:**
+```
+Implied daily carry (quarter) c_imp(t) = (F_quarter(t) − S_perp_proxy(t)) / tau
+  S_perp_proxy ≈ P_perp(t) (perp ≈ spot within funding band)
+Fair funding f_fair(t) = RUSFAR_RUB − RUSFAR_CNY_proxy
+  proxy: on-shore CNY rate or, pragmatically, 0–2% pa (param)
+Spread signal S(t) = P_perp(t) − P_quarter(t) − E_carry_fair(tau)
+  E_carry_fair = f_fair * tau_remaining  (linear carry accrual)
+z(t) = S(t) / sigma_S   where sigma_S = stdev of S residual over L
+Alternative direct: z_fund = (swaprate_observed − f_fair)/sigma_fund
+Units: RUB per 1,000 CNY; thresholds in ticks.
+```
+
+**Param-selection (pre-registered):**
+* L ∈ {30, 60, 90} days for sigma; tau in days; f_fair ∈ {1.0%, 2.0%, spread of RUSFAR−2%} pa; entry |z| ∈ {1.5, 2.0, 2.5}; TP at z ∈ {0, ±0.5}; SL/time-stop variants; min |S| floor = Conservative RTC + LQDT_5d.
+
+**Entry / Continue / Exit:**
+* Entry: |z| ≥ z_entry AND |S| > RTC_Cons + 0.5*IM variation AND tau ≥ 10 days AND OI both legs > 20k.
+* Continue (next day while OPEN): hold while |z| on favorable side and not mean-reverted; **conditional value test** (§12) each day; no averaging down.
+* Exit: z crosses 0 (or ±0.5) OR tau ≤ 5 (expiry flatten) OR time-stop N ∈ {10,15,20} days OR spread adverse by 2× entry gap.
+* Invalidate: RUSFAR jump > 200 bp/day or SWAPRATE formula change announced by MOEX/NCC → cool-down 5 days.
+
+**Failure mode:** Central bank FX intervention, capital-control step, or NCC funding-parameter change (K1/K2 bands, L1/L2) → carry fair jumps; spread walks away without reversion, VM drains test book. Also: perp funding can stay pinned at floor/cap for weeks, creating slow bleed.
+
+**Validation:** Walk-forward quarterly refit; gap = N_lookback/3 between train and test; stress branch with MOEX funding-spec change dates as known event dummies.
+
+**Reject if:** Net X median ≤ 0 on C1 after Conservative cost and LQDT drag, or half-life > tau/2, or funding-persistence test shows swaprate is regime-shifted (ADF on swaprate residual p > 0.10 across 2 regimes).
+
+**Verified pilot edge check (not PnL):** Current funding 0.00571 RUB/1k/day = RUB 5.71/day per contract, i.e. **~47 bp per fortnight** on RUB 12,230 notional. Spread move to close entry-level deviation must exceed Base RTC 7.5 RUB within ~1.3 days of funding accrual alone — plausible only if dislocation > 1.5–2σ **and** held >10 days. Hence **frequency will be low** — matches prompt’s “zero-trade days acceptable.”
+
+---
+
+### H1b — Gold Perpetual vs Gold Quarterly (Family A/B border)
+
+**Story:** Same as H1a but gold’s funding is not FX carry but **USD/RUB + lease-rate**. Perpetual GLDRUBF funding is small (observed ~ RUB 0.001–0.01/day recently), while quarterly GLZ6 embeds gold lease + risk-premium. Premium of perp over quarter should oscillate with risk-off/on.
+
+**Instruments:** GLDRUBF ×1 vs GLZ6 ×1 (both 1-unit lots). MKS Gr.2 discount.
+
+**Formula:** Analog `S = P_perp − P_quarter − lease_fair * tau`. Lease fair proxied by GOFO-like 0–0.5% pa (param).
+
+**Why deprioritized:** Observed Base RTC 11.3 RUB, but typical funding accrual only ~ RUB 0.1–1.5/day → needs 7–80 days carry to cover cost → holding period long vs expiry (only ~56 days left on 2026-10-22), so edge is thin. Keep as second-wave only if H1a survives.
+
+---
+
+### H2a — CNY Calendar Carry (CRZ6 vs CRH7) (Family A–B)
+
+**Story:** Pure FX carry strip. `F(March) − F(Dec)` = carry between Dec and Mar maturities. In absence of deliverable commodity squeeze, forward FX follows covered-interest logic; calendar spread is **direct carry quote**. Mean-reversion occurs when front-vs-back misprice relative to interpolated RUSFAR curve corrects, not because two random series correlate. Time decay is deterministic (theta = −carry accrual/day), giving structural edge if entered rich/cheap correctly.
+
+**Instruments:** CRZ6 (2026-12-17) vs CRH7 (2027-03-18), 1:1. MMS-eligible (CNY second quarterly). IM ~RUB 1,281 on spread vs RUB 2,467 gross.
+
+**Data:** Same as H1a but without perp; need RUSFAR curve (O/N out to 3M) to compute fair calendar carry; alternatively use `c_fair = (F_far − F_near)/tau`.
+
+**Formula:**
+```
+S_cal(t) = P_far(t) − P_near(t)
+fair_cal(t) = c_fair * tau_spread   where c_fair from RUSFAR 3M or rolling median of S_cal/tau
+signal s(t) = (S_cal − fair_cal) / sigma_cal
+Units RUB/1,000 CNY. Entry on s deviation AND fair_cal stability (no rusfar jump).
+```
+
+**Params:** L ∈ {45, 60, 90}; entry |s| ∈ {1.8, 2.2, 2.8}; exit s=0±0.3; max hold = min(20 days, tau_near − 2d); entry floor = RTC_Cons + 2× daily carry.
+
+**Continue vs exit:** Each day, remaining theta (carry bleed/earn) is recomputed; position closed early if adverse theta flips sign (carry curve inversion) — see §12.
+
+**Failure:** Rushing into March when Dec spot is stressed (year-end FX liquidity), curve inverts and stays inverted; spread trends, not reverts. Observed CRZ6/CRH7 spread on 2026-10-22 implies ~ RUB 0.205 over 91 days = **2.25 RUB/1k per day carry** — modest; a 20-day hold earns ~45 RUB carry but Base RTC is 9.5 RUB, leaving narrow net. So **model predicts few trades**.
+
+**Validation:** Train on 2020–2024 CNY calendars (CRH3→CRZ6 rolls, handling tick history), test on 2025–2026. Must survive 2022-03 FX restriction regime split (structural break test).
+
+---
+
+### H3a — Brent Mini Calendar (BMX6 vs BMZ6) (Family B)
+
+**Story:** Commodity calendar reflects **storage cost + convenience yield + expected scarcity**. In contango (far > near) seller of calendar earns roll-down; in backwardation the opposite. Near-term physical tightness (e.g., refinery turnarounds) can push `F_near − F_far` rich, then mean-revert as tightness eases. This is seasonal/operational, not pure stat.
+
+**Instruments:** BMX6 (Nov-26, last 2026-11-02) vs BMZ6 (Dec-26, last 2026-12-01), 1:1 × 1 bbl mini. Full BR (10 bbl) as scale-up analog. MMS-eligible to 2nd monthly only (so Nov–Dec **is** eligible, but Dec–Jan would still be eligible until Dec expires — verify monthly rolling).
+
+**Data:** BR forward curve (MOEX BR/BM settlements), Dated Brent vs front spread if available, OI/volume per expiry, seasonal dummies (month).
+
+**Formula:**
+```
+S_oil(t) = P_far − P_near − seasonal_fair(month_pair)
+seasonal_fair estimated as median S over same month-pair last N years (N=3–5) or rolling 60-day median.
+s = S / sigma (heteroscedastic — scale by near price or use % spread)
+Units: USD/bbl → RUB via FX; threshold in USD ticks (0.01 USD = 0.82 RUB).
+```
+
+**Expiry:** Must flat Nov leg by T-2 (~2026-10-29!). Pilot starting 2026-10-07 would face **only ~3 weeks** on nearest expiry — forcing rapid test; plan rolls to Dec→Jan pair (BMZ6 vs BMM? actually BMF7 = Jan-27 listed). Real hypothesis is **recurring monthly pair**, not one fixed pair.
+
+**Params:** L ∈ {30,45,60}; entry |s| 2.0–2.8; exit 0±0.5; seasonal_fair lookback 3y; max hold 15 days; OI filter 10k min.
+
+**Failure:** Geopolitical shock (pipeline, sanctions) → curve structure breaks, convenience yield spikes, calendar stays inverted for months despite “reversion” signal → forced loss at expiry. Oil calendars famously **trend** in supply shocks (Chan Ch.6 “Do Calendar Spreads Mean-Revert? — generally no, except seasonal/month-specific”).
+
+**Validation:** Yearly walk-forward by month-pair; gap = 10 trading days; report per-month-pair hit rate separately — aggregation must not hide that only 2 of 12 month-pairs ever work.
+
+---
+
+### H3b — Natural Gas Micro Calendar (NRX6 vs NRZ6) (Family B)
+
+**Story:** NGM is micro Henry Hub (1 MMBtu). Its calendar reflects **U.S. gas seasonality + storage injections**, transmitted to MOEX via USD settlement. Nov→Dec spread captures injection-season tail. Similar economics to H3a but with stronger seasonality.
+
+**Instruments:** NRX6 vs NRZ6, 5× micro to get granularity (1× micro IM only RUB 69, so single contract is too small to matter; 5× gives tradable notional ~RUB 6,650, IM ~RUB 718). Full NG (100 MMBtu) is too large for RUB 30k scale.
+
+**Formula:** `S_gas = P_Dec − P_Nov − seasonal_fair`; s normalized.
+
+**Why lower rank despite tiny IM:** Seasonality means signal only in certain months; pilot’s Oct-Dec window is actually gas shoulder season — may generate signal but with expiry pressure (Nov leg expires 2026-11-25, leaving ~34 days). Also USD/RUB FX noise on top of USD gas.
+
+**Validation:** Same as H3a, but require seasonal baseline and inventory-surprise event handling (EIA Thu).
+
+---
+
+### H4a — SBER Common vs Preferred (SRZ6 vs SPZ6) (Family C)
+
+**Story:** Same issuer, same enterprise value; pref discount reflects voting-right value + dividend policy (pref gets not-less-than-ordinary, but non-voting). Discount fluctuates with governance news, not with “pairs correlation.” Trade is **control-premium mean-reversion** within wide institutional band.
+
+**Instruments:** SRZ6 vs SPZ6, 1:1 (both 100-share lots). No MKS/MMS discount across share classes (separate asset codes SBRF≠SBPR) — so IM ~RUB 11k gross, no portfolio benefit, capping pilot at 1 spread.
+
+**Formula:**
+```
+S_sber = P_ord − β·P_pref   β≈1.0 (or 1.0 by share count)
+or ratio R = P_ord / P_pref
+s = (R − median_R)/sigma_R
+```
+
+**Data:** Stock-futures settlements, underlying SBER/SBPR spot, dividend calendar, MOEX corporate-action adjustments (must be point-in-time).
+
+**Failure mode:** Dividend-capture distortion before record date; then structural re-rating after governance vote — spread trends 5–10% over weeks, stop-out inevitable. Observed SPZ6 spread 9 ticks (RUB 9) already half of Base RTC → friction eats edge.
+
+**Validation:** Exclude 10 trading days before dividend record; break test on dividend announcement.
+
+**Reject if:** Median trade net X < 0 after Conservative, or annual turnover < 1 (economics says trade rare — matches data: 11.9k OI on pref vs 616k ord).
+
+---
+
+### H5a — GOLDM vs SILVM Cross-Metal (Family D)
+
+**Story:** Gold-silver ratio reflects industrial (silver) vs monetary (gold) demand. In risk-off, gold outperforms; ratio mean-reverts only conditional on cycle stage. This is **beta spread**, not tight arbitrage.
+
+**Instruments:** GNZ6 (GOLDM, 2 units mini, lot=2) ×2 vs S1Z6 (SILVM micro) ×3 to match ~RUB 13.7k notional each side. No tight IM discount (different asset codes, but MKS Gr.4 may give partial if physical group — verify: GOLD/GOLDM/SILV/SILVM share Gr.4, so **some** MKS may apply — but still large).
+
+**Formula:** `S = P_gold − β·P_silver`, β from rolling regression of returns (60-day), refreshed quarterly. Or log-spread.
+
+**Failure:** β unstable; crisis correlation breaks (silver falls faster). Pilot position RUB ~7.9k IM → already 26% of book → undiversifiable.
+
+**Included as:** Falsifier for “cross-asset pairs” — expected to fail cost/hurdle.
+
+---
+
+## 11. Compatibility Matrix & Experiment Design
+
+### 11.1 Pair-family × machinery compatibility
+
+| Machinery | H1a perp-CNY | H2a cal-CNY | H3a cal-BRM | H3b cal-NGM | H4a SBER op | H5a metal β |
+|-----------|--------------|-------------|-------------|-------------|-------------|-------------|
+| Carry-implied β=1 | **✓ required** | **✓ required** | **✓ required** | **✓ required** | ✓ (β=1 default) | ✗ (needs β) |
+| Rolling OLS β | — | — | — | — | — (check) | **✓ required** |
+| Kalman β(t) | optional check | — | — | — | — | optional |
+| Deterministic seasonal fair | — | (RUSFAR-based) | **✓ required** | **✓ required** | — | — |
+| Funding observable | **✓ swaprate** | — | — | — | — | — |
+| MMS eligible (1-asset spread) | — | **✓ 2nd quart** | **✓ 2nd month** | **✓ 6th month** | ✗ | — |
+| MKS eligible (perp↔quart, etc.) | **✓ Gr.3** | — | **✓ Gr.10** | **✓ Gr.9** | ✗ | ? Gr.4 (partial) |
+| EOD-only signal feasible | **✓** | **✓** | **✓** | **✓** | **✓** | **✓** |
+| 1× fits RUB 30k with 1.5× VM | **✓** | **✓** | **✓** | **✓ (5×)** | marginal (×1) | marginal |
+| Needs intraday / book snapshot | — | — | — | — | — | — |
+
+### 11.2 Experiment schedule (walk-forward)
+
+| Exp | Hypotheses tested | Data span (formation → test) | Params tried (preregistered) | Costs | Compute | Priority |
+|-----|-------------------|------------------------------|------------------------------|-------|---------|----------|
+| E01 | H2a calendar CNY | Train 2021-01 → 2024-12, gap 15d, test 2025-01 → 2026-10 (rolling quarterly refit) | L 3, z_entry 3, TP 2, floor 2 = 36 combos | B/C/S | <30 min on MBP; ~100k EOD rows total | **Do first** |
+| E02 | H1a perp-quarter CNY | Train 2021-06 → 2024-12, gap 15d, test 2025-01 → 2026-10 | L 3, z 3, TP 2, lease/fair 3 = 54 combos | B/C/S | <30 min | Do second |
+| E03 | H3a BR mini | Train 2020-01 → 2024-12 by month-pair, gap 10d, test 2025-01 → 2026-10 | L 3, z 3, seasonal N 2 = 18 combos | B/C/S | <20 min | Third |
+| E04 | H3b NGM micro | Same as E03, grouped | Same | B/C/S | <20 min | Fourth |
+| E05 | H4a SBPR | Train 2020-01 → 2024-12, gap 20d, test 2025-01 → 2026-10 | β ∈ {1.0, OLS}, z 3, TP 2 = 12 combos | B/C/S | <10 min | Negative control |
+| E06 | H5a metal cross | Train 2020-01 → 2024-12, gap 20d, test 2025-01 → 2026-10 | β window 2, z 3 = 6 combos | B/C/S | <10 min | Negative control |
+| E07 | Portfolio queue | **All E01–E04 survivors only**, single virtual portfolio, rank by (|s|−cost)/IM, max 1 open spread, no reuse of test data for ranking | Best param per E01–E04 (1 each) | B/C/S + C0/C1 | <30 min | Only if ≥1 survivor |
+| E08 | Ablation (see §18) | Subset of E07 | Fixed vs adaptive vs scale-in vs oracle | B/C/S | <30 min | Conditional |
+
+Total unique param combinations before pruning: **~168** (not 3,000) — kept deliberately compact. Every combination logged; failed branches retained in appendix.
+
+**Hold-out:** Last 90 calendar days (2026-07-10 → 2026-10-07, i.e., pack date) **never touched** until E01–E06 lock; E07 runs once on hold-out to estimate distribution of time-to-exit and LQDT shortfall.
+
+---
+
+## 12. Entry vs Continuation: Conditional Value, Not Sunk Cost
+
+> Prompt core: *Conditional expected incremental value from now, remaining costs, LQDT counterfactual, distribution of time-to-exit, loss/expiry risk and freed funds for competing opportunities. Do not make “holding long” automatically bad or sunk losses a reason to continue.*
+
+### 12.1 Formal rule
+
+At any day `t` while position in spread `i` is OPEN, compute **incremental expected value (IEV)** from *now* (mark-to-market), not from entry:
+
+```
+IEV_i(t) = E[ PnL_to_exit | signal_t, tau_remaining ] − RTC_remaining(= exit RTC + time LQDT drag)
+           − opportunity_cost_of_locked_IM(t)
+where:
+  E[PnL_to_exit] from walk-forward conditional mean: historical PnL of same hypothesis
+                   when signal at t equals s(t) and tau similar
+  RTC_remaining = one-way exit cost (exchange+broker+0.5 spread+slippage at Stress if adverse)
+                  + LQDT_drag_daily * E[time_to_exit | s(t)]
+  opportunity_cost = bestAlternativeQueueExpectedExcessPerDay * E[time_to_exit]
+                     (if queue non-empty and alternative can be funded by freeing IM)
+```
+
+**Action:**
+
+* If `IEV_i(t) < 0` **and** alternative queue has positive-expected trade that fits freed IM → **flatten i now** (even at loss), free IM, enter alternative. This is *opportunity-aware exit*, not stop-loss.
+* If `IEV_i(t) < 0` but queue empty → flatten if `E[PnL_to_exit] < exit_cost` (i.e., expected loss from holding exceeds exit cost) — essentially time-stop.
+* If margin call risk (VM buffer < 1 day of 99th-pct adverse move) → flatten immediately (risk rule overrides IEV).
+* **Never** count sunk entry RTC or sunk PnL in IEV — they cancel on both “hold vs close now” branches.
+
+**Practical estimator:** For each s bucket (|s| ∈ [1.5,2.0), [2.0,2.5), [2.5,∞)), compute empirical distribution of *future* spread PnL to exit (at TP or time-stop) from **train data only**. Then IEV at t is median (or mean minus 1 SD conservative) of that bucket. This avoids “we lost 200 RUB so we must hold to win it back.”
+
+### 12.2 Expiry & loss risk
+
+* Calendar spreads lose deterministic theta (cost of carry) each day regardless of signal → IEV must subtract daily theta (for FX, RUSFAR-day; for oil, seasonal drift). If theta turns adverse (curve inverts), IEV negative even before any price move.
+* For quarterly FX/index, forced flatten at T-2 ensures loss is bounded but still can be large if spread moved adversely 5–10% of notional (e.g., RUB 600 on ~12k notional for CNY = 5% move). Distribution of tail must be reported (99th pct loss), not hidden by average.
+* Physical/perp funding jump risk: overnight gap (observed CNY close 12.404 vs settle 12.419 = 15 RUB gap on 1k notional = 0.12% overnight). Stress RTC already embeds 2× spread for gap day.
+
+### 12.3 Freed funds for competing opportunities
+
+Opportunity cost is real only if alternative **(a) exists now**, **(b) fits RUB 30k IM**, and **(c) was not cherry-picked ex-post**. Hence queue (§14) must be evaluated on *available-at-t* set, not full sample optimum. Prompt explicitly forbids “oracle that always reallocates to ex-post best trade.”
+
+---
+
+## 13. Sizing Compared on Same Splits, Fixed vs Capped Adaptive vs Scale-Ins
+
+All three variants share **same data splits, same execution delays, same cost scenarios, same total authority (RUB 30k + max RUB 15k emergency only-to-flat)**, so difference is architecture, not data.
+
+### 13.1 Definitions
+
+| Variant | Rule | Cap | Emergency behavior |
+|---------|------|-----|--------------------|
+| **F1 — Fixed minimum** | `n = 1× spread (or 5× micro minimum) if IM*1.5 ≤ C` else 0. Forecast only gates entry (yes/no); size never varies with |z| or volatility. | 1× | No add; emergency funds only to meet VM and flatten. |
+| **A1 — Capped adaptive (vol-targeted)** | `n = clamp( floor( (C * vol_target / sigma_spread) * forecast_strength ), 1, n_max)` where `n_max = 2` for pilot (3 on RUB 10m scale). `forecast_strength = |s|/z_entry` capped at 2.0. | 2× (pilot) / ~4× (scaled book) | Same — no increase on loss; adaptive size is *a priori* function of signal strength, not PnL. |
+| **S1 — Preplanned scale-in** | Plan at entry: up to 2 tranches, 2nd triggers at `|s| ≥ z_entry + 0.7` *only if* first still open and IEV_2 > 0 incremental (i.e., adding improves IEV, not sunk). Second tranche = 1× same size as first (no pyramid). Total still ≤ cap. | 2× | **Any second tranche funded from uncommitted C only** — never from emergency reserve, never after drawdown breaches 10k shortfall. Reserve cannot “fund averaging down” (prompt prohibition). Emergency still only-to-flat. |
+
+### 13.2 Why S1 is not averaging down
+
+Averaging down = “I’m losing, so I add to improve breakeven.” S1 = “My *ex-ante plan* said: if spread widens another 0.7σ, the conditional edge *per unit* is higher (farther from fair), so a second unit has positive IEV *on its own*.” Formal test: compute IEV_2 **ignoring first position** — if IEV_2 < 0, second leg never fires, even though average price would look better. This distinction is what Leung & Li (2015) and Chan (2013 Ch.5) require: optimal double-stopping has *disconnected* entry region — too-close-to-stop-loss is *not* entry even if underwater.
+
+### 13.3 Hypothesis for ablation
+
+*Null (must be disproven):* `A1` and `S1` do **not** improve net X vs `F1` after costs, given RUB 30k cap and manual latency. If walk-forward shows X_A1 − X_F1 median < Conservative RTC margin or Sharpe difference p > 0.10 (Harvey-Liu), complexity is rejected. This directly addresses prompt §5: “missing evidence must prevent complexity being treated as necessary.”
+
+---
+
+## 14. Opportunity-Arrival Model: Ranked Queue vs Oracle (Anti-Oracle Test)
+
+### 14.1 Ranked queue (honest)
+
+Each day `t`, score every eligible spread `i` with:
+
+```
+score_i(t) = ( |S_i(t) − fair_i(t)| − RTC_Cons_i ) / IM_i(t)    # excess per unit IM
+           = effective edge per ruble locked
+```
+
+* Eligibility: filters (§9.4) pass, tau ≥ min, |s| ≥ z_entry, |S| > floor.
+* Rank descending; top-ranked that fits `C_avail` is entered (1 at a time for pilot; parallel later).
+* Ties: lower IM first (fills book), then higher OI.
+* If top cannot fit due to IM, skip to next — queue never fragments book (no 0.3× positions).
+* **Stale/rejected log:** Every day an eligible signal existed but portfolio was full or IM insufficient → counted as *foregone opportunity*; its *realized* future PnL (if it had been taken) is tracked for queue-efficiency audit — but never used to re-rank ex-post.
+
+This is Carver’s “forecast → position” mapped to spread book: single score, deterministic, no discretion.
+
+### 14.2 Oracle (dishonest, for ablation only)
+
+Oracle at `t` knows *realized* future PnL of each eligible spread to its optimal exit, picks max, and pretends it chose correctly. Its X is **unachievable upper bound**. Purpose is to measure **regret gap**: `regret = X_oracle − X_queue` after same costs. If queue captures > 60–70% of oracle’s achievable edge net of costs, queue is “sufficient” (prompt test criterion) and no ML allocator is justified now.
+
+### 14.3 Stale/rejected inclusion
+
+Past available opportunities = all eligible signals on **train** period, including days queue was full. Do **not** train queue parameters on test period. Queue’s z thresholds are the same as individual hypotheses’ thresholds — no extra tuning.
+
+---
+
+## 15. Validation Discipline: Walk-Forward, Gaps, Logs, Hold-Out
+
+Chronological walk-forward, no information leakage:
+
+1. **Preregister** candidate ranges (§9–10) in CSV before any test fetch. Commit hash logged.
+2. **Expanding or rolling?** Rolling 3-year train / 1-year test for FX/oil (regime-sensitive); expanding for stock pairs (sparse). Gap between train-end and test-start = **L_max/2** (or 15 trading days min) to prevent look-ahead from overlapping rolling σ windows; signal/holding overlap size explicitly sets gap.
+3. **Fit only on train:** β, σ lookback, fair estimates, z thresholds, TP/SL chosen by **maximizing net X per trade after Base cost**, not gross. Optimize via grid; penalize turnover > 1/trade per month.
+4. **Log every trial:** date, hypothesis, params, RTC scenario, X_C1/C0, drawdown, trades, foregone queue. No cherry-picked “best” without full log.
+5. **Statistical guards:**
+   * Deflated Sharpe Ratio (Bailey-López de Prado) for multiple trials (n≈168); required DSR p < 0.05 to claim edge (not raw Sharpe).
+   * Benjamini-Hochberg on per-hypothesis significance.
+   * Bootstrap (stationary, block len = half-life) for X CI.
+6. **Hold-out untouched:** 2026-07-10 → 2026-10-07 (90 cal days, ~64 trading days) — only portfolio-level E07 runs here once, reporting distribution of time-to-exit, LQDT shortfall path, and 10k-trigger events. No param tweak on hold-out; violation = invalidate study.
+
+**Primary metric (per prompt):** **Net RUB excess X(t) after all modeled costs, vs matched LQDT counterfactual with identical external flows.** Secondary: max drawdown of X, time under water, trades/year, tail loss (99th pct).
+
+---
+
+## 16. Risk, Governance & Emergency-Funding Protocol
+
+### 16.1 Drawdown & shortfall action ladder (prompt defaults, unvalidated)
+
+| Condition (excess-curve basis) | Action | Funding allowed? |
+|---------------------------------|--------|------------------|
+| 5k excess drawdown from high-water or 5k cumulative LQDT shortfall | **Warning** — pause new entries; review open spread IEV daily | No |
+| 10k drawdown from X HWM *or* 10k cumulative shortfall | **Act** — flatten existing at market (stress slippage); **any funding is solely to reach flat** (prompt mandate) | Only to meet VM to *reach flat*, counts to RUB 15k gross cap, needs explicit approval, incident-logged |
+| 15k cumulative shortfall (outer boundary) | **Hard stop** — immediate flat, 90-day review gate; no new risk until review passes | Same as above, up to cap |
+| 90 calendar days elapsed | **Review gate** even if no breach — loss not reset | No auto-reset |
+
+**Broker use of core collateral (R > RUB 40m LQDT) without approval = incident**, counts to 15k gross allowance. Sale proceeds of LQDT collateral are *not* automatically economic loss in X — only realized loss net of collateral retained yield counts (prompt distinction).
+
+### 16.2 Margin discipline
+
+* Pre-trade: `required_IM_spread * 1.5 + 2× daily 99th move < C_avail` else skip trade (even if queue ranks it top).
+* Intraday: If evening VM close breaches 50% of VM buffer, preemptive flatten next AM (no waiting for exchange margin call) — models manual 5–15 min latency as *next-settlement* exit with extra tick.
+
+### 16.3 Human quota
+
+Manual capacity = **1 new spread entry + 1 exit per trading day max** (conservative for 3–90 min window and Telegram-dark workflow). Queue test must respect this throttling; unconstrained portfolio is oracle-like.
+
+---
+
+## 17. Resource Budget: VPS, MacBook, Data, Timeframes
+
+| Resource | Spec (prompt) | Load for this plan | Verdict |
+|----------|---------------|---------------------|---------|
+| VPS 1 vCPU, 1 GB + 2 GB swap, 20 GB disk, VPN, shared 250–350 MB | Background budget unverified | EOD fetch+walk-forward: ~100–200 MB RAM, < 10 MB/day storage (CSV), 0 external deps beyond ISS JSON. VPN for MOEX JSON OK. | **Fits** — no tick store, no real-time stream. |
+| MacBook i7 6-core 16 GB Radeon Pro | Dev/analysis | Python (pandas) walk-forward < 2 min per Exp; even 168 combos < 6 min | **Fits** |
+| Data: free MOEX ISS FORTS EOD + LQDT TQBR + RUSFAR index | Rate-limited, no auth | ~5k contracts × 5y × 250d ≈ 1–2 m rows if full scan; filtered to ~40 relevant tickers → ~200k rows | **Free & finest defensible** — minute/live not needed for this family (see below); 1-min justified only if H3b microstructure edge proven, which it is not at pilot hurdle. |
+| Timeframe | EOD (settlement) primary; 1-min optional upgrade | All hypotheses testable on EOD bars + OI + swaprate (verified). Finer intervals would add API/storage cost and VPS load for negligible gain given RTC hurdle. | **EOD is finest *free defensible* baseline** — upgrade only if E03/E04 shows intraday entry timing explains >50% of foregone edge in stale-log audit. |
+
+No production probing/deployment now (prompt gate). Dark screener can consume EOD batch output (CSV → Telegram bot), not live book.
+
+---
+
+## 18. Ablation Plan: Isolating Flex Size / Scale-Ins / Opportunity-Aware Exits
+
+Purpose: prove each complexity layer *earns* its keep vs trivial baseline, on same splits/delays/costs/authority.
+
+| Ablation variant | What changes vs baseline (F1 + ranked queue + fixed TP) | What stays | Decision rule |
+|-----------------|----------------------------------------------------------|------------|---------------|
+| **A0 Baseline** | — | F1 sizing, ranked queue, TP at z=0, no scale-in, time-stop 15d, close at T-2 | Reference X |
+| **A1 Adaptive size** | F1 → A1 (vol-targeted, cap 2×) | Queue, TP, no scale-in | Adopt only if median ΔX = X_A1−X_A0 > **Conservative RTC** and DSR p < 0.05 |
+| **S1 Scale-in** | Add preplanned 2nd tranche on deepening | F1 (or A1 if A1 passed) | Adopt only if incremental X_S1−X_A0 > 0 *and* max drawdown of X does **not** worsen > 20%, and tail loss 99th not worsened |
+| **O1 Opportunity-aware exit** | Fixed TP → IEV-based early exit vs queue alternative | F1 (+A1 if passed) | Adopt only if O1 captures ≥ 30% of oracle regret gap vs A0 and does not increase turnover > 2× |
+| **S1+O1 Combined** | Both | — | Only if both individually passed |
+| **Oracle ceiling** | Queue → oracle (for gap measurement only) | F1 | Measure, never ship |
+
+Each ablation runs **three cost branches** (B/C/S) × two collateral modes (C1/C0) = 6 paths. Result table reports median X, 10th/90th pct, and “complexity tax” (extra trades × RTC).
+
+> **Expected outcome given pilot math:** A1/S1 unlikely to beat F1 on RUB 30k because `n_max=2` caps leverage and second tranche often fails IEV>0 vs queue. Plan explicitly states: *missing evidence = complexity treated as unnecessary*.
+
+---
+
+## 19. Library Leads: Vidyamurthy / Chan / Carver — What to Extract
+
+Targeted reads — not cover-to-cover summaries — with page/section pins and counterexamples relevant to this pilot.
+
+### Vidyamurthy, G. — *Pairs Trading: Quantitative Methods and Analysis* (Wiley, 2004)
+
+**Inspect first:** TOC: Ch.1 CAPM/MS-neutral, Ch.2 Time-series models, Ch.3 Factor models/APT, Ch.4 Kalman, **Ch.5 Overview — history/motivation/cointegration**, **Ch.6 Pairs selection (distance vs cointegration)**, **Ch.7 Testing for tradability**, **Ch.8 Trading design (band design, dynamics, non-parametric, regularization)**, Ch.9–12 Risk arb.
+
+**Extract for this plan:**
+
+* **Ch.5–6 (pp.71–101):** Common-trends model: “two prices share I(1) common trend ⇒ spread is I(0)” is *selection story*, not trade proof; distance SSD vs cointegration — Gatev et al. (1999) vs Johansen — and why industry match (same sector/asset class) beats pure stat rank. *Implication:* H4a/H5a must justify economic link (same issuer / same metal) — not correlation.
+* **Ch.7 (pp.104–117):** “Testing residual for tradability” — half-life, zero-crossings, variance-ratio, and **holding-period feasibility** (trade must complete within hedge horizon). Counterexample: OU with half-life 120 days on 30-day expiry = untradable before expiry → reject even if ADF p=0.01.
+* **Ch.8 (pp.118–136):** **Band design for white noise (pp.119–122):** optimal band `k*σ` maximizes expected P&L *given* noise var and transaction cost `c` — band widens with cost. Non-parametric “empirical quantile bands” alternative. **Regularization (pp.130–135):** shrink β toward economic prior to reduce turnover when σ estimated noisily — directly motivates buffer in §13 and conservative β=1 for calendars.
+* **Relevance tag per hypothesis:** H2–H3 → band design with cost; H5 → factor-model hedge (Ch.3) + regularization; H1 → spread dynamics (Ch.8.3).
+
+**Requestable sections (if expanded):** Ch.7.5–7.6 (pp.112–117) tradability tests with cost; Ch.8.2–8.5 (pp.119–135) band + regularization formulas; do not need Ch.9–12 for this pilot.
+
+### Chan, E.P. — *Algorithmic Trading: Winning Strategies and Their Rationale* (Wiley, 2013)
+
+**Inspect first:** TOC: Ch.1 Backtesting traps, **Ch.2 Mean-reversion basics (ADF, Hurst, VR, half-life, CADF, Johansen)**, **Ch.3 Implementing mean-reversion (Bollinger, Kalman, costs)**, Ch.4 Stocks/ETF, **Ch.5 Currencies & futures (calendar, roll yield)**, Ch.7 Momentum/roll, Ch.8 Risk/Kelly.
+
+**Extract:**
+
+* **Ch.2 (pp.39–62):** ADF vs KPSS vs VR — ADF null is *unit root* (non-stationarity), so “fail to reject” ≠ stationary; need both directions. Hurst <0.5 ≠ tradeable if variance is microstructure noise. **Half-life formula** `t½ = ln(2)/λ` from OU fit, but λ biased if series has jumps (expiry roll).
+* **Ch.3 (pp.63–85):** **Bollinger vs Kalman**: Bollinger bands are moving-average reversion; **Kalman filter is dynamic hedge regression** (pp.75–82) — useful for H5a β(t) but warns Kalman *lags* at regime shift → same reason we prefer static carry-implied β for H1–H3. **Cost section (pp.84–85):** Chan quantifies “roll-adjustment before test” — calendar P&L must remove contract-roll jump, otherwise fake mean-reversion.
+* **Ch.5 (pp.107–132):** **Do Calendar Spreads Mean-Revert? (pp.119–125):** Answer: **generally no** — forward curve shift dominates; only contango/backwardation *regime* inside seasonal window may. Direct falsifier for H3a/H3b — need seasonal fair, not blind z. **Roll return discussion (pp.110–115):** carry decomposition `total = spot + roll`; calendar isolates roll — so edge is roll risk premium, not price prediction. **FX carry (pp.107–109):** confirms H1/H2 logic but flags 2022–2023 RUB intervention as structural break requiring dummy.
+* **Ch.8:** Position inertia / Kelly fraction for cap sizing — anchors A1 cap reasoning.
+
+**Requestable sections:** Ch.2.5–2.7 (pp.55–62) test pitfalls; Ch.3.7 (pp.84–85) Kalman vs Bollinger; Ch.5.3–5.5 (pp.119–128) calendar/roll — most critical for H2/H3.
+
+### Carver, R. — *Systematic Trading* (Harriman, 2015)
+
+**Inspect first:** TOC: Part One Behavioural, **Part Two Toolbox (Fitting Ch.13, Portfolio Ch.14)**, **Part Three Framework (Instruments Ch.6, Forecasts Ch.7–8, Vol-targeting Ch.9, Position Sizing Ch.10–11, Costs Ch.12)**, Appendices (EWMAC, Carry rule).
+
+**Extract:**
+
+* **Ch.13 Fitting (pp.79–98):** Overfit checklist — degrees of freedom = params × trials; our 168 combos on ~5y daily ≈ 1,250 obs gives ~7.4 obs/param — borderline, so must penalize and demand DSR. His “one-good-rule” caution vs many-filtered rules applies directly to our ablation null.
+* **Ch.14 Portfolio (pp.99–118):** Instrument weights as **signal strength / cost** — exactly our `score = (edge−RTC)/IM` queue. Correlation-adjusted sizing for parallel positions (not needed pilot single-position, but scale-up rule).
+* **Ch.9 Vol-targeting & Ch.10 Sizing (pp.179–218):** **Volatility target → position = forecast × vol_target / instrument_vol** — our A1 adaptive maps to this, with cap 2× as pilot leverage limit. His **position inertia** (Ch.11, Ch.12) — don’t trade unless move > cost — matches §12 IEV gate.
+* **Ch.12 Costs & Scale (pp.243–268) + Appendix B Carry rule (pp.311–322):** **Carry rule** is `forecast ∝ (forward−spot)/vol`, scaled by vol-target — **isomorphic to H2a/H3a** but he runs on expiry strip, not single spread; his cost model (commission+spread+impact) validates three-scenario approach; his minimum capital per instrument informs RUB 30k feasibility table.
+* **Appendix B (pp.311–322):** EWMAC vs Carry comparative stats — useful benchmark for forecast diversification later, not pilot priority.
+
+**Requestable sections:** Ch.12 (pp.243–268) costs; Appendix B Carry (pp.311–322); Ch.9.4–9.5 (pp.192–210) vol-target math for A1 calibration.
+
+> **Book-use protocol per prompt:** Each book’s contents were inspected via public TOC/index; targeted sections above are *leads to request*, not claims of having read full text. If later expanded, log copy/page citations.
+
+---
+
+## 20. Falsification Criteria & Project Gates
+
+### 20.1 Per-hypothesis reject triggers (any one ⇒ hypothesis rejected, not retuned forever)
+
+1. **Cost fail:** Base-scenario median net X ≤ 0 on C1, or Conservative X 10th pct < −5k (warning level) on rolling window.
+2. **Frequency fail:** < 2 eligible trades/year on median param (after filters) → opportunity set too sparse for manual workflow to justify monitoring.
+3. **Stability fail:** Chow/Bai-Perron break p < 0.01 on train, or half-life CI spans > 3× (e.g., 5–60 days) → parameter unstable.
+4. **Expiry trap:** > 40% of trades forced-flatten at T-2 at loss (i.e., edge not realized within expiry window).
+5. **Tail fail:** 99th-pct loss per trade > 2.5× median win (left-tail dominated — the “non-convergence” pathology Do & Faff 2012 documented for equity pairs).
+
+### 20.2 Portfolio-level gates
+
+* **After E01–E06:** If *zero* hypotheses survive Conservative → **stop new hypothesis hunt** (prompt: broad hunting without validation discipline increases selection bias). Report “no pilot-viable mean-reversion spread at RUB 30k manual” as honest outcome.
+* **After E07:** If queue X net ≤ 0 after C0 accounting on hold-out, or if queue captures < 40% of oracle regret → **do not automate at BCS**; either reduce to single-calendar carry hobby or abandon futures-spread pilot and keep LQDT.
+* **After ablation:** If S1/A1 do not beat A0, ship F1 + queue only — no scale-in, no adaptive sizing at pilot scale.
+
+### 20.3 Scale gates
+
+* RUB 30k pilot surviving Conservative ⇒ paper-trade on VTB 1× with 1.5× buffer for 90 days (gate 2027-01-07).
+* Surviving Stress as well ⇒ justify VPS sizing increase (1 vCPU → 2) and minute-snapshot upgrade cost.
+* Scale to RUB 10–20m only after **KPU​R-tier IM confirmed in writing by broker** and EDP haircut quantified — internal budgets do not prove collateral eligibility.
+
+---
+
+## 21. What Was Verified, What Is Still Conditional
+
+### Verified 2026-10-21/22 (primary sources cited, accessed same day)
+
+* MOEX ISS FORTS history schema and expired-contract availability (CRZ6, CRU6 live fetch) — §4.1
+* FORTS securities live table: IM/fee/tick/step-price/lot/last-trade for 15 contracts — §4.2
+* MMS (межмесячные) and MKS (межконтрактные) groups, netting rules, max maturities — MOEX parameters page a215 — §4.3
+* Calendar-spread fee formula Fee_CS = T×F×(1−K), K=0.2 marketing, synthetic matching — spreads page + tariff s93 — §4.4, §5
+* Asymmetric taker-pays fees (maker 0%), rate table by contract group (валютные 0.00462% etc.) — tariff page — §5
+* Broker tariff extracts: VTB “Профессиональный”/“Мой онлайн” 0.045–0.015% + LQDT exempt/BCS Investor 0.1% short-leg trap noted — tariff PDFs — §5
+* LQDT TQBR price/value and RUSFAR ON 13.97% — ISS history 2026-10-21 — §4.4, §6
+* Perpetual swaprate in history (`SWAPRATE` column, CNYRUBF 0.00571) — §4.2
+* No China-linked SHFE/DCE commodity contract on MOEX — commodity futures list + contract search — §8, §10
+
+### Still conditional (explicit unknowns per prompt)
+
+* **Point-in-time IM history** depth/delist correctness — not in ISS history; needs daily `go_futures` archive from NCC.
+* **VTB’s KPUR recognition & EDP haircut** for LQDT-as-collateral — broker-specific, unverified; C0 excess depends on it.
+* **VTB web/mobile access to “Календарный спред” order type** and its 20% fee discount — assumed *not* available manually; atomic-leg costing is conservative stand-in.
+* **Investor tax residence / IISS type-A/B vs plain brokerage** — affects net vs gross, but cancels in excess at pilot scale.
+* **Human quota & overnight alert SLA** — modeled as 1/day cap, not measured.
+* **Finer timeframe necessity** — hypothesized *not needed*; ablation stale-log will test.
+* **BRM monthly roll calendar post-Nov** — BMF7 Jan-27 exists, but continuous string gaps around 2024-12 re-list need validation.
+
+> **Rule followed:** Conditional conclusions are marked conditional; absence of verification was never treated as zero cost or permission.
+
+---
+
+## 22. Bibliography & Primary Sources
+
+**MOEX primary (accessed 2026-10-21/22 for this pack):**
+
+1. MOEX, “Параметры срочного рынка” (a215) — https://www.moex.com/a215 — MMS table (CNY second quarterly, Si fourth, NG sixth, BRM 2nd monthly), MKS 21 groups, netting rules, negative-price eligibility, R-surcharge for CNY/JPY etc. Accessed 2026-10-22. Excerpt: “Все сроки исполнения, не превышающие максимальный, включаются в межмесячный спред.”
+2. MOEX, “Календарные спреды” (ru/spreads) — https://www.moex.com/ru/spreads — synthetic matching, legs definition, “Цена — величина спреда (разница цен дальнего и ближнего фьючерсов).” Accessed 2026-10-22.
+3. MOEX, “Тарифы срочного рынка” (s93) — https://www.moex.com/s93 — asymmetric maker/taker, rate table (валютные 0.00462%, индексные 0.00660%, фондовые 0.01980%, товарные 0.01320%), “Комиссия по календарному спреду равна сумме комиссий по каждому фьючерсу.” Accessed 2026-10-22.
+4. MOEX, “Тарифы срочного рынка ПАО Московская Биржа” (docx 3838, ed. 01-04-2025) — https://fs.moex.com/files/3838 — Fee_CS = T·F·(1−K), K=0.2 marketing 6 months. Accessed 2026-10-22.
+5. MOEX ISS API — `iss/engines/futures/markets/forts/securities.json` and `iss/history/engines/futures/markets/forts/securities/<SECID>.json` — live verified payloads in §4.1/4.2 tables. Endpoints documented at https://iss.moex.com/iss/reference/ . Accessed 2026-10-22.
+6. MOEX, “Расчётные контракты на цветные металлы” (a4437) + Spec. 05-03-2025 № МБ-П-2025-718 (files/4z923pa5j24r9v58cf9apa7qxv) — COPPER/CE lot 10 kg, step 1 USD, settlement vs LME. Accessed 2026-10-22. Excerpt: “Цена Контракта … в долларах США за 1 тонну … стоимость шага … в рублях по курсу доллара США.”
+7. MOEX, “Вечные фьючерсы — контракты и фандинг” (ru/derivatives/perpetual-futures) + FAQ — funding bands K1/K2, L1/L2, D = price_perp − price_spot. Accessed 2026-10-22.
+8. MOEX, “Фьючерсы на товары” (s202), “Фьючерсы на нефть” (fyuchersy-na-neft), BR/BM/NG/NGM specs — commodity family list, monthly expiry. Accessed 2026-10-22.
+9. MOEX, “Информация по фьючерсным контрактам” (ru/derivatives/select.aspx) — BR/BRM, NGM lot/step catalog. Accessed 2026-10-22.
+10. MOEX, “Риск-менеджмент на срочном рынке” (s1059), “Принципы расчета гарантийного обеспечения” (files/4w80p5…) — GO = netted SPAN risk, ММS/МКС льготы, “Межмесячный спред — группа фьючерсов на один базовый актив … зависимость,” “Межконтрактный спред — на разные базовые активы.”
+11. MOEX, “БПИФ Ликвидность” (ru/issue LQDT) + “Паевые фонды на индексы МосБиржи” (a82) + Индикаторы денежного рынка (s2530) — LQDT benchmark RUSFAR, 370 bn+ AUM, AUM 20.1% TRUR / 20%+ retail share. Accessed 2026-10-22.
+12. MOEX, “Индикаторы денежного рынка RUSFAR” (s2530), RUSFAR index methodology — RUSFAR reflects secured CCP repo with KСУ (GC Bonds). Accessed 2026-10-22.
+
+**Broker / clearing (accessed 2026-10-22):**
+
+13. VTB, “Тариф ‘Мой онлайн’” (moy_online.pdf) + “Тариф ‘Профессиональный’” (prof.pdf) — vtbrussia.ru — 0.045%→0.018% ladder, LQDT purchases “Без комиссии (до 31.12.2026)”, срочный “Без комиссии (до 31.12.2026)”. Accessed 2026-10-22. Excerpt: “Комиссия брокера за сделки на срочном рынке — Без комиссии (до 31.12.2026 включительно).”
+14. BCS, “Брокерские тарифы — Инвестор/Трейдер” (tarif.pdf, tariff-traider.pdf) — bcs.ru/static — Инвестор: срочный продажа 0.1% объема, покупка 0%, опционы 2.5%; Трейдер: 0.08–1.20 RUB/contract tiered, cap 1% of deal. Accessed 2026-10-22.
+15. VBR.ru, “Брокер ВТБ — тарифы 2026” — summary of VTB tiers — validates 0.05% base. Accessed 2026-10-22.
+16. NCC — “Тарифы Клирингового центра” раз. II/V + static risk params (nationalclearingcentre.ru/rates/derivativesStaticParams, ncl = intermonth half-netting count) — referenced via MOEX a215 footnote. Not scraped, flagged conditional.
+17. Bank of Russia Указание № 6681-У (01-04-2025 new risk tiers КНУР/КСУР/КПУР/КОУР) — via BCS-Express, MOEX n88979 — 4-tier GO transmission to broker. Accessed 2026-10-22.
+
+**Textbooks (targeted TOC inspection, not assumed read):**
+
+18. Vidyamurthy, G. *Pairs Trading: Quantitative Methods and Analysis.* Wiley, 2004. TOC & structure via Wiley/OPAC; Ch.7–8 tradability/band/regularization referenced §19.
+19. Chan, E.P. *Algorithmic Trading: Winning Strategies and Their Rationale.* Wiley, 2013. TOC via Wiley; Ch.2–3 mean-reversion implementation, Ch.5 calendar/roll cited §19.
+20. Carver, R. *Systematic Trading.* Harriman House, 2015. TOC & carry-rule appendix; Ch.9–12 vol-target/sizing/costs cited §19.
+
+**Commodity/China extension negative search:**
+
+21. SHFE — commodity basis/warehouse leads (shfe.com.cn pdfs) — reviewed, no MOEX-SHFE link contract found; skip extension per prompt.
+
+*No promotional backtest blog, signal-channel, or paywalled paper was used. No API credential was employed.*
+
+---
+
+## 23. Appendices
+
+### Appendix A — Prompt compliance trace
+
+| Prompt § | Where addressed | Evidence |
+|----------|-----------------|----------|
+| §1 family of carry/basis + why raw z alone fails | §7 + §8 + cards H1–H6 | Vidyamurthy Ch.7, Chan Ch.2/5, Carver Ch.13 |
+| §2 normalization/hedge/integer/expiry/break | §9 | Formulas + point-in-time inputs listed |
+| §3 entry vs continuation, sunk cost, freed funds | §12 | IEV formula + opportunity_cost term |
+| §4 fixed vs adaptive vs scale-in same authority | §13 | F1/A1/S1 defined, cap, emergency rule |
+| §5 opportunity-arrival without oracle | §14 | Ranked queue score + oracle anti-test |
+| Required outputs: cards + matrix + ranked exps + cost/resource + ablation + library leads | §10–11, §17–19 | Cards H1a–H5a, matrix, E01–E08 table, RTC table, ablation table, targeted reads |
+
+### Appendix B — Reproducible endpoint inventory
+
+*Active-perp/quarter snapshot (KPUR tier, 2026-10-22 snapshot; re-fetch for audit):*
+`https://iss.moex.com/iss/engines/futures/markets/forts/securities.json?iss.meta=off&iss.only=securities,marketdata`
+
+*EOD history (OHLCV+OI+swaprate, per contract, date-range):*
+`https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/<SECID>.json?from=YYYY-MM-DD&till=YYYY-MM-DD&iss.meta=off`
+
+*Hold-out LQDT + hurdle:*
+`https://iss.moex.com/iss/history/engines/stock/markets/shares/securities/LQDT.json?from=YYYY-MM-DD&till=YYYY-MM-DD&iss.meta=off` (boards TQBR/TQTF)
+`https://iss.moex.com/iss/history/engines/stock/markets/index/securities/RUSFAR.json?...`
+
+*MOEX pages as rendered 2026-10-22 stored as source-of-truth; edited later versions do not prove past availability.*
+
+### Appendix C — Deterministic cost arithmetic (how Base/Conservative/Stress columns were computed)
+
+Per-spread 4-leg model (§5 formula) with inputs from §4.2 live table; broker fee 0.30/1.00/3.00; spread multiplier 1.0×/1.25×/2.0×; slippage 0.5/1.0/2.0 ticks per leg per side. LQDT drag = `(IM_gross × buffer) × ((1+r_LQDT)^(hold/365)−1)` with `buffer=0.5` for C1 and `1.5` for C0, hold=15 calendar days, r=13.65% net pa (observed RUSFAR 13.97% minus ~0.30% TER). VTB promo 0.00 and calendar-spread 0.8× discount shown as memo upside, not in table.
+
+### Appendix D — What to deliver after walk-forward
+
+* `R10_TRIAL_LOG.csv` — every param combo × cost branch × hypothesis with X_C1, X_C0, drawdown, trades, tail.
+* `R10_QUEUE_REALIZED.csv` — daily queue ranking + filled/foregone PnL.
+* `R10_HOLDOUT_IEV.csv` — daily IEV vs realized next-exit PnL (calibration check).
+* `R10_ABLATION.csv` — ΔX for A1/S1/O1 vs A0 with DSR p-values.
+* No equity-curve PNG is decision-critical; if produced, show **X vs LQDT**, not gross.
+
+### Appendix E — Risk note on VPS & VTB manual path
+
+* Telegram alert from VPS → phone → VTB ticket at ~5–15 min median is **slower than queue model** that rebalances at settlement. Sensitivity run with +60 min delay + Stress RTC must be published; if Strategy survives only with 0-delay, it is not pilot-viable.
+* Weekend session futures trading (MOEX weekend pilot) creates Sunday gap risk — backtest must include Monday WAPRICE gap as realized trade.
+
+---
+
+**Prepared by:** R10 desk research — deterministic hypothesis plan.  
+**Contact / review:** 90-day formal review from 2026-10-07 (pack) / 2026-10-22 (facts cutoff), whichever governance requires. No emergency funding, no live trade until validation gates pass.
+
+*End of report.*

@@ -1,0 +1,269 @@
+# R11 — Free-Resource Feasibility, Reliability, and Later Setup Plan
+
+**Research Cutoff:** October 2026 | **Project:** Private MOEX Futures-Spread Pilot
+
+**Scope:** Desk research, workload model, resource budgets, failure modes, and Stage 3 preflight safety checklist. No live deployment, probing, or automated connections executed.
+
+---
+
+## Executive Summary & Core Feasibility Verdict
+
+The proposed lightweight deployment on the **Ubuntu 24.04 VPS (1 vCPU, 1 GB RAM, 2 GB swap, 20 GB SSD)** alongside active VPN services (Xray / 3X-UI) is **technically feasible**, provided the architecture enforces strict SQLite write-concurrency bounds, bounded memory limits, and isolated I/O scheduling.
+
+```
+       SHARED VPS MEMORY BUDGET (1,024 MB Total Physical RAM)
+┌─────────────────────────────┬───────────────────────────────┬────────────────┐
+│  OS Core + Systemd Services │  Core Active VPN (Xray/3X-UI) │   Free Safety  │
+│         (~200–250 MB)       │         (~200–250 MB)         │    Buffer Zone │
+│                             │                               │   (~224–324 MB)│
+├─────────────────────────────┴───────────────────────────────┼────────────────┤
+│       SHARED BACKGROUND ALLOWANCE ALLOCATED TO R11 WORKLOADS │                │
+│                         (~250–350 MB)                       │                │
+└─────────────────────────────────────────────────────────────┴────────────────┘
+
+```
+
+* **Storage Feasibility:** Raw end-of-day (EOD) plus 15-minute watchlist snapshots for 30 pairs across 5 years requires **~200 MB to 450 MB** of uncompressed storage, fitting within the 20 GB disk.
+* **RAM Feasibility:** Steady-state footprint for continuous monitoring and a virtual ledger will consume **40 MB to 80 MB** (Python/Rust + SQLite). Peak research or batch backfill processes **must be capped at 200 MB** using Linux `cgroups v2` (`MemoryMax=250M`) to prevent swap thrashing and keep the VPN process (Xray/3X-UI) from being killed by the Linux Out-Of-Memory (OOM) killer.
+* **VPN Coexistence:** Market data collection and Telegram polling **must bypass the local Xray VPN outbound client** via routing rules (`SO_BINDTODEVICE` or local IP/interface binding) to avoid breaking when VPN tunnels reset or re-key.
+
+---
+
+## Section 1: Workload Estimates vs. Sensitivity Matrix
+
+Workloads are modeled across three scale assumptions for the MOEX futures derivative universe:
+
+1. **Base:** 50 active contracts, 5 candidate pairs monitored at 15-minute snapshots.
+2. **Medium:** 200 active contracts, 15 candidate pairs monitored at 5-minute snapshots.
+3. **High:** 500 active contracts (full MOEX derivatives directory), 30 candidate pairs monitored at 1-minute snapshots.
+
+### Operational Workload Sensitivity
+
+| Parameter | Base Case | Medium Case | High Case |
+| --- | --- | --- | --- |
+| **Active Universe (Contracts)** | 50 | 200 | 500 |
+| **Watchlist Pairs** | 5 | 15 | 30 |
+| **EOD Daily Record Size (1 yr)** | ~12.5 KB / contract | ~50 KB / contract | ~125 KB / contract |
+| **Intraday Interval** | 15 minutes | 5 minutes | 1 minute |
+| **API Requests / Day (MOEX ISS)** | ~150 requests | ~1,200 requests | ~18,000 requests |
+| **Ingress Bandwidth / Day** | ~2.5 MB | ~18.0 MB | ~240.0 MB |
+| **Disk Growth Rate (Uncompressed)** | ~1.2 MB / month | ~8.5 MB / month | ~110 MB / month |
+| **SQLite DB Size (5-Year Depth)** | ~75 MB | ~510 MB | ~6.6 GB |
+| **RAM Footprint (Polling Process)** | ~35–50 MB | ~55–80 MB | ~120–180 MB |
+
+### Resource Allocation & Go / No-Go Criteria
+
+```
+                        GO / NO-GO DECISION TREE
+                        
+                  [ Total Available RAM Check ]
+                               │
+               ┌───────────────┴───────────────┐
+         RAM < 250 MB                    RAM >= 250 MB
+               │                               │
+         [ NO-GO ]                     [ Check Swap Depth ]
+    (OOM Risk on VPN)                          │
+                               ┌───────────────┴───────────────┐
+                          Swap < 1 GB                    Swap >= 2 GB
+                               │                               │
+                          [ NO-GO ]                       [ GO ]
+                     (Risk of Thrashing)           (Cgroups Enforced)
+
+```
+
+* **Go Criterion:** Free memory headroom consistently $\ge 250\text{ MB}$; Swap available $\ge 1.5\text{ GB}$; MOEX ISS API query response times $< 800\text{ ms}$; Telegram webhook or long-poll latency $< 1.5\text{ s}$.
+* **No-Go Criterion:** Available RAM drops below $120\text{ MB}$ for $> 60\text{ consecutive seconds}$; Linux OOM killer invocation detected in `dmesg`; Disk I/O utilization exceeds $85\%$ during background SQLite writes; HTTP 429 / 403 responses from MOEX ISS exceed $5\%$ of daily requests.
+
+---
+
+## Section 2: Runtime, Storage Architecture, and Schema Design
+
+### Runtime Selection: Python 3.12 (CPython) vs. Rust
+
+* **Python 3.12+ (Recommended for Monitored Runtime):** Standard library `asyncio` + `aiohttp` + `sqlite3` natively uses ~35–45 MB RSS. Standardized duck-typing and rapid iteration suit spread-formula experimentation.
+* **Rust / Compiled (Alternative):** Lower footprint (~8–15 MB RSS), but adds toolchain complexity on 1 GB RAM (compiling Rust on a 1 vCPU / 1 GB VPS will trigger OOM failures unless compiled locally on the MacBook Pro and cross-compiled or deployed as a binary).
+* **Rule:** Perform all compilation, heavy data slicing, and strategy exploration on the **MacBook Pro Intel i7**. The VPS runs **only pre-compiled or lightweight scripted tasks**.
+
+### Storage & Database Architecture: SQLite WAL Mode
+
+SQLite in **Write-Ahead Logging (WAL)** mode is selected over PostgreSQL or Dockerized databases to eliminate background service overhead (~100–150 MB saved).
+
+```sql
+-- Core Relational Schema for Reproducible Spreads & Virtual Ledger
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA temp_store = MEMORY;
+PRAGMA page_size = 4096;
+
+CREATE TABLE IF NOT EXISTS market_snapshots (
+    ticker TEXT NOT NULL,
+    timestamp INTEGER NOT NULL, -- Unix epoch UTC seconds
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    open_interest INTEGER,
+    source_lineage TEXT NOT NULL, -- e.g. "MOEX_ISS_20261023_EOD"
+    PRIMARY KEY (ticker, timestamp)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS virtual_ledger (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    pair_id TEXT NOT NULL,
+    signal_type TEXT NOT NULL, -- ENTRY, EXIT, STOP_LOSS, MARGIN_CALL_WARNING
+    leg_a_ticker TEXT NOT NULL,
+    leg_a_price REAL NOT NULL,
+    leg_b_ticker TEXT NOT NULL,
+    leg_b_price REAL NOT NULL,
+    calculated_spread REAL NOT NULL,
+    virtual_pnl_rub REAL NOT NULL,
+    cumulative_lqdt_shortfall REAL NOT NULL,
+    execution_status TEXT NOT NULL -- FILLED, REJECTED, STALE_PRICE
+);
+
+```
+
+### Schema Migration & Point-in-Time Reproducibility
+
+1. **Migrations:** Managed via single-file PRAGMA user_version pragmas embedded directly in lightweight Python bootstrap scripts (no heavy ORM dependencies like Alembic).
+2. **Reproducibility:** Every ingested row retains its `source_lineage` and `timestamp`. The backtesting harness on macOS queries state strictly as of $T_{\text{snapshot}}$, ignoring subsequent retroactive settlements or adjustments.
+
+---
+
+## Section 3: Telegram API Constraints, Security, and Monitoring
+
+### Telegram Rate Limits & Delivery Mechanics
+
+* **Private Chat Limits:** Max ~1 message per second per chat.
+* **Global Bot Limits:** Max ~30 messages per second across all chats.
+* **Handling 429 Errors:** Upon receiving `HTTP 429 Too Many Requests`, parse the response header/body `retry_after` parameter. The notification queue must block and pause for $N + 1$ seconds before re-trying.
+
+```
+                     TELEGRAM ALERT DECOUPLING QUEUE
+                     
+  [ Strategy Monitor ]    [ Risk Monitor ]    [ Outage Daemon ]
+           │                     │                    │
+           └─────────────────────┼────────────────────┘
+                                 ▼
+                     ┌───────────────────────┐
+                     │ Async SQLite / Memory │
+                     │  Priority Alert Queue │
+                     └───────────┬───────────┘
+                                 │
+                   (Throttled: 1 msg/sec max)
+                                 │
+                                 ▼
+                     ┌───────────────────────┐
+                     │   Telegram API Client │
+                     └───────────────────────┘
+
+```
+
+### Risk Alert Isolation Rule
+
+Research batch jobs (e.g., historical spread calculations) **must execute in a separate sub-process or cgroup with `nice -n 19` and `ionice -c 3**`. The risk monitoring and Telegram alert loop runs in a dedicated thread/process with default priority to ensure critical warnings (e.g., RUB 5,000 drawdown warning or RUB 10,000 shortfall action) deliver instantly even during heavy local disk/CPU activity.
+
+### Secrets Management & Access Control
+
+* **Storage:** Secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_AUTHORIZED_CHAT_ID`, optional broker API tokens) are stored in an unprivileged systemd environment file (`/etc/r11/env`) protected by POSIX permissions (`chmod 600`, owned by non-root system user `r11runner`).
+* **Bot Privacy:** Inbound command processing ignores any update whose `message.from.id` does not match the strict `TELEGRAM_AUTHORIZED_CHAT_ID`.
+
+---
+
+## Section 4: Operational Failure Budget & VPN Health Safeguards
+
+### VPN Protection Principles (Xray / 3X-UI Preserved)
+
+1. **No System Network Interface Modifications:** Do not flush `iptables`, modify global `nftables` tables, or alter standard network interfaces (`tun0`, `eth0`) used by 3X-UI.
+2. **Ports Protection:** Ports `22` (SSH), `443` (VPN ingress), and `20724` (3X-UI Web Panel) are strictly untouchable.
+3. **Loopback Binding:** Any optional temporary research screen or API endpoint bound locally **must bind exclusively to `127.0.0.1**`. Never listen on `0.0.0.0`.
+
+### Failure Mode & Recovery Matrix
+
+| Failure Event | Trigger Condition | Automated Mitigation | Recovery / Replay Action |
+| --- | --- | --- | --- |
+| **Out-of-Memory (OOM)** | Available RAM $< 80\text{ MB}$ | `cgroups v2` terminates research worker (`MemoryMax=250M`); main service stays alive. | Systemd restarts service with 30s delay; log incident to SQLite. |
+| **Disk Full / Thrashing** | Disk usage $> 90\%$ | System interrupts data collection; purges old non-watchlist temporary snapshots. | SQLite WAL checkpoint forced; database auto-vacuum executed. |
+| **MOEX ISS Outage / 503** | 3 consecutive API timeouts | Exponential backoff ($15\text{s}, 45\text{s}, 135\text{s}, \dots$ max 1 hr). | Queue pending points; backfill gap using ISS start/end parameters upon recovery. |
+| **Clock Drift** | NTP divergence $> 2.0\text{ s}$ | Log warning; pause order signal generation in virtual ledger. | Re-sync time via systemd-timesyncd; mark affected bars as `UNVERIFIED_CLOCK`. |
+| **Corrupt SQLite File** | `PRAGMA quick_check` failure | Shutdown database handle immediately; trigger critical Telegram alert. | Restore latest daily `.db.bak` copy; replay raw JSON raw responses from staging folder. |
+
+---
+
+## Section 5: External Free Services & Operational Limitations
+
+```
+                      HYBRID INFRASTRUCTURE SEAMS
+                      
+ ┌──────────────────────────────────────┐     ┌────────────────────────────────────┐
+ │        LOCAL MACBOOK PRO i7          │     │          UBUNTU 24.04 VPS          │
+ │                                      │     │                                    │
+ │  • Strategy Exploration & Backtesting│     │  • Continuous Monitoring Daemon    │
+ │  • Heavy Data Crunching & Fitting    │ ──► │  • Virtual Ledger State Machine    │
+ │  • Model Training (HuggingFace/Flash)│ Sync│  • Low-overhead Telegram Bot       │
+ │  • Primary Repository & Code Base    │     │  • Bounded SQLite WAL Storage      │
+ └──────────────────────────────────────┘     └────────────────────────────────────┘
+
+```
+
+1. **MOEX ISS API (Information & Statistical Server):** Free tier allows daily and intraday polling. Subject to rate limits per IP (~10 requests/sec fair use). Must implement HTTP caching headers (`If-Modified-Since`, `Etag`).
+2. **Hugging Face Hub / Free Gemini Flash API:** **Not 24/7 production backends.** Useful solely for offline strategy discovery, document parsing, or natural-language summary generation on the MacBook Pro. All live execution logic and virtual ledger updates must run locally on deterministically coded algorithms, without API dependencies on LLMs.
+3. **Cloud Ephemeral Run-times (Google Colab / Kaggle):** Treat strictly as temporary compute accelerators for batch processing. Free tier sessions terminate unpredictably and cannot maintain WebSocket connections or continuous polling.
+
+---
+
+## Section 6: Stage-3 Read-Only Preflight Checklist & System Budget Negotiation
+
+Before executing any commands in Stage 3, the user (or executing agent) must run this non-destructive, read-only diagnostic checklist to verify resource headroom without making system modifications.
+
+### Non-Destructive Preflight Verification Plan
+
+```bash
+# 1. Inspect Memory and Swap Allocation
+free -h -m
+
+# 2. Verify Storage Usage on Root Partition
+df -h /
+
+# 3. Check Systemd Cgroups Version (Must be unified/v2)
+stat -fc %T /sys/fs/cgroup
+
+# 4. Verify Active VPN Ports and Panel Non-Interference
+ss -tulpn | grep -E ':22|:443|:20724'
+
+# 5. Measure Idle System CPU & Memory Load
+top -bn1 | head -n 20
+
+# 6. Verify System Clock and NTP Synchronization
+timedatectl status
+
+```
+
+### Resource Budget Contract
+
+```
++-------------------------------------------------------------------------+
+| SYSTEM RESOURCE BUDGET CONTRACT (1,024 MB TOTAL RAM)                    |
++-----------------------------------+-------------------------------------+
+| Component                         | Allocation Bound                    |
++-----------------------------------+-------------------------------------+
+| Operating System & Core Services  | 250 MB (Hard Reserved)              |
+| Existing VPN Services (3X-UI)     | 250 MB (Hard Reserved)              |
+| R11 Monitoring & Ledger Daemon    | 80 MB Steady / 250 MB Peak (Cgroup) |
+| Safety Buffer (OOM Headroom)      | 194 MB - 444 MB (Unallocated)       |
++-----------------------------------+-------------------------------------+
+| Disk Footprint Cap for R11 Data   | 3.0 GB (Hard Cap in SQLite / Logs)  |
++-----------------------------------+-------------------------------------+
+
+```
+
+### No-Touch Safeguard List
+
+* **DO NOT** edit `/etc/network/interfaces`, `/etc/netplan/*`, or `/etc/resolv.conf`.
+* **DO NOT** restart or reload `x-ui`, `3x-ui`, `xray`, or `iptables` services.
+* **DO NOT** install Docker, Snap, or heavy container runtimes that instantiate bridge interfaces (`docker0`) or consume background daemon memory.
+* **DO NOT** run `apt upgrade` globally; restrict any future package installation strictly to minimal required libraries (`python3-venv`, `sqlite3`).
+
+---

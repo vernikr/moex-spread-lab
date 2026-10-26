@@ -1,12 +1,13 @@
 # Stage 2 — Research inventory and ready-to-use prompts
 
-Delivered 2026-10-07. **Scope: research design only. The user performs the research. No investigation has been run or report accepted.** No stage-3 environment setup, production access, market data collection, strategy implementation or trading occurred.
+Delivered 2026-10-07. **Scope: research design and handoff. The user performs the research. Reports received on 2026-10-26 are stored as intake material; no report has been validated or accepted.** No stage-3 environment setup, production access, market data collection, strategy implementation or trading occurred.
 
 ## Artifacts
 
 - [Research pack: sequence, dependencies, literature/channel leads](../research/README.md)
 - [Fifteen standalone prompts](../research/prompts/)
 - [Report return instructions](../research/results/README.md)
+- [Received research intake](../research/results/received/README.md)
 - [Delegated provisional pilot risk policy](../risk/pilot-policy.md)
 - [Updated decisions](../decisions.md) and [account/risk blockers](../blockers/b01-account-and-risk.md)
 
@@ -27,7 +28,7 @@ The full inventory contains deliverables, evidence standards, dependencies and s
 
 ## Exit and next gate
 
-Stage-2 **prompt delivery** is complete; **research execution/evidence acceptance is pending**. Stage 3 remains a separate turn for authorized tools/access and safe VPS verification; it need not wait for optional research. No live-trading feasibility or stack decision should be declared while its mandatory evidence is missing. Received findings may revise previous artifacts with explicit reasons.
+Stage-2 **prompt delivery** is complete; **research reports have been received, while execution review and evidence acceptance are pending**. Stage 3 remains a separate turn for authorized tools/access and safe VPS verification; it need not wait for optional research. No live-trading feasibility or stack decision should be declared while its mandatory evidence is missing. Accepted findings may revise previous artifacts with explicit reasons.
 
 ## User-requested refinement — 2026-10-07
 

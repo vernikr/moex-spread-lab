@@ -1,0 +1,172 @@
+# R08 Research Report: Delayed Manual Execution, Signal Validity, and Virtual Portfolio Architecture
+
+**Project Scope:** Private MOEX Futures-Spread Pilot
+
+**Current Date Cutoff:** October 2026
+
+**Operating Environment:** Manual execution via VTB (initial phase), potential future automation via BCS; capital envelope of **RUB 30,000** tested against a core **LQDT** holding exceeding **RUB 40 million**, maintaining strict cash-flow and counterfactual accounting parity (`X = V - B`).
+
+---
+
+## 1. Timeline and Milestone Definitions
+
+In a manual execution framework with a human reaction window of **3–90 minutes** (median **5–15 minutes**), asynchronous friction points dictate whether an edge survives transmission to the order book.
+
+### Chronological Milestone Taxonomy
+
+* **$T_0$ (Information Available):** Raw market data point, cross-contract price divergence, or quantitative trigger forms in the screening engine (dark-only screener / Telegram alert).
+* **$T_1$ (Model Evaluation):** Signal verification script checks basic integrity, data freshness, and prelim spread bounds.
+* **$T_2$ (Signal Creation & Packaging):** Formatted alert containing leg specifications, limits, and invalidation criteria is generated.
+* **$T_3$ (Telegram Delivery):** Network push lands on the operator's device; subject to mobile connectivity or client app background sleep states.
+* **$T_4$ (User Reading & Decision):** Operator acknowledges alert, assesses operational context, and initiates manual workflow.
+* **$T_5$ (Order Acceptance / Submission):** Orders entered into the VTB trading interface (quik/mobile/web) with explicit limit or market parameters.
+* **$T_6$ (Exchange Fill):** Matching engine executes matching contracts (partial or full).
+* **$T_7$ (Hedge Completion):** Second leg of the spread is filled, neutralizing directional delta.
+* **$T_8$ (Cancellation / Expiry):** Signal or order explicitly terminated due to timeout, adverse movement, or margin constraint.
+
+### Operational Disjunctions
+
+* **Model Outages:** Server-side feed drops, API rate limiting, or Telegram bot delivery failures resulting in silent signal loss.
+* **Irregular Human Availability:** Sleep, transit, or primary professional obligations causing right-tail delays ($>90$ minutes) where the signal decays into noise.
+
+---
+
+## 2. Plausible Delay Scenarios and Market Regimes
+
+Manual execution delays are not uniformly distributed; they exhibit strong state-dependency tied to volatility and liquidity regimes on the Moscow Exchange (MOEX derivatives market).
+
+### Delay Scenario Matrix
+
+| Scenario ID | Regime Characterization | Typical Delay Range | Primary Risk Factor |
+| --- | --- | --- | --- |
+| **DS-1 (Normal Flow)** | Calm mid-session (11:00–16:00 MSK), tight spreads, steady order book depth. | **3–10 minutes** | Minor slippage; high signal validity. |
+| **DS-2 (High Volatility / News)** | Macro release or sudden spot FX jump, rapid spread expansion. | **15–45 minutes** | Stale quotes; legs misalign before entry. |
+| **DS-3 (Session Transition)** | Approaching evening clearing (**18:45–19:05 MSK**) or evening session open (**19:05 MSK**). | **30–90 minutes** | Order book thinning; liquidity vacuum during clearing halts. |
+| **DS-4 (Operational Absence)** | Operator engaged elsewhere; notification missed during low-attention hours. | **$90+$ minutes** | Complete signal invalidation; catastrophic stale fill risk. |
+
+> **Market Schedule Constraint:** MOEX derivatives main trading session runs from **10:00 to 18:45 MSK**, followed by an evening clearing session (**18:50–19:05 MSK**) and an evening trading session (**19:05–23:50 MSK**). Signals generated outside these windows or during clearing cannot be executed instantly.
+
+---
+
+## 3. Candidate Revalidation Protocol
+
+A fresh signal timestamp cannot refresh stale market input. Before submitting orders at $T_5$, the operator must re-verify candidate viability against strict filters:
+
+* **Net Advantage vs. LQDT:** Does the expected spread capture exceed the risk-free daily accrual of the matched LQDT counterfactual over the expected holding period?
+* **Bid-Ask and Depth Check:** Are current quotes capable of absorbing the minimum lot without walking the book into severe price impact?
+* **Margin & Funds Availability:** Does the available cash within the **RUB 30,000** envelope cover initial margin requirements plus a safety buffer, with **zero** emergency funding tapped?
+* **Data Freshness:** Is the price feed current, or has the exchange experienced a pause or quote freeze?
+* **State Invalidation & Expiry:** If the spread has retraced by more than **50%** of its expected edge during the delay window, the signal is automatically scrubbed and marked as a *missed opportunity*.
+
+---
+
+## 4. Two-Leg and Partial Execution Mechanics
+
+MOEX futures spreads are rarely executed via atomic exchange-level spread orders in a basic retail setup unless supported by specific broker routing tools (unverified for VTB initial phase). Therefore, legs must be handled sequentially or concurrently as independent orders.
+
+### Execution Risks
+
+1. **The Unhedged Leg Hazard:** Filling Leg A creates unhedged directional exposure. If Leg B experiences a liquidity gap or price jump before manual submission, the portfolio bears naked futures risk.
+2. **Asynchronous Acknowledgements:** Broker interface lag in confirming Leg A fill creates uncertainty over whether to release Leg B.
+3. **Partial Fills:** Leg A fills for 2 contracts, but Leg B fills for only 1. The residual unhedged contract must be managed via immediate flattening or secondary adjustment.
+
+* **Abortion Protocol:** If Leg A fills and Leg B cannot be completed within **3 minutes** due to sudden limit-up/limit-down or quote disappearance, the operator must immediately market-exit Leg A to prevent unbounded directional drawdown.
+
+---
+
+## 5. Finite-Capital Virtual Portfolio Architecture
+
+To simulate real-world constraints without live financial risk during the R08 phase, the virtual portfolio architecture operates under strict boundaries:
+
+* **Capital Ceiling:** Hard cap at **RUB 30,000**, segregated ledger-style from the core **>RUB 40 million LQDT** holding.
+* **Deterministic Priority for Conflicts:** When simultaneous signals compete for cash or margin:
+1. Highest net expected return relative to margin utilization.
+2. Lowest historical volatility pair.
+3. Oldest valid signal timestamp.
+
+
+* **Capital Reservation:** Active positions lock required margin plus a **20%** variation margin buffer. Unfilled pending orders temporarily reserve capital to prevent over-allocation.
+* **Marked P&L & Counterfactual Tracking:** Performance is logged daily against the matched LQDT counterfactual $B(t)$, tracking excess curve $X(t) = V(t) - B(t)$ and drawdown from peak $D(t) = H(t) - X(t)$.
+
+---
+
+## 6. Signal Communication and Metadata Architecture
+
+To eliminate ambiguity during manual translation from screen to broker terminal, signal messages delivered via Telegram must strictly segregate idea-level analytics from execution instructions.
+
+### Standardized Signal Payload Structure
+
+```text
+[SIGNAL ID: 2026-10-21-01]
+-- IDEA LEVEL --
+Pair: Si-12.26 / Ri-12.26 (USD/RUB vs RTS Index Futures)
+Expected Net Edge: +0.84% over 5 days (Exceeds LQDT hurdle)
+Confidence Basis: Statistical cointegration Z-score = 2.41 (Lookback 60d)
+Holding Uncertainty: Medium (Macro headline risk expected at 14:00 MSK)
+
+-- EXECUTION CONSTRAINTS --
+Do Not Enter If: Spread narrows below 1.200 pts OR bid-ask spread > 15 pts on either leg.
+Data Age: Generated at 11:14 MSK (Max allowed delay: 20 minutes)
+
+-- ORDER INSTRUCTIONS --
+Leg 1: BUY 1 contract Si-12.26 @ limit <= 92,500
+Leg 2: SELL 1 contract Ri-12.26 @ limit <= 114,200
+Max Slippage Tolerance: 0.15% per leg
+
+```
+
+---
+
+## 7. Required Outputs & Frameworks
+
+### Lifecycle and Reason-Code Taxonomy
+
+| Status Code | Label | Description & Action Trigger |
+| --- | --- | --- |
+| **SIG-GEN** | Generated | Signal created by quantitative screening model. Awaiting read. |
+| **SIG-EXP** | Expired | Delay exceeded threshold ($>90$ min or max age) or spread retraced $>50\%$. Discarded. |
+| **ORD-SUB** | Submitted | Operator has entered orders into VTB interface. Awaiting fills. |
+| **FIL-FUL** | Fully Filled | Both legs successfully executed within slippage bounds. Position active. |
+| **FIL-PRT** | Partially Filled | One or both legs incomplete. Initiates partial-fill resolution protocol. |
+| **ERR-CASH** | Insufficient Funds | Rejected at order entry due to insufficient free margin within the RUB 30,000 envelope. |
+| **ERR-CLO** | Market Closed | Attempted execution during clearing or outside main/evening sessions. |
+| **ERR-OVL** | Overlap Conflict | Skipped due to capital reservation by a higher-priority simultaneous signal. |
+| **ERR-NOF** | No Funding Approval | Entry blocked because required additional allocation lacked explicit user approval. |
+
+---
+
+### Falsifiable Delayed-Fill Evaluation Protocol
+
+To prevent retrospective bias ("every signal fills perfectly"), backtesting and forward paper-collection must adhere to strict evaluation rules:
+
+1. **Conservative OHLCV Fallback:** Never assume execution at the theoretical model midpoint. For buy orders, evaluate execution at the prevailing **Ask** price plus historical median slippage; for sell orders, use the **Bid** price minus slippage.
+2. **Forward Data Collection Requirement:** Forward logs must record:
+* Exact timestamp of Telegram alert receipt.
+* Timestamp of broker terminal quote inspection.
+* Actual observed book depth at the moment of manual button-click.
+* Resulting fill price or explicit rejection reason code.
+
+
+3. **Falsification Criterion:** If simulated delayed execution returns a cumulative net deficit exceeding **RUB 5,000** over a 30-sample test window compared to zero-delay theoretical execution, the manual execution hypothesis is falsified, requiring transition to automated API execution or strategy termination.
+
+---
+
+### Hypothetical Edge Cases
+
+* **Stale Winner:** A signal identifies a spread dislocation at 11:00 MSK. Due to a meeting, the operator reads the alert at 12:15 MSK (75-minute delay). Although the spread is still nominally profitable, the order book has shifted against the entry price by 40 ticks. *Action:* Revalidation protocol triggers a 50% edge decay check; signal is marked **SIG-EXP** (Missed Opportunity).
+* **Simultaneous Signals Competing for Cash:** Two valid signals arrive within 2 minutes of each other, but remaining free capital in the **RUB 30,000** envelope only supports one. *Action:* Deterministic priority ranks Signal A higher based on Sharpe-to-margin ratio; Signal B receives **ERR-OVL** and is dropped without execution.
+* **One-Leg Fill & Margin Escalation:** Leg A fills completely, but Leg B hangs due to a sudden liquidity drop. Margin utilization jumps to 85% due to the unhedged leg. *Action:* Emergency abort triggered within the 3-minute window; Leg A is closed at market, recording a small friction loss without breaching the **RUB 5,000** warning threshold.
+
+---
+
+### Manual-Action Burden Metrics & Daily Trade Definition
+
+* **Operator Burden:** Monitoring screens and managing 5–10 potential signals daily introduces severe cognitive fatigue. Manual execution is sustainable for at most **1–3 interventions per day**.
+* **Definition of a Daily "Trade":** For this project, a daily "trade" is defined as **one complete round-trip spread intervention (entry and subsequent exit)** or an active multi-leg adjustment, rather than raw signal counts or individual leg order placements.
+* **Proposed Default for Later Gates:** Limit the virtual portfolio to a maximum of **1 entry attempt per day** during the initial 30 days to keep manual operational error rates near zero before contemplating automation scaling.
+
+---
+
+## Suggested Next Steps
+
+Would you like to proceed with defining the formal validation protocol parameters (R09) or establish the stress-testing thresholds for collateral and funding coordination with R07?

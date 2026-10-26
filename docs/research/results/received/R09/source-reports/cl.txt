@@ -1,0 +1,119 @@
+# R09 validation methodology: report and protocol
+
+## 0. Provenance and limits
+
+- **Actually read:** only the pasted prompt. I did no web retrieval, no paper or book reading, and no data work in this session.
+- **Citations:** every reference below is a bibliographic lead from memory. None carries a retrieved excerpt, URL or page number. The prompt requires those for material claims, so each lead is conditional until you verify it. Formulas are marked where I'm reciting from recall.
+- **Not done:** no backtest, no MOEX fact-check, no measured numbers. All MOEX-specific items are hypotheses to check against primary exchange documents.
+- **Proposed only:** every test below.
+
+## 1. Bottom line
+
+1. With sparse, overlapping, regime-dependent spread trades, no retrospective method can certify profitability. The honest goal is to **falsify cheaply, bound uncertainty, and mostly end up "inconclusive"**. Inconclusive is a legitimate and likely outcome.
+2. The dominant risk is the researcher-degrees-of-freedom count (pairs × parameters × universes × cost and delay choices), not the model class. Log everything in a registry, and treat the unit of evidence as the **economic episode**, not the bar.
+3. Keep the hypothesis set small and economically motivated before looking at data. Prefer parameter plateaus to optima. Use a single, pre-registered primary cost and delay scenario.
+4. The pilot validates operations (fills, latency, margin behaviour, tracking of the LQDT counterfactual). It cannot validate profitability at RUB 30k over 90 days.
+
+## 2. Leakage inventory, worked examples and prevention tests
+
+| Pathway | Hypothetical example | Prevention test |
+|---|---|---|
+| Survivorship | The universe is built from currently listed contracts, so delisted or illiquid series are missing | Rebuild the universe at each decision date from an exchange list effective on that date. Compare the count to the archived listing; any unexplained difference blocks the run. |
+| Continuous-contract roll adjustment | Back-adjusting with the final roll gap changes old spreads using future prices. A spread Z-score computed on adjusted series then "knows" the future. | Build spreads from **raw contract pairs** with explicit roll rules fixed in advance. Run a truncation test: recompute the signal at date t on data ending at t and on data ending later. Any difference fails. |
+| Future parameters or events | Dividend or expiry calendars known only after the fact. Hedge ratio fit on the full sample. | Every fitted object carries a `fit_end` timestamp that must be ≤ the decision time. Unit test by shifting the dataset end date. |
+| Late price revisions | Settlement prices corrected after the day | Store as-of snapshots with availability time. Distinguish publication, availability, effective time and access time. A later edited page does not show what was known then. |
+| Overlapping labels | A train trade's holding window overlaps a test trade's window | Purge by interval overlap (section 3). |
+| Cross-pair dependence | Two pairs share a leg or an FX/oil factor, so the "independent" test trades are one episode | Cluster trades into episodes by shared legs and calendar overlap. Split by cluster. |
+| Universe selection | Pairs chosen after a full-sample cointegration screen | The screen runs inside each training window only. |
+| Reused holdout | Peeking at the final holdout after each tweak | Holdout ledger (section 6). Consumed on first scored look. |
+| Post-hoc costs | Costs set after seeing results | The cost model is frozen and timestamped before scoring. |
+| Best-delay choice | Reporting the 3-minute scenario because it looks best | The primary scenario is pre-registered, and the gating scenario is the **worst** of the pre-specified set. |
+
+MOEX-specific items to verify from primary sources (all unverified): the trading halt and reopening in early 2022, any contract-spec or trading-hours changes, how share-futures prices treat dividends, and any FX-benchmark changes after sanctions. Each is a possible **regime break** that must not sit inside one training window.
+
+## 3. Split logic
+
+Decision-time rule: a trade has decision time `t0`, exit time `t1`, a feature lookback `L`, and an estimator window `W` (hedge ratio, z-score window). A training observation is dropped if its `[t0 − max(L,W), t1]` interval overlaps the test trade's interval. After each test block, an embargo of at least the longest dependence horizon is added: `max(estimator window, holding horizon, observed autocorrelation horizon)`. Do not use an arbitrary bar count.
+
+```
+Time ─────────────────────────────────────────────────────────►
+|---- warm-up ----|--- dev: rolling origin ---|-embargo-|--- shadow ---|
+                   train₁|purge|test₁
+                   train₂ (expanding) |purge|test₂
+                                         ...
+FINAL HOLDOUT: sealed, touched once, only after the registry is frozen
+```
+
+- **Primary method:** expanding-window, rolling-origin evaluation. It matches the live use case and has simple leakage logic.
+- **Nested selection:** the inner loop chooses among a small, capped set of configs. The outer loop is scored once per origin. With few trades, nested CV has high variance. Cap the config count rather than hoping for power.
+- **CPCV / combinatorial purged CV (AFML ch. 12):** useful for diagnosing overfitting via many path reconstructions. Its paths reuse the same few trades, so path dispersion is **not** a confidence interval for true performance. A synthetic-environment comparison of out-of-sample methods (Arian, Norouzi, Seco, 2024, recalled) reportedly favours CPCV over walk-forward on stability. Verify it, and note that synthetic stationarity is not MOEX.
+- **Fit only on allowed data:** transforms, regime labels, hedge ratios, thresholds and the selection rule itself.
+
+## 4. Registry and multiple testing
+
+**Registry fields (one row per experiment):** ID; timestamp; hypothesis and economic rationale; data snapshot hash and availability cutoff; universe rule; pair and parameter grid; fit/purge/embargo rules; cost and delay scenario IDs; primary metric; stopping rule; code commit; result (including failures); who looked at which data partition and when; and a link to the parent experiment if it was derived from one.
+
+**Corrections to evaluate:**
+- FWER: Holm (1979). Bonferroni is too conservative and assumes little about dependence.
+- FDR: Benjamini–Hochberg (1995), and Benjamini–Yekutieli (2001) under dependence.
+- Resampling under dependence: White's Reality Check (2000), Hansen's SPA (2005), Romano–Wolf StepM (2005), Hansen–Lunde–Nason Model Confidence Set (2011). All need a block bootstrap (Künsch 1989; stationary bootstrap, Politis–Romano 1994; block length per Politis–White 2004).
+- Harvey–Liu–Zhu (2016) argue for higher t-hurdles in factor discovery. Treat that as context, not a threshold for this project.
+- **Effective number of trials N:** correlated configs reduce it. Estimate by clustering (López de Prado and Lewis 2018, recalled) and report a range, because N is the least certain input.
+
+**DSR (recalled from the 2014 JPM paper; verify before use):** the benchmark is SR0 ≈ √V[SR̂ₙ]·((1−γ)Φ⁻¹(1−1/N) + γΦ⁻¹(1−1/(Ne))), with γ the Euler–Mascheroni constant. DSR is the probabilistic Sharpe ratio evaluated at SR0, adjusted for skew, kurtosis and sample length.
+
+**Applicability limits for sparse spread trades:**
+- It assumes an adequately long, roughly IID return series. Overlapping positions and mostly-flat bars break this.
+- Skew and kurtosis estimates are unreliable with few episodes.
+- The result is sensitive to N and to the trial-Sharpe variance.
+- Annualizing a Sharpe ratio from a few episodes needs explicit justification (Lo 2002 on autocorrelation).
+- **Use DSR as a screen that flags weak evidence, not as proof.** PBO (Bailey et al., 2017, CSCV) likewise says how often the in-sample best ranks poorly out of sample. It is weak with few independent splits.
+
+## 5. Metrics and uncertainty
+
+- **Primary:** daily RUB excess `E_t = V_pilot,t − V_LQDT-counterfactual,t`, with identical external flows. Core LQDT diverted for the pilot stays invested in the counterfactual. Do not double-deduct LQDT yield on retained collateral. Exclude only the LQDT long-term holding deduction. Tax residence is unknown.
+- **Companions:**
+  - capital-time usage (margin × days)
+  - excess per RUB-day
+  - path drawdown from the excess high-water mark, against the provisional RUB 5,000 and 10,000 rules
+  - stress funding need (peak variation-margin draw)
+  - holding duration and turnover
+  - net execution cost and slippage
+  - capacity
+- **Sample-size language:** distinguish bars, trades, episodes and effective sample size. No universal "30 trades" rule. Report the episode count and the effective n after autocorrelation.
+- **Uncertainty:** stationary or block bootstrap over episodes (or calendar blocks), plus a permutation or sign-flip test against baselines. Report RUB intervals, not only p-values. Add model uncertainty by repeating across the pre-registered cost, delay and benchmark scenarios, and report the spread.
+
+## 6. Baselines, scenarios, outcomes, holdout
+
+- **Baselines:** no-trade/LQDT (zero excess by construction), plus simple deterministic spread rules (for example fixed-window z-score, with no tuning beyond the same grid). A strategy that cannot beat a simple rule at the same cost does not advance.
+- **Stress scenarios:** execution delay across the 3–90 minute range (using the 5–15 minute median as the primary), quote quality (stale, rejected, partial fills), and cost multipliers. The gate uses the pessimistic set.
+- **Outcome rules (thresholds to be fixed in the registry before scoring; the values are the project's choice, not established standards):**
+  - **Reject:** the upper bound of the excess interval is ≤ 0 under the primary cost, or it fails the baseline.
+  - **Advance to shadow:** the lower bound is > 0 under pessimistic costs and survives the selection correction.
+  - **Inconclusive:** everything else. Continue shadow evaluation with no parameter changes.
+- **Holdout ledger:** the holdout is consumed at the first scored look by anyone who has seen results. Any subsequent change creates a new, later holdout. Prospective shadow trading, with timestamped signals recorded before outcomes, is the cleanest evidence.
+
+## 7. Probability calibration
+
+- Show a probability only if it has a defined event, horizon (for example hit target before stop within H days, net of costs), and a calibration record built from past-only (prequential) fits.
+- Score with proper rules (Brier, log loss; Gneiting–Raftery 2007) against the base rate. Check reliability with Wilson or Clopper–Pearson intervals per bin. Use simple calibrators such as Platt or beta; isotonic needs more data than this project is likely to have.
+- If the intervals are too wide to change a decision, **do not show a number**. Show an ordinal bucket or nothing.
+- **Decision link:** trade EV ≥ 0 requires p ≥ (L + c)/(W + L), where W and L are gain and loss and c is cost. Uncertainty in c and in the benchmark moves this break-even. Act only when the lower bound of p exceeds the upper bound of the break-even.
+
+## 8. Gate separation
+
+1. **Data feasibility:** availability, history depth, and timestamps (as-of).
+2. **Statistical evidence:** the protocol above.
+3. **Operational feasibility:** a manual reaction-time distribution, margin behaviour on the shared account, and zero-emergency-funding entry.
+4. **Small live test (90 days):** operations and cost realism only. Zero trades is acceptable. Profit or loss is uninformative.
+5. **Scaling to RUB 10–20M:** a separate gate with new capacity and market-impact evidence.
+
+## 9. Conflicts, unknowns, falsification, possible changes
+
+- **Unknowns:** actual MOEX data availability and free-timeframe depth, the effective N, the regime-break dates, and the broker collateral treatment.
+- **Falsified if:** results disappear under truncation tests, under raw-contract spreads, or under the pessimistic cost and delay set; or shadow results fall outside the pre-stated interval.
+- **Possible project changes:** a smaller hypothesis set, an episode-based unit of evidence, no probability display by default, and explicit "inconclusive" as an allowed gate output.
+
+## 10. Next step
+
+Please verify the reading leads yourself: Bailey and López de Prado (2014) *The Deflated Sharpe Ratio*, JPM 40(5); and AFML (Wiley 2018) ch. 3–4, 7, 11–12 and 14. If you can send the relevant excerpts or the edition you hold, I can critique the exact passages and replace the recalled formulas. I can also turn this into a Word or Markdown file if you'd like.

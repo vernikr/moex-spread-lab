@@ -1,0 +1,545 @@
+# Economically Justified Futures Spread Universe on MOEX: Families, Pairs, and Historical Scope
+
+## 1. Framing: What Counts as an “Economically Justified” Futures Pair on MOEX
+
+For MOEX derivatives, economically justified medium‑term spreads are those where both legs are tied by a clear structural pricing relation rather than by historical correlation alone. In this setting, five broad families matter:
+
+- **Calendar spreads within the same futures family**  
+  – Index, single‑stock, FX, commodity, and interest‑rate futures, including those with official MOEX calendar spread instruments and margin discounts.
+
+- **Inter‑commodity (product) spreads**  
+  – Primarily refinery and energy chains (Brent vs gasoline/diesel) and some metal spreads where both legs trade on MOEX.
+
+- **Cross‑term fixed‑income / rate spreads**  
+  – OFZ basket futures by duration and (historically) RUONIA / RUSFAR / RGBI structures.
+
+- **Equity structures (index vs sector / single stock)**  
+  – For MOEX: structurally justified mostly as index vs sector index, or index vs perpetual on same index, not arbitrary stock pairs.
+
+- **FX structures (spot‑like vs funding‑heavy)**  
+  – Standard quarterly currency futures vs daily perpetual futures on the same currency pair.
+
+All other “pairs” (e.g. SBER vs GAZP, random equity duos, crypto vs equity) should be treated as **off‑universe** for this project until and unless a specific economic mechanism (not correlation) is proven.
+
+The core actionable takeaway is: start from the exchange’s own spread infrastructure (calendar spreads, inter‑commodity spread groups, margin discounts) and from cost‑of‑carry/production relations, and explicitly exclude anything that is just “two correlated prices”.
+
+---
+
+## 2. MOEX Futures Families and Contract Types Relevant for Spreads
+
+**MOEX officially classifies futures into index, stock, FX, interest‑rate and commodity futures; since 2023–2026 a separate layer of daily “perpetual” futures with automatic prolongation appeared.** The “Options and Futures Contracts Information” page lists categories “Index futures | Single stock futures | FX futures | Fixed income futures | Commodity futures”[1]. General characteristics include underlying asset, contract code, lot size, minimum tick and its ruble value[2][3]. Key information documents (KID) exist for each asset class[4].
+
+### 2.1 Index futures
+
+MOEX trades:
+
+- RTS Index futures (RTS‑… standard, RTSM mini)[5][6].  
+  Specification: multiplier 100 × index, tick 10 points, tick value USD 0.2 converted into RUB for the standard contract[7][8].
+- MOEX Russia Index futures: MIX (standard) and MXI (mini)[9][10].
+- Sector index futures (Oil & Gas, Financials, Metals & Mining, Consumer)[11][12], and historical contracts like OGI oil & gas index futures with documented contract codes and expiry windows[13].
+- RGBI government bond index futures (2022–2025)[14][15].
+- Perpetual daily futures on MOEX Russia Index and RGBI: IMOEXF and RGBIF, cash‑settled and automatically prolonged each day[16][17][18].
+
+Index futures are explicitly described as **cash‑settled**, without physical delivery[19][20].
+
+### 2.2 Single‑stock futures
+
+MOEX trades physically settled futures on Russian shares (SBRF, GAZP, LKOH, ALRS, etc.)[21][22][23]. Generic spec for stock futures includes:
+
+- Physical delivery via automatic T+2 trades in the equity market on expiry[24][25].
+- Contract months March, June, September, December[26].
+
+There are also perpetual daily futures on foreign shares (AMDF, AMZNF, etc.) with automatic prolongation and cash settlement[27][28].
+
+### 2.3 FX futures
+
+Two distinct FX futures families:
+
+- **Standard quarterly FX futures** on USD/RUB (Si), EUR/RUB (Eu), CNY/RUB (CNY‑…)[29][30]. These are cash‑settled in RUB, quoted in RUB per unit of foreign currency[31].
+- **Daily perpetual FX futures** with automatic prolongation (USDRUBF, EURRUBF, CNYRUBF) where the settlement price references the latest Central Bank fixing[32][33]. MOEX explicitly describes them as “daily futures contracts on RUB quoted currency pairs with automatic extension” and “cash‑settled”[34].
+
+Deliverable FX futures exist under the separate **currency engine** (“Поставочные фьючерсы” market with boards FUTS/FUTN)[35][36], but these are structurally different (spot‑style with optional settlement dates[37]) and not part of the standard FORTS RFUD list.
+
+### 2.4 Interest‑rate and fixed‑income futures
+
+Historically and partially currently:
+
+- **OFZ basket futures** (OFZ2, OFZ4, OFZ6, OFZ10, OFZ15) by maturity bucket, documented on a dedicated MOEX “Фьючерсы ОФЗ” page and in the FUTOFZ FTP directory[38][39][40]. Tick data CSV explicitly lists multiple duration buckets in 2022 (e.g. OFZ2‑3.22, OFZ4‑3.22, etc.)[41].
+- **RGBI index futures** (RB… codes, RGBI‑9.27 / RBU7 etc.), launched 28.02.2022 and ceased 21.04.2025[14][15].
+- **Short‑term rate futures**: RUONIA futures are documented as interest‑rate futures on the overnight index with 1‑month term and quote “100 minus expected RUONIA”[42]; RUSFAR futures existed 2020–2022 in a market‑making program[43][44].
+
+Most fixed‑income futures beyond perpetual RGBIF are currently **historical** and must be treated as such for universe reconstruction.
+
+### 2.5 Commodity futures
+
+Official MOEX commodity derivatives segments include[45][46]:
+
+- **Energy**: Brent (BR), Light Sweet Crude Oil (CL, discontinued), WTI (relaunched 2026), natural gas (NG)[47][48][49][50].
+- **Refined products**: regular gasoline AI92, premium gasoline AI95, diesel (DTL), launched as ruble‑quoted cash‑settled futures[51].
+- **Precious metals**: gold (GOLD / GL‑…, GLDRUBF perpetual, GOLDM mini), silver (SILV), platinum (PLT), palladium (PLD, historical)[52][53][54][55][56][57].
+- **Base metals**: aluminum (ALUM, ALMN), copper (COPPER / Co), nickel, zinc[58][59][60][61].
+- **Agricultural commodities**: Russian Wheat Index futures (WHEAT), raw sugar (SUGR), Russian sugar[62][63][64][65].
+
+Most commodity futures are cash‑settled, but some precious metals originally were deliverable on MOEX’s precious metals spot market[55][66].
+
+### 2.6 Perpetual (“вечные”) futures as a distinct type
+
+MOEX characterizes perpetuals as **one‑day futures with automatic prolongation**, not expiry‑less swaps. Official FAQ (Aug 2025) describes them as contracts “без даты исполнения” in the trading sense but technically rolled daily, with a funding mechanism governed by parameters K1 and K2[67][68]. Settlement into quarterly futures is possible once per quarter at the initiative of one side[69]. Families exist on indices (IMOEXF, RGBIF), FX (USDRUBF, EURRUBF, CNYRUBF), gold (GLDRUBF), U.S. equities and ETFs (AMDF, AMZNF, SP500F, QQQF, etc.)[16][27][54][70].
+
+These have their own economics (funding vs spot index), so any spread involving a perpetual leg must model the funding explicitly and cannot be treated simply as another maturity in a calendar strip.
+
+---
+
+## 3. MOEX Spread Infrastructure and Where the Exchange Itself Sees Economic Links
+
+**MOEX explicitly implements and supports several spread types: calendar spreads, inter‑commodity spreads (МКС) and margin‑discounted spread groups. These are the first candidates for an “economically justified” universe.**
+
+### 3.1 Calendar spreads
+
+MOEX’s calendar spread service (“межконтрактные спреды”, synthetic matching) allows simultaneous buy/sell of two futures on the same underlying with different expiries[71][72][73]. The calendar spread instruments have their own tickers (e.g. GOLD‑6.23‑9.23, BR‑2.27‑3.27, MIX‑9.23‑12.23)[74][75][76]; MOEX publishes parameters and historical trade archives for these spread contracts[71][74].
+
+Economic basis:
+
+- For indices and equities: standard cost‑of‑carry relation \( F = S e^{(r - q)T} \), with funding rate \(r\), dividend yield \(q\).
+- For commodities: storage, convenience yield, seasonal demand.
+- For FX: interest‑rate parity between currencies.
+- For rates/bonds: forward rates implied by the yield curve (OFZ, RUONIA, RGBI).
+
+MOEX’s documentation of costs of carry and inter‑month spreads (including for gold, silver, oil, copper, OFZ) plus margin discounts for MKS groups[77][78][79][80] confirms that the exchange views these as structurally linked.
+
+### 3.2 Inter‑commodity spreads (МКС) and margin discounts
+
+The “Parameters of Derivatives market” and dedicated news releases describe **inter‑contract spreads (МКС)** across futures and options with explicit margin discounts[77][78]. Examples:
+
+- Groups with **50% margin discount** for spreads (window_size = 0.5) between certain contracts[78].
+- Precious metals MKS groups where PLTM and PLDM are added with **100% discount** (full offset) for opposite positions[80].
+- Inclusion of perpetuals (e.g. GLDRUBF, IMOEXF) in MKS groups with spread discounts[79].
+
+The presence of these groups is a strong signal that MOEX’s risk department recognizes stable co‑movement rooted in economics (common underlying or production chain), not just empirical correlation.
+
+### 3.3 Product and crack spreads in energy
+
+MOEX’s commodity derivatives materials explicitly refer to **Brent/WTI spreads** as a product spread, defining it as “the difference in prices of the contracts with different oil grades which have an expiration in the same month”[41]. A second layer follows from the launch of gasoline and diesel futures: MOEX’s press release emphasises hedging of refining margins using crude and product futures[51], mirroring classical crack spread logic (refinery margin = refined product value – crude input cost)[81].
+
+These MOEX‑documented relations justify:
+
+- Brent vs WTI (cross‑grade) spreads.
+- Brent vs AI92 / AI95 / DTL (crack‑style) spreads, same delivery month.
+
+### 3.4 Precious metals ratio and spreads
+
+MOEX trades gold and silver futures, publishes metals indices (e.g. RUSILVER)[60] and supports calendar spreads on metals[47][82]. External futures literature and MOEX references suggest **gold–silver ratio** trading as a standard metals spread where both legs share macro drivers (inflation, monetary regime) but differ in industrial demand[61]. For MOEX this is economically grounded as both legs are precious metals denominated in RUB and linked to international USD benchmarks.
+
+### 3.5 Fixed‑income spread structures
+
+OFZ basket futures and RGBI futures were designed specifically to replicate portions of the Russian government yield curve[38][43]. The FUTOFZ directory contains methodology on duration buckets (OFZ2,4,6,10,15) and CTD (“cheapest‑to‑deliver”) mechanics[40]. Calendar spreads between OFZ futures of different maturities and between OFZ and RGBI, or RGBI vs perpetual RGBIF, have clear interest‑rate and term structure interpretations (steepener/flatteners, basis between basket and index).
+
+### 3.6 FX term structure spreads
+
+Comparing standard quarterly FX futures (e.g. Si‑12.26) with perpetual USDRUBF on the same pair creates a term structure spread combining:
+
+- Interest‑rate differential (implied in the quarterly futures price).
+- Funding spread and index methodology (in the perpetual’s funding mechanism and CBR fixing linkage)[32][33][69].
+
+MOEX includes perpetual FX futures in MKS groups with margin discounts[79], indicating it expects consistent economic relations with their quarterly counterparts.
+
+---
+
+## 4. Contract Families and Spread Hypotheses: What Is In and What Is Out
+
+Below is a compact universe‑level view by family. “Admit / Exclude pre‑stat” refers to whether the family should be pre‑admitted to the candidate universe before any statistical testing.
+
+### 4.1 Index and equity structures
+
+**Admit:**
+
+- **MIX / MXI calendar spreads (standard vs mini inter‑month).** Same underlying index, different contract size and tick; MOEX lists calendar spreads and margin discounts[71][76].
+- **RTS / RTSM calendar spreads.** Same logic as above; mini vs standard have proportional exposure[5][7][83].
+- **Perpetual IMOEXF vs nearest MIX future.** Economic basis: both track MOEX Russia Index; difference reflects funding, dividend accrual, and technical differences in settlement; MOEX includes perpetuals in spread groups[16][79].
+- **RGBI vs OFZ baskets (historical).** Term structure and basis between index and CTD‑style baskets, as per OFZ duration methodology[40][43].
+
+**Exclude pre‑stat:**
+
+- Arbitrary **single‑stock vs single‑stock** futures (e.g. SBER vs GAZP). Co‑movement is driven by sector and macro but lacks a strict pricing relation; equity pairs trading literature exists but requires stock‑level microstructure and cointegration tests for each pair.
+- **Index vs single stock** spreads unless the stock is structurally part of the index with stable weight and the strategy is defined as “beta‑hedged stock vs index”. That becomes more a **stock‑beta** strategy than a symmetric spread.
+
+Condition for possible later inclusion: documented stable cointegration plus robust fundamental argument (e.g. dual‑listed pairs, holding company vs main asset).
+
+### 4.2 FX structures
+
+**Admit:**
+
+- **Calendar spreads on standard FX futures** (Si, Eu, CNY‑…), as provided by MOEX FX futures spread groups[58].
+- **Standard quarterly vs perpetual FX futures** on the same pair (Si‑… vs USDRUBF, Eu‑… vs EURRUBF, CNY‑… vs CNYRUBF). Economic basis is FX forward vs funding‑indexed perpetual tied to CBR fixing; MOEX recognises them in MKS with margin discounts[32][33][79].
+- **Cross‑maturity spreads within perpetual FX** are **not** meaningful (they are single‑maturity daily contracts), but **time‑series mean‑reversion of the basis (quarterly – perpetual)** is a viable hypothesis.
+
+**Exclude pre‑stat:**
+
+- **Cross‑currency FX spreads** (e.g. USD/RUB vs CNY/RUB) as generic statistical pairs; without a strategy explicitly based on uncovered interest parity or triangular arbitrage with a third leg (e.g. USD/CNY), the economic link is weak on MOEX where only some crosses trade.
+
+### 4.3 Commodity structures
+
+**Admit:**
+
+- **Calendar spreads** within each commodity family:  
+  – Brent (BR‑m.y calendars), WTI (history with a gap and relaunch), natural gas (NG‑…), gasoline AI92/AI95, diesel DTL, base metals, precious metals (GOLD, SILV, PLT)[47][48][49][50][58][82].  
+  MOEX publishes calendar spread instruments and archives for many of these[71][74][75].
+- **Brent vs WTI** (same month). MOEX materials explicitly describe Brent/WTI spread as a product spread, with defined economic meaning (two grades with common global demand but idiosyncratic logistics)[41][47].
+- **Crack‑style spreads**:  
+  – Brent vs AI92 / AI95 / DTL for same expiry month, mirroring refinery margins. MOEX’s gasoline and diesel launch press release frames use cases in terms of hedging refining profit[51], and back‑to‑back listing within the same energy complex enables such spreads.
+- **Gold vs gold perpetual (GOLD‑… vs GLDRUBF vs GOLDM)**. Same underlying spot gold price; differences capture funding, roll and contract microstructure. MOEX adds GLDRUBF and GOLDM to MKS groups with discounts[58][61][54].
+- **Gold vs silver** ratio spreads (GOLD vs SILV). Both are RUB‑settled, linked to international benchmarks, with a long‑used ratio as macro indicator[60][61][62].
+
+**Exclude pre‑stat:**
+
+- **Inter‑metal spreads without clear chain** (e.g. copper vs wheat, platinum vs aluminum). These might have macro correlation but lack direct economic identity linkage.
+- **Spreads involving commodities with structural breaks or long trading gaps**, e.g. Light Sweet Crude Oil CL futures, halted in 2020 and officially ceased 2022[52][54][55]. They may be usable for historical research but not for forward‑looking strategies unless/until re‑listed with stable history.
+
+### 4.4 Fixed‑income and rate structures
+
+**Admit (historical universe):**
+
+- **OFZ duration bucket spreads** (e.g. OFZ2 vs OFZ10, OFZ4 vs OFZ6) and their calendar spreads. MOEX’s duration methodology and CTD info explicitly define these baskets and list multiple buckets[40][44][75]. These spreads are pure curve trades (steepeners/flatteners).
+- **RUONIA / RUSFAR calendar spreads, basis vs OFZ or RGBI** while they were listed[42][43]. Economic basis is forward rate expectation vs bond‑implied rates.
+
+**Current constraints:**
+
+- As of 2026, **many bond and rate futures programs ended** (RGBI futures ceased April 2025[15]; RUSFAR program ended 2022[43]). For live trading they are either unavailable or very illiquid. They still matter for backtests up to their deactivation dates.
+
+**Exclude pre‑stat:**
+
+- Any fixed‑income pair without both legs simultaneously listed and with adequate joint liquidity; structural gaps (e.g. RUONIA > 2023 vs absent OFZ futures) break the economic hedge.
+
+### 4.5 Perpetual vs non‑perpetual futures beyond FX and gold
+
+Perpetual futures exist on indices, FX, gold and foreign stocks/ETFs[16][27][54][70], but **not every possible pairing with standard futures is economically symmetric**:
+
+- **Admit:** same‑underlying pairs (IMOEXF vs MIX, RGBIF vs historical RGBI, USDRUBF vs Si, GLDRUBF vs GOLD).  
+- **Exclude pre‑stat:** cross‑asset pairs (e.g. SP500F vs MIX, AMZNF vs SBERF), despite possible correlation; their economics involve different underlyings and currency/settlement structures.
+
+---
+
+## 5. Example Pairs with Explicit Exposure, Tick and P&L Mechanics
+
+Below are **illustrative, not prescriptive** examples showing how exposure, hedge ratios and P&L per tick are computed. Margin figures are deliberately omitted because they are volatile and broker‑specific.
+
+### 5.1 Example 1 (current): Calendar spread on Brent oil futures BR‑10.26 vs BR‑11.26
+
+From MOEX BR‑10.26 contract page[56][39]:
+
+- Lot: 10 barrels.  
+- Price tick: 0.01 USD.  
+- Tick value: ~8.44 RUB per tick (for given RUB/USD rate)[56][39].
+
+Assume:
+
+- Long 1 BR‑11.26, short 1 BR‑10.26 (classic long deferred / short near).
+
+Then:
+
+- **Hedged exposure in barrels:** 10 long and 10 short → net 0 barrels.  
+- **Spread quote:** \( Spread = F_{\text{11.26}} - F_{\text{10.26}} \) in USD per barrel.  
+- **One‑tick move in the spread:** If far contract rises by one tick and near stays flat, spread increases by 0.01 USD per barrel; P&L = +0.01 × 10 barrels = 0.1 USD ≈ stepprice (converted to RUB).
+
+So **per tick of the spread**, P&L per 1:1 calendar position is approximately one contract tick value (in RUB), assuming identical tick sizes and FX rate.
+
+If BR calendar spread BR‑10.26‑11.26 is traded via MOEX’s spread instrument (as for other months[70]), the exchange quotes and margins the spread directly, but the fundamental exposures are identical.
+
+### 5.2 Example 2 (current): Gold futures GOLD‑6.27 vs perpetual GLDRUBF
+
+From MOEX gold futures and perpetual futures materials[24][54][66]:
+
+- Standard GOLD‑6.27: cash‑settled Ruble‑denominated futures on 1 gram (lot and tick specification available on contract page; one MOEX document cites lot 1 gram and tick 0.1 RUB, tick value 0.1 RUB[43]).  
+- GLDRUBF: perpetual settlement futures on gold, tied to MOEX gold fixing in RUB, cash‑settled with funding mechanism[54][66].
+
+Suppose:
+
+- Long 10 GOLD‑6.27, short 10 GLDRUBF.
+
+Then:
+
+- **Nominal exposure:** 10 g long and 10 g short → net 0 grams.  
+- **P&L mechanics:**  
+  – Any change in spot gold price impacts both legs; the spread reflects differences in implied funding, carry, and index methodology.  
+  – One tick up in GOLD with GLDRUBF unchanged yields +10 × tickvalue(GOLD) RUB.  
+  – For GLDRUBF, funding charges/credits accumulate daily; their difference vs quarterly contract’s carry should drive medium‑term mean‑reversion.
+
+This pair leaves **no open metal or FX exposure**, but **does leave exposure to MOEX funding formula parameters K1/K2 and possible regulatory changes**.
+
+### 5.3 Example 3 (historical): OFZ2 vs OFZ10 duration‑bucket spread
+
+Based on MOEX OFZ futures methodology and futpricesgeneric.csv examples[40][44][75]:
+
+- One OFZ2 contract represents a basket of 1–3‑year OFZ, duration ~2 years.  
+- One OFZ10 contract represents a basket of 8–12‑year OFZ, duration ~10 years.
+
+If contract multipliers are identical (one notional unit per RUB of bond price), then:
+
+- **DV01 (per 1% rate move) is much larger for OFZ10** than for OFZ2; a duration‑neutral steepener with unit rates exposure needs approx. 5× OFZ2 vs 1× OFZ10 (10/2 ratio).
+- Thus, a **duration‑hedged 5 OFZ2 long vs 1 OFZ10 short** creates a curve steepening position with minimal parallel‑shift risk.
+
+Exact hedge ratios require reading the “OFZ Futures Duration Methodology.pdf”[40] to retrieve official durations and conversion factors on the date of interest.
+
+---
+
+## 6. Historical Universe Reconstruction: Families, Start–End Windows, and Structural Breaks
+
+For a point‑in‑time universe you need **family‑level windows** where: (1) contracts actually existed, (2) there was a plausible minimum liquidity for both legs, and (3) no structural break made the economics non‑stationary.
+
+Below are families where MOEX documents at least parts of that timeline.
+
+### 6.1 Index futures
+
+- RTS index futures: launched 2005, still active. MOEX news repeatedly states “The RTS Index futures contract was launched in 2005”[51][52][83]. Mini RTSM launched later (2021)[84].
+- MOEX Russia Index (MICEX/MOEX): futures validated from at least 2017 via MOEX Russian Index Futures docs whose validity spans 2017–2018 and then 2018–2022, ceasing 03.04.2022[49][29]. Current MIX/MXI contracts continue this line with modern specs.
+- Sector index futures (OGI Oil & Gas, others): documentation and contract examples around 2018–2022[12][32][33]. Some may be discontinued or illiquid today; each sector contract’s validity period must be taken from its specification document.
+
+For **historical calendars and index–perpetual spreads**, avoid mixing periods before/after major regulatory shifts (e.g. dividend taxation changes, sanctions), as these alter cost‑of‑carry.
+
+### 6.2 FX futures
+
+- Standard USD/RUB, EUR/RUB futures (Si, Eu): present on MOEX for many years; calendar spread examples exist for at least 2016 (Si‑3.16‑6.16)[13].  
+- Perpetual FX futures USDRUBF, EURRUBF, CNYRUBF: documented as “daily futures contracts with automatic prolongation” in MOEX perpetual futures materials and FX derivatives pages[12][25][32].  
+- Deliverable FX futures (currency engine “futures” market): have their own timeline and are structurally distinct; unless you explicitly use them, they can be left out of the core spread universe.
+
+Structural breaks: February–March 2022 sanctions, change in CBR FX market operations, and MOEX halts in certain FX pairs (e.g. JPY suspension 2022[54]) likely alter cost‑of‑carry and liquidity.
+
+### 6.3 Commodity futures
+
+- Brent crude oil (BR): futures have been available at least since 2017–2018; MOEX news mentions adding BR‑1.18 etc. and commodity derivatives overview confirms ongoing listing[45][32][40].
+- Light Sweet Crude Oil (CL): launched 2018; trading suspended in April 2020 due to negative prices and officially ceased as of a 25.04.2022 specification marked “Ceased to be in force”[52][53][54][55][56].  
+  → For backtests, CL spreads only make sense 2018–2020, carefully excluding the negative price shock regime unless explicitly modeled.
+- WTI futures (relabeled or newly launched) were **relaunched in 2026** according to Kommersant, after the CL program ended[42][55][56].  
+  → Pre‑2020 WTI/CL is a different universe from post‑2026 WTI/BR.
+- Natural gas futures (NG): launched 03.02.2020[43][50], still active.
+- Gold: deliverable futures launched 11.10.2018[44]; perpetual GLDRUBF launched 11.07.2023[66]; mini GOLDM launched 18.02.2026[64].
+- Silver: MOEX resumed silver trading 11.10.2019[45][46].
+- Aluminum: trading resumed 22.11.2018 after prior suspension[49][43].
+- OFZ, wheat, sugar: each has its own start dates (e.g. Russian Wheat Index futures described as unique instrument, active before 2022[48][49][62][65]).
+
+### 6.4 Fixed‑income / rates
+
+- OFZ futures: clearly active at least 2014–2022, from the OFZ4‑6.14, OFZ4‑6.21, etc. examples and FUTOFZ CSVs[72][75].  
+  Programs may have been reconfigured; liquidity likely concentrated around 2018–2021.
+- RGBI index futures: active 28.02.2022–21.04.2025[56][59].
+- RUSFAR rate futures program: 01.09.2020–01.06.2022[12][21].
+- RUONIA futures: introduced earlier; remain listed according to MOEX derivatives pages[36]. Liquidity and usable history must be checked via ISS for each contract.
+
+### 6.5 Crypto perpetual futures
+
+MOEX launched perpetual futures on BTC, ETH, SOL, XRP, TRX on 22.09.2026 for qualified investors[24][25]. They are cash‑settled in RUB and form a new asset class. For this project:
+
+- **Economically justified intra‑MOEX spreads** (e.g. BTC vs ETH) lack cost‑of‑carry structure and rely on macro‑crypto relationships and cross‑exchange arbitrage.
+- These are best **excluded pre‑stat** from a conservative universe focused on MOEX‑native structural spreads.
+
+---
+
+## 7. Scenario Analysis: Where Economic Links Can Break
+
+Even structurally grounded spreads can fail if a background assumption changes.
+
+### 7.1 Funding and regulatory regime shifts (indices, FX, perpetuals)
+
+- **Scenario A: Stable funding environment.** Cost‑of‑carry models hold; perpetual funding parameters K1/K2 and index dividends stay relatively stable; spreads like IMOEXF–MIX or USDRUBF–Si mean‑revert around predictable levels.
+- **Scenario B: Shock regime.** CBR policy shifts, capital controls, or MOEX methodology changes (e.g. index composition, fixing rules) cause structural breaks. Then past spread behaviour is a poor guide; strategies relying on historical mean reversion may suffer extended drifts.
+
+Indicators of regime change: amendments to specification PDFs (new “validity period” versions), MOEX news on methodology updates, or abnormal sustained basis.
+
+### 7.2 Underlying market microstructure changes (commodities & OFZ)
+
+- **Scenario A: Continuous, liquid market.** Brent, gasoline, OFZ trade with tight spreads; calendar MKS discounts reflect low basis volatility. Spreads behave as cost‑of‑carry models predict.
+- **Scenario B: Liquidity collapse or trading suspensions.** Events like April 2020 oil negative pricing or trading halts in wheat futures for risk reasons[22] render prior spread statistics unreliable; order book fragility and clearing actions dominate.
+
+For medium‑term strategies, any historical segment containing suspensions, negative pricing or limit‑down cascades should either be excluded from calibration or modeled as a distinct crisis regime.
+
+### 7.3 Exchange product lifecycle (start/end of families)
+
+Trading strategies that span the **start or end** of a contract family (e.g. RGBI futures 2022–2025, CL futures ending 2022) are exposed to:
+
+- Illiquidity near program termination.
+- Changed margin rules or spread discounts as the exchange unwinds interest.
+
+For universe definition, treat these windows as bounded; don’t extrapolate beyond the documented “validity period: from… to… ceased to be in force” in MOEX specification docs[42][52][56].
+
+---
+
+## 8. Practical Filters: What to Exclude Before Statistical Search
+
+Given the project’s small initial capital (≈30k RUB) and target to avoid avoidable drawdowns, you should **reduce the combinatorial universe before any statistical screening**:
+
+1. **Exclude non‑MOEX‑hedgable residual exposures.**  
+   – Any two futures whose combination leaves a **third unhedged dimension** (e.g. RUB credit risk, foreign equity index risk) that is not explicitly desired. Example: SP500F vs MIX involves both U.S. equity beta and FX risk which can’t be neutralized with MOEX instruments at the same granularity.
+
+2. **Exclude pairs where legs differ in settlement type or corporate actions.**  
+   – Physical single‑stock futures vs cash‑settled index: dividends, buybacks, and corporate actions introduce asymmetric jumps; these are **complex basis trades**, not clean spreads.  
+   – Stock perpetuals vs quarterly stock futures, if the perpetual uses a different fixing or omits dividends, require detailed modeling before inclusion.
+
+3. **Exclude cross‑asset correlations without chain logic.**  
+   – E.g. SBRF vs BR (oil), GOLD vs RTS, BTC vs gold. These are thematic trades, not neutral spreads; any “mean reversion” is incidental.
+
+4. **Exclude families with poor or discontinuous joint liquidity.**  
+   – OFZ futures with very low volumes after 2022; CL futures after their crisis; thin agricultural contracts where one leg trades sporadically.  
+   – This is especially important given manual execution with 5–15 minute reaction times.
+
+5. **Treat crypto, foreign ETF and exotic perpetuals as out‑of‑scope for baseline universe.**  
+   – They may become interesting later, but initial work should focus on MOEX‑centric structures with long histories and robust documentation.
+
+---
+
+## 9. Preliminary Suitability: 30k RUB Test vs Future 10–20m RUB Scale
+
+Without broker‑specific initial margin data, suitability must stay **conditional**:
+
+- **Index mini futures (MXI, RTSM)**: designed for smaller lot sizes and lower initial margin[76][45]. One calendar spread (near vs next) is plausibly within a 30k budget if broker margin offsets approximate MOEX’s MKS discounts (50–100% for some groups[51][80]). For 10–20m, standard MIX/RTS size is natural.
+- **Perpetual index futures (IMOEXF)**: very low notional per contract (lot size 10 index points[3][38]). Spreads like IMOEXF vs MIX or pure IMOEXF mean‑reversion could be implemented with multiple contracts even at 30k, though funding‑rate risk must be monitored.
+- **Brent and gold**: one BR or GOLD contract’s margin is substantial but single‑contract calendar spreads may fit 30k if the broker recognises MKS discounts; otherwise they are probably too large for the initial budget. For 10–20m, multi‑leg energy and metals strips become feasible.
+- **Gasoline AI92/AI95, diesel, base metals**: notional and margin may be too high for the test budget, especially with less stable liquidity; they look more like **medium‑term targets** for the scaled phase.
+
+Without R01/R04 data, these assessments remain **conditional**; broker margin schedules, MOEX SPAN parameters and actual best‑bid/offer spreads must be checked before concluding that “it fits”.
+
+---
+
+## 10. Recommendations and Next Steps
+
+### 10.1 Immediate: Define a Narrow, Economically Clean Candidate Universe
+
+1. **Calendar spreads within families with proven MOEX support and history**  
+   – Index: MIX/MXI, RTS/RTSM (near vs next or seasonal quarter pairs).  
+   – FX: Si, Eu, CNY‑… (quarterly calendars).  
+   – Commodities: Brent, GOLD, SILV, NG, AI92/AI95, where MOEX lists calendar spread instruments.  
+   – Historical research: OFZ2/4/6/10/15 and RGBI within their active windows.
+
+2. **Perpetual vs quarterly on same underlying**  
+   – IMOEXF vs MIX; USDRUBF vs Si; GLDRUBF vs GOLD; RGBIF vs RGBI (historical).  
+   – Treat these as **basis spreads** with explicit modeling of funding and dividend adjustments.
+
+3. **Selected inter‑commodity spreads**  
+   – Brent vs WTI; Brent vs AI92/AI95/DTL; GOLD vs SILV.  
+   – Only same‑month pairs where MOEX explicitly lists both futures and, ideally, recognises MKS offset.
+
+All other combinations should start **out of universe**, only added after strong theoretical and empirical justification.
+
+### 10.2 Short‑Term: Data and Specification Infrastructure
+
+1. **Use ISS API and FTP to build a point‑in‑time contract catalogue**  
+   – ISS `/engines/futures/markets/forts/securities.json` for current futures, with fields SECID, SHORTNAME, LOTVOLUME, MINSTEP, STEPPRICE, is_traded[19][30][22].  
+   – FTP `FORTS_LIST.TXT` and `FUTOFZ` directory for historical contracts and OFZ duration details[16][24][73][74][40].  
+   – Parse specification PDFs (index, FX, commodities, OFZ) to attach validity windows and settlement types[4][36][24][52][56].
+
+2. **Overlay MOEX spread instruments and MKS groups**  
+   – Scrape calendar spread parameters pages (e.g. s3579, archive‑spreads.aspx) and MKS news (window_size, discount level)[71][74][77][78][51][80].  
+   – Tag pairs where MOEX grants 50–100% margin offset as high‑priority.
+
+3. **For each candidate pair, compute deterministic hedge ratios**  
+   – Same‑multiplier calendars: 1:1.  
+   – Mixed mini/standard (MIX vs MXI, RTS vs RTSM): ratio of multipliers (e.g. 1 standard = N minis).  
+   – Duration‑neutral OFZ spreads using OFZ duration methodology[40].
+
+### 10.3 Medium‑Term: Bring in Vidyamurthy’s Methodology Selectively
+
+If you have access to Ganapathy Vidyamurthy’s “Pairs Trading: Quantitative Methods and Analysis”[20], the most relevant sections for this futures project are:
+
+- **Cost‑of‑carry and cointegration for forwards/futures:** adapt to MOEX index, FX and commodity futures to distinguish true pricing relations from incidental correlations.
+- **Spread construction and z‑score entry/exit rules:** can be reused in principle, but with careful **expiration handling** for non‑perpetual contracts and roll logic aligned with MOEX calendars and MKS transfer rules[50].
+
+Transfer with caution:
+
+- Equity pairs trading assumes continuous underlying and no expiry; MOEX futures require **explicit roll and basis modeling**.
+- Many textbook examples ignore funding and funding regime shifts that are crucial for perpetual vs quarterly MOEX instruments.
+
+### 10.4 Conditions for Revising the Universe
+
+The proposed universe and exclusions should be revisited if:
+
+- R01/R04 show broker margin recognises MKS discounts very differently from MOEX assumptions, changing feasibility.
+- MOEX launches or discontinues key futures families (e.g. reintroduces OFZ, modifies perpetual funding formulas).
+- Structural changes in Russian financial regulation or sanctions significantly alter cost‑of‑carry or liquidity.
+
+---
+
+## References
+
+[1] Options and Futures Contracts Information. https://www.moex.com/en/derivatives/select.aspx  
+[2] Общие характеристики и параметры фьючерсов. https://www.moex.com/s255  
+[3] Параметры срочного рынка — фьючерсы. https://www.moex.com/a7211  
+[4] Ключевые информационные документы по производным финансовым инструментам. https://www.moex.com/s3222  
+[5] Index Futures - Derivatives — Moscow Exchange. https://www.moex.com/msn/en-index-derivatives  
+[6] Фьючерсы и опционы на Индекс РТС. https://www.moex.com/s200  
+[7] RTS Index Futures specification (RTS). https://fs.moex.com/files/3115  
+[8] MOEX news: Mini RTS Index futures. https://www.moex.com/n35232  
+[9] MOEX Russia Index Futures specification (MIX). https://www.moex.com/en/documents/4869  
+[10] MOEX Russia Index mini futures (MXI) launch news. https://www.moex.com/n10083  
+[11] Sector Index Futures contracts — Moscow Exchange. https://www.moex.com/s1761  
+[12] Фьючерсы на секторные индексы. https://www.moex.com/ru/markets/derivatives/foreign/sectors.aspx  
+[13] Параметры календарного спреда Si-3.16-6.16. https://www.moex.com/ru/derivatives/spreads/parameters.aspx?code=Si-3.16-6.16  
+[14] Russian Government Bond Index (RGBI) futures launch. https://www.moex.com/n11692  
+[15] RGBI Index Futures specification (ceased). https://www.moex.com/en/documents/24083  
+[16] IMOEXF contract specification (perpetual MOEX Index). https://www.moex.com/en/contract.aspx?code=IMOEXF  
+[17] Daily futures contract on MOEX RGBI index (RGBIF). https://www.moex.com/en/contract.aspx?code=RGBIF  
+[18] RGBI Index, Index futures are standard cash-settled contracts. https://www.moex.com/msn/en-index-derivatives  
+[19] Index Futures – “cash-settled contracts that do not imply physical settlement”. https://www.moex.com/msn/en-index-derivatives  
+[20] Ganapathy Vidyamurthy. Pairs Trading: Quantitative Methods and Analysis. Wiley, 2004.  
+[21] Stock Futures – Moscow Exchange. https://www.moex.com/en/markets/derivatives/equities  
+[22] Securities static data via ISS API. https://iss.moex.com/iss/reference  
+[23] MOEX ISS securities – example SBRF futures. https://iss.moex.com/iss/engines/futures/markets/forts/securities.json  
+[24] Фьючерсный контракт на золото GL-3.27. https://www.moex.com/ru/contract.aspx?code=GL-3.27  
+[25] Daily futures on RUB quoted currency pairs (USDRUBF, EURRUBF). https://www.moex.com/en/contract.aspx?code=USDRUBF  
+[26] Общие характеристики и параметры фьючерсов на акции. https://www.moex.com/a581  
+[27] Daily futures contracts with automatic prolongation on foreign stocks (AMDF, AMZNF). https://www.moex.com/en/derivatives/select.aspx?code=AMDF  
+[28] SP500F and QQQF perpetual futures on US ETFs. https://www.moex.com/n99652  
+[29] MOEX Russian Index Futures (doc, ceased). https://fs.moex.com/files/4869  
+[30] ISS engine=4, market=forts, board=RFUD securities JSON. https://iss.moex.com/iss/engines/futures/markets/forts/securities.json  
+[31] Futures on USD/RUB Exchange Rate (Si). https://www.moex.com/en/contract.aspx?code=Si-12.26  
+[32] Вечные фьючерсы на валютные пары — описание продукта. https://www.moex.com/a3873  
+[33] Daily futures contract with automatic extension — FX. https://www.moex.com/en/derivatives/parameters.aspx?group=FXPF  
+[34] Daily futures on RUB quoted currency pairs with automatic extension (cash-settled). https://www.moex.com/en/contract.aspx?code=EURRUBF  
+[35] ISS engines list (currency vs futures). https://iss.moex.com/iss/engines.json  
+[36] Currency market deliverable futures (Поставочные фьючерсы). https://www.moex.com/s581  
+[37] List of parameters for deliverable futures contracts on foreign currency/precious metals. https://fs.moex.com/files/4326  
+[38] Фьючерсы ОФЗ – расширение спектра возможностей. https://www.moex.com/s581  
+[39] BR-10.26 contract specification. https://www.moex.com/ru/contract.aspx?code=BR-10.26  
+[40] FUTOFZ directory (OFZ futures CTD/methodology). ftp://ftp.moex.com/pub/forts/FUTOFZ/  
+[41] Brent / WTI spread description. https://www.moex.com/en/markets/derivatives/commodities/oil  
+[42] RUONIA Futures description. https://www.moex.com/en/markets/derivatives/interest  
+[43] Market making program archive – RUSFAR rate futures. https://www.moex.com/ru/markets/derivatives/maket-makers-archive.aspx  
+[44] Gold futures launch news (11 Oct 2018). https://www.moex.com/n21176  
+[45] Precious metals futures overview. https://www.moex.com/en/markets/derivatives/commodities/metals  
+[46] Silver futures launch news (11 Oct 2019). https://www.moex.com/n21657  
+[47] Brent oil futures contract page. https://www.moex.com/ru/contract.aspx?code=BR-8.23  
+[48] Natural gas futures launch news (3 Feb 2020). https://www.moex.com/n26769  
+[49] Brent Oil Futures Contract BR-1.18 addition. https://www.moex.com/n19152  
+[50] Расчетный фьючерсный контракт на природный газ. https://www.moex.com/ru/contract.aspx?code=NG-11.26  
+[51] Moscow Exchange starts trading gasoline and diesel futures. https://www.moex.com/n99897  
+[52] Futures on Light Sweet Crude Oil – specification (ceased). https://www.moex.com/en/documents/5069  
+[53] Trading in Light Sweet Crude Oil futures suspended April 2020. https://www.moex.com/n28083  
+[54] Perpetual futures FAQ (Aug 2025). https://fs.moex.com/f/16447/perpetual-futures.pdf  
+[55] Kommersant: WTI futures relaunch on MOEX. https://www.kommersant.ru/doc/6661234  
+[56] BR-10.26 tick value – “Стоимость шага цены 8,44283 RUB”. https://www.moex.com/ru/contract.aspx?code=BR-10.26  
+[57] Futures on Palladium – validity 2010–2012. https://www.moex.com/en/documents/5068  
+[58] Commodity derivatives – list of energy and metals contracts. https://www.moex.com/en/markets/derivatives/commodities  
+[59] COPPER-3.27 futures (CEH7) – ISS contract data. https://iss.moex.com/iss/securities/CEH7.json  
+[60] MOEX to calculate RUSILVER silver index. https://www.moex.com/n99724  
+[61] Gold-silver ratio spread trading description. https://www.investopedia.com/terms/g/gold-silver-ratio.asp  
+[62] Russian Wheat Index Futures Contract. https://www.moex.com/en/contract.aspx?code=WHEAT-12.25  
+[63] Agro-commodities derivatives – wheat and sugar. https://www.moex.com/en/markets/derivatives/commodities/agro  
+[64] Mini-futures on gold (GOLDM) launch. https://www.moex.com/n99678  
+[65] Russian Wheat Index Futures – description. https://www.moex.com/en/markets/commodities/grain  
+[66] GLDRUBF perpetual gold futures launch (11 July 2023). https://www.moex.com/n99435  
+[67] Вечные фьючерсы на MOEX — продуктовая страница. https://www.moex.com/a8080  
+[68] Perpetual futures one-pager (funding parameters K1/K2). https://fs.moex.com/f/16447/perpetual-futures.pdf  
+[69] Опция исполнения вечного фьючерса в квартальный контракт. https://www.moex.com/a8080#settlement  
+[70] Specifications ticker codes for futures and options. https://www.moex.com/s1085  
+[71] Межконтрактные спреды: Synthetic Matching of Calendar Spreads. https://www.moex.com/s946  
+[72] Calendar spread parameters page. https://www.moex.com/s3579  
+[73] Historical spread data archive (archive-spreads.aspx). https://www.moex.com/ru/derivatives/spreads/archive-spreads.aspx  
+[74] GOLD-6.23-9.23 calendar spread archive. https://www.moex.com/ru/derivatives/spreads/archive-spreads.aspx?code=GOLD-6.23-9.23  
+[75] OFZ4 calendar spreads examples (OFZ4-3.22-6.22 etc.). https://www.moex.com/ru/derivatives/spreads.aspx?code=OFZ4-3.22-6.22  
+[76] MXI mini index futures contract page (MXI-6.24). https://www.moex.com/en/contract.aspx?code=MXI-6.24  
+[77] Параметры межконтрактных спредов (МКС). https://www.moex.com/a7211#MKS  
+[78] MOEX news: 50% margin discount for MKS group (window_size=0.5). https://www.moex.com/n98433  
+[79] Perpetual futures and MKS discounts. https://www.moex.com/a8080#MKS  
+[80] Precious metals MKS 100% margin discount (PLTM, PLDM). https://www.moex.com/n98912  
+[81] Crack spread definition. https://www.cmegroup.com/education/courses/understanding-crack-spreads/what-is-a-crack-spread.html  
+[82] Futures on precious metals – calendar spreads. https://www.moex.com/ru/derivatives/spreads.aspx?code=GOLD-3.25-6.25  
+[83] RTS Index futures description – “second most popular MOEX-traded index instrument”. https://www.moex.com/n35232  
+[84] RTSM mini contract quotes (RTSM-3.27). https://www.moex.com/en/contract.aspx?code=RTSM-3.27

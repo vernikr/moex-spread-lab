@@ -1,0 +1,347 @@
+# Rigorous Evaluation Protocols for MOEX Futures Spreads: Point-in-Time Testing, False Discovery Control, and Benchmark-Adjusted Evidence Thresholds
+
+Quantitative research in futures-spread trading on the Moscow Exchange (MOEX) faces severe methodological challenges. These stem from structural market non-stationarity, sparse trading signals, high execution latency, and selection bias resulting from iterative strategy search. When testing medium-term spread strategies across a broad universe of candidate pairs, standard backtesting approaches systematically inflate performance metrics. Spurious statistical significance frequently arises from subtle data leakage, inappropriate continuous-contract adjustments, and uncorrected multiple hypothesis testing.
+
+Evaluating medium-term futures-spread strategies requires a rigorous framework for point-in-time validation, false discovery control, and benchmark-adjusted performance measurement. The methodology presented here is designed to operate under strict capital constraints—specifically a pilot allocation of RUB 30,000 alongside a core holding exceeding RUB 40 million in the money market fund LQDT—while accounting for manual operational delays and strict drawdown rules.
+
+---
+
+## Taxonomy of Backtest Leakage Pathways and Prevention Protocols
+
+Data leakage occurs when information from outside the strict historical training window inadvertently influences model specification, feature engineering, signal generation, or performance evaluation. In sparse, medium-term futures spreads, where position holding periods range from days to weeks, leakage can artificially inflate risk-adjusted returns and cause strategies to fail when deployed in live trading.
+
+### Detailed Mechanism Analysis of Leakage Pathways
+
+#### Universe Selection and Survivorship Bias
+Constructing a historical universe solely from contracts that are currently active or liquid introduces survivorship bias. On MOEX, derivative liquidity shifts dynamically across single-stock futures (such as SBER, GAZP, LKOH), currency futures (Si, CNY), and index contracts (MIX, RTS). Selecting pairs based on current liquidity or long-term historical correlation causes researchers to ignore contracts that delisted, suffered structural liquidity collapses, or experienced regime-driven spread divergences. To eliminate survivorship bias, the candidate pair universe must be constructed dynamically at each point in time $t$ using trailing liquidity windows $W_{\text{liq}}$ and active contract specifications published by MOEX.
+
+#### Continuous-Contract Roll Adjustments
+Futures contracts have finite lifespans, requiring continuous price series construction for backtesting. The method used to adjust for contract rolls alters feature distributions and signal properties:
+*   **Panama Canal Adjustment (Absolute Difference):** The price gap at the roll date $\Delta P_{\text{roll}} = P_{\text{new}} - P_{\text{old}}$ is subtracted from all historical contracts. While this method preserves absolute price movements and point-value P&L, it distorts historical price levels. Over long histories, back-adjusted prices can become negative, breaking ratio-based indicators, percentage volatility calculations, and relative Z-score spreads.
+*   **Ratio Adjustment (Proportional Scaling):** Historical prices are multiplied by the ratio $R_{\text{roll}} = P_{\text{new}} / P_{\text{old}}$. This preserves relative returns and percentage volatility. However, it distorts absolute ruble price distances, meaning that fixed-ruble stop-loss bounds, absolute target spreads, and Average True Range (ATR) metrics in ruble terms become non-stationary over time.
+
+For mean-reverting spread strategies on MOEX, using ratio-adjusted series to derive dollar- or ruble-denominated spread targets introduces severe leakage. The model learns threshold parameters on historical price levels that have been rescaled relative to actual settlement prices. Conversely, Panama adjustment shifts the zero-bound, causing percentage-based risk models to miscalculate position sizes. The leak-free protocol requires computing trading features on raw individual contract series or omitting the roll-gap bar from return computations, while evaluating execution costs on unadjusted, point-in-time tradeable contracts.
+
+#### MOEX Settlement Mechanics and Exogenous Events
+MOEX derivatives feature a two-stage clearing architecture: an intermediate intraday settlement (14:00–14:05 MSK) and a main evening settlement (18:45–19:00 MSK). During the evening settlement, variation margin (VM) is calculated, realized, and credited or debited in rubles directly against the account equity. Backtests that calculate returns using continuous close-to-close prices without modeling intermediate VM cash flows introduce cash-flow timing leakage. They fail to account for overnight liquidity constraints, variation margin financing costs, or potential margin calls caused by intraday spread expansion. Furthermore, historical price series must account for corporate actions, dividend cash-adjustment points in single-stock futures, and structural revisions to contract tick sizes or initial margin (IM) requirements executed by the exchange.
+
+#### Label Overlap and Lookahead Bias
+When target labels depend on future outcomes—such as a triple-barrier labeling scheme with a multi-day holding horizon or a profit-target barrier—the label assigned to a bar at time $t$ relies on price action from time $t$ to $t + H$. If adjacent observations in the training set contain overlapping forward-looking windows, standard cross-validation splits leak future price information from the test fold into the training fold. This distorts feature importance estimates and overstates model performance.
+
+| Leakage Pathway | Underlying Mechanism | Diagnostic Verification Test | Operational Impact |
+| :--- | :--- | :--- | :--- |
+| **Survivorship Bias** | Filtering historical pair universes using current liquidity or listing status. | Compare universe membership at $t_{-5\text{ years}}$ against point-in-time MOEX open interest files. | Overstates strategy win rate by excluding delisted or illiquid failing pairs. |
+| **Roll-Adjustment Distortion** | Fitting absolute ruble thresholds on ratio-adjusted series or percentage returns on Panama series. | Verify feature calculation matches execution mechanics; confirm roll-gap bar is omitted from return calculations. | Distorts Z-scores and risk parameters; causes miscalculated position sizing. |
+| **Settlement & VM Leakage** | Assuming continuous compounding without modeling MOEX 18:45 MSK VM extraction. | Replicate cash balance daily; verify margin eligibility and overnight liquid reserves. | Ignores overnight margin calls and forced liquidations during volatility spikes. |
+| **Label Overlap** | Training features overlap with multi-day horizon labels in adjacent folds. | Check that training and test label time intervals $\Phi_{\text{train}} \cap \Phi_{\text{test}} = \emptyset$. | Inverts out-of-sample performance due to severe lookahead bias. |
+| **Reused Holdout Set** | Iteratively modifying strategy parameters after observing performance on a "final" holdout dataset. | Audit experiment registry logs for repeated evaluations on identical OOS date ranges. | Transforms out-of-sample holdout into an overfitted in-sample dataset. |
+| **Post-Hoc Cost Tuning** | Adjusting execution slippage or latency assumptions to match backtest profitability. | Enforce fixed, pre-registered latency (e.g., 15-min delayed execution) and conservative spread models. | Creates unrealizable live expectations for manual execution environments. |
+
+### Worked Hypothetical Leakage Examples and Prevention Tests
+
+#### Example 1: Lookahead Leakage in Static Spread Hedge Ratio Estimation
+Consider a two-leg futures spread strategy between Si (USD/RUB futures) and CNY (CNY/RUB futures). A researcher estimates the hedge ratio $\beta$ by running an Ordinary Least Squares (OLS) regression over the entire 5-year historical dataset: $\text{Price}_{\text{Si}, t} = \alpha + \beta \cdot \text{Price}_{\text{CNY}, t} + \epsilon_t$. The researcher then generates trading signals using a rolling Z-score of the residual $\epsilon_t$.
+
+*   **Leakage Mechanism:** The estimated coefficient $\beta$ incorporates structural regime shifts, macro shocks, and foreign exchange interventions that occurred across the full 5-year horizon. When backtesting at year 2, the model utilizes a hedge ratio that "knows" the future co-integration vector across years 3 through 5.
+*   **Prevention Test:** Enforce point-in-time sliding-window estimation. At each historical time step $t$, the hedge ratio $\beta_t$ must be estimated using strictly lagged data within an allowed training window $[t - W_{\text{train}}, t]$. The spread residual at time $t + 1$ must be evaluated out-of-sample as $S_{t+1} = \text{Price}_{\text{Si}, t+1} - \beta_t \cdot \text{Price}_{\text{CNY}, t+1}$. If the performance degrades significantly when transitioning from static $\beta$ to rolling $\beta_t$, lookahead leakage was present.
+
+#### Example 2: Continuous Contract Roll-Gap Leakage in Z-Score Thresholds
+A quantitative model trades a mean-reverting spread on MIX (MOEX Index futures) using a Panama back-adjusted continuous price series. The model calculates a 20-day rolling Z-score and sets entry barriers at $Z = \pm 2.0$, corresponding to a historical spread distance of 1,500 index points.
+
+*   **Leakage Mechanism:** Panama back-adjustment subtracts the absolute roll gap $\Delta P = P_{\text{front}} - P_{\text{back}}$ at each expiration date. Over a multi-year backtest with multiple backwardation or contango rolls, the historical baseline price level is shifted vertically, often pushing older historical prices to artificial levels. Consequently, an entry threshold of 1,500 index points represents a vastly different percentage move in year 1 compared to year 5.
+*   **Prevention Test:** Compute Z-score metrics using ratio-adjusted series for relative return stability, or fit Z-score parameters exclusively on raw individual contract series. In the raw contract methodology, positions are evaluated on individual contract bars, and continuous series are used solely for calculating normalized percentage returns. Verify that the price delta across the roll bar $t_{\text{roll}}$ is explicitly removed from feature updates: $\Delta P_{\text{clean}, t_{\text{roll}}} = P_{\text{front}, t_{\text{roll}}} - P_{\text{front}, t_{\text{roll}}-1}$.
+
+---
+
+## Purged, Embargoed, and Walk-Forward Cross-Validation Methodologies
+
+Standard $K$-fold cross-validation fails in time-series analysis because financial observations are serially correlated and target labels often overlap across time. Applying standard random $K$-fold cross-validation allows the model to interpolate between past and future observations, causing severe in-sample leakage and invalidating out-of-sample performance metrics.
+
+### Mathematical Formulation of Purging and Embargoing
+
+To prevent leakage between training and testing sets, training observations that overlap with test labels must be removed ("purging"), and training data immediately following a test set must be excluded to account for serial correlation ("embargoing").
+
+Let the dataset consist of $N$ observations ordered chronologically. An observation $i$ spans an information interval $[t_{i,1}, t_{i,2}]$, where $t_{i,1}$ is the feature timestamp and $t_{i,2}$ is the timestamp when the label outcome is fully realized (e.g., $t_{i,2} = t_{i,1} + H$, where $H$ is the holding period horizon).
+
+The validation structure enforces three distinct chronological windows:
+1.  **Purging Window:** Applied to training data preceding the test set. Any training observation $i$ whose label realization interval $[t_{i,1}, t_{i,2}]$ extends into the test set start time $t_{\text{test, start}}$ must be purged from the training set:
+    $$S_{\text{purged}} = \left\{ i \in S_{\text{train}} \;:\; \max(t_{i,1}, t_{\text{test, start}}) \le \min(t_{i,2}, t_{\text{test, end}}) \right\}$$
+2.  **Test Window:** The designated out-of-sample evaluation period $[t_{\text{test, start}}, t_{\text{test, end}}]$.
+3.  **Embargo Window:** Applied to training data immediately following the test set end time $t_{\text{test, end}}$. Because market regimes display serial autocorrelation, observations immediately following a test set can remain correlated with test predictions. An embargo window of duration $h_{\text{embargo}}$ is established, excluding any training observation $i$ that starts within this window:
+    $$S_{\text{embargo}} = \left\{ i \in S_{\text{train}} \;:\; t_{\text{test, end}} < t_{i,1} \le t_{\text{test, end}} + h_{\text{embargo}} \right\}$$
+
+For sparse, medium-term futures spreads with an average holding period of $H = 5\text{ days}$, the purging window must cover at least $5\text{ days}$ prior to the test boundary. The embargo window should equal the decay time of the spread's autocorrelation function, typically $h_{\text{embargo}} = 5\text{ to }10\text{ days}$.
+
+### Chronological Walk-Forward vs. Combinatorial Purged Cross-Validation
+
+While traditional Walk-Forward Analysis (WFA) respects time ordering, it tests strategies along a single historical path, making it vulnerable to regime-specific noise. Combinatorial Purged Cross-Validation (CPCV) addresses this by splitting the dataset into $N_{\text{blocks}}$ sequential time blocks and generating backtest paths across all combinations of training and testing folds.
+
+Given $N_{\text{blocks}}$ sequential time blocks, a test set size of $k_{\text{blocks}}$ is selected. The total number of unique cross-validation combinations is given by the binomial coefficient:
+
+$$C = \binom{N_{\text{blocks}}}{k_{\text{blocks}}} = \frac{N_{\text{blocks}}!}{k_{\text{blocks}}!(N_{\text{blocks}} - k_{\text{blocks}})!}$$
+
+These $C$ combinations are reassembled into $\phi$ distinct, ordered out-of-sample backtest paths:
+
+$$\phi = \frac{k_{\text{blocks}}}{N_{\text{blocks}}} \binom{N_{\text{blocks}}}{k_{\text{blocks}}} = \binom{N_{\text{blocks}}-1}{k_{\text{blocks}}-1}$$
+
+Each resulting path represents a continuous out-of-sample time series evaluated across varying market regimes.
+
+| Validation Dimension | Chronological Walk-Forward Analysis (WFA) | Combinatorial Purged Cross-Validation (CPCV) |
+| :--- | :--- | :--- |
+| **Backtest Path Count** | Exactly 1 historical path. | $\phi = \binom{N_{\text{blocks}}-1}{k_{\text{blocks}}-1}$ distinct, ordered out-of-sample paths. |
+| **Data Efficiency** | Low; early historical data is utilized solely for initial training. | High; every observation is evaluated across multiple model instances. |
+| **Overfitting Diagnostics** | Limited to single path metrics; high sample variance. | Generates an empirical distribution of Sharpe ratios and P&L trajectories. |
+| **Leakage Control** | Implicitly time-ordered; vulnerable to post-test serial correlation. | Rigorously controlled via mathematical purging and embargoing routines. |
+| **Suitability for Sparse Spreads** | Poor; yields too few out-of-sample trades for statistical inference. | High; constructs stable statistical distributions across sparse trading events. |
+
+### Strictly In-Sample Parameter Estimation Pipeline
+
+To eliminate leakage, all model transformations, parameter fits, and selection rules must be estimated strictly within the allowed training fold $S_{\text{train}}$ before being applied to the test fold $S_{\text{test}}$. The execution order proceeds as follows:
+
+1.  **Data Partitioning:** Divide historical series into $N_{\text{blocks}}$ and assign $k_{\text{blocks}}$ to $S_{\text{test}}$. Apply purging to training data preceding $S_{\text{test}}$ and embargoing to training data following $S_{\text{test}}$.
+2.  **Hedge Ratio Estimation:** Estimate cointegration vectors or hedge ratios $\beta_{\text{train}}$ via OLS or Ridge regression using strictly $S_{\text{train}}$ prices: $\text{Leg1}_{t} = \alpha + \beta_{\text{train}} \cdot \text{Leg2}_{t} + \epsilon_t$ for $t \in S_{\text{train}}$.
+3.  **Spread Normalization:** Compute spread residuals $S_{\text{train}} = \text{Leg1}_{\text{train}} - \beta_{\text{train}} \cdot \text{Leg2}_{\text{train}}$. Fit rolling location ($\mu_{\text{train}}$) and scale ($\sigma_{\text{train}}$) parameters exclusively on $S_{\text{train}}$.
+4.  **Signal Generation on Test Fold:** Project parameters out-of-sample to compute point-in-time Z-scores for $t \in S_{\text{test}}$:
+    $$Z_t = \frac{(\text{Leg1}_t - \beta_{\text{train}} \cdot \text{Leg2}_t) - \mu_{\text{train}}}{\sigma_{\text{train}}}$$
+5.  **Execution & Cost Simulation:** Apply pre-registered entry thresholds (e.g., $|Z_t| > 2.0$) and simulate execution using delayed market quotes to evaluate out-of-sample P&L.
+
+---
+
+## Multiple Hypothesis Testing Corrections, Resampling under Dependence, and Methodological Critiques
+
+Testing hundreds of candidate pairs, lookback windows, and entry thresholds on a single dataset creates a severe multiple testing problem. Without statistical corrections, researchers risk selecting strategies whose backtested performance is driven entirely by random noise.
+
+### Classical Multiple Testing Frameworks
+
+#### Familywise Error Rate (FWER) Controls
+FWER controls the probability of making at least one false discovery across $m$ hypothesis tests: $\text{FWER} = P(V \ge 1) \le \alpha$, where $V$ is the number of false positives.
+*   **Bonferroni Correction:** Sets the significance threshold for each individual test to $\alpha_i = \alpha / m$. While Bonferroni guarantees $\text{FWER} \le \alpha$, it is extremely conservative in financial applications, severely reducing statistical power and causing researchers to reject genuine trading signals.
+*   **Holm Step-Down Procedure:** Ranks raw $p$-values in ascending order $p_{(1)} \le p_{(2)} \le \dots \le p_{(m)}$ and sequentially tests each hypothesis against an adjusted threshold:
+    $$p_{(i)} \le \frac{\alpha}{m - i + 1}$$
+    The procedure stops at the first rank $k$ where $p_{(k)} > \frac{\alpha}{m - k + 1}$, rejecting hypotheses $H_{(1)}, \dots, H_{(k-1)}$. Holm provides strictly greater statistical power than Bonferroni while maintaining FWER control.
+
+#### False Discovery Rate (FDR) Controls
+FDR controls the expected proportion of false discoveries among all rejected hypotheses: $\text{FDR} = E[V / R \mid R > 0] \cdot P(R > 0)$, where $R$ is the total number of rejected null hypotheses. FDR controls offer greater statistical power for exploratory strategy search.
+
+*   **Benjamini-Hochberg (BH) Procedure:** Ranks raw $p$-values $p_{(1)} \le p_{(2)} \le \dots \le p_{(m)}$ and identifies the largest rank $k$ satisfying:
+    $$p_{(k)} \le \frac{k}{m} \alpha$$
+    All hypotheses $H_{(1)}, \dots, H_{(k)}$ are declared significant discoveries. Standard BH assumes independent or positively dependent test statistics.
+*   **Benjamini-Yekutieli (BY) Procedure:** Adjusts the BH threshold to account for arbitrary or negative dependencies across test statistics. Because parameter sweeps across financial strategies generate highly dependent trial return series, BY modifies the critical threshold using the harmonic number $c(m)$:
+    $$p_{(k)} \le \frac{k}{m \cdot c(m)} \alpha \quad \text{where} \quad c(m) = \sum_{j=1}^{m} \frac{1}{j} \approx \ln(m) + \gamma_{\text{Euler}}$$
+
+### Haircut Sharpe Ratios, Deflated Sharpe Ratio, and PBO
+
+#### Haircut Sharpe Ratios
+Harvey, Liu, and Zhu demonstrate that standard two-sigma significance thresholds ($t > 2.0$) are insufficient for quantitative finance research. They establish that acceptable $t$-statistics must exceed 3.0 (corresponding to an annualized Sharpe Ratio $> 1.0$ over a 10-year period) when accounting for multiple backtests. They propose a haircut adjustment that reduces reported Sharpe ratios based on the total number of candidate models evaluated.
+
+#### Deflated Sharpe Ratio (DSR)
+Developed by Bailey and López de Prado, the Deflated Sharpe Ratio adjusts the estimated Sharpe ratio for two major distortions: return non-normality (skewness $\hat{\gamma}_3$ and kurtosis $\hat{\gamma}_4$) and selection bias from multiple testing.
+
+Given an estimated Sharpe Ratio $\hat{SR}$ computed over $T$ periods, the Probabilistic Sharpe Ratio (PSR) against a baseline threshold $SR^*$ is defined as:
+
+$$\text{PSR}(SR^*) = \Phi \left( \frac{(\hat{SR} - SR^*) \sqrt{T-1}}{\sqrt{1 - \hat{\gamma}_3 \hat{SR} + \frac{\hat{\gamma}_4 - 1}{4} \hat{SR}^2}} \right)$$
+
+where $\Phi(\cdot)$ represents the cumulative standard normal distribution function.
+
+To correct for multiple testing across $N$ trials, the baseline threshold $SR^*$ is set to the expected maximum Sharpe ratio under the null hypothesis of zero true performance, denoted $SR_0$:
+
+$$SR_0 = \sqrt{V[\{\hat{SR}_n\}]} \left( (1-\gamma_{\text{Euler}}) \Phi^{-1} \left( 1 - \frac{1}{N} \right) + \gamma_{\text{Euler}} \Phi^{-1} \left( 1 - \frac{1}{N \cdot e} \right) \right)$$
+
+where $V[\{\hat{SR}_n\}]$ is the variance of the Sharpe ratios estimated across the $N$ strategy trials, $\gamma_{\text{Euler}} \approx 0.57721566$, and $e$ is Euler's number. The Deflated Sharpe Ratio is defined as:
+
+$$\text{DSR} = \text{PSR}(SR_0)$$
+
+#### Probability of Backtest Overfitting (PBO)
+Using Combinatorial Symmetric Cross-Validation (CSCV), PBO measures the probability that a strategy selected as optimal in-sample yields below-median performance out-of-sample. 
+
+CSCV partitions a matrix of $T$ returns across $N$ strategies into $M$ equal time slices, generating $\binom{M}{M/2}$ combinations of training and testing subsets. For each combination, the strategy $j^*$ with the highest in-sample Sharpe ratio is identified. The out-of-sample rank percentile $\bar{R}_{j^*}$ of that strategy is then computed. PBO is calculated as the proportion of splits where the in-sample optimal strategy drops below median performance out-of-sample ($\bar{R}_{j^*} < 0.50$):
+
+$$\text{PBO} = \frac{1}{C} \sum_{c=1}^{C} \mathbf{I}\left( \bar{R}_{j^*, c} < 0.50 \right)$$
+
+### Theoretical and Practical Failures in Sparse, Non-Stationary Russian Markets
+
+While DSR, PBO, and classical FDR corrections offer valuable framework mechanics, applying them directly to sparse MOEX futures spreads reveals major theoretical limitations:
+
+1.  **Violation of IID Normality Assumptions:** DSR and PSR formulations assume returns are independent and identically distributed (IID) with stationary higher-order moments ($\hat{\gamma}_3, \hat{\gamma}_4$). MOEX futures spreads display clustered volatility, price jump dynamics, and non-stationary residual distributions. During geopolitical events or sanction shifts, tail risks expand dramatically, invalidating asymptotic normal distributions.
+2.  **Sample Size Deficits in Sparse Spread Trading:** DSR relies on large sample sizes ($T \to \infty$) for asymptotic convergence. A medium-term spread strategy on MOEX may yield only 15 to 40 independent trades over a 3-year period. In small sample sizes, the variance of the Sharpe ratio estimator is dominated by noise, causing DSR to produce unstable values.
+3.  **Distortion of Trial Count ($N$) in Non-Independent Grids:** Calculating DSR or Bonferroni adjustments requires specifying the number of independent trials $N$. Parameter sweeps over continuous thresholds (e.g., testing entry Z-scores of 1.80, 1.85, and 1.90) produce highly correlated return series. Treating these as $N = 3$ independent trials overstates selection bias, whereas setting $N = 1$ ignores search-driven overfitting. Estimating the true number of effective independent trials $N_{\text{effective}}$ requires principal component analysis of the trial return matrix.
+4.  **Non-Stationarity of the Reference Threshold ($SR_0$):** The theoretical null threshold $SR_0$ assumes that strategy returns are drawn from a zero-mean distribution with stable variance $V[\{\hat{SR}_n\}]$. Structural breaks in Russian market liquidity cause historical variance across strategies to shift over time. As a result, $SR_0$ can miscalculate the required hurdle rate for out-of-sample significance.
+
+---
+
+## Performance Metrics, Matched Benchmark Accounting, and Effective Sample Size
+
+Performance metrics must reflect the structural realities of the trading account. In this project, the test allocation is RUB 30,000 (covering initial margin, variation margin liquidity, and reserves), operating within a primary account holding over RUB 40 million invested in the money market fund LQDT.
+
+### Matched LQDT Counterfactual Accounting Framework
+
+Because core capital remains invested in LQDT, evaluating strategy performance using a standard zero-interest cash baseline is inaccurate. The true economic value of the spread strategy is its net performance relative to a matched counterfactual investment in LQDT.
+
+1.  **Counterfactual Baseline Construction:** The counterfactual portfolio maintains an identical external cash flow history. If RUB 30,000 is allocated to the futures-spread pilot, the counterfactual assumes that this RUB 30,000 remained fully invested in LQDT over the same holding period.
+2.  **Avoiding Double-Counting Collateral Yield:** Under MOEX and broker rules (VTB / BCS), LQDT units held in the portfolio can serve as eligible margin collateral for futures trading, subject to broker haircuts. If core LQDT holdings are pledged as collateral while continuing to accrue interest ($R_{\text{LQDT}}$), that yield accrues to the core account. Therefore, interest earned on collateral pledged for initial margin must not be subtracted from the strategy's P&L. Doing so would double-count the collateral drag.
+3.  **Accounting for Cash Divergence and Yield Drag:** If the broker requires cash settlement for variation margin deficits, cash must be generated by redeeming LQDT units or drawn from uninvested cash reserves. The opportunity cost of this diverted cash must be subtracted from the strategy's gross P&L:
+    $$\text{P\&L}_{\text{excess}}(t) = \text{P\&L}_{\text{gross}}(t) - \text{Costs}_{\text{execution}}(t) - \sum_{\tau=1}^{t} C_{\text{diverted}}(\tau) \cdot R_{\text{LQDT}}(\tau)$$
+    where $C_{\text{diverted}}(\tau)$ is the cash diverted from LQDT at time $\tau$, and $R_{\text{LQDT}}(\tau)$ is the daily return of the money market benchmark.
+4.  **Tax Deduction Adjustments:** Long-term investment tax deductions (such as the 3-year LZI deduction on Russian securities) apply to the underlying LQDT holdings. P&L accounting must exclude potential losses of the long-term holding deduction unless an explicit redemption of long-held core LQDT units is triggered to cover margin deficits.
+
+### Capital-Time Usage, Stress Funding, and Effective Sample Size
+
+#### Capital-Time Usage ($CTU$)
+Futures contracts require initial margin (IM), which fluctuates dynamically with market volatility. Evaluating returns against total equity understates strategy efficiency. Capital-Time Usage measures capital efficiency by integrating margin utilization over the active position lifecycle:
+
+$$CTU = \frac{\int_{0}^{T} \text{Margin}_{\text{utilized}}(t) \, dt}{\text{Total Capital Allocation} \times T}$$
+
+#### Stress Funding & Path Drawdown
+Because variation margin on MOEX is settled daily, a strategy can remain economically solvent over a 10-day horizon while experiencing severe intraday margin drawdowns. Stress funding measures the peak cumulative cash required to maintain positions during adverse price swings:
+
+$$\text{Stress Funding} = \max_{t \in [0, T]} \left( \text{IM}_{\text{required}}(t) + \text{Cumulative VM Deficit}(t) \right)$$
+
+#### Effective Sample Size ($N_{\text{effective}}$)
+Counting individual price bars (e.g., 1-minute or 1-hour bars) overstates statistical significance due to strong autocorrelation in high-frequency data. Similarly, counting raw executed trades exaggerates independence if positions are re-entered rapidly during the same volatility cluster. To establish the true statistical power of a strategy, the Effective Sample Size ($N_{\text{effective}}$) must be calculated using two approaches:
+
+1.  **Autocorrelation-Adjusted Trade Count:** For a trade return series with first-order autocorrelation $\rho_1$:
+    $$N_{\text{eff, serial}} = N_{\text{trades}} \cdot \frac{1 - \rho_1}{1 + \rho_1}$$
+2.  **Kish's Effective Sample Size:** When trade returns or duration weights $w_i$ vary significantly across market regimes, Kish's ESS formula determines the weighted effective sample size:
+    $$N_{\text{eff, Kish}} = \frac{\left( \sum_{i=1}^{N} w_i \right)^2}{\sum_{i=1}^{N} w_i^2}$$
+
+A strategy that generates 100 raw trade fills across 5 distinct macroeconomic events may yield an effective sample size of $N_{\text{effective}} \approx 8 \text{ to } 12$ independent economic episodes. Claims of statistical significance must be evaluated using $N_{\text{effective}}$, not the raw trade count.
+
+| Metric Identifier | Mathematical Formula | Methodological Target / Hurdle | Operational Purpose in Evaluation |
+| :--- | :--- | :--- | :--- |
+| **Matched LQDT Excess P&L** | $\text{P\&L}_{\text{strat}} - \sum C_{\text{diverted}}(t) R_{\text{LQDT}}(t)$ | $> 0.0$ RUB Net of Costs | Isolates true economic alpha above money market baseline without double-counting collateral yield. |
+| **Capital-Time Usage ($CTU$)** | $\frac{1}{T \cdot C_{\text{total}}} \int_0^T \text{IM}(t) dt$ | Unconstrained ($CTU \in [0, 1]$) | Quantifies margin usage efficiency across active position lifecycles. |
+| **Stress Funding Requirement** | $\max_t \left( \text{IM}(t) + \text{VM}_{\text{drawdown}}(t) \right)$ | $\le \text{RUB } 30,000$ Base | Establishes peak liquidity required to survive adverse intraday MOEX margin swings. |
+| **Effective Sample Size ($N_{\text{eff}}$)** | $N \frac{1 - \rho_1}{1 + \rho_1}$ or $\frac{(\sum w_i)^2}{\sum w_i^2}$ | $N_{\text{eff}} \ge 30$ Episodes | Replaces raw bar/trade counts with the true number of independent economic episodes. |
+| **Brier Score Calibration** | $\frac{1}{N} \sum (p_i - y_i)^2$ | $\text{BS} < 0.20$ | Validates that reported model outcome probabilities are statistically well-calibrated. |
+
+---
+
+## Baseline Models, Execution Latency Stress Testing, and Preregistration
+
+Evaluating strategy edge requires comparison against simple baselines and stress scenarios. In-sample optimization often fails when confronted with live execution delays and dynamic market friction.
+
+### Baseline Hierarchy
+
+Every candidate spread strategy must demonstrate statistically significant excess performance over two zero-parameter baselines:
+1.  **Passive LQDT Baseline:** Cash allocation remains 100% invested in LQDT money market instruments, generating zero trading friction and zero directional risk.
+2.  **Deterministic Static Spread Baseline:** A naive buy-and-hold spread position across the same candidate futures pair, rebalanced strictly on roll dates without parameter tuning or timing logic.
+
+A strategy that fails to outperform these baselines after transaction costs provides no genuine alpha.
+
+### Stress-Cost and Delay Scenarios
+
+Given that initial trading execution is manual via VTB (with eventual automation at BCS), execution latency is a critical factor. Manual reaction time spans a 3–90 minute window, with a median response time of 5–15 minutes. Backtests that assume instant execution at the signal generation price introduce severe delay leakage.
+
+To quantify sensitivity to execution friction, every strategy must undergo stress testing across three pre-defined delay scenarios:
+*   **Scenario A (Optimistic Execution, 3-minute delay):** Signal executed at market price $P_{t + 3\text{m}}$ plus standard bid-ask spread.
+*   **Scenario B (Baseline Manual Execution, 15-minute delay):** Signal executed at market price $P_{t + 15\text{m}}$ plus $1.5\times$ bid-ask spread to model market impact.
+*   **Scenario C (Adverse Delay Execution, 90-minute delay):** Signal executed at the worst price observed within the $[t + 3\text{m}, t + 90\text{m}]$ window, combined with doubled transaction fees.
+
+Strategies whose net Sharpe ratio drops below zero under Scenario B are rejected as operationally unfeasible for manual execution.
+
+### Experiment Registration and Holdout Management
+
+To combat selection bias, all backtesting experiments must be registered in an immutable audit log prior to execution. The experiment registry must record the following fields for every trial:
+1.  **Registration ID & Timestamp:** Unique identifier and date-time stamp.
+2.  **Strategy Family & Pair Identifier:** Specific instruments (e.g., Si-CNY spread).
+3.  **Search Grid Dimensions ($N$):** Exact parameter combination count tested in this iteration.
+4.  **Data Range & Split Rules:** Dates for training, purging, embargoing, and out-of-sample testing.
+5.  **Ex-Ante Latency & Cost Model:** Assigned execution delay scenario (3m, 15m, 90m) and commission assumptions.
+6.  **Out-of-Sample Metrics:** Realized excess return over LQDT, DSR, PBO, and $N_{\text{effective}}$.
+
+#### Rules for Final Holdout Consumption
+1.  The final holdout dataset (consisting of the most recent 12–18 months of market data) must remain strictly encrypted and unblinded during initial strategy development.
+2.  Unblinding the final holdout dataset is permitted **only once** per strategy family, after the research protocol has been finalized and registered.
+3.  Upon unblinding, the holdout dataset is considered **consumed**. Any subsequent parameter tuning, threshold adjustments, or feature additions executed after observing holdout performance render the holdout dataset in-sample. Further tests on this data are classified as overfit.
+
+---
+
+## Operational vs. Statistical Feasibility, Pilot Governance, and Probability Calibration
+
+A 90-day prospective live pilot using a small allocation (RUB 30,000 base, gross maximum RUB 45,000) provides operational validation of broker mechanics, execution pipelines, and order fills. However, it cannot deliver statistical proof of long-term profitability.
+
+### Statistical Limitations of the 90-Day Pilot
+
+In medium-term spread trading, position holding periods span several days to weeks. Consequently, a 90-day pilot will yield only 5 to 15 completed trades. With a sample size of $N = 10$, the standard error of the estimated annualized Sharpe Ratio is extremely large:
+
+$$\text{SE}(\hat{SR}) \approx \sqrt{\frac{1 + \frac{\hat{SR}^2}{2}}{T}}$$
+
+For a realized 90-day Sharpe Ratio of $1.5$, the $95\%$ confidence interval spans $[-0.20, +3.20]$. Therefore, a successful 90-day pilot validates execution infrastructure, broker collateral handling at VTB/BCS, and variation margin tracking. It does not establish statistical proof of alpha.
+
+### Unvalidated Action Rules and Allocation Limits
+
+The trading pilot operates under strict risk management bounds relative to the LQDT benchmark:
+
+1.  **Capital Base & Emergency Allocation Rules:**
+    *   **Base Allocation:** RUB 30,000 (inclusive of margin, VM reserves, and buffer) co-located on the primary core account (> RUB 40m LQDT).
+    *   **Emergency Capital Limit:** Maximum RUB 15,000 cumulative gross emergency allocation across the entire pilot lifetime, bringing total gross funded capital to at most RUB 45,000.
+    *   **Emergency Access Conditions:** Emergency funding requires explicit, real-time investor authorization. It may be deployed **solely** to prevent disorderly broker liquidation or to de-risk existing open positions during extreme variation margin swings. It must **never** be used to fund new positions, average down losing trades, or reset lifetime drawdown metrics.
+    *   **Zero-Emergency Entry Hurdle:** All new trade entries must pass margin checks using unencumbered pilot capital, requiring zero emergency funding at the time of entry. Unapproved broker-initiated drawdowns against the core LQDT collateral are logged as risk incidents and count toward the gross RUB 15,000 limit.
+2.  **Excess Drawdown Action Triggers:**
+    *   **Warning Threshold (RUB 5,000 Excess Drawdown):** Reaching a RUB 5,000 cumulative underperformance relative to the LQDT baseline triggers an immediate audit of execution latency, slippage costs, and broker fills. Trading remains active.
+    *   **Action Threshold (RUB 10,000 Excess Drawdown):** Reaching a RUB 10,000 drawdown from the excess P&L high-water mark, or a cumulative LQDT shortfall of RUB 10,000, triggers an automated suspension of new trade entries. Position management switches to de-risking mode, executing orders to return the pilot portfolio to flat. Emergency funds deployed at this threshold may only be used to achieve a flat position.
+    *   **Outer Boundary (RUB 15,000 Shortfall):** A cumulative underperformance of RUB 15,000 relative to LQDT represents the absolute risk limit. The strategy is liquidated, and live operations are suspended pending a formal review.
+    *   **Time-Based Review:** Reaching 90 calendar days without hitting drawdown bounds triggers a mandatory review. Cumulative drawdown metrics are not reset at day 90.
+
+### Calibrating and Reporting Outcome Probabilities
+
+Quantitative reports often present win probabilities or expected directional accuracies derived from backtest models. In sparse, non-stationary markets, reporting point-estimate win probabilities (e.g., "Win Probability = 68.5%") creates a false sense of precision.
+
+1.  **Brier Score Verification:** Directional win probabilities $p_i \in [0, 1]$ generated by a model must be evaluated against realized outcomes $y_i \in \{0, 1\}$ using the Brier Score:
+    $$\text{BS} = \frac{1}{N} \sum_{i=1}^{N} (p_i - y_i)^2$$
+    If the Brier Score exceeds $0.25$ (the score of a naive $50\%$ coin flip), model probabilities are uncalibrated and must not be used for position sizing or decision-making.
+2.  **Uncertainty Interval Reporting:** Win probabilities must always be reported alongside their 90% confidence intervals, calculated via non-parametric bootstrapping or Bayesian estimation. If the $90\%$ confidence interval spans $0.50$ (e.g., $P(\text{Win}) \in [0.42, 0.67]$), the report must explicitly state that the direction of the signal is statistically indistinguishable from a random walk.
+3.  **Decision Policy for Probabilities:** If the effective sample size is small ($N_{\text{effective}} < 30$), or if market regimes exhibit non-stationary shifts, point-estimate win probabilities must be withheld. The report should instead display qualitative regime classifications alongside stress-scenario P&L profiles.
+
+---
+
+## Targeted Literature Critique and Synthesis
+
+Applying quantitative machine learning methodologies—specifically those developed by Bailey, López de Prado, Harvey, Liu, and Zhu—to sparse MOEX futures spreads requires adapting theoretical frameworks to practical execution realities.
+
+### Literature Evaluation and Applicability Matrix
+
+| Source / Publication | Core Theoretical Premise | MOEX Spread Market Reality | Methodological Adaptation Required |
+| :--- | :--- | :--- | :--- |
+| **Bailey & López de Prado (2014)** *Deflated Sharpe Ratio* | Corrects SR for selection bias ($N$) and non-normality ($\gamma_3, \gamma_4$). | Small sample size ($N_{\text{eff}} < 30$) causes unstable asymptotic DSR values. | Replace asymptotic normal threshold with non-parametric bootstrap resampling. |
+| **López de Prado (2018)** *AFML Ch. 3: Labeling* | Triple-barrier labeling captures path dependency and stop-losses. | Fixed barrier widths fail during volatility regime shifts on MOEX. | Normalize barrier widths dynamically using trailing implied volatility. |
+| **López de Prado (2018)** *AFML Ch. 7: Purged CV* | Purging/embargoing eliminates leakage across overlapping labels. | Sparse trades require wide embargo windows ($h_{\text{embargo}} = 10\text{ days}$). | Enforce strict temporal separation based on spread autocorrelation decay time. |
+| **Harvey, Liu, & Zhu (2016)** *Evaluating Trading Strategies* | Raises significance hurdles ($t > 3.0$) for multiple testing. | Strict FWER controls increase Type II errors in exploratory pair search. | Adopt Benjamini-Yekutieli FDR control to preserve power under trial dependence. |
+
+### Analysis of Primary Literature Findings
+
+1.  **Purging and Embargoing (*Advances in Financial Machine Learning*, Chapter 7):** These techniques are essential for cross-validating financial time series. In MOEX futures spreads, where mean-reversion signals depend on multi-day horizons, purging eliminates information leakage between adjacent training and testing folds. Embargoing effectively removes serial correlation induced by persistent volatility regimes.
+2.  **Combinatorial Purged Cross-Validation (*Advances in Financial Machine Learning*, Chapter 7):** CPCV offers a significant improvement over traditional single-path walk-forward testing. By generating $\phi$ distinct out-of-sample paths, CPCV allows researchers to evaluate distributions of drawdowns, Sharpe ratios, and stress funding needs across varying market states.
+3.  **Deflated Sharpe Ratio (*Journal of Portfolio Management*, 2014):** DSR provides a mathematical framework for evaluating selection bias across $N$ trials. However, its formulation assumes asymptotic normality and stationary variance. In sparse MOEX futures spreads ($N_{\text{effective}} < 30$), DSR estimates become unstable. Researchers must supplement DSR with non-parametric resampling and stress scenario testing rather than relying on it as a single threshold for strategy validation.
+
+---
+
+## Minimal Reproducible Validation Protocol and Experiment Registry
+
+To operationalize these insights, every candidate futures-spread strategy evaluated for the MOEX project must strictly adhere to the following checklist prior to deployment.
+
+### Protocol Execution Checklist
+
+1.  **Universe & Data Verification:**
+    *   Construct point-in-time universe based on historical liquidity at time $t$.
+    *   Verify execution costs use raw, unadjusted contract prices, and drop contract roll bars from return series calculations.
+    *   Model daily MOEX 18:45 MSK variation margin settlement and cash balance flows.
+2.  **Cross-Validation Setup:**
+    *   Partition data into $N_{\text{blocks}}$ using CPCV.
+    *   Set purging window $P = \text{Maximum Holding Period } (H)$.
+    *   Set embargo window $E = \text{Autocorrelation Decay Time } (h_{\text{embargo}})$.
+    *   Fit all hedge ratios, Z-score rolling statistics, and model parameters exclusively on in-sample training folds.
+3.  **Multiple Testing & Selection Corrections:**
+    *   Log all $N$ attempted parameter configurations in the Experiment Registry.
+    *   Compute the Effective Sample Size ($N_{\text{effective}}$) using Kish's ESS or serial correlation adjustments.
+    *   Apply the Benjamini-Yekutieli (BY) FDR adjustment across parameter grids.
+    *   Compute DSR and PBO metrics across all generated CPCV paths.
+4.  **Benchmark & Stress Testing:**
+    *   Calculate Excess P&L relative to the matched LQDT counterfactual, deducting cash diversion costs while preserving collateral yield earned on pledged LQDT.
+    *   Subject the strategy to manual execution latency scenarios (3-minute, 15-minute baseline, and 90-minute adverse delays). Reject any strategy failing Scenario B.
+    *   Confirm that $N_{\text{effective}} \ge 15$ independent economic episodes exist in the out-of-sample set.
+5.  **Pilot Governance & Decision Criteria:**
+    *   Maintain strict holdout encryption; unblind holdout data only once per strategy family.
+    *   Enforce a maximum gross pilot allocation of RUB 45,000 (RUB 30,000 base + RUB 15,000 emergency capital allowance).
+    *   Enforce drawdown action triggers: Warning at RUB 5,000 underperformance vs. LQDT; Action/Halt at RUB 10,000 shortfall from high-water mark; Liquidation at RUB 15,000 outer boundary.
+    *   Evaluate 90-day pilot purely for operational execution validation, withholding claims of statistical profitability until long-term prospective criteria are fulfilled.

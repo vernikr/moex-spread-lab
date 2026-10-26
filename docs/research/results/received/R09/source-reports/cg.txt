@@ -1,0 +1,1184 @@
+# R09 — False discoveries, point-in-time testing and evidence thresholds
+
+## 1. Decision conclusion
+
+For a broad MOEX futures-spread search with sparse medium-term trades, overlapping positions and a changing Russian market, the honest validation object is **the entire research-and-selection procedure**, not the single best backtest discovered at the end.
+
+The recommended evidence architecture is:
+
+**point-in-time data → chronological nested walk-forward selection → overlap-aware purging/embargo → frozen outer test → search/multiple-testing adjustment → dependence-aware uncertainty → matched LQDT comparison → prospective shadow evaluation.**
+
+The most important practical consequence is that **“many trades” is not equivalent to “many independent observations.”** Bars can be highly numerous, several trades can overlap, and many nominal trades can be manifestations of the same economic episode. The project brief explicitly requires distinguishing bars, trades, economic episodes and effective sample size, and rejects any universal minimum such as “30 trades.”
+
+A 90-day pilot should therefore be treated as an **operational validation stage**—execution, fills, reaction time, data availability, collateral behavior, incident handling—not as sufficient evidence that the strategy is profitable. That distinction is also explicit in the brief.
+
+The strongest pass condition should consequently be something like:
+
+> The pre-specified research procedure produces positive, economically meaningful excess versus the matched LQDT counterfactual in genuinely out-of-sample periods, with no known point-in-time leakage, robustness to predeclared execution stresses, and uncertainty narrow enough to support the next stage.
+
+Anything less should normally be classified as **inconclusive**, rather than promoted to “validated.”
+
+---
+
+# 2. What was actually read
+
+### Project brief
+
+The supplied R09 brief was read in full. It specifies the actual project context, including the matched LQDT counterfactual, limited pilot capital, finite reaction time, broad candidate universe, zero-trade tolerance and the required leakage, validation, uncertainty and probability questions.
+
+### Bailey & López de Prado, *The Deflated Sharpe Ratio*
+
+I read the publicly available 22-page 2014 version of:
+
+David H. Bailey and Marcos López de Prado, **“The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality,”** *Journal of Portfolio Management*, 40(5), 94–107, 2014. DOI 10.3905/jpm.2014.40.5.094. The author/SSRN version identifies July 31, 2014 as the manuscript date.
+
+The important passages for this project are the paper's discussion of:
+
+* the need to know **how many strategies/trials were tried**;
+* selection bias from reporting only successful searches;
+* backtest overfitting;
+* the danger of believing a holdout remains independent after repeated reuse;
+* DSR as a combination of probabilistic Sharpe inference and a multiple-trial adjustment;
+* the distinction between independent and dependent trials.
+
+The paper's central point is highly applicable: without information about the extent of the search, an impressive historical Sharpe cannot be interpreted honestly.
+
+### Bailey et al., *The Probability of Backtest Overfitting*
+
+I also read the public paper on the **Probability of Backtest Overfitting (PBO)** and its Combinatorially Symmetric Cross-Validation framework. It is useful because it addresses a different question from DSR: not “is this Sharpe statistically impressive after accounting for search?”, but whether the model selected as optimal in-sample tends to be poor out-of-sample under the resampled selection exercise.
+
+### *Advances in Financial Machine Learning*
+
+I did **not** read the full book. I read the publicly accessible publisher excerpts and contents for the relevant sections of the 2018 Wiley first edition:
+
+* Chapter 3 — Labeling;
+* Chapter 4 — Sample Weights, especially overlapping outcomes and uniqueness;
+* Chapter 7 — Cross-Validation in Finance;
+* Chapter 12 — Backtesting through Cross-Validation;
+* Chapter 14 — Backtest Statistics.
+
+Chapter 7 explicitly identifies the failure of ordinary K-fold CV in financial settings and presents purged K-fold CV as the remedy. Chapter 12 presents walk-forward, CV and combinatorial purged CV as alternative backtesting constructions.
+
+So the discussion below should be understood as **a targeted reading of the relevant AFML material, not a claim to have reviewed the entire book.**
+
+---
+
+# 3. Why ordinary backtesting is particularly fragile here
+
+The project has three properties that interact badly:
+
+1. **Broad search.** Many pairs, parameter combinations, strategy families, rules, delays, cost assumptions and perhaps regimes can be tried.
+
+2. **Sparse independent economic events.** The signal may produce few genuine opportunities even though the underlying price series contains millions of bars.
+
+3. **Overlapping exposures.** Several positions can coexist, sometimes using the same underlying risk factors or capital.
+
+There is then a fourth complication: **the market itself is not constant through the sample.**
+
+For example, MOEX and the Bank of Russia made substantial changes to market operation during 2022, including periods when parts of the market were closed or restricted, changes in derivatives availability and later resumption of evening derivatives trading. Those historical institutional changes are not merely changes in prices; they change the set of executable strategies and the meaning of a historical bar.
+
+That makes “train on all history and validate on randomly shuffled observations” especially inappropriate.
+
+The finance-validation literature reaches the same broad conclusion from a different angle. White's Reality Check frames data snooping as repeated reuse of the same data for inference or model selection; he emphasizes that this is especially difficult in time series because only one historical path is normally available.
+
+---
+
+# 4. Leakage inventory
+
+The registry should contain an explicit leakage audit for every strategy family.
+
+| Leakage pathway                    | Hypothetical example                                                                                                                               | Prevention test                                                                                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Survivorship                       | Historical search uses today's surviving/active contracts and silently excludes instruments that later disappeared or ceased being eligible.       | Reconstruct the eligible universe separately at every historical decision date. No present-day list may be used to define past eligibility.                    |
+| Continuous-contract construction   | A continuous series is assembled using a roll convention or adjustment that depends on information determined later.                               | Build from individual dated contracts; store the historical roll decision/rule and verify that every roll choice was knowable at that timestamp.               |
+| Future parameters                  | A risk parameter, exchange setting, contract specification or settlement convention in use today is applied retrospectively to older observations. | Version parameters by effective timestamp. A backtest at time \(t\) can read only the version available at \(t\).                                              |
+| Future corporate/event information | Later-confirmed dividends or other cash-flow information is inserted into an earlier valuation or hedge calculation.                               | Store publication/announcement/approval/effective timestamps and use the earliest information actually available to the simulated decision.                    |
+| Late price revisions               | A vendor's corrected historical quote is used even though that corrected version would not have existed in the simulated research state.           | Maintain data version/snapshot provenance; test sensitivity to revisions where version history exists.                                                         |
+| Overlapping labels                 | A training trade opened before the test interval is still open during the test and its outcome depends on test-period prices.                      | Purge training observations whose outcome intervals overlap the test interval.                                                                                 |
+| Reused final holdout               | After seeing the final graph, the entry threshold is adjusted and the same “untouched” period is checked again.                                    | Mark the holdout as consumed on first substantive inspection. Any subsequent development moves back to training/validation.                                    |
+| Post-hoc costs                     | Several transaction-cost models are tried, and only the cheapest one is reported.                                                                  | Every cost model belongs in the search registry; the primary assumption is frozen before performance is compared.                                              |
+| Best delay selection               | 0, 5, 15, 30 and 60-minute delays are tested, and the best one becomes the headline result.                                                        | Treat delay as a searched dimension. Freeze a primary delay ex ante; all alternatives remain recorded and are stress scenarios unless independently justified. |
+| Post-hoc universe restriction      | Weak pairs are dropped after seeing their history, leaving a “clean” universe.                                                                     | Universe rules are written before the performance comparison or nested entirely inside training.                                                               |
+| Post-hoc hedge ratio               | A hedge ratio is estimated using the full history, then historical P&L is called out-of-sample.                                                    | Fit hedge ratios only on data permitted by the relevant training fold.                                                                                         |
+| Regime labeling leakage            | A “2022 regime” or volatility state is defined using future information unavailable when the trade was initiated.                                  | Regime features and labels must be computable with the information set existing at the simulated decision time.                                                |
+| Operational hindsight              | Failed or delayed fills are removed because the intended theoretical trade “would have worked.”                                                    | The virtual portfolio attempts each eligible signal and records stale, rejected, partial and unfilled outcomes.                                                |
+
+The last operational rule is already part of the project's specification, and it is important because otherwise execution hindsight becomes another form of selection.
+
+### A special warning on MOEX point-in-time data
+
+MOEX's derivatives documentation includes parameters used for futures settlement/risk processes and describes parameters that are periodically redefined. That means a modern parameter page is not evidence that the same input was known or valid throughout the historical sample. Historical research therefore needs a **time-versioned parameter source**, not simply today's webpage.
+
+---
+
+# 5. The correct split structure
+
+## 5.1 Primary architecture
+
+The basic timeline should look like:
+
+```text
+PAST                                                        FUTURE
+│                                                               │
+├──────────── OUTER TRAINING ────────────┤── PURGE ──┤── OUTER TEST ──┤
+│                                        │            │                │
+│    inner chronological selection      │            │   frozen       │
+│    ├──── train ─── test ───┤          │            │   evaluation   │
+│    ├──── train ─── test ───┤          │            │                │
+│    └──── train ─── test ───┘          │            │                │
+│                                        │            │                │
+└────────────────────────────────────────┴────────────┴────────────────┘
+```
+
+The **outer test period must never influence selection**.
+
+Inside the outer-training period, pair choice, parameter choice, feature transformations, hedge ratios, regime definitions and all other adaptive decisions may be fitted only on the inner training data.
+
+This is what distinguishes genuine nested validation from merely applying cross-validation after already seeing the whole historical result.
+
+AFML's Chapter 7 specifically motivates purging because standard K-fold CV assumes an IID-like separation that financial labels frequently do not possess.
+
+## 5.2 Walk-forward versus rolling/expanding training
+
+Two legitimate designs should be distinguished:
+
+**Expanding window**
+
+```text
+Train ──────────────────> Test
+Train ─────────────────────────────> Test
+Train ─────────────────────────────────────────> Test
+```
+
+All eligible historical observations remain available to later decisions.
+
+**Rolling window**
+
+```text
+      Train ──────> Test
+           Train ──────> Test
+                Train ──────> Test
+```
+
+Only a fixed/restricted recent history is used.
+
+Neither is universally correct. The choice is an economic assumption about how much historical information should remain relevant. It must be specified before comparing results; otherwise “expanding versus rolling” itself becomes another opportunity to overfit.
+
+Tashman's rolling-origin literature is relevant here because repeated genuine forecast-origin tests provide a more informative evaluation of time-series forecasting than a single arbitrary split. AFML Chapter 12 likewise presents walk-forward as a principal chronological construction and explicitly warns that a flawless walk-forward requires attention to data, microstructure, risk, performance measurement and multiple testing.
+
+For this project I would make **nested walk-forward the primary validation**, with rolling-versus-expanding treated as a predeclared methodological branch rather than a late optimization.
+
+---
+
+# 6. Purging and embargo: do it by economic overlap, not by bars
+
+This is one of the most important changes I would make to an ordinary backtest.
+
+Represent every decision/trade outcome by its information interval:
+
+$$
+I_i=[t_{i,\mathrm{decision}},\,t_{i,\mathrm{outcome}}].
+$$
+
+For a spread trade this generally means:
+
+**information available at signal/entry → actual or simulated exit/outcome time.**
+
+If an observation in the training set has an outcome interval intersecting an outer test interval, it is not an independent training observation and should be purged.
+
+For example:
+
+```text
+Training trade:       Jan 10 ───────────────── Feb 10
+Test period:                    Jan 20 ───────── Jan 31
+                                  ↑
+                            forbidden overlap
+```
+
+The fact that the signal itself occurred on January 10 does not rescue it: its label contains information about prices during the test period.
+
+This is precisely the type of overlap addressed by AFML's treatment of overlapping outcomes and purged cross-validation.
+
+### Embargo
+
+After the test block, add an embargo where necessary to prevent the remaining training sample from carrying immediate dependence on the test information.
+
+The key point is that the embargo should be **derived from the actual dependence mechanism**:
+
+* holding-period overlap;
+* delayed execution/outcome realization;
+* state variables with persistence;
+* any other feature/label construction that can transmit test information.
+
+Do not choose “10 bars because 10 sounds conservative.”
+
+Likewise, do not automatically equate the embargo with the entire feature lookback. A historical feature calculated only from observations genuinely available before a decision does not itself create future leakage merely because its window is long.
+
+---
+
+# 7. What should be counted as a “trial”?
+
+The DSR paper's strongest lesson for this project is that **the search itself is part of the statistical evidence**. It is not enough to record the 17 configurations in the final report if 4,000 were actually tried.
+
+A trial should therefore be defined by an immutable fingerprint containing at least:
+
+```text
+universe definition
+pair-selection rule
+strategy family
+signal formula
+feature transforms
+hedge-ratio method
+regime method
+parameter values/ranges
+entry rule
+exit rule
+position-sizing rule
+capital/concurrency rule
+delay assumption
+execution model
+transaction-cost model
+data snapshot/version
+selection objective
+training/validation scheme
+```
+
+A single conceptually identical re-run can be recorded as a repeat execution, but a changed threshold, changed objective, changed universe, changed delay or changed cost treatment is a new research branch.
+
+The registry must retain:
+
+```text
+trial_id
+parent_trial_id
+timestamp tried
+pre-result specification
+data snapshot
+code/model version
+inner/outer fold
+result
+failure/error status
+reason for rejection
+selection rank
+whether inspected by analyst
+whether used for subsequent development
+```
+
+Most importantly:
+
+> **Failed experiments are data.**
+
+Deleting failed models from the research history is itself a selection mechanism.
+
+White's Reality Check was developed precisely around the problem that repeated specification search can make the best-looking model appear good by chance.
+
+---
+
+# 8. The final holdout must have a lifecycle
+
+A useful rule is:
+
+### Holdout = locked
+
+The final holdout should be created only after:
+
+* the data/contract construction is frozen;
+* the search family is defined;
+* the primary cost and delay assumptions are frozen;
+* the selection algorithm is frozen;
+* the outer validation results are complete.
+
+Then the holdout is opened once.
+
+Once viewed substantively, it becomes **consumed evidence**.
+
+That means this sequence is invalid:
+
+```text
+See holdout
+→ change entry rule
+→ see holdout again
+→ change cost assumption
+→ see holdout again
+→ publish holdout result
+```
+
+It is statistically just another validation/search loop.
+
+The DSR paper explicitly discusses the difficulty of relying on a holdout once researchers continue interacting with it, while White's framework formalizes repeated data reuse as data snooping.
+
+---
+
+# 9. Multiple testing: what to use and what not to use
+
+There should not be a single “multiple testing number.”
+
+Use several complementary layers because they answer different questions.
+
+## 9.1 Nested walk-forward — primary protection
+
+This protects the outer test from the **selection process carried out inside training**.
+
+This should be the project's principal structural safeguard.
+
+It is more important than simply multiplying a p-value afterward because it makes the simulated research process resemble the real decision process.
+
+## 9.2 White Reality Check
+
+White's Reality Check tests whether the best model found in a specification search has predictive superiority relative to a benchmark, explicitly allowing for the fact that the benchmark comparison was selected from a search.
+
+For this project the natural benchmark is not zero return but the **matched LQDT counterfactual**, because the economically relevant question is opportunity cost.
+
+## 9.3 Hansen SPA
+
+Hansen's Superior Predictive Ability test is a useful companion to the Reality Check. It was proposed as more powerful and less sensitive to poor or irrelevant alternatives than the original Reality Check.
+
+For a large pair/parameter universe this matters because many candidates may be obviously poor. A test that is excessively burdened by irrelevant alternatives can become less informative.
+
+A practical structure is:
+
+> **Reality Check / SPA on a pre-specified candidate family + nested WF on the adaptive research procedure.**
+
+Do not interpret SPA as magically solving nonstationarity or overlapping capital.
+
+## 9.4 DSR
+
+The DSR corrects Sharpe-based inference for two major sources of apparent performance inflation:
+
+* selection over multiple trials;
+* non-normal returns.
+
+The paper explicitly emphasizes that the analyst needs information about the number of trials that produced the selected result.
+
+It incorporates the observed Sharpe, sample length, higher moments and an estimate of the number of independent trials. The paper's derivation of the expected maximum Sharpe assumes a model for the distribution of trial Sharpe estimates and discusses the distinction between independent and non-independent trials.
+
+That last point is crucial here:
+
+**1,000 correlated variants of the same spread strategy are not necessarily 1,000 independent trials.**
+
+Conversely, “we only tested 30 pairs” does not establish that there were only 30 independent research opportunities if many transformations, windows, delays, thresholds and economic filters were repeatedly tried.
+
+Therefore the registry should report both:
+
+```text
+total search attempts
+estimated independent trial count / effective multiplicity
+```
+
+and should document how the second quantity was obtained.
+
+The DSR should be treated as a **selection-adjusted Sharpe diagnostic**, not as a proof that the strategy is real.
+
+## 9.5 PBO
+
+PBO/CSCV answers a different question: how often does the strategy that wins in-sample end up ranking badly out-of-sample under the cross-validation resampling construction?
+
+That can be informative for broad search.
+
+But sparse spread data creates a major limitation:
+
+> PBO cannot manufacture independent economic histories that do not exist.
+
+If the sample contains only a small number of meaningful non-overlapping episodes, a combinatorial procedure can create many train/test arrangements without creating many genuinely independent realizations of the phenomenon.
+
+So a PBO result should be labeled something like:
+
+**“PBO under the specified resampling model”**
+
+rather than:
+
+**“Probability that the strategy will fail live.”**
+
+---
+
+# 10. Uncertainty: use dependence-aware inference
+
+## 10.1 Primary outcome
+
+The primary portfolio-level quantity should be the matched benchmark-relative result.
+
+Let:
+
+* \(X_t\) = pilot strategy portfolio after realistic execution, all costs and actual flows;
+* \(L_t\) = matched LQDT counterfactual with the identical external flows;
+* \(E_t=X_t-L_t\) = excess wealth path.
+
+The project brief has an important accounting requirement: capital diverted into the pilot remains invested in the LQDT counterfactual, and LQDT return on retained collateral must not be deducted twice.
+
+The headline statistic should therefore be something like:
+
+$$
+E_T-E_0
+$$
+
+over the predeclared evaluation horizon.
+
+Not:
+
+> “Sharpe = X, therefore success.”
+
+## 10.2 What uncertainty should describe
+
+At minimum report uncertainty for:
+
+**Cumulative matched-LQDT excess.**
+
+Then separately report:
+
+* maximum drawdown of the excess path;
+* maximum absolute strategy drawdown;
+* time under water;
+* holding-duration distribution;
+* capital-time usage;
+* turnover;
+* total execution cost;
+* cost as a fraction of gross edge;
+* peak concurrent exposure;
+* stress funding requirement;
+* execution failure rate;
+* capacity sensitivity.
+
+This follows the brief's required metric categories.
+
+## 10.3 Do not bootstrap individual trades as IID
+
+A naive resampling such as:
+
+```text
+sample trades independently with replacement
+```
+
+is not credible when trades overlap or are exposed to the same market episode.
+
+Use dependence-aware methods instead.
+
+For weakly dependent stationary observations, the stationary bootstrap of Politis and Romano was specifically developed for dependent time-series observations. Block bootstrap methods likewise preserve local dependence rather than pretending every observation is independent.
+
+For return-series inference, HAC estimators such as Newey–West can account for heteroskedasticity and autocorrelation.
+
+But neither technique solves structural breaks automatically.
+
+## 10.4 Recommended uncertainty procedure
+
+For the main portfolio excess path:
+
+1. preserve chronological order;
+2. use moving/stationary blocks rather than IID observations;
+3. choose a block-length range linked to observed dependence and economic holding/episode structure;
+4. repeat over several defensible block lengths;
+5. report the resulting uncertainty interval/range rather than silently picking the most favorable one;
+6. separately stress different market regimes/eras;
+7. never let the uncertainty procedure erase the original selection process.
+
+The last point is important.
+
+If the final winner was selected from 5,000 candidates and the bootstrap resamples only the already-selected winner, the calculation understates uncertainty. Where selection matters, the resampling scheme should either:
+
+* re-run the selection procedure inside each resample, or
+* use a formal search-adjusted procedure such as Reality Check/SPA.
+
+---
+
+# 11. Effective sample size
+
+For this project there are at least four different “N” values:
+
+| Quantity                      | What it measures               | Can it support IID inference?  |
+| ----------------------------- | ------------------------------ | ------------------------------ |
+| Bars                          | Frequency of raw observations  | No                             |
+| Filled trades                 | Executed transactions          | Not necessarily                |
+| Positions                     | Economic exposures             | Not necessarily                |
+| Independent economic episodes | Distinct opportunities/regimes | Closest to the meaningful unit |
+
+Suppose ten entries occur during one volatility shock, share the same underlying spread dislocation and overlap in holding period.
+
+Calling this “10 independent trades” would substantially exaggerate the amount of evidence.
+
+A more useful hierarchy is:
+
+```text
+bars → observations
+trades → execution events
+positions → exposure events
+episodes → approximate independent evidence
+```
+
+The precise effective sample size is itself uncertain.
+
+Therefore I would avoid converting the whole problem to an artificial single number unless the assumptions are explicit.
+
+A particularly dangerous pattern would be:
+
+> “The backtest has 250,000 one-minute observations, therefore the standard error is tiny.”
+
+That conclusion is precisely what the dependence and overlap controls are designed to prevent.
+
+---
+
+# 12. Nonstationarity should be treated as an evidence dimension
+
+The Russian market history contains institutional breaks large enough that assuming one stationary data-generating process across the entire period is difficult to defend. The 2022 MOEX/Bank of Russia changes are a concrete illustration.
+
+Do not “fix” this by automatically discarding inconvenient history.
+
+Instead, run three views:
+
+### Full-history view
+
+“What does the strategy do across all admissible historical eras?”
+
+### Era/stress view
+
+“Does the result depend almost entirely on one particular institutional or market regime?”
+
+### Recent-regime view
+
+“How does the result look when the training procedure gives greater weight to recent conditions?”
+
+The third can become a production rule only if it is defined ex ante.
+
+Structural-break methods such as Andrews' parameter-instability framework and Bai–Perron multiple-break framework can be useful diagnostics, but they do not themselves give permission to discover a break date and then retrospectively redesign the strategy around it. The break-detection procedure becomes part of the model and therefore part of the search.
+
+---
+
+# 13. Worked hypothetical leakage examples
+
+## Example A — Survivorship
+
+Suppose a researcher currently sees 40 active/usable futures contracts and reconstructs 2019–2026 data only for those contracts.
+
+A pair that would have been top-ranked in 2020 is absent because one constituent later disappeared from the current universe.
+
+The backtest is now biased because the historical search space has been conditioned on what survived until today.
+
+**Prevention test:** for every historical date, generate the candidate universe from the information that would have been available on that date. A modern instrument list must not determine historical eligibility.
+
+---
+
+## Example B — Continuous contract
+
+Suppose today's research database creates a “continuous front-month series” with a roll adjustment based on a roll convention that is known only from the finalized historical contract mapping.
+
+The researcher then optimizes a spread signal on that adjusted historical series.
+
+The problem is not that adjustment is inherently invalid; it is that the simulation may be consuming a **future-computed representation of the past**.
+
+**Prevention test:** reproduce each dated contract separately and demonstrate that each roll was determined by a rule and information available at the historical decision time.
+
+---
+
+## Example C — Overlapping labels
+
+Suppose:
+
+```text
+Trade A training interval:  01 Jan → 10 Feb
+Test interval:             20 Jan → 31 Jan
+```
+
+Trade A began before the test, but its eventual P&L depends on test-period prices.
+
+Calling Trade A “training only” does not eliminate the leakage.
+
+**Prevention test:** purge it because its outcome interval intersects the test interval.
+
+This is exactly why AFML's financial CV treatment records label start/end intervals rather than treating every observation as an independent point.
+
+---
+
+## Example D — Best delay
+
+Suppose the same signal is tested with:
+
+```text
+0 min
+5 min
+15 min
+30 min
+60 min
+```
+
+The 15-minute version looks best.
+
+Choosing 15 minutes afterward means that **delay is a searched parameter**.
+
+It cannot subsequently be presented as though it had been specified before seeing the result.
+
+**Prevention test:** freeze a primary operational delay before the primary comparison; retain all alternatives in the registry and show them as search alternatives/stresses.
+
+This is particularly important because the project already anticipates real manual reaction times ranging from roughly 3 to 90 minutes.
+
+---
+
+## Example E — Reused holdout
+
+The final holdout shows a disappointing result.
+
+The researcher changes the entry threshold and discovers a better result on exactly the same dates.
+
+The holdout is now no longer a holdout.
+
+**Prevention test:** first substantive inspection consumes the holdout. Subsequent modifications belong to a renewed development cycle, requiring another untouched evaluation segment.
+
+---
+
+# 14. Costs and delays must be inside the evidence, not appended afterward
+
+The project is unusually sensitive to this because manual execution is slow relative to fast market moves.
+
+Therefore the validation should contain a **cost/delay surface**, not merely one optimistic estimate.
+
+For example:
+
+```text
+                Quote quality
+             good    ordinary    poor
+Delay 0      base      stress      stress
+Delay 5      base      stress      stress
+Delay 15     base      stress      stress
+Delay 30     stress    stress      stress
+...
+```
+
+But the interpretation must be controlled:
+
+**Primary scenario:** predeclared execution assumption.
+
+**Stress scenarios:** alternative delays/costs/quote quality.
+
+**Selection alternatives:** parameters that were allowed to influence the strategy choice.
+
+Those three categories must not be conflated.
+
+If a strategy becomes profitable only under the cheapest delay and best quote-quality assumption, the proper conclusion is not “profitable with reasonable costs.”
+
+It is:
+
+> **evidence is highly execution-sensitive and therefore inconclusive unless that execution condition can be demonstrated prospectively.**
+
+That is especially important given the project's explicit finite-capital and operational constraints.
+
+---
+
+# 15. Probability reporting
+
+## 15.1 The first question is: probability of what?
+
+A “70% win probability” is meaningless without a horizon and event definition.
+
+Possible definitions are very different:
+
+$$
+P(\text{trade P\&L}>0)
+$$
+
+versus
+
+$$
+P(\text{trade beats LQDT over the holding interval})
+$$
+
+versus
+
+$$
+P(\text{portfolio beats LQDT after 90 days})
+$$
+
+versus
+
+$$
+P(\text{positive excess without breaching the drawdown/funding boundary}).
+$$
+
+For this project, the last two are much closer to the actual decision problem than a generic per-trade hit rate.
+
+## 15.2 If showing per-trade probabilities
+
+A per-trade model should produce:
+
+$$
+p_i=P(Y_i=1\mid I_i)
+$$
+
+where \(I_i\) is the information available before entry and \(Y_i\) is a predeclared outcome.
+
+Calibration must be measured on observations that were not used to fit the probabilities.
+
+Proper scoring rules are appropriate because they reward truthful probabilistic forecasts; Gneiting and Raftery provide the general framework, while the Brier score is a standard proper score for binary probabilities.
+
+For a tiny sparse sample, a reliability diagram can be visually attractive but statistically weak. The score itself plus uncertainty is more informative.
+
+## 15.3 Hit-rate intervals
+
+For an empirical hit rate, a Wilson/adjusted-binomial interval is preferable to the naive Wald interval when ordinary binomial assumptions are defensible.
+
+But the assumption is the important part.
+
+For dependent overlapping trades, a raw binomial interval is not automatically justified. The better approach is to cluster/resample at the economic-episode level or use a dependence-preserving bootstrap.
+
+## 15.4 Probability should include cost and benchmark uncertainty
+
+Suppose the gross edge is only slightly positive.
+
+Then uncertainty in:
+
+* execution delay;
+* transaction costs;
+* benchmark return;
+* capital usage;
+* fill probability
+
+may move the trade from “winner” to “loser.”
+
+A single probability number based on one cost assumption conceals that.
+
+The preferred output is therefore something like:
+
+```text
+P(excess > 0 | base execution scenario)
+P(excess > 0 | moderate execution stress)
+P(excess > 0 | severe execution stress)
+```
+
+with the scenarios fixed before seeing their performance differences.
+
+## 15.5 When probability should simply be suppressed
+
+For sparse data, do not force a probability estimate because the UI or report “expects one.”
+
+Suppress it when:
+
+* the calibration sample is too small to distinguish plausible probabilities;
+* the uncertainty interval spans the project's entire decision range;
+* the event is inadequately defined;
+* calibration uses overlapping/reused observations without defensible dependence treatment;
+* the model was materially tuned on the same data used to assess the probabilities.
+
+In that situation the honest output is:
+
+> **Probability not shown: insufficient independent out-of-sample evidence for reliable calibration.**
+
+That is stronger evidence discipline than displaying “62% ± very wide uncertainty.”
+
+---
+
+# 16. Metrics and acceptance rules
+
+The project already has provisional loss-action rules, but they are explicitly unvalidated and should not be presented as statistical confidence bounds.
+
+I would separate the final decision into five gates.
+
+## Gate 1 — Data integrity
+
+**Pass:** no unresolved known leakage, point-in-time construction documented, contract universe reconstructable, execution rules reproducible.
+
+**Reject:** any material future information or survivorship contamination that cannot be repaired.
+
+## Gate 2 — Statistical evidence
+
+**Pass:** outer walk-forward excess is positive and uncertainty supports a meaningful positive effect; search-adjusted tests do not indicate that the result is plausibly just a selection artifact.
+
+**Inconclusive:** positive point estimate but wide uncertainty, too few independent episodes or unstable selection.
+
+**Reject:** outer evidence is materially negative or the apparent effect disappears after the search procedure is properly accounted for.
+
+## Gate 3 — Economic robustness
+
+**Pass:** positive under the primary execution assumptions and remains acceptable under predeclared realistic cost/delay stresses.
+
+**Inconclusive:** edge disappears with modest execution deterioration.
+
+**Reject:** profitability requires implausibly favorable execution.
+
+## Gate 4 — Path and capital risk
+
+**Pass:** drawdown, capital-time usage, concurrency and stress-funding needs remain within the separately defined operational limits.
+
+**Reject:** apparent average profitability depends on a path that would have caused unacceptable liquidity/funding stress.
+
+The pilot's emergency allocation rules are particularly relevant here: emergency funding is not evidence that the original strategy passed. The project specification explicitly says the strategy must enter successfully without emergency funding.
+
+## Gate 5 — Prospective behavior
+
+**Pass:** shadow/live observations resemble the backtest's assumptions regarding signals, reaction time, quote availability, rejection, fills and costs.
+
+**Important:** this validates the operational model, not necessarily future profitability.
+
+A 90-day pilot that demonstrates excellent order handling but no statistically decisive excess return should be reported as:
+
+> **Operationally validated; profitability evidence inconclusive.**
+
+---
+
+# 17. A minimal reproducible validation protocol
+
+The entire protocol can be reduced to this sequence.
+
+### Step A — Freeze the research specification
+
+Write down:
+
+* admissible universe;
+* contract eligibility;
+* roll construction;
+* signal definitions;
+* pair-search family;
+* parameter ranges;
+* hedge method;
+* regime method;
+* entry/exit;
+* sizing/concurrency;
+* delay;
+* transaction-cost model;
+* benchmark accounting;
+* primary objective;
+* train/validation/test logic.
+
+Anything not listed is either fixed or must enter the registry as a new experimental branch.
+
+### Step B — Create point-in-time data
+
+For every timestamp, identify:
+
+```text
+what existed
+what was tradable
+what information was published
+what parameter version was effective
+what price/quote state was available
+```
+
+### Step C — Run inner chronological selection
+
+Within each outer training period:
+
+```text
+inner train
+→ purge overlapping outcomes
+→ embargo
+→ fit transforms/ratios/regimes
+→ evaluate candidates
+→ choose according to frozen selection rule
+```
+
+### Step D — Freeze
+
+No parameter adjustment after inner selection.
+
+### Step E — Run outer test
+
+Use only future information as it would actually have been known.
+
+Record every execution outcome, including failures.
+
+### Step F — Repeat through time
+
+Move the walk-forward origin forward.
+
+The deployment procedure should be the same procedure being evaluated.
+
+### Step G — Preserve every trial
+
+Store successful, unsuccessful and abandoned searches.
+
+### Step H — Conduct selection-adjusted inference
+
+Use an appropriate combination of:
+
+* Reality Check / SPA;
+* DSR;
+* PBO/CSCV;
+* dependence-aware bootstrap/HAC inference.
+
+None is a replacement for the other layers.
+
+### Step I — Evaluate matched LQDT
+
+Use identical external flows and preserve the counterfactual LQDT investment correctly.
+
+### Step J — Open the final holdout once
+
+When it is opened, label it consumed.
+
+### Step K — Only then begin prospective shadow/live evidence
+
+Do not retrospectively modify the historical validation based on what happens prospectively and then report the combined result as one out-of-sample test.
+
+---
+
+# 18. Experiment-registry minimum schema
+
+A practical minimum registry is:
+
+| Field                     | Purpose                             |
+| ------------------------- | ----------------------------------- |
+| Trial ID                  | Immutable identity                  |
+| Parent/family ID          | Links variants to the original idea |
+| Research timestamp        | Establishes chronology of discovery |
+| Data version              | Point-in-time reproducibility       |
+| Universe version          | Prevents survivorship               |
+| Contract/roll rule        | Detects continuous-contract leakage |
+| Strategy family           | Multiplicity accounting             |
+| Parameters                | Exact configuration                 |
+| Transform fit scope       | Leakage audit                       |
+| Hedge-ratio fit scope     | Leakage audit                       |
+| Regime method             | Leakage/search accounting           |
+| Entry/exit                | Economic definition                 |
+| Delay                     | Execution assumption                |
+| Cost/slippage model       | Economic realism                    |
+| Capital/concurrency rules | Portfolio-path realism              |
+| Inner-fold specification  | Nested selection record             |
+| Outer test period         | Genuine OOS identity                |
+| Raw result                | No cherry-picking                   |
+| Failure status/reason     | Failed experiments preserved        |
+| Selection rank            | Search transparency                 |
+| Analyst inspection status | Holdout/data-snooping audit         |
+| Decision after result     | Tracks post-hoc modifications       |
+| Final disposition         | pass/reject/inconclusive            |
+
+A useful additional field is:
+
+**“Was this specification known before the result was inspected?”**
+
+That single yes/no field will expose a surprising amount of accidental hindsight.
+
+---
+
+# 19. What would count as falsification?
+
+The protocol should define failure before the exciting result arrives.
+
+Strong falsifiers include:
+
+### Data falsifiers
+
+A future parameter, unavailable contract or revised price materially enters a supposedly out-of-sample calculation.
+
+### Selection falsifiers
+
+The result exists only after choosing the best delay, cost model, pair universe or parameter window post hoc.
+
+### Statistical falsifiers
+
+The positive result disappears after correctly accounting for search and dependence.
+
+### Economic falsifiers
+
+Modest realistic transaction costs or delays remove the economic edge.
+
+### Regime falsifiers
+
+The effect is entirely concentrated in one historical episode and has no credible mechanism or robustness outside it.
+
+### Operational falsifiers
+
+The historical strategy assumes fills, timing or liquidity that cannot be reproduced prospectively.
+
+### Accounting falsifiers
+
+The LQDT benchmark or external flows are handled inconsistently between strategy and counterfactual.
+
+The final category is especially important because the project is explicitly defined around benchmark-relative opportunity cost.
+
+---
+
+# 20. DSR and PBO: how much weight should they get?
+
+## DSR — useful, but not decisive
+
+The DSR is very useful here because the project deliberately performs broad search.
+
+It directly addresses the intuition:
+
+> “The Sharpe is impressive, but how many things were tried before this one was found?”
+
+However, DSR is ultimately a Sharpe-based statistical adjustment. A pair strategy with sparse, overlapping, non-normal, regime-dependent returns can violate important simplifying assumptions.
+
+So:
+
+**Use DSR to downgrade apparent Sharpe evidence.**
+
+Do not:
+
+**Use a passing DSR as proof of economic validity.**
+
+The paper itself distinguishes the issue of independent trials and derives the multiplicity adjustment from assumptions about trial distributions.
+
+## PBO — useful diagnostic of selection fragility
+
+PBO is particularly attractive for asking:
+
+> “Does the thing that wins the historical contest tend to win outside the portion of history on which it was selected?”
+
+But it requires enough information to make the combinatorial experiment informative.
+
+With sparse spread trades:
+
+* many splits do not imply many independent histories;
+* overlapping observations can make splits correlated;
+* nonstationarity can change the ranking mechanism itself.
+
+Therefore PBO should be reported alongside:
+
+```text
+number of economically independent episodes
+overlap structure
+regime composition
+number of candidate variants
+```
+
+not by itself.
+
+---
+
+# 21. Targeted AFML reading guide
+
+For this project, the most relevant parts of the 2018 first edition are:
+
+### Chapter 3 — Labeling
+
+Read especially the fixed-time-horizon and barrier-label sections.
+
+**Why:** every trade outcome should have a defensible start/end definition.
+
+### Chapter 4 — Sample Weights
+
+Read:
+
+* overlapping outcomes;
+* concurrent labels;
+* uniqueness.
+
+**Why:** sparse spread trades can have substantial overlap even when the raw bar count is enormous.
+
+### Chapter 7 — Cross-Validation in Finance
+
+Read §§7.3–7.4, **“Why K-Fold CV Fails in Finance”** and **“A Solution: Purged K-Fold CV.”**
+
+The book's first edition places Chapter 7 at pp. 103–111.
+
+### Chapter 12 — Backtesting through Cross-Validation
+
+Read:
+
+* §12.2 Walk-Forward;
+* §12.3 Cross-Validation;
+* §12.4 Combinatorial Purged Cross-Validation;
+* §12.5 How CPCV Addresses Backtest Overfitting.
+
+Chapter 12 explicitly describes walk-forward as simulation in which strategy decisions are based on observations that predate the decision.
+
+### Chapter 14 — Backtest Statistics
+
+Use for implementation-shortfall, efficiency, Sharpe/PSR/DSR and classification-score material.
+
+### Applicability critique
+
+AFML's purging framework is directly relevant to overlapping trade outcomes.
+
+But it should **not** be treated as a complete solution to this project because this project is broader than financial-ML cross-validation:
+
+* candidate pair discovery is unusually broad;
+* market structure changed materially;
+* execution is manual and delay-distributed;
+* the objective is matched LQDT wealth, not simply predictive classification;
+* capital is finite and positions overlap;
+* the ultimate concern is a small number of economically meaningful opportunities.
+
+CPCV can create many combinatorial train/test configurations, but it does not create new real market history.
+
+That distinction is essential.
+
+---
+
+# 22. Proposed evidence hierarchy
+
+The final report should rank evidence approximately as follows:
+
+**Tier 1 — Data integrity**
+
+Can the historical experiment be shown to contain only information available at each simulated time?
+
+**Tier 2 — Genuine out-of-sample process**
+
+Does nested chronological validation evaluate the same selection procedure that would actually be used?
+
+**Tier 3 — Search-adjusted evidence**
+
+Does the result survive multiple-testing scrutiny?
+
+**Tier 4 — Dependence-aware uncertainty**
+
+How uncertain is the result when overlapping and serially dependent observations are respected?
+
+**Tier 5 — Economic robustness**
+
+Does the result survive realistic cost, delay, liquidity and capital constraints?
+
+**Tier 6 — Prospective evidence**
+
+Do actual future observations conform to the assumptions?
+
+A strategy should not jump from Tier 1 directly to “validated” because its backtest Sharpe is high.
+
+---
+
+# 23. Recommended outcome vocabulary
+
+Avoid:
+
+> “Validated.”
+
+Prefer one of:
+
+### Supported
+
+All principal gates pass; evidence supports further controlled testing.
+
+### Inconclusive
+
+No fatal flaw has been identified, but the independent evidence is too sparse, too uncertain or too unstable to distinguish a real edge from noise.
+
+### Rejected
+
+A decisive methodological or economic failure exists.
+
+### Operationally validated, profitability unproven
+
+Useful for the 90-day pilot when execution behavior is successfully demonstrated but statistical economic evidence remains insufficient.
+
+This vocabulary is especially appropriate because the project itself explicitly separates data feasibility, statistical evidence, operational feasibility, small live testing and scaling.
+
+---
+
+# 24. Bottom line for this project
+
+The most defensible rule is:
+
+> **Do not ask whether the best pair or parameter set made money in historical data. Ask whether the predeclared research procedure, when forced to make only time-appropriate choices, repeatedly produced economically meaningful matched-LQDT excess in untouched future periods, after accounting for search, overlap, execution uncertainty and regime change.**
+
+That changes the research workflow in several important ways.
+
+A broad search is allowed.
+A zero-trade day is allowed.
+A sparse strategy is allowed.
+A small number of genuine opportunities is allowed.
+
+What is not allowed is silently converting the scarcity of independent evidence into the appearance of certainty by counting bars, overlapping trades, parameter variants or repeated looks at the holdout as independent evidence.
+
+For this reason, **“inconclusive” should be considered a successful methodological outcome when the data cannot support a stronger claim.**
+
+And the 90-day pilot should be judged primarily on whether the real execution environment matches the validated simulation assumptions—not on whether 90 calendar days happen to produce a positive P&L. The supplied brief already establishes that distinction.
+
+## Core references
+
+Bailey, D. H., & López de Prado, M. (2014). *The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality*. *Journal of Portfolio Management*, 40(5), 94–107.
+
+White, H. (2000). *A Reality Check for Data Snooping*. *Econometrica*, 68(5), 1097–1126.
+
+Hansen, P. R. (2005). *A Test for Superior Predictive Ability*. *Journal of Business & Economic Statistics*, 23(4), 365–380.
+
+Politis, D. N., & Romano, J. P. (1994). *The Stationary Bootstrap*. *Journal of the American Statistical Association*, 89(428), 1303–1313.
+
+Newey, W. K., & West, K. D. (1987). *A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix*. *Econometrica*, 55(3), 703–708.
+
+López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley, 1st edition. Relevant chapters: 3, 4, 7 and 12–14.

@@ -1,0 +1,77 @@
+# R13. Optional Regime Conditioning – Research Design
+
+## Data Sources (MOEX futures, liquidity, volatility)  
+We will use official Moscow Exchange (MOEX) data for futures prices, volumes and open interest.  MOEX publishes *“Aggregated trading results”* (daily official close, high/low, volume, OI) for the **derivatives market** (“Срочный рынок”) from Sep 2001 onward.  These data can be downloaded (XML/CSV) via MOEX’s web portal or API (with subscription).  In addition, MOEX provides *complete trade and orderbook records* (Type C data) for futures from Nov 2000 (though access may require an informational license).  For market-wide volatility, we note that a *Russian Volatility Index* (RVI, analogous to VIX) exists; e.g. its daily values are published on public sites (Investing.com) and reflect implied vol for major Russian stocks.  (We will compute realized volatility from the MOEX futures return series as well.)  
+
+For liquidity, we will use trading **volume** and **open interest** on each futures contract.  Liquidity is the ease of trading without price impact, so high-volume/large-OI contracts are more liquid.  Volatility is the price variability (std dev of returns).  These quantities are observable at each decision time.  (If needed, we may use exchange indices – e.g. MOEX’s IMOEX index for broad market trends – but primary drivers will be contract-level data.)
+
+Additionally, we will collect relevant *contract information* (expiration dates, roll dates, contract specifications) and any macro markers (e.g. MOEX trading holidays, major policy changes) to align regimes with known events.  Data on futures carry (“roll return” or term‐structure slope) can be calculated from the forward curve.
+
+## Baseline Spread Strategy (No Regime)  
+As a **reference baseline**, we specify deterministic, fixed-parameter calendar-spread strategies on the selected MOEX futures (e.g. commodities or currency).  A *calendar spread* is a strategy taking opposite positions in the same underlying with different maturities.  For example, the baseline “carry” strategy might hold a near-month long / far-month short spread whenever the spread’s level relative to a long-term mean exceeds a threshold.  Alternatively, a baseline “mean-reversion” spread might trade on the spread’s z-score reverting to zero (as in Chan’s model).  Critically, the baseline *does not use any regime filter*: it uses fixed look-back windows and parameters chosen on the training set only.  For instance, one baseline could always trade a {T₁,–T₂} spread (long near, short far) sized by a fixed constant whenever signal = “spread > X”, with X fit in-sample; or a constant fraction of volatility.  Another baseline could invert these positions when “spread < Y”.  These baselines serve as “no-regime” controls for comparison.
+
+*(Citing: a calendar spread involves same-asset offsetting positions with different expiries.  Chan’s constant-roll model shows the log value of a long-near/short-far portfolio is a fixed roll return times the time difference.)* 
+
+## Regime-Conditioned Variants  
+We will design **regime-aware variants** that modify entry/exit/position size based on simple market-state indicators, without using hidden-state models initially.  For example:
+
+- **Volatility regimes**: compute a rolling realized volatility (e.g. 1-month std of futures returns).  Define high-volatility vs low-volatility regimes by comparing this to a threshold (e.g. median or percentile).  Then condition strategy (e.g. trade only in low-vol, or reduce size in high-vol).  This uses only past data up to decision time.
+- **Liquidity regimes**: define high-liquidity vs low-liquidity days based on trading volume or open interest.  For instance, if volume < Q1, treat as thin market (illiquid) and avoid large positions. 
+- **Carry regimes**: based on the term structure (forward curve) – e.g. if near-far spread is steeply contango (positive roll), label one regime; if backwardation (negative roll) another.  
+- **Composite splits**: combine indicators, e.g. “high-volatility, low-liquidity” vs “other”.
+
+Each regime filter affects only *specific strategy aspects*.  We will *predeclare* the mapping: for instance, we might say “in high-vol regimes, widen the spread trigger (trade less often) or shorten expected holding”.  We will treat these as separate hypotheses: e.g. “H1: low-vol regime trading improves net returns vs baseline”, “H2: low-liquidity regime trading improves returns”.  We avoid using regime info for everything; for example, we may allow regime to alter *position size or exit timing* but keep entry signals constant, to isolate effects.
+
+We will compare these “observable-regime” variants before moving to *hidden-state models*.  As a check, we may later consider a Markov-switching or change-point model (e.g. a two-state HMM or SWARCH) to label regimes, but only if simple splits prove promising.  Note that true predictive regimes must be assigned causally (forward in time), not by looking at full-sample labels.
+
+*(Citing: regime-switching models can characterize market phases – e.g. bull vs bear or low/high volatility.  In an S&P 500 study, estimated high/medium/low-volatility states covered distinct average volatilities, showing persistence.  This motivates splitting by vol.)*  
+
+## Validation Protocol  
+We will use a **walk-forward chronological test** (rolling or expanding windows).  All strategy parameters (e.g. volatility thresholds, lookback periods, z-score boundaries) will be fit only on past data.  We strictly separate each test period from its training set, mimicking real-time prediction.  This prevents “smoothing leakage” – e.g. if labeling regimes via a fitted HMM, we will only use forward-filtered (causal) state probabilities at decision time, not hindsight labels.  
+
+To avoid data dredging, we pre-register hypotheses (which indicators trigger a regime, how it alters trading) and *record all variants tried*.  We will log every tested rule and its performance.  The final report will highlight only those variants that survived filters, but all attempts (including null results) will be documented separately.  An untouched **final holdout** period (last N weeks/months) will measure out-of-sample performance for the chosen design.
+
+We will apply identical procedures to baseline and regime strategies.  For each variant, we compute the excess return (or P&L) *relative to the matched cash counterfactual* (the long-term LQDT portfolio) as specified.  All costs, fees, and execution delays (see below) are applied equally in both cases.  The primary metric is the net RUB gain over baseline (with excess drawdown and underperformance triggers as per guidelines).  We also check “backtests vs data-snooping”: e.g. if a regime split only yields benefit in-sample but not in holdout, we flag it as overfit.  
+
+*(Citing: proper analysis requires testing hypotheses on data not used for fitting.  Walk-forward testing and protected holdouts guard against spurious “p-hacking” results.)*
+
+## Cost, Risk, and Execution Assumptions  
+We will parameterize trading costs as recommended.  For each contract we assume an exchange fee (e.g. MOEX fee) plus half-spread slippage.  We will test *three scenarios*: 
+- **Base case**: moderate commission and typical bid-ask, slippage reflecting historical MOEX spreads. 
+- **Conservative (low cost)**: assume minimal fees and tight spreads. 
+- **Stress (high cost)**: assume higher fees and double spreads (to simulate low-liquidity events).  
+
+Each scenario applies the same costs to baseline and regime tests.  We will also model order execution delay of 3–90 minutes (with median ~10 min), applied randomly to simulate real reaction times.  If a signal arrives just before market close or during maintenance, the trade may not fill that day.  We incorporate broker margin rules: e.g. contracts are sized by integer multiples under the RUB 30k capital cap (plus possible emergency add-on up to 15k).  Any call on core account collateral is treated as test capital.  
+
+We will not “average down” or re-use emergency funding to restart new signals – i.e. we strictly cap gross funding and record any use as an incident.  These constraints (capital limit, drawdown alerts at RUB5k/10k/15k) are built into the testing code, so strategies never exceed stated risk levels.
+
+## Hypotheses and Analysis Plan
+
+We will predeclare specific hypotheses (“hypothesis cards”) before simulation.  Each card will include: *Name, Date, Signal used, Regime Info, Strategy change, Performance metric, Evaluation criteria*.  For example:
+
+- **H1: Low-Volatility Entry** – *Signal:* when realized vol (30d) is below its 50th percentile; *Action:* allow trade only in low-vol days (skip signals in high-vol); *Expected:* stable markets favor our baseline, so avoiding high-volshould reduce drawdowns and improve net returns. *Test:* Compare net P&L vs baseline in holdout; require statistically significant excess net profit (or lower drawdown). 
+- **H2: High-Volatility Exit** – *Signal:* high-vol days; *Action:* shorten hold time (exit spreads early) or reduce position; *Expected:* prevents volatile losses. 
+- **H3: Low-Liquidity Size** – *Signal:* below-median volume days; *Action:* reduce contract count on entry; *Expected:* avoids being trapped in illiquid moves. 
+- **H4: Term-Structure Regime (Carry)** – *Signal:* sign of forward curve (near month below far = backwardation); *Action:* only trade when carry is positive (we earn roll), or vice versa; *Expected:* enhance carry profits or avoid negative roll. 
+- **H5: Hidden Markov Regime** – *Model:* fit a two-state HMM on historical returns (up vs down states) without lookahead; *Action:* e.g. only enter spread trades in “down market” state (contrarian), or adjust size; *Expected:* capture structural bull/bear differences. 
+
+For each hypothesis, we record the **information set** used (e.g. last 30-day vol, last 100-day avg volume) and ensure it uses only pre-trade data.  We will log each test’s outcome (net excess P&L, hit rates, drawdown) and compute statistical significance if appropriate.  All hypotheses will be judged by performance on the untouched final test period.  
+
+**Discard criteria:**  A regime variant will be discarded if (a) it fails to exceed the no-regime baseline net return (after costs) on the held-out test, or (b) it reduces robustness (e.g. increases maximum underperformance beyond the 10k threshold).  We will also drop any variant that proves negligible (e.g. regime triggers occur too infrequently to matter) or that essentially “coincides” with known market events (e.g. if a regime is nothing but a contract expiration pattern).  Hypotheses are falsifiable: if the regime adjustment does not improve out-of-sample P&L or risk metrics, it will be rejected.
+
+### Resource Estimates  
+Implementation will require data download (via Python 3.13 scripts in a venv environment) and backtest coding.  We expect to fetch MOEX data via web/API (as XML/CSV) and compute indicators.  A moderate effort is needed to code the walk-forward engine and cost model.  As a reference, similar studies (e.g. regime-switching trend rules) involve solving threshold problems but our focus is simpler rules.  Roughly, one analyst-week could code and run preliminary tests on a few contract examples.  The workload is small-scale (30k capital, no portfolio of dozens of contracts needed in parallel).  Computational requirements are minimal (regular Python scripts on a laptop or small VPS suffice).  We plan to document versions, seed values, and ensure reproducibility.  All code runs will be done within a controlled Python 3.13 environment (e.g. created via `python3.13 -m venv`) with dependencies installed via `python3.13 -m pip` to match user’s setup preferences. 
+
+*(Citing environment note: Virtual environments with explicit Python versions are best practice for reproducibility.)*  
+
+## References  
+- Investopedia: *“Understanding Liquidity…”* (defines liquidity, liquid vs illiquid assets).  
+- Wikipedia: *“Volatility (finance)”* (volatility as std. dev. of returns).  
+- Investopedia: *“Mastering Calendar Spreads…”* (calendar spread definition).  
+- Chan (algorithmic trading) and followers: constant-roll model for spreads.  
+- SIAM J. Financial Math., Dai et al. (2010): *“Trend following under regime switching”* (bull/bear phases via conditional probabilities).  
+- ECB Financial Stability Review (May 2018): *“Regime shifts in stock market volatility”* – shows volatility clusters in low/med/high regimes.  
+- Wikipedia: *“Data dredging”* – cautions on multiple testing and need for out-of-sample tests.  
+- MOEX website (“Birzhevaya informatsiya”): archived futures data available via XML/CSV (access by API/website).  
+
+ Each factual statement above is supported by these sources. Where MOEX documentation was in Russian, the content is translated and cited in context. We have not assumed any proprietary data or results; all strategy designs are hypothetical (unbacktested) and contingent on future implementation. The conclusions will rest on the actual walk-forward tests to be conducted under the above plan.

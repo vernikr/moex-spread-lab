@@ -1,0 +1,157 @@
+# Executive Summary  
+This document presents a **generic research plan template** that can be adapted to any topic. It outlines the key steps and deliverables for a comprehensive literature review and research project. The plan begins with clarifying the **scope and objectives** of the study (including rationale, aims, research questions/hypotheses) and identifying target outcomes. It then recommends **primary and secondary sources** along with search strategies (databases, keywords, timeframes) to gather information. The **methodology** section describes how data or evidence will be collected and evaluated (including credibility criteria like currency, authority, accuracy, relevance, purpose) and how findings will be synthesized (e.g. thematic analysis, meta-analysis, comparative charts). Expected **deliverables** include a concise executive summary, annotated bibliography of key sources, data summary tables, and visualizations (charts, graphs, diagrams) to highlight patterns. Example templates are provided: a source-comparison table, a project timeline, a budget outline, and a stakeholder matrix. Suggested visualizations (Mermaid charts/timelines) illustrate the workflow and timelines. Three review scenarios (Quick Scan, Standard Review, Deep Review) are compared with estimated effort (e.g. Quick Scan: a few hours; Deep Review: several weeks) to guide planning. Finally, a **checklist of next steps** and clarifying questions is provided to refine the topic and research plan. All advice is grounded in best practices (e.g. clearly linking aims to methods, and structuring the executive summary to stand alone).  
+
+## Research Scope and Objectives  
+- **Define Scope (Boundaries):** Specify *what is (and is not)* included in the study. This clarifies context. For example, “This study will examine the effects of [TOPIC] on [OUTCOME] in [population/region]” while excluding unrelated factors. The scope ensures the research questions are focused and that findings are appropriately contextualized.  
+- **Overall Aim and Rationale:** State the high-level goal of the research. Why is this topic important? What gap in knowledge or problem will it address?   
+- **Specific Objectives (Aims):** Break the overall aim into 2–4 specific objectives that together achieve it. Each specific aim should cover a distinct aspect of the topic. For example: (1) *“Identify and categorize recent approaches to [TOPIC]”*; (2) *“Evaluate impacts of [TOPIC] on [factor]”*; (3) *“Analyze trends over time or across regions.”* Ensure the aims logically interrelate (sequential or parallel).  
+- **Deliverables and Outcomes:** Define expected outcomes (new insights or findings) and outputs (e.g. report, policy brief, dataset). For instance, outcomes might be “identified key trends” or “validated metrics,” and outputs could include a written report, an annotated bibliography, or data tables.
+
+## Research Questions and Hypotheses  
+- **Research Questions:** Formulate clear, focused questions derived from the objectives. For example: *“How has [TOPIC] evolved in the last decade?”* or *“What factors influence [TOPIC] in [context]?”*  
+- **Hypotheses (if applicable):** If the discipline expects hypotheses, state testable statements. E.g., “H₁: [Intervention] leads to increased [Outcome] among [Population].” Hypotheses should link directly to the specific aims. Note that not all fields use formal hypotheses.  
+- **Example Questions/Hypotheses:**  
+  - *Q1:* What are the major drivers of [TOPIC]?  
+  - *Q2:* How do outcomes differ by region or demographic?  
+  - *Q3:* Is there a statistically significant change in [metric] after [intervention]?  
+  - *H1:* “[Variable A] positively correlates with [Variable B] under conditions of [Condition].”  
+
+## Recommended Sources & Search Strategy  
+- **Primary Sources:** Prioritize authoritative sources such as peer-reviewed journals, official reports (government, UN, NGO), conference proceedings, and technical white papers. These provide original data and analysis. Wherever possible, use *primary* data (e.g. official statistics, datasets) and *original research articles*. Secondary sources (reviews, summaries) help contextualize findings.  
+- **Databases & Tools:** Use multidisciplinary databases (e.g. Google Scholar, Web of Science, Scopus, JSTOR) plus subject-specific ones (e.g. PubMed for health, IEEE Xplore for engineering, EconLit for economics). Also consult institutional libraries, archive repositories, and statistical databases (e.g. World Bank, UN data, government archives). If applicable, search patent or legal databases for regulatory context.  
+- **Search Keywords:** Compile a list of relevant keywords, including synonyms and related terms. For example, if the topic is *“renewable energy policy”*: keywords might include *“renewable”, “sustainable”, “green energy”, “policy”, “regulation”,* etc. Use Boolean operators to refine: e.g., `("renewable energy" OR "green energy") AND (policy OR regulation) AND (2020..2026)`. Combine subject-specific terms, acronyms, and variations to ensure thorough coverage. Adjust queries by field and database.  
+- **Language and Date Filters:** Since there is no language constraint, consider searching in major world languages or use translation tools for non-English literature. Limit by publication date to recent years (e.g. last 5 years) if current trends are needed. For historical context, expand date range as required.  
+- **Search Techniques:**  
+  - Use advanced search features (quotation marks for phrases, wildcards, field-specific filters).  
+  - Leverage “snowball” techniques: review references of key papers (backward citation) and see who cites them (forward citation).  
+  - Explore grey literature via organizational websites (e.g. WHO, IEA, EU). A query like `site:iea.org "renewable energy report 2025"` can find specific reports.  
+  - Consider queries on general search engines: e.g.  
+    - “`intitle:\"systematic review\" [TOPIC] 2026`” (for review articles).  
+    - “`site:gov [TOPIC] statistics 2024`” (for government data).  
+- **Example Search Queries:**  
+  - Academic search: ``(`machine learning` AND (`malware` OR `cybersecurity`))`` on Google Scholar.  
+  - Industry/government search: ``site:.gov "climate policy" 2025 "United States"``.  
+  - Databases: In PubMed, use MeSH terms or filters: e.g., `("diabetes"[MeSH] AND "intervention studies"[Publication Type])`.  
+- **Organizing Sources:** Keep a record (using citation software like Zotero, EndNote, or Excel) of all found sources, noting authors, date, type, and relevance. This will later feed into an annotated bibliography.  
+
+## Methodology (Data Collection, Evaluation, Synthesis)  
+- **Data Collection:** Depending on the topic, data may come from surveys, experiments, interviews, or existing datasets. For a literature-focused project, collection means systematically gathering articles and documents as above. If empirical work is needed (e.g. a small survey or expert interviews), define the procedure (sampling, questions, ethics). Plan any required data analysis methods (statistical tests, coding qualitative responses, GIS mapping, etc.).  
+- **Source Evaluation:** Critically appraise each source. Use criteria such as the CRAAP test:  
+  - *Currency:* Check publication date and updates. (Is the information up-to-date?)  
+  - *Relevance:* Ensure the content directly pertains to the research question. (Is it in-depth enough, and appropriate for the intended audience?)  
+  - *Authority:* Identify the author and publisher. (Are they experts or reputable organizations?)  
+  - *Accuracy:* Verify that claims are supported by evidence (citations, data, sound methodology).  
+  - *Purpose:* Determine if the source is meant to inform/educate, or if there is bias (e.g. commercial interest).  
+  Only include sources that meet a high standard of credibility and relevance. For example, a government statistics bureau report would generally score high on authority and currency.  
+- **Data Synthesis:** Decide how to combine the information. Options include:  
+  - **Qualitative synthesis:** Thematic analysis of findings from different sources, writing narrative summaries of patterns.  
+  - **Quantitative synthesis:** If data is available (e.g. metrics, survey results), consider meta-analysis or summary statistics (mean, trend lines).  
+  - **Comparative tables:** Create tables that compare key data points or arguments across studies (see *Templates* below).  
+  - **Visual charts:** Plot data trends or distributions (bar charts, scatter plots) if relevant.  
+  Ensure that methods align with aims: for example, if an aim is to measure an effect, the methods (data collected, analysis) must be suitable to test that effect. Sydney University advises that methodology be chosen to directly address the research aims and that timelines are realistic for the proposed methods.  
+
+## Expected Deliverables  
+- **Executive Summary:** A concise (≈10% of report length) summary of purpose, methods, key findings, and recommendations. This should stand alone and be understandable without reading the full report.  
+- **Full Report:** Sections may include Introduction, Literature Review, Methods, Results, Discussion, and Conclusion. Each section aligns with aims and covers background, analysis, and implications.  
+- **Annotated Bibliography:** A list of key sources used, each with a brief summary of its content and relevance. This demonstrates depth of research.  
+- **Data Tables and Charts:** Summaries of any collected data or extracted findings. For example, a table of comparative study results, or a chart showing trends.  
+- **Visualizations:** Diagrams or infographics (workflow flowchart, Gantt chart, conceptual model) to illustrate methods or findings. Example Mermaid diagrams are shown below.  
+- **Appendices (optional):** Detailed materials such as full survey instruments, extended data tables, or a list of search terms and results.  
+
+## Templates and Examples  
+
+**Source Comparison Table (Example):**  
+| Source/Database  | Content Type    | Example Information               | Notes (Credibility)                     |
+|------------------|-----------------|-----------------------------------|-----------------------------------------|
+| Google Scholar   | Academic papers | Journal articles, theses, etc.    | Broad coverage; mix of peer-review and preprints |
+| PubMed (if health) | Journal articles | Clinical studies, reviews on [Topic] | Peer-reviewed, authoritative for medical content |
+| Government Data (e.g. EPA, World Bank) | Reports, Statistics | Emissions data, regulatory info     | High authority; up-to-date official data |
+| Industry Reports | White papers, Reports | Market analyses, case studies      | May have bias; check authorship         |
+| News Media/Blogs | News articles    | Recent events or expert commentary | Useful for context; verify with other sources |
+
+**Project Timeline (Gantt) – Example:**  
+```mermaid
+gantt
+    title Research Phases (Standard 2–5 day review)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+    section Quick Scan
+    Initial Search       :a1, 2026-10-01, 1d
+    section In-depth Review
+    Read Key Papers      :crit, a2, after a1, 3d
+    Extract Data         :a3, after a2, 2d
+    section Synthesis
+    Write Summary Tables :a4, after a3, 2d
+    Create Visuals       :a5, after a4, 1d
+    section Wrap-Up
+    Draft Report         :a6, after a5, 2d
+    Revise & Submit      :after a6, 1d
+```
+*(Each phase’s timing is illustrative. A “Quick Scan” might compress these into a single day, while a “Deep Review” would extend tasks over weeks with additional team members.)*
+
+**Budget Template (Example):**  
+| Item                    | Estimated Cost | Funding Source   | Notes                    |
+|-------------------------|----------------|------------------|--------------------------|
+| Research assistant (50% FTE, 1 month) | $5,000        | Grant / Dept.  | Literature searching, data extraction |
+| Database access (e.g. JSTOR/IEEE)     | $500         | Library funds    | Subscription fees       |
+| Software licenses (e.g. NVivo, SPSS)  | $300         | Dept. budget     | For qualitative/quantitative analysis |
+| Miscellaneous (printing, travel)      | $200         | Project funds    | Printing reports, meeting costs |
+
+**Stakeholder Matrix (Example):**  
+| Stakeholder Group       | Role / Influence            | Interest in Research |
+|-------------------------|-----------------------------|----------------------|
+| Academic Supervisor     | Advisor and reviewer        | High – guides scope and quality |
+| Funding Agency (if any) | Funder, sets goals          | High – expects certain outcomes |
+| Target Community or Industry | Users of findings     | Variable – want practical insights |
+| Partner Organizations   | Data providers, collaborators | Moderate – may benefit from results or have data access |
+
+## Suggested Visualizations  
+- **Methodology Flowchart:** Outline the research workflow. For example: `Define questions → Search literature → Screen sources → Extract data → Synthesize → Report`.  
+```mermaid
+flowchart LR
+    A([Define Research Question]) --> B([Search Literature]);
+    B --> C([Screen and Filter Sources]);
+    C --> D([Extract Key Data/Findings]);
+    D --> E([Analyze/Synthesize Results]);
+    E --> F([Write Report & Summary]);
+```
+- **Timeline Chart:** The Gantt above shows phases and durations. For longer projects, a mermaid Gantt with weeks/months is useful.  
+- **Data Charts:** If quantitative data are involved, use bar charts, line graphs, or pie charts.  
+  Example (Mermaid pie chart of source types):  
+  ```mermaid
+  pie title Example: Distribution of Sources
+      "Peer-reviewed Journals" : 50
+      "Government Reports" : 30
+      "Conference Papers" : 10
+      "Web/News Articles" : 10
+  ```
+  *(This hypothetical chart could represent the breakdown of collected sources.)*  
+
+## Timeline & Resource Estimate  
+| Review Type         | Timeframe    | Effort (person-hours) | Scope & Output                               |
+|---------------------|--------------|-----------------------|----------------------------------------------|
+| **Quick Scan**      | 2–4 hours    | ~1 person (2–4h)      | High-level scan: identify few key sources, skim abstracts. Broad overview with minimal detail. Useful for initial insight or feasibility. |
+| **Standard Review** | 2–5 days     | ~1 person (16–40h)    | Moderate-depth: systematic search, read and take notes on key literature. Develop an annotated bibliography and summary tables. |
+| **Deep Review**     | 2–4 weeks    | ~1–2 persons (80–160h) | Comprehensive: exhaustive search across databases and languages, full data extraction, rigorous analysis (possibly quantitative). Includes extensive notes, multiple drafts, and polished visualizations. |
+
+*Note:* These are illustrative estimates. A longer available timeframe may permit deeper analysis or more team collaboration. As Sydney University advises, align the scope and methods with realistic timelines (e.g. a 2-year grant vs a quick project). If a planned 2-year study seems to require more time, you may need to narrow objectives or simplify methods.  
+
+## Next Steps and Clarifying Questions  
+- **Next Steps:**  
+  - Confirm the *exact topic and objectives* with the stakeholder or user. Refine scope accordingly.  
+  - Conduct an *initial scoping search* to identify seminal works and see how much literature exists on the topic.  
+  - Develop a *detailed search plan*: list databases to search, final keywords and synonyms, and inclusion/exclusion criteria.  
+  - Set up *reference management*: create folders or software project to organize found literature.  
+  - Draft a concise *outline* of the report structure, aligning sections with research aims.  
+- **Clarifying Questions:** (to ask the user)  
+  1. What **specific topic or question** should the research address?  
+  2. Are there *preferred sources* or known key references to include?  
+  3. What is the **deadline** or time frame for the project?  
+  4. What **depth of analysis** is expected (e.g. a brief overview vs. thorough review)?  
+  5. Who is the **audience** (academic, industry, policy-makers) and what format is needed (report, presentation, policy brief)?  
+  6. Are there any **constraints** (budget, access to databases, language restrictions)?  
+
+By following this template and adapting each section to the specific topic and constraints, a thorough and well-structured research report can be produced. The plan ensures clarity of purpose (why and what to study), efficiency in gathering high-quality information, and effective presentation of findings. All stages should be documented, and any major assumptions or gaps noted for further inquiry.  
+
+**Sources:** Authoritative guides on research planning were used in this template, including advice on setting aims and methodology, executive summaries, and evaluating sources (the CRAAP test). These informed the structure and checklists above. 
+

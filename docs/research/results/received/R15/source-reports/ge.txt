@@ -1,0 +1,125 @@
+# R15 Research Report: Optional Neural Strategies Under Limited Compute for MOEX Futures Spreads
+
+**Date:** October 7, 2026
+
+**Project Scope:** Private MOEX Futures-Spread Pilot (RUB 30,000 Allocation vs. Core LQDT Counterfactual)
+
+**Target Environment:** MacBook Pro Intel i7 (16 GB RAM, Radeon Pro 5300M 4 GB) / VPS (1 vCPU, 1 GB RAM + 2 GB swap)
+
+---
+
+## Executive Summary & Core Conclusion
+
+**Can a neural model add economically useful, reproducible out-of-sample value over deterministic/linear alternatives on this data class and hardware, after inference delay and selection risk?**
+
+**Conclusion:** **No, under current constraints, a neural model is negative-value.** For a free end-of-day (EOD) MOEX futures panel with scarce independent macro regimes, limited history, and a 3–90 minute manual-to-semi-automated execution lag, introducing neural complexity introduces severe selection risk, overfitting, and maintenance overhead without overcoming fundamental information limits.
+
+Simple linear models (Ridge/Lasso) or robust deterministic spread-boundary rules (e.g., rolling z-score cointegration bands) exhaust the informational content of daily EOD data. Neural candidates fail the net-of-cost hurdle once transaction fees, slippage, margin constraints on RUB 30,000, and opportunity costs relative to the matched LQDT counterfactual are factored in.
+
+---
+
+## 1. Supervised Objective, Decision-Time Information, and Baseline Hierarchy
+
+### Objective Formulation & Horizon
+
+* **Target Variable ($Y_{t+h}$):** Net forward spread return over a $h$-day horizon (where $h \in [1, 5]$ days), adjusted for round-trip MOEX futures exchange fees, estimated bid-ask spread, and slippage.
+* **Decision-Time Information ($\mathcal{I}_t$):** Available strictly at close of day $t$ without look-ahead bias:
+* Lagged EOD prices (OHLCV) and open interest (OI) changes.
+* Rolling spread levels, historical volatility ratios, and calendar/expiry proximity indicators.
+* Zero-trade days explicitly permitted when expected alpha does not cover transaction hurdles.
+
+
+
+### Baseline Hierarchy & Comparison Framework
+
+The evaluation model enforces a strict complexity ladder where advanced models must decisively clear simpler baselines *net of execution costs*:
+
+1. **No-Trade (LQDT Counterfactual):** 100% allocation to LQDT money-market instrument. Serves as the absolute zero-risk hurdle.
+2. **Deterministic Spread Baseline:** Fixed-parameter Bollinger-style or z-score thresholds on cointegrated futures pairs (e.g., spot-futures or inter-contract calendar spreads).
+3. **Simple Linear / Tree Models:** L1/L2 regularized Logistic Regression or shallow LightGBM/CatBoost trained on engineered stationary spread features.
+4. **Neural Candidate:** Multi-Layer Perceptrons (MLPs) or small sequence models (1D-CNNs) operating on normalized tensor panels.
+
+---
+
+## 2. Data Sufficiency, Leakage, and Validation Skeleton
+
+### Data Class Realities & Independent Episodes
+
+* **Data Class:** Free EOD daily MOEX futures panel spanning tens to a few hundred contracts. History is short and heavily impacted by contract expirations, structural liquidations, and delistings.
+* **Independent Macro Episodes:** True structural regimes (e.g., rate hiking cycles, liquidity shocks, geopolitical shifts) are extremely sparse in Russian market history. Training deep models on limited daily panels leads directly to memorizing historical noise rather than structural pricing anomalies.
+
+### Validation Skeleton & Leakage Control
+
+To prevent false-positive backtest overfitting:
+
+* **Chronological Walk-Forward Splits:** Train-validation-test splits must strictly follow time. No random k-fold cross-validation.
+* **Purging and Embargoing:** Following López de Prado's methodology, training samples whose label horizons overlap with validation periods are purged to prevent label leakage.
+* **Stationarity & Normalization:** All rolling normalizations, z-scoring, and feature engineering transformations must be fitted *strictly* on the training fold and applied out-of-sample without updating parameters using test data.
+
+---
+
+## 3. Model Family Selection and Compute Feasibility
+
+### Hardware Realities
+
+* **Local Machine:** MacBook Pro Intel 6-core i7, 16 GB RAM, Radeon Pro 5300M 4 GB (No CUDA support; OpenCL/MPS acceleration is limited or non-portable for standard deep learning graph training).
+* **VPS Deployment Target:** 1 vCPU, 1 GB RAM + 2 GB swap, 20 GB disk (shared background budget of 250–350 MB).
+
+### Small Model Evaluation
+
+| Model Family | Training Feasibility | Inference Latency | Hardware Footprint | Risk Profile |
+| --- | --- | --- | --- | --- |
+| **Deterministic Rules** | Instant (Code) | < 1 ms (CPU) | Negligible (< 10 MB) | Zero training risk; robust to structural shifts. |
+| **Linear / ElasticNet** | Fast (< 1 min on CPU) | < 5 ms (CPU) | < 20 MB | Low overfitting risk; interpretable coefficients. |
+| **LightGBM / CatBoost** | Moderate (CPU optimized) | < 50 ms (CPU) | ~50–100 MB | Moderate risk of leaf over-branching on noisy panels. |
+| **Small Neural (MLP / 1D-CNN)** | Slow / Unstable on CPU | < 100 ms (CPU) | 100–500 MB RAM | **High risk:** Gradient explosion, slow iteration, severe CPU bottleneck. |
+
+*Conclusion on Compute:* Neural model training and hyperparameter search on an Intel i7 CPU without CUDA, deployed on a 1 GB RAM VPS, creates an unsustainable engineering overhead. LightGBM or regularized linear models represent the upper bound of useful complexity.
+
+---
+
+## 4. Operational Robustness, Calibration, and Net LQDT Excess
+
+### Execution Friction & Latency Realities
+
+* **Inference-to-Action Delay:** Manual-to-semi-automated execution takes **3 to 90 minutes** (median 5–15 minutes).
+* **Impact on EOD Signals:** EOD daily signals computed at market close are exposed to overnight gaps and significant decay by the time manual execution occurs at the next session open or intraday window. High-frequency or minute-level neural responsiveness is physically impossible under manual VTB/BCS workflows and 3–90 minute latency distributions.
+
+### Translation to Net LQDT Excess
+
+* **Performance Metric:** Net RUB excess over the matched LQDT counterfactual, respecting capital rules (RUB 30,000 all-in, integer contracts).
+* **Drawdown Boundaries (Provisional Defaults):**
+* Warning at **RUB 5,000** excess-curve drawdown.
+* Action trigger at **RUB 10,000** drawdown or cumulative LQDT shortfall.
+* Outer boundary at **RUB 15,000**.
+
+
+* *Operational Verdict:* Neural models produce probabilistic output scores that require precise probability calibration. A miscalibrated neural probability leading to false-positive trades will rapidly consume the RUB 5,000 warning threshold via exchange fees, slippage, and opportunity cost against LQDT.
+
+---
+
+## 5. Staged Experiment Matrix and Discard Criteria
+
+| Stage | Objective | Primary Artifact | Success Criteria to Advance | Early Discard Criteria |
+| --- | --- | --- | --- | --- |
+| **Stage 0** | Baseline Setup | No-trade LQDT tracking script | Positive baseline establishment | Inability to track net counterfactual accurately. |
+| **Stage 1** | Deterministic Spreads | Z-score threshold backtest | Beats LQDT net of fees on holdout | Negative net excess after realistic slippage. |
+| **Stage 2** | Linear / Tree Models | Ridge / LightGBM model panel | Outperforms Stage 1 by $> 2 \times$ fee hurdle | Marginal improvement not justifying added complexity. |
+| **Stage 3** | Neural Sanction Check | Simple MLP / 1D-CNN (CPU) | Outperforms Stage 2 significantly | Overfitting, instability, or memory limits on VPS. |
+
+### Deferred and Excluded Items
+
+* **Excluded:** Multi-GPU training, transformer-based time-series foundation models (e.g., PatchTST, Chronos), high-frequency intraday tick processing, automated API execution on unverified broker endpoints.
+* **Deferred:** Live deployment with real capital exceeding the RUB 30,000 test envelope.
+
+---
+
+## 6. Epistemological Critique (López de Prado & Financial ML Reality)
+
+### Applicability of Advanced Financial Machine Learning
+
+While *Advances in Financial Machine Learning* (Marcos López de Prado) provides gold-standard techniques—such as **fractional differentiation** to preserve memory while achieving stationarity, **triple-barrier labeling**, and **sample weight estimation via uniqueness**—its core tenets reveal why neural models fail in this specific MOEX context:
+
+1. **Signal-to-Noise Ratio (SNR):** Financial data has an exceptionally low SNR. In mature markets, machine learning extracts weak signals from massive tick data. On a limited daily MOEX futures panel, the data density is insufficient to train hierarchical feature extractors without extreme overfitting.
+2. **Structural Breaks:** Russian equity and derivatives markets experience frequent regulatory, structural, and macroeconomic breaks (sanctions, exchange halts, liquidity shifts). Historical patterns learned over past years frequently become inverse indicators post-break.
+3. **The Simplicity Principle:** When operational capacity is constrained by a 3–90 minute manual execution window and a RUB 30,000 capital base, **model transparency and execution speed trump expressive capacity**. Deterministic cointegration rules allow immediate human verification before order placement at VTB/BCS; black-box neural scores obstruct human risk validation during emergency de-risking.

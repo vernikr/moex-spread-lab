@@ -1,0 +1,129 @@
+# Validation Methodology and Evidence Thresholds for MOEX Futures-Spread Project
+
+**Status:** Methodological Report | **Date:** October 7, 2026
+
+## 1. Project Context and Methodological Assumptions
+
+This report defines the statistical validation and operational thresholds for a medium-term MOEX futures-spread project.
+
+* **Capital Constraints:** The pilot allocation is RUB 30,000 (inclusive of margin and liquidity reserves), executed on an account with a core LQDT holding exceeding RUB 40 million. A strict emergency gross funding limit of RUB 15,000 is permitted *only* to avert disorderly liquidation, never to fund new entries or average down.
+* **Operational Constraints:** Initial execution is manual (3–90 minute latency, median 5–15 minutes) via VTB, later potentially automated via BCS.
+* **State of Evidence:** No completed backtests, empirical software results, or live trades currently exist for this specific strategy. This document specifies the *prospective* testing methodology required to validate data and statistical claims before capital is placed at risk.
+
+---
+
+## 2. Information Arbitrage and Leakage Pathways
+
+In non-stationary environments like the Moscow Exchange (MOEX), models frequently discover "alpha" that is actually a leakage of future information or an artifact of survivorship.
+
+### 2.1. Common Leakage Pathways in Futures Spreads
+
+* **Survivorship Bias and Universe Selection:** Testing only on pairs that are highly liquid today (e.g., ignoring delisted or illiquid contracts) creates an overly optimistic view of historical returns. If a contract was halted or delisted, the backtest must accurately reflect the stranded capital.
+* **Continuous-Contract Roll Malpractice:** Splicing futures contracts without properly adjusting for the calendar roll gap (via backward/forward ratio or difference adjustments) creates synthetic price shocks. Alternatively, calculating roll adjustments post-hoc using the entire dataset leaks future price structures into historical testing.
+* **Late Price Revisions and Settlement:** Using MOEX end-of-day settlement prices as actionable triggers when those prices are determined via clearing algorithms hours after the continuous session closes.
+* **Post-Hoc Transaction Costs and Delay Selection:** Cherry-picking a 5-minute execution delay scenario because it minimizes historical slippage, rather than sampling the actual 5–15 minute median manual reaction latency distribution.
+
+### 2.2. Worked Leakage Example and Prevention Test
+
+* **Hypothetical Leakage Scenario:** A mean-reversion spread strategy buys when the price difference drops two standard deviations below the rolling mean. The researcher normalizes the entire dataset using the mean and standard deviation of the full 3-year historical sample before dividing it into train/test sets. The model "knows" the macro volatility regime of 2025 during the simulated trading of 2023.
+* **Prevention Test (Data Truncation):** To prove the absence of look-ahead leakage, compute the indicator vector at time $t$ using the full dataset. Then, truncate the dataset to strictly end at $t$ and recompute. If the values at time $t$ are not mathematically identical to the 10th decimal place, future data has leaked into the point-in-time calculation.
+
+---
+
+## 3. Point-in-Time Testing and Cross-Validation Logic
+
+Chronological walk-forward testing (Train $\rightarrow$ Test $\rightarrow$ Train $\rightarrow$ Test) is standard, but in sparse medium-term strategies, it yields very few independent evaluation paths. Nested Combinatorial Purged Cross-Validation (CPCV) can be used, provided strict separation logic is maintained.
+
+### 3.1. Purging and Embargoing (Lopez de Prado Methodology)
+
+Because futures spreads have holding periods that span multiple bars, standard cross-validation suffers from "label overlap"—the outcome of a trade initiated in the training set resolves inside the test set. According to Marcos Lopez de Prado's *Advances in Financial Machine Learning* (AFML):
+
+* **Purging:** You must drop any training observations whose evaluation window overlaps with the test set. The separation must be based on the *actual maximum holding duration* of the spread, not an arbitrary fixed number of bars.
+* **Embargoing:** Because markets possess memory, purging alone is insufficient. An "embargo" period—a strict chronological buffer—must be enforced immediately following the test set to prevent future data from influencing subsequent training sets.
+
+### 3.2. Timeline Split Logic
+
+For any point-in-time test, enforce this strict timeline:
+
+1. **Training Set 1:** Data from $t_0$ to $t_1$.
+2. **Purge Buffer:** $t_1$ to $t_1 + h$ (where $h$ is the maximum economic holding period of the spread).
+3. **Test Set:** $t_1 + h$ to $t_2$.
+4. **Embargo Buffer:** $t_2$ to $t_2 + e$ (where $e$ is an estimated market memory decay period, e.g., 5-10% of the dataset length).
+5. **Training Set 2:** $t_2 + e$ to $t_3$.
+
+All regime labels, transforms, and hedge-ratio calculations (e.g., cointegration coefficients) must be computed exclusively on the isolated Training Sets.
+
+---
+
+## 4. False Discoveries and Multiple Testing
+
+Testing dozens of pairs, hyperparameter combinations, and entry thresholds guarantees that a false positive will emerge purely by chance.
+
+### 4.1. Deflated Sharpe Ratio (DSR)
+
+Bailey and Lopez de Prado (2014) established the Deflated Sharpe Ratio to address this multiple testing crisis. The DSR discounts a strategy's raw Sharpe Ratio by penalizing three specific axes:
+
+1. **Non-Normality:** Skewness and kurtosis (fat tails) in returns.
+2. **Track Record Length:** Short histories provide noisy estimates.
+3. **Number of Independent Trials:** The more strategy variations tested, the higher the statistical bar the "winning" strategy must clear to prove it is not a statistical fluke.
+
+### 4.2. Experiment Registry Fields
+
+To calculate the DSR accurately, you cannot just record the final result; you must record *every failed attempt*. The project's experiment registry must include:
+
+* `Experiment_ID` / `Date` / `Hash`
+* `Candidate_Universe` (e.g., specific MOEX pairs)
+* `Tested_Hyperparameters` (grid search limits, thresholds)
+* `Holdout_Period` (when the test set is consumed, it is permanently burned)
+* `Number_of_Model_Configurations_Tested` (critical for DSR calculation)
+* `Outcome` (Accept / Reject / Inconclusive)
+
+---
+
+## 5. Performance Metrics and Thresholds
+
+No metric is valid unless measured against the specified project counterfactual: an unencumbered LQDT holding.
+
+### 5.1. Matched LQDT RUB Excess Calculation
+
+The true cost of the RUB 30,000 allocation is the opportunity cost of the core LQDT yield.
+
+* **Formula:** `Excess Return = (Strategy Gross PnL) - (Execution Costs) - (Opportunity Cost of Liquidated LQDT)`
+* *Note:* If VTB permits the retention of the LQDT core holding as eligible margin collateral (and it continues to earn yield), this yield must not be deducted twice. Unknown tax variations (loss of long-term holding deduction) are excluded from this specific excess curve calculation.
+
+### 5.2. Debunking the "30 Trades" Myth
+
+There is no universal minimum of "30 trades" that guarantees statistical significance. Thirty high-frequency trades executed in a single macro environment (e.g., a one-week volatility spike) represent just *one* independent economic episode. Validation requires distinguishing between raw trade counts and *Effective Sample Size*, measuring distinct, uncorrelated market regimes.
+
+### 5.3. Baseline and Stress Scenarios
+
+* **Simple Baselines:** Compare the model not just against LQDT, but against a naive deterministic rule (e.g., perpetually shorting the calendar spread).
+* **Stress Scenarios:** Evaluate the system assuming the worst-case 90-minute manual delay and widened MOEX bid-ask spreads, determining the exact point at which execution costs consume the alpha.
+
+---
+
+## 6. Separating Data, Statistics, and Operational Feasibility
+
+A 90-day, RUB 30,000 pilot with a human-in-the-loop (3–90 minute latency) is an **operational** test, not a statistical proof of alpha.
+
+* **What the 90-Day Pilot Validates (Operations):**
+* Friction of manual execution within the 5–15 min median target on a VPS/MacBook setup.
+* Broker collateral treatment (does VTB silently liquidate core LQDT for margin?).
+* Respecting risk limits: Warning at RUB 5,000 drawdown; flattening the book at RUB 10,000 shortfall.
+
+
+* **What the 90-Day Pilot Cannot Validate (Statistics):**
+* Medium-term spreads may only trigger 5-10 distinct economic episodes in a 90-day window. This is statistically insufficient to prove structural profitability, even if the PnL is highly positive.
+
+
+
+---
+
+## 7. Targeted Reading Critique for Sparse Spreads
+
+1. **Bailey & Lopez de Prado (2014) - *The Deflated Sharpe Ratio***:
+* *Critique of applicability:* DSR heavily penalizes short sample lengths and multiple trials. For sparse, medium-term MOEX spreads, trade frequency is low. Unless the raw Sharpe is exceptionally high, the DSR will almost always reject the null (classify the strategy as noise). It demands hundreds of independent episodes to provide statistical confidence, which medium-term trading cannot quickly provide.
+
+
+2. **Lopez de Prado (2018) - *Advances in Financial Machine Learning***:
+* *Critique of applicability:* Built for high-frequency or large-dataset quantitative funds. While Chapter 7 (Purging/Embargoing) is methodologically vital, applying Combinatorial CV to a sparse dataset often results in training sets that lack the required density to fit stable parameters, leading to severe underfitting.

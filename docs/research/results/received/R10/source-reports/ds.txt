@@ -1,0 +1,417 @@
+# R10 — Deterministic Strategy Hypotheses, Continuation and Opportunity Cost
+
+**Status:** Hypothesis/test plan only. No backtest was conducted, no order was simulated, no broker tariff or account eligibility was verified. All numbers are formulae, candidate ranges or resource estimates, not measured results. Costs are parameterised and must be calibrated before any conclusion about economic viability.
+
+**Research date / facts cutoff:** 23 October 2026. Sources were accessed on that date unless stated otherwise.
+
+**Inputs actually read:** The complete prompt (including embedded working assumptions). Public pages opened and cited below. No private repository, previous R-series report, broker tariff, account statement, MOEX historical file or paid database was read.
+
+---
+
+## 1. Conclusions
+
+1. **The most defensible first family is not generic statistical mean reversion but contractually anchored carry/calendar-basis relationships.** MOEX FX and index futures have explicit settlement mechanics, and MOEX provides calendar-spread order functionality with reduced margin treatment【22†L5–L8】【22†L29–L33】. These relationships can be stated in cash-flow terms before any z-score is computed. This does not prove positive net returns; it only gives a falsifiable economic mechanism.
+
+2. **Raw z-scores, correlations and stationarity tests are screening tools, not mechanisms.** Unit-root tests on futures are sensitive to price limits, data errors and microstructure noise【11†L4–L15】. Vidyamurthy’s cointegration framework assumes stationarity of idiosyncratic components and implicitly assumes frictionless execution; structural breaks and transaction costs can destroy the apparent edge【8†L2–L15】. A hypothesis must therefore specify what real-world flow, inventory constraint or contractual cash flow is expected to restore the relationship, and what would falsify that expectation.
+
+3. **Entry and continuation must use the same forward-looking decision rule.** Holding a position is economically identical to entering it afresh at the current spread, minus the cost of closing and re-entering. The relevant comparison is: expected incremental value of continuing over the intended horizon versus (a) remaining costs, (b) the matched LQDT counterfactual on the capital actually tied up, and (c) the expected value of the best competing queued opportunity. Sunk losses and “the spread must eventually converge” are not decision criteria.
+
+4. **Fixed minimum sizing, capped adaptive sizing and preplanned scale-ins must be compared on identical splits, execution delays, cost vectors and total authority.** Carver’s volatility targeting provides a transparent benchmark for adaptive sizing【15†L33–L36】. Averaging-down evidence warns that scale-ins can reduce drawdown but often also reduce profitability, and leveraged averaging down can be destructive【18†L5–L13】. The emergency reserve must not become an implicit averaging-down facility.
+
+5. **Opportunity-arrival modelling must use only past available opportunities, including stale and rejected ideas.** The decision at each point should compare the continuation value of the current position with the value of the best *known* alternative, not the ex-post best trade【16†L23–L26】. A simple ranked queue must be tested as a lower-complexity benchmark against any opportunity-aware reallocation rule.
+
+6. **The ranking of experiments below is provisional and conditional on cost calibration.** The highest-priority tests are the ones with a contractual or accounting anchor and a clearly observable failure state: FX calendar carry/basis, index futures calendar basis, and CNY/RUB carry. Relative-value and residual mean-reversion tests rank lower because their economic mechanism is weaker and their data requirements are higher.
+
+---
+
+## 2. Candidate hypothesis cards
+
+Each card is a preregistered test design, not a recommendation. Parameter ranges are candidate ranges; they must be fixed on training data and held constant in the holdout.
+
+---
+
+### Card H1 — FX calendar carry / basis convergence (CNY/RUB, USD/RUB)
+
+**Economic story.** For deliverable-free cash-settled FX futures, the difference between a deferred contract and a nearby contract should reflect the interest-rate differential and expected funding over the interval, subject to basis noise. If the observed calendar spread deviates from a no-arbitrage carry band, and if the deviation is not explained by a change in the expected policy path, a position that is long the cheap leg and short the rich leg has a contractual convergence mechanism at expiry. The mechanism is not “the spread always mean-reverts”; it is the cash settlement of both legs against the same underlying at their respective expiries.
+
+**Instruments.** MOEX USD/RUB futures (Si) and CNY/RUB futures (CR). Si contract lot is USD 1,000, tick 1 RUB, tick value 1 RUB; quotation is RUB per lot【21†L4–L8】【21†L14–L18】. CR lot and tick must be verified per contract; the perpetual CNY/RUB futures have a CNY 1,000 lot and RUB 0.01 tick for the perpetual version【21†L28–L33】, but the deliverable-free quarterly contract specification must be read from the current MOEX contract page before testing. Settlement prices are linked to the fixing of the corresponding currency to RUB【21†L4–L8】.
+
+**Data.** Free end-of-day MOEX futures daily bars: settlement price, OHLC, volume and open interest. Point-in-time correctness, delisting coverage and historical depth are unverified. Official MOEX ISS API can expose historical open-interest data【25†L36–L38】, but the exact endpoint stability, fields and adjustment methodology must be tested on a small sample before relying on them. Calendar and expiry dates are a prerequisite.
+
+**Formula and units.** Let \(F_{t,T_1}\) and \(F_{t,T_2}\) be the nearby and deferred settlement prices in RUB per unit of foreign currency, with \(T_2>T_1\). Define the calendar spread \(S_t = F_{t,T_2} - F_{t,T_1}\) in RUB per unit. Define the carry-implied spread band \(S^*_t = F_{t,T_1} \times [r_{RUB}(t,T_1,T_2) - r_{FX}(t,T_1,T_2)] \times \tau\), where \(\tau\) is the year fraction and \(r\) are the relevant money-market or policy-linked rates. The exact day-count, fixing convention and whether the quotation is direct or indirect must be taken from the MOEX specification. A simple robust alternative is the ex-post carry residual \(S_t - S^*_t\), expressed in RUB per contract by multiplying by the contract lot.
+
+**Parameter-selection procedure.** On training data only, estimate the residual’s historical distribution and the half-life of deviations that were not accompanied by scheduled central-bank meetings or known policy changes. Candidate entry bands: residual beyond ±1.5 to ±2.5 standard deviations of the training residual, with a minimum economic threshold in RUB per contract that exceeds the modelled round-trip cost by a preregistered multiple. Candidate exit: residual returns inside ±0.5 standard deviation, or expiry approaches within a fixed number of trading days. No per-pair optimisation beyond these ranges; every combination tried must be logged.
+
+**Entry / continue / exit / invalidate.**
+- Entry: only if the residual exceeds the cost-adjusted threshold and the implied carry residual is not explained by a scheduled policy event within the intended holding period.
+- Continue: only if the forward continuation value (Section 5) remains positive after remaining costs and the LQDT counterfactual, and no invalidation trigger has fired.
+- Exit: convergence to the exit band, expiry, or invalidation.
+- Invalidate: a scheduled or unexpected policy-rate change that moves the carry-implied band, a change in the contract specification, a liquidity deterioration below a preregistered minimum, or a residual that sets a new high for a preregistered number of consecutive days without convergence.
+
+**Expected failure mode.** The apparent carry residual is actually compensation for a risk the model omits (e.g. capital controls, convertibility risk, or a basis that reflects expected devaluation). The position converges on the spread but loses on the outright FX leg because the hedge is imperfect or because margin is denominated in RUB and the collateral asset is LQDT. Expiry handling and the T+1 settlement change under the unified trading session must be incorporated; MOEX moved to a unified session with T+1 settlement of variation margin, premiums and commissions, and expiry at specified times rather than during a clearing break【7†L28–L37】【1†L18–L22】.
+
+**Validation design.** Chronological walk-forward with a training window of at least two full calendar cycles, a gap sized by the maximum intended holding period, and a final untouched holdout. Primary metric: net RUB excess over the matched LQDT counterfactual after all modelled costs. Secondary metrics: hit rate, average holding time, maximum adverse excursion, and the proportion of exits caused by expiry rather than convergence.
+
+**Decision to reject.** Reject if the net excess over LQDT is not positive in the holdout across the base and conservative cost scenarios, or if the result disappears when the LQDT counterfactual is properly charged for the capital actually used.
+
+---
+
+### Card H2 — Index futures calendar basis (RTS / MOEX index)
+
+**Economic story.** A cash-settled index future has no physical delivery. The calendar spread between two expiries should reflect the risk-free RUB rate minus the expected dividend yield of the index over the interval, plus a basis. If the spread deviates from the dividend-adjusted carry band and the deviation is not explained by a change in expected dividends or by a scheduled index rebalancing, a convergence trade has a contractual anchor at the deferred expiry. RTS futures are cash-settled; the contract size is 100 × RTS Index, tick 10 points, and tick value is USD 0.2 converted to RUB at the official rate【14†L4–L18】. The mini contract has different parameters and must not be mixed without normalisation【14†L8–L13】.
+
+**Data.** Daily settlement prices and open interest for at least two expiries, plus a dividend forecast or a proxy. Dividend data is the weakest input and must be treated as an explicit unknown, not zero. Index rebalancing dates and contract specifications are prerequisites.
+
+**Formula.** Let \(F_{t,T_1}\) and \(F_{t,T_2}\) be index futures prices in index points. The carry-implied spread is \(F_{t,T_1} \times [(r_{RUB} - q) \times \tau]\), where \(q\) is the expected dividend yield over the interval. The residual is in index points; convert to RUB per contract using the RTS multiplier and the USD/RUB conversion specified in the contract. For the mini contract, use its own multiplier and tick value. Hedge ratio between the two expiries is not necessarily 1:1 in contract count because the contract multipliers and prices differ; the integer mapping must solve for the number of deferred contracts that matches the RUB value of one nearby contract within a preregistered tolerance.
+
+**Entry/exit/invalidate.** Similar band logic to H1, but the invalidation set must include a dividend announcement or a change in the expected dividend calendar, an index rebalancing, and a contract specification change. The expiry handling must account for the cash-settlement calculation based on the average index value over a specified window on the last trading day; for RTS the settlement is based on the average RTS Index from 15:00 to 16:00 Moscow time on the last contract day【14†L20–L23】. This makes the final settlement price path-dependent and means a convergence trade can be exposed to the settlement average even if the spread converges before expiry.
+
+**Expected failure mode.** The dividend forecast is wrong or stale; the basis reflects a risk premium rather than a mispricing; or the spread converges but the settlement average produces an adverse final mark. Liquidity in the deferred leg may be insufficient to exit before expiry.
+
+**Validation design.** Same walk-forward discipline. Because dividend data is an explicit unknown, run the test in two modes: (a) with a point-in-time dividend forecast if a free, dated source can be found; (b) with a conservative constant dividend assumption, and report the sensitivity of the result to the assumption. If the result is only positive in mode (a) and the forecast source cannot be shown to be available historically, the hypothesis is conditional and cannot be ranked highly.
+
+---
+
+### Card H3 — CNY/RUB carry and synthetic RUB bond
+
+**Economic story.** The CNY/RUB futures curve has traded in contango reflecting the RUB interest rate. A long spot CNY / short CNY futures position is economically a synthetic RUB-denominated bond: the investor earns the implied RUB rate if the basis converges at expiry, with the FX exposure hedged. This is a carry story with a contractual convergence at expiry, not a mean-reversion story. MOEX has a liquid CNY/RUB futures contract and a perpetual version with automatic extension【6†L6–L27】; the perpetual version’s funding mechanics are different and must not be conflated with the quarterly contract.
+
+**Data and formula.** Spot CNY/RUB rate, futures settlement price, contract lot (CNY 1,000 for the perpetual contract; verify the quarterly contract), and the RUB money-market rate. The annualised implied carry is \((F/S - 1) \times 365/\text{days to expiry}\). The trade’s gross P&L at expiry is the difference between the futures price and the spot price at expiry, minus the cost of funding the spot position. If the spot leg is not held (a pure futures calendar or basis trade), the carry is embedded in the spread and the same expiry logic applies.
+
+**Entry/continue/exit/invalidate.** Entry only when the implied carry exceeds the RUB funding cost plus a cost buffer and the position can be held to expiry or rolled with a preregistered roll rule. Continue only if the implied carry remains positive after remaining costs and the LQDT counterfactual. Exit on convergence, expiry, or invalidation (e.g. a change in convertibility rules, a contract specification change, or a liquidity collapse). This hypothesis has a lower entry frequency than H1 because it is a carry capture rather than a deviation trade.
+
+**Expected failure mode.** The carry is compensation for convertibility or settlement risk; the spot leg is unavailable or expensive; or the futures basis widens further before expiry, producing a mark-to-market drawdown that breaches the pilot’s drawdown rules even though the trade would be profitable if held to expiry. This is a critical distinction: an economically “correct” carry trade can still fail the pilot’s drawdown governance.
+
+---
+
+### Card H4 — Commodity calendar spread (Brent)
+
+**Economic story.** For a storable commodity, the calendar spread reflects storage cost, financing cost and convenience yield. In contango, the deferred contract trades above the nearby; in backwardation, below. A calendar spread position is exposed to changes in the convenience yield and to inventory dynamics. This is a weaker contractual anchor than FX or index carry because the convenience yield is unobservable and time-varying.
+
+**Instruments.** MOEX Brent futures (BR). Lot 10 barrels, tick USD 0.01, tick value USD 0.1【20†L5–L19】. The tick value in RUB depends on the USD/RUB rate and must be converted at the applicable rate; the specification states that the value is expressed in RUB using the exchange’s official USD/RUB rate【14†L14–L18】. The mini contract (BRM) has a different lot and must not be mixed without normalisation.
+
+**Formula.** \(S_t = F_{t,T_2} - F_{t,T_1}\) in USD per barrel; convert to RUB per contract using lot size and the USD/RUB rate. The carry band is \(F_{t,T_1} \times [(r_{USD} + c - y) \times \tau]\), where \(c\) is storage cost and \(y\) is convenience yield. Because \(y\) is unobservable, the residual is a joint test of the carry model and the convenience-yield estimate. This makes H4 more fragile than H1–H3 and it should be ranked lower unless a credible, dated proxy for \(y\) is available.
+
+**Entry/exit/invalidate.** Entry only when the residual exceeds a cost-adjusted band and inventory data or the shape of the curve supports a directional convenience-yield view. Invalidate on an inventory shock, an OPEC or sanction event that changes the storage economics, or a contract specification change. Expiry handling must account for the Brent futures settlement mechanism, which may differ from a simple cash settlement; the exact specification must be read before testing.
+
+**Expected failure mode.** The convenience yield is not mean-reverting; the spread is driven by a persistent inventory regime; or the trade is profitable on paper but fails the drawdown rules because the spread can widen persistently before converging.
+
+---
+
+### Card H5 — Relative-value spread between economically linked MOEX instruments
+
+**Economic story.** Two instruments with a stable economic relationship (e.g. an index future and a basket of single-stock futures, or two FX futures with a cross-rate link) may deviate from their historical relationship. The mechanism is weaker than carry: it relies on a stable hedge ratio and on the absence of a structural break. This is the family closest to classic pairs trading and therefore the one most exposed to the criticisms of raw z-score and cointegration approaches.
+
+**Data and formula.** Daily prices for both legs, a rolling hedge ratio estimated by OLS or a state-space model on training data only, and a spread residual. The hedge ratio must be estimated on a rolling window whose length is fixed before the holdout; the window length is a parameter to be tested within a preregistered range, not optimised per pair. Integer mapping: the number of contracts on each leg must be chosen to minimise the absolute RUB value of the residual hedge error, subject to a maximum contract count and a minimum liquidity filter.
+
+**Entry/continue/exit/invalidate.** Entry when the residual z-score exceeds a training-set threshold and the economic link is not broken by a scheduled event. Continue only if the forward expected convergence exceeds remaining costs and the LQDT counterfactual. Invalidate on a structural break: a change in the index composition, a merger or delisting of a constituent, a regulatory change, or a sustained shift in the rolling hedge ratio beyond a preregistered band. Vidyamurthy’s framework assumes stationarity of the idiosyncratic components; a regime shift can produce extended non-convergence and losses【8†L2–L7】.
+
+**Expected failure mode.** Spurious cointegration, overfitted hedge ratio, structural break, or a spread that converges but not before the drawdown limit is hit. This is the family where selection bias is most dangerous because the space of possible pairs is large and the economic story is easiest to retrofit.
+
+**Validation design.** The pair universe must be preregistered, not discovered by scanning thousands of combinations on the full sample. A useful discipline is to select pairs on a training window using only the economic link and liquidity, then test the residuals on the next window, then hold out the final period. Report the number of pairs screened and the number that passed, so that the multiple-testing burden is visible.
+
+---
+
+### Card H6 — Robust spread mean reversion with a cost-aware filter
+
+**Economic story.** Some spreads exhibit statistical mean reversion even when the contractual carry story is weak. The hypothesis is that the reversion is strong enough to cover costs and is not merely a artefact of the estimation window. This is the weakest economic mechanism in the set and should be treated as a benchmark, not a core hypothesis.
+
+**Formula and filter.** A spread normalised by a rolling median and MAD rather than mean and standard deviation, to reduce sensitivity to outliers. Entry when the robust z-score exceeds a threshold. A cost filter: the expected reversion from the entry level to the exit level, multiplied by the contract multiplier, must exceed the modelled round-trip cost by a preregistered multiple. This filter is essential because otherwise the strategy will trade on deviations that are too small to be profitable after spread and commissions.
+
+**Why raw z-scores alone are insufficient.** A z-score of 2 says only that the current spread is far from its recent average in units of recent volatility. It does not say why the spread should return, who will force it back, or whether the “average” is stable. Stationarity tests can reject a unit root in-sample and still fail out-of-sample after a structural break. The unit-root literature on futures explicitly warns that price limits and microstructure noise can produce misleading results【11†L4–L15】. H6 should therefore be ranked last and used mainly as a falsification benchmark: if a simpler carry hypothesis cannot beat H6 on the same data and costs, the carry hypothesis is not adding value.
+
+---
+
+## 3. Normalisation, hedge estimation, integer mapping, entry/exit and failure checks
+
+### 3.1 Spread normalisation
+
+Three normalisations should be compared, not assumed:
+- **Absolute RUB spread:** \(S_t = P^{(2)}_t \times M_2 - P^{(1)}_t \times M_1\), where \(P\) is price and \(M\) is the RUB value of one price point or tick. This is the most interpretable for cost comparison because it is already in the P&L unit.
+- **Percentage spread:** \(S_t / P^{(1)}_t\). Useful for comparing across price levels, but it can be misleading when the nearby price approaches zero or when the contract multiplier changes.
+- **Robust z-score:** \((S_t - \text{median}_{w}(S)) / (1.4826 \times \text{MAD}_{w}(S))\). The window \(w\) is a parameter; candidate ranges should be fixed on training data. This normalisation is less sensitive to outliers than the mean/standard-deviation z-score.
+
+The choice of normalisation must be the same across training and holdout. A normalisation that uses the full sample is a look-ahead error.
+
+### 3.2 Hedge estimation
+
+- **Carry/calendar hypotheses (H1–H3):** the economic hedge ratio is defined by contract multipliers and the cash-flow identity, not estimated from price correlations. For two contracts on the same underlying with the same lot and currency, one contract versus one contract is often the natural starting point, but the RUB value of a tick may differ because the tick value is converted at the USD/RUB rate or because the lot sizes differ. The integer mapping must therefore use the RUB tick values, not contract counts alone.
+- **Relative-value hypothesis (H5):** the hedge ratio \(\beta\) is estimated on training data by OLS of leg 2 on leg 1, or by a state-space model. A rolling window is preferable to a full-sample estimate because it allows the relationship to evolve, but the window length must be fixed before the holdout. A stability check should compare the rolling \(\beta\) in the training and holdout periods; a large shift is a structural-break warning.
+- **No hypothesis should use a hedge ratio estimated on the evaluation period.** That includes using the full sample to choose the pair, the window, or the threshold.
+
+### 3.3 Integer mapping
+
+Futures cannot be traded in fractional contracts. The mapping from a target RUB exposure to an integer contract count must:
+1. Compute the RUB value of one tick for each leg using the current contract specification and the applicable FX conversion.
+2. Choose integers \(n_1, n_2\) that minimise the absolute residual RUB exposure \(|n_2 \times V_2 - \beta \times n_1 \times V_1|\), where \(V\) is the RUB value of one contract at the current price.
+3. Impose a maximum contract count per leg and a minimum liquidity constraint (e.g. the order must not exceed a preregistered fraction of average daily volume).
+4. Record the hedge error in RUB and include it in the cost model. A large hedge error is an implicit cost that is often omitted from pairs-trading backtests.
+
+A simple alternative is to round to the nearest integer and accept the hedge error, but the error must be measured and reported, not assumed to be zero.
+
+### 3.4 Entry, continuation, exit and invalidation
+
+A single decision framework should be used for all three actions:
+
+- **Entry:** expected net value over the intended holding horizon, conditional on the current state, exceeds the expected net value of not entering and preserving the capacity for a future opportunity. The expected value must deduct the full round-trip cost and the LQDT counterfactual on the capital committed.
+- **Continuation:** expected net value of holding from now to the planned exit, minus the cost of closing now and the option value of freeing the capital, exceeds the expected net value of the best known alternative use of that capital. The continuation rule should not refer to the entry price or to past losses.
+- **Exit:** convergence to the target, expiry, invalidation, or a better opportunity that clears the continuation test.
+- **Invalidation:** a preregistered structural event that breaks the economic mechanism. Examples: a policy-rate change outside the expected path, a dividend announcement that changes the carry band, an index rebalancing, a contract specification change, a liquidity collapse, or a sustained hedge-ratio shift. Invalidation is not the same as a stop-loss; it is a change in the economic premise. A stop-loss based only on price may exit a position that is economically more attractive, while an invalidation rule may exit a position that is only mildly offside but no longer supported by the mechanism.
+
+### 3.5 Expiry handling
+
+Every hypothesis must specify:
+- The last trading day and settlement time from the current contract specification. MOEX expiry times differ by instrument and are now conducted at specified times (e.g. 14:00 and 19:00) rather than only during a clearing break【1†L18–L22】.
+- The settlement price methodology. RTS futures use the average index value over 15:00–16:00 on the last trading day【14†L20–L23】; FX futures use the fixing of the corresponding currency to RUB【21†L4–L8】. A convergence trade that targets the spread but ignores the settlement average is exposed to a final basis risk.
+- The roll rule if the position is to be continued beyond the nearby expiry. The roll must be preregistered and its costs included.
+- The margin and collateral treatment at expiry, including any change in variation-margin timing under the unified trading session【7†L28–L37】.
+
+### 3.6 Required point-in-time inputs
+
+For each hypothesis, the minimum point-in-time dataset is:
+- Daily settlement price, OHLC, volume and open interest for every contract used.
+- The contract specification version that was in force on the signal date, including lot, tick, tick value, settlement method, last trading day and margin parameters.
+- The applicable trading calendar, including holidays, early closes and the unified-session schedule.
+- For carry hypotheses: the relevant interest-rate or policy-rate observations available on the signal date, with publication lag.
+- For dividend hypotheses: the dividend forecast or announcement available on the signal date, not a revised series.
+- For relative-value hypotheses: the index composition, constituent list and corporate-action history available on the signal date.
+
+If any of these inputs cannot be reconstructed point-in-time from a free source, the hypothesis is conditional and must be flagged as such.
+
+---
+
+## 4. Why raw z-scores, correlation and stationarity tests are not enough
+
+A z-score is a standardised distance from a reference mean. It does not encode a mechanism, a counterparty, or a reason why the distance should close. Correlation measures co-movement, not a stable long-run relationship; two series can be highly correlated and still diverge permanently. ADF or Johansen tests can reject a unit root in-sample and still be followed by a structural break that makes the estimated relationship useless out-of-sample.
+
+The evidence in the opened sources supports this caution:
+- Unit-root tests on futures are affected by price limits, data errors and microstructure noise; a spread that appears mean-reverting in unadjusted tests can lose that property after correcting for noise【11†L4–L15】.
+- Vidyamurthy’s framework assumes that the idiosyncratic components are stationary and that execution is frictionless; structural breaks, regime shifts and transaction costs can produce extended non-convergence and losses【8†L2–L15】.
+- Carver’s framework explicitly treats forecasts as uncertain and scales positions by volatility; it does not treat a statistical signal as a certain edge【15†L33–L44】.
+
+Therefore, each hypothesis card above includes an economic story and an invalidation rule. The z-score or residual is a **measurement device** for deciding when the economic deviation is large enough to be interesting, not the hypothesis itself. A test that only reports “z-score > 2 was profitable” is not evidence of an economic mechanism; it is evidence that a particular rule happened to fit the sample.
+
+---
+
+## 5. Entry vs continuation: conditional expected incremental value
+
+At any decision point \(t\), the relevant comparison is between three quantities, all measured in net RUB over the same horizon and against the same LQDT counterfactual:
+
+1. **Continuation value \(C_t\):** expected net RUB from holding the existing position from \(t\) to the planned exit, including remaining carry, expected convergence, remaining costs, and the LQDT counterfactual on the capital that remains tied up.
+2. **Close-and-redeploy value \(R_t\):** net RUB from closing now (after exit costs), plus the expected net RUB from the best **known** alternative opportunity available at \(t\), including the LQDT counterfactual on the freed capital. The alternative must be one that was actually observable at \(t\); an ex-post best trade is not admissible.
+3. **Close-and-hold-cash/LQDT value \(H_t\):** net RUB from closing now and leaving the freed capital in the matched LQDT counterfactual until the next decision point.
+
+The continuation rule is: continue only if \(C_t > \max(R_t, H_t) + \text{a preregistered hysteresis buffer}\). The buffer prevents excessive switching caused by estimation noise and transaction costs. It is a parameter to be tested within a preregistered range, not optimised per trade.
+
+This framework makes several things explicit:
+- **Sunk losses are irrelevant.** The entry price does not appear in \(C_t\), \(R_t\) or \(H_t\). A position that is offside but has positive expected continuation value should be continued; a position that is in profit but has negative expected continuation value should be closed.
+- **“Holding long” is not automatically bad or good.** The comparison is forward-looking. A long holding period is justified only if the incremental expected value exceeds the opportunity cost over that period.
+- **The LQDT counterfactual is charged on the capital actually committed.** If the position uses margin and the core LQDT remains invested, the counterfactual must reflect the true external flows. It must not double-count the LQDT return on eligible retained collateral. The treatment of the LQDT long-term holding deduction is excluded by the prompt; that exclusion must be recorded as a scope limitation, not as a zero cost.
+- **Expiry risk is part of the continuation value.** If the remaining time to expiry is shorter than the expected convergence time, the continuation value should reflect the probability of an expiry exit at an unfavourable settlement price.
+
+---
+
+## 6. Sizing comparison: fixed minimum, capped adaptive and preplanned scale-in
+
+All three sizing rules must be tested on the **same** chronological splits, the **same** execution delay (manual median 5–15 minutes, with stale/rejected/partial outcomes recorded), the **same** cost scenarios, and the **same** total authority (RUB 30,000 test allocation plus at most RUB 15,000 emergency gross, with the emergency reserve not used for fresh exposure or averaging down).
+
+### 6.1 Fixed minimum sizing
+
+- One contract per leg, or the smallest integer mapping that satisfies the economic hedge, subject to the available margin and a minimum liquidity filter.
+- No increase with signal strength or volatility.
+- Advantage: transparent, easy to audit, no risk of size-driven overfitting.
+- Disadvantage: underutilises capital when volatility is low and the signal is strong; the RUB 30,000 allocation may be too small to trade some spreads at one contract per leg. This must be checked against actual margin requirements and the minimum contract value, not assumed.
+
+### 6.2 Capped adaptive sizing
+
+- Target a fixed fraction of the test allocation as cash volatility per position, using Carver’s volatility scalar: number of position units = (daily cash volatility target) / (instrument value volatility in RUB)【15†L33–L36】.
+- Multiply by a forecast scaled to a standardised long-run value (Carver uses 10 as the standardised average absolute forecast) and cap the result at a preregistered maximum number of contracts【15†L43–L44】.
+- The volatility estimate must use only past data; a simple exponentially weighted standard deviation or a blend of short- and long-window estimates is sufficient for a first test. The exact estimator is a parameter to be fixed on training data.
+- Advantage: uses more capital when volatility is low, reduces size when volatility is high.
+- Disadvantage: the volatility estimate can be wrong at regime changes; the cap is essential. If the cap is set by the emergency reserve, the reserve is effectively funding normal exposure, which the pilot rules prohibit. The cap must be set by the test allocation and the broker’s margin requirement, not by the emergency reserve.
+
+### 6.3 Preplanned scale-in
+
+- A schedule of additional entries at predetermined spread levels or after predetermined time intervals, with the total size capped at the same maximum as the capped adaptive rule.
+- The scale-in must be **preplanned at entry** and must not be triggered by a desire to rescue a losing position. The distinction is procedural: if the additional entry levels were written into the trade plan before the first fill, it is a sizing decision; if they are invented after the position moves against the trader, it is averaging down.
+- Evidence on averaging down suggests that it can reduce drawdowns but often at the cost of lower profitability, and leveraged averaging down can be destructive【18†L5–L13】. Therefore, the scale-in variant should be tested as a separate ablation, not assumed to improve results.
+- The emergency reserve must not be used to fund a scale-in. If a scale-in would require emergency funding, the trade plan is inconsistent with the pilot rules and must be rejected at the design stage.
+
+**Comparison metric.** The primary metric is net RUB excess over the matched LQDT counterfactual after all modelled costs. Secondary metrics: maximum drawdown from the excess-result high-water mark, time to recovery, number of emergency-funding incidents, and the proportion of trades that hit the maximum contract cap. A sizing rule that produces a higher average return but a higher probability of breaching the RUB 10,000 drawdown action trigger is not necessarily superior under the pilot’s governance.
+
+---
+
+## 7. Opportunity-arrival modelling without an oracle
+
+The opportunity-arrival model must respect the information set at each decision point. It cannot know which future opportunity would have been best.
+
+### 7.1 Record all opportunities, including stale and rejected ones
+
+At each decision point, record:
+- The signal value and the economic state for every instrument in the preregistered universe.
+- Whether the signal passed the entry filter.
+- If it did not pass, why (cost filter, liquidity, invalidation, data missing).
+- If it passed but was not taken, why (capital unavailable, manual delay, rejected order, stale signal).
+- The subsequent realised outcome of the opportunity over the planned horizon, for research only; this outcome must not be used in the live decision rule.
+
+This record allows the opportunity-arrival model to be estimated on the **past availability set**, not on the set of trades that happened to be taken. It also allows the measurement of the cost of capital constraints and stale signals, which is currently unknown.
+
+### 7.2 Ranked queue benchmark
+
+A simple ranked queue: at each decision point, rank all eligible opportunities by a preregistered score (e.g. expected net value per unit of capital, or expected net value per unit of margin). If capital is available, take the highest-ranked opportunity. If capital is fully deployed, compare the top-ranked new opportunity with the continuation value of the weakest existing position. Switch only if the new opportunity exceeds the continuation value by the hysteresis buffer.
+
+This rule is transparent and does not require a forecast of future opportunity arrivals. It is the benchmark against which any more complex opportunity-aware rule must be judged.
+
+### 7.3 Opportunity-aware exit rule
+
+A more complex rule might estimate the arrival rate of future opportunities from the historical record and reserve capital for expected future arrivals. This is an inventory-control problem. It should be tested only if the simpler ranked queue leaves measurable value on the table in the ablation. The arrival-rate estimate must use only past data and must be updated on a schedule fixed before the holdout. An oracle that reallocates to the ex-post best trade is not a valid benchmark; it is a upper bound that is not achievable.
+
+---
+
+## 8. Pair-family / strategy compatibility matrix
+
+| Hypothesis | Economic anchor | Data intensity | Expiry sensitivity | Liquidity risk | Cost sensitivity | Selection-bias risk | Rank |
+|---|---|---|---|---|---|---|---|
+| H1 FX calendar carry (CNY/RUB, USD/RUB) | Contractual settlement + interest-rate differential | Medium | High | Medium (deferred leg) | High | Low–medium | 1 |
+| H2 Index futures calendar basis (RTS) | Cash settlement + dividend-adjusted carry | High (dividend input) | High (settlement average) | Medium | High | Medium | 2 |
+| H3 CNY/RUB synthetic bond carry | Contractual settlement + RUB rate | Medium | High | Medium | High | Low | 3 |
+| H4 Brent calendar spread | Storage + convenience yield | High (inventory/yield proxy) | Medium | Medium–high | High | Medium | 4 |
+| H5 Relative-value linked instruments | Stable economic relationship, no direct carry | High (hedge ratio, corporate actions) | Low–medium | High | Very high | High | 5 |
+| H6 Robust spread mean reversion | Statistical reversion only | Medium | Low–medium | High | Very high | Very high | 6 (benchmark) |
+
+The ranking is by **economic defensibility and data feasibility**, not by expected return. H1 ranks first because the settlement mechanism is explicit and the required data is mostly end-of-day market data. H2 ranks second because dividend data is an explicit unknown. H5 and H6 rank last because the economic mechanism is weakest and the multiple-testing burden is highest.
+
+---
+
+## 9. Ranked experiments with cost and resource estimates
+
+All experiments use free end-of-day MOEX data where possible, the same walk-forward splits, and the same cost scenarios. The resource estimates are planning ranges, not measured costs.
+
+| Rank | Experiment | Minimum data | Cost scenarios | Compute / storage | Main dependency | First decision |
+|---|---|---|---|---|---|---|
+| 1 | H1 FX calendar carry | Daily settlement, OI, contract specs, policy-rate observations | Base: parameterised fee per side + spread in ticks + slippage; conservative: 2× base; stress: 4× base | Small: daily bars, <1 GB; laptop CPU sufficient | Contract specs and point-in-time rate data | Does the net excess survive the conservative cost scenario in the holdout? |
+| 2 | H2 RTS calendar basis | Daily settlement, OI, dividend forecast/proxy, index composition | Same three scenarios, with dividend-assumption sensitivity | Small–medium: dividend data may require manual assembly | Point-in-time dividend input | Does the result survive without a hindsight dividend series? |
+| 3 | H3 CNY/RUB carry | Spot, futures, RUB rate, contract specs | Same, plus spot-leg funding cost | Small | Spot execution feasibility and funding cost | Does the carry exceed the RUB funding cost after costs and the drawdown limit? |
+| 4 | H4 Brent calendar spread | Daily settlement, OI, inventory proxy, contract specs | Same, plus roll cost and USD/RUB conversion | Small | Convenience-yield proxy | Is the residual stable enough to distinguish from a persistent regime? |
+| 5 | H5 Relative-value pairs | Daily prices, OI, hedge inputs, corporate actions | Same, plus hedge-error cost | Medium: pair universe screening | Preregistered pair universe | Does the result survive a correction for the number of pairs screened? |
+| 6 | H6 Robust mean reversion | Daily prices, OI | Same | Small | None beyond market data | Can it beat the carry hypotheses as a benchmark? If not, the carry hypotheses are adding value; if it beats them, the carry hypotheses need re-examination. |
+
+**Cost parameterisation.** For every experiment, the cost model must include:
+- Per-contract broker fee, per side.
+- Exchange fee, per side, if not bundled.
+- Bid/ask spread in ticks, estimated from the daily bar or a conservative assumed value. Using the daily high–low range as a spread proxy is not sufficient; it measures intraday volatility, not the executable spread. A better free proxy is the difference between the best bid and best ask at the close, if available; otherwise use a preregistered conservative tick assumption and stress-test it.
+- Slippage in ticks, with a base value and a stress value. The manual reaction time of 5–15 minutes means the executable price may differ from the signal price; the slippage assumption must reflect this delay, not assume instantaneous fill.
+- For calendar spreads, the reduced-margin treatment may lower the funding cost, but it does not eliminate the broker fee or the spread cost. MOEX provides calendar-spread order functionality with a single order and reduced margin【22†L5–L8】【22†L29–L33】; the exact fee treatment must be verified with the broker and the exchange documents before it is treated as a cost saving.
+- For any hypothesis that requires a spot leg, the spot commission, bid/ask spread and funding cost must be included. Unknown spot costs are not zero.
+
+**Unknowns that prevent a final ranking.** The broker tariff at VTB and BCS, the actual bid/ask spread distribution for the relevant contracts, the point-in-time availability of dividend and rate data, and the historical depth of expired contract data are all unverified. Until these are resolved, the ranked experiments are **conditional**. The first task is not to run the backtests but to verify the data and cost inputs.
+
+---
+
+## 10. Ablation plan
+
+The ablation isolates whether complexity is necessary. Each variant must be tested on the same splits, execution delays, cost scenarios and total authority.
+
+| Ablation | Baseline | Variant | Question | Decision rule |
+|---|---|---|---|---|
+| **A1: Flexible size** | Fixed minimum sizing | Capped adaptive sizing (Carver-style volatility target) | Does adaptive sizing improve net excess over LQDT after costs and drawdown governance? | Keep adaptive sizing only if it improves the primary metric without increasing the probability of breaching the RUB 10,000 drawdown trigger. |
+| **A2: Scale-ins** | Single entry at the planned size | Preplanned scale-in at predetermined levels, same maximum size | Does the scale-in improve net excess, or does it mainly reduce drawdown while lowering profitability? | Keep scale-ins only if the primary metric improves in the holdout; if they only reduce drawdown but lower net excess, they are not justified as a return-enhancement feature. |
+| **A3: Opportunity-aware exit** | Fixed exit rule (convergence/expiry/invalidation) | Ranked-queue opportunity-aware exit with hysteresis | Does reallocation to known alternatives improve net excess after the hysteresis buffer and switching costs? | Keep only if it beats the fixed exit rule in the holdout; otherwise the fixed rule is preferred for its lower complexity and lower selection-bias risk. |
+| **A4: Economic filter** | Raw z-score entry (H6) | Cost-aware economic filter (H1–H5) | Does the economic mechanism add value beyond statistical screening? | If the economic filter does not beat H6 on the same data and costs, the economic story is not adding measurable value and the hypothesis should be rejected or reformulated. |
+| **A5: Hedge estimation** | Full-sample hedge ratio (look-ahead) | Rolling training-only hedge ratio | How much of the apparent result is due to look-ahead in the hedge ratio? | The full-sample variant is a diagnostic, not a candidate. If the result only survives with the full-sample ratio, the hypothesis is not valid. |
+
+The ablation plan is deliberately designed so that **missing evidence prevents complexity from being treated as necessary architecture**. If a component cannot be shown to improve the primary metric in the holdout, it is removed from the candidate design.
+
+---
+
+## 11. Targeted library leads
+
+The three books should be inspected first at the contents and index level, then only the relevant sections requested. The purpose is to extract counterexamples and assumptions, not generic summaries.
+
+### 11.1 Vidyamurthy, *Pairs Trading: Quantitative Methods and Analysis*
+
+**What to inspect first:** the table of contents and the chapters on cointegration, pair selection, and trading rules. The relevant sections are likely those that state the assumptions required for the cointegration framework (stationarity of the spread, stability of the cointegration vector, frictionless execution) and the sections that discuss risk management or the absence of it.
+
+**What to extract:**
+- The explicit or implicit assumption of frictionless execution and its consequence for backtest interpretation【8†L10–L11】.
+- The assumption that the idiosyncratic components are stationary and that structural breaks are not modelled【8†L2–L7】.
+- The limited guidance on stop-loss, dynamic sizing and extreme events【8†L17–L23】.
+- The distinction between cointegration and simple correlation, and the conditions under which a cointegrated pair may still fail to converge in a tradeable horizon.
+
+**Why it matters for this project:** Vidyamurthy’s framework is the reference for cointegration-based pairs trading, but the opened critical review shows that it is not a complete trading system. The book’s assumptions should be treated as limitations to be tested, not as features to be imported wholesale.
+
+### 11.2 Chan, *Algorithmic Trading: Winning Strategies and Their Rationale*
+
+**What to inspect first:** the chapters on mean reversion, cointegration, and pairs trading, and the sections on transaction costs and risk management. Chan’s book is known for practical implementation and for cautioning that pairs trading has become more difficult over time【23†L10–L20】.
+
+**What to extract:**
+- The specific conditions under which a cointegrated pair is tradeable, including the half-life of mean reversion and the cost threshold.
+- The treatment of transaction costs and the warning that costs can exceed the profit from the spread【23†L36–L41】.
+- The distinction between cointegration and mean reversion, and the fact that cointegration is a restrictive condition that is rarely fulfilled【23†L22–L28】.
+- Any examples of parameter instability or out-of-sample deterioration.
+
+**Why it matters:** Chan’s treatment of costs and the half-life is directly relevant to the cost filter in H5 and H6. The book’s examples can inform the choice of candidate parameter ranges, but they are not evidence of MOEX profitability.
+
+### 11.3 Carver, *Systematic Trading*
+
+**What to inspect first:** the chapters on forecasts, volatility targeting, position sizing, and trading costs. The opened reading notes cover the front portion of the book and the Forecasts chapter; the remaining framework chapters on volatility targeting, position sizing, trading speed and costs are not covered by those notes and should be read directly in the book【9†L9–L15】.
+
+**What to extract:**
+- The formula for the volatility scalar: daily cash volatility target divided by instrument value volatility in the trader’s currency, expressed in position blocks【15†L33–L36】.
+- The standardisation of forecasts to a long-run average absolute value of 10, and the capped forecast approach【15†L43–L44】.
+- The treatment of trading costs and the trade-off between trading speed and cost.
+- The framework for combining forecasts across instruments and the role of diversification.
+
+**Why it matters:** Carver provides a transparent, replicable benchmark for adaptive sizing (A1) and for the cost-aware evaluation of trading speed. The book is not a source of MOEX-specific parameters; those must come from MOEX contract specifications and the pilot’s own data.
+
+**A note on access.** These books are optional leads, not assumed attachments. The relevant sections can be requested from a library or purchased as individual chapters if the full book is not available. No paid subscription or proprietary database should be purchased for this task without explicit approval.
+
+---
+
+## 12. Conflicts, unknowns and falsification criteria
+
+### 12.1 Material conflicts
+
+- **Carry vs convergence:** A trade can be economically “correct” in the sense that the carry is positive, but still fail the pilot because the mark-to-market drawdown breaches the action trigger before convergence. The hypothesis cards must therefore report both the convergence result and the drawdown path; a positive terminal result is not sufficient.
+- **Reduced margin vs true funding cost:** MOEX calendar-spread orders may receive reduced margin treatment【22†L5–L8】, but that does not mean the capital is free. The LQDT counterfactual must be charged on the capital actually committed, and the margin reduction must not be treated as a return enhancement.
+- **Manual execution vs backtest:** The manual reaction time of 5–15 minutes and the possibility of stale, rejected, partial or unfilled orders mean that a backtest assuming instantaneous fill at the signal price is not a valid representation of the pilot. Execution delay and fill uncertainty must be modelled explicitly, or the backtest should be interpreted as an upper bound.
+- **Free data vs point-in-time correctness:** Free daily bars may be available, but their historical point-in-time correctness, delisting coverage and adjustment methodology are unverified. A backtest on a free dataset that has been revised after the fact is not a valid test. The first data task is to verify a small sample against the original contract specifications and exchange notices.
+
+### 12.2 Unknowns that prevent a final conclusion
+
+- The actual broker and exchange fees at VTB and BCS.
+- The actual bid/ask spread distribution for the relevant contracts, especially the deferred legs.
+- The point-in-time availability of dividend forecasts, policy-rate expectations and inventory data.
+- The historical depth of expired contract data on MOEX and the stability of the ISS API endpoints.
+- The treatment of the LQDT long-term holding deduction and its interaction with the pilot’s tax and account treatment.
+- The broker’s recognition of KPUR status and the collateral eligibility of the core LQDT holding.
+- The exact margin requirements for calendar-spread positions and whether they change under stressed conditions.
+
+None of these unknowns should be converted into zero cost or permission. Each is a reason to mark the relevant conclusion conditional.
+
+### 12.3 Falsification criteria
+
+A hypothesis should be rejected if any of the following occurs in the holdout:
+- Net RUB excess over the matched LQDT counterfactual is not positive in the base and conservative cost scenarios.
+- The result disappears when the LQDT counterfactual is charged on the capital actually committed.
+- The drawdown path breaches the RUB 10,000 action trigger before convergence in a material proportion of trades, even if the terminal result is positive.
+- The result is not robust to a plausible change in the cost assumption (e.g. doubling the spread assumption).
+- The result depends on a look-ahead input, such as a full-sample hedge ratio or a revised dividend series.
+- The number of parameter combinations tried is large relative to the number of independent trades, and the holdout result is not clearly separated from the distribution of random rules.
+
+### 12.4 Possible project changes
+
+- **If the data verification fails:** the project may need to narrow the universe to contracts with reliable point-in-time data and sufficient liquidity, or to accept a shorter history and a lower-confidence conclusion.
+- **If the cost calibration shows that the minimum contract size is too large for the RUB 30,000 allocation:** the pilot may need to use mini contracts or a smaller-notional instrument, or to accept that some hypotheses are not testable at the current scale. This is a scope change, not a reason to increase the allocation.
+- **If the LQDT counterfactual dominates:** the project may need to reconsider whether the pilot’s capital is better left in LQDT until a clearly superior opportunity arrives. Zero-trade days are acceptable; the pilot is not required to trade.
+- **If the drawdown governance is binding before the economic edge is realised:** the project may need to revisit the action thresholds or the holding-period assumptions, but only with explicit approval and a full review. The thresholds should not be relaxed simply because a backtest looks attractive.
+
+---
+
+## 13. Summary of what was read and what is proposed
+
+**Read:** The complete prompt; MOEX perpetual FX futures product description【6†L1–L37】; MOEX unified trading session guide【7†L1–L37】; a critical review of Vidyamurthy’s pairs-trading framework【8†L1–L61】; reading notes on Carver’s *Systematic Trading*【9†L1–L56】; a Russian-language example of CNY/RUB carry and calendar spread【10†L1–L32】; a unit-root study on futures spreads【11†L1–L46】; MOEX Brent futures parameters【20†L5–L19】; MOEX Si futures parameters【21†L4–L18】; MOEX calendar-spread instrument description【22†L5–L33】; search results on Chan’s *Algorithmic Trading*【23†L1–L50】; search results on cost-of-carry and basis【24†L5–L54】; and search results on MOEX open-interest data availability【25†L36–L38】.
+
+**Proposed, not performed:** Backtests, walk-forward runs, cost calibration, data verification against point-in-time sources, broker tariff checks, account-margin checks, legal/tax verification, and any real or simulated trading. The hypothesis cards are designs for those tests, not results.
+
+**Conditional conclusions:** The ranking of H1–H6 is conditional on the unknowns in Section 12.2. If the data and cost inputs cannot be verified, the hypotheses remain hypotheses, and the correct project decision is to defer trading until the evidence is sufficient.

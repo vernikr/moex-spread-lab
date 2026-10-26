@@ -1,0 +1,401 @@
+# R11 — Operational constraints for later environment/stack choices
+
+**Scope and status.** This is desk research and a proposed measurement plan only. I did not connect to the VPS, scan ports, install tools, deploy anything, or execute any benchmark. No repository, server attachment, prior report or credential was available. All resource figures below are **planning estimates derived from the embedded assumption ranges**, not measurements. Current-facts cut-off is **2026-10-22**; all sources were accessed on that date unless stated otherwise.
+
+---
+
+## 1. Bottom line
+
+The later environment should be shaped by six constraints, in this order:
+
+1. **The VPS is a shared 1 GB appliance, not a research server.** Ubuntu 24.04 cloud images have a 1 GB minimum and a 3 GB suggested minimum, so the VPS is already at the low end before Xray/3X-UI and the other scheduled workload are counted. The project must be subordinate to VPN health, not compete with it.
+2. **The 250–350 MB background allowance is a shared ceiling, not a per-process allowance.** A monitor plus a collector plus a daily ETL job can easily exceed it if each is given its own generous limit. The project should have a parent cgroup/slice cap, not just per-service caps.
+3. **Heavy research and 15-minute history belong on the laptop.** Daily collection, monitoring, virtual-ledger updates and Telegram alerts can be made small enough for the VPS. Parsing multi-year 15-minute history is not a 1 GB VPS workload.
+4. **SQLite is sufficient for the ledger and reference data; containers, microservices, message queues and a public dashboard are premature.** SQLite is a single-file, in-process, ACID database; WAL mode gives concurrent readers with one writer. It is the right default for a low-volume event ledger and alert state.
+5. **Telegram is free and adequate for low-volume alerts, but it is not an execution channel.** Bots cannot start conversations with users; the user must add the bot to a group or send it a message first. The Bot API is free for developers, but there are broadcast and per-chat limits, and the token grants full control of the bot.
+6. **Free Gemini and Hugging Face resources are optional research conveniences, not production 24/7 infrastructure.** Gemini’s free tier exists but its rate limits are not guaranteed and vary by model and region. Free Hugging Face Spaces sleep after inactivity and have non-persistent disk.
+
+**Recommended default for stages 5–6:** laptop for research/backtests; VPS for a thin always-on monitor, virtual ledger and Telegram relay only; a conditional VPS collector only after a read-only benchmark shows adequate headroom; no public dashboard; no container orchestration; no paid dependency unless measurement proves the VPS cannot do even the thin job.
+
+---
+
+## 2. Material evidence table
+
+| Claim | Source and excerpt | Status |
+|---|---|---|
+| Ubuntu 24.04 cloud image minimum is 1 GB RAM; suggested minimum is 3 GB | Canonical Ubuntu Server documentation, “System requirements”: “Minimum RAM: 1 GB (cloud images)” and “Suggested minimum RAM: 3 GB or more” | Primary, current |
+| `MemoryHigh` is the main memory-control mechanism; `MemoryMax` is the last line of defence and invokes the OOM killer inside the unit | systemd.resource-control(5), man7.org: “It is recommended to use MemoryHigh= as the main control mechanism and use MemoryMax= as the last line of defense” | Primary, current |
+| `CPUQuota=` can cap a unit’s CPU time relative to one CPU | systemd.resource-control(5): “CPUQuota=20% ensures that the executed processes will never get more than 20% CPU time on one CPU” | Primary, current |
+| systemd timers do not spawn a second instance if the service is already active | systemd.timer(5): “in case the unit to activate is already active at the time the timer elapses it is not restarted, but simply left running” | Primary, current |
+| `Persistent=true` catches up missed `OnCalendar=` runs after downtime | systemd.timer(5): “the service unit is triggered immediately if it would have been triggered at least once during the time when the timer was inactive” | Primary, current |
+| SQLite WAL gives concurrent readers and one writer, and is faster in most scenarios | SQLite “Write-Ahead Logging”: “WAL is significantly faster in most scenarios… readers do not block writers and a writer does not block readers” | Primary, current |
+| SQLite normally permits at most one writer at a time | SQLite documentation: “Usually, SQLite allows at most one writer to proceed concurrently” | Primary, current |
+| SQLite has an online backup API that produces a consistent snapshot without locking the source for the whole copy | SQLite “Using the SQLite Online Backup API”: the copy “may be done incrementally… only for the brief periods of time when it is actually being read from” | Primary, current |
+| `PRAGMA integrity_check` checks the entire database and reports corruption | SQLite PRAGMA documentation: it “does an integrity check of the entire database… looks for out-of-order records, missing pages, malformed records, and corrupt indices” | Primary, current |
+| DuckDB is an embedded OLAP database, roughly a 20 MB binary, strong on medium-size analytical data sets | PostHog, “DuckDB vs SQLite”, 2026-06-02: DuckDB is an OLAP database; “available as a 20MB binary”; “extremely fast at medium-size data sets (e.g. 5M–50M rows)” | Secondary, current |
+| DuckDB can be given a memory limit and thread count | DuckDB documentation: `SET memory_limit = '10GB';` and `SET threads = 1;` | Primary, current |
+| Telegram Bot API is free for developers; bot accounts do not need an extra phone number | Telegram “Bots: An introduction”: “The Telegram Bot Platform… is free for both users and developers”; “Telegram bots are special accounts that do not need a phone number to set up” | Primary, current |
+| Bots cannot initiate conversations; the user must start the bot or add it to a group | Telegram “Bots: An introduction”: “Bots can't start conversations with users. A user must either add them to a group or send them a message first” | Primary, current |
+| Default broadcast limits: about 30 messages/second globally, about 20 messages/minute in a group, and avoid more than one message/second in a single chat | Telegram Bots FAQ: “In a single chat, avoid sending more than one message per second… In a group, bots are not able to send more than 20 messages per minute… For bulk notifications, bots are not able to broadcast more than about 30 messages per second” | Primary, current |
+| Paid Broadcasts can raise the limit to 1,000 messages/second for 0.1 Telegram Stars per message above the free 30/second | Telegram Bot API: “Each message broadcasted over the free amount of 30 messages per second incurs a cost of 0.1 Stars per message” | Primary, current |
+| Exceeding Telegram limits produces 429 errors; retry behaviour must be handled | Telegram Bots FAQ: “eventually you'll begin receiving 429 errors” | Primary, current |
+| Privacy mode is on by default for group bots; bots see only relevant commands/replies unless made admin or privacy mode is disabled | Telegram Bots FAQ: “Bots with privacy mode enabled will receive: Commands explicitly meant for them… Replies to any messages implicitly or explicitly meant for this bot” | Primary, current |
+| Bot token is full control and must be kept secret | Telegram “Bots: An introduction”: “Your bot token is its unique identifier – store it in a secure place… Everyone who has your token will have full control over your bot” | Primary, current |
+| MOEX ISS provides delayed (15-minute) data for free; real-time requires a subscription | MOEX “Interfaces”: “Access to real-time data requires subscription, delayed data (15 min) is provided for free” | Primary, current |
+| MOEX ISS does not publish an explicit public rate limit; requests should be cached and spaced | Secondary Russian source: “Ограничение по частоте запросов есть, документированного лимита нет, поэтому запросы принято кэшировать и разносить во времени” | Secondary; must verify |
+| MOEX ISS limits records per request (commonly 1,000) | Secondary MOEX documentation: “The limit on the number of records per request is 1000” | Secondary; must verify |
+| Gemini free tier exists, but specified rate limits are not guaranteed and vary by model/tier | Google Gemini API rate limits: “Free | Active project or free trial”; “Specified rate limits are not guaranteed and actual capacity may vary” | Primary, current |
+| Gemini API is offered only in listed countries/regions | Google AI available-regions page lists supported countries; a text search of the rendered page for “Russia”/“俄” returned no match in the rendered excerpt | Primary but rendered-page limitation; verify before use |
+| Hugging Face free CPU Basic is 2 vCPU / 16 GB / 50 GB, but disk is not persistent | Hugging Face Spaces Overview: “Each Spaces environment is limited to 16GB RAM, 2 CPU cores and 50GB of (not persistent) disk space by default”; “CPU Basic | 2 vCPU | 16 GB | FREE” | Primary, current |
+| Free Hugging Face Spaces sleep after inactivity and stop executing | Hugging Face Spaces Overview: “On free hardware, your Space will ‘go to sleep’ and stop executing after a period of time if unused” | Primary, current |
+| BCS Trade API uses refresh and access tokens; read-only and trading tokens are separate; access token lasts 24 hours, refresh token 90 days | BCS Trade API quick-start: refresh tokens are issued in the BCS web interface; “Access-токен имеет срок жизни 24 часа… Refresh-токен имеет срок жизни 90 суток”; tokens can be read-only or trading | Primary, current |
+
+---
+
+## 3. Workload sizing from the embedded assumptions
+
+### 3.1 Planning formulas and base case
+
+These are **estimates**, not measurements. I use:
+
+- Universe `N` = 100 / 200 / 300 contracts.
+- Watchlist `W` = 5 / 20 / 30 pairs.
+- Trading days `D` = 250 per year.
+- History `H` = 3 / 5 years.
+- Session length `S` = 10 hours/day for the base case; sensitivity to 14 hours is shown.
+- Raw record size `R` = 2 KB (JSON/CSV row plus metadata); sensitivity 1–5 KB.
+- Compression ratio 8× for retained raw snapshots; sensitivity 5–10×.
+
+**Daily baseline, all contracts:**
+- Rows = `N × D × H`.
+- Base `N=200, H=3`: 200 × 250 × 3 = **150,000 rows**.
+- Raw ≈ 150,000 × 2 KB = **0.3 GB**; compressed ≈ **0.04 GB**.
+- High case `N=300, H=5`: 375,000 rows; raw ≈ **0.75 GB**; compressed ≈ **0.09 GB**.
+
+**Hourly watchlist:**
+- Snapshots = `W × S × D × H`.
+- Base `W=20, S=10, H=3`: 20 × 10 × 250 × 3 = **150,000 snapshots**; raw ≈ **0.3 GB**; compressed ≈ **0.04 GB**.
+- High case `W=30, S=14, H=5`: 30 × 14 × 250 × 5 = **525,000 snapshots**; raw ≈ **1.05 GB**; compressed ≈ **0.13 GB**.
+
+**15-minute watchlist:**
+- Snapshots = `W × S × 4 × D × H`.
+- Base `W=20, S=10, H=3`: 20 × 40 × 250 × 3 = **600,000 snapshots**; raw ≈ **1.2 GB**; compressed ≈ **0.15 GB**.
+- High case `W=30, S=14, H=5`: 30 × 56 × 250 × 5 = **2,100,000 snapshots**; raw ≈ **4.2 GB**; compressed ≈ **0.53 GB**.
+
+### 3.2 Sensitivity table
+
+| Workload | Universe / watchlist | History | Raw storage (estimate) | Compressed retained (estimate) | Main operational concern |
+|---|---:|---:|---:|---:|---|
+| Daily all contracts | 200 | 3 y | 0.30 GB | 0.04 GB | Negligible; can run on VPS or laptop |
+| Daily all contracts | 300 | 5 y | 0.75 GB | 0.09 GB | Still small; batching and retries matter more than size |
+| Hourly watchlist | 20 | 3 y | 0.30 GB | 0.04 GB | VPS-feasible if collection is lightweight |
+| Hourly watchlist | 30 | 5 y | 1.05 GB | 0.13 GB | VPS-feasible, but avoid loading all history in memory |
+| 15-min watchlist | 20 | 3 y | 1.20 GB | 0.15 GB | Do ETL on laptop or in bounded chunks; not a pandas-on-VPS job |
+| 15-min watchlist | 30 | 5 y | 4.20 GB | 0.53 GB | Raw + indexes + logs can approach the 20 GB disk budget; retention and compression essential |
+
+**Key reading:** the *storage* is not the problem. Even the high 15-minute case is under 1 GB compressed. The **CPU and peak memory** of parsing and transforming millions of rows is the problem on a 1 vCPU/1 GB VPS.
+
+### 3.3 CPU, memory and network estimates
+
+| Workload | Estimated CPU | Estimated peak RSS | Network estimate | Comment |
+|---|---:|---:|---:|---|
+| Daily ETL, 150k–375k rows | 10–60 s of one core with pandas; longer with Python loops | 200–500 MB with pandas; 100–200 MB with DuckDB memory_limit=150 MB and threads=1 | <1–5 MB/day raw, plus retries | Fits laptop easily; risky on VPS unless chunked and capped |
+| Hourly watchlist ETL, 150k–525k snapshots | 5–30 s of one core | 100–300 MB with careful chunking | <5 MB/day raw, plus overhead | VPS-conditional |
+| 15-min watchlist ETL, 600k–2.1M snapshots | 30 s–5 min of one core, depending on tooling | 0.5–2 GB with pandas; 150–300 MB with DuckDB memory_limit and chunking | <20 MB/day raw, plus overhead; <7 GB/year | Do on laptop; if on VPS, must be a separate bounded batch, not concurrent with monitoring |
+| Always-on monitor / ledger loop | <5% of one core average | 50–120 MB with stdlib/sqlite3/requests; 150–250 MB if pandas is imported | negligible | Keep this process free of heavy imports |
+| Telegram alert send | negligible | negligible | negligible | Far below 1 message/second in normal use |
+
+The memory issue is **total**, not per process. If the OS uses 200–300 MB, Xray/3X-UI uses 100–250 MB (unverified), and the project monitor uses 100 MB, the project is already at or near the 250–350 MB shared allowance before any collector or ETL runs. A 15-minute ETL with a 500 MB pandas peak would either swap heavily or be OOM-killed. `MemoryHigh` would slow it down before `MemoryMax` kills it, but the VPN may still suffer from swap and I/O contention.
+
+### 3.4 What this means for placement
+
+| Component | Recommended placement | Why |
+|---|---|---|
+| Research/backtests over multi-year 15-min data | Laptop | 16 GB RAM and 6-core CPU; no VPN co-tenancy; offline scheduling acceptable |
+| Point-in-time raw daily snapshots | VPS or laptop | Tiny; VPS gives 24/7 capture |
+| Hourly watchlist snapshots | VPS conditional | Feasible if one-shot batch, bounded memory, retention capped |
+| 15-minute watchlist snapshots | Laptop preferred; VPS only after benchmark | CPU/RSS risk; disk growth manageable only with retention and compression |
+| Virtual ledger and alert state | VPS | Small SQLite DB; must survive laptop sleep |
+| Telegram relay | VPS | Needs to work when laptop is asleep; low resource |
+| Dark-only UI | Laptop or localhost-only on VPS | No public dashboard exposure by default; avoid adding a web server to the 1 GB VPS |
+| Broker API automation | Separate later gate | Read-only token first; do not co-locate order credentials with research scripts |
+
+---
+
+## 4. Runtime, storage and UI alternatives
+
+### 4.1 Embedded database choice
+
+| Option | Strengths | Weaknesses | Best use here |
+|---|---|---|---|
+| **SQLite** | Single file, ACID, 750 KB compiled, WAL concurrency, mature backup API, `integrity_check` | One writer at a time; not columnar; analytical scans slower on large data | Virtual ledger, alert state, reference data, small daily tables |
+| **DuckDB** | Columnar OLAP, ~20 MB binary, fast on 5M–50M rows, configurable `memory_limit` and `threads` | Less proven as a long-running transactional ledger; single-file concurrency model differs; analytical engine can still use significant memory unless capped | Offline research on laptop; bounded analytical batch on VPS only with `memory_limit` and `threads=1` |
+| **Parquet/CSV + manifest** | Portable, compressible, reproducible, no server | No transactions; schema drift; must manage checksums and partitions | Immutable raw snapshots and research outputs |
+| **PostgreSQL/ClickHouse** | Strong concurrency and analytics | Another daemon, more RAM/disk, more attack surface, more backup work | Premature on a 1 GB shared VPS |
+| **SQLite + Parquet** | Best of both: transactional state plus portable research data | Two formats to manage | **Recommended default** |
+
+Durability and consistency: SQLite with WAL, `busy_timeout`, `synchronous=FULL` or `NORMAL` depending on acceptable loss window, and `PRAGMA integrity_check` on backups. Reproducibility: raw snapshots immutable, timestamped, checksummed, and stored with source/URL/retrieval time. Schema migration: a simple `schema_version` table and forward-only migration scripts is enough; no ORM/migration framework is required at this scale. Backup: SQLite online backup API or `VACUUM INTO` for a consistent copy; retain daily/weekly/monthly; verify with `PRAGMA integrity_check` on the backup, not just the source.
+
+### 4.2 Local research vs VPS monitoring
+
+| Aspect | Laptop research | VPS monitoring |
+|---|---|---|
+| Heavy search/backtest | Yes; offline scheduling acceptable | No; would contend with VPN |
+| 15-min history retention | Yes | Only compressed/summarised, or not at all |
+| Always-on alerting | No; laptop sleeps | Yes; small process |
+| Public exposure | None | None by default; SSH tunnel/localhost only |
+| Failure blast radius | Local only | Shared with VPN; must be contained by cgroup and no-touch rules |
+| Backup | Time Machine/external + encrypted copy | SQLite backup + raw snapshot sync to laptop |
+
+### 4.3 UI and service shape
+
+- **Default:** command-line/scripted monitor, SQLite ledger, Telegram alerts, static HTML reports generated on the laptop. No web dashboard on the VPS.
+- **If a UI is later needed:** bind to `127.0.0.1`, access via SSH tunnel; no `0.0.0.0`, no public port, no authentication bypass. Dark-only is a front-end concern, not a reason to add a public server.
+- **Avoid:** Docker/Compose, Kubernetes, Redis, RabbitMQ, microservices, a separate API gateway, a public Grafana. They add memory, disk, update surface and attack surface without solving a demonstrated problem at this scale.
+- **One process, one systemd service, one timer** is the appropriate architecture until measurements show otherwise.
+
+---
+
+## 5. Telegram: costs, limits, recipients, delivery and privacy
+
+### 5.1 Costs and limits
+
+- The Bot API is free for developers; bot accounts do not require an additional phone number. The user still needs a Telegram account to create the bot and receive alerts.
+- Default broadcast limits: about **30 messages/second across all chats**, about **20 messages/minute in a group**, and avoid more than **one message/second in a single chat**.
+- Paid Broadcasts can raise the limit to **1,000 messages/second** for **0.1 Telegram Stars per message** above the free 30/second; the bot must hold at least 10,000 Stars. This project’s alert volume is far below the free limit, so paid broadcast is not justified.
+- Exceeding limits returns **429**; clients must honour retry behaviour rather than hammering the API.
+
+### 5.2 Authorized recipients and privacy
+
+- A bot **cannot initiate a conversation**. The user must either add it to a group or send it a message first. For private alerts, the user must `/start` the bot and the bot must store the resulting `chat_id`.
+- Group privacy mode is enabled by default; a bot sees only commands/replies relevant to it unless made an admin or privacy mode is disabled. This is a feature, not a bug: the bot should not be given broad group visibility.
+- The bot token is **full control** of the bot. It must be stored in a secrets file with restrictive permissions, never in code or a repository, and rotated via BotFather if exposed.
+- The bot should maintain an explicit **allowlist of chat IDs** for commands and never treat an arbitrary incoming message as authorization. Telegram does not provide a built-in user allowlist; this must be enforced in the application.
+
+### 5.3 Delivery, retry, deduplication and persistence
+
+- Use `getUpdates` with an `offset` of `update_id + 1` to confirm processed updates and avoid replaying the same update. If webhooks are used later, the supported ports are 443, 80, 88 and 8443, and a secret URL path is recommended.
+- Outbound alerts should have an **idempotency key** (for example, `event_type + contract + signal_timestamp + state_version`) persisted before send. On retry, the same key should not produce a duplicate user-visible alert.
+- On 429, honour `retry_after`; cap retries and move exhausted messages to a dead-letter table. Do not let a Telegram outage block the monitor loop.
+- **Notification success ≠ user action ≠ trade fill.** A delivered Telegram message proves only that Telegram accepted the API call. It does not prove the user saw it, acted on it, or that a broker order was filled. The virtual ledger must record `alert_sent`, `alert_delivered` (if obtainable), `user_ack` (if implemented) and `trade_outcome` as separate states.
+- Risk and outage alerts must not silently stop during research jobs. The monitor process must be independent of any research/ETL process, with its own systemd service and resource cap. Research jobs must never share a process with the alert loop.
+
+---
+
+## 6. Operational failure budget and safe-stop design
+
+### 6.1 Failure-mode table
+
+| Failure | Detection | Safe stop / containment | Recovery | Backup / replay |
+|---|---|---|---|---|
+| Monitor process crash | systemd service state; missing heartbeat | systemd `Restart=on-failure` with `StartLimitBurst`; alert after repeated failures | Restart; resume from last ledger checkpoint | Ledger is transactional; replay last event batch |
+| Collector process crash | systemd state; missing snapshot | Restart bounded; if repeated, stop collector and keep monitor alive | Re-fetch missing interval; idempotent snapshot keys | Raw snapshots are immutable; missing interval is visibly marked |
+| Stale market data | `max_staleness` per feed; last-update timestamp | Mark feed `STALE`; suppress signals; send one outage alert | Resume only after fresh data and explicit state transition | Do not backfill signals on stale data; record the gap |
+| Disk full | `df` threshold at 80/90/95%; inode threshold | At 90% stop writes to project DB and collector; at 95% stop all project writes; keep monitor read-only if possible | Delete expired raw/logs; compact; restore from backup if DB corrupted | Journald `SystemMaxUse`, logrotate, retention policy; never fill root |
+| Swap pressure | `vmstat`/`pgmajfault`; `MemoryCurrent` near `MemoryHigh` | `MemoryHigh` throttles; if sustained, stop collector/ETL; keep monitor | Reduce batch size/frequency; move ETL to laptop | Do not rely on swap for correctness; swap is a symptom, not a solution |
+| External MOEX/Telegram outage | HTTP errors/timeouts; 429; missing responses | Exponential backoff with jitter; circuit breaker; mark data stale; alert once | Resume when healthy; do not replay stale signals | Raw requests and responses retained for post-mortem |
+| Session/day boundary | Exchange calendar and session clock | No signals outside session; no orders outside session | Next session resumes; previous session closed | Calendar/spec lineage stored with each record |
+| Clock drift | `timedatectl`; NTP offset | Suspend signal generation if offset exceeds threshold; alert | NTP correction; manual review of affected timestamps | UTC internally; exchange timezone for display; log clock offset |
+| Job overlap | systemd active state; `flock` | systemd timers do not restart an active service; use `flock` for scripts | Next scheduled run; no concurrent ETL | Checkpoint table records last complete batch |
+| Corrupt state | `PRAGMA integrity_check`; failed transaction | Stop writes; switch to read-only; alert | Restore last verified backup; replay raw snapshots | Daily backup + integrity check; retain 7 daily/4 weekly/6 monthly |
+| VPN degradation | VPN latency/handshake probe; system load | Stop project workloads; do not touch VPN config; alert user | User-approved investigation; project remains stopped | Separate cgroup; no auto-reboot; no firewall changes |
+| Telegram duplicate/loss | Idempotency key; `update_id`; dead-letter count | Do not resend blindly; mark dead-letter | Manual review or safe retry with same key | Alert log and dead-letter table |
+
+### 6.2 VPN protection rules
+
+- Put the project in a **separate systemd slice/cgroup** with `MemoryHigh`, `MemoryMax`, `MemorySwapMax`, `CPUQuota` and `TasksMax`. `MemoryHigh` should be the primary throttle and `MemoryMax` the last line of defence. `CPUQuota=20–50%` leaves headroom for Xray and the other workload.
+- **Never** change ports 22/443/20724, the x-ui service, its data directory, Xray configuration, nftables/iptables rules, network interfaces, kernel network tuning, or VPN certificates.
+- Do not install a public dashboard, reverse proxy, or anything that binds a new public port. If a UI is needed, bind to `127.0.0.1` and use SSH tunneling.
+- Monitor VPN latency and handshake success from the project. If the VPN degrades, the project stops itself, not the VPN.
+- No reboot, no `apt upgrade`, no kernel change, no firewall reload without explicit user approval and a maintenance window.
+
+### 6.3 Backup and replay design
+
+| Asset | Backup method | Frequency | Retention | Verification |
+|---|---|---|---|---|
+| Raw market snapshots | Compressed immutable files + SHA256 manifest | Per collection batch | Daily 5 y; 15-min 1–2 y | Checksum on write and restore |
+| SQLite ledger/state | SQLite online backup or `VACUUM INTO` | Daily + before migration | 7 daily, 4 weekly, 6 monthly | `PRAGMA integrity_check` on backup |
+| Reference data/calendars | Versioned JSON/CSV with source timestamp | On change | All versions | Diff and manual review |
+| Config/secrets | Encrypted archive, offline/laptop | On change | Current + previous | Restore test; token rotation drill |
+| Research outputs | Parquet/CSV + manifest + notebook/script hash | Per experiment | Per project policy | Reproduce from raw + code hash |
+
+Replay safety: the ledger should be **event-sourced with deterministic event IDs** and an append-only table. Replaying a batch should be idempotent: `INSERT OR IGNORE` on the event key, then recompute derived state in a temp table, compare hashes with the production state, and only then swap. Do not “replay” by re-sending Telegram alerts; alerts are a side effect, not the source of truth.
+
+---
+
+## 7. Free service terms, geography and production suitability
+
+| Service | Free terms | Realistic limits | Geography/payment/phone | Production suitability |
+|---|---|---|---|---|
+| **Telegram Bot API** | Free for developers; bots do not need an extra phone number | 30 msg/s global; 1/s per chat; 20/min group; 429 on excess | Telegram account required to create bot; no foreign card for basic use | Good for low-volume alerts; not an execution channel |
+| **MOEX ISS** | Delayed 15-minute data free; real-time by subscription | Undocumented rate limit; 1,000 records per request commonly reported | Russian market data; no API key commonly required for delayed ISS | Suitable for delayed research and end-of-day; not a real-time execution feed |
+| **Gemini API** | Free tier exists for active project/free trial | Limits vary and are not guaranteed; region-dependent | Official available-regions list does not show Russia in the rendered excerpt; secondary sources say not available in Russia | Optional offline summarisation/research; not reliable 24/7 and not for critical alerts |
+| **Hugging Face Spaces** | CPU Basic 2 vCPU/16 GB/50 GB at no hourly cost; static Spaces free | Free Spaces sleep after inactivity; disk not persistent | Hugging Face account; paid plan may be needed for compute Spaces | Not suitable for always-on monitoring; optional research demo |
+| **Free VPS/cloud trials** | Varies; often time-limited or credit-limited | Sleep, eviction, credit expiry | Often require foreign card/phone | Not assumed; do not treat as production |
+
+**Important conflict:** Hugging Face’s own documentation contains both “Static Spaces are free for everyone. Gradio and Docker Spaces run on compute and require a paid plan” and “The default CPU Basic hardware has no hourly cost”. This ambiguity, plus sleep and non-persistent disk, means free Spaces should not be part of the alerting path. Treat them as optional research conveniences only.
+
+**Gemini geography caveat:** the official available-regions page is the primary source, but the rendered excerpt I could inspect did not include the full list, and a text search for Russia returned no match. A secondary source states that Gemini is not offered in Russia. This must be verified against the current official page and the user’s actual account region before any dependency is designed. Do not design a critical path around Gemini until that is confirmed.
+
+---
+
+## 8. Proposed benchmark matrix (suggested, NOT executed)
+
+All commands below are suggestions for a later read-only/measurement stage. I did not run them. Run only with user approval and only in a way that does not touch the VPN.
+
+| Workload | What to measure | Suggested command (not executed) | Go/no-go threshold |
+|---|---|---|---|
+| Baseline VPS headroom | Free RAM, swap, disk, inodes, load | `free -m`; `swapon --show`; `df -h`; `df -i`; `uptime`; `vmstat 1 5` | At least 150–200 MB RAM free after VPN/other workload; ≥5 GB disk free; no sustained swap |
+| VPN baseline | Xray/3X-UI RSS/CPU; latency/handshake | `systemctl status x-ui --no-pager`; `systemd-cgtop`; `ps -eo pid,rss,pcpu,comm --sort=-rss`; latency probe to a known endpoint | Record baseline; project must not change it materially |
+| Monitor process | Steady RSS, CPU, file descriptors | `/usr/bin/time -v <monitor command>`; `pidstat -dru -p <pid> 1 5`; `systemctl show <unit> -p MemoryCurrent,MemoryHigh,MemoryMax` | Steady RSS <100 MB; peak <150 MB; CPU <5% average |
+| Daily ETL | Wall time, peak RSS, CPU, DB size growth | `/usr/bin/time -v <etl command>`; `du -sh data/`; `sqlite3 db "PRAGMA integrity_check;"` | Peak RSS <250 MB; wall time <5 min; DB growth <0.5 GB/year |
+| Hourly collector | Peak RSS, network bytes, disk growth | `/usr/bin/time -v <collector command>`; `du -sh`; interface counters via `ss -s` or `/proc/net/dev` | Peak RSS <200 MB; disk growth <0.5 GB/year compressed |
+| 15-min ETL (laptop) | Peak RSS, wall time, output size | `/usr/bin/time -v <etl command>`; `du -sh`; `sqlite3 db "PRAGMA quick_check;"` | Peak RSS <2 GB on laptop; output <1 GB compressed/year |
+| 15-min ETL (VPS, conditional) | Peak RSS under DuckDB `memory_limit=150MB`, `threads=1` | Same as above, plus `systemd-cgtop` | Peak RSS <250 MB; no OOM; VPN unaffected; otherwise move to laptop |
+| SQLite write/read | Writes/second, read latency, WAL growth | `sqlite3 db "PRAGMA journal_mode;"`; `sqlite3 db "PRAGMA wal_checkpoint(TRUNCATE);"`; small benchmark insert/select | Writes far below 1,000/s; WAL checkpoint <1 s; no `SQLITE_BUSY` storms |
+| Telegram delivery | 429 frequency, retry_after, end-to-end latency | A test bot and test chat; send a controlled burst; log `429` and `retry_after` | No 429 at normal volume; if 429, `retry_after` handled and no duplicate |
+| Disk full behaviour | Simulated threshold in a test directory, not root | `df` monitoring script against a test directory; no real disk fill | Project stops writes at 90%; monitor remains alive; alert sent |
+| Restore drill | Restore SQLite backup and raw snapshot | Copy backup to temp; `sqlite3 backup "PRAGMA integrity_check;"`; replay a small batch | `ok` from integrity check; replay produces identical derived state |
+
+**Go/no-go rule:** if the measured project cgroup cannot stay under the negotiated shared allowance while the VPN remains healthy, do not deploy the collector on the VPS. Move collection to the laptop, reduce frequency, or use a separate paid VPS. Do not “solve” the problem by removing the memory cap or by letting the project swap heavily.
+
+---
+
+## 9. Stage-3 read-only preflight and least-privilege deployment prerequisites
+
+### 9.1 Read-only preflight (suggested, not executed)
+
+These are inspection commands only. Do not change state during preflight.
+
+- OS and kernel: `uname -a`, `lsb_release -a`, `cat /etc/os-release`.
+- Memory/swap: `free -m`, `swapon --show`, `cat /proc/meminfo`, `vmstat 1 5`.
+- Disk/inodes: `df -h`, `df -i`, `du -sh /var/log /var/lib/x-ui 2>/dev/null`.
+- VPN service: `systemctl status x-ui --no-pager`, `systemctl cat x-ui`, `journalctl -u x-ui --since -1h --no-pager`.
+- Existing workloads: `systemctl list-timers --all`, `crontab -l` (current user), `ps aux --sort=-%mem | head -20`.
+- Ports and firewall: `ss -lntup`, `nft list ruleset` or `iptables -S` (read-only), without modifying.
+- Time: `timedatectl`, `chronyc tracking` if installed.
+- Connectivity: `curl -I` to `iss.moex.com` with a short timeout; no high-frequency probing.
+- Tool inventory: `python3 --version`, `sqlite3 --version`, `duckdb --version` if installed; these are not assumed.
+
+### 9.2 Least-privilege deployment prerequisites
+
+| Prerequisite | Requirement |
+|---|---|
+| Dedicated OS user | `futures` user, no sudo, no shell login beyond deployment; owns project directory |
+| Project directory | `/srv/futures` or `/opt/futures`, not inside `/root`, `/etc`, `/usr/local/x-ui`, or the x-ui data directory |
+| Python environment | Project-local venv; pinned dependencies; no global `pip install` |
+| Secrets | `EnvironmentFile` or secrets file mode `600`, owned by `futures`; bot token and broker tokens never in code/repo |
+| systemd unit | `User=futures`, `Group=futures`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `ReadWritePaths=/srv/futures`, `Restart=on-failure`, `StartLimitBurst`, `StartLimitIntervalSec` |
+| Resource caps | `MemoryHigh`, `MemoryMax`, `MemorySwapMax`, `CPUQuota`, `TasksMax`; preferably a parent slice for the whole project |
+| Logging | journald `SystemMaxUse` and/or logrotate; no unbounded project log files |
+| Network | Outbound only to MOEX/Telegram/broker endpoints; no inbound public port; no port binding to `0.0.0.0` |
+| Backups | Backup directory outside the project data directory; verified restore path; encrypted off-VPS copy |
+| Approval | SSH method, sudo rules, package installation, firewall changes and any reboot are later user-approved configuration, not part of research |
+
+### 9.3 RAM/disk budget negotiation
+
+The VPS has 1 GB RAM and 20 GB disk. A defensible negotiation is:
+
+- **RAM:** OS baseline + VPN/3X-UI + other workload + project ≤ 1 GB with at least 100–150 MB headroom. If the project is allowed 250–350 MB, that is a **shared** project budget, not per service. Put the project in a parent slice with `MemoryMax` at or below the negotiated figure. A monitor-only process should fit in 100–120 MB; a collector plus monitor should be treated as one budget, not two.
+- **Disk:** OS + packages + swap + VPN logs/data + other workload + project ≤ 20 GB with at least 2–3 GB free. Project steady-state target ≤3 GB, peak ≤5 GB. If free disk after the existing workloads is below 5 GB, do not retain 15-minute raw data on the VPS.
+- **Swap:** 2 GB swap is a safety buffer, not capacity. `MemorySwapMax` should cap project swap so the VPN is not forced to swap. Sustained swap-in/out is a no-go signal, not a normal operating mode.
+- **CPU:** 1 vCPU is shared. `CPUQuota=20–50%` and `Nice=10` reduce the chance that a batch starves Xray. Do not run CPU-heavy ETL while the VPN is under peak load.
+
+### 9.4 No-touch protection list
+
+Do not modify, restart, reconfigure, or probe aggressively:
+
+- Ports **22/443/20724**.
+- The **x-ui** service, its systemd unit, its data directory, its database, and its panel credentials.
+- Xray configuration, certificates, keys, and inbound/outbound settings.
+- nftables/iptables rules, network interfaces, routing, DNS, and kernel network sysctl.
+- The other scheduled workload, its timers, and its data.
+- System-wide Python, systemd, OpenSSL, or kernel packages.
+- Any file under `/etc`, `/usr/local/x-ui`, `/var/lib/x-ui`, or the VPN certificate paths.
+- Do not run `apt upgrade`, `do-release-upgrade`, `reboot`, `systemctl daemon-reload` outside the project unit, or firewall reload without explicit approval.
+
+---
+
+## 10. Minimum security posture
+
+| Area | Minimum requirement |
+|---|---|
+| Telegram token | Stored in a mode-600 secrets file, not in code or git; rotate via BotFather if exposed |
+| Broker tokens (later) | Read-only refresh token first; access token 24 h, refresh 90 days; separate trading token only after a separate approval gate |
+| SSH | Key-based only; no root login; no password auth; no public dashboard; no new inbound port |
+| OS user | Dedicated non-root user; no sudo; project directory only |
+| systemd hardening | `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`, `ReadWritePaths`, `RestrictAddressFamilies`, `CapabilityBoundingSet=` |
+| Secrets in logs | Never log tokens, chat IDs beyond the allowlist, broker account numbers, or full API responses containing personal data |
+| Telegram authorization | Application-level allowlist of chat IDs; do not treat any incoming message as authorized |
+| Replay safety | Idempotency keys on events and alerts; append-only ledger; no order placement in the monitoring process |
+| Dashboard | No public exposure by default; if added later, localhost + SSH tunnel + authentication |
+| Backups | Encrypted at rest if they contain secrets; integrity-checked before restore |
+| Incident response | If token leak suspected: revoke Telegram token, rotate broker tokens, review logs, notify user; do not silently continue |
+
+---
+
+## 11. Option comparison for stages 5–6
+
+This is a comparison of operating models, not a final stack selection.
+
+| Option | What runs where | Advantages | Disadvantages / risks | Verdict |
+|---|---|---|---|---|
+| **A. Laptop research + VPS monitor/ledger/alert relay** | Laptop: research, backtests, 15-min ETL, UI. VPS: monitor, SQLite ledger, Telegram relay | Fits 1 GB VPS; heavy compute does not touch VPN; no public dashboard; simplest security surface | Laptop must be available for research; VPS still needs to be reliable for alerts; data sync needed | **Recommended default** |
+| **B. VPS collector + monitor; laptop research via sync** | VPS: daily/hourly collection, ledger, alerts. Laptop: research and 15-min history | 24/7 capture; less laptop dependence; data is centralised | Collector and monitor compete for 250–350 MB; 15-min ETL is unsafe on 1 GB; needs strict parent cgroup and disk quotas | **Conditional**, only after benchmark shows headroom |
+| **C. VPS full stack (collector + monitor + DuckDB + UI + public dashboard)** | Everything on the VPS | One place; remote access | 1 GB RAM is insufficient; public dashboard increases attack surface; VPN contention risk; maintenance burden | **Reject for now** |
+| **D. Free ephemeral services (Hugging Face Spaces, Gemini free tier) for research** | HF Space for demos/notebooks; Gemini for optional summarisation | Zero cost; no VPS use | Sleep, non-persistent disk, rate limits, region restrictions, data privacy, no 24/7 guarantee | **Optional offline only**; not in alert path |
+| **E. Separate paid small VPS for the project** | Dedicated 1–2 GB VPS for collector/monitor | Isolation from VPN; predictable headroom; easier capacity planning | Cost; another server to secure and back up; violates “free preferred” unless justified by measurement | **Fallback** if measurement shows the shared VPS cannot host even the thin job |
+
+**Seams for later broker automation:** the BCS public documentation describes a refresh-token/access-token lifecycle, separate read-only and trading scopes, and a 24-hour access token / 90-day refresh token. The later design should therefore have a **token-lifecycle seam** (refresh, store, rotate, revoke), a **read-only data seam** (positions, candles, limits) and a **separate order-placement seam** behind an explicit gate. Do not assume streaming, WebSocket, rate limits or futures-spread order support until the specific product documentation is read. The public BCS page is a starting point, not a verified specification for this project’s account or instrument set.
+
+---
+
+## 12. Falsification criteria and possible project changes
+
+The environment choice should be falsified by measurements, not defended.
+
+**Reject or change the VPS collector if:**
+
+- Project cgroup `MemoryCurrent` cannot stay below the negotiated `MemoryHigh` without sustained swap or OOM kills.
+- VPN latency/handshake success degrades materially while the project runs.
+- Free disk after existing workloads is below 5 GB, or project disk growth exceeds the negotiated quota.
+- Daily ETL peak RSS exceeds 250 MB on the VPS, or 15-minute ETL peak RSS exceeds 250 MB even with DuckDB `memory_limit` and `threads=1`.
+- MOEX ISS error rate exceeds roughly 1% at the planned request rate, or 429/connection resets become frequent.
+- Telegram 429 `retry_after` is routinely long or duplicate alerts cannot be prevented.
+- Gemini is unavailable in the user’s region, or its free-tier limits are insufficient for the intended use.
+- Hugging Face free Spaces sleep during an alert test.
+
+**Possible project changes if criteria fail:**
+
+- Move all collection to the laptop and keep only a monitor/alert relay on the VPS.
+- Reduce the universe to 5–10 pairs and use daily-only collection on the VPS.
+- Keep 15-minute data on the laptop only; sync daily summaries to the VPS.
+- Use a separate small paid VPS if the user accepts the cost and the shared VPS cannot meet the thin-job budget.
+- Drop the LLM dependency entirely; use deterministic rules and Telegram templates.
+- Delay broker automation until a read-only BCS token is tested against the actual futures/spread data and limits.
+- Replace the public dashboard idea with static HTML reports generated on the laptop.
+
+---
+
+## 13. Material unknowns and conflicts
+
+1. **Actual VPN/Xray/3X-UI resource use is unknown.** The 3X-UI ecosystem reports vary; some guides mention 512 MB/1 GB minimums, but these are not measurements of this VPS. The VPN’s actual RSS/CPU must be measured read-only before any deployment.
+2. **The 250–350 MB background allowance is unverified and shared.** It is not clear whether it includes page cache, journald, or the other workload. Treat it as a total project ceiling until measured.
+3. **Free disk after OS, swap, VPN logs and the other workload is unknown.** A 20 GB disk can be consumed by logs and snapshots faster than the raw data estimate suggests. Measure `df` and `du` before choosing retention.
+4. **MOEX ISS rate limits are not publicly documented.** Secondary sources mention ~20 req/s or ~100k/day, but these are not vendor commitments. Use caching, backoff and conservative cadence; do not design to a rumoured limit.
+5. **Telegram limits are guidance, not a hard contract.** The FAQ says “about 30 messages per second” and warns of 429s. The design must handle 429 even at low volume.
+6. **Gemini free-tier limits and regional availability change.** The official page says limits are not guaranteed and vary by model/tier. The available-regions list did not show Russia in the rendered excerpt, but this must be verified against the current page and the actual account region.
+7. **Hugging Face free compute policy is ambiguous.** The documentation contains both “Static Spaces are free” and “CPU Basic… FREE”, but also “Gradio and Docker Spaces run on compute and require a paid plan”. Free Spaces sleep and have non-persistent disk. Do not depend on them for 24/7 work.
+8. **BCS API capabilities for futures spreads are not verified.** The public page documents token auth and read-only vs trading scopes, but not the full rate limits, streaming behaviour, or spread-order support. Treat automation as a later gate.
+9. **Ubuntu 24.04 at 1 GB is at the minimum, not the suggested level.** Canonical suggests 3 GB or more for broader scenarios. This is a structural constraint, not a tuning problem.
+10. **No installed-tool inventory is verified.** Python, SQLite, DuckDB, curl and monitoring tools may or may not be installed. Versions must be read on the VPS later; do not assume features.
+
+---
+
+## 14. Inputs actually read and checks only proposed
+
+**Inputs actually read:** the user prompt and its embedded assumptions; public vendor documentation from Telegram, Google Gemini, Hugging Face, MOEX, Canonical Ubuntu, systemd/man7, SQLite, DuckDB and BCS. No attachments, prior Rxx reports, server specification file, credentials or production access were provided. No private repository was read. No VPS connection, port scan, installation, deployment or benchmark was performed.
+
+**Checks only proposed, not executed:** all benchmark commands in Section 8, all read-only preflight commands in Section 9.1, the RAM/disk budget negotiation in Section 9.3, the restore drill, and the Telegram/ MOEX/ broker connectivity tests. These require a later user-approved stage and must respect the no-touch list.
+
+**What this report does not claim:** it does not claim that the VPS can run the collector, that MOEX ISS will tolerate the planned cadence, that Gemini is available to the user, that Hugging Face free Spaces are suitable for alerts, that BCS supports the intended spread automation, or that any backtest or trading result has been measured. Those are conditional later gates.

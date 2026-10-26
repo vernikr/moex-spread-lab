@@ -1,0 +1,109 @@
+# Spread Strategy Families and Baselines
+
+We categorize possible spreads by their economic drivers.  **Calendar/Carry spreads** occur when multiple expirations of the same underlying trade at different prices (e.g. crude oil front vs next month).  Such spreads reflect **carry** (storage cost minus convenience yield).  When futures curve is in **contango** (long-dated above spot), a short calendar (sell near, buy far) earns roll yield; in **backwardation** the reverse.  If the spread is abnormally high/low relative to history, we expect mean-reversion: i.e. trade until the curve flattens.  **Basis trades** compare a futures price to the current cash or spot price.  For example, currency forward vs spot or index futures vs cash index.  If the basis (futures–spot) diverges from theoretical carry/interest differentials, it may revert.  **Inter-commodity spreads** pair related commodities (e.g. gold vs silver, gasoline vs crude) or geographically-linked commodities (e.g. Brent vs Urals crude).  Correlated fundamentals (e.g. refinery yields, shipping flows, China import demand) can create a long-run equilibrium: deviations may mean-revert if driven by e.g. inventory imbalances.  **Cross-market spreads** exploit relationships across asset classes (e.g. stock index vs currency, bond futures vs interest rates). For example, the ruble’s strength often correlates with oil prices, suggesting an oil–USD/RUB spread; mean-reversion may occur if that link holds (foreign-basis).  Each family has a distinct economic logic.  By contrast, naïve stat‐arb (just looking at raw z‐scores, correlations or stationarity tests) is insufficient: mean-reversion must have a *mechanism* (the Law of One Price or economic carry) behind it.  High historical correlation alone does not guarantee profitability or a persistent equilibrium.  For instance, pairs trading assumes a fixed mean spread, but if fundamentals “drift” the mean, the model breaks.  Thus baseline strategies must start from **economic narratives** (carry, inventory cost, seasonal demand, cross-asset parity) not just statistical artifacts.
+
+# Data, Contracts and Instrument Specs
+
+We assume MOEX daily futures data (open/high/low/close, volume, open interest) via the MOEX ISS API.  For each candidate underlying, we record all active and expired futures.  The ISS “history” endpoint (e.g. `/iss/history/engines/futures/markets/forts/securities/{ticker}.json`) provides end-of-day bars with OI and trading volume.  We verify contract **specifications** (lot size, tick/point value, listing/expiry dates) from MOEX (for example, NBISF has lot=1, price step=0.1 => tick₍₀.₁₎ = 8.19739 ₽).  Whenever an instrument expires, we must exit/roll ahead by that date.  We will map hedge ratios to whole contracts: e.g. if a regression suggests 1.7 of one future per 1 of another, we test rounding (e.g. 2:1 or 1:1) and scale by least common multiple of notionals.
+
+**Normalization:** We normalize spreads so signals are comparable across markets.  For calendar and commodity spreads, we might work in **price difference** (e.g. Front – Back) or in **percentage/yield** difference.  For cross-commodity, we can normalize by one leg’s price or volatility (e.g. `Spread = (P_A – β·P_B)`).  Regression/cointegration provides β (e.g. minimize variance of P_A–βP_B over training).  If one leg trades in different units (e.g. currency vs commodity), we convert via FX or common units.  Entry triggers use normalized z-scores: e.g. `z = (Spread – μ_spread)/σ_spread`.  But (as above) *a z-score alone isn’t enough*; we require a credible story for mean-reversion.
+
+**Hedge Estimation:** Hedge ratios β may be set by historical linear regression or cointegration (Engle-Granger) on training data, using only in-sample periods.  We **pre-register** candidate β (e.g. 1:1, or the OLS slope) and test in walk-forward fashion.  Regression residual tests (ADF) can confirm stationarity but serve only as filters, not final proof.  We also test fixed simple ratios (1:1, 1:2, etc) as robustness checks.
+
+**Entry/Exit Rules:** For each spread, define an entry when `z > z_entry_upper` or `z < z_entry_lower`.  We choose symmetric thresholds (e.g. ±1σ to ±3σ) as candidates.  Exit when the spread reverts (e.g. crosses zero or z returns to 0) or hits a stop-loss/time limit.  We treat **expiry** as an absolute exit: for calendar spreads, either roll to next month or close before expiry.  We will exclude trades that run into expiry without being closed, to avoid assignment risk.
+
+**Structural-break checks:** Monitor for breakdowns: e.g. if one leg stops trading or fundamental correlation disappears.  If rolling correlation drops below a threshold or regression R² collapses, we invalidate ongoing signals.  If a contract’s specification changes (e.g. re-tick, margin hike) mid-trade, we exit.  Our validation will record any “signal” that fails due to such changes.
+
+# Calibration and Parameters (Pre-registration)
+
+All entry/exit thresholds, lookback windows, and filters will be set from training data only (no peeking at test).  For example, we might calibrate the mean/σ of spreads over a long lookback and keep them fixed in each test.  Candidate ranges (e.g. entry z=±1.0–2.5, exit z=0 or ±0.5; maximum hold 5–20 days) are **pre-specified** for testing.  If multiple filters (volume, OI minimum, time-of-day) are used, we log each as a hypothesis choice.
+
+We will not tune per-pair beyond this: e.g., the same z thresholds apply to all spreads of a family, to avoid overfitting.  In backtests, we will also capture how often conditions fail (e.g. not meeting min liquidity) and treat those as “stale” or “rejected” opportunities in the simulation (see below).
+
+# Entry vs Continuation (Opportunity Cost)
+
+Trading always has an **opportunity cost**: capital and margin tied up cannot be used elsewhere.  When a signal arrives, we must decide if opening a trade today is better than waiting or using funds on another trade.  Likewise, for an open trade, we should assess *incremental expected value* of continuing versus exiting and reallocating capital.  We will model the “value of continuation” by estimating the expected future spread move (from historical holding-time distributions) minus future costs (e.g. funding, margin) and comparing it to what that capital could earn in the baseline LQDT portfolio.  
+
+We will explicitly simulate capital as a limited pool: if a better-ranked opportunity appears while funds are tied, we test the effect of **harvesting** or closing the less attractive position early.  In other words, we record the distribution of time-to-mean-reversion (or stop-loss), and compare continuing versus reallocating capital to alternate signals.  We will **not** implement a sunk-cost fallacy: any trade that looks increasingly unprofitable (e.g. z drifting further away from mean) will be exited per rule, regardless of past losses, consistent with risk limits.  
+
+In practice, this means we include *expiry risk* (if a spread trade doesn’t revert in time, loss up to margin) and *alternative opportunity* as costs.  We will test policies such as: 
+- **Hold to target** vs **time-stop** (exit after N days or on volatility rise).
+- **Early exit on new signal**: if a new spread signal outperforms the expected value of the open trade, simulate closing the old trade immediately.  
+
+All expected values will use only past information (simulated historically), avoiding any future-lookahead.  We ensure the counterfactual LQDT return (the core portfolio) continues and any freed capital is assumed to earn its baseline return.
+
+# Position Sizing and Scaling
+
+We compare three sizing schemes under the same total capital: 
+1. **Fixed-size**: each trade uses a fixed fraction of capital (e.g. one contract or fixed rupees margin per side).  
+2. **Adaptive sizing**: size inversely to volatility or risk (e.g. target 1% volatility per trade, using more contracts when spread vol is low).  
+3. **Planned scale-ins**: split a signal into parts; e.g. enter half-size at z=threshold, add the rest if z continues further.  
+
+Each will be run on identical signal streams with identical costs.  We *parametrize* (e.g. volatility targets 0.5–2%, or scale-in increments at z=1.5,2.0), and compare the excess return and maximum drawdown of each.  Scaling-in uses no extra capital beyond initial budget (emergency reserve cannot be tapped to average down).  We log outcomes to see if adaptive or scale strategies outperform simple fixed size on metrics of net excess after costs.  
+
+All sizing must respect margin limits on the same account – we will treat margin usage as cumulative (so adding scale-ins may throttle other trades).  No new capital injection is assumed beyond the planned reserve rules.
+
+# Opportunity-Arrival Modeling
+
+When multiple signals occur (or stale/rejected ones exist), we avoid an “oracle” that magically picks the best.  Instead, we model a **trade queue**: each day, identify all eligible signals (with z-scores beyond threshold).  Rank them (e.g. by |z| or expected return from historical analogues).  Then allocate capital sequentially: take the top signal, then the next, until capital is exhausted.  If an opportunity is skipped (due to lack of funds or low rank), it may still appear later if conditions persist; we must record such *stale* signals.  
+
+We will compare this ranked-queue approach to a simple “first-in, first-out” arrival order to test sensitivity.  Rejected/unfilled signals (insufficient funds) remain in memory for a holding period or drop after a max age.  This simulates realistic scheduling: trades are not simultaneously opened without regard to capacity.  
+
+Additionally, if a currently open trade clashes with a new higher-ranked one (same capital), we allow the possibility of **exiting the old to free funds** only if pre-specified (e.g. if expected yield differential exceeds a threshold).  All such decisions and their impact on P&L will be logged.
+
+# Candidate Hypotheses (Strategy Cards)
+
+We outline distinct hypothesis “cards” as follows (non-exhaustive examples):
+
+- **H1: Commodity Calendar Mean-Reversion (Carry exploit)**. *Instruments:* Same-commodity futures, nearby vs next month (e.g. Brent Jan vs Feb, or MOEX URAL* if exists). *Story:* Futures price differences reflect inventory/carry; large deviations from historical carry imply eventual reversion. *Data:* MOEX daily futures. *Formula:* Spread = (Front – Back). Hedge β=1. Normalize via z-score. *Entry:* If z > +\(Z\) then short front/long back; if z < \(-Z\) do reverse. *Exit:* z→0 or fixed Δ price difference. *Failure mode:* structural shifts in contango/backwardation (e.g. supply shock), or persistent roll costs. *Validation:* Walk-forward on past oil futures (e.g. WTI or Brent from 2010-2025), test with cost scenarios. *Decision:* Expect profit in historical contango regimes; reject if after costs excess ≈0.
+
+- **H2: Commodity Inter-Spread (e.g. Crack/Conversion)**. *Instruments:* Related products (e.g. Brent vs Gasoline, or Rhodium vs Platinum if data). *Story:* Marginal demand shifts (e.g. refining margins) cause one product’s price to lead; reverse moves as markets rebalance. *Data:* MOEX or external for joined pairs; compute ratio or difference. *Formula:* Regression β to equalize variance, Spread = P_A – β·P_B. *Entry/Exit:* Similar z-threshold on residual. *Failure:* If fundamentals decouple (new technology, sanctions). *Validation:* Use historical spreads and test if calibration holds.
+
+- **H3: Currency Carry/FX Spread**. *Instruments:* Currency futures (e.g. USD/RUB vs EUR/RUB, or spot futures vs interest). *Story:* The “carry” between currencies or funding rates; deviations may mean revert as rates align. *Data:* MOEX currency futures, overnight RUB repo rates. *Formula:* E.g. Spread = USDRUBF – (USDRUB * factor) or EURRUBF vs USDRUBF. *Entry/Exit:* If cross-hedged currency spread widens beyond mean, bet on convergence. *Failure:* Central bank policy changes, market closures. *Validation:* Historical currency futures backtest.
+
+- **H4: Equity-Index vs Basket Spread**. *Instruments:* IMOEX index future vs synthetic basket of heavy-weight stocks (or vs related index like RTS). *Story:* Mispricings between index future and underlying stock prices/statistics should arbitrage. *Data:* MOEX index futures vs underlying index level. *Formula:* Spread = Future – Index. *Entry:* Large basis (accounting for funding) reverts after alignment. *Failure:* Mechanical roll adjustments, corporate actions. *Validation:* Compare modeled index basis.
+
+- **H5: Cross-Asset Macro Spread**. *Instruments:* E.g. Oil futures vs RUBFX futures (USD/RUB), or Gold vs USD, reflecting “petrocurrency”. *Story:* Macro link: oil revenues support ruble; extreme divergence signals correction. *Data:* Oil futures (Brent or internal), FX futures. *Formula:* Spread = OilPrice – γ·(1/FX) for ruble. *Entry/Exit:* If oil is high and ruble weak (or vice versa) beyond norm, expect reversion. *Failure:* Geopolitical blocks (sanctions can decouple ruble from oil). *Validation:* Backtest during known regimes.
+
+Each card records: **Data requirements** (e.g. need open interest to filter low-liquidity), **parameter ranges** (e.g. entry z=1–2), **expected P/L drivers**, **high-water loss triggers** (stop-loss multiples), and **passing criteria** (significant positive excess net of costs in walk-forward).
+
+# Strategy/Pair Compatibility Matrix
+
+| Spread Family            | Instrument Examples           | Normalization/Hedge   | Strategy Type     |
+|--------------------------|------------------------------|-----------------------|-------------------|
+| Calendar (Carry)         | Oil front vs back futures    | 1:1 price difference  | Mean-reversion    |
+| Calendar (Seasonal)      | Agri (wheat Mar/Sep)         | 1:1 or ratio         | Mean-reversion    |
+| Basis (Futures vs Spot)  | Index future vs index level | Discount factor (funding) | Convergence      |
+| Cross-Commodity (Relative)| Gold vs Silver, Brent vs Jet| Regression β          | Relative value    |
+| Cross-FX (Carry)         | USDRUB vs EURRUB            | Synthetic cross-rate  | Carry-arbitrage   |
+| Equity-Equity (Pairs)    | BankFutures vs Index Future  | 1:β or regression    | Pairs trading     |
+| Macro (Petrocurrency)    | Oil vs RUBFX                | Oil:USD vs USD:RUB    | Macro arbitrage   |
+
+*(Matrix notes: “Normalization/Hedge” indicates the unit adjustment. “Strategy Type” notes the economic rationale.)* This helps match each hypothesis card to suitable markets. For example, calendar trades fit well with futures that have active multi-month curves, whereas cross-commodity or FX spreads require strong correlation. A pair like index vs index (IMOEX vs RTS) could use pairs trading methods, whereas a commodity basis trade is essentially a cash-and-carry arbitrage.
+
+# Walk-Forward Validation and Costs
+
+We will use **chronological walk-forward**: split data into training (for parameter fit, β estimation) and out-of-sample test.  Holding periods and signal overlap are accounted for realistically.  Each scenario is backtested from earliest to latest date without lookahead.  The **primary metric** is cumulative RUB excess P/L above the LQDT baseline, including realized financing costs.  
+
+We **parameterize costs**: assume for each contract a per-side commission (e.g. 50–150 ₽) and a bid–ask spread/slippage (e.g. 0.1–1 tick), tested under *stress/base/conservative* cases.  For example, a base case might use 1 tick slippage and 100 ₽ per contract, whereas a stress scenario uses 3 ticks and 200 ₽.  We report performance sensitivity.  Funding costs (for cross-currency) or exchange carrying (for perpetuals) are included if applicable.
+
+We will hold out a **final period** (e.g. most recent 6–12 months) for validation and not tune on it.  All intermediate results (train/test curves, drawdowns vs the LQDT counterfactual) are documented.  A strategy “passes” only if it shows robust positive excess net of costs in test data, and drawdowns within the user’s tolerance (e.g. <RUB10k).  Every hypothesis’s design, including assumed cost parameters, is recorded to avoid hindsight bias.
+
+# Ablation and Complexity Testing
+
+To test necessity of complexity, we will “ablate” the model features:
+- **No adaptive sizing**: fix position sizes, compare with full adaptive.
+- **No scale-in**: enter full size at once vs incremental adds.
+- **No early exit**: hold all trades to natural exit vs allow preemption for new signals.
+
+Each ablation will be its own backtest branch with everything else equal.  If removing a feature (e.g. scale-in) does not materially change excess returns, it may be unnecessary overhead.  Conversely, if a feature (e.g. exit-on-better-signal) greatly improves results, we note it as important.  Ablation outcomes help refine the “test plan” to avoid over-engineering.
+
+# References and Theory Sources
+
+- The MOEX ISS API documentation and third-party guides confirm data availability: historical daily bars can be fetched via `/iss/history/engines/futures/markets/forts/...`.  MOEX’s own site shows futures specs (lot, tick) and reports open interest (e.g. NBISF had 32,940 open contracts on 2026-10-22).  
+- Pairs/calibration theory: Reversion requires an economic link – “pairs trading would not work were prices truly random walks”.  A stable spread (constant mean) is assumed; if fundamentals shift (“drift”), performance can evaporate.  
+- Calendar spread logic: In contango, near-month is cheaper and traders buy front/sell back for roll yield; backwardation flips the setup.  Excess deviations usually mean-revert (“market comes back to neutral”) but not always.  For example, an oil-calendar spread trading guide shows entering at extreme z-score with opposite trades, noting that spread trades often carry lower margin.  
+- Risk management: Exiting unprofitable spreads promptly is essential (losses can accumulate if both legs move adversely).  Pairs literature emphasizes exits if the spread trends away (model forecast error thresholds).  These guides inform our risk rules and highlight that spread trading is not risk-free (worst-case loss = sum of both legs’ losses).
+
+**Library Leads:** For methodology we will consult major texts. Vidyamurthy’s *Pairs Trading* discusses cointegration-based spreads and cautions on sample choice. Chan’s *Algorithmic Trading* covers mean-reversion entry/exit signals and performance pitfalls (e.g. high trading costs can erase returns). Carver’s *Systematic Trading* addresses sizing, scaling, and robustness tests.  We will focus on relevant sections (e.g. index spreads in Chan, portfolio sizing in Carver) to inform our hypothesis design rather than generic summaries.
+

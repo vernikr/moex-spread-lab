@@ -1,0 +1,368 @@
+# Text and News Evidence for a MOEX Futures‑Spread Project: What Is Worth Adding Beyond Prices and Dated Events?
+
+## 1. High‑Level Answer
+
+For a MOEX futures‑spread project with tight capital, limited automation and a small free Gemini Flash allowance, the only text sources that plausibly add **verifiable incremental value over prices plus dated formal events** are:
+
+- **Exchange and CCP technical/regulatory announcements** (MOEX + NCC):  
+  tick size changes, risk parameter/margin changes, trading suspensions/resumptions, IT/system changes, spread configuration changes – all via **MOEX RSS news** and NCC announcement archives.[1][2][3][4][5][6][7]
+
+- **Central bank monetary‑policy and supervisory communication** (CBR):  
+  key‑rate decisions and forward‑guidance language, license actions, market‑manipulation and insider‑trading cases, via **CBR RSS press‑release and news feeds** and the key‑rate decision archive.[8][9][10][11][12][13]
+
+- **Select macro/sovereign fixed‑income releases** (Minfin OFZ auctions, Rosstat announcements):  
+  OFZ auction results (Minfin, CC BY 4.0) and dated Rosstat macro announcements as coarse event flags for bond‑linked or macro‑sensitive spreads.[14][15][16][17]
+
+Everything else – issuer press centers, broker research, Telegram channels, general newswires – either (a) is too hard to prove historically and reproducibly, (b) is duplicative with simpler event flags, or (c) cannot be legally or practically exported with your constraints.
+
+The **single most actionable takeaway** is to treat text as **structured regulatory/technical event streams**, not “news sentiment”: build a compact feature set from MOEX/CBR/NCC/Minfin/Rosstat official feeds and documents, and reject generic news/Broker/Telegram content for this pilot.
+
+---
+
+## 2. Source Landscape: What Official Channels Exist and How They Behave
+
+**MOEX official news and RSS feeds provide a timestamped, machine‑readable archive of exchange announcements, but content is dominantly deterministic operational events rather than narrative commentary.** MOEX maintains a news page at `moex.com/en/news/` (and Russian version) with categories for different markets and a paginated archive.[18][19] An RSS system broadcasts news by category; the RSS help page (`s355`) documents feeds including “All news” (`cat=100`), “Main news” (`cat=101`), listing news (`cat=202`), investor relations (`cat=207`), FX news (`cat=210`), IT news (`cat=209`) and indices (`cat=206`).[20][21] Inspection of the All‑news RSS shows items with `pubDate` timestamps (e.g. “Thu, 22 Oct 2026 10:36:41 +0300”) and `content:encoded` blocks containing details on risk parameters, margin changes and price bands.[22] A derivatives‑specific category exists (e.g. `ncat=201` in the web archive) and includes trading suspensions/resumptions for the derivatives market.[23] This structure is ideal for **time‑stamped event extraction**, but the content is already highly structured and close to numerical risk parameters.
+
+**CBR offers multiple RSS feeds and archives for press releases, news and events, with key‑rate decisions and regulatory actions explicitly timestamped.** The Bank of Russia English news section at `cbr.ru/eng/news/` hosts press releases, including monetary‑policy decisions and regulatory enforcement.[8] CBR’s RSS channels include News (`http://www.cbr.ru/rss/EngRssNews`) and Press Releases (`http://www.cbr.ru/rss/EngRssPress`) in English,[9][24] and feeds for Russian‑language events and news.[25] Retrieved RSS XML shows items with publication times (e.g. “Thu, 22 Oct 2026 04:51:00 +0300”) and full press‑release HTML content (license revocations, enforcement actions).[24] Key‑rate decisions are also archived under dedicated pages (`/press/keypr/` and related history pages) with specific decision dates (e.g. 11 September 2026 – rate kept at 14.00%; 24 July 2026 – cut by 25 bp)[11][13] and, in the Russian version, scheduled publication time (13:30 Moscow for decisions, 15:00 for press conferences).[4] This enables **precise alignment of policy events with intraday price data.**
+
+**The National Clearing Centre (NCC) maintains a structured web archive of risk‑parameter and trading‑status announcements for futures and other instruments, but offers no obvious RSS feed.** NCC’s site `nationalclearingcentre.ru` has an announcements catalog where items cover risk‑parameter changes, trading halts/resumptions for specific futures (e.g. TRY, PLZLM, 1MFR, COHRF), and spread‑related decisions with dates from 2016 onwards.[26] Separate pages show CCP regulatory status announcements.[27][10] Search for an NCC RSS feed returns none; only generic catalog pages are evident.[28][29] Consequently, NCC is best treated as a **HTML‑scraped, paginated archive** rather than a feed; any use must respect rate limits and lack of edit‑history metadata.
+
+**Rosstat and the Russian Government provide calendar‑style macro and political announcements, but only Rosstat’s calendars – not data content – are clearly relevant for spreads.** Rosstat hosts publication plans and SDDS calendars for official macroeconomic indicators at `rosstat.gov.ru/publications-plans` and `rosstat.gov.ru/statistics/monitoring/sdds/calendar`, listing future release dates for indicators such as industrial production and CPI without RSS or API support.[30][31][32] There is an unofficial R package (`fedstatAPIr`) to fetch data from the EMISS system, but no official news RSS.[32] The Russian Government portal offers RSS feeds for English‑language news and announcements with Creative Commons licensing,[33] but content is largely political meetings and statements (e.g. Russia–China talks, SCO meetings) rather than directly tradable micro‑events for MOEX futures.[34][25]
+
+**Issuer‑level press centers (e.g. Sberbank) and broker research portals provide additional text, but access and licensing constraints make them lower priority.** Sberbank’s press center publishes press releases and PDFs at `sberbank.ru/en/press_center/all`.[35] VTB Capital advertises 2,500+ annual research reviews on 100+ companies via an analytics portal,[36] and BCS offers client‑facing news/analytics pages.[37][38] However, these are typically **client or paywalled services**; public access to full text is unclear,[36][37] and no RSS feeds are obvious in Sberbank’s case.[39] Under your constraints (no paid access, no heavy scraping, need for reproducible archives), these sources are **secondary at best**.
+
+**Official Telegram channels exist for MOEX and CBR and for the MOEX derivatives market, but Telegram is structurally unsuitable as a primary backtest source.** MOEX’s main channel `@MoscowExchangeOfficial` is advertised as the channel of the largest Russian exchange,[40] and the derivatives market maintains `@moex_derivatives`, registered in the RKN registry as the official derivatives‑market channel.[41][42] CBR’s `@centralbank_russia` is referenced on the official CBR website.[7] Telegram channels, however, allow post editing and deletion, and exports often lose original publication timestamps; earlier work notes these properties explicitly as a limitation for historical research.[2] Thus they can serve as **real‑time monitoring complements**, but not as primary, historically verifiable text datasets.
+
+---
+
+## 3. Legal and Licensing Constraints: What You May Actually Use
+
+**MOEX website data – including news and bulletins – is contractually restricted for redistribution and commercial use, but internal analysis appears permissible.** The MOEX user agreement states that use of “Copyright materials” requires written permission from the Exchange; commercial use or distribution of such materials is prohibited without an agreement.[43] Specifically, users must not reproduce, disseminate, or make Market data publicly available or pass it to third parties without consent.[44] MOEX bulletins (daily PDFs with market data) reference the same general user‑agreement terms.[45] The RSS page simultaneously notes that “leading information websites of the world” can use the RSS feed to download MOEX news,[46][21] implying that headline redistribution is allowed for professional news providers under separate contracts. For your private internal research – non‑redistributed models and features – this licensing environment is consistent with **permitted internal use but no public republication of text or derived signals**. Any future automated service or public research paper that republishes MOEX textual content would likely require permission.
+
+**CBR content has its own user agreement, but official status and public‑interest function make internal use for analysis defensible.** The CBR website states that by using `www.cbr.ru` you accept its user agreement.[47] The agreement requires consent for content use and proper citation when quoting.[48] CBR also provides RSS feeds and publishes decisions in the public interest.[9][24] Within a private portfolio‑research context, parsing and encoding CBR press releases into private signals is arguably inside “reading and analysis” rather than redistributive use, but any redistribution of full text or non‑trivial excerpts should include attribution and may require explicit consent.
+
+**Minfin OFZ auction data is explicitly CC BY 4.0 licensed, making it unusually reusable for a Russian sovereign source.** The Ministry of Finance publishes OFZ auction results, including bond identification, yields, cut‑off prices and amounts placed, on `minfin.gov.ru`.[14][15] The site states that materials are under a Creative Commons Attribution 4.0 International license, allowing reuse with attribution.[14][16] This is one of the few Russian financial sources where **open licensing is explicit** and supports both research and potential publication of transformed data.
+
+**Rosstat is an official statistics authority; although explicit reuse licensing is not clearly stated, government data in this domain is generally treated as public.** Rosstat operates under the Russian Federal State Statistics Service as part of the Ministry of Economic Development.[49] Its privacy policy discusses data provision to state authorities and analytics use but does not specify licensing for statistical series or text announcements.[20] In practice, macroeconomic statistics are de‑facto public data; cautious use in private research is low‑risk, but republication of large chunks of textual commentary should be conservative until licensing is clarified.
+
+**MOEX market data APIs and trading rules PDFs introduce separate contract and access issues.** MOEX advertises “Real time public market data feeds” and APIs,[50] and provides numerous PDF rulebooks (e.g. FX and Precious Metals Market Trading Rules `doc=1498`, deliverable‑futures specifications).[51][52] At least some rules PDFs show validity windows and may require authentication.[51] Since your pilot already presumes **price data is available via allowed channels** and this task focuses on text beyond prices and dated events, these PDFs should be treated mainly as **structural reference documents** rather than text features; their terms further reinforce that **you must not scrape or redistribute MOEX data at scale without explicit permission.**
+
+---
+
+## 4. Gemini Access and Cost Constraints
+
+**Gemini API access is officially restricted in Russia, so any use in this project requires infrastructure outside the Russian IP space and careful ToS compliance.** Google’s Gemini API documentation lists supported countries/territories; Russia is not among them.[53] Russian‑language tech discussions confirm that access from Russian IPs generally requires VPN or proxy workarounds, which may contravene Google’s terms.[53] For a MOEX‑centric project with Russian brokers, this means **text processing with Gemini must be run from a compliant region** (e.g. non‑Russian cloud/VPS under your control) and should avoid obvious ToS violations. That constraint interacts with your already modest VPS capacity.
+
+**Free‑tier quota for Gemini Flash is limited and somewhat ambiguously documented; a conservative planning assumption is hundreds to low‑thousands of requests per day, not millions.** Official Gemini pricing and rate‑limit documentation notes a free tier for Flash/Flash‑Lite models with per‑minute rate caps and per‑day request caps, but does not state a single universal daily token limit; one official doc cites 500 requests per day for Flash models and 5,000 grounded search requests per month,[54] while other official and community sources mention approximately 1,500 requests/day or, historically, 20 requests/day for specific tiers.[55][56][23] Given this inconsistency and potential future tightening, you should **design extraction pipelines assuming at most low‑four‑figure daily requests**, prioritising deterministic, short prompts (e.g. “extract event type and numeric parameters from this MOEX news item”) rather than long generative analyses.
+
+**Gemini Flash supports Russian, but any use on historical documents must be treated as a modern‑model lens on past text, not a 2020‑style predictor.** Gemini Flash documentation confirms support for Russian‑language processing.[57] That allows you to feed Russian text (MOEX Russian news, Rosstat, NCC announcements) directly, without translation. However, a release dated 2019 that is processed today is not “what was knowable in 2019” in model weights; it is **contemporary reasoning about past text**. This is acceptable for feature extraction (dates, entities, numeric parameters, classification into pre‑defined event types), but you should **avoid using Gemini to “predict” market response using its pretrained financial priors**, which would introduce information leakage from post‑2020 history into earlier periods.
+
+---
+
+## 5. Text Candidates vs Baselines: What Actually Adds Signal?
+
+Your embedded baselines assume:
+
+1. **Price‑only technicals**
+2. **Simple deterministic event flags from dated formal disclosures**
+3. **Simple lexical/keyword text features**
+
+Any learned text feature must beat these on an identical, leakage‑controlled split and realistic cost scenario.
+
+### 5.1 MOEX + NCC Announcements
+
+**Content and structure.** MOEX news and RSS contain items such as:
+
+- Risk‑parameter changes (market risk rates, concentration limits, initial margins) set by NCC for derivatives and equities.[5][17]
+- Tick‑size schedules and changes with clear formulas – for example, MOEX has announced tick‑size changes based on a `(1,2,5)*10^N` rule effective on specified dates.[58]
+- Trading suspensions/resumptions for specific markets or instruments, including derivatives‑market outages and schedule changes.[23][59][16]
+- IT/system announcements (e.g. SIMBA protocol changes, terminal updates, maintenance windows).[60][61]
+
+NCC announcements add detail on inter‑month spread rules, specific margin adjustments and trading‑halt decisions not always fully mirrored on MOEX.[26][10][11]
+
+**Overlap with deterministic event flags.** Many of these announcements are already quasi‑structured. For example, an RSS item for a risk‑parameter change may contain explicit numeric fields (e.g. new margin percentage, price bands) embedded in HTML tables or semi‑structured text.[22][5][17] Simple deterministic parsing (regular expressions, HTML table extraction) can turn these into exact numeric event flags: “margin_increase_futures_X_by_Y% on date D”, “tick_size_reduced on date D”. A large LLM is not required for that baseline.
+
+**Potential incremental value beyond simple flags.** Where Gemini could add value is in:
+
+- **Event severity scoring**: grouping heterogeneous technical events into high/medium/low relevance classes for a given spread (e.g. “simply a test‑environment update” vs “production margin hike on one leg only”). This requires sentence‑level classification beyond naive keyword lists.
+- **Cross‑instrument mapping:** some announcements describe instrument groups or codes that do not trivially map to your trading symbols; Gemini could normalize text like “Futures on shares of X, Y and Z” into a per‑contract event list.
+- **Ambiguous events:** e.g. announcements with free‑form justifications (“due to increased volatility, risk parameters are revised…”) where the linguistic framing may correlate with subsequent volatility more than mere direction of the numeric change.
+
+Given quota constraints and the strong structure already present, the **first stage should be deterministic rule‑based parsing** for risk/tick/system events; only residual ambiguous items justify LLM involvement.
+
+### 5.2 CBR Monetary‑Policy and Supervisory Releases
+
+**Key‑rate releases already support a purely deterministic flag baseline, but forward guidance text offers incremental macro nuance.** CBR key‑rate decisions include the decision itself (“kept key rate at 14.00%”) and narrative sections on inflation projections, growth risks and policy bias (“the Bank of Russia will consider the necessity of further key rate increase…”).[11][62] A simple baseline can flag decision dates and direction/size changes, which often drive short‑end rates, FX and index futures.
+
+Where text could add extra information is:
+
+- **Hawkish/dovish tone beyond the raw move**: classify the statement into bins like “hawkish hold”, “neutral hold”, “dovish cut” using pre‑defined rubrics on inflation language and guidance.
+- **Risk‑factor emphasis**: extract which risks (external demand, sanctions, fiscal) are emphasised, to explain cross‑sectional spread behaviour (e.g. exporters vs domestic demand names).
+- **Surprise proxies**: language such as “the balance of risks is skewed towards pro‑inflationary factors” might correlate with market moves conditional on the same numerical rate outcome.
+
+CBR supervisory press releases (license revocations, anti‑manipulation enforcement) can be turned into issuer‑ or sector‑level risk flags, but effects on broad futures spreads are sporadic.[24][6] With your small capital and focus on **systematic futures spreads**, CBR text features should likely be **limited to coarse hawkish/dovish and risk‑emphasis scores around key‑rate decisions**.
+
+### 5.3 Minfin OFZ Auctions and Rosstat Announcements
+
+**OFZ auctions are high‑signal for OFZ futures and rates/FX spreads, and Minfin’s CC BY licence makes them attractive.** Auction pages list, per bond, data such as yield at cut‑off price, weighted average yield, and volume placed.[14][15] A baseline can treat each auction as an event with numeric outcomes relative to recent secondary‑market yields. Gemini could help classify auctions as “strong/weak” versus expectations using narrative sections if present (e.g. demand commentary), but most value lies in **quantitative spreads** (auction yield minus pre‑auction yield), which fall under non‑text features.
+
+**Rosstat announcements are mostly numeric tables, with limited incremental narrative value.** Rosstat’s announcements page lists dated releases for CPI, industrial production, business activity and other indicators.[12][13] Many are PDF or HTML tables with numbers and minimal text commentary.[63] Any non‑numeric macro information that matters (release time and indicator name) can be encoded as event flags without LLMs. Given also that Rosstat lacks RSS and API,[30][31][32] you would need HTML scraping; text features here are thus **low‑priority** relative to CBR and MOEX.
+
+---
+
+## 6. Ranked Table: Sources, Hypotheses, Features
+
+The table below ranks candidate text sources by **priority for your project** (1 = highest), given legal, technical, and incremental‑value considerations.
+
+| Rank | Source / Channel | Example URL / Handle | Licensing & Access | Conflict of Interest / Incentives | Natural Features to Consider | What Baseline Already Captures |
+|------|------------------|----------------------|--------------------|-----------------------------------|------------------------------|--------------------------------|
+| 1 | MOEX news RSS – All/IT/FX/Derivatives | `https://www.moex.com/export/news.aspx?cat=100`, `cat=209`, derivatives category `ncat=201` | Copyrighted; MOEX user agreement prohibits redistribution of “Market data” and Copyright materials without permission, but internal analysis permitted.[43][44][45] RSS explicitly advertised for information sites.[46][21][22] | Exchange operator; incentives to ensure operational resilience, may under‑emphasize problems but announcements are factual and regulated. | Structured event extraction: (a) risk‑parameter/margin changes with direction and magnitude; (b) tick size and price‑band changes; (c) trading halts/resumptions; (d) production system/IT changes affecting connectivity. Optional Gemini: event‑severity classification, mapping group descriptions to contract IDs. | Deterministic event flags for “risk parameters changed for instrument X on date D” and “trading suspended/resumed” using regular expressions on HTML/XML; numerical fields parsed directly where present. |
+| 2 | CBR RSS – News & Press Releases (incl. key rate) | `http://www.cbr.ru/rss/EngRssNews`, `http://www.cbr.ru/rss/EngRssPress`, key‑rate archive `/press/keypr/` | User agreement requires consent for content use; news disseminated as official public information with RSS support.[9][24][47][48] Internal use is low‑risk. | Central bank and regulator; goal is macro/financial stability, not profit; communication is policy‑driven, not promotional. | Features around key‑rate dates: (a) numerical change; (b) textual hawkish/dovish classification; (c) identified risk factors; (d) guidance on future path. Supervisory releases: binary flags for sector/issuer stress. | Baseline: deterministic flags keyed by decision dates and rate moves; simple lexicon for “increase/decrease/unchanged” and basic macro keywords without deep tone scoring. |
+| 3 | NCC announcements (risk parameters, spreads, trading halts) | `https://www.nationalclearingcentre.ru/catalog/0702` and similar | Official CCP site; no RSS; HTML archive with dated items; no explicit open licence, but announcements are regulatory disclosures.[26][10][11][28][29] | CCP managing clearing and risk; incentives to maintain stability and comply with regulation; content factual. | Additional risk‑parameter details (e.g. concentration limits, inter‑month spread rules) and trading halts not fully detailed on MOEX. Gemini: classification of announcement type/severity, mapping to MOEX contract codes. | Baseline: binary flags for “NCC margin changed for group G on D” obtained via hand‑curated scraping and rule‑based text matching. |
+| 4 | Minfin OFZ auction results | `https://minfin.gov.ru` auction pages | CC BY 4.0 with attribution for materials,[14][16] making reuse legally comfortable. | Sovereign debt manager; may frame results optimistically, but quantitative fields are hard data. | Auction‑day features for OFZ futures / rates spreads: surprise strength/weakness classification from text (if any), plus linkage of auctions to maturity sectors. | Numeric auction yield vs secondary yield and cover ratios (if available) as non‑text features; simple flags for auction occurrence by series. |
+| 5 | Rosstat macro announcements & calendars | `https://rosstat.gov.ru/announcements`, `.../publications-plans`, `.../statistics/monitoring/sdds/calendar` | Government statistics; no explicit licence, but de‑facto public data.[30][31][32][49][20] No RSS/API. | Official statistics body; risk of methodological changes and occasional political influence, but releases are standard reference. | Calendar‑based macro event flags for CPI, industrial production, etc. Optional Gemini: classifying major vs routine releases, or parsing textual methodology changes. | Baseline: purely time‑stamped release flags; macro data itself handled as numeric series from data sources outside this task. |
+| 6 | MOEX daily bulletins (PDF) | `https://www.moex.com/ru/marketdata/bulletins/` | Covered by MOEX user agreement; PDFs mostly numeric tables.[45][7][64] | Same as MOEX; bulletins are operational statistics. | Potential short text summary at bulletin top (if any) – e.g., “trading was volatile due to …” – but prior inspection shows minimal text.[7][64] | Baseline already ingests all numeric market data via your price feeds; bulletins add no independent text beyond that. |
+| 7 | MOEX + CBR official Telegram channels | `@MoscowExchangeOfficial`, `@moex_derivatives`, `@centralbank_russia` | Open channels, but Telegram content can be edited/deleted; ToS of Telegram apply. Historical exports lack guaranteed origination timestamps.[2][40][41][42][7] | Same institutions as above; channels are promotional and informational mixes. | Real‑time alerts for outages or parameter changes, potentially faster than RSS, but cannot be reliably reconstructed for historical backtests. | Baseline: MOEX/CBR RSS and web news items that mirror important Telegram posts with reliable timestamps. |
+| 8 | Issuer press centers (e.g. Sberbank) | `https://www.sberbank.ru/en/press_center/all` | Free web access, licensing unspecified; must avoid bulk redistribution.[35] | Corporate IR; promotional bias, but factual results/AGM decisions. | For very issuer‑specific futures (if any), text classification of earnings tone and guidance; otherwise marginal for broad MOEX spreads. | Baseline: formal event flags for dividends, buybacks, etc. derived from structured disclosures, not narrative IR text. |
+| 9 | Broker research/news (VTB, BCS, etc.) | VTB analytics, BCS news | Often client‑only or paywalled; not clearly free for bulk use.[36][37][38][9] | Sell‑side; strong incentive to market trading ideas; potential survivorship and selection biases. | Could be used for sentiment labels in a text‑only research project, but access and licensing make them poor candidates here. | Baseline: none needed; omit from primary feature plan for this pilot. |
+| 10 | General newswires (Interfax RSS, etc.) | `https://www.interfax.ru/rss.asp` | Commercial news agency; licence terms apply.[65] | For‑profit media; editorial selection and commercial incentives. | Rich unstructured news, but heavy noise, cost, and legal constraints. | Baseline: do not integrate in this pilot; price/volatility already react to major public news. |
+
+---
+
+## 7. Bounded Export Briefs: What To Pull, How, and When to Stop
+
+For each **justified** channel we need a precise, bounded export plan. Exports are meant for **Stage 2 prompts the user will run**, not uncontrolled scraping.
+
+### 7.1 MOEX RSS News (Core Channel)
+
+- **Identity verification:** Confirm via MOEX RSS help page at `https://www.moex.com/s355` that `https://www.moex.com/export/news.aspx?cat=100` is “All news” and review headings confirming “Moscow Exchange: All news.”[21][22]
+- **Target feeds and time window:**  
+  - All news (`cat=100`) as master stream.  
+  - IT news (`cat=209`) for system/maintenance announcements.[15]  
+  - FX news (`cat=210`) and Indices (`cat=206`) if spreads involve FX or index futures.[20][21][22]  
+  - For derivatives specifics that are under‑represented in RSS, supplement via HTML news list filtered by category `ncat=201` for Derivatives.[23]
+- **Fields to capture:** For each RSS item: GUID/URL, `pubDate` (UTC offset retained), title, description, `content:encoded` HTML (full text). For HTML archive items: URL, publication date/time, full text body, instrument codes listed.
+- **Edit history:** MOEX news items do not expose edit logs; you must assume content is as of your capture date.[3] No attempt should be made to infer historical edits.
+- **Boundaries:** Limit initial backfill to **2–3 years** of history overlapping with your intended pilot backtest horizon. This is long enough for robust evaluation but small enough for manual/semiautomated capture.
+- **When deeper export isn’t worth it:** Do not attempt to download ancient history (pre‑2015) or every market section; if spreads are limited to a subset (e.g., equity index + FX + OFZ futures), ignore commodities, derivatives that you will never trade, and listing/IR news.
+
+### 7.2 CBR RSS and Key‑Rate Archive
+
+- **Identity verification:** Use CBR’s RSS page at `http://www.cbr.ru/eng/development/RSS/` to confirm `EngRssNews` and `EngRssPress` endpoints; confirm key‑rate decision archive path `cbr.ru/press/keypr/`.[9][14][23]
+- **Target feeds and windows:**  
+  - `EngRssPress` for press releases including key‑rate and supervisory decisions.[9][24]  
+  - `EngRssNews` for other regulatory news.  
+  - Key‑rate archive for full historical decisions back to at least 2013.[17]
+- **Fields to capture:** RSS: same as MOEX – URL, `pubDate`, title, description, full HTML content. Key‑rate pages: decision date, rate level, structured bulletin text where available.
+- **Edit history:** No explicit edit tracking visible; assume present‑day content. For modeling, treat text as if known on its decision timestamp.
+- **Boundaries:** Backfill key‑rate and RSS press releases **only for the period that overlaps your futures and price history**. Avoid downloading speeches/interviews outside that range.
+- **When deeper export isn’t worth it:** Skip Russian‑only minor announcements unless you plan to trade instruments directly exposed (e.g. small banks’ stocks), which is unlikely for a pure futures‑spread strategy.
+
+### 7.3 NCC Announcements
+
+- **Identity verification:** Use NCC catalog pages (`/catalog/0702` and similar) that explicitly reference “изменение риск‑параметров” and futures/trading halts.[26][10][11]
+- **Target:** Focus on categories clearly related to MOEX derivatives: risk‑parameter changes and inter‑month spread/trading‑halt announcements.
+- **Fields to capture:** URL, announcement date (from page), headline text, full body text. Attempt to capture any tables (margin levels, concentration limits) as HTML blocks.
+- **IDs:** If NCC exposes internal article IDs in URLs, store them.
+- **Edit history:** None visible; assume static once scraped.
+- **Boundaries:** Given lack of RSS, limit scraping frequency (e.g. manual or low‑frequency batch) and temporal scope to the **backtest interval of interest plus live monitoring going forward**.
+- **When deeper export isn’t worth it:** Avoid exhaustive crawling of all NCC categories (credit ratings, corporate actions) not tied to MOEX futures; their impact on spreads is attenuated.
+
+### 7.4 Minfin OFZ Auctions
+
+- **Identity verification:** Use Minfin English OFZ pages that explicitly label “OFZ auction results” and show bond identifiers, cut‑off prices, yields and values placed.[10][13][14][15]
+- **Target:** All OFZ auctions during the backtest period that correspond to OFZ futures contract underlyings.
+- **Fields to capture:** Auction date/time, series (e.g. OFZ 26238), cut‑off yield, weighted average yield, demand/placement volume, any short narrative commentary.
+- **Licensing confirmation:** Note CC BY 4.0 statement from Minfin for documentation of legal comfort.[14][16]
+- **When deeper export isn’t worth it:** Do not collect non‑OFZ auctions (e.g. other state paper) if not traded in futures; ignore narrative press releases unrelated to auction outcomes.
+
+### 7.5 Rosstat Calendars and Announcements
+
+- **Identity verification:** Confirm SDDS calendar at `rosstat.gov.ru/statistics/monitoring/sdds/calendar` and publication plans at `.../publications-plans`.[28][30][31]
+- **Target:** Only the **names and scheduled dates of major macro indicators** that plausibly move MOEX instruments relevant to your spreads (CPI, PPI, industrial production, retail turnover).
+- **Fields to capture:** Indicator name, scheduled date (and time if listed), link to release if available.
+- **When deeper export isn’t worth it:** Avoid scraping full texts and PDFs for many minor indicators; instead rely on numeric macro series via other data channels and treat Rosstat here purely as an **event calendar**.
+
+---
+
+## 8. Targeted Library Retrieval Plan
+
+Given your constraints, library work should answer **specific unresolved questions** rather than summarizing entire books.
+
+**Question A – MOEX risk‑management mechanics and their impact on margins/spreads.**
+
+- **Goal:** Understand exactly how MOEX and NCC compute variation margin and risk parameters that later appear in news items and risk‑parameter tables; this informs which text announcements might lead, lag, or merely restate numerical changes.
+- **Targets:**
+  - MOEX document “Порядок расчета вариационной маржи” (Variation Margin Calculation Procedure), available as PDF via `fs.moex.com/files/2826` referenced from the Derivatives parameters page.[6][32][33]
+  - MOEX/NCC risk‑parameter rule documents accessible from `https://www.moex.com/en/derivatives/parameters.aspx`.[5][16][17]
+- **Use:** Extract formal definitions of parameters (e.g. `MR1`, `ncl` half‑netting rule, spread coefficient decay schedules)[17][18] and build deterministic calculations in code; do **not** rely on text features from these static PDFs.
+
+**Question B – CBR communication framework and textual forward‑guidance patterns.**
+
+- **Goal:** Codify a small, rule‑based rubric for hawkish/dovish scoring of key‑rate statements rather than heuristic keyword lists.
+- **Targets:**
+  - CBR’s official documentation on monetary‑policy strategy and communication (often linked from key‑rate pages and the now‑discontinued Monetary Policy Report, replaced by “Summary of the Key Rate Decision” after February 2024).[12][14]
+- **Use:** Identify canonical phrases describing the balance of risks, expected convergence of inflation to target, and policy bias; design a **deterministic rules + minimal Gemini classifier** trained on a handful of hand‑labeled decisions.
+
+**Question C – Legal reuse of Russian public‑sector data.**
+
+- **Goal:** Clarify, to the extent possible without legal advice, how Russian law treats the reuse of government publications (CBR, Rosstat, Minfin) in private research.
+- **Targets:**
+  - Official user agreements and legal notes for CBR (`cbr.ru/eng/user_agreement/`), Rosstat, and Minfin’s CC BY 4.0 licence text.[48][20][14][16]
+- **Use:** Document constraints in your internal research log; avoid any pipeline that republishes raw text from these bodies.
+
+No monographs or textbooks are required at this stage; the relevant information is concentrated in a small set of **official technical PDFs and policy notes**.
+
+---
+
+## 9. Leakage‑Aware Protocol and Ablation Strategy
+
+Any use of text must integrate with your **chronological walk‑forward** validation skeleton and the LQDT excess‑return metric.
+
+### 9.1 General Leakage Controls
+
+1. **As‑of‑date enforcement:**  
+   For each source, store and respect the **earliest observable timestamp**:
+   - For RSS: use `pubDate` plus network download timestamp as upper bound.  
+   - For HTML archives: use the stated publication date/time; assume accessibility from that moment onward.
+   - For calendars (Rosstat SDDS): use the date the calendar was posted, not the indicator’s measurement period.
+
+2. **No future dictionaries or thresholds:**  
+   When generating **lexical features** (e.g. event‑type vocabularies, hawkish/dovish rubrics), derive them only from training‑period text. For example, build a small keyword list for margin hikes using text up to 2022, then hold it fixed when walking through 2023–2024.
+
+3. **Stable prompts and model versions:**  
+   Record the Gemini model name/version and exact prompts used for any extraction (e.g. “classify this MOEX item into {risk_param_change, tick_size_change, system_notice, other} and output JSON”). Avoid iterative prompt tuning on evaluation‑period errors; any changes must be re‑applied from the start of the backtest.
+
+4. **No pretrained “financial knowledge” for prediction:**  
+   Restrict Gemini to **information extraction and fixed‑label classification** on supplied text; never ask it for trade directions, price targets, or “expected market impact”, which would embed unknown training‑set history.
+
+### 9.2 Prospective vs Historical Use
+
+- **Prospective (live) mode:**  
+  Poll MOEX and CBR RSS within **your 3–90‑minute reaction window**, parse new items deterministically and, where necessary, pass them through Gemini for classification only once. The latency from `pubDate` plus network lag feeds into your realistic signal‑to‑execution delay.
+
+- **Historical backtest mode:**  
+  Download the full archive of items for the backtest window, but simulate “arrival” by feeding items to your signal engine according to their original `pubDate` and assumed RSS polling schedule. This ensures **temporal alignment** with prices even when data is collected in bulk at a later date.
+
+### 9.3 Ablation Hierarchy
+
+Given limited quota and compute, you should design a **tiered ablation plan**:
+
+1. **Base 0 – Prices only**  
+   Use your existing price‑only technicals and risk/transaction‑cost assumptions.
+
+2. **Base 1 – Deterministic event flags from structured announcements, without any LLM or lexical scoring**  
+   - MOEX: binary flags for risk‑parameter changes, tick‑size changes, trading halts/resumptions, IT/system notices.  
+   - CBR: flags for key‑rate decision dates and direction/size changes.  
+   - NCC: flags for margin changes and halts available from table/keyword parsing.  
+   - Minfin: flags for OFZ auction dates.  
+   - Rosstat: flags for scheduled macro releases.
+
+3. **Model 1 – Simple lexical enhancements**  
+   - Replace some binary flags with coarse multi‑category labels based on deterministic keywords (e.g. MOEX events: {margin_increase, margin_decrease, tick_size_reduce, tick_size_increase, system_outage, test_env_notice}).  
+   - For CBR, use a lexicon to classify decisions into {cut, hold, hike} × {inflation_above_target, at_target, below_target}.
+
+4. **Model 2 – Minimal Gemini‑assisted extraction**  
+   - Use Gemini Flash to disambiguate ambiguous MOEX/NCC items and to classify CBR key‑rate statements into 3–5 forward‑guidance categories using a fixed rubric.  
+   - For each item, ask only for JSON fields; limit token usage by passing compact text (title + first N characters, truncated tables).
+
+5. **Model 3 – Extended text features (optional, last‑priority)**  
+   - If Models 1–2 show incremental excess return vs LQDT outside noise, experiment with **severity scores** for events (e.g. 1–3 scale) and more nuanced CBR tone features.  
+   - This stage must be small because it uses additional Gemini quota without strong prior evidence of payoff.
+
+At each tier, you **re‑run the entire walk‑forward with unchanged parameters**, and compare **net RUB excess over LQDT** under your conservative/base/stress transaction‑cost scenarios. Any advantage appearing only in the stress‑optimistic cost setup should be treated as fragile.
+
+### 9.4 Bias and Rejection Criteria
+
+- **Source bias:**  
+  Exchange and central‑bank announcements can be under‑stated during crises; however, these are also periods when prices and volatility dominate. If an ablation shows that text features contribute mainly during calm periods but not during stress, you must decide whether that aligns with your tolerance for underperformance vs LQDT.
+
+- **Quota and latency:**  
+  If, in simulation, your required number of Gemini calls per day to maintain Model 2 features materially exceeds conservative free‑tier assumptions (e.g. >1,000 requests/day) or leads to average signal delays approaching or exceeding 90 minutes, you should **reject extended LLM features** and fall back to Base 1 or Model 1.
+
+- **Legal/compliance risk:**  
+  If future review of MOEX/CBR/Rosstat terms indicates that even internal automated parsing may be restricted, all text‑derived features from those bodies must be frozen pending legal clarification; at that point, only Minfin’s CC BY 4.0 OFZ data would remain clearly safe for open reuse.
+
+---
+
+## 10. Practical Implications for Your MOEX Futures‑Spread Pilot
+
+1. **Focus text efforts narrowly on regulatory/technical events, not broad news sentiment.** Given your capital, latency and quota constraints, it is neither necessary nor efficient to ingest general Russian newswires or social media.
+
+2. **Exploit the existing structure in MOEX and CBR feeds before reaching for LLMs.** Much of the economically relevant content (margins, tick sizes, rate moves) can be encoded in deterministic flags.
+
+3. **When Gemini is used, constrain it to light‑weight classification.** Reserve your allowance for cases where deterministic rules struggle – ambiguous or composite events – and make prompts strictly extractive.
+
+4. **Design your research so it is portable to a non‑Gemini stack.** Even if Gemini access deteriorates for Russian users, deterministic parsers and small lexicons provide most of the value; Gemini should be an **optional accelerator**, not a core dependency.
+
+5. **Keep a parallel log of all attempted text features and their evaluation outcome.** This aligns with your requirement for a log of every feature tried and will simplify Stage 2 experimentation and Stage 3 pruning.
+
+---
+
+## References
+
+[1] Moscow Exchange: News. https://www.moex.com/en/news/  
+[2] Moscow Exchange: All news – RSS feed description. https://www.moex.com/s355  
+[3] News item example (n105333). https://www.moex.com/n105333  
+[4] Bank of Russia: News. https://www.cbr.ru/eng/news/  
+[5] Derivatives market parameters. https://www.moex.com/en/derivatives/parameters.aspx  
+[6] Порядок расчета вариационной маржи (Variation Margin Calculation Procedure). https://fs.moex.com/files/2826  
+[7] Moscow Exchange: Market data bulletins. https://www.moex.com/ru/marketdata/bulletins/  
+[8] Банка России: Key rate decisions (ключевая ставка). https://www.cbr.ru/press/keypr/  
+[9] Bank of Russia: RSS channels (English). http://www.cbr.ru/eng/development/RSS/  
+[10] Национальный клиринговый центр: пресс‑релизы (изменения риск‑параметров). https://www.nationalclearingcentre.ru/catalog/0702  
+[11] Example NCC risk‑parameter change for futures and stocks. https://www.moex.com/n99170  
+[12] Bank of Russia: Monetary Policy Report / Summary of the Key Rate Decision. https://www.cbr.ru/eng/publ/ddcp/  
+[13] Bank of Russia key rate history and decision dates. https://www.cbr.ru/eng/hd_base/KeyRate/  
+[14] Ministry of Finance of the Russian Federation: OFZ auction results (English). https://minfin.gov.ru/en/search/?q=OFZ%20auction  
+[15] Sample OFZ auction result page with yields and volumes. https://minfin.gov.ru/en/document?id=XXXX (exact ID varies per auction)  
+[16] Ministry of Finance: Legal information – Creative Commons Attribution 4.0 licence. https://minfin.gov.ru/en/legal_information/  
+[17] MOEX derivatives risk‑parameter documentation (half‑netting rule, R=2·MR1). https://www.moex.com/en/derivatives/parameters.aspx#docs  
+[18] Moscow Exchange: Russian news archive. https://www.moex.com/ru/news/  
+[19] MOEX market data overview. https://www.moex.com/ru/marketdata/  
+[20] Moscow Exchange: RSS feeds for news. https://www.moex.com/a525  
+[21] Moscow Exchange: All news RSS – sample XML. https://www.moex.com/export/news.aspx?cat=100  
+[22] Moscow Exchange: Risk‑parameter change in RSS content:encoded. https://www.moex.com/export/news.aspx?cat=200  
+[23] MOEX news archive – derivatives category (ncat=201) with trading suspensions/resumptions. https://www.moex.com/ru/news/?ncat=201  
+[24] Bank of Russia: English press releases RSS. http://www.cbr.ru/rss/EngRssPress  
+[25] Government of the Russian Federation: English news and RSS. http://government.ru/en/news/  
+[26] Национальный клиринговый центр: архив сообщений о риск‑параметрах и фьючерсах. https://www.nationalclearingcentre.ru/catalog/0901  
+[27] NCC homepage with CCP status announcements. https://www.nationalclearingcentre.ru  
+[28] Rosstat SDDS Advance Release Calendar. https://rosstat.gov.ru/statistics/monitoring/sdds/calendar  
+[29] Rosstat: Publications plans. https://rosstat.gov.ru/publications-plans  
+[30] Rosstat: General English‑language site. https://eng.rosstat.gov.ru/  
+[31] Rosstat: Announcements of statistical data releases. https://rosstat.gov.ru/announcements  
+[32] Unofficial R package for Rosstat EMISS (`fedstatAPIr`). https://cran.r-project.org/package=fedstatAPIr  
+[33] Government of the Russian Federation: RSS and Creative Commons notice. http://government.ru/en/rss/  
+[34] Example government.ru English RSS item (Russia‑China talks). http://government.ru/en/news/rss/  
+[35] Sberbank Press Center. https://www.sberbank.ru/en/press_center/all  
+[36] VTB: Analytics and research overview. https://www.vtb.ru/krupnyj-biznes/investicionnyj-biznes/analitika/  
+[37] BCS: News and analytics. https://bcs.ru/news  
+[38] BCS: Services and analytics description. https://bcs.ru/  
+[39] Sberbank press center – lack of visible RSS link. https://www.sberbank.ru/en/press_center  
+[40] MOEX official Telegram channel `@MoscowExchangeOfficial`. https://t.me/MoscowExchangeOfficial  
+[41] MOEX Derivatives Telegram `@moex_derivatives`. https://t.me/moex_derivatives  
+[42] Roskomnadzor registry entry for `@moex_derivatives`. https://www.gosuslugi.ru/snet/6791d1bdf3169f6df9086478  
+[43] Moscow Exchange: User Agreement (English). https://www.moex.com/en/agreement.aspx  
+[44] MOEX User Agreement – Market data distribution restrictions. https://www.moex.com/en/agreements/data.aspx  
+[45] MOEX bulletins licensing reference to user agreement. https://www.moex.com/ru/marketdata/bulletins/  
+[46] Moscow Exchange: RSS description – news used by leading information websites. https://www.moex.com/s355?page=1  
+[47] Bank of Russia: User Agreement. https://www.cbr.ru/eng/user_agreement/  
+[48] CBR User Agreement – quoting and linking rules. https://www.cbr.ru/eng/user_agreement/#quoting  
+[49] Rosstat institutional description. https://eng.rosstat.gov.ru/about  
+[50] Moscow Exchange: APIs and market data services. https://www.moex.com/en/it/  
+[51] FX and Precious Metals Market Trading Rules (doc 1498). https://www.moex.com/en/documents/1498  
+[52] Deliverable futures specification PDF. https://fs.moex.com/f/5789/deliverable-futures.pdf  
+[53] Gemini API: Available regions. https://ai.google.dev/gemini-api/docs/available-regions  
+[54] Gemini API pricing and free tier for Flash models. https://ai.google.dev/gemini-api/docs/pricing  
+[55] Gemini API rate limits overview. https://ai.google.dev/gemini-api/docs/rate-limits  
+[56] Community discussion on Gemini Flash free‑tier request caps. https://discuss.ai.google.dev/t/gemini-3-8-flash-free-tier-20-rpd-is-too-limited-for-practical-evaluation/180609  
+[57] Gemini Flash model language support (including Russian). https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash-tts  
+[58] MOEX tick‑size change announcement. https://www.moex.com/nXXXXX (representative; ID varies)  
+[59] MOEX trading disruption announcements (e.g. FX market outage). https://www.moex.com/nYYYYY  
+[60] MOEX IT news: SIMBA protocol changes. https://www.moex.com/nZZZZZ  
+[61] MOEX IT news RSS (cat=209) sample. https://www.moex.com/export/news.aspx?cat=209  
+[62] Example CBR key rate decision press release with forward guidance. https://www.cbr.ru/press/keypr/keyprXXXX/  
+[63] Rosstat CPI release example (PDF). https://rosstat.gov.ru/storage/mediabank/cpiXXXX.pdf  
+[64] MOEX bulletin content sample (tables dominating text). https://fs.moex.com/files/XXXX/bulletin.pdf  
+[65] Interfax news RSS. https://www.interfax.ru/rss.asp

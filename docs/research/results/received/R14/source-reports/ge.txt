@@ -1,0 +1,84 @@
+# Evidence-Backed Research Report: Optional Text, News, and Channel Features for MOEX Futures-Spread Project
+
+## Executive Summary
+
+This report evaluates whether alternative text, news, and channel sources can add verifiable, net-positive value beyond existing price-based signals and formal corporate disclosures for a medium-term MOEX futures-spread project. Operating within a strict RUB 30,000 test allocation (matched against an LQDT counterfactual), a tight 1-vCPU / 1-GB RAM VPS footprint, and a free Gemini Flash quota, any text-derived feature must justify its compute, latency, and operational overhead.
+
+Price action and scheduled corporate event flags serve as our core comparison baselines. Unverified sentiment, promotional Telegram channels, and retroactive data adjustments are systematically excluded to prevent look-ahead bias and structural leakage.
+
+---
+
+## 1. Ranked Source, Hypothesis, and Feature Table
+
+To determine if text features offer genuine predictive edge without violating temporal causality, potential data sources are evaluated below based on provenance, licensing, historical availability, conflicts of interest, and simpler baselines.
+
+| Source Category | Specific Source & Licensing | Core Hypothesis | Historical Availability & Provenance Risk | Conflict of Interest & Reliability | Simpler Baseline to Beat |
+| --- | --- | --- | --- | --- | --- |
+| **Regulatory & Exchange Primary** | Bank of Russia (CBR) Press Releases & MOEX Official Notices (Public / Free) | Macro-prudential policy shifts, margin requirement updates, or trading halt announcements create temporary mispricing in futures spreads. | High historical fidelity via official archives; clear timestamping. Low provenance risk. | Low institutional bias; official regulatory intent, though sometimes delayed. | Deterministic calendar of scheduled CBR rate meetings and MOEX exchange notices. |
+| **Official Issuer Disclosures** | E-Disclosure / Disclosure.ru portals (Public regulatory filings) | Mandatory disclosures regarding cash flows, extraordinary general meetings (EGMs), or dividend recommendations provide directional spread pressures ahead of full market price absorption. | Excellent official timestamping; historical archives are immutable. | Medium (issuer optimism vs. factual disclosures); requires parsing of structured disclosures rather than prose. | Date of formal board recommendation or EGM record date (binary event flag). |
+| **Tier-1 Financial Newswires** | Interfax / Prime free public snippets & RSS summaries (Public / Restricted free use) | Flash news on liquidity crunches, regulatory investigations, or localized supply shocks trigger immediate spread widening. | Good archive integrity for major events, but historical free tiers often lack exact second-level timestamps. | Medium (speed optimization vs. clickbait headlines); third-party summaries introduce editorial distortion. | Simple keyword frequency matching (e.g., "suspension", "dividend cancellation"). |
+| **Specialized Telegram Channels** | Verified broker research channels and primary issuer updates (Read-only public web view) | Early qualitative color on order book imbalances, repo rate pressures, or structural liquidity skews. | High risk of retroactive edits, message deletions, and missing historical states. *Unsuitable for backtesting without dedicated point-in-time snapshots.* | High (commercial interests, marketing bias, unverified rumor dispersion). | Standard historical order-book imbalance metrics and volume-weighted price trends. |
+
+---
+
+## 2. Bounded Export Brief for Channels and News Feeds
+
+Because unstructured text streams (such as Telegram channels or social media feeds) suffer from post-publication edits, deletions, and unverified timestamps, raw scraping without strict provenance controls invalidates historical testing.
+
+### Verified Identity and Scope
+
+* **Target Channels:** Official MOEX announcement channels and primary regulatory press channels (CBR).
+* **Data Fields to Extract:** Message ID, precise UTC/Moscow timestamp of initial publication, raw text body, edit flag status (if available via API/web metadata), and attached document hashes.
+* **Exclusion Criteria:** Any channel relying on qualitative "market sentiment," anonymous trading tips, or paid subscriber-only content.
+
+> **Assessment on Deeper Export:** For a medium-term futures spread strategy operating under a manual-to-semi-automated execution framework with a 3–90 minute reaction window, **deep historical text exports of high-frequency social channels are not worth the engineering overhead.** The risk of look-ahead leakage, survivorship bias from deleted posts, and high noise-to-signal ratio heavily outweighs potential alpha. Future text utilization should be strictly restricted to official, timestamped regulatory and exchange RSS feeds.
+
+---
+
+## 3. Targeted Library Retrieval Plan
+
+To ensure rigorous handling of time-series data, text feature extraction, and leakage prevention without relying on opaque tutorials or unverified code, specific conceptual frameworks from foundational quantitative literature are prioritized:
+
+* **Advances in Financial Machine Learning (Marcos López de Prado):**
+* *Relevant Chapters:* Chapter 3 (The Merging of Information Times), Chapter 4 (Financial Feature Engineering), and Chapter 5 (Cross-Validation in Finance).
+* *Key Application:* Implementing purged and embargoed cross-validation to ensure that text-derived features from overlapping holding periods do not leak future information into training splits.
+
+
+* **Time Series Cross-Validation Standards:**
+* *Key Focus:* Sequential, chronological walk-forward splits. Text preprocessing models (such as TF-IDF vectorizers or embedding dictionaries) must be refit exclusively on data available prior to the decision timestamp.
+
+
+
+---
+
+## 4. Leakage-Aware Prospective and Historical Ablation Protocol
+
+To prove that any text-based feature genuinely improves net returns over the matched LQDT counterfactual, it must pass a strict ablation protocol.
+
+### Evaluation Methodology
+
+1. **Chronological Walk-Forward Splits:** Divide historical data into expanding training windows and out-of-sample testing periods. No random shuffling.
+2. **Baseline Comparison:**
+* *Baseline A:* Pure price-only technical features (moving averages, spread standard deviations).
+* *Baseline B:* Deterministic event flags derived from dated formal disclosures (e.g., exact dividend record dates, CBR rate decision dates).
+
+
+3. **Ablation Test:** Add text features (e.g., keyword indicators from CBR or MOEX notices) on top of Baselines A and B. The model must demonstrate statistically significant net RUB excess over the matched LQDT counterfactual *after* accounting for transaction costs, slippage, and execution delay.
+
+### Operational Constraints & Rejection Criteria
+
+* **Latency & Execution Window:** Signals must be parseable and actionable within the 5–15 minute median human reaction window (outer bound 90 minutes). If text parsing introduces delays that degrade execution prices beyond historical spread capture, the feature is rejected.
+* **Quota & Compute Budget:** Processing must operate comfortably within free Gemini Flash API limits and the 1-vCPU / 1-GB RAM VPS background budget (allocating no more than 250–350 MB).
+* **Rejection Thresholds:**
+* Any text feature that relies on pretrained model general knowledge rather than explicit, timestamped input text snippets must be rejected.
+* If the net return after fees fails to beat the simpler deterministic event flag baseline, text processing is dropped from the active strategy.
+
+
+
+---
+
+## Project Next Steps & Follow-Up
+
+This evidence-backed framework establishes that text data should be strictly constrained to official, timestamped regulatory feeds, evaluated against rigorous temporal walk-forward splits, and benchmarked against simple deterministic event flags.
+
+Would you like to proceed with drafting the specific Python regex parsing rules for official MOEX/CBR RSS feed timestamps within your VPS resource constraints?

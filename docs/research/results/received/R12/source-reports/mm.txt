@@ -1,0 +1,628 @@
+# Title
+Dividend and Corporate Action Data for MOEX Futures Spreads: Sources, Time‑Consistency, and What to Extract from Legacy Projects
+
+---
+
+## 1. Executive Answer and Framing
+
+For medium‑term spread strategies on MOEX equity and index futures you will need two qualitatively different classes of information:
+
+1. **Issuer‑level ground truth about dividends and corporate actions (ex‑dates, record dates, payments, splits, etc.)**  
+   – This must come from **e‑disclosure.ru (Интерфакс – Сервер раскрытия информации)** and/or **NSD / ЦКИ**; they are the legally mandated primary sources with verifiable publication timestamps and corporate‑action semantics.[E17][E4][E21][E22][E23][E35][E65]
+
+2. **How MOEX derivatives and indices operationalize these events (dividend indices, record‑date treatment, dividend adjustments in perpetual futures, index methodologies, clearing reports)**  
+   – This must come from **MOEX index and derivatives methodology documents, Record Dates page, ISS cashflow and clearing reports (index_div), and contract specifications**.[E34][E48][E25][E37][E60][E61][E57][E59][E63]
+
+Free, fully historical, machine‑readable corporate action time series for *all* Russian issuers **do not exist**; official APIs with full coverage are commercial (NSD API NSD, ЦКИ, e‑disclosure Gateway) or at least access‑controlled.[E6][E7][E52][E53][E54][E55][E70][E74][E75][E27][E31][E40][E42]  
+For your project, this forces a mixed approach:
+
+- For **indices and MOEX perpetual index futures**, many dividend effects can be modeled **without directly knowing each stock’s dividend amount**, by using:
+  - MOEX **Dividend Indices Methodology** and **IMOEXDIV index values** for timing and magnitude of aggregate dividend flows;[E34][E67]
+  - MOEX **Total Return / Dividend index methodologies** for record‑date handling and backfilling rules;[E67][E68][E69]
+  - **Dividend adjustment (index_div) fields** in clearing / CSV reports for perpetual futures (e.g. IMOEXF).[E57][E59][E61][E62][E64]
+
+- For **single‑stock futures spreads**, if the edge depends on *mispricing vs. expected dividends*, you ultimately need either:
+  - Paid **corporate actions feeds** (NSD API NSD or ЦКИ);[E6][E7][E18][E20][E21][E22][E52][E70]
+  - Or your own curated archive from **e‑disclosure.ru** (scraped manually or via later‑built tools, obeying CAPTCHA/ToS), anchored by document timestamps.[E18][E19][E20][E23][E31][E36][E38][E47]
+
+The most actionable near‑term path, given your scale and desire to avoid paid data, is:
+
+- Focus first on **index‑based pairs (index–index, index–ETF, perpetual vs. quarterly index futures)** where **MOEX itself publishes the dividend adjustment and record‑date rules**.  
+- Use **MOEX Record Dates CSV**, **Dividend Indices**, and **f07/f04 reports’ index_div** as “no‑look‑ahead” inputs.  
+- Treat detailed **per‑issuer dividend histories** as a **second‑phase enhancement**, likely requiring NSD/ЦКИ or a dedicated e‑disclosure archive.
+
+The rest of the report makes this concrete: which endpoints and documents exist, what timestamps they carry, how they relate to futures P&L, and what from your prior MOEX work must be preserved for a time‑consistent backtest.
+
+---
+
+## 2. Landscape of Official Sources: Who Knows What and Under Which Rules
+
+**The Russian market splits dividend/corporate‑action information across three institutional roles: issuer disclosure, central depository processing, and exchange‑level usage.**
+
+1. **Issuer mandatory disclosure – e‑disclosure.ru (Интерфакс – Сервер раскрытия информации)**  
+   - By regulation, Russian issuers must disclose material facts (including dividend decisions, record dates, extraordinary events) via the **official disclosure system** operated by Interfax (e‑disclosure.ru).[E17][E18][E22][E51]  
+   - Event pages for specific issuers show:
+     - publication date and time (с датой и временем публикации);  
+     - decision‑making date (e.g. AGM/BoD);  
+     - record date phrase “датой, на которую определяются лица, имеющие право на получение дивидендов…”;[E20][E21][E67]  
+     - payment deadline or actual payment date, sometimes as text, sometimes in attachments.[E31][E38]
+   - A **Disclosure Data API** (“Шлюз”) exists at `https://gateway.e-disclosure.ru/api/` with Swagger/OpenAPI spec,[E74][E75][E48] but:
+     - access requires login/password and is paid;[E27][E11][E74][E75]
+     - documentation pages are protected by CAPTCHA, blocking unauthenticated automated scraping.[E36][E49][S3]
+
+2. **Centralized corporate actions processing – NSD / ЦКИ**  
+   - NSD (НРД), as Russia’s CSD and part of Moscow Exchange Group, is designated a **corporate information center** and processes corporate actions per ISO 20022/15022 standards.[E4][E6][E7][E31][E25][E26][E29]
+   - NSD’s data services:
+     - **API NSD** (nsddata.ru), a web service for reference and corporate actions data (methods `getSecurities`, `getCompanies`, `getCorpActions V.2`, etc.), with Swagger documentation and detailed schemas.[E6][E7][E17][E18][E27][E52][E53][E54][E55]
+     - **Центр корпоративной информации (ЦКИ)**, marketed via MOEX/NSD as a single “golden copy” source of corporate data, including structured fields for dividends, coupons, redemptions and corporate actions; data is accessible via **API, FTP, Excel Add‑in, Trade Radar**.[E18][E19][E20][E21][E40][E51]
+     - NSD information services’ tariff schedules explicitly price **API access per corporate action** (fee per event), confirming it is a commercial feed.[E8][E70]
+
+3. **Exchange‑level usage – MOEX**  
+   - MOEX operates:
+     - **ISS API** for market data and some analytics;[E2][E64][E76]
+     - **index calculation and methodology documents** (equity indices, TR indices, dividend indices);[E34][E45][E48][E81]
+     - **Record Dates web page** for listing register closings, with CSV export;[E12][E15][E56][E57][E74][E82]
+     - **derivatives corporate actions procedures** for futures and options;[E25][E29][E30][E4]
+     - **historical trading data** and **clearing CSV reports (e.g. f04/f07)** embedding dividend adjustments.[E17][E64][E57][E59][E61][E62][E63]
+   - MOEX does **not** itself act as the legal primary source for issuer dividends; it consumes NSD and e‑disclosure data (as its own corporate actions/Record Dates pages explicitly reference NSD/Interfax as providers).[E30][E56]
+
+Implication for your project: whenever you need **“what did the issuer legally decide and when was this public?”**, e‑disclosure is the ground truth; whenever you need **“how did this impact index composition or futures P&L on MOEX?”**, you rely on MOEX methodologies and NSD/ЦКИ‑backed feeds that the exchange exposes (partially free, partially paid).
+
+---
+
+## 3. MOEX‑Facing Public Data You Can Use Without Paid Feeds
+
+### 3.1. Record dates and listing‑side corporate info
+
+**MOEX’s “Record Dates” page gives a free, structured view of register‑closing dates, but not full dividend amounts, and its programmatic accessibility is constrained.**
+
+- The English page `https://www.moex.com/en/listing/listing-register-closing.aspx` states:  
+  “This page contains the information on dividend record dates (in case the decision on their payment is taken by the issuer). Record date for foreign investment companies relates to particular fund (sub-fund).”[E12][E22][E56][E77][E82]  
+  It offers a **CSV download** (“Download CSV (spacers – commas/semicolon)” in RU version).[E56][E57][E74]
+- This CSV provides, at a minimum, **issuer identifier + record date + corporate action type** and serves as an exchange‑localized projection of NSD/e‑disclosure events. It is, however:
+  - a **listing service**, not a full corporate actions tape (not guaranteed to contain all announcements, especially historical corrections);  
+  - rendered in HTML/JS plus a download link which, in tests, can be obscured behind CAPTCHA or require browser interaction, limiting automation through simple HTTP calls.[E73][E75]
+
+For backtesting, this page can anchor **record dates and their first appearance on MOEX website**, but cannot stand alone for amount‑sensitive strategies.
+
+### 3.2. Dividend indices and TR indices (IMOEXDIV and relatives)
+
+**MOEX’s dividend and total‑return index methodologies are fully public and encode how dividends are mapped to index dates, which you can exploit without issuer‑level microdata.**
+
+- The **Dividend Indices Methodology of Moscow Exchange** (document 25954) is published on the MOEX methodology page and has explicit versioning; the current edition has been valid from 31.01.2024.[E34][E24][E25][E30]
+- The methodology states (emphasis added):  
+  “Dividends are included in the calculation of the Dividend Indices on the day on which the persons entitled to receive dividends are determined by law (hereinafter, the Record Date). If the Record Date is not a trading day, dividends are included in the calculation of the Dividend Indices on the trading day preceding the Record Date.”[E67]  
+  It also specifies:
+  - **calculation schedule** (once a day at 18:30 Moscow time);  
+  - **publication/disclosure window** (values announced within 1 hour after main session close);[E54]
+  - backfilling rules when information arrives late (dividends may be added retroactively but no later than six months after Record Date – per broader MOEX index docs, though the exact six‑month figure should be treated carefully as it comes from the TR index context).[E67][E68]
+- MOEX also maintains **Total Return indices** and **RTS Total Return indices** that combine price performance with dividends (gross or net).[E22][E69] They rely on the **same record‑date convention** as the dividend indices.
+
+Crucially, the methodology ties index adjustments to **Record Date**, not ex‑date, and makes explicit how non‑trading days are handled. For **index futures spreads**, this lets you construct a **no‑look‑ahead mapping from dividend events to index level changes**, even if you never see each stock’s dividend per share.
+
+### 3.3. Perpetual futures dividend adjustments and clearing reports
+
+**For MOEX perpetual index and single‑stock futures, the exchange computes an explicit “dividend adjustment” (дивидендная поправка) that hits variation margin and is reported in clear, machine‑readable fields.**
+
+- MOEX’s official presentations (“Дивидендная поправка и фандинг в вечных фьючерсах”) and user docs state:
+  - For **perpetual futures on stocks**, the dividend adjustment equals the **cash dividend per share × lot size**;  
+  - For **perpetual futures on the MOEX Russia Index (IMOEXF)**, the dividend adjustment equals the **value of the dividend index IMOEXDIV × contract multiplier**.[E21][E22][E23][E32][E33][E35][E37][E60]
+  - The adjustment is **included in variation margin at the evening clearing (23:50) of the trading day preceding the Record Date**, provided you have an open position at that clearing.[E2][E5][E20][E32][E60]
+- MOEX clearing documentation confirms:
+  - A field **`index_div`** was added to futures clearing data (e.g. `fut_sess_settl` table in `FORTS_CLR_REPL` stream and `f04`/`f04cl_XXYY.csv`) to carry the dividend adjustment value for perpetual futures on the index.[E59][E61][E62][E63]
+  - Later, `CL_CSV_reports.pdf` documents **`index_div` in `f07.csv`** (futures trading report), making adjustments visible per contract.[E64]
+
+Because `index_div` is computed and booked **on the adjustment day itself**, using these historical reports in your backtest does not introduce look‑ahead: the value was economically realized in P&L on that date and is reported ex post.
+
+### 3.4. ISS cashflow endpoint for expected dividends on futures underlyings
+
+**MOEX ISS exposes a “cashflow” dataset for expected dividends on stocks that underlie futures, but its history is short and its ex‑date field was removed.**
+
+- In June 2023, MOEX announced ISS changes: a `CASH_FLOW` dataset at `https://iss.moex.com/iss/rms/engines/futures/objects/cashflow` would provide **anticipated dividend payments on the stock, being the underlying asset of a futures contract**, with fields such as:
+  - `CFTYPE` (Dividend type),  
+  - `CF` (expected dividend amount),  
+  - `CFRISK` (risk of change),  
+  - `CASH_FLOW` date and `UPDATETIME`.[E6][E7][E14][E83][E84][E85][E86]
+- Initially, a field `CORPORATE_ACTION_DATE` (ex‑dividend date) was included, documented as “Ex-dividend date (will be deleted later)”; MOEX later confirmed it **would be deleted after 10.06.2023**, and current `columns.xml` indeed shows only `T` (cash flow date) and `CF`, with no ex‑date.[E28][E29][E30][S11][E16]
+- The historical accumulation of expected dividend payment history was stated to begin **13.06.2023**.[E7]
+
+This endpoint is **forward‑looking by design** and should be treated as “market expectations about underlier dividends available at time t” – useful for modelling how futures are priced *before* events, but potentially hazardous for backtests if you do not pin down when each record became available (via `UPDATETIME`) and respect that temporal boundary.
+
+### 3.5. ISS “dividends” endpoint on individual securities
+
+**There is an ISS endpoint `/iss/securities/{SECID}/dividends` but in practice it returns only metadata in recent tests; it cannot be relied upon as a free historical dividend tape.**
+
+- Community examples suggest URLs like `http://iss.moex.com/iss/securities/SBER/dividends.json?iss.meta=off` for dividend data.[E8][E13][E14][E43]
+- Direct tests against such URLs over HTTPS show:
+  - the endpoint exists and responds;[E9]
+  - but the returned blocks contain **security metadata and board info**, not rows of dividend events.[E15][E16][E33][E35][S1][S6]
+- Official ISS reference lists a “dividends” reference record (`/iss/reference/769`) but that describes **reference tables** rather than timeseries of corporate actions.[E48][E32]
+
+Conclusion: you cannot plan your research architecture around this as a free corporate actions API. At best, it is an unstable or limited interface, and MOEX itself does not document it as a public dividend history feed.
+
+---
+
+## 4. Primary Corporate Action Ground Truth: e‑disclosure vs NSD/ЦКИ
+
+### 4.1. e‑disclosure.ru (issuer disclosures)
+
+**For time‑consistent, regulator‑grade history of what issuers said and when, e‑disclosure.ru is the primary source.**
+
+- Every material fact about dividends and most corporate events is disclosed there under a well‑defined legal regime (Bank of Russia Regulation 714‑П, etc.).[E17][E22][E51]
+- The portal stores:
+  - a list of **disclosure events** for each issuer;  
+  - each event page with **publication date/time**, document type, short description;  
+  - links to detailed PDFs / Word documents (AGM protocols, BoD decisions) stating:
+    - dividend amount per share;  
+    - total payout;  
+    - **record date**;  
+    - payment deadline, sometimes as “not later than [date]”;[E19][E20][E21][E31][E38][E67]
+- The **Disclosure API (“Шлюз”)**:
+  - official description: *“Веб-сервис Шлюз данных предназначен для автоматизированного получения сведений (Событий раскрытия)…”*;[E43][E40][E74][E75]
+  - base URL `https://gateway.e-disclosure.ru/api/<наименование метода>`;[E44][E48]
+  - authentication mandatory (login/password).[E27][E74][E75]
+  - service is paid (tariffs from roughly a few thousand RUB/month, details change over time).[E11]
+
+For a **no‑look‑ahead backtest**, the key is that **e‑disclosure’s publication timestamp is the earliest legally mandated public time**. Even if you don’t buy the API now, you should treat e‑disclosure as the reference clock when reconciling other data:
+
+- If MOEX/NSD shows a corporate action effective date but the **announcement was on e‑disclosure after your assumed entry time**, your strategy should **not** have used that information.
+
+### 4.2. NSD API NSD and ЦКИ (centralized structured corporate actions)
+
+**NSD/ЦКИ provide the structured, machine‑readable corporate action datasets that underlie most “professional” Russian dividend calendars – they are commercial but conceptually ideal for your use‑case.**
+
+- **API NSD** (`nsddata.ru`) exposes via web service:
+  - `getCorpActions V.2` – list of corporate actions and related securities/organizations;  
+  - dictionaries, accrued interest (`getAccintr V.2`) etc.;[E6][E7][E17][E18][E52]
+  - explicit blocks for **dividend payments** with fields for pay interval and other attributes.[E52]
+- NSD’s fee schedule (e.g. 2023‑12‑12) spells out **per‑corporate‑action pricing** for API NSD, confirming that each dividend announcement is monetized.[E8][E70][E38][E39]
+- The **Центр корпоративной информации** product description emphasizes:
+  - **structured data for dividends, coupons, redemptions and other corporate events** linked to issuers and instruments;  
+  - unified consolidated register across all Russian instruments and issuers with **retrospective depth** (10–15 years mentioned in some marketing materials);  
+  - access via API, FTP, Excel Add‑in, Trade Radar;[E18][E19][E20][E21][E40][E51]
+- MOEX data pages explicitly state that **corporate actions info is provided by NSD / ЦКИ** for exchange instruments, sometimes with a specified **delay** in minutes or days.[E2][E29][E62][E30]
+
+From a backtesting perspective this class of feeds is attractive because:
+
+- you can query corporate actions **by date, issuer, security type**;  
+- the records contain **event type, effective date(s), cash amount, currency, record date, ex‑date, payment date, update timestamps**, and sometimes corrections;  
+- because NSD integrates ISO 20022 as its canonical model, many events have explicit **“Announcement Date” vs “Effective Date” vs “Payment Date”**.
+
+However, these feeds are **commercial, with per‑event fees**, and will likely exceed the economic justification for a 30k–45k RUB experimental strategy budget, especially if not shared with other activities.
+
+---
+
+## 5. MOEX ISS nsd_corp_info: a Hidden but Relevant Layer
+
+**MOEX mirrors some NSD/ЦКИ data through an ISS “nsd_corp_info” application with a formal OpenAPI description, but actual data access appears restricted.**
+
+- The OpenAPI at `https://iss.moex.com/iss/apps/nsd_corp_info/v1/openapi.json` (or equivalent) defines endpoints such as:
+  - `/corp-actions/dividends` (deprecated);  
+  - `/corp-actions-new/dividends`;  
+  - `/calendars/dividends`, returning `CalendarDividend` objects.[E60][E61]
+- The `CalendarDividend` schema includes the fields most relevant for your spread modelling:
+  - `ex_dividend_date_moex` – **MOEX ex‑dividend date**;  
+  - `begin_date` / `end_date` – window for entitlement or payment;  
+  - `security_name_full_ru`, `secid`, `isin`, `state_reg_number`;  
+  - `basis_company_id`, `inn`, `ogrn`, `name_short_ru`, `period_trek_id`.[E61]
+- Attempts to call these endpoints directly returned **HTML content with `text/html` content‑type**, not JSON, indicating that the API endpoints require **authentication or are behind a firewall**, even though the schema is publicly visible.[E65][E66][S8][E59]
+
+If at some later stage you or a broker secures credentials for this application, it could provide exactly what you need: **exchange‑aligned dividend calendars with ex‑dates**. For now, you must treat it as a **potential but not currently available** data source.
+
+---
+
+## 6. Index Vs. Single‑Name Futures: Do You Need Issuer‑Level Events?
+
+### 6.1. Index futures (perpetual and quarterly)
+
+For **index–index and index–spot (ETF) spreads**, corporate action complexity is mostly **aggregated into index level series and dividend adjustments**, which MOEX documents publicly.
+
+- **Quarterly index futures (e.g. MIX/MXI on IMOEX)**  
+  - Do **not** have explicit dividend adjustments built into clearing; dividends only influence them **indirectly via spot index level**.[E8][E31][E35][S2][S4]
+  - For a backtest, you simply need **historical index values** and **contract specs**; corporate actions on constituents are invisible except through index price.
+- **Perpetual index futures (IMOEXF)**  
+  - Have an explicit **dividend adjustment** equal to `IMOEXDIV × lot`, credited via variation margin at the evening clearing prior to Record Date.[E21][E22][E32][E33][E37][E60]
+  - MOEX distributes:
+    - **Dividend index (IMOEXDIV) values and history** at `moex.com/ru/index/imoexdiv` with archive;[E24][E32][E63]
+    - **Index methodologies** specifying record‑date treatment and backfilling rules;[E34][E25][E55][E81]
+    - **clearing fields (`index_div`)** per contract/per day.[E57][E59][E61][E62][E64]
+
+For index futures, you can thus **avoid per‑stock dividend data entirely**, yet **still model all dividend‑driven P&L**:
+
+- spot side – from index TR or dividend indices and price indices;  
+- futures side – from historical settlement prices and `index_div` adjustments.
+
+### 6.2. Single‑stock futures
+
+Single‑stock futures are different:
+
+- Their fair pricing embeds:
+  - interest rate differentials;  
+  - **expected dividends of that specific issuer**;  
+  - borrow/funding costs, etc.
+- For some cross‑sectional or relative‑value strategies (e.g. **stock future vs. index future; pair of stock futures inside a sector**), your edge might depend on:
+  - market under/overestimation of upcoming dividends;  
+  - corporate actions like **splits, consolidations, conversions**.
+
+On the **MOEX derivatives side**, some dividend effects are captured through **dividend adjustments for perpetual single‑stock futures**, analogous to IMOEXF (dividend equals `dividend per share × lot`).[E6][E36][E37] These adjustments appear in clearing data and would let you model P&L on existing historical contracts without needing the raw dividend amount.
+
+However, for **anticipating or explaining spread behaviour prior to events**, issuer‑level knowledge becomes important. For example:
+
+- When Gazprom Neft’s AGM sets a high dividend and Record Date, single‑stock futures may cheapen vs. index futures even before MOEX posts any index_div, affecting your entry decisions.
+
+Therefore:
+
+- If your **family selection for this project focuses first on index pairs**, you can **postpone** building a full issuer‑level dividend subsystem and still get economically meaningful tests.
+- If you later expand into **systematic index–single‑stock futures spreads where the trade thesis hinges on individual dividends**, you will need:
+  - at least an **issuer‑level calendar of record dates and declared dividends**, with **available‑at timestamps** (i.e. e‑disclosure or NSD/ЦКИ);  
+  - or you must restrict to **reaction‑based strategies using post‑factum dividend adjustments** (e.g. trading after index_div hits P&L), which drastically narrows the strategy space.
+
+---
+
+## 7. Time‑Consistency: Avoiding Look‑Ahead Bias
+
+### 7.1. Distinguishing fact vs expectation vs correction
+
+For every event type, the project must distinguish:
+
+- **Announcement / disclosure to market** – when the decision was first *legally* published (e‑disclosure timestamp, possibly NSD ISO message timestamp).[E19][E20][E21][E31][E38]
+- **Effective dates:**
+  - Record Date (дата, на которую определяются лица…);[E67]
+  - Ex‑dividend date (CORPORATE_ACTION_DATE in some feeds, MOEX ex_dividend_date_moex in nsd_corp_info);[E28][E30][E61]
+  - Payment date / last payment date.
+- **Exchange processing date** – when MOEX:
+  - adjusts index methodologies (TR/dividend indices);[E67][E54]
+  - applies dividend adjustments in perpetual futures;[E21][E22][E60]
+  - updates Record Dates CSV or corp‑info pages.[E56][E57][E72]
+- **Expectation series**, e.g. ISS `cashflow` dataset for expected dividends (CASH_FLOW, CF, CFTYPE, CFRISK).[E6][E7][E14][E84][E86]
+
+In a **no‑look‑ahead backtest**, you must ensure that **at simulation time t**, your data includes at most:
+
+- issuer announcements with **publication timestamp ≤ t**;  
+- any MOEX “Record Dates” entries that were actually present on the website as of t (harder to prove historically; see §7.3);  
+- ISS `cashflow` rows with **UPDATETIME ≤ t**;  
+- index_div and TR index fixing values only up to the simulated date.
+
+### 7.2. How MOEX methodologies help enforce time‑logic
+
+MOEX’s dividend and TR index methodologies are valuable not only for formulas but also for **time rules**:
+
+- Dividends are projected into indices **on Record Date or previous trading day**;[E67]  
+- Total Return and dividend indices are calculated once daily at **18:30**, and published within an hour.[E54][E68]  
+- Dividends that become known later can be **backfilled up to a limited window (e.g. six months)**, but always assigned to the original Record Date.
+
+When you backtest:
+
+- You can safely use **published historical index series**, because any backfilled data still only affects the index level **on Record Date or its mapped trading day**, not earlier. There is **no forward drift**.
+- You should not, however, treat **TR index levels as “known” before 18:30** on each date. For intraday or same‑day entry rules, you’d need explicit assumptions about information timing (your strategy horizon is medium‑term; daily bar logic may be enough).
+
+### 7.3. Archival issues and available‑at reconstruction
+
+The toughest problem is: **how to know when a given dividend entry first appeared in a web‑exposed calendar**, such as MOEX “Record Dates” or a third‑party dividend calendar.
+
+- MOEX does not provide a **version history** of Record Dates CSV files; pages can also be partially shielded by CAPTCHA, complicating raw automated archiving.[E73][E75]
+- e‑disclosure does not expose a formal “API event version history” to you without its Gateway; manual pages show **publication timestamp**, but **pdf/docx attachments can, in principle, be replaced or corrected** later.
+
+Given this, a realistic middle path for your project is:
+
+- Treat **e‑disclosure publication timestamps as the earliest reliable available‑at marker**.  
+- For MOEX‑level artifacts (Record Dates CSV, index_div, TR indices), rely on:
+  - **methodology rules** to reason about sequence;  
+  - plus your own **Wayback Machine / self‑archiving** going forward, not for the historical backfill (robots for e‑disclosure are restrictive; MOEX pages are indexable).[E52][E70][E36]
+
+Backtests over **past years** will inevitably assume that **as of date D, the MOEX Record Dates file & clearing reports accurately reflected all events that we now see in the downloadable historical files**; this is not strictly provable without paid archives, but is industry‑standard practice.
+
+---
+
+## 8. Scenario Analysis for the Project’s Data Architecture
+
+### Scenario A – Focus on index futures; issuer‑level events deferred
+
+**Use‑cases:** Index–index spreads (perpetual vs quarterly), index–ETF, calendar spreads on index futures where dividend dynamics matter.
+
+Data you can use **now**, free:
+
+- Historical **index price series** (IMOEX, RTS, sector indices);  
+- Historical **dividend indices** (IMOEXDIV, other dividend indices) and TR indices;[E24][E32][E68][E69]  
+- MOEX **Dividend Indices Methodology** and **Equity Indices Methodology**;[E34][E24][E25][E81]  
+- Futures contract specs and parameters (document s1085/s205/s255);[E26][E27][E26][E34]  
+- Clearing **`index_div` fields** from f04/f07 and FORTS_CLR_REPL;[E57][E59][E61][E62][E63][E64]  
+- ISS **cashflow** for expected dividends on underliers (post‑2023) if you model market expectations.
+
+Outcome:
+
+- You can backtest **all dividend‑driven P&L on perpetual index futures** and **index TR / dividend indices** without issuer‑level data.
+- You avoid commercial feeds and heavy scraping.
+
+Risks / limitations:
+
+- You cannot exploit cross‑sectional mispricings related to individual stock dividends;  
+- Index methodologies may change over time; you must map each backtest period to the correct document version (25954 editions, 3344 equity methodology, etc.).[E24][E25][E30][E48]
+
+### Scenario B – Full single‑stock futures spread research
+
+**Use‑cases:** Pairs of single‑stock futures, stock vs index futures, sector vs index spreads where idiosyncratic dividend expectations are central.
+
+Required additions:
+
+- A **structured corporate actions tape per issuer** with:
+  - fields: announcement publication datetime, event type, dividend per share, currency, record date, ex‑date, payment date;  
+  - corrections and cancellations.
+- Realistic options:
+  - **NSD API NSD / ЦКИ** subscription (likely several 10k RUB per month, plus per‑event charges, per NSD tariffs).[E6][E7][E8][E20][E52][E70]
+  - **Your own curated e‑disclosure archive** using manual downloads or a CAPTCHA‑aware, rate‑limited scraper to store events and attachments going forward.
+
+Outcome:
+
+- You can design strategies that, for example, sell overpriced futures vs. index when implied dividends exceed likely AGM decisions, etc.
+- You also can reconcile disputes (e.g. when a third‑party calendar was wrong) against official records.
+
+Risks / limitations:
+
+- Initial historical backfill will be incomplete unless you pay for a full NSD/ЦКИ historical dump.  
+- Building a high‑quality archive from e‑disclosure is engineering‑heavy and legally sensitive (respect ToS, load, and potentially licensing for redistribution).
+
+Given your experimental capital and the fact that **paid feeds cannot be amortized over large AUM yet**, Scenario A is more realistic for Stage 1; Scenario B can be designed conceptually but not fully implemented at this budget.
+
+---
+
+## 9. What to Extract from Previous MOEX Projects (Stage 7)
+
+From earlier MOEX‑related code and data you have, Stage 7 should prioritize **reusable connectors, schemas, and tests related to time‑consistent handling of events, not just trading logic**. Specifically:
+
+### 9.1. Connectors and raw snapshots
+
+- **ISS connectors**  
+  - Any robust wrappers around ISS endpoints:
+    - `engines/futures/markets/forts/...` for contracts and quotes;  
+    - `rms/engines/futures/objects/cashflow` for expected dividends;[E6][E7][E14]  
+    - `analyticalproducts/netflow2` / similar analytics;[E58]  
+    - general `securities`, `turnovers`, `indices` endpoints.[E2][E64][E76]
+  - Pay attention to any custom handling of:
+    - retry logic, rate limiting;  
+    - content‑type anomalies (HTML vs JSON) – especially around nsd_corp_info and dividends endpoints;[E42][E47][E65][E66]
+- **Clearing and CSV report parsers**  
+  - Any parsers for **f04, f07, FORTS_CLR_REPL** etc., especially if they already map the `index_div` and related fields used in perpetual futures.[E57][E59][E61][E62][E63][E64]
+  - Historical snapshots of these reports, with timestamps of download if available.
+- **Index and Record Dates snapshots**
+  - Local copies of index level histories and **Record Dates CSV files** already downloaded, ideally with **file timestamps**. Even without official versioning, your own archive acts as a proof of “available‑at latest by [download time]”.
+
+### 9.2. Schemas and semantic conventions
+
+You want to retain and standardize:
+
+- **Event schema** definitions used in prior work, mapping at least:
+  - `event_id`  
+  - `issuer_id` (e.g. ISIN, SECID)  
+  - `instrument_id` (share class, futures code)  
+  - `event_type` (DIVIDEND, SPLIT, BONUS, MERGER, etc.)  
+  - `announcement_datetime` (from e‑disclosure or NSD)  
+  - `record_date`  
+  - `ex_date`  
+  - `payment_date`  
+  - `amount` (per share, per lot)  
+  - `currency`  
+  - `source_system` (e-disclosure, NSD, MOEX, third‑party)  
+  - `source_url` / `document_id`  
+  - `available_at` (your own fetch timestamp)  
+  - `last_update_datetime` (from API feed, if present).
+- **Date semantics**  
+  - Any existing code that carefully distinguishes:
+    - MOEX clearing calendar vs trading calendar vs corporate action effective dates;  
+    - intraday cutoffs (e.g. evening clearing 23:50 vs midday index calc at 18:30);[E5][E20][E32][E54]
+  - Existing functions that align **futures P&L dates with index/dividend index dates**.
+
+### 9.3. History of corrections and pitfalls
+
+From logs, issues, and comments in earlier projects, extract:
+
+- Known **API quirks**:
+  - episodes where ISS returned HTML or malformed JSON/XML (e.g. corporate actions or dividends tests);[E42][E43][E49][E65][E66]
+  - field deprecations like `CORPORATE_ACTION_DATE` in `cashflow`.[E28][E30]
+- Any documented **mismatches** between:
+  - MOEX Record Dates vs e‑disclosure;  
+  - dividend indices vs issuer‑level announced dividends;  
+  - expected vs actual dividend adjustments.
+- **Failed approaches** you do not want to repeat:
+  - attempts to rely on third‑party dividend calendars as primary data;[E3][E11][E37][E95]  
+  - scraping MOEX HTML tables without stable selectors.
+
+### 9.4. Licensing and Terms of Use
+
+You should explicitly bring forward:
+
+- Any prior **review of MOEX / NSD / e‑disclosure licensing** and distribution terms, especially where they state that:
+  - market data and corporate actions feeds **cannot be redistributed** without exchange’s written consent;[E3]
+  - API NSD and ЦКИ output are proprietary and intended for internal use by clients.  
+- Third‑party libraries’ licenses (`apimoex`, `moexapi`, your custom wrappers) to ensure you can reuse code in a future closed‑source strategy engine.
+
+### 9.5. Tests and validation harnesses
+
+Particularly valuable are:
+
+- **Unit/integration tests** that:
+  - reconcile ISS cashflow expected dividend series with actual dividend index / index_div realized P&L;  
+  - validate mapping of futures contract codes and expiries to underlying indices or stocks;[E26][E27][E26]
+  - ensure **no use of future data** by checking that:
+    - events from **after** simulation date do not leak into decision features;  
+    - time‑series transforms respect ISS `UPDATETIME` where available.[E6][E7][E14]
+
+These harnesses are essential to re‑use and adapt when you add any new event source.
+
+---
+
+## 10. Minimal Event Schema and Time Logic for This Project
+
+To make all of the above tractable, you can define a **minimal cross‑source event schema** that supports both index and single‑name futures work. Here is a concise proposal:
+
+### 10.1. Core entities
+
+- `Issuer` – identified by `basis_company_id` (if from nsd_corp_info), `INN`, `OGRN`, and main `ISIN`.[E61]
+- `Security` – `secid`, `isin`, `state_reg_number`, type (share, DR, ETF, index, future).[E21][E61]
+- `CorporateActionEvent` – generic event with subtypes.
+
+### 10.2. `CorporateActionEvent` fields (minimal)
+
+- `event_id` – unique key per source (e.g. NSD CA reference, e‑disclosure message ID);  
+- `issuer_id` – FK to Issuer;  
+- `security_id` – FK to Security;  
+- `event_type` – enumeration (`DIVIDEND_CASH`, `SPLIT`, `CONSOLIDATION`, `BONUS`, `REORG`, etc.);[E26][E17]
+- `announcement_datetime` – earliest publication datetime known (e‑disclosure publication or NSD ISO message timestamp);[E18][E19][E20][E31][E38]
+- `effective_date` – event‑specific main date:
+  - for dividends: `record_date`;[E67]  
+  - for splits: date from which new quantity is valid;  
+  - for mergers: conversion date.
+- `ex_date` – if explicitly present (`CORPORATE_ACTION_DATE`, `ex_dividend_date_moex`);[E28][E30][E61]
+- `payment_date` – first or last payment date;  
+- `amount_per_unit` – dividend per share, split ratio, etc.;  
+- `currency`;  
+- `source_system` – `E_DISCLOSURE`, `NSD_API`, `NSD_CKI`, `MOEX_RECORD_DATES`, `MOEX_NSD_CORP_INFO`, `MOEX_DERIV_CLEARING`, etc.;  
+- `source_reference` – URL or document ID;[E22][E24][E48][E75]  
+- `source_update_datetime` – from feed’s `UPDATETIME` or NSD’s change date;[E6][E7][E14][E84][E86]  
+- `first_seen_datetime` – your own ingestion timestamp;  
+- `is_correction` / `previous_event_id` – links corrections/amendments.
+
+For **MOEX futures P&L features** you also maintain:
+
+- `FuturesDividendAdjustment`  
+  - `contract_code` (e.g. IMOEXF);[E64]  
+  - `date` (clearing date);  
+  - `index_div_value`;[E57][E59][E61][E62][E63][E64]  
+  - `source` (`FORTS_CLR_REPL`, `f07.csv`, etc.).
+
+### 10.3. Time logic strategy
+
+In backtests:
+
+- **Decision feature window for date D** may include:
+  - any `CorporateActionEvent` with `announcement_datetime ≤ D` (plus possibly a delay to simulate reaction lag);  
+  - **expected dividend series** from ISS `cashflow` with `UPDATETIME ≤ D`;  
+  - **no** TR index values that include dividends with Record Date > D;  
+  - **no** issuer events with future effective dates whose announcements occur after D, even if the Record Date is before D due to corrections (rare but possible).
+
+---
+
+## 11. Recommendations and Priorities
+
+### 11.1. Immediate (before coding any strategy)
+
+1. **Constrain v1 strategy universe to index‑based spreads.**  
+   - IMOEXF vs MIX/MXI; RTS index vs IMOEX; perpetual vs quarterly futures; maybe sector vs broad index.  
+   - This sidesteps the need for paid issuer‑level corporate actions and focuses on dividend adjustments that MOEX exposes publicly.
+
+2. **Formally adopt MOEX dividend/index methodologies as your timing backbone.**  
+   - Download and archive current and relevant historical versions of:
+     - `Методика расчета Индексов дивидендов Московской Биржи` (25954);[E34][E24][E25][E30]  
+     - `Методика расчета Индексов акций Московской Биржи` (3344);[E48]  
+     - MOEX Russia/RTS Total Return index methodologies.[E68][E69]
+   - Explicitly encode their record‑date rules and daily calculation times.
+
+3. **Inventory Stage‑7 assets.**  
+   - Create a checklist and locate:
+     - ISS connectors & wrappers;  
+     - clearing report parsers with index_div support;  
+     - any Record Dates / IMOEXDIV local archives;  
+     - tests touching dividends or corporate actions.
+
+### 11.2. Short term (first 1–2 months of R12 work)
+
+4. **Design and implement the minimal event schema described in §10, even if many fields stay NULL initially.**  
+   - Start populating from:
+     - MOEX Record Dates CSV;[E56][E57][E74]  
+     - dividend indices and `index_div` clearing fields;[E57][E59][E61][E62][E63][E64]  
+     - a small sample of e‑disclosure pages for key blue chips (manual ingestion).
+
+5. **Establish a forward‑looking archival process.**  
+   - Daily or weekly snapshots of:
+     - MOEX Record Dates CSV;  
+     - `imoexdiv` index levels;[E24][E32][E63]  
+     - `index_div` per perpetual contract (from clearing CSV or ISS where available);  
+     - optionally, a curated subset of e‑disclosure events for issuers whose futures you actually trade.
+
+6. **Clarify feasible access to nsd_corp_info and/or e‑disclosure Gateway.**  
+   - With your brokers or MOEX contacts, check whether:
+     - nsd_corp_info `/calendars/dividends` can be accessed under your existing trading account or via broker infrastructure;[E60][E61][E65][E66]  
+     - discounted access to API NSD / ЦКИ is available for individuals or funds of your scale.  
+   - This doesn’t commit you to paying now, but informs Scenario B planning.
+
+### 11.3. Medium term (once early index‑spread results exist)
+
+7. **Evaluate the marginal value of issuer‑level data.**  
+   - Based on index‑spread backtests, estimate how much incremental edge you could plausibly gain from **idiosyncratic dividend mispricing**.  
+   - Only if this is meaningfully positive relative to your allowed 10–15k RUB underperformance buffer should you pursue paid feeds.
+
+8. **If justified, prototype a narrow e‑disclosure pipeline.**  
+   - Start with **manual/assisted ingestion** of dividend events for 10–20 top‑liquidity single‑name underliers (SBER, GAZP, LKOH, NVTK, etc.).  
+   - Use that to develop:
+     - text parsing templates;  
+     - event linking;  
+     - reconciliation rules vs. MOEX/NSD calendars.
+
+9. **Integrate ISS `cashflow` expectations carefully.**  
+   - Use `UPDATETIME` and history start date to restrict expectations to what would have been known at simulated time.  
+   - Compare ex ante expectations (from `cashflow`) to ex post adjustments (`index_div`) as a quality check.
+
+---
+
+## 12. References
+
+[1] Интерфакс – Сервер раскрытия информации. https://www.e-disclosure.ru/  
+[2] Раскрытие информации ПАО Московская Биржа. https://www.moex.com/s575  
+[3] Центр корпоративной информации – Корпоративные действия. https://www.moex.com/ru/products/data/cci  
+[4] NSD. Corporate Actions Processing. https://www.nsd.ru/en/services/depozitariy/obsluzhivanie-aktivov/sodeystvie-realizatsii-prav-po-tsennym-bumagam/  
+[5] API NSD – A web service that offers access via an interface for reference data and data about corporate actions. https://nsddata.ru/en/products/2  
+[6] API NSD – Руководство пользователя. https://nsddata.ru/content/documents/api_nsd_user_manual.pdf  
+[7] Fee Schedule for NSD’s Information Services. https://www.nsd.ru/upload/tariffs/fees_inf_serv_2023_12_12_en.pdf  
+[8] Центр корпоративной информации – описание сервиса. https://www.nsd.ru/ru/products/information_services/center_corporate_information/  
+[9] Центр корпоративной информации – Корпоративные действия (презентация). https://www.moex.com/f/10881/nrdirect-ruk-ikd.pdf  
+[10] e-disclosure.ru: Получение информации – Шлюз (API). https://www.e-disclosure.ru/poluchenie-informacii/shlyuz-api  
+[11] Disclosure Data API – Tutorial (Интерфакс – ЦРКИ). https://www.e-disclosure.ru/PortalContent/InfoMaterial/560  
+[12] Шлюз данных e-disclosure.ru – OpenAPI спецификация. https://gateway.e-disclosure.ru/swagger/v1/swagger.json  
+[13] Informational & Statistical Server (ISS) – Documentation. https://www.moex.com/a2920  
+[14] ISS Reference – Общие сведения. http://iss.moex.com/iss/reference/  
+[15] MOEX ISS – cashflow endpoint columns. https://iss.moex.com/iss/rms/engines/futures/objects/cashflow/columns  
+[16] Изменения в ИСС – Антиципированные дивидендные выплаты. https://www.moex.com/n56498  
+[17] Календарь закрытия реестров – MOEX Record Dates. https://www.moex.com/en/listing/listing-register-closing.aspx  
+[18] Календарь закрытия реестров (RU версия). https://www.moex.com/ru/listing/listing-register-closing.aspx  
+[19] Moscow Exchange – Dividend and shares (MOEX own stock). https://www.moex.com/s760  
+[20] Moscow Exchange – Historical data service. https://www.moex.com/a2863  
+[21] MOEX Russia Dividend Index (IMOEXDIV) – index page. https://www.moex.com/ru/index/imoexdiv  
+[22] MOEX – Indices methodology page (Dividend Indices Methodology). https://www.moex.com/ru/documents/25954  
+[23] Dividend Indices Methodology of Moscow Exchange (EN). https://www.moex.com/en/documents/26106  
+[24] Методика расчета Индексов дивидендов Московской Биржи (текущая редакция). https://www.moex.com/files/8z5rj0v1g7wjz3wlc4txfqw1sf  
+[25] Методика расчета Индексов акций Московской Биржи (документ 3344). https://www.moex.com/ru/documents/3344  
+[26] Methodology of the Moscow Exchange Equity Indices Calculation. https://www.moex.com/en/documents/3345  
+[27] MOEX Russia Total Return Indices. https://www.moex.com/en/index/totalreturn/RTSTR  
+[28] MOEX Equity Indices Methodology and fact sheets. https://www.moex.com/fsn/ru-indices-methodology  
+[29] О порядке учета дивидендов в индексах акций Московской Биржи полной доходности (новость n63176). https://www.moex.com/n63176  
+[30] О порядке действий по обработке корпоративных событий на Срочном рынке (s3715). https://www.moex.com/s3715  
+[31] Derivatives Market – Futures and Options Contract Code Specifications. https://www.moex.com/s1085  
+[32] Parameters of the Derivatives market. https://www.moex.com/a7211  
+[33] CL_CSV_reports – Specifications of CSV reports (f04, f07, etc.). https://ftp.moex.com/pub/Reports/CL_CSV_reports.pdf  
+[34] FORTS_CLR_REPL – Specification of FORTS clearing stream (index_div). https://ftp.moex.com/pub/RTS_Archives/XML/FORTS_CLR_REPL.pdf  
+[35] Presentation: Дивидендная поправка и фандинг в вечных фьючерсах. https://fs.moex.com/f/19591/dividend_adjustment_perpetual_futures.pdf  
+[36] Presentation: Дивидендная поправка и фандинг (расширенная). https://fs.moex.com/f/23697/dividend_adjustment_funding.pdf  
+[37] MOEX ISS – nsd_corp_info OpenAPI. https://iss.moex.com/iss/apps/nsd_corp_info/v1/openapi.json  
+[38] MOEX ISS – nsd_corp_info Redoc (UI). https://iss.moex.com/iss/apps/nsd_corp_info/v1/redoc  
+[39] NSD – Information services: corporate actions calendars. https://www.nsd.ru/en/products/information_services/  
+[40] NSD – Единый портал корпоративных действий (EPKD). https://www.nsd.ru/epkd/  
+[41] Bank of Russia Regulation No. 714-П “О раскрытии информации эмитентами эмиссионных ценных бумаг”. https://www.cbr.ru/Queries/UniDbQuery/File/90103/714-p_20200327.pdf  
+[42] Moscow Exchange – Events calendar. https://www.moex.com/ru/eventscalendar.aspx  
+[43] Moscow Exchange – APIs for order messaging and market data. https://www.moex.com/s3630  
+[44] Moscow Exchange – Machine Readable Calendar service. https://www.moex.com/n68609  
+[45] e-disclosure.ru – Поиск по сообщениям. https://www.e-disclosure.ru/poisk-po-soobshheniyam  
+[46] Example issuer dividend disclosure (Газпром нефть) on e-disclosure.ru. https://www.e-disclosure.ru/portal/company.aspx?id=1218  
+[47] NSD – Specifications of electronic documents for corporate actions (ISO 20022). https://www.nsd.ru/en/services/depozitariy/specifications/  
+[48] NSDDATA – API NSD Swagger UI. https://nsddata.ru/products/api/docs  
+[49] NSD – Provision of information from NSD database (offer document). https://www.nsd.ru/upload/docs/offer_information_services_en.pdf  
+[50] Moscow Exchange – Dividend policy and record date rules. https://www.moex.com/s1345  
+[51] Moscow Exchange – Listing rules and record date information. https://www.moex.com/en/listing  
+[52] RTS Total Return Indices — Moscow Exchange. https://www.moex.com/en/index/totalreturn  
+[53] Interfax – CIDC Web API «Disclosure Data API» (PDF). https://www.e-disclosure.ru/PortalContent/InfoMaterial/647  
+[54] context7.com – ISS MOEX reference documentation snapshot. https://context7.com/websites/iss_moex_iss_reference  
+[55] GitHub – apimoex library. https://github.com/lins05/apimoex  
+[56] PyPI – moexapi library. https://pypi.org/project/moexapi/  
+[57] smart-lab.ru – Discussion of MOEX ISS dividends endpoint. https://smart-lab.ru/vopros/896232.php  
+[58] Habr – Example usage of ISS dividends endpoint. https://habr.com/ru/articles/511256/  
+[59] Moscow Exchange – Investor Calendar. https://www.moex.com/a8915  
+[60] Telegram – Официальный канал Московской биржи. https://t.me/MoscowExchangeOfficial

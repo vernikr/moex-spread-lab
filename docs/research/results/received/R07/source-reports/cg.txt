@@ -1,0 +1,391 @@
+**R07**
+
+Pilot risk, funding liquidity, stress and sizing
+
+MOEX integer futures spreads • shared brokerage account • manual execution
+
+**Evidence-backed decision report**
+
+Research cut-off: 22 October 2026 \| Brief prepared: 7 October 2026
+
+Basis: the supplied R07 prompt plus targeted public-source research. The referenced dependency reports were not supplied.
+
+Purpose: determine whether the delegated risk defaults are internally coherent, what must be stress-tested, and when the correct result is no-trade. This is not software, a backtest, an account check, legal advice, or authorization to trade or fund.
+
+<table>
+<colgroup>
+<col style="width: 100%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th><p><strong>Decision status: CONDITIONAL / NO LIVE FEASIBILITY PROVEN</strong></p>
+<p>The numeric rules can govern escalation, but they cannot cap realised loss or establish cash feasibility. At minimum, the actual pair universe, contract multipliers, live broker margin, fees, execution/partial-fill paths, available data and account-wide recourse must be demonstrated before a live pilot can pass.</p></th>
+</tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+
+Cut-off convention: current pages accessed on 22 October 2026; dates printed on source documents are kept separate. Current web pages without an identifiable publication/effective date are cited by access date and are not treated as historical proof.
+
+# 1. Executive decision
+
+Answer to the question: the defaults are mostly internally coherent, but live feasibility for even one minimum-lot spread is unproven and must be treated as a no-trade state until the missing inputs are resolved. The critical failure mode is joint: spread P&L deteriorates while initial margin rises or offset relief disappears, then a leg is left unmatched or the trader cannot react quickly enough. These are different budgets and must be tested separately.
+
+| **Decision item**                                                             | **Finding**                                                                                                                   | **Disposition**                                                                                 |
+|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| RUB 30,000 pilot envelope                                                     | Can be a strict all-in sleeve budget; it is not an equity-loss limit or evidence that one lot fits.                           | Retain as a ceiling; require lot-level price, margin and liquidity pass. \[1–4\]                |
+| RUB 5,000 warning / RUB 10,000 action                                         | Coherent as internal escalation states. A trigger is not a liquidation price, and D can breach while X is positive.           | Retain provisionally; block scale-ins at warning until review, block all new risk at action.    |
+| RUB 15,000 outer LQDT shortfall boundary                                      | A policy breach condition, not a guaranteed maximum. Execution gaps, fees, variation margin and forced selling can overshoot. | Retain as a hard governance boundary; do not call it a loss cap. Stress post-trigger exit path. |
+| RUB 15,000 lifetime gross extra funding; RUB 45,000 total gross contributions | Defines authority, not net risk capital, recourse or maximum loss. Emergency cash may arrive too late or be unavailable.      | Retain as a lifetime cumulative cap; entry must pass with zero rescue cash.                     |
+| 50% starting-margin ceiling / RUB 5,000 stress buffer                         | Useful hypotheses, unsupported as universal rules. Starting margin ignores margin expansion, VM and partial-fill loss.        | Test, do not approve as sufficient. Compare 25%/35%/50% margin-use sensitivity and joint paths. |
+| 3–90 minute manual reaction                                                   | Too wide to assume a stop can be executed at the observed signal price. The tail distribution is unknown.                     | Model 3, 5–15, 30, 60 and 90 minute reaction/exit paths plus missed/partial fills.              |
+| Future RUB 10–20m scale                                                       | A small pilot cannot establish capital capacity, market impact or stability at scale.                                         | Separate promotion gate; require capacity and stress evidence at proposed size.                 |
+
+## Three conditions that dominate the decision
+
+1.  A feasible trade must pass both the relative economic-loss test and the cash/margin-path test under the same joint scenario. Passing only one is not enough.
+
+2.  When X reaches −RUB 10,000, the remaining loss to get flat plus a positive uncertainty buffer must fit within the remaining RUB 5,000 outer-boundary distance (or less if X is already below −10,000). The adequacy of that distance is unknown.
+
+3.  If actual broker/account terms allow pilot-related exposure to consume the core LQDT holding or other account assets without a fresh user decision, the policy cannot guarantee containment. Treat an unapproved spillover as an incident, not as available liquidity.
+
+# 2. Scope, inputs and evidence standard
+
+Read in this investigation: the complete supplied R07 prompt and the public sources listed in Section 12. Not supplied/read: the requested R01, R02, R04, R05, R06, R09 or R08 reports. Therefore, this report does not choose a real spread, calculate current contract-specific GO, calculate commission totals, verify broker recognition of KPUR, test historical tails, validate LQDT/tax accounting, measure slippage or establish performance.
+
+| **Missing dependency**                            | **Decision-critical evidence still needed**                                                                                                                                                                          |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R01 — broker rules, KPUR, collateral, liquidation | Current VTB contract and enabled margin/account mode; the client’s recorded risk category; exact treatment of LQDT/core assets; top-up/forced-close thresholds, deadlines, transfer rules and account-wide recourse. |
+| R02 — costs                                       | Current per-side broker, exchange and clearing charges; order/transaction minima; spread execution costs; tax/fees on emergency transfers; realistic exit slippage.                                                  |
+| R04 — free data                                   | Instrument fields, interval, history, timestamps, delay/live status, entitlement and stability; whether data quality supports the tested signal and 3–90 minute reaction.                                            |
+| R05 — LQDT benchmark and tax                      | Same external flows for V and B, fund return/NAV/fees, matched flows, tax-residence/account scenario, treatment of the specified long-term holding deduction.                                                        |
+| R06 — universe and specifications                 | Eligible pair families, contract codes, multipliers, tick values, expiry, spread ratios, delivery/settlement details, open interest and current broker/CCP margin.                                                   |
+| R09 — validation                                  | Pre-registered tests, leakage protections, multiple-testing controls, scenario library, confidence/stability requirements and benchmark matching.                                                                    |
+| R08 — execution / virtual portfolio               | Signal timestamp validity, spread vs leg orders, order type, realistic queue/latency assumptions, no discretionary omissions, rejected/unfilled/partial-fill logic, operator quota and outage handling.              |
+
+Source limitations are explicit. Current exchange and broker web pages establish general mechanics and current published settings only; they do not establish this account’s exact terms or the past state of a page. Current MOEX futures GO page was labelled “Data as of 20.10.2026”; this report’s access/cut-off is 22.10.2026. \[2\]
+
+# 3. Keep the risk concepts separate
+
+| **Risk layer**             | **Measure / meaning**                                                                         | **What can go wrong**                                                                            | **What must be tested**                                                                                                           |
+|----------------------------|-----------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| Relative economic result   | X = V − B; B is the no-pilot LQDT counterfactual with identical genuine external flows.       | Positive futures P&L can still underperform LQDT; matched top-up must not improve X.             | Synchronized values, estimated close costs, same external flows, no duplicate VM/fund expenses; after-tax sensitivity separately. |
+| Absolute P&L               | Realized and unrealized pilot gains/losses and cash expenses.                                 | A cash loss can be large even if LQDT also fell; X and absolute loss answer different questions. | Track sleeve cash ledger and economic wealth bridge.                                                                              |
+| Excess-result drawdown     | H = max(0, past X); D = H − X.                                                                | D≥10k can trigger while X remains positive if the pilot gives back a higher excess-result peak.  | Peak giveback, exit time, costs and opportunity cost of reducing exposure.                                                        |
+| VM / cash path             | Cash settled or required at clearings; stress cash equity after adverse VM and fees.          | Cash can run out before a slower thesis or stop can be exited.                                   | Time-sequenced price shock and clearing cash requirements, not only terminal P&L.                                                 |
+| Broker margin / collateral | Actual broker-reported GO, any house add-on and available collateral.                         | GO can rise; eligible offsets may be cut; assets may not be eligible or instantly transferable.  | Actual broker screens/terms under shocked marks and risk categories; offset removal.                                              |
+| Gross exposure             | Notional or delta-adjusted leg exposure, reported separately from GO.                         | Low GO from spread relief is not low notional or low gap risk.                                   | Each leg notional, concentration, common-factor and basis scenarios.                                                              |
+| Temporary single-leg risk  | Worst loss and margin of a partially filled or broken-ratio position.                         | One leg fills first or one exit fails; spread offset may not apply.                              | Each reachable fill state, actual leg multiplier and adverse movement over response/exit window.                                  |
+| Account-wide recourse      | Whether obligations / margin can draw on the whole brokerage account, directly or indirectly. | Core LQDT or other assets may support pilot liabilities or be sold by the broker.                | Written account-level rules, transfer permissions, client setting and controlled operational proof.                               |
+
+MOEX describes futures collateral as portfolio margining: risks may net where known price relationships exist. NCC describes margin benefits for eligible inter-contract/inter-month spreads, and publishes lists of eligible groups. That is a modelled collateral offset, not an assurance that the spread remains hedged in all execution states. \[1, 3\]
+
+# 4. What public rules establish—and do not establish
+
+## 4.1 MOEX / NCC
+
+- The current MOEX futures GO page had a dated snapshot labelled 20 October 2026. Actual rates are instrument-specific and change; no value has been imported into this report because R06 supplied no specific contract family and broker mode. The currently published list is the proper starting point when the universe is known. \[2\]
+
+- NCC says dynamic parameters (including settlement prices, theoretical option prices and other risk parameters) are defined at each clearing, including interim clearing, and also during the calculation period when price bands or risk-assessment ranges change. The static-parameters page is therefore not proof that current-day requirements will be unchanged. \[3\]
+
+- NCC states that listed inter-contract and inter-month spread groups receive GO benefits. The list matters: correlation observed by the researcher alone does not create exchange margin relief. \[3\]
+
+- MOEX’s current derivatives FAQ states that GO is based on historical and stress volatility, may increase when volatility rises, and that futures losses may exceed initial GO. It also says MOEX/ISS data may be real-time with the relevant subscription or delayed without it. Therefore, a free feed is not assumed to be live enough for the strategy: R04 must verify timestamps, delay and interval. The exact size of a margin scenario must come from instrument-specific data and account/broker implementation, not an invented blanket multiplier. \[4\]
+
+## 4.2 VTB / BCS and the meaning of KPUR
+
+- The public VTB KDS page states broker-specific KDS threshold KDS-X=0 and target KDS-Y=0.2 for its published futures-account sufficiency framework (these are VTB symbols, unrelated to the project economic X=V−B): when the minimum KDS threshold is reached, the bank closes positions to the sufficient value KDS-Y. The page also describes reserving exchange/bank guarantees and opening/closing commissions. The page did not expose a publication/effective date in the result reviewed; the figures must be reconfirmed against the live client interface and current contract terms before use. \[5\]
+
+- The Bank of Russia’s Instruction No. 6681-U entered into force on 1 April 2025. NCC says the regime brings futures into client risk categorisation, and NCC has a service for transmission of customer risk categories and corresponding risk rates. “Qualified investor” status and a broker-recorded risk category such as КПУР are different facts; neither should be inferred from the other. Confirm the category actually applied to the specific VTB/BCS account and the associated rates. \[6\]
+
+- The NCC Clearing Rules approved 26 February 2026 state that on the futures market a clearing-member margin requirement arises when free collateral SZSC is negative, must be met within the time set by the applicable temporary regulations, and non-compliance may lead to settlement-regime/asset-transfer/closing actions. These are clearing-member rules, not the retail customer’s full contract; they reinforce that the user cannot assume a discretionary 90-minute rescue window. \[7\]
+
+- BCS’s accessible Futures Service Agreement was approved by order dated 17 July 2023 (document marked 1 August 2023). Its section 7 permits closing positions without client instruction in specified cases including a negative NПР2. It is useful evidence that broker action can supersede the user’s plan, but this dated copy does not prove the exact conditions currently applicable to the user or a later BCS account. Obtain the current effective appendix and linked agreement. \[8\]
+
+**Implication:** a risk monitor that only checks X/D or “initial GO \< RUB 15k” is incomplete. It must read actual broker indicators and model the earliest possible broker action. If the exact account terms/indicator behaviour cannot be obtained, do not live-trade on the assumption that the emergency policy controls the account.
+
+# 5. Entry and continuation inequalities
+
+Define the stressed horizon from a reliable current mark through the first feasible fully-flat state. It must include the assumed 3–90 minute reaction, time to submit/confirm orders, any clearing/market closure exposure, rejected/partial fills, price gaps, spread dislocation and exit fees/slippage. Only include costs once: if the marked X already contains a given fee or close-cost estimate, do not subtract it again.
+
+Relative-survival test: X_now − L_X,stress(n, scenario) − U_X(n, scenario) ≥ −RUB 15,000
+
+L_X,stress is the adverse change in X from the current synchronized mark to fully flat, after incremental trading/funding costs not already in X. U_X is a strictly positive uncertainty buffer for residual modelling, timestamp, fill and shock uncertainty. Do not set the buffer to zero because a backtest lacks tail data.
+
+Action-trigger test: L_exit,stress + U_remaining ≤ X_at_action + RUB 15,000
+
+At the X=−RUB 10,000 trigger, the right-hand side is RUB 5,000. If X has already reached −RUB 11,000, only RUB 4,000 remains; at −RUB 14,000, only RUB 1,000 remains. Therefore the familiar “RUB 5,000 gap” is a path-dependent budget, not a proven safety margin. If exit stress plus uncertainty exceeds it, either earlier/tighter entry and de-risking conditions are needed or the strategy is infeasible at that size.
+
+Cash/margin test at every stress timestamp t: E_stress(t) ≥ M_stress(t) + R_oper(t)
+
+E_stress is eligible account equity/cash after the scenario’s adverse VM and costs, excluding core assets unless their use is expressly authorized and controlled. M_stress is the broker-relevant GO / margin requirement in that same state (including house add-ons and the single-leg state). R_oper is remaining free liquidity for further VM/fees and operational uncertainty. Equivalently, the test must ensure the RUB 30,000 sleeve can cover stressed blocked GO, paid/adverse VM, fees and reserve concurrently. Avoid adding current GO and the entire stressed GO together: the blocked margin is a resource requirement, not itself a P&L loss.
+
+Integer sizing: n\* = max n ∈ {0,1,2,…} for which every relative, cash, margin, gross-exposure and leg-risk test passes
+
+Use \`n=0\` as a valid answer. For a two-leg ratio a:b, the execution plan must preserve the required whole-lot ratio; the temporary states between individual fills must each pass the single-leg test. A fractional solution of 0.4 lot is not rounded up to one lot. The maximum size is the minimum allowed by all constraints, then rounded down to the feasible whole-lot ratio.
+
+Tax overlay (deferred, not zero): for each taxpayer/account scenario use X_after_tax = X_before_tax − (tax on V − tax on B), with the same genuine external flows on both paths. Exclude only the loss of the LQDT long-term holding deduction, as specified in the brief; other tax/account treatment remains unknown. Keep the report’s numeric defaults pre-tax, then present tax sensitivities separately once R05 and investor-specific inputs exist.
+
+## 5.1 Joint scenario design
+
+| **Scenario family**                 | **Required path**                                                                                                         | **Evidence source / handling**                                                                                                                                            |
+|-------------------------------------|---------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Spread move / basis shock           | Widen/narrow the spread adversely while each leg moves at its own plausible extreme; include basis correlation breakdown. | Use R06 specifications and historical synchronized prices; stress observed adverse episodes, the worst valid sample episode and conditional 3–90 minute path in R08/R09.  |
+| GO / spread-relief change           | Recalculate GO with current parameters; add parameter sensitivity and eligible offset removed or substantially reduced.   | Actual MOEX/NCC/broker margin module and eligible-spread list; sensitivity grid such as 1.00x/1.25x/1.50x GO is a test grid only, not a claim about observed probability. |
+| Leg execution failure               | Long leg filled, short leg unfilled (and vice versa), ratio mismatch, cancel/reprice delay, crossed exit.                 | Order-by-order virtual replay; use conservative reachable leg-only price moves and actual single-leg margin. If this cannot be bounded to a positive budget, no trade.    |
+| Reaction and access delay           | 3, 5–15, 30, 60, 90 minutes; also missing alert, user unavailable, connectivity down and market closed.                   | Run all eligible signals without discretionary omission; retain failed and partial fills. Do not assume 24/7 tradability because monitoring is 24/7.                      |
+| Joint price–liquidity–margin stress | Same scenario causes bad X, negative VM, higher GO, wider spread, fewer bids and costly exit together.                    | Joint timeline rather than separate “best case” tests. Do not add independent probabilities unless dependence is demonstrated.                                            |
+| Core/account spillover              | Broker revalues eligible collateral or reduces/sells core assets; internal transfer arrives late or not at all.           | R01 written account rules, current VTB KDS and asset eligibility. Exclude core from sleeve liquidity unless approval and operational controls are documented.             |
+
+No Gaussian-tail guarantee is appropriate. Historical worst cases do not cap future gaps; report sample dates, marks, market regime, missing periods and uncertainty. Arbitrary GO multipliers are useful for sensitivity only and must not be described as historically calibrated unless the data demonstrates that calibration.
+
+# 6. Worked hypothetical ledgers
+
+All figures below are constructed examples, not observed MOEX contract values, not broker margin estimates, and not backtest results. The point is to test arithmetic and expose failure modes. Shared-core collateral is excluded in every “available cash” number.
+
+## Ledger A — passes the initial-margin heuristic, fails the joint cash path
+
+| **Item**                                                         | **Hypothetical amount** | **Interpretation**                                         |
+|------------------------------------------------------------------|-------------------------|------------------------------------------------------------|
+| Sleeve cash at entry                                             | RUB 30,000              | All-in pilot limit; no emergency money.                    |
+| Initial spread GO                                                | RUB 8,000               | 26.7% of sleeve; passes even a 50% start-margin heuristic. |
+| Stressed GO when spread offset is lost / house requirement rises | RUB 18,000              | Hypothetical shocked broker requirement, not current data. |
+| Adverse VM / P&L on path to exit                                 | −RUB 7,000              | Hypothetical joint spread move.                            |
+| Incremental exit costs / slippage                                | −RUB 1,000              | Assume not already included in X.                          |
+| Remaining positive uncertainty/liquidity reserve                 | RUB 5,000               | Hypothetical cushion.                                      |
+| Stressed net equity after VM and costs                           | RUB 22,000              | 30,000 − 7,000 − 1,000.                                    |
+| Required GO plus reserve                                         | RUB 23,000              | 18,000 + 5,000.                                            |
+| Liquidity margin                                                 | −RUB 1,000              | Deficit: fails despite low initial GO.                     |
+
+Relative-loss test by itself might show X=0 − 7,000 − 1,000 − 5,000 = −RUB 13,000, inside the outer −RUB 15,000 line; the independent cash test still fails by RUB 1,000. A forced broker/core transfer or disorderly liquidation is therefore possible unless the setup is rejected or further resources are already legally/operationally inside the sleeve. It is not cured by calling the spread “hedged.”
+
+## Ledger B — the RUB 10,000 action threshold cannot guarantee the RUB 15,000 outer boundary
+
+| **Item**                                 | **Hypothetical amount** | **Interpretation**                                                                      |
+|------------------------------------------|-------------------------|-----------------------------------------------------------------------------------------|
+| X at trigger                             | −RUB 10,200             | Shortfall trigger has fired; new risk must cease.                                       |
+| Stress loss/cost remaining to fully flat | RUB 4,000               | Assumed additional adverse spread move + close cost.                                    |
+| Positive uncertainty buffer              | RUB 2,000               | Assumed unmodelled residual.                                                            |
+| Terminal stressed X                      | −RUB 16,200             | −10,200 − 4,000 − 2,000.                                                                |
+| Outer-boundary result                    | Breach by RUB 1,200     | The trigger was actioned, but the policy cannot prevent overshoot on these assumptions. |
+
+At this trigger, the remaining headroom to −RUB 15,000 is RUB 4,800, so the path test requires \`RUB 4,000 + RUB 2,000 ≤ RUB 4,800\`, which fails by RUB 1,200. An earlier entry filter, lower integer size, smaller leg exposure, lower response latency, or no trade is necessary; extra cash alone does not fix the economic loss constraint.
+
+## Ledger C — peak giveback action while X remains positive
+
+| **Item**                     | **Hypothetical amount** | **Interpretation**                                                                           |
+|------------------------------|-------------------------|----------------------------------------------------------------------------------------------|
+| Historical high-water mark H | +RUB 20,000             | Maximum prior X.                                                                             |
+| Current X                    | +RUB 9,200              | Still outperforming the matched LQDT counterfactual by RUB 9,200.                            |
+| D = H − X                    | RUB 10,800              | D≥RUB 10,000: suspend new risk/additions and orderly de-risk under the delegated rule.       |
+| Likely opportunity cost      | Unknown                 | Closing may miss a rebound and re-entry creates friction; not closing permits more giveback. |
+
+The D rule is a giveback-control rule, not the same as \`X≤−10,000\`. It can protect accumulated excess returns while sacrificing recovery. R09 should compare results with/without the rule using the same eligible signals and realistic exit/re-entry costs; the rule must not be selectively disabled after a profitable episode.
+
+## Ledger D — rescue allowance is not an unlimited margin bridge
+
+| **Item**                                    | **Hypothetical amount**                                    | **Interpretation**                                                         |
+|---------------------------------------------|------------------------------------------------------------|----------------------------------------------------------------------------|
+| Original contributed sleeve                 | RUB 30,000                                                 | Base amount.                                                               |
+| Prior approved gross additional allocations | RUB 12,000                                                 | Lifetime additional allowance used.                                        |
+| Remaining lifetime gross allowance          | RUB 3,000                                                  | RUB 15,000 cap less 12,000 used.                                           |
+| Cash needed to complete safe exit path      | RUB 5,000                                                  | Hypothetical path need; not a fresh entry.                                 |
+| Uncovered amount if no other permitted path | RUB 2,000                                                  | Do not assume availability from core or a timely transfer.                 |
+| Policy implication                          | No fresh risk; incident if core is pulled without approval | A cap is an authority limit, not proof that all future exits are fundable. |
+
+At \`X≤−RUB 10,000\`, any individually approved funding is only to reach flat, never to wait for recovery or average down. The virtual portfolio must default to “no additional funding” absent explicit approval and confirmed arrival time. Internal sale proceeds are not an external flow or automatically an economic loss in X; pilot-induced core actions require separate accounting and must not silently enlarge the sleeve.
+
+## Ledger E — unhedged fill state can dominate the nominal spread
+
+Hypothetical: the intended spread requires one long and one short leg. Only the long leg fills; the short leg is rejected for 15 minutes. If the unfilled leg’s absence leaves the portfolio exposed to a RUB 12,000 adverse single-leg move and the standalone requirement is RUB 19,000, then RUB 30,000 sleeve equity less RUB 12,000 VM and RUB 1,000 exit cost equals RUB 17,000—below the stressed GO alone, before any uncertainty reserve. This state fails both liquidity and risk tests. A spread-level net-risk estimate cannot substitute for the reachable single-leg states.
+
+# 7. Sizing methods and low / medium / high research profiles
+
+| **Method**                                         | **Strength**                                                                                                  | **Failure mode / condition**                                                                                                           | **Disposition for this pilot**                                                                                                       |
+|----------------------------------------------------|---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| Fixed minimum-lot spread                           | Simple, reproducible, easiest to audit; appropriate baseline for the first virtual portfolio.                 | One lot may be too large and cannot be downsized; a small GO does not imply low spread or leg risk.                                    | Test first. Reject if any stress/liquidity/fees/exit test fails.                                                                     |
+| Bounded risk-scaled integer sizing                 | Selects the largest whole-lot number satisfying all stress, liquidity, gross-exposure and concentration caps. | Risk-per-lot can be unstable; portfolio interactions and discrete rounding cause jumps.                                                | Preferred research framework after R06/R08/R09 inputs are available; calculate every fill state.                                     |
+| Capped fractional-Kelly-like sizing                | Could link size to edge and uncertainty when probabilities are well-calibrated.                               | Requires stable out-of-sample edge and distributions, dependence and model-error treatment; tiny integer lots defeat smooth fractions. | Defer. Not justified by the current evidence. Never round fractional \<1 to one contract.                                            |
+| Precommitted scale-ins                             | Can add only at fixed conditions with known aggregate exposure.                                               | Creates path dependence, adds risk after prior mark changes and tempts averaging down.                                                 | No scale-ins after the RUB 5,000 warning until reviewed; none at/after D≥10,000 or X≤−10,000. Total caps precommitted and re-tested. |
+| Low profile: 25% start-margin hypothesis           | Would cap initial GO at RUB 7,500 of the original RUB 30,000.                                                 | Still can fail if minimum-lot margin/one-leg stress or VM liquidity is too high.                                                       | Sensitivity case only; not a universal recommendation.                                                                               |
+| Medium profile: 35% start-margin hypothesis        | Would cap initial GO at RUB 10,500.                                                                           | Higher capital efficiency, less free liquidity; does not bound loss.                                                                   | Sensitivity case only; must pass same tail tests.                                                                                    |
+| High research profile: 50% start-margin hypothesis | Would cap initial GO at RUB 15,000.                                                                           | Leaves fewer unblocked funds and can fail on GO expansion/VM; does not authorize larger loss.                                          | Research stress case only. Cannot enlarge the pilot’s delegated authority.                                                           |
+
+The profile percentages are a proposed sensitivity grid for experimentation, not sourced estimates of safe allocation and not approved rules. The existing 50% idea is not validated simply because it is conservative relative to some leverage limits; it is only a cap on the \*starting\* GO.
+
+## 7.1 Per-idea and portfolio caps
+
+- Per idea: calculate the full-hedged spread P&L stress; standalone leg P&L stress; marginal and portfolio stressed GO; maximum cash need during the response/exit path; exit costs; and gross/delta-adjusted exposure. Use whichever is most restrictive.
+
+- Portfolio: test every concurrently open spread under common market shocks and pair-specific basis dislocations. No diversification credit just because past correlations are low. Use CCP offsets only if eligible, then run the offset-removal case. For common scenarios, aggregate the resulting instrument-level P&L and cash obligations at the same time steps.
+
+- Concentration: cap aggregate risk by shared underlying/factor, maturity, broker risk category and liquidity regime; a set of “different” pairs linked to the same underlying is one joint exposure for stress purposes.
+
+- Rounding: compute the largest feasible integer contract package after applying leg ratios. Never round up; if the first lot violates a cap or would require emergency funding at entry, use zero.
+
+- Scale-in: each new tranche must pass the whole portfolio checks against the \*remaining\* budget and all prior realized/embedded losses. Profit, returned cash, emergency funding and withdrawals do not reset X, H or the gross-funding allowance.
+
+# 8. Proposed risk state machine
+
+| **State / trigger**                                                   | **Required response**                                                                                                                                                                     | **Funding and restart semantics**                                                                                                     |
+|-----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| NORMAL: D\<5k, X\>−10k, all checks pass                               | Only allow precommitted signals whose minimum integer size passes relative, cash, margin, gross and leg-state tests. Keep reliable marks and orders monitored.                            | Zero emergency money assumed at entry. All open positions must be coverable without core spillover.                                   |
+| WARNING: D≥RUB 5,000                                                  | Warn and reassess exposures, data, fees, margin and path-to-flat. Proposed tighter operation: pause optional scale-ins until review.                                                      | No reset of loss/high-water history. Funding is not automatic.                                                                        |
+| DRAWDOWN ACTION: D≥RUB 10,000                                         | Suspend entries/additions; cancel risk-increasing working orders; reduce risk orderly. User review required before resuming, even if X remains positive.                                  | Review is not restart approval. Resume only after fresh scenario/calibration gate.                                                    |
+| SHORTFALL ACTION: X≤−RUB 10,000                                       | Cease new risk and begin orderly exit to flat. Funding, if separately approved and timely, may only avert disorderly liquidation / complete de-risking; not extend the holding period.    | No “wait for recovery” rescue. Do not assume a funding approval automatically authorizes restart.                                     |
+| OUTER BREACH: X\<−RUB 15,000                                          | Record a policy breach / incident; suspend the live project pending formal review. Reconcile all marks, flows, costs and any core use.                                                    | It is not an allowed overshoot. Never reset X/H or funding consumed on restart.                                                       |
+| EARLIER broker, margin, naked-leg, stale-data, expiry/delivery danger | Overrides monetary thresholds. Cancel entries and de-risk/flatten as permitted and actually executable; capture the incident and slippage.                                                | Broker action can be faster than the manual policy. If no feasible controlled exit exists, the position was not eligible at entry.    |
+| Funding event / unapproved core collateral use                        | Freeze new orders and count newly earmarked cash/collateral, including broker-induced core use, against the RUB 15k gross lifetime allowance. Count a collateral-to-cash conversion once. | Unapproved broker-initiated core use is an incident; do not quietly treat core as pilot funds. Returned funds do not restore the cap. |
+
+## 8.1 Partial-fill and stop policy
+
+4.  Use a spread order if the actual platform supports it with acceptable mechanics; test whether it is truly a single spread execution or still creates leg risk. Do not assume an atomic hedge without evidence.
+
+5.  If orders can execute as separate legs, predefine which leg may be entered first, max time unhedged, ratio repair/rejection handling and one-leg stop/de-risk actions. The allowed time is the tested operational limit, not the 90-minute maximum the person may sometimes need.
+
+6.  A stop instruction is an action rule, not a guarantee of a fill or price. Model market gaps, price-band interactions, circuit/market closure, rejected/partial fills, wide bid-ask and failed cancellation. Do not represent stop-losses as loss caps.
+
+7.  Record actual signal time, data timestamp/age, order send/ack/fill/cancel timestamps, each leg’s price/quantity, fees, broker indicator, GO and VM before/after; count every eligible signal and every unfilled/rejected one in the virtual portfolio.
+
+8.  Emergency cash is a de-risking contingency, never an entry prerequisite. If time-to-credit and approval are not guaranteed by evidence, model it as unavailable in the base stress path. If core resources are required to pass the test, mark no-trade under the current delegated policy.
+
+# 9. Exact 90-day review, high-water giveback and promotion
+
+Planning convention: define T0 as the timestamp at which the pilot is formally declared started. The formal review is due at T0 + 90 calendar days (not 90 trading days), using a stated time zone and a saved snapshot of X, H, D, realized/unrealized P&L, all cash flows, commissions, GO/VM, margin calls, actual/virtual fill discrepancies, funding used and incidents. The review does not force every position to expire on day 90; each position still needs its ordinary expiry/delivery and risk management, and every continuation must pass current and stressed constraints.
+
+No reset: at day 90 and every other review, carry forward the original X/H history, funding already consumed and any policy breaches. If records or reliable marks are missing, the portfolio is not demonstrably compliant; no added exposure until reconciled. The time review itself does not erase losses or transform an open loss into a new pilot.
+
+Peak giveback opportunity cost: D≥RUB 10,000 can cause de-risking when X\>0. This can prevent the strategy from giving back more excess profit, but creates exits/re-entries, fees, slippage and missed-recovery costs. Pre-register a comparison of the delegated D-trigger rule against alternative drawdown/action thresholds, using matched LQDT flows, all eligible signals, and identical execution assumptions. Report trigger frequency, opportunity missed, after-cost X distribution, worst post-trigger overshoot and funding path. A profitable small sample is not evidence that a threshold controls tails.
+
+## 9.1 Stable promotion gates for RUB 10–20 million
+
+- Evidence and reproducibility: specified universe/parameters before evaluation, frozen data lineage, point-in-time availability, realistic fills, all eligible signals, leakage audit and multiple-testing correction under R09.
+
+- Execution stability: sampled or replayed 3–90 minute latency distribution; partial/rejected fill and single-leg state counts; stressed close cost and liquidity by contract and time of day, including weekends/holidays only where that contract actually trades.
+
+- Economics: positive after-cost X versus matched LQDT with external flows matched; tax sensitivity under R05; stable by regime and not concentrated in one event/pair. Report uncertainty; no pilot profit target at the cost of validating the defaults.
+
+- Capacity: recalculate the whole strategy at RUB 10m and RUB 20m order sizes, not linear extrapolation from tiny lots. Examine displayed depth, fill ratio, market impact, order-book replenishment, simultaneous orders, and correlated liquidation. Existing CCP margin relief does not prove market depth.
+
+- Controls: current broker/client category and margin settings verified; actual usable funds/recourse known; alert and execution process tested; user availability and intervention quota specified; no single stressed path requires unapproved core use. Fail any gate → do not promote.
+
+# 10. Parameter disposition: retain, revise, defer
+
+| **Parameter**                                                                       | **Disposition proposed**                                                        | **Reason / sensitivity**                                                                                                                     | **Pre-live prerequisite**                                                                                                      |
+|-------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Initial all-in allocation: RUB 30,000                                               | Retain as hard sleeve envelope, not a proven feasible capital level.            | One-lot test must include all fees, VM, margin shock, exit and reserve. If minimum lot fails, set size to zero.                              | R06 specifications + current broker GO/margin + R02 costs + R08 single-leg stress.                                             |
+| Emergency funding: RUB 15,000 gross lifetime; total gross contributions ≤RUB 45,000 | Retain as maximum delegated gross authority; never a rescue guarantee.          | Test 0, 5k, 10k, 15k cumulative use; approval/arrival scenarios 3–90+ minutes, unavailable and rejected. No funds assumed at entry.          | Documented separate approval, amount, source, availability and time; record core spillover once and as incident if unapproved. |
+| Warning: D≥RUB 5,000                                                                | Retain provisionally; proposed pause on discretionary scale-ins pending review. | Test sensitivity to valuation noise, marks, fees and signal reversals; no threshold has been validated.                                      | Reliable synchronized X, counterfactual B, stale-mark tolerance and review log.                                                |
+| Action: D≥RUB 10,000                                                                | Retain provisionally as no-new-risk and orderly-reduction trigger.              | May trigger while X is positive; test whipsaw, opportunity cost and exit tail.                                                               | Precommitted execution/availability plan and R08 replay.                                                                       |
+| Action: X≤−RUB 10,000                                                               | Retain; immediate block on new risk and start controlled flat process.          | Post-trigger remaining loss + buffer must fit within X+15,000, not automatically 5,000 at all times.                                         | Empirically/scenario-supported L_exit and positive residual uncertainty budget.                                                |
+| Outer boundary: X\<−RUB 15,000                                                      | Retain as breach, not loss guarantee.                                           | Gaps, broker liquidation, spread break and fees can overshoot. Tighter entry gate may be necessary.                                          | Joint scenario and account-wide recourse tests; incident handling.                                                             |
+| 50% of initial capital in starting GO                                               | Defer as safety requirement; test 25% / 35% / 50%.                              | 50%=RUB 15,000 for the starting sleeve, but later GO/VM can exhaust resources.                                                               | Observed broker/CCP margin under shocks and actual free-cash path.                                                             |
+| RUB 5,000 stress buffer                                                             | Defer as a fixed rule; require U\>0 and calibrate by risk.                      | No evidence proves this amount covers 90-minute response or jumps. Test values relative to observed measurement error and missed-fill tails. | R08 latency/fill study and R09 scenario/uncertainty protocol.                                                                  |
+| Per-idea / portfolio caps                                                           | Deferred—not enough contract/pair information.                                  | Derive from min-lot stress risk, correlated exposure, gross notional and max cash path; avoid arbitrary percentage-risk rules.               | R06 + current GO snapshot + joint scenario set.                                                                                |
+| 90 calendar-day review                                                              | Retain exactly as governance review; not forced expiry.                         | Opportunity to audit after-cost X, marks, controls, execution and capacity. No reset.                                                        | T0 defined; audit trail and review checklist.                                                                                  |
+| Tax settings                                                                        | Defer after-tax numeric results.                                                | Given instruction excludes only loss of LQDT long-term holding deduction; other investor/tax/account facts unknown.                          | R05 scenarios and taxpayer-specific evidence; keep before-tax default distinct.                                                |
+
+# 11. No-trade criteria, falsification and project changes
+
+## 11.1 No-trade criteria
+
+- No feasible whole-lot package passes the relative-survival and cash/margin tests simultaneously under the same joint path.
+
+- Actual contract multiplier/tick value/settlement/expiry, current broker GO or broker-specific category treatment is unknown, stale or not independently reproducible.
+
+- The only way to avoid a margin shortfall or orderly exit deficit is an unapproved core-collateral transfer, hoped-for rescue funding, asset sale without permission, or assumed access to funds inside the 3–90 minute window.
+
+- Spread offset is required for viability but the one-leg fill state, margin-reset state or offset-removal scenario fails.
+
+- After-cost fees and likely spread/exit cost are not available; or free data is delayed/irregular at a level that invalidates the intended signal execution window.
+
+- The virtual portfolio selectively skips eligible signals, omits partial fills, assumes guaranteed stop fills, looks ahead to settlement/revision data, or cannot reproduce the matched LQDT counterfactual.
+
+- Account-wide recourse is not bounded/documented, actual KPUR/risk category is unverified, or the broker’s early action conditions can occur before the operational response path.
+
+- At action trigger, stressed remaining loss to flat plus positive uncertainty exceeds X+RUB 15,000, or current risk violates the D action state.
+
+- No stable free-cash path exists across price shock, VM, increased GO, exit costs and uncertainty—even if current initial GO is low.
+
+## 11.2 Falsification criteria
+
+- Any admissible minimum-lot stress path that breaches the outer X boundary after the prescribed reaction/exit disproves that the candidate size is protected by the proposed rule; it does not justify widening the boundary after the fact.
+
+- Any sample where broker collateral rules/house add-ons materially differ from the model, or forced liquidation occurs sooner than the simulated action schedule, falsifies the assumed broker-response model until revalidated.
+
+- Any unpaired position lasting longer or losing more than the validated leg limit falsifies the partial-fill control and forces rework or no-trade.
+
+- A positive pilot result that disappears under matched LQDT flows, all fees, conservative fills or multiple-testing controls does not pass an economics gate; a small profitable pilot alone does not establish tail safety or capacity.
+
+- Frequent alert non-response, stale data, capital constraints, or omitted signals in the manual portfolio falsify execution feasibility even if the theoretical spread is profitable.
+
+## 11.3 Possible project changes if gates fail
+
+Options to test—not decisions taken here: reduce to a smaller / different eligible pair only if a mini contract materially reduces per-lot stressed risk; use a truly executable spread order instead of independently legged orders if verified; narrow the universe to contracts with more depth and stable timing; increase the starting sleeve only through a new explicit authorization and only if the relative-loss policy also changes appropriately; select a ring-fenced account/sleeve arrangement if feasible under actual broker terms; or stop the pilot. A separate account may reduce operational spillover but is not automatically a legal or collateral guarantee. The present shared-account choice remains conditional on proof that core use is controlled.
+
+# 12. Targeted library lead: Robert Carver
+
+Robert Carver, \*Systematic Trading: A unique new method for designing trading and investing systems\*, Harriman House, published 14 September 2015, 325 pages, ISBN 9780857194459. The publisher’s table of contents identifies Chapter 9 “Volatility targeting,” Chapter 10 “Position sizing,” Chapter 11 “Portfolios,” and Chapter 12 “Speed and Size.” \[9\]
+
+Applicable idea for R07: position size should connect forecast/strategy risk, instrument volatility, portfolio weights/diversification and trading cost; overall size needs to reflect the cost of trading and capacity. The first implementation question is “can the desired risk be expressed in the instrument’s executable unit?” not “what percentage of the equity would a continuous optimizer allocate?”
+
+Small-lot limitation for this project: continuous portfolio weights can be fractional while exchange futures are integer contracts and a spread can have a fixed leg ratio. Rounding risk is discontinuous: a target allocation below one lot means the feasible size is zero, not one. Portfolio diversification assumptions must also be haircut in joint stress and overridden by any exchange/broker collateral rules. Forecast probabilities and covariance estimates are not enough to budget a rare single-leg failure or cash call.
+
+Reading caveat: I did not verify a licensed full-text copy or personally inspect the relevant chapter pages in this run. I therefore give the actual edition/publication details and chapter titles, but no page-number claims or assertions that this is a verbatim extraction from particular pages. The publisher page is the bibliographic lead. \[9\]
+
+# 13. Final answer and next evidence package
+
+The provisional policy can be used as an initial governance skeleton, but it cannot yet be called feasible. Three revisions are warranted now: (1) define the remaining-loss-to-flat inequality relative to the RUB 15,000 boundary at every action point; (2) make joint cash/margin and temporary single-leg tests pass separately from X; and (3) treat emergency funding as unavailable unless explicitly approved and its arrival time is supportable. The 50% initial-GO ceiling and RUB 5,000 stress buffer remain sensitivity hypotheses, not sufficient safeguards.
+
+The decisive next evidence is not a wider generic risk survey. It is the smallest package needed to resolve feasibility for a specific candidate: R06 pair/specification rows, exact current VTB rules/account category/collateral treatment (R01), full round-trip costs (R02), usable data timestamps/history (R04), and realistic fill/latency assumptions (R08), tested under R09 and measured against R05’s matched LQDT path. Until those inputs establish at least one integer package that passes every constraint without emergency money, no-trade is the supported result.
+
+# Appendix A. Source register and traceable excerpts
+
+Public sources were accessed on 22 October 2026 unless an explicit publication/effective date is stated. Quotes below are short supporting excerpts; they support only the proposition described, not client-specific conclusions.
+
+**\[1\] “Обеспечение” / portfolio margining.** Moscow Exchange; web page, publication/effective date not shown; accessed 22 Oct 2026.
+
+> Supporting excerpt: “Риски по отдельным инструментам неттируются с учетом известных ценовых взаимосвязей между инструментами” Limit: General exchange methodology; no account-specific GO or guaranteed offset availability. Source URL: [<u>open official source</u>](https://www.moex.com/s1573)
+
+**\[2\] “Гарантийное обеспечение по фьючерсным контрактам”.** Moscow Exchange; data snapshot labelled 20.10.2026; accessed 22 Oct 2026.
+
+> Supporting excerpt: “Данные на 20.10.2026. Всего в списке: 497” Limit: Current dated contract data page; no particular contract was selected because R06 was absent. Source URL: [<u>open official source</u>](https://www.moex.com/ru/derivatives/go_futures.aspx?tid=3013)
+
+**\[3\] “Риск-параметры”.** National Clearing Centre; current web page, publication/effective date not shown; accessed 22 Oct 2026.
+
+> Supporting excerpt: “определяются каждый клиринг (в том числе промежуточный), а также в ходе расчетного периода” Limit: Supports parameter-change and eligible spread-group mechanics; specific instrument history still required. Source URL: [<u>open official source</u>](https://www.nationalclearingcentre.ru/catalog/030902)
+
+**\[4\] “Срочный рынок” FAQ.** Moscow Exchange; current web page, publication/effective date not shown; accessed 22 Oct 2026.
+
+> Supporting excerpt: “При росте волатильности ГО может быть увеличено” Limit: General risk explanation: does not specify the multiplier or intraday account action timing. Source URL: [<u>open official source</u>](https://www.moex.com/ru/derivatives)
+
+**\[5\] “Коэффициент достаточности средств”.** VTB Bank; current web page accessed 22 Oct 2026, no publication/effective date surfaced.
+
+> Supporting excerpt: “Значение Х устанавливается Банком равным 0. Значение Y устанавливается Банком равным 0,2.” Limit: Publicly published KDS settings; reconfirm the exact current client/account implementation. Source URL: [<u>open official source</u>](https://www.vtb.ru/personal/investicii/tarify/kds/)
+
+**\[6\] “Определение ставок риска по категориям и информационные сервисы расчета ГО”.** National Clearing Centre, notice on Bank of Russia Instruction 6681-U; rule effective 01.04.2025; accessed 22 Oct 2026.
+
+> Supporting excerpt: “инструменты срочного рынка включаются в периметр регулирования ... категоризацию клиентов по уровню риска” Limit: Distinguishes broker-assigned client risk categories from an unsupported assumption about the client’s category. Source URL: [<u>open official source</u>](https://www.nationalclearingcentre.ru/catalog/030903)
+
+**\[7\] “Правила клиринга НКЦ”, Part I, arts. 33.7–33.11.** NCC; approved by Supervisory Board on 26.02.2026, protocol 17; PDF pp.189–192; accessed 22 Oct 2026.
+
+> Supporting excerpt: “На срочном рынке Маржинальное требование возникает ... если ... SZSC\<0” Limit: Clearing-member rule and system-level response; not a complete retail-client agreement. Source URL: [<u>open official source</u>](https://www.nationalclearingcentre.ru/connector?_t=1780477378&cmd=file&target=B_XENsZWFyaW5nXNCU0L7QutGD0LzQtdC90YLRi1zQn9GA0LDQstC40LvQsCDQutC70LjRgNC40L3Qs9CwXDEuINCd0JrQpiDQn9GA0LDQstC40LvQsCDQutC70LjRgNC40L3Qs9CwLiDQntCx0YnQsNGPINGH0LDRgdGC0YwgKDEt0LDRjyDRgNC10LTQsNC60YbQuNGPIDIwMjYpX9Cx0LXQtyDQv9GA0LDQstC_P0Lpf0YHQsNC50YIucGRm)
+
+**\[8\] “Соглашение о порядке обслуживания на срочном рынке клиентов ООО «Компания БКС»”, App. 6.** BCS Broker; approved by order dated 17.07.2023, PDF copy marked 01.08.2023, section 7; accessed 22 Oct 2026.
+
+> Supporting excerpt: “Компания вправе без поручения Клиента закрыть все позиции Клиента или их часть” Limit: Dated accessible copy only; must obtain the then-current applicable customer terms before any BCS use. Source URL: [<u>open official source</u>](https://cdn.broker.ru/static/broker/f/reg/attachment-06/bcs_futures-230801.pdf)
+
+**\[9\] “Systematic Trading” bibliographic page.** Robert Carver, Harriman House; published 14.09.2015; 325 pages; ISBN 9780857194459; accessed 22 Oct 2026.
+
+> Supporting excerpt: “Chapter Ten. Position Sizing; Chapter Eleven. Portfolios; Chapter Twelve. Speed and Size” Limit: Publisher metadata/table of contents; no full-text page claims are made. Source URL: [<u>open official source</u>](https://www.harriman-house.com/authors/robert-carver/systematic-trading/9780857194459)
+
+**\[10\] “Документы” / broker terms index.** VTB Bank; current document index accessed 22 Oct 2026. Lists the “О порядке работы с непокрытыми позициями клиентов” document as effective from 25.04.2025; newer current regulations are also listed.
+
+> Supporting excerpt: “Действует с 25.04.2025” Limit: Page-level index used to locate current documents; a full client-specific contract review was not completed because account identity/contract inputs were not provided. Source URL: [<u>open official source</u>](https://www.vtb.ru/personal/investicii/documents/)
+
+**\[11\] MOEX derivatives page, data-delivery note.** Moscow Exchange; current page accessed 22 Oct 2026; publication/effective date not shown.
+
+> Supporting excerpt: “биржевая информация может предоставляться ... в режиме реального времени — при наличии соответствующей подписки, так и с задержкой — без оформления подписки” Limit: General service description only; the actual free feed, fields, interval and historical availability remain to be verified in R04. Source URL: [<u>open official source</u>](https://www.moex.com/ru/derivatives)
+
+**Research integrity note.** No repository was accessed; no Rxx dependency report other than the supplied prompt was read; no live brokerage/account query, trade, backtest, historical stress calculation or formal legal verification was performed. All ledgers and profile percentages marked “hypothetical” or “sensitivity” are analyst-constructed arithmetic, not observed outcomes.

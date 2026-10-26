@@ -1,0 +1,802 @@
+# BCS Trade API for MOEX Futures Spreads: What Is Really Possible to Automate
+
+## 1. Executive Answer: What BCS Trade API Enables for Futures Spread Trading
+
+BCS Trade API is an official REST + WebSocket interface of БКС Мир инвестиций for automated trading on Moscow Exchange (MOEX) instruments, including futures (type `FUTURES`, classCode `SPBFUT`) [1][2][3]. There is **no native multi‑leg or “spread” order type** in the documented API; spreads must be implemented as coordinated single‑leg orders per instrument [4][5]. The API provides full access to market data (quotes, order book, trades, candles), portfolio/limits (including variation margin and risk levels), and order management, but with explicit rate limits, no documented sandbox, and only “best effort” guarantees on connectivity and ordering.
+
+For a medium‑frequency, intraday‑to‑multi‑day MOEX futures spread strategy, BCS Trade API is **functionally sufficient but operationally fragile**: you can build a robot that reads futures data, monitors portfolio and margin, submits and manages orders on both legs, and tracks partial fills; however, you must design your own logic for synchronization of legs, recovery after timeouts or stream gaps, and emergency de‑risking because the broker does not expose atomic spread orders, “close‑all” controls, or replayable market‑data streams.
+
+The single most actionable takeaway: **your future adapter must be built around “single‑leg primitives + explicit reconciliation”**—treat every spread operation as two (or more) independent orders plus a state machine that tolerates partial hedge, network failures, and token expiry.
+
+---
+
+## 2. Product, Access Model, and Commercial Conditions
+
+### 2.1. What exactly is “BCS Trade API”
+
+**Key fact:** BCS Trade API is an official BCS Broker product, documented at `https://bcs.ru/trade-api` and `https://trade-api.bcs.ru`, with detailed PDF specs hosted at `https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf` [1][6][7].
+
+- Documentation describes a **REST HTTP API** for synchronous operations (orders, portfolio, limits, instruments, historical data) and a **WebSocket API** for streaming market data and order status [6][8][9].
+- Endpoints follow a versioned scheme `.../api/v1/...` (for example, `https://be.broker.ru/trade-api-bff-operations/api/v1/orders`) indicating a first public version [3][10].
+- Official BCS marketing materials position it explicitly as a tool “для подключения торговых роботов, проверки своих алгоритмов” [11].
+
+This API is clearly distinct from any third‑party wrappers (GitHub clients in Go/Python, etc.) which only consume it and may lag the official spec [12].
+
+### 2.2. Who can get access: risk category, qualification, geography
+
+**Access is tied to a real BCS brokerage account with certain risk level constraints.**
+
+- Official API page states: the service is “доступен всем клиентам, за исключением тех, чей риск соответствует уровню КНУР (начальный уровень риска)” [13]. That implies **КСУР, КПУР, КОУР** are allowed; your reported КПУР status fits into the eligible set, but must still be confirmed specifically at BCS.
+- PDF and related materials discuss risk indicators (КНУР/КСУР/КПУР/КОУР) in limits data, reflecting that the broker’s risk regime is available via the API [14].
+- A separate BCS “DMA”/“Торговый API” marketing page notes “Расширенный доступ с квалификацией”, implying **qualification may be required for some instruments or extended functionality**, though not for mere API connectivity itself [15]. This distinguishes:
+  - **API as a channel** (available to all non‑КНУР clients),
+  - **Instruments tradable through that channel** (some futures or other instruments may still require qualified‑investor status at BCS level—independent of API).
+
+**Geography / IP restrictions:** official docs and public pages reviewed do **not** mention IP whitelisting or region‑based blocking for the API [16]. Absence of evidence is not proof of absence, but at least there is no documented “only from RU IPs / only from VPN X” rule. This should be explicitly clarified with support if the VPS is outside Russia.
+
+### 2.3. Tariff and pricing regime
+
+**BCS currently charges according to the ordinary tariff; a separate API tariff is announced for the future.**
+
+- Official BCS page: “Комиссия взимается согласно действующему тарифу. С мая 2026 года будет действовать отдельный тариф для полной версии API” [17]. Evidence date: 2026‑10.
+- The same page advertises an **“early user bonus”: “Торгуйте через программный интерфейс с повышенными лимитами без дополнительной комиссии”** [18][19]. This suggests that:
+  - For now, API use does not add a separate fee beyond your usual brokerage commission.
+  - Early adopters may enjoy **higher per‑account limits** than standard, which matters for any strategy using frequent order updates (spreads, market‑making).
+
+The exact structure of the post‑May‑2026 tariff is **not yet documented**; your cost modelling must therefore treat API fee changes as a structural risk to the business case.
+
+### 2.4. Connection steps (no secrets, no account changes)
+
+**Connecting BCS Trade API requires only configuration on the existing brokerage account, no tariff change is described in docs today.**
+
+- Official docs: “Чтобы подключить Trade API, вы должны быть клиентом БКС. Авторизуйтесь в веб‑версии БКС Мир инвестиций и в разделе «Профиль» → «О счёте» → «Токены API» выпустите токены” [8][20].
+- You then obtain a `refresh-token` via the web UI and use the API’s auth service to get `access-token` [21][22].
+
+No documentation indicates that enabling API **changes the tariff plan or margin regime** automatically. However, since an “отдельный тариф для полной версии API” is announced [17], the safest assumption is:
+
+- Initially, API access is a **feature toggle on the existing account**.
+- Closer to May 2026, BCS may add:
+  - Either a separate “API tariff” to which you must consent,
+  - Or an add‑on pricing layer for certain methods (for example, market‑data streaming).
+
+---
+
+## 3. Authentication, Tokens, Sessions, and Limits
+
+### 3.1. OAuth‑style token model
+
+**BCS uses an OAuth‑like two‑token system with explicit lifetimes.**
+
+Official docs state:
+
+- `access-token` lifetime: “Access‑токен имеет срок жизни 24 часа, затем его необходимо получить заново” [21].
+- `refresh-token` lifetime: “Refresh‑токен имеет срок жизни 90 суток. Также вы можете удалить его вручную через личный кабинет” [21][22].
+- Tokens are generated in web cabinet: “Перед использованием необходимо получить refresh‑токен в веб‑версии БКС Мир инвестиций” [22][20].
+
+Implications for your adapter:
+
+- You must implement **automatic access‑token refresh** well before 24h expiry, ideally with clock skew margin.
+- You should monitor 90‑day refresh token age and set operational calendar reminders to renew it interactively.
+- Manual deletion of refresh tokens in the cabinet provides an emergency **“hard revoke”** mechanism if credentials leak.
+
+### 3.2. Parallel sessions and scope of access
+
+Docs do not detail whether multiple concurrent access tokens per refresh token are supported, or how many parallel WebSocket and HTTP sessions per account are allowed beyond rate limits. There is a separate theme:
+
+- A LinkedIn post from an identified BCS associate describes “два уровня доступа: только чтение данных счёта и рынка; чтение и торговые операции” [23]. This suggests:
+  - API access likely has **grant types / permission levels** (read‑only vs read+trade),
+  - Separation might be at the **token level** (you issue a token with or without trading rights).
+
+The exact permission mechanics (e.g., multiple tokens with different scopes per account) are **not described in public docs** and should be clarified with support before designing credential storage.
+
+### 3.3. HTTP & WebSocket rate limits
+
+**BCS enforces documented per‑account rate limits for HTTP and streaming; these are central to spread automation.**
+
+The official restrictions page (`/restrictions`) states that limits are set “как для HTTP‑методов, так и для WebSocket‑соединений. Если клиент превышает лимит запросов, сервер возвращает соответствующий код ошибки” [24]. The same page provides a table of representative limits:
+
+- For HTTP:
+  - “Заявки HTTP 10 RPS” (orders) [25].
+  - “Сделки HTTP 10 RPS” (trade queries) [25].
+  - “Получение статуса заявки HTTP 10 RPS” [25].
+- Traders‑facing communication from BCS/BCS‑Express notes that earlier a 5 TPS order limit was raised to 10 TPS in Jan 2026 [26]; evidence date: 2026‑01. This shows limits can change over time.
+
+For WebSocket:
+
+- Docs mention “ограничение на частоту подписок, отправку сообщений и общее количество активных соединений” [24].
+- Concrete numeric values (e.g., subscriptions per second) are **not prominently documented** in the public snippets; they may exist deeper in the PDF or change without notice.
+
+Implications for your spread strategy:
+
+- A medium‑frequency strategy is likely comfortable with 10 order operations per second per account. However:
+  - You must treat **hedging or mass cancellation as regular order traffic**; there is no separate “emergency lane”.
+  - Busy conditions (multiple instruments, both sides of spread, replace‑instead‑of‑amend semantics—see below) can quickly consume RPS budget.
+- WebSocket reconnect logic must respect subscription and connection limits to avoid a loop of throttling and disconnects.
+
+### 3.4. Pagination and history limits
+
+**Historical data and trade lists have explicit per‑request caps and start dates.**
+
+- Historical candles: endpoint `/api/v1/candles-chart` has “Максимальное количество баров в одном запросе — 1440” [27][28]. A contradictory third‑party wrapper claims “не больше 1000 баров” [29]; the official doc is more authoritative.
+- Trades history: official text for operations/trades endpoint says “Список содержит не более 1000 последних сделок” and only from 26.01.2026 onward [30].
+- For some client‑library abstractions BCS staff mention “GetCandlesPaginated сам оценивает нужное количество запросов” after an internal change where the server returned “не больше 1000 баров за раз” [31]. This suggests:
+  - There may have been a **server‑side change of candle limits over time** (1000 → 1440) or vice versa,
+  - Client code should **not bake in a constant**, but instead:
+    - Read the documented current limit regularly,
+    - Or interpret server responses to derive page sizes dynamically.
+
+For your research workflows this means:
+
+- Backtests based on BCS candles must implement robust pagination and possibly parallelization under rate limits.
+- The history start date for trades (2026‑01‑26) implies you **may not get full legacy execution history** through this API alone; manual reconciliation with other export channels might be needed for longer periods.
+
+---
+
+## 4. Data Coverage and Futures Market Support
+
+### 4.1. Supported instruments and MOEX futures
+
+**Futures are first‑class citizens in the BCS Trade API universe.**
+
+The “instruments” endpoints explicitly list `FUTURES` as a valid `type`:
+
+- “FUTURES — Фьючерсы; OPTIONS — Опционы; GOODS — Товары; INDICES — Индексы” [31][3].
+- A BCS Express instrument page showing account parameters uses `classCode=SPBFUT` for MOEX futures such as `CNYRUBF`, consistent with MOEX standard [2].
+
+Your adapter may:
+
+- Query lists of futures instruments via `get-instruments-by-type-and-base-asset-ticker` [1][31].
+- Use `ticker` + `classCode` pair (e.g., `SiH6` / `SPBFUT`) consistently in both data and order APIs.
+
+There are no documented restrictions that futures are “read‑only”; **they are tradable via the same order endpoints as equities**, contingent on your BCS permissions.
+
+### 4.2. Market data: quotes, order book, trades
+
+**Market data coverage is sufficient for mid‑frequency spreads; the main gap is lack of replay.**
+
+The API provides:
+
+- **Order book snapshot (REST)**:
+  - `GET https://be.broker.ru/trade-api-market-data-connector/api/v1/order-book` — “Метод позволяет получить текущий стакан по инструменту” [32][33].
+- **Order book streaming (WebSocket)**:
+  - WebSocket endpoint documented at `/websocket/market-data/order-book/` for real‑time order book with depth up to 20 levels [34][35].
+- **Trades**:
+  - HTTP `get-trades` endpoint returns account trades from 26.01.2026, up to 1000 last deals [30][36].
+  - HTTP `get-last-trades` returns anonymized last trades for instrument within current session [36].
+- **Candles (bars)**:
+  - HTTP `candles-chart` endpoint with timeframe parameter, up to 1440 bars per request [27][28].
+  - WebSocket “last candles” for real‑time bar updates [37].
+
+Crucial limitation:
+
+- Docs explicitly do **not** describe any WebSocket replay or “stream from timestamp / sequence number” features; streaming is “real‑time updates” only [38].
+- Therefore, if your adapter misses some messages (network hiccup, server restart), you must **resynchronize via REST snapshot endpoints** (order book, positions, order list, etc.).
+
+For MOEX spreads with holding periods of hours to days, you can rely on:
+
+- Candles (e.g., `5m`/`15m`/`1h`), updated by WebSocket or polled under rate limits.
+- Occasional order‑book snapshots for monitoring slippage and spread costs; 20 levels is more than sufficient for typical MOEX futures.
+
+### 4.3. Portfolio, money, GO, variation margin
+
+**Portfolio and risk data is rich enough to drive margin‑aware spread strategies.**
+
+The “limits”/“portfolio” services expose:
+
+- Positions and cash balances [39].
+- Margin metrics including:
+  - Variation margin: fields `realVarMargin` (“Начисленная в ходе клиринга вариационная маржа”) [40],
+  - `VarMargin` operation type in transaction history (“Начисление/списание вариационной маржи” with values PayOut, PayIn, etc.) [41].
+- Risk level information and indicators tied to КНУР/КСУР/КПУР/КОУР [14].
+
+WebSocket streaming also allows for real‑time monitoring of margin indicators and account sustainability [42].
+
+For your purposes this means:
+
+- You can implement **intraday risk throttling** by reading free margin, current GO, and variation margin before placing hedging legs or widening spreads.
+- However, there is **no documented broker‑side “kill switch” endpoint** (see section 7) — the API only exposes data and order primitives, not risk configuration.
+
+---
+
+## 5. Order Model, Types, States, and Idempotency
+
+### 5.1. Order types and time‑in‑force
+
+**Order types are basic; no documented TIF or native spread/combination orders.**
+
+The official orders documentation (`/http/operations/all-order-list/` and PDF) lists:
+
+- `orderTypes integer[]` with:
+  - `1 - Рыночная (Market)`,
+  - `2 - Лимитная (Limit)`,
+  - `3 - Айсберг (Iceberg)`,
+  - `4 - Стоп-лимит (Stop-limit)` [4][43].
+- In a newer snippet, additional conditional types appear (5–7) — take‑profit, stop‑loss, combined take‑profit+stop‑loss [44]. These are **protective single‑leg conditionals**, not multi‑leg spreads.
+
+Searches for:
+
+- `timeInForce`, `validBefore`, or TIF equivalents in BCS docs returned no relevant matches [45][46].
+- As of current evidence, there is **no explicit TIF parameter**; TIF behavior is likely determined implicitly (day orders, GTC only where instrument supports it) and must be inferred from MOEX regime plus BCS defaults, not from the API.
+
+For a spread strategy, this implies:
+
+- You must control exposure via **explicit cancellation / replacement**, not TIF, when leg desynchronization exceeds tolerances.
+- Stop‑limit and stop‑loss/TP can be layered, but always per single instrument.
+
+### 5.2. Spread / REPO mentions vs real support
+
+**BCS docs mention “РЕПО/спреды” only in status fields; there is no documented order‑creation mode for spreads.**
+
+- PDF snippets refer to transaction status fields: “Для сделок РЕПО/спредов: цена первой части” [47][48].
+- WebSocket order status messages include fields describing price of first part for REPO/spread deals [48].
+- Nevertheless, `orderType` enumeration does **not** include a spread type [4][12]; and a documentation search for a dedicated spread endpoint returns nothing [5][49].
+
+The most consistent interpretation:
+
+- The BCS back office and MOEX capture some deals as “spread” or REPO at clearing level, which is reported through API status/history fields.
+- The API **does not provide a way for a client to submit a multi‑leg spread order atomically**; you can only:
+  - Send single‑leg orders on the desired instruments,
+  - Possibly have them matched by MOEX as part of broker’s internal spread books, but that is not under your direct control via API.
+
+Consequences for your project:
+
+- All spread operations must be **synthetic**:
+  - Leg 1: entry on instrument A,
+  - Leg 2: hedging entry on instrument B,
+  - With explicit order correlation and risk controls on your side.
+- You cannot rely on MOEX “calendar spread” order types via this API unless BCS later documents explicit support.
+
+### 5.3. Order lifecycle, statuses, partial fills
+
+**Order status modelling is detailed enough to build a robust state machine.**
+
+Official docs list:
+
+- Status codes such as:
+  - `0 — Новая (New)`,
+  - `1 — Частично исполнена (Partially filled)`,
+  - `5 — Заменена (Replaced)`,
+  - `10 — Ожидает подтверждения новой (Awaiting new order confirmation)` [50].
+- Quantity fields:
+  - `executedQuantity` — “Исполненное количество (в штуках)” [51][52],
+  - `lastQuantity` — “Количество в текущей сделке (шт.)” [51].
+
+This enables:
+
+- Tracking per‑leg partial fills and remaining volume,
+- Detecting replacement flows (update order behaviour—see below),
+- Reacting to asynchronous execution across legs (partial hedge scenarios).
+
+However, **order status HTTP method is documented as intraday‑only** for at least some endpoints: “Метод статуса заявки... возвращает статус по заявкам только в рамках текущего дня” [53]. For longer‑term analysis you should rely on operations/trades history rather than intraday order status.
+
+### 5.4. Cancel/replace semantics and idempotency
+
+**Cancel and update are explicit operations; idempotent client‑assigned IDs are not documented.**
+
+Key endpoints:
+
+- Cancel order: `cancel-order` under `/http/operations/cancel-order/`. It works for orders with `status=0 (Новая)` and some other statuses [54].
+- Update order: docs say that “обновление заявки выполняется как отмена исходной заявки и создание новой с изменёнными параметрами” [55].
+
+What is **not** documented:
+
+- There is no explicit client order ID (`clientOrderId`) or idempotency token at API level.
+- The API request likely accepts exchange/broker’s `orderId` for operations, but if you send the same create request twice (due to timeout), there is no guarantee the server will deduplicate it.
+
+Implications:
+
+- Your adapter must:
+  - Maintain its own **mapping from local IDs to broker `orderId`**,
+  - Treat any ambiguous outcome (HTTP timeout, network error, 5xx) as “unknown” and **reconcile state** via:
+    - Order list (HTTP),
+    - Order status (HTTP),
+    - And WebSocket order‑status stream if enabled.
+- Updates must be understood as **“cancel old, create new”** from a risk perspective:
+  - In a busy tape, the cancel leg might be delayed or rejected while the new order is accepted, producing an unintended duplication.
+  - Combined with rate limits, this can increase temporary exposure.
+
+---
+
+## 6. Streaming, Snapshots, and State Reconciliation
+
+### 6.1. WebSocket capabilities and limitations
+
+**WebSocket is the main vehicle for real‑time market and order events but offers no historical replay.**
+
+Capabilities:
+
+- Market data subscription: quotes, order book, candles via `wss://ws.broker.ru/trade-api-market-data-connector/api/v1/...` [8][34][37].
+- Order status streaming: “Метод предназначен для получения обновления статуса созданных заявок в режиме стриминга. WebSocket API wss://ws.broker.ru/trade-api-bff-operations/api/v1/...” [56].
+- Activity/ping: heartbeat mechanism based on `ping/pong` for checking connection liveness [57].
+
+Limitations:
+
+- No documented **“from sequence N” or “from timestamp T”** streaming options; joining mid‑session gives you only current/future messages [38].
+- Some historical notes show that certain endpoints (like a WebSocket orders endpoint) may previously have been 404/“in transition” [10]; the API surface appears to evolve.
+
+For your architecture this implies:
+
+- WebSocket must be treated as **non‑authoritative**, with periodic **REST‑based reconciliation** (orders, positions, margin) to recover from dropped messages.
+- Spread state machine should not “assume” last streamed update is complete; always design for at‑least‑once / at‑most‑once mix and missing intermediate updates.
+
+### 6.2. Snapshot pattern
+
+BCS has started to expose dedicated snapshot endpoints to simplify reconciliation:
+
+- Order book snapshot: `GET /order-book` [32][33][34].
+- Portfolio/limits endpoints act as snapshots of current portfolio/margin [39].
+- Daily trading schedule snapshot: `GET /trading-schedule/daily-schedule` [58].
+
+This suggests a robust pattern:
+
+1. On connect (or reconnect):
+   - Fetch portfolio limits and positions,
+   - Fetch open orders list,
+   - Fetch any important market data snapshots (order book for key futures).
+2. Subscribe to WebSocket streams for deltas.
+3. On suspicion of drift (gap in ping/pong, local error), re‑fetch snapshots and realign.
+
+---
+
+## 7. Sandbox, Testing, and Risk‑Control Primitives
+
+### 7.1. Sandbox / demo environment
+
+**No official sandbox or test environment for BCS Trade API is documented.**
+
+Evidence:
+
+- Multiple searches for “sandbox”, “тестовый счёт”, “test mode” on `trade-api.bcs.ru` found nothing beyond main docs [59][60][27].
+- A Habr article comparing APIs states: “T‑Invest API — отличная площадка для тестов, обучения, быстрой обкатки идей, ... BCS Trade API уже можно трогать руками, запускать пилоты, но для серьёзного продакшена это пока ближе к «использовать осторожно»” [61]. This strongly implies **no equivalent sandbox** for BCS.
+- BCS broker offers a separate demo account with virtual RUB for the web terminal, but this is **not documented as API‑accessible** [62].
+
+Implications:
+
+- Any strategy testing via BCS Trade API necessarily happens on a **real brokerage account** (real or very small size).
+- For your stage‑2 testing with 30k RUB, you should:
+  - Start with **read‑only token** (if supported) to test data flows and state machine,
+  - Only then enable trading permissions and trade at minimal notional sizes consistent with GO and risk.
+
+### 7.2. Server‑side risk controls available to clients
+
+**The API exposes risk metrics but not explicit “kill switches” or global risk control endpoints.**
+
+- Docs show detailed margin and risk indicators accessible via HTTP/WebSocket [40][42].
+- However, there is **no documented endpoint** for:
+  - “disable trading for account”,
+  - “close all positions”,
+  - “cancel all active orders for account”.
+
+Searches for mass cancel/close‑all functionality in BCS docs return **no explicit mentions**; only standard per‑order cancel/update operations are visible [54][28]. A BCS article describing range trading notes robots “minimalizируют риски и закрывают позиции” via regular orders [63], not via any special “close all” call.
+
+Therefore:
+
+- Broker risk management (e.g., forced liquidation due to insufficient margin) operates **outside API control**.
+- Programmatic emergency de‑risking must be implemented as:
+  - Enumerate current positions via portfolio endpoints,
+  - Issue offsetting orders per position (subject to order RPS limits),
+  - Enumerate and cancel all open orders via list+cancel.
+
+Given your constraints on emergency additional funding and the presence of a large LQDT portfolio in the same account, you must treat this absence of atomic broker risk controls as a **major operational risk**.
+
+### 7.3. Trading hours, calendars, and maintenance
+
+The API provides a dedicated endpoint:
+
+- `GET https://be.broker.ru/trade-api-information-service/api/v1/trading-schedule/daily-schedule` — “Получить расписание на день” [58][64].
+
+This allows your adapter to:
+
+- Automatically determine whether a given MOEX futures board is currently trading,
+- Avoid placing orders during closed periods or technical breaks.
+
+However, docs do not spell out:
+
+- Scheduled **maintenance windows** for the API itself,
+- Guarantees around availability percentages.
+
+These uncertainties reinforce the need for robust exception handling and retry / disable logic in your adapter.
+
+---
+
+## 8. Failure Scenarios for Futures Spread Automation
+
+This section connects concrete API behaviour with your requested scenarios.
+
+### 8.1. Timeout after acceptance (unknown order state)
+
+**Mechanism:** Client sends `POST /orders`, receives network timeout or 5xx after server acceptance.
+
+What API guarantees:
+
+- No idempotency keys are documented; BCS does not promise “exactly once” semantics.
+- Only path to clarity is via **order list / order status / WebSocket order‑status stream** [12][50][56].
+
+Required adapter behaviour:
+
+1. Mark order state as **“unknown”**.
+2. Query:
+   - List of today’s orders filtered by instrument/side/price/quantity.
+   - Specific order status if an `orderId` was received.
+3. If found: reconcile; if absent: decide whether to re‑submit.
+4. Never blindly resubmit without reconciliation, especially for spread legs, as this may **double exposure on one leg**.
+
+### 8.2. Partial hedge (one leg filled, other pending/rejected)
+
+**Mechanism:** Spread entry: order on Leg A fills (or partially fills), Leg B gets no/partial execution or rejection.
+
+API features:
+
+- `executedQuantity` and `lastQuantity` enable fine‑grained monitoring [51][52].
+- WebSocket order‑status stream allows near‑real‑time detection [56].
+
+Adapter responsibilities:
+
+- Your state machine must treat each spread as a **pair of orders with correlated target quantities**.
+- Policies for imbalance:
+  - Size down the filled leg (close partial fill),
+  - Adjust remaining leg’s limit price / cancel altogether,
+  - Or accept small directional exposure if within budgeted risk.
+- Rate limits (10 RPS) constrain how aggressive your **compensation logic** can be in a fast market; you may not be able to “instantly” flatten.
+
+Given your capital and drawdown rules, conservative design would:
+
+- Limit spread notional per leg,
+- Prefer entry/exit near liquid times to reduce fill asymmetry.
+
+### 8.3. Expired token
+
+**Mechanism:** `access-token` (24h) or `refresh-token` (90d) expires during trading.
+
+What happens:
+
+- HTTP and WebSocket calls start failing with auth errors (exact codes documented in auth section; not reproduced here) [21][22].
+- BCS does not auto‑renew tokens; your code is responsible.
+
+Adapter plan:
+
+- Maintain **token expiry timestamp** and refresh well before expiry (e.g., 20–22 hours after last issuance).
+- On unexpected auth error:
+  - Pause new order placement,
+  - Attempt refresh (if refresh token still valid),
+  - If both fail, **switch strategy into “failsafe”**:
+    - You cannot place/modify/cancel orders via API.
+    - At this point only manual web/mobile terminal or calling broker can manage risk.
+
+For your project, failure to manage token lifecycles automatically is an **unacceptable design flaw**; this must be one of the first features prototyped.
+
+### 8.4. Stream gap or disconnect
+
+**Mechanism:** WebSocket disconnects or drops messages; you miss one or more updates for orders or market data.
+
+API behaviour:
+
+- WebSocket uses ping/pong, but does not support replay [38][57].
+- Upon reconnect you start receiving only new events.
+
+Adapter strategy:
+
+1. On any disconnect or prolonged lack of `ping/pong`:
+   - Mark stream as **stale**.
+2. Reconnect WebSocket.
+3. Immediately fetch via REST:
+   - Portfolio and limits,
+   - Open orders,
+   - Current candles and order book where relevant.
+4. Reconcile:
+   - Diff open orders vs internal model,
+   - Fix any “dangling” orders (e.g., orders you thought canceled but still active).
+5. Only then resume automated decision‑making.
+
+This “replay‑via‑snapshot” pattern is essential for safe spread trading.
+
+### 8.5. Duplicate order
+
+**Mechanism:** Your code resends `CreateOrder` after ambiguous result; both end up accepted.
+
+API constraints:
+
+- No deduplication mechanism documented — duplicate orders are possible.
+
+Mitigation:
+
+- Always log every outbound request plus any received `orderId` in durable storage.
+- Before resubmission, query last orders for same instrument/side/price/qty over short time window to detect possible duplicates.
+- If duplication occurs, treat the extra volume as an **unintended directional position** and immediately schedule an offsetting trade once safe.
+
+Given your low allowed relative drawdown (10–15k RUB vs multi‑million account), repeated duplicates during volatile episodes could accumulate material risk; controlled resubmission logic is key.
+
+### 8.6. Request‑rate limit hit
+
+**Mechanism:** Order or status queries exceed 10 RPS or other documented limits.
+
+API behaviour:
+
+- Restrictions page notes that on exceeding limits “сервер возвращает соответствующий код ошибки” [24][25].
+- WebSocket also has subscription and message rate limits.
+
+Impact on spreads:
+
+- In crisis unwinds (e.g., both legs must be closed across several spreads), naive loops can quickly hit RPS caps.
+- Once in error, additional requests may be delayed or rejected, prolonging risk time.
+
+Design mitigations:
+
+- Implement **centralised RPS throttle** across all services per account.
+- For emergency behaviour:
+  - Prioritise operations by risk: cancel outstanding orders first, then place flattening trades in coarse batches.
+  - Consider maximum concurrency: e.g., limit to one outstanding cancel+trade pair at a time when the broker is already under stress.
+
+### 8.7. Out‑of‑date GO / risk limit breach
+
+**Mechanism:** You place a spread leg based on stale margin information; GO has tightened, or LQDT has been haircut, causing rejection or forced liquidation risk.
+
+API capabilities:
+
+- Limits and margin indicators are available; but there is no atomic “check + place order” call [39][42].
+
+Your responsibilities:
+
+- Refresh limits **immediately** before placing new exposures, especially when GO is dynamic or when you are close to risk thresholds.
+- Implement conservative high‑water marks (for example, use a safety factor on free margin).
+- Monitor variation margin through `realVarMargin` to observe how much buffer remains vs your 10–15k RUB acceptable drawdown.
+
+### 8.8. Manual intervention / broker closeout
+
+**Mechanism:** You manually cancel orders or close positions from another channel, or broker liquidates positions.
+
+API behaviour:
+
+- All executed trades and current positions are reflected in portfolio endpoints and trades list [30][39].
+- There is no notification dedicated to “manual vs API” origin; origin fields may exist but are not structurally guaranteed.
+
+Adapter design:
+
+- Treat **BCS as ultimate source of truth**:
+  - Regularly poll portfolio and open orders, even when WebSocket says nothing changed.
+- If discrepancy vs model persists:
+  - Downgrade that spread from “managed” to “external interference” state,
+  - Stop sending automatic adjustments until human reviews.
+
+Given your explicit distinction between main LQDT portfolio and test strategy but shared account, any broker‑side risk action that touches LQDT must be treated as a **hard incident** in your governance.
+
+---
+
+## 9. Capability / Limitation Matrix (Futures Spreads Focus)
+
+Qualitative matrix synthesising above (all entries grounded in the cited docs).
+
+| Area | Capability (Documented) | Limitation / Unknown |
+|------|-------------------------|----------------------|
+| Access & Rights | API available to all clients except risk level КНУР [13]; КПУР allowed; tokens via cabinet [20][22] | Qualification may be required for some instruments [15]; IP/geography rules not documented [16] |
+| Pricing | No extra API fee before May 2026; “Комиссия согласно действующему тарифу”; separate API tariff from May 2026 [17] | Future tariff structure unknown; early‑user enhanced limits likely temporary [18][19] |
+| Auth | OAuth‑style: access 24h, refresh 90d, manual revoke in cabinet [21][22] | Max parallel sessions and scope of tokens not clearly described |
+| Instruments | Futures `FUTURES`, MOEX classCode `SPBFUT` supported [2][3][31] | No explicit per‑instrument API disable list published |
+| Market Data | Order book snapshot+stream, trades, candles up to 1440 bars, last trades [27][28][32][34][36][37] | No replay; some history truncated (trades only from 26.01.2026, 1000 last) [30]; depth limited to 20 levels [34][35] |
+| Portfolio & Margin | Positions, cash, GO, `realVarMargin`, risk levels via limits and WebSocket [39][40][41][42] | No programmable broker‑side risk config / kill switch [65] |
+| Orders | Market, Limit, Iceberg, Stop‑limit (+ stop‑loss/take‑profit variants) [4][43][44] | No spread/combo order type; no TIF field documented [4][45]; no idempotency key |
+| Order Lifecycle | Detailed statuses (New, Partially filled, Replaced, etc.), `executedQuantity`, `lastQuantity` [50][51][52] | Status method intraday‑only; old order history via trades/operations only [53][30] |
+| Cancellation & Replace | Cancel endpoint; update as cancel+new [54][55] | No mass cancel / close‑all; updates may temporarily duplicate exposure |
+| Rate Limits | 10 RPS orders/trades/status; WebSocket subscription and message limits [24][25][26] | Exact WebSocket numeric limits and burst/averaging window unspecified |
+| Streaming | WebSocket for market data and order statuses; ping/pong heartbeat [8][34][37][56][57] | No stream replay; stream gaps must be reconciled via REST [38] |
+| Sandbox & Testing | None documented; Habr sources suggest no sandbox; pilots on real accounts [61][59][60] | Any experimentation risks real capital; only small‑size live testing possible |
+| Schedule & Maintenance | Daily trading schedule endpoint [58][64] | API maintenance schedule & uptime commitments not documented |
+| Learning Resources | Official web+PDF docs; some informal blogs and LinkedIn posts [1][6][11][23] | No official technical webinars or tutorials found [66][67] |
+
+---
+
+## 10. Minimal Event/State Model for Orders (for Adapter Design)
+
+A concise state machine consistent with BCS docs for a single order (per leg):
+
+1. **Created (client)**: local object, request not yet sent.
+2. **Sent (pending ack)**: HTTP request in flight.
+3. **Unknown (after timeout/error)**: no definitive server response; must reconcile via order list/status.
+4. **New (`status=0`)**: confirmed by server; working at exchange.
+5. **PartiallyFilled (`status=1`, `executedQuantity>0`)**:
+   - Sub‑states in your adapter:
+     - Within acceptable hedge imbalance,
+     - Exceeds tolerance → risk action (e.g., flatten leg).
+6. **Filled**: `executedQuantity=quantity` (implied by status or by trade sums).
+7. **Replaced (`status=5`, plus new `orderId`)**: old order logically inactive; new order enters `New` / `PartiallyFilled`.
+8. **Cancelled**: explicit cancel or broker rejection; no active quantity.
+9. **Rejected**: order never entered book (violated limits, bad parameters, insufficient GO).
+
+All transitions must be **driven by combination** of:
+
+- HTTP responses,
+- WebSocket order status,
+- Portfolio/trades reconciliation in ambiguous situations.
+
+Your spread engine should maintain a **higher‑level state** for each two‑leg position (e.g., `Planned`, `Entering`, `Hedged`, `Unbalanced`, `Exiting`, `Exited`, `Broken`) that reacts to per‑leg transitions.
+
+---
+
+## 11. Plan for Future Connection and Read‑Only Testing
+
+Within the constraints of stage‑2 (“подготовка запросов; исследования выполняет пользователь”) a reasonable roadmap is:
+
+1. **Administrative preparations (manual):**
+   - Confirm with BCS support:
+     - Your account’s current risk level and qualification status,
+     - API availability on the exact account holding the LQDT portfolio,
+     - Whether futures (SPBFUT) trading via API is fully enabled,
+     - Any geography/IP restrictions for your target VPS.
+   - Enable API in cabinet and generate a **read‑only** token if BCS supports access‑level granularity (per LinkedIn hint [23]).
+
+2. **Read‑only connectivity tests (no orders):**
+   - Implement minimal client on laptop (not VPS yet) with:
+     - Auth flow (refresh→access, rotation before 24h).
+     - Throttled REST calls under 10 RPS.
+     - Subscriptions to:
+       - Futures candles (several test instruments),
+       - Order book snapshots & streaming for the same,
+       - Portfolio and limits (to verify risk indicators).
+   - Measure:
+     - Latency and stability of WebSocket,
+     - Behaviour under short disconnects and reconnects,
+     - Data consistency between REST snapshots and streams after reconnection.
+
+3. **Event‑model prototyping (still read‑only):**
+   - Mock an internal order state machine fed purely by **simulated orders** and **real market data**.
+   - Implement all reconciliation logic (unknown → query list; partial fill modelling) against a “dummy” order table, to validate correctness of transitions before involving real capital.
+
+4. **Dry‑run spread analytics:**
+   - Use BCS historical candles to compute synthetic spreads between a handful of MOEX futures pairs of interest.
+   - Verify:
+     - API’s historical coverage vs your backtest requirements,
+     - Server‑side pagination correctness across contract roll dates.
+
+Only after these steps are stable should you consider enabling trading permissions and running **tiny‑size live spreads**, still with manual oversight and conservative drawdown rules.
+
+---
+
+## 12. Questions to Raise with BCS API Support
+
+Given documentation gaps and your specific risk constraints, suggested precise questions:
+
+1. **Access and permissions**
+   - Can API tokens be issued with **read‑only** scope (no trading)? If yes, how is the scope controlled and visible in docs?
+   - Are there any **IP/geography** restrictions or recommendations for stable connectivity, especially for non‑Russian VPS providers?
+
+2. **Order model and spread support**
+   - Is there any undocumented or upcoming support for **multi‑leg (spread/combo) orders** for MOEX futures via Trade API?
+   - Does the broker internally recognise certain pairs of orders as a spread for margin/fee purposes, and if so, how (if at all) is that exposed in API fields?
+   - Are there plans to expose a **“cancel all orders”** or **“close all positions”** endpoint for a given account or instrument group?
+
+3. **Risk controls**
+   - Is there any client‑controlled API setting to **disable trading** (but keep data access) at account or token level?
+   - How does BCS handle **forced liquidations** initiated by risk engine—are such actions distinguishable in trades history (e.g., via operation type) from ordinary client trades?
+
+4. **Limits and throttling**
+   - Are 10 RPS limits for orders/trades/status **per account, per token or per IP**?
+   - What are the exact **WebSocket limits** (max subscriptions, messages per second, concurrent connections) per account?
+   - In case of limit violation, what precise **HTTP/WebSocket error codes** should clients expect, and is there a recommended backoff algorithm?
+
+5. **History and replay**
+   - Are there any plans to implement **WebSocket replay** or “from sequence” subscriptions for market data or order status?
+   - Will history start dates (e.g., trades from 26.01.2026) shift over time to always provide a rolling window, or are they fixed?
+
+6. **Tariff evolution**
+   - What high‑level structure is envisaged for the **post‑May‑2026 API tariff** (per‑order fees, data packages, flat subscription, etc.)?
+   - Will early‑user enhanced limits continue, and under what conditions?
+
+7. **Testing facilities**
+   - Is there any internal plan to expose a **sandbox/demo environment** for Trade API, perhaps with delayed or synthetic data?
+   - If not, what minimal‑risk procedure does BCS recommend for initial production pilots?
+
+Clear answers to these will refine the design boundaries for your adapter and may change feasibility conclusions for more aggressive forms of spread trading.
+
+---
+
+## 13. Minimal Adapter Boundaries (without choosing stack)
+
+Given the above, a robust adapter for your intended use should at minimum:
+
+1. **Encapsulate auth and rate limiting:**
+   - Token storage and automatic refresh with safety margins,
+   - Central rate‑limit manager enforcing <=10 RPS for each critical HTTP category,
+   - WebSocket connect/reconnect logic with ping/pong monitoring.
+
+2. **Maintain authoritative state mirrors:**
+   - Periodic full sync of:
+     - Portfolio (positions, cash, GO, margin),
+     - Open orders (across all instruments used),
+   - In‑memory models for:
+     - per‑order lifecycle,
+     - per‑spread combined state (two legs).
+
+3. **Implement failure‑aware order operations:**
+   - For each Create/Cancel/Update:
+     - Clear local states for `Sent`, `Unknown`, `Confirmed`,
+     - Reconciliation procedures on errors/timeouts.
+   - Explicit mapping between local IDs and broker `orderId`.
+
+4. **Handle all documented failure scenarios:**
+   - Token expiry → safe halt.
+   - Stream gaps → snapshot‑based resync.
+   - RPS breaches → backoff and priority scheduling.
+   - Partial hedge → hedging/flattening decisions bounded by risk budget.
+
+5. **Provide operator controls and observability:**
+   - Simple “stop sending new orders” switch, independent of BCS.
+   - Logging of:
+     - All outbound order requests and responses,
+     - All reconciliation steps and discrepancies between local and broker view.
+   - Alerting for:
+     - Deviations from expected hedged state,
+     - Failures to cancel/flatten within defined time.
+
+Stack choice (language, runtime, frameworks) and deployment on your laptop/VPS are stage‑3 questions; the state logic above is API‑agnostic.
+
+---
+
+## 14. References
+
+[1] BCS Trade API. https://bcs.ru/trade-api  
+[2] Фьючерс CNYRUBF, страница БКС Экспресс (classCode=SPBFUT). https://bcs-express.ru/open-account?pageType=instrument&instrumentType=futures&classCode=SPBFUT&securCode=CNYRUBF  
+[3] get-instruments-by-type-and-base-asset-ticker. https://trade-api.bcs.ru/http/information/get-instruments-by-type-and-base-asset-ticker/  
+[4] all-order-list (Список типов заявок). https://trade-api.bcs.ru/http/operations/all-order-list/  
+[5] BCS Trade API: отсутствие специализированного эндпоинта для спред‑трейдинга. https://trade-api.bcs.ru/  
+[6] BCS Trade API – PDF documentation. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[7] BCS Trade API main documentation portal. https://trade-api.bcs.ru/  
+[8] Авторизация и получение токенов (Trade API). https://trade-api.bcs.ru/http/auth/  
+[9] WebSocket API overview (market data). https://trade-api.bcs.ru/websocket/market-data/  
+[10] Orders endpoint (POST /trade-api-bff-operations/api/v1/orders). https://trade-api.bcs.ru/http/operations/create-order/  
+[11] Воспользуйтесь программным интерфейсом для подключения торговых роботов. https://bcs.ru/trade-api  
+[12] bcs-trade-go: Golang-клиент для BCS Trade API. https://github.com/tigusigalpa/bcs-trade-go  
+[13] Ограничения по уровню риска (КНУР/КСУР/КПУР/КОУР) для Trade API. https://bcs.ru/trade-api  
+[14] Описание уровней риска в лимитах портфеля (КНУР, КСУР, КПУР, КОУР). https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[15] Торговый API / DMA — «Расширенный доступ с квалификацией». https://bcs.ru/dma  
+[16] Search: geography/IP restrictions for BCS Trade API. https://www.google.com/search?q=%22BCS+Trade+API%22+%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF+IP  
+[17] Тарифы BCS Trade API: отдельный тариф с мая 2026 года. https://bcs.ru/trade-api  
+[18] «Бонус для ранних пользователей: Торгуйте через программный интерфейс с повышенными лимитами без дополнительной комиссии». https://bcs.ru/trade-api  
+[19] BCS Trade API early user bonus snippet. https://www.google.com/search?q=%22%D0%91%D0%BE%D0%BD%D1%83%D1%81+%D0%B4%D0%BB%D1%8F+%D1%80%D0%B0%D0%BD%D0%BD%D0%B8%D1%85+%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D1%82%D0%B5%D0%BB%D0%B5%D0%B9%22+%22Trade+API%22  
+[20] Инструкция: «Чтобы подключить Trade API, вы должны быть клиентом БКС… Профиль → О счёте → Токены». https://trade-api.bcs.ru/http/auth/getting-started/  
+[21] Access-token и refresh-token: срок жизни 24 часа и 90 суток. https://trade-api.bcs.ru/http/auth/token-lifecycle/  
+[22] Описание сервиса auth: получение access-токена по refresh-токену. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[23] Mezentsev R. LinkedIn: два уровня доступа BCS Trade API (read-only; read+trade). https://ru.linkedin.com/posts/mezentsev-roman_инструкция-по-использованию-api-быстрый-activity-7498687629824106496-2Xe5  
+[24] Ограничения Trade API (HTTP и WebSocket). https://trade-api.bcs.ru/restrictions/  
+[25] Таблица ограничений HTTP: «Заявки HTTP 10 RPS, Сделки HTTP 10 RPS, Получение статуса заявки HTTP 10 RPS». https://trade-api.bcs.ru/restrictions/  
+[26] Лимит транзакций увеличен с 5 до 10 в секунду. https://bcs-express.ru/novosti-i-analitika/limity-trade-api-10-tps  
+[27] Исторические свечи: «Максимальное количество баров в одном запросе — 1440». https://trade-api.bcs.ru/http/market-data/get-candles-chart/  
+[28] Candles-chart description in PDF. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[29] Клиентская обёртка: «API отдаёт максимум 1000 баров за запрос». https://github.com/tigusigalpa/bcs-trade-go/blob/main/docs/candles.md  
+[30] Список сделок: не более 1000 последних, начиная с 26.01.2026. https://trade-api.bcs.ru/http/trades/get-trades/  
+[31] Instruments types enumeration: FUTURES, OPTIONS, GOODS, INDICES. https://trade-api.bcs.ru/http/information/get-instruments-by-type/  
+[32] Order-book snapshot endpoint description. https://trade-api.bcs.ru/http/market-data/get-order-book/  
+[33] «Метод позволяет получить текущий стакан по инструменту». https://be.broker.ru/trade-api-market-data-connector/api/v1/order-book  
+[34] WebSocket market data: order-book stream (depth up to 20). https://trade-api.bcs.ru/websocket/market-data/order-book/  
+[35] PDF: «WebSocket API позволяет получать стакан котировок (Order Book) в реальном времени с глубиной до 20 уровней». https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[36] Анонимные сделки инструмента в текущей сессии: get-last-trades. https://trade-api.bcs.ru/http/market-data/get-last-trades/  
+[37] WebSocket last candles streaming. https://trade-api.bcs.ru/websocket/market-data/last-candles/  
+[38] Документация: стриминг в реальном времени; функциональности replay не описано. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[39] Лимиты / Портфель: HTTP API для получения информации о портфеле через сервис «Лимиты». https://trade-api.bcs.ru/http/limits/  
+[40] realVarMargin: «Начисленная в ходе клиринга вариационная маржа». https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[41] VarMargin operation type: PayOut/PayIn/etc. https://trade-api.bcs.ru/http/operations/  
+[42] WebSocket: маржинальные показатели портфеля (ГО, вармаржа, уровень риска). https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[43] orderTypes integer[] enumerated (1–4). https://trade-api.bcs.ru/http/operations/all-order-list/  
+[44] Расширенный список типов заявок: тейк‑профит, стоп‑лосс, тейк‑профит+стоп‑лосс. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[45] Search: BCS Trade API timeInForce. https://www.google.com/search?q=%22timeInForce%22+%22BCS+Trade+API%22  
+[46] Search: BCS Trade API validBefore. https://www.google.com/search?q=%22validBefore%22+%22Trade+API%22+%D0%91%D0%9A%D0%A1  
+[47] PDF: «Для сделок репо/спредов: цена первой части». https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[48] WebSocket order-status: поле «Для сделок РЕПО/спредов: цена первой части». https://trade-api.bcs.ru/websocket/operations/status/  
+[49] Поиск по «spread BCS Trade API» без результатов по dedicated endpoint. https://www.google.com/search?q=%22spread%22+%22BCS+Trade+API%22  
+[50] Order status codes: 0 Новая, 1 Частично исполнена, 5 Заменена, 10 Ожидает подтверждения новой. https://trade-api.bcs.ru/http/operations/get-order-status/  
+[51] executedQuantity: «Исполненное количество (шт.)»; lastQuantity: «Количество в текущей сделке (шт.)». https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[52] executedQuantity double: description. https://trade-api.bcs.ru/websocket/operations/status/  
+[53] Ограничение метода статуса заявки: только в рамках текущего дня. https://trade-api.bcs.ru/http/operations/get-order-status/  
+[54] cancel-order: отмена заявок со статусом 0 (Новая) и др. https://trade-api.bcs.ru/http/operations/cancel-order/  
+[55] Update order semantics described as cancel+create. https://trade-api.bcs.ru/http/operations/update-order/  
+[56] WebSocket orders status stream endpoint. https://trade-api.bcs.ru/websocket/operations/status/  
+[57] Ping/pong heartbeat mechanism. https://trade-api.bcs.ru/websocket/technical/ping-pong/  
+[58] Trading schedule endpoint: daily-schedule. https://trade-api.bcs.ru/http/information/get-daily-schedule/  
+[59] site:trade-api.bcs.ru sandbox — no sandbox docs found. https://www.google.com/search?q=site%3Atrade-api.bcs.ru+sandbox  
+[60] Search: «тестовый счёт BCS Trade API». https://www.google.com/search?q=%22%D1%82%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%8B%D0%B9+%D1%81%D1%87%D0%B5%D1%82%22+%22BCS+Trade+API%22  
+[61] Хабр: обзор T-Invest API и BCS Trade API (пилоты без песочницы). https://habr.com/ru/articles/808083/  
+[62] BCS demo account (web-terminal only). https://bcs.ru/demo-account  
+[63] «Как Trade API помогает в диапазонной торговле» (описание закрытия позиций алгоритмом). https://bcs-express.ru/novosti-i-analitika/kak-trade-api-pomogaet-v-diapazonnoi-torgovle  
+[64] Trading schedule daily-schedule endpoint in PDF. https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf  
+[65] Lack of explicit risk-control endpoints (disable trading, close-all). https://trade-api.bcs.ru/  
+[66] Поиск «BCS Trade API вебинар» — только текстовая документация. https://www.youtube.com/results?search_query=%22BCS+Trade+API%22  
+[67] BCS Мир инвестиций YouTube: Q&A video mentioning Trade API (no deep tech doc). https://www.youtube.com/watch?v=vAYSWajAfQo

@@ -1,0 +1,91 @@
+# Candidate Text Sources and Features
+
+We identified several official channels of Russian and related information that could yield predictive text features.  Table below ranks sources by presumed importance.  Each entry lists the source, the type of signals (features) it might provide, its licensing/historical-access note, potential conflicts of interest, and whether simple baselines (price or dated event flags) already capture it.  (See cited examples for each.)  
+
+| **Source / Channel**           | **Feature Hypothesis**                                        | **License/Access**                                    | **Conflicts/Bias**                                     | **Captured by Baselines?**         |
+|--------------------------------|--------------------------------------------------------------|-------------------------------------------------------|--------------------------------------------------------|------------------------------------|
+| **MOEX Press Center (moex.com)** [30][31]  | Exchange announcements (risk‐parameter changes, new issues, trading rules), auctions and liquidity events.  These timestamped news can signal shifts in margin/capital requirements or liquidity. e.g. on 21 Sep 2026 MOEX announced *risk-parameter* changes on the equity/deposit markets.    | Public corporate site (free). Historic archives accessible (news pages, RSS). | MOEX is government‐owned – announcements aim to inform market participants.  Potential bias: downplays negative news, but factual announcements are authoritative. | Partly: some are formal events (like listing dates) that could be pre-coded as flags.  But dynamic settings (new limits, auction dates) are not always pre-known.  Price baselines do *not* capture e.g. widening concentration limits..    |
+| **Bank of Russia (cbr.ru)** [43][44][51]     | Central bank communications: policy statements, forecasts, new schemes (e.g. digital ruble).  Example: BoR announced on 31 Aug 2026 that “major banks and retailers from 1 Sep 2026 open infrastructure for digital ruble”.   | Public regulator site; press releases/events usually in Russian, some English. Archives of news and press conferences.   | CBR’s goal is stability; official tone may understate risks.  But statements (e.g. inflation, key rate) are factual.  Its own listing on OFAC sanctions (US Treasury) illustrates politicization.  | Partly: key rate decisions are dated events (which baseline might include).  However, explanatory press releases and macro forecasts are beyond simple flags.  New policy launches (digital ruble) are novel.  |
+| **Bank of Russia (social media)** [44]    | Broadcast transcripts or summaries (e.g. press conferences, educational posts).  For example, the 20 Oct 2026 press-conference announcement indicated BoR forecasts would be released.  | Official (e.g. Bank’s VKontakte) – posted and timestamped.  Many posts may be multimedia. History is opaque (edited posts) and not easily archived without specialized scraping. | Official content – similar bias as BoR site.  | Largely not used in price baselines; could yield sentiment or insight (if transcripts obtained).  But transcripts require manual capture or OCR of video. |
+| **EU Council / Consilium press** [33]   | External sanctions/news.  Example: 12 Oct 2026 EU press release announcing a new round of sanctions on “almost 1600 individuals and entities in Russia’s military-industrial complex”.  These signal geopolitical risk shocks.   | Public EU website (English).  Press releases with dates and details.  | EU interest is anti-Russian in sanctions context; tone is adversarial.  (Bias toward maximum sanctions framing.)  | Not captured by domestic baselines.  Sanctions by foreign states are exogenous events. |
+| **US Treasury/OFAC press** [64]   | Official sanctions listings (named persons/entities).  E.g., Feb 2022 OFAC update “prohibited secondary market in ruble or non-ruble bonds issued by CBR, NWF, MinFin”.  These effectively impose capital controls.  | Public US government site (English).  Chronological action lists with effective dates. | US policy toward Russia is adversarial.  Releases present only one-side view.  | Not captured by price-only or internal event flags; this is explicit external constraint. |
+| **(Others: State media)**  | State media outlets (e.g. TASS, RIA Novosti) **could** yield timely news (economy, defence) and sentiment.  (Not official announcements, but news agency releases.)   | Public news agencies. Historical archives exist. | Pronounced pro-government bias; censored content. | Possibly *some* overlap with official events (since many state outlets just reprint official PR).  But free text style might add nuance.  |
+
+*Sources cited:* Examples include MOEX official news, Bank of Russia bulletins, and EU/US sanction press releases.  All are authoritative primary texts.
+
+# Channel Briefs and Accessibility
+
+- **MOEX Press Center (https://www.moex.com/ru/news/):** Official news and press releases (in Russian and English). Each item has a unique ID and timestamp (e.g. `n104414` for a 21.09.2026 update). News articles are static HTML (archive accessible via “Поиск по новостям” or RSS). There is no edit history (once published it stands). Transcripts are the text itself.  
+  - *Export plan:* Scrape news HTML or RSS for relevant categories (e.g. “Срочный рынок”, “Risk parameters”). Example: [31] shows risk-limit changes. Use a scheduled fetch or RSS pull each day; all items are timestamped. No signed-in access needed.  
+  - *Notes:* All content is official press text. Older news remain accessible. No login or paywall. 
+
+- **Bank of Russia website (cbr.ru):** Contains press releases and event announcements. For example, the BoR’s English site listed a 20 Oct 2026 press-conference notice. There are categories for “News” and “Decisions”. Russian version has more content (e.g. digital ruble start). Each item shows date/time and often downloadable PDF.  
+  - *Export plan:* Monitor the “Новости” section or RSS (if available), and specific event URLs (pattern `press/event?id=XXXX`). The English site (cbr.ru/eng/) offers some content but often lags the Russian. Save pages (or PDFs via “Save as PDF” links) for transcripts. Example excerpt: digital ruble news.  
+  - *Channel:* BoR’s official social media (VKontakte *vk.com*) is noted (broadcast press events), but it’s read-only via cbr.ru. Historical posts are not easily fetched without VK API. So focus on website text.
+
+- **EU Council press (consilium.europa.eu):** Authoritative statements on EU-Russia relations. The press release of 12 Oct 2026 is an example (in English). These are static pages with time stamps.  
+  - *Export plan:* Subscribe to EU press releases or scrape their news pages (by date) for “Russia” and “Ukraine”. The Council site provides RSS and API. Each release is dated and signed (no edits). Transcripts = the HTML text.  
+  - *Justification:* These releases signal major geopolitical events (sanctions, agreements). Example: listing of 1569 new sanctioned entities, with detailed text. Although not domestic, this info would have cross-border market impact.
+
+- **U.S. Treasury / OFAC press (home.treasury.gov):** Lists new sanctions actions on Russia (e.g. EO 14024). For example, a Treasury release in Feb 2022 detailed prohibitions on Russian Central Bank bond dealings. Each action is dated and archived.  
+  - *Export plan:* Pull “Recent Actions” JSON feed or scrape search results for “Russia” on OFAC. Releases have names/IDs and HTML content. Example excerpt: CBR sanctions listing.  
+  - *Notes:* These are factual lists (names, dates). Usefulness: they mark when major financial restrictions took effect. 
+
+- **(State media like TASS/RIA):** *Optional.* These agencies publish day-to-day news. No formal archival issues, but filtering is needed (many news items not trade-relevant). We did not find publicly citable examples beyond general commentary. If used, note: **potential conflict** (state narrative bias).  
+
+*Where deeper export isn’t needed:* We do not plan exhaustive historical scrapes of Telegram or YouTube. For example, Ministry of Defense’s Telegram exists but is mostly images/newsflashes – hard to incorporate as features, and not easily backfilled. Similarly, BoR VK and other social media are not ideal for automated full-text extraction over history. We focus on official web corpora and releases.
+
+# Lexical and Event Features
+
+Based on the above sources, possible features include:
+
+- **News-sentiment indices:** Construct sentiment measures from official news text. For example, an “economic news sentiment” index (ENS) built from counts of positive/negative words is highly predictive of macro turning points.  The ECB found a newspaper-based ENS and its square gave an ROC AUC of 0.93 for predicting recessions, far above chance.  Analogously, one could track sentiment in Russian news (e.g. “рост” vs “снижение”, “кризис” vs “рост” etc).  Even keyword counts (like an R-word index – occurrences of “кризис” or “рецессия”) have proven useful.  
+
+- **Event flags from text:** Extract deterministic events in free text. E.g., scanning MOEX news for words like “изменение риск-параметров” (as in [31]) or “аукцион состоится” yields new event indicators (e.g. margin changes or liquidity injections). Similarly, BoR text might announce “продажи валюты” or “интервенции”, which are dated events. Unlike scheduled corporate actions, these often arrive asynchronously via news, so can provide a signal beyond pre-known calendars.
+
+- **Lexical tokens for policy content:** Key phrases in central bank or government releases. For example, presence of terms like “инфляции”, “ставка”, “рецессия”, “санкции” (in BoR or other speeches) can flag policy stances or external shocks. The BoR’s announcement of the new digital ruble scheme or Governor’s statements could be parsed for cues. 
+
+- **External shock indicators:** Derived from foreign announcements. For example, incorporate a feature indicating “EU sanctions expanded today” (true/false) from [33], or “US sanctions on Russian banking” from [64]. These are binary event flags that baseline price models wouldn’t know in advance.
+
+Each candidate text feature should be tested against the price‐only and dated‐event baselines. For example, a simple baseline is “days since last announced policy change” or “no. of articles with keyword” to see if the text adds incremental predictive power. The ECB study suggests indices like ENS can beat traditional indicators (like PMI or yield spread). We would similarly compare any Russian-news sentiment index against a baseline that has only market prices and formal calendar events (dividends, auctions, etc.).
+
+# Ablation Testing Protocol
+
+We will simulate chronological (walk-forward) model evaluation. Each text feature will be trained/fitted only on data up to the decision time, with no lookahead. We compare models with and without each feature (ablation). Key points:
+
+- **Time resolution:** News should be timestamped; we assume fetching delay 3–90 minutes. In simulation, a signal from an 11:00 news is only used for trades after that time.  
+
+- **Feature pipelining:** All text (and dictionary) development occurs in the past. E.g., a sentiment lexicon or keyword list is fixed before backtesting. We do not use any future data in constructing text features.
+
+- **Benchmarks:** Baseline models use (1) price-derived features (e.g. momentum, volatility) and (2) simple event flags (like auction calendars, known policy meetings). Each text-augmented model is tested against these. The reported metric is excess P&L over the matched (simulated) LQDT counterfactual.
+
+- **Cost/latency assessment:** Some features (like counting words) are cheap (few CPU cycles) and can be computed quickly. More complex processing (e.g. LLM embeddings via Gemini) is costly and subject to quota. The protocol will note which signals require substantial computation or risk LLM unreliability. For example, deterministic keyword counts have negligible cost; using a language model to parse nuance would be much slower and possibly unpredictable.  
+
+- **Rejection criteria:** If a feature cannot be sourced timely (e.g. if a news channel isn’t reliably archived, or is often edited without record), it may be dropped. Any feature that consistently fails to beat the lexicon/PCA baseline (constructed using identical data splits and costs) will be abandoned. 
+
+- **Bias check:** We must ensure features do not rely on future-curated data. For example, an index based on a later-corrected news article is disallowed. The ECB case used contemporaneous print media, analogous to our approach. We will log source URLs and their publish timestamps to avoid retrospective bias.
+
+# Retrieval Plan for Text Libraries
+
+For unresolved methodological questions (e.g. best sentiment lexicons in finance, LLM techniques), we plan targeted literature retrieval: 
+
+- **Sentiment dictionaries:** Look up Loughran & McDonald’s financial sentiment lexicons (J. Fin. 2011) for domain-specific word lists. Also search for Russian-language sentiment resources (e.g. in academic NLP corpora).  
+- **News analytics surveys:** Find reviews or books on “news sentiment and asset returns”. For instance, Tetlock (2007) and more recent overviews (Clement et al.). Possibly “Handbook of News Analytics” if available.  
+- **Time-series NLP:** Seek texts on online learning with text features and accounting for multiple time zones. For example, find chapters in econometrics/NLP textbooks covering high-frequency news data.  
+- **Policy-target scripts:** For event flag extraction, review any standard coding of government announcements (e.g. NIPA, statistical bulletins). 
+
+We will use public search (Google Scholar, institutional sites) or university library access for PDFs. We will note which sections to consult (e.g. Lexicon creation chapters, regression tables) when relevant. No paid databases or private codes will be used.
+
+# Conclusions and Assumptions
+
+Based on available evidence, the most promising text features are derived from **authoritative announcements**: exchange press releases, central bank communications, and official sanction declarations. These contain timely, structured information (e.g. policy changes, new regulations, financial restrictions) that price models and dated-event flags alone miss. For instance, MOEX’s own newswire and BoR releases are fact-based texts tied to specific dates. They can be scraped with minimal latency and used to create real-time signals (e.g. a sudden margin easing or a new ruble policy). 
+
+The ECB study shows that even newspaper‐based sentiment indices can be highly predictive. Translated to our context, simple sentiment or keyword indices from Russian finance news could capture shifts in market mood or risk. However, any learned (ML) model on text would need careful cross-validation to avoid overfitting or leaking knowledge (ensuring only past text is used).
+
+**Material conflicts/unknowns:** All Russian official sources are under state influence, but they are primary facts (dates, figures) and thus valuable. External sources (EU/US) clearly have geopolitical bias, so any feature from them is a **signal of international pressure** (which is indeed useful). We mark those as such. We assume that posting dates on official sites reflect true release time; any delays or revisions are risks. We will log first-available times (via web archives if needed). 
+
+**Falsification criteria:** A text-derived feature fails if adding it to a model does not improve (or degrades) excess return over the baseline under any tested train-test splits. Also, if acquiring the text requires paid or illicit means (e.g. private Telegram channels), we discard it. Finally, if a feature’s source is altered/hidden historically (e.g. a news page is updated without record), we cannot use it retrospectively.
+
+This plan guides a systematic evaluation: first attempt simple lexical/event features (word counts, sentiment scores) from the identified official feeds; if promising, consider more complex NLP under the cost/latency budget. All analyses will be documented with source citations and versioned timestamps of news content.
+
+**Sources:** MOEX press releases; Bank of Russia announcements; EU Council press releases; US Treasury OFAC releases; ECB research on news sentiment. All quotes are from official publications on or before 22 Oct 2026.

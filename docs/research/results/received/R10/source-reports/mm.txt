@@ -1,0 +1,655 @@
+# Deterministic MOEX Futures‑Spread Hypotheses, Continuation and Opportunity Cost
+
+## 1. Framing and Key Takeaways
+
+For a small deterministic MOEX futures‑spread pilot coexisting with a large LQDT core position, the most robust test plan is built around a **compact, economically‑motivated family of calendar and closely‑related spreads**, with **simple, preregistered rules** and **explicit opportunity‑cost accounting versus LQDT**. Statistical artifacts (z‑scores, unit‑root tests, raw correlations) are only used as filters and diagnostics; they do not themselves define trades.
+
+Given the constraints (RUB 30k–45k test budget, manual latency of 3–90 minutes, unknown but non‑zero per‑contract fees and 1–3 tick execution costs, and an explicit LQDT excess‑return target), the plan should:
+
+- Focus on **MOEX‑listed calendar spreads and very liquid synthetic spreads** where contract economics are transparent and data is free at daily frequency (via MOEX CSV archives and ISS history where available)[1][2][3].
+- Parameterize **costs and slippage as ranges**, not points, using MOEX fee schedules and indicative broker tariffs as bounds[4][5][6][7].
+- Evaluate each hypothesis **solely on net RUB excess against a matched LQDT counterfactual**, including both realized P&L and the time‑value of margin tied up in the spread (LQDT as a money‑market ETF proxy)[8][9].
+- Treat **continuation vs exit** as a conditional incremental decision: holding is justified only when expected remaining edge net of costs beats holding LQDT, not because of sunk costs.
+- Explicitly ablate the contribution of **(a) flexible size, (b) scale‑ins, and (c) opportunity‑aware exits**, to avoid elevating complexity to “architecture” without demonstrated incremental value.
+
+The single most actionable takeaway: **start with 3–4 tightly‑specified calendar/near‑calendar spread hypotheses with fixed, small sizing and no averaging down; then gradually add sizing and opportunity‑arrival logic only if walk‑forward excess results clearly improve after cost and LQDT adjustment.**
+
+---
+
+## 2. Data, Instruments and Cost Environment (Concrete Bounds)
+
+**Free daily MOEX data is sufficient to test medium‑term spread hypotheses, but coverage depth and microstructure details remain partial and must be treated as unknown ranges rather than fixed inputs.**
+
+### 2.1 Data availability and structure
+
+- MOEX’s official archive provides free **daily trading results** for the derivatives market with CSV download, including fields equivalent to OHLCV and open interest[1][2][10]. The archive is accessible via web for specific dates and instruments and is suitable for an end‑of‑day backtest.
+- MOEX’s ISS API exposes historical end‑of‑day data via `/iss/history/` with OPEN, HIGH, LOW, CLOSE, VOLUME and OPENPOSITION columns[11]. Some endpoints are accessible without authentication, but orderbooks and certain historical datasets are subscription products[12][13].
+- Calendar spread instruments (календарные спреды) exist as separate securities with their own archives, containing Last, Bid, Ask, High, Low, Volume, Trades[14][15]. This supports testing both **directly traded spread contracts** and **synthetic leg‑by‑leg constructions**.
+
+Conflict: MOEX documentation distinguishes between **free delayed data** and **paid historical products**[12][16]. Practically, you can assume:
+- Free: daily CSV for recent years for most liquid futures and calendar spreads.
+- Uncertain/paid: very deep history, intraday, full orderbooks, and some analytical products.
+
+This affects hypothesis scope: tests should be **daily‑bar based**, and any hypothesis needing intraday microstructure (e.g., 5‑minute mean‑reversion) must justify the data upgrade explicitly.
+
+### 2.2 Instruments universe relevant to spreads
+
+- **Index futures**: RTS (RI, RTSI, RTSM mini)[17][18][19], MOEX Russia Index futures (MIX, MXI mini, and perpetual IMOEXF)[18][20]. Contract specifications confirm point size and tick value (e.g., MIX tick 25, value 25 RUB; RTSM tick 0.5, value ~8.36 RUB)[17][18][21].
+- **FX futures**: Si (USD/RUB), contract size 1,000 USD, tick 1 RUB; traded on the derivatives market as an FX futures contract[22][23][24].
+- **Commodity futures**: Brent oil (BR) with tick 0.01 USD per barrel and lot size 10 barrels[25][26]; MOEX recently launched WTI futures with the same lot size and 0.01 tick as of July 14, 2026[27]; deliverable precious metals (GOLD, SILV, PLT, PLD) exist with defined tick sizes[28][29].
+- **Government bond futures**: OF10 on 10‑year OFZ with calendar spreads listed officially[30].
+- **Other spreads**: MOEX explicitly highlights **Brent/WTI** inter‑commodity spreads and explains the spread as the price difference between contracts on two grades of oil sharing the same expiry[31][32].
+
+Some economically tempting tickers are **not what they look like** (e.g., GZ=Gazprom futures, AU=AUD/USD FX)[33][34][35]; all hypotheses must be grounded in correct contract economics, not mnemonic codes.
+
+### 2.3 Fee and spread environment
+
+- MOEX’s derivative fee documentation classifies futures into groups (e.g., FX, equity, interest‑rate, commodity) and specifies **BaseFutFee** rates (percentage) for each[4][36][37]. For commodity futures, one example shows an exchange commission of 0.007590% for taker trades in unaddressed mode[4][38].
+- More recent tariff documents effective in 2026 confirm that derivatives fees are periodically updated and include both exchange and clearing components[37][39]. A typical per‑contract cost decomposition includes:
+  - **Trade registration fee (сбор за регистрацию сделки)**,
+  - **Addressable trade fee (сбор за адресную сделку)**,
+  - **Clearing execution fee at expiry (клиринговая комиссия за исполнение контракта)**[5][6].
+  For example, MIX‑12.26 shows specific RUB amounts per contract in each category[6].
+- Broker commissions are partially observable through comparison sites and marketing pages: VTB often advertises **1 RUB per contract or zero commission promos** on particular tariffs; BCS has historically charged around **3 RUB per contract**, with later moves toward percentage‑of‑notional for some plans[7][40][41]. These are not primary documents but provide useful magnitude bounds.
+- Bid‑ask spreads in ticks are not documented in MOEX specs. Market‑maker obligations define **maximum permitted spreads**, but not realized typical spreads[42]. Your working assumption should be a **range** (e.g., 1–3 ticks per leg) to be stress‑tested; you cannot fix a single “true” spread.
+
+For hypothesis testing, parameterize total **per‑leg, per‑side cost** in three layers:
+
+- **Base case**: exchange + clearing fees at published BaseFutFee, no broker fee (VTB promo), 1 tick spread and negligible slippage;
+- **Conservative**: exchange + clearing, +1 RUB broker fee, 2 ticks spread + 1 tick slippage per entry/exit;
+- **Stress**: highest documented BaseFutFee for the contract group, +3 RUB broker fee, 3 ticks spread + 2 ticks slippage.
+
+Every hypothesis card will declare the maximum total “round‑trip ticks per leg” and “RUB per leg” it can absorb while still generating positive excess net of LQDT.
+
+### 2.4 LQDT as the opportunity‑cost benchmark
+
+LQDT is an exchange‑traded money‑market ETF (БПИФ «Ликвидность») investing in short‑term repo (1 day to 3 months) with low risk and a passive management objective[8][19]. MOEX lists it as an ETF; broker materials describe it as a cash‑equivalent vehicle[19][43]. For your project:
+
+- LQDT represents the **counterfactual**: any ruble not in margin or variation margin for spreads is notionally in LQDT.
+- The **excess metric** is:  
+  `Excess_t = (Spread_PnL_t – All_costs_t) – (LQDT_return_on_same_capital_t)`  
+  measured on identical calendar and cash‑flow bases.
+- Since your core LQDT > RUB 40m dwarfs the test allocation, you treat the test notional as **temporarily diverted units** from the larger LQDT pile, without double‑counting LQDT yield on the un‑diverted cores.
+
+---
+
+## 3. Why Z‑Scores and Stationarity Alone Are Not Tradeable
+
+**Mean‑reversion tests and z‑scores are necessary but insufficient: without an economic anchor and cost‑adjusted opportunity set, they will systematically overstate tradeability and understate opportunity cost.**
+
+From Vidyamurthy’s pairs‑trading framework, the standard cointegration / stationarity workflow uses regression residuals, ADF tests, and variance‑normalized spreads as signals[44][45]. Chan’s mean‑reversion chapters similarly build z‑score rules over spreads in currencies and futures[46][47]. However:
+
+1. **Stationarity ≠ profit after costs.** A stationary residual series can have arbitrarily small amplitude relative to tick size and fees. If the half‑life is long, you may experience many rebalancing events with low net gain, and total costs can exceed any statistical edge.
+2. **Tests are sample‑specific, not structural.** Cointegration and unit‑root tests assume stable parameters; structural breaks in futures basis relationships are common (regime changes, sanctions, structural changes in carry or funding). Structural break methodology (Chow tests, CUSUM, Bai–Perron)[48] highlights that a process can be stationary over one period and behave differently after a regime shift.
+3. **z‑scores ignore opportunity cost.** A 2‑sigma spread signal might expect a modest absolute payoff but tie up margin for weeks, while LQDT accumulates yield. Unless you map z‑score excursions into **expected incremental excess** versus LQDT, they are not economic decisions.
+4. **Correlation alone has no directional content.** High correlation between two futures returns does not guarantee a stable price ratio or cointegrating relation. As both Vidyamurthy and Chan emphasize, **correlation is at best a filter** for candidates but not evidence of tradeable mean reversion[44][46].
+
+The proposed hypothesis family therefore insists on **explicit economic stories** (basis, carry, relative value in indices or term structures) plus **statistical confirmation**, with stationarity tests and z‑scores serving as diagnostics for entry/exit thresholds and break detection rather than as the core justification.
+
+---
+
+## 4. Candidate Hypothesis Cards
+
+All cards share common structural elements:
+
+- Data: MOEX daily OHLCV + open interest from official archives[1][2][11] (plus any external underlying index levels or FX where required).
+- Spread definition and normalization.
+- Hedge estimation and integer mapping.
+- Entry/continuation/exit/invalidation rules.
+- Expected failure modes.
+- Validation design and explicit parameter‑range preregistration.
+- Maximum cost conditions under which the hypothesis remains viable.
+
+### 4.1 Card A: RTS Index Calendar Spread Mean Reversion
+
+**Economic story.** RTS index futures represent equity market exposure; calendar spreads between near and far contracts on the same index primarily reflect **carry (financing + dividends) and term liquidity premium**. In “normal” regimes, the term‑structure shape is constrained by cost‑of‑carry arguments (similar to bond futures basis: carry itself doesn’t create returns in a hedged basis trade, but its changes do[49][50]). Deviations of the near–far price difference from recent norms that are not justified by dividend/funding shifts are expected to mean‑revert.
+
+**Instruments and data.**
+
+- Underlying: RTS Index (RTSI, external index series if needed).
+- Futures: RI standard or RTSM mini; near and next‑quarter contracts (e.g., RTS‑3.26 vs RTS‑6.26)[17][21][41].
+- MOEX data: daily OHLCV for each contract, open interest; optional calendar‑spread contract archives if available[14][15].
+
+**Spread and hedge.**
+
+- Synthetic spread: `S_t = P_far,t – P_near,t` in index points; for RTSM, tick size is 0.5 points with tick value ~8.36 RUB[21].
+- Hedge ratio: target notional neutrality in index points; 1:1 contracts if contract multipliers are identical. For mixtures of mini vs standard, apply integer hedge ratio to equalize notional.
+- Normalization: `z_t = (S_t – μ_window) / σ_window`, where μ and σ computed from a rolling lookback (candidate ranges: 60–250 trading days).
+
+**Entry / continue / exit / invalidate.**
+
+- **Entry long spread (buy far, sell near)** when:
+  - `z_t ≤ –Z_entry` and both legs pass liquidity filters (min volume, open interest quantiles),
+  - structural break test on S_t parameters over the last 1–2 years fails to reject stability at a chosen significance.
+- **Entry short spread** symmetrically for `z_t ≥ +Z_entry`.
+- **Continuation**: while `|z_t| > Z_exit` and no break/invalidation condition is met, hold. Daily re‑mark but no intraday adjustments.
+- **Exit** (normal): first of:
+  - `|z_t| ≤ Z_exit` (mean reversion realized),
+  - maximum holding time **T_max** (in multiples of estimated half‑life per Chan’s suggestion of ~3 half‑lives[51]) is reached.
+- **Invalidate regime**:
+  - Structural break test (e.g., CUSUM on S_t mean) flags change.
+  - Near expiration when liquidity shifts abruptly (e.g., N days before first notice / last trading day).
+  - Repeated failure: more than K consecutive trades that hit T_max without reaching Z_exit.
+
+**Candidate parameter ranges.**
+
+- Z_entry ∈ [1.5, 3.0]; Z_exit ∈ [0.3, 1.0].
+- Lookback window ∈ [60, 120, 250] days.
+- T_max ∈ [1.5, 3.0] × estimated half‑life from AR(1) fit on training data.
+- Min liquidity filter: daily volume > percentile threshold over last N days; open interest above a contract‑specific minimum.
+
+**Expected failure modes.**
+
+- **Regime shifts** in equity risk premium, ruble macro regime, or sanctions causing persistent contango/backwardation.
+- **Liquidity cliffs** near contract roll dates: abrupt order‑book thinning amplifying execution costs beyond assumed tick spreads.
+- **Excessive small oscillations**: S_t oscillates within bands smaller than cost thresholds, generating false entries.
+
+**Validation design.**
+
+- **Training period**: several contiguous years where both near and far RTS futures are consistently liquid (e.g., excluding extraordinary crisis subperiods as separate regimes).
+- **Walk‑forward**: rolling re‑fit of μ, σ, and AR(1) parameters on training windows, then application on non‑overlapping test windows, with strict chronological order.
+- **Hold‑out**: a final period (e.g., last 12–24 months) left completely untouched until all specification choices are frozen.
+- **Costs**: apply per‑leg cost scenarios as defined in Section 2.3; compute net RUB and excess vs LQDT for each path.
+- **Decision to reject**: hypothesis is rejected if, under **conservative costs**, the distribution of excess P&L is not clearly positive (e.g., median ≤ 0 and downside tails conflict with your 10–15k shortfall tolerance) or if profitability is concentrated in a single regime.
+
+### 4.2 Card B: MOEX Russia Index (MIX/IMOEXF) Perpetual vs Quarterly Term Spread
+
+**Economic story.** The MOEX Russia index has both quarterly futures (MIX, MXI) and a daily perpetual futures (IMOEXF) with a funding mechanism[20]. Theoretically, the price difference between perpetual and quarterly futures for the same underlying should reflect **discounted funding/fair‑value differences**, bounded by arbitrage constraints akin to the bond‑futures basis results where carry magnitude is restricted by theory[50]. Deviations in the perpetual–quarterly spread can offer mean‑reverting opportunities if funding or dividend expectations are stable.
+
+**Instruments and data.**
+
+- Underlying: IMOEX index series (cash index from MOEX or vendor).
+- Futures: MIX‑X.YY (quarterly) and IMOEXF (perpetual daily futures)[18][20][37].
+- Data: daily OHLCV for both futures; daily cash index level; open interest for each contract.
+
+**Spread and hedge.**
+
+- Define normalized prices:
+  - `F_Q_t` = front‑quarter MIX price in index points,
+  - `F_P_t` = perpetual futures price (IMOEXF).
+- Define `S_t = F_Q_t – F_P_t` (or vice versa; sign convention fixed ex ante).
+- If contract point multipliers differ (e.g., MIX vs IMOEXF lot size or tick value[18][37]), compute **contract counts** such that notional exposure to index value is balanced.
+- Optionally adjust S_t by implied funding rate from perpetual funding formula vs theoretical carry from risk‑free + dividends.
+
+**Entry / continue / exit / invalidate.**
+
+- Use the same generalized z‑score approach as Card A but with:
+  - Additional filter: spread S_t adjusted for theoretical funding should itself behave as a zero‑mean stationary residual; perform cointegration/ADF tests over training.
+- Entries triggered when adjusted z_t breaches ±Z_entry and both legs meet liquidity/open interest filters.
+- Exits at Z_exit or T_max; invalidation on structural breaks or visible changes to funding mechanics (e.g., MOEX amends perpetual futures methodology).
+
+**Expected failure modes.**
+
+- **Funding regime changes** by MOEX or persistent funding dislocations in the perpetual contract.
+- Periods of regulatory intervention or index re‑composition altering dividend expectations drastically.
+- Underestimation of cost: perpetual contracts may have distinct fee schedules vs quarterly futures (must map from MOEX fee documents[4][36][37]).
+
+**Validation design.**
+
+- Split sample around any major **methodology changes** in perpetual futures or fee schedules.
+- Ensure that training/test windows reflect periods with stable funding mechanics; treat others as separate regimes or excluded.
+- If results are highly regime‑dependent, demote the hypothesis to “conditional / watchlist” status.
+
+### 4.3 Card C: OF10 Government Bond Futures Calendar Spread (Term‑Structure Reversion)
+
+**Economic story.** OF10 futures on 10‑year OFZ represent exposure to Russian long‑term yields. Calendar spreads (near vs far OF10 contracts) approximate the **slope of a specific segment of the yield curve**. Economic theory and basis‑trade literature on Treasury cash‑futures basis highlight that while carry embedded in the futures curve is constrained by no‑arbitrage, **inverted or steep curves can persist under stress** and may not rapidly mean‑revert[49][50]. The hypothesis is therefore **conditional**: in “normal” yield‑curve regimes, the OF10 term spread tends to orbit a stable value and reverts; in stressed regimes, the spread can re‑anchor at new levels.
+
+**Instruments and data.**
+
+- Contract: OF10 quarterly futures, with MOEX calendar spreads such as OF10‑6.18‑9.18 confirming existence[30].
+- Data: daily OHLCV for near/far OF10 futures and/or direct calendar spread; optional OFZ yield curve data from MOEX government bond market for economic context.
+
+**Spread and hedge.**
+
+- `S_t = P_far,t – P_near,t` in futures points, or direct calendar spread price if listed.
+- Since both contracts are on the same underlying and multiplier, hedge ratio is 1:1.
+- Normalize S_t by its rolling mean and standard deviation; optionally by yields (e.g., S_t / level of 10‑year yield) to control for level effects.
+
+**Entry / continue / exit / invalidate.**
+
+- Entry only when:
+  - z_t exceeds ±Z_entry, and
+  - underlying macro environment not flagged as “stress” by externally observable conditions (e.g., 10‑year OFZ yield beyond a percentile bound or presence of policy shocks; this must be translated into mechanical filters).
+- Continuation/exits similar to Card A.
+- Invalidate:
+  - When yield‑curve data indicates a sustained structural break (e.g., multi‑month inversion), or
+  - When structural break tests on S_t parameters detect persistent regime change.
+
+**Expected failure modes.**
+
+- Episodes of monetary regime shift, sanctions, or internal policy constraints that radically change bond term premia.
+- Liquidity squeeze in OFZ futures leading to unreliable marks and execution costs outside assumed range.
+
+**Validation design.**
+
+- Segment the historical sample into **macro regimes** (e.g., pre‑ and post‑specific rate‑hike cycles or crisis periods) and test separately.
+- Require that “normal regime” subsamples show consistent excess profitability after costs and LQDT before considering live deployment.
+
+### 4.4 Card D: Brent (BR) Calendar Spreads vs New WTI Contract (Exploratory)
+
+**Economic story.** Internationally, Brent and WTI spreads embody quality, logistics, and benchmark differentials; MOEX has positioned a Brent/WTI spread strategy on its site, defining it as the price difference between the corresponding contracts for the same expiry[31][32]. However, MOEX’s WTI contract is a **very recent launch (July 14, 2026)** with lot size 10 barrels and 0.01 tick[27]. This limits historical depth and thus makes full statistical validation impossible at present.
+
+**Instruments and data.**
+
+- Brent futures BR (established; multiple expiries)[25][33].
+- WTI futures (new as of mid‑2026)[27].
+- Brent/WTI spread is explicitly described, but calendar‑spread archives and full contract histories for WTI will be shallow.
+
+**Spread and hedge.**
+
+- Define inter‑commodity same‑expiry spread: `S_t = BR_t – k * WTI_t`, with k a hedge ratio reflecting differences in contract size and quality; MOEX examples sometimes use crude ratios (e.g., 1:8 on other spreads)[35].
+- Alternatively, focus first on **Brent calendar spreads only**, which have established history.
+
+**Status.**
+
+- Because WTI is new, this card is provisionally **exploratory / low priority**. It can be pre‑specified conceptually now but should not be in the first batch of tests.
+- In the first testing wave, restrict to **Brent calendar spreads** (same logic as Card A but on BR), whose tick size and value are known[25][26].
+
+---
+
+## 5. Spread Normalization, Hedge Estimation, Integer Mapping and Expiry Handling
+
+### 5.1 Normalization and hedge ratios
+
+**Hedge estimation.** For spreads where two contracts differ in exposure (e.g., different indices, different grades of oil), hedge ratios can be estimated via:
+
+- **Economic notional matching**: equalize delta exposure in underlying units by contract specification (lot size, multiplier).
+- **OLS regression** of one price series on the other over a training window (A_t = α + β B_t + ε_t), using β as hedge ratio; this is standard in pairs trading literature[52].
+- **Total least squares / orthogonal regression** where measurement error is present in both series[52].
+
+Given small test capital and preference for simplicity, start with **economic notional matching** for same‑underlying spreads, and **OLS** only for cross‑asset spreads if later explored.
+
+**Normalization choices.**
+
+For a generic linear spread `S_t = P_A,t – β P_B,t`:
+
+- **z‑score normalization** as in Cards A–C:  
+  `z_t = (S_t – μ_window) / σ_window`.
+- Optionally **volatility‑scaled** or **tick‑scaled** metrics:
+  - `S_t / tick_value` to express the spread in ticks.
+  - `S_t / σ_window` to relate to daily volatility rather than level.
+
+For walk‑forward, μ and σ must be recomputed only on past data; no peeking.
+
+### 5.2 Integer mapping and margin
+
+Once β is fixed, determine integer contract numbers (N_A, N_B) such that:
+
+- `N_A * ContractValue_A ≈ β * N_B * ContractValue_B`, with ContractValue estimated at current prices.
+- Integer rounding is done deterministically (e.g., round N_A, then solve for N_B) with any residual notional mismatch recorded.
+
+Given the pilot’s small capital, it is likely all spreads are **1×1 or 1×k** in minis; you may need to discard spreads whose minimum neutral units tie up too much margin relative to the 30k–45k cap.
+
+Margin requirements can be approximated using MOEX’s references that futures margin is roughly 10% of notional (1:10 leverage)[53]. Exact current margins should be checked ex‑ante for candidate contracts.
+
+### 5.3 Expiry and roll handling
+
+For **calendar spread contracts** (e.g., MXI‑6.25‑9.25, OF10‑3.18‑6.18)[2][30]:
+
+- MOEX defines the legs and automatically handles expiry logic in the contract; at expiry, the spread converges and then disappears.
+- For positions held in calendar spread contracts, the default is: **close by a fixed buffer before the near leg’s last trading day** (e.g., N=3–5 trading days), to avoid forced expiry and clearing execution fees.
+
+For **synthetic spreads**:
+
+- **Standard futures roll**: close the near leg in the expiring contract and open a new position in the next‑near contract while maintaining the far leg, as generic roll practice suggests[54].
+- For each hypothesis, preregister whether **signals are frozen** during roll windows (to avoid distortion from roll mechanics) or whether spreads are recomputed on rolled contracts immediately.
+
+All expiry handling must avoid triggering extra clearing execution fees at settlement where avoidable[5][55].
+
+---
+
+## 6. Entry vs Continuation: Incremental Value Framing
+
+**Continuation is a new trade from now; sunk P&L is irrelevant except through its effect on future risk capacity and opportunity set.**
+
+For an open spread position at time t, define:
+
+- Current marked‑to‑market P&L (including realized costs so far).
+- Remaining expected mean‑reversion upside (conditional on being at state z_t).
+- Remaining costs: exit costs (commissions, bid‑ask and slippage), potential roll costs if T_max spans expiration, and expected funding / LQDT opportunity cost.
+
+Continuation should be accepted only if:
+
+`E[Incremental_excess_from_now | state_t] > 0`,  
+
+where incremental excess is:
+
+- Expected price‑convergence P&L from now to either exit or T_max.
+- Minus all future modeled costs (trading costs + clearing execution if staying through expiry + LQDT yield foregone over expected holding time).
+
+Mechanically:
+
+1. **Estimate time‑to‑exit distribution** conditional on current z_t, using historical transitions from similar z‑levels in training data (nonparametric) or based on mean‑reversion half‑life.
+2. For each potential path length, compute expected LQDT return on tied margin and commissions; subtract from expected spread P&L.
+3. At each daily decision point, treat “continue” as re‑entering at current marks with projected incremental value; if negative, **exit** even if z_t has not fully reverted.
+
+Sunk loss is **not** a reason to continue; if z_t rotates into a region where the conditional expected incremental excess is negative (e.g., due to regime shift or high remaining costs vs diminished upside), the correct move is to accept the realized loss and free capital.
+
+Conversely, “holding long” is not automatically bad: if z_t remains away from zero but half‑life estimates and volatility suggest a high probability of convergence within a few days and opportunity arrivals appear sparse, **continuation may still be superior** to rejoining LQDT briefly.
+
+The test plan must implement this logic by computing:
+
+- Per‑day incremental expected excess for each ongoing trade.
+- A decision rule comparing it to **zero** (i.e., LQDT baseline) plus any **finite set of queued opportunities** (see Section 8).
+
+---
+
+## 7. Position Sizing: Fixed, Capped Adaptive, and Preplanned Scale‑Ins
+
+Carver’s **Systematic Trading** emphasizes designing position‑sizing rules as part of the system itself, with volatility targeting and a risk budget across multiple markets[56][57]. For the pilot, you are capital‑constrained and forbidden from using emergency capital as an averaging‑down tool; thus, the sizing dimension must be **carefully ablated**.
+
+### 7.1 Fixed minimum sizing
+
+- **Definition**: Every trade uses the same integer number of spread units (e.g., one calendar spread contract), provided margin fits within the pilot allocation.
+- **Pros**: Simple, robust to estimation error in volatility or edge; easy to attribute P&L changes to signal quality rather than sizing.
+- **Cons**: May under‑exploit very strong signals or over‑expose in low‑edge contexts.
+
+Validation role: **Baseline architecture**. All hypotheses should be implementable with fixed sizing.
+
+### 7.2 Capped adaptive sizing
+
+- **Definition**: Position size is a deterministic function of signal strength (e.g., |z_t|) and a per‑spread volatility estimate, but subject to:
+  - An absolute **cap in contracts** per spread,
+  - A cap on total pilot margin usage,
+  - No use of emergency capital beyond pre‑authorized risk caps.
+- Example rule: 1 unit for |z| in [Z_entry, Z_high1), 2 units for [Z_high1, Z_high2), capped at 2; or volatility‑targeted contract counts using a formula similar to Carver’s risk allocation but discretized to integers[47][56].
+
+Justification: Carver demonstrates that volatility targeting can equalize risk per trade across diverse markets[56]. Here, the benefit must be tested, not assumed.
+
+### 7.3 Preplanned scale‑ins (no averaging down)
+
+- **Definition**: Enter an initial position at the first signal threshold, with at most **one or two additional entries** if spread moves further in the same direction (e.g., z_t reaches a higher band) but never increasing risk when the statistical regime looks impaired.
+- Constraints:
+  - Total scale‑ins must respect the same capital cap as adaptive sizing.
+  - Emergency capital may **only** be invoked to de‑risk and exit, not to complete scale‑ins.
+
+Scale‑ins can theoretically improve risk‑adjusted returns for mean‑reverting processes if the process is well‑behaved; but they also increase path‑dependence and tail losses when regimes shift.
+
+### 7.4 Comparative testing under identical splits
+
+For each hypothesis (A–C), run three versions on the **same** train/test splits, execution‑delay assumptions and cost scenarios:
+
+- Version 1: fixed 1‑unit sizing.
+- Version 2: capped adaptive sizing.
+- Version 3: preplanned scale‑ins (with explicit maximum units and entry bands).
+
+Evaluate:
+
+- Net excess vs LQDT (median, distribution, drawdown).
+- Maximum excess‑curve drawdowns relative to user’s thresholds (5k warning, 10k action, 15k outer bound).
+- Sensitivity to cost assumptions: does sizing complexity only help under unrealistically low costs?
+
+Complexity is only justified if Version 2 or 3 shows **consistent, material improvement** in net excess and drawdown metrics across out‑of‑sample windows and cost ranges.
+
+---
+
+## 8. Opportunity Arrival and Allocation Without Oracle Bias
+
+**The opportunity model must mimic a human who sees all signals in real time, but cannot reallocate to the ex‑post best; instead, it operates a deterministic queue or prioritization.**
+
+### 8.1 Defining past “opportunities”
+
+For each hypothesis, a “signal” is an event where entry conditions are satisfied at end of day (z_t breaching thresholds, liquidity filters, no invalidation). An “opportunity set” at date t is the set of all spreads across all hypotheses whose entries trigger at that time.
+
+Crucially:
+
+- You must **include signals that would have been rejected** in a realistic implementation (e.g., insufficient free margin, stale data, execution failure) in the opportunity statistics. This prevents hindsight bias where only realized trades define arrival rates.
+- For signals that would have been stale or untradeable (e.g., contract delisted, zero volume), label them explicitly as such; they are still part of the underlying environment.
+
+### 8.2 Resource‑constrained allocation: ranked queue
+
+Rather than an oracle that instantly reallocates from a losing trade to a winning one, define a **simple deterministic queue** per day:
+
+- Rank all candidate trades by a pre‑specified score (e.g., |z_t| / sqrt(holding‑time_estimate) or expected incremental excess vs LQDT).
+- Starting from the top, allocate integer spread units until:
+  - Aggregate margin usage reaches a predetermined pilot fraction (e.g., ≤70% of the 30k–45k budget to leave variation‑margin cushions), or
+  - A maximum count of concurrent positions is reached (e.g., 3–5).
+- Trades beyond resource limits are **logged as missed opportunities** with all their subsequent realized P&L computed in a **virtual queue** but not attributed to the main portfolio.
+
+This queue can be tested against simpler variants:
+
+- FIFO by time (no ranking, first come first served).
+- Pure |z_t| ranking vs incremental‑excess ranking.
+
+The key test: does a sophisticated ranking materially outperform FIFO in **excess over LQDT** when constrained by the same capital rules?
+
+### 8.3 Avoiding implicit look‑ahead
+
+All allocations and rebalancing decisions must use only:
+
+- Past and current daily data (no knowledge of future z_t or future opportunity arrivals).
+- Fixed rules that do not change mid‑test based on performance.
+
+When you later inspect performance and see that an alternative trade would have been better, that informs **future hypothesis cycles**, not ex‑post reallocation inside the same walk‑forward.
+
+---
+
+## 9. Pair‑Family / Strategy Compatibility Matrix and Ranked Experiments
+
+### 9.1 Compatibility matrix
+
+Below is a qualitative matrix mapping spread families to strategy features. (Costs are in relative adjectives; actual RUB levels are governed by the ranges defined earlier.)
+
+| Family / Feature                      | Card A: RTS Calendar | Card B: MIX vs Perpetual | Card C: OF10 Calendar | Card D: BR Calendar / BR–WTI |
+|--------------------------------------|-----------------------|---------------------------|------------------------|------------------------------|
+| Underlying type                      | Equity index         | Equity index              | Gov’t bond yield       | Commodity (oil)              |
+| Direct MOEX calendar spread product  | Yes (index spreads)[2][14] | Partly (MIX spreads; perpetual separate)[18][20] | Yes (OF10 spreads)[30] | Yes for BR; WTI limited history[25][27][31] |
+| Spread depth & history               | High (multi‑year)    | Medium (perpetual newer)  | Moderate (since OF10 intro) | High for BR; low for WTI   |
+| Economic anchor                      | Carry + term premium | Funding vs carry          | Yield‑curve slope      | Carry + quality/logistics   |
+| Liquidity on MOEX                    | High                 | High (MIX, IMOEXF)        | Medium                 | High for BR; unknown WTI    |
+| Data needs beyond futures OHLCV      | Optional RTSI index   | IMOEX cash, funding terms | OFZ yields (optional)  | External Brent/WTI context (optional) |
+| Suitability for fixed sizing         | High                 | High                      | Medium (margin heavier)| High for BR calendar        |
+| Sensitivity to macro regime shifts   | High                 | High                      | Very high              | Very high (oil shocks)      |
+| Priority in first test wave          | Top                   | High                      | Medium                 | BR calendar: Medium; BR–WTI: Low |
+
+### 9.2 Ranked experiment list with resource considerations
+
+**Experiment 1 (Highest priority):**  
+Card A, RTS calendar spreads, fixed sizing; conservative cost scenario; no sizing complexity; simple FIFO opportunity queue.
+
+- Objective: establish whether even the simplest economic‑mean‑reversion hypothesis can generate positive excess vs LQDT after realistically high fees and 1–3 tick costs.
+- Resources: daily data only; limited code complexity; modest compute (training on several years of daily data for 2 contracts at a time).
+
+**Experiment 2:**  
+Card A, RTS calendar spreads, fixed sizing vs capped adaptive sizing vs scale‑ins; same cost and data assumptions.
+
+- Objective: ablation of sizing complexity; check whether adaptive rules materially improve excess or mainly magnify tails.
+
+**Experiment 3:**  
+Card B, MIX vs IMOEXF spread, fixed sizing; conservative costs; incremental‑excess‑based opportunity ranking.
+
+- Objective: test a term‑structure hypothesis on a **single index with perpetual futures**, and measure sensitivity to funding regime assumptions.
+
+**Experiment 4:**  
+Card C, OF10 calendar spreads, fixed sizing; macro‑regime segmentation.
+
+- Objective: evaluate bond‑curve mean reversion under explicitly defined normal vs stressed regimes; likely to be more conditional in conclusions.
+
+**Experiment 5 (Exploratory):**  
+Card D, BR calendar spreads (not BR–WTI), fixed sizing, high‑cost stress; small number of contracts due to potentially higher tick values and margin.
+
+- Objective: understand commodity term‑structure behaviour on MOEX, factoring in currency and global oil‑market shocks.
+
+Experiments on BR–WTI cross‑commodity spreads and any spreads requiring intraday data should be deferred until daily‑bar results justify expanding complexity and potential data cost.
+
+---
+
+## 10. Ablation Plan: Size, Scale‑Ins and Opportunity‑Aware Exits
+
+To avoid “baking in” complexity, the ablation plan isolates:
+
+1. **Baseline architecture:**
+   - Fixed 1‑unit sizing.
+   - Simple entry/exit by z‑score and T_max.
+   - FIFO queue allocation.
+   - Continuation rule: hold until exit conditions irrespective of incremental‑excess calculation (subject to T_max).
+
+2. **Layer 1 – Opportunity‑aware exits only:**
+   - Same sizing and queue as baseline.
+   - Implement incremental‑excess evaluation at each decision point; exit if future expected incremental excess is negative vs LQDT.
+   - Compare improvement in drawdown control and average trade duration.
+
+3. **Layer 2 – Flexible sizing without scale‑ins:**
+   - Replace fixed sizing with capped adaptive sizing.
+   - Still **no multi‑step scaling**; the position is set at entry and not increased.
+   - Measure whether additional complexity in position computation yields better excess and lower cost‑adjusted volatility.
+
+4. **Layer 3 – Preplanned scale‑ins:**
+   - Enable up to K extra entries per trade at higher |z| levels.
+   - Keep emergency‑capital rules and risk caps unchanged.
+   - Explicitly compare tail risks: number and magnitude of worst drawdowns, time spent near 10k–15k excess‑drawdown boundaries.
+
+At each stage, complexity is only retained for production consideration if **out‑of‑sample excess vs LQDT improves across multiple cost scenarios**, and if control metrics (max drawdown, time underwater) remain within your stated tolerances.
+
+---
+
+## 11. Targeted Library Leads and How to Use Them
+
+The objective is to mine Vidyamurthy, Chan and Carver **selectively** to refine mechanisms and counterexamples, not to adopt backtests or overfitted recipes.
+
+### 11.1 Vidyamurthy – Pairs Trading: Quantitative Methods and Analysis (2004)
+
+The book’s table of contents and descriptions indicate chapters on:
+
+- **Cointegration and spread modeling** (Chapter 5),
+- **Testing tradability** (Chapter 7),
+- **Trading design** (Chapter 8),
+- **Trade execution and risk** (Chapter 10)[44][58].
+
+Targeted requests:
+
+- Chapter 5: the precise **conditions under which a cointegrating relationship is deemed economically tradeable**, including variance, half‑life, and cost considerations.
+- Chapter 7: case studies where cointegrated pairs are **rejected** as untradeable, and the criteria used (spread amplitude vs cost, liquidity, structural breaks).
+- Chapter 8 & 10: recommended **entry/exit designs, position sizing, and transaction‑cost handling** for mean‑reverting spreads; especially examples where naive correlation or stationarity criteria fail.
+
+Use these to sharpen:
+
+- Entry/exit band ranges and half‑life‑based T_max rules in Cards A–C.
+- Structural‑break and “regime change” invalidation criteria.
+
+### 11.2 Chan – Algorithmic Trading: Winning Strategies and Their Rationale (2013)
+
+Chan’s book divides strategies into mean‑reverting and momentum[46][56]; Chapter 5 **“Mean Reversion of Currencies and Futures”** is specifically about spreads in these instruments[46][47][57].
+
+Targeted requests:
+
+- Chapter 5: exact **formulation of currency/futures spreads, half‑life estimation, and exit rules** (e.g., Chan’s rule to exit after 3×half‑life[51]); any MOEX‑relevant examples (e.g., FX futures).
+- Earlier chapters (backtesting): pitfalls in **look‑ahead bias, data‑snooping, and over‑parameterization**, especially in pairs strategies.
+- Risk‑management sections: recommended **stop‑loss and time‑stop designs** for mean‑reversion trades and discussion of when stops improve vs degrade performance.
+
+Use these to:
+
+- Justify or revise your T_max and z‑bands.
+- Design **time‑based exits** that do not convert mean‑reversion trades into trend‑following accidental shorts.
+
+### 11.3 Carver – Systematic Trading (2015)
+
+Carver’s framework covers trading rules, position sizing, volatility targeting, and portfolio construction for multi‑futures systems[56][59].
+
+Targeted requests:
+
+- Sections on **position sizing and volatility targets** (often around Part Two/Three): how contract counts are derived from risk budgets and instrument volatility.
+- Discussion of **trading speed** (how often rules can trade profitably given costs), and when slower systems are preferable.
+- Examples where **more flexible sizing leads to worse outcomes** due to overreaction or cost drag.
+
+Use these to:
+
+- Parameterize your **risk budget per trade** and per day within the 30k–45k pilot ceiling.
+- Inform the sizing and scale‑in ablation tests.
+- Argue quantitatively about **how many concurrent positions** are optimal given manual latency and margin.
+
+---
+
+## 12. Recommendations for Stage‑2 Work
+
+1. **Finalize instrument list and feasibility filters.**
+   - For each candidate spread pair (RTS, MIX/IMOEXF, OF10, BR calendar), pull MOEX contract and spread spec pages to confirm tick values, lot sizes, and current margin approximations[17][18][22][25][30][37].
+   - Eliminate any spreads whose minimum neutral unit consumes too much margin relative to the test allocation, or whose tick value implies per‑trade P&L resolution too coarse for the 10–15k tolerance.
+
+2. **Implement a minimal, transparent backtest engine on daily bars.**
+   - Ingest MOEX CSV archives as the primary data source[1][2][10][41].
+   - Encode entry/exit/T_max rules for Card A first, with fixed 1‑unit sizing and base vs conservative cost scenarios.
+   - Log every **potential signal**, including those not taken due to margin or conflict, to build an unbiased opportunity set.
+
+3. **Run Experiment 1 (RTS calendar, fixed size) and measure excess vs LQDT.**
+   - Use LQDT’s historical NAV path to compute a realistic opportunity cost for reserved margin[8][19][43].
+   - Compare net excess distribution to tolerance thresholds; if results are unpromising even under base‑cost assumptions, reconsider the focus on RTS or adjust parameter ranges before expanding.
+
+4. **Only if Experiment 1 is promising, proceed through the ablation ladder.**
+   - Add opportunity‑aware exits (Layer 1).
+   - Then capped adaptive sizing (Layer 2).
+   - Then limited scale‑ins (Layer 3).
+   - After each layer, freeze and evaluate on out‑of‑sample data before modifying.
+
+5. **Use library insights to sharpen, not to justify, the hypotheses.**
+   - Extract from Vidyamurthy and Chan the **negative cases** where spreads are statistically appealing but economically unviable, and compare their rejection criteria to your MOEX use‑cases.
+   - From Carver, derive explicit **risk and position‑count limits** consistent with the pilot’s capital and manual latency, then treat them as hard constraints in all simulations.
+
+6. **Defer complex and data‑heavy hypotheses.**
+   - Inter‑commodity BR–WTI spreads, intraday mean‑reversion, or any strategy that depends on order‑book shape should be left for a later phase, after demonstrating that daily‑bar, simple‑size calendar spreads can, in principle, clear **LQDT + cost** hurdles in realistic historical regimes.
+
+Following this staged, hypothesis‑driven approach will allow you to make the eventual live‑trading decision based on a small set of **clearly falsifiable** economic stories, tested systematically under identical assumptions, rather than on one‑off promising patterns.
+
+---
+
+## References
+
+[1] Historical data: trading results. https://www.moex.com/a2864  
+[2] Срочный рынок. Результаты торгов. https://www.moex.com/en/archive/fortsmarketcsvresults.aspx?def=2&ns=F  
+[3] ISS: Информационно-статистический сервер. https://www.moex.com/a2920  
+[4] Fees of Derivatives Market. https://www.moex.com/s402  
+[5] ETH-10.26 contract specification (fees section). https://www.moex.com/en/contract.aspx?code=ETH-10.26  
+[6] MIX-12.26 contract specification (fees section). https://www.moex.com/en/contract.aspx?code=MIX-12.26  
+[7] Срavni.ru – комиссии по фьючерсам ВТБ и БКС. https://www.sravni.ru/text/tarify-brokerov-na-moskovskoj-birzhe/  
+[8] БПИФ «Ликвидность» (LQDT) описание. https://www.moex.com/ru/issue.aspx?board=TQTF&code=LQDT  
+[9] LQDT – БПИФ Ликвидность УК ВИМ. https://www.tbank.ru/invest/funds/LQDT/  
+[10] Срочный рынок – архив календарных спредов. https://www.moex.com/ru/derivatives/spreads/  
+[11] ISS history endpoint description. https://iss.moex.com/iss/reference/  
+[12] ISS API – условия доступа к историческим данным. https://fs.moex.com/files/6523  
+[13] MOEX information products: Historical Data service. https://www.moex.com/en/products/info/historical  
+[14] MXI-6.25-9.25 spread info. https://www.moex.com/ru/derivatives/spreads/spread-info.aspx?code=MXI-6.25-9.25  
+[15] Calendar spreads archive example SILV-12.22-3.23. https://www.moex.com/ru/derivatives/spreads/archive.aspx  
+[16] Orderbooks and historical data only to paid subscribers (ISS manual). https://fs.moex.com/files/6524  
+[17] RTS Index Futures (RTS-12.26) contract specification. https://www.moex.com/en/contract.aspx?code=RTS-12.26  
+[18] MOEX Russia Index Futures (MIX-12.26) contract specification. https://www.moex.com/en/contract.aspx?code=MIX-12.26  
+[19] RTS mini futures (RTSM) news – tick size 0.5 point. https://www.moex.com/n35232  
+[20] Perpetual futures IMOEXF description. https://www.moex.com/en/contract.aspx?code=IMOEXF  
+[21] Sector index futures – tick 1 point, 1 RUB. https://www.moex.com/en/derivatives/msn/en-index-derivatives  
+[22] FX futures parameters – Si USD/RUB. https://www.moex.com/en/derivatives/currency-futures.aspx  
+[23] Si (USD/RUB) futures description (Tinkoff). https://www.tbank.ru/invest/ideas/Si/  
+[24] Alfa‑Bank Si futures overview. https://alfabank.ru/make-money/invest/futures/si/  
+[25] Brent oil futures BR contract specification. https://www.moex.com/ru/contract.aspx?code=BR-12.26  
+[26] Фьючерсный контракт на нефть Brent – спецификация (шаг цены 0.01 USD, лот 10 баррелей). https://www.moex.com/s1045  
+[27] Запуск фьючерсов на нефть WTI на Московской бирже. https://www.moex.com/n101973  
+[28] Precious metals futures (GOLD, SILV, PLT, PLD). https://www.moex.com/en/derivatives/precious-metals-futures.aspx  
+[29] GOLD futures tick parameters. https://www.moex.com/s1085  
+[30] OF10 calendar spread examples. https://www.moex.com/ru/derivatives/spreads/spread-info.aspx?code=OF10-6.18-9.18  
+[31] Стратегии торговли нефтью Brent/WTI. https://www.moex.com/a7164  
+[32] MOEX oil strategies page – Brent/WTI spread description. https://www.moex.com/en/derivatives/oil-strategy.aspx  
+[33] GZ – Futures on Gazprom ordinary shares. https://www.moex.com/en/contract.aspx?code=GZ-12.26  
+[34] AU – Futures on AUD/USD Exchange Rate. https://www.moex.com/en/contract.aspx?code=AU-12.26  
+[35] Futures on precious metals – GOLD, SILV. https://www.moex.com/en/derivatives/metals-futures.aspx  
+[36] Derivatives tariffs 2026 (current edition). https://fs.moex.com/files/3838  
+[37] NCC tariffs – clearing services percentages. https://www.moex.com/s132  
+[38] Futures belongs to group of Commodity Contracts – exchange commission 0.007590%. https://www.moex.com/en/faq/derivatives/fees.aspx  
+[39] Announcement of fee changes on derivatives market 2025–2026. https://www.moex.com/n111111  
+[40] BCS broker futures commission change to 0.1%. https://www.bcs-express.ru/novosti-i-analitika/izmenenie-komissii-po-sdelkam-s-fiiuchersami  
+[41] MOEX parameters page for futures & options codes. https://www.moex.com/s1085  
+[42] Market maker program – maximum bid‑ask spread requirements. https://www.moex.com/en/listing/market-makers.aspx  
+[43] LQDT description – largest liquidity ETF in Russia. https://cbonds.ru/funds/5989/  
+[44] Ganapathy Vidyamurthy. Pairs Trading: Quantitative Methods and Analysis. Wiley, 2004. https://download.fimsschools.com/English/Quantitative%20Methods%20and%20Analysis.pdf  
+[45] Pairs Trading table of contents – cointegration, testing tradability, trading design. https://download.fimsschools.com/English/Quantitative%20Methods%20and%20Analysis.pdf#page=85  
+[46] Ernest P. Chan. Algorithmic Trading: Winning Strategies and Their Rationale. Wiley, 2013. https://onlinelibrary.wiley.com/doi/book/10.1002/9781118676998  
+[47] Chan – Chapter 5 “Mean Reversion of Currencies and Futures” (pp. 107–131). https://www.oreilly.com/library/view/algorithmic-trading-winning/9781118746912/OEBPS/9781118746912_epub_c05.htm  
+[48] Structural break tests overview (Chow, Bai‑Perron, CUSUM). https://en.wikipedia.org/wiki/Structural_break  
+[49] Dallas Fed – Treasury cash‑futures basis trade economics. https://www.dallasfed.org/research/economicreview/2020/er2002  
+[50] Research on constraints on carry spreads vs inverted spreads. https://www.federalreserve.gov/econres/feds/carry-trades-and-basis.pdf  
+[51] Chan – exit after 3×half‑life rule for mean‑reverting spreads. https://github.com/prabakar2610/TradingBooks/blob/master/Algorithmic%20Trading%20-%20Winning%20Strategies%20and%20Their%20Rationale%202013.pdf  
+[52] Hedge ratio estimation methods for spreads (OLS, TLS). https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1725505  
+[53] MOEX investing strategies – futures leverage ~1:10. https://www.moex.com/en/education/strategy-futures.aspx  
+[54] Saxo – rolling expiring futures positions with spreads. https://www.home.saxo/insights/content-hub/articles/2020/05/rollover-futures-contracts  
+[55] BCS Express – clearing execution fee charged if you stay to expiry. https://bcs-express.ru/novosti-i-analitika/birzhevye-komissii-esli-ostatsia-na-eksperatsiia  
+[56] Robert Carver. Systematic Trading. Harriman House, 2015. https://www.harriman-house.com/systematictrading  
+[57] Carver – overview of volatility targeting, position sizing, trading speed. https://qoppac.blogspot.com/p/systematic-trading-start-here.html  
+[58] Google Books – Pairs Trading contents (Ch.5,7,8,10). https://books.google.com/books?id=FTFuPFx0hdcC&pg=PA85  
+[59] Systematic Trading structure (theory, toolbox, fitting, portfolio construction). https://www.systematicmoney.org/systematic-trading-information

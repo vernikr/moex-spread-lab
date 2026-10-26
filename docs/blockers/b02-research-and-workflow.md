@@ -1,6 +1,6 @@
 # b02 — Workflow and evaluation definitions
 
-Status: open. Stage-2 prompts delivered; no research findings received.
+Status: open. Stage-2 prompts delivered; reports received, validation and evidence acceptance pending.
 
 - b02.1 — A-06/A-15: define trade/intervention quota, availability and response assumptions, including emergencies. Owner: user; R08 supplies a workflow assessment.
 - b02.2 — A-11/A-12/A-33: validate the comparison/tax convention and criteria for usefulness beyond LQDT. Loss basis is confirmed; a 90-day formal review is provisionally selected without forced exits/resets. Owner: R05/R07/R10, user for tax/workflow facts.

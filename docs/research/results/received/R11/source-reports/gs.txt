@@ -1,0 +1,704 @@
+# R11 — Free-resource feasibility, reliability and later setup plan
+
+**Research cutoff: 22 October 2026.** The pack preparation date, 7 October 2026, is not the cutoff used here.
+
+**Scope:** public-source desk research, workload estimates and a proposed later measurement plan. No VPS connection, port scan, installation, deployment, broker-account check, Telegram message, backtest or performance measurement was performed.
+
+## 1. Decision summary
+
+**The defensible starting direction is laptop-based research plus a small, resource-capped VPS monitoring role—but only if later measurements establish sufficient shared headroom without harming the VPN.** This is a conditional option, not a selected implementation stack.
+
+The embedded daily and watchlist-snapshot workloads are modest in record count. The main threats are not the number of candidate pairs: they are **unbounded historical downloads, repeated full-payload retention, memory-heavy research, overlapping jobs, growing temporary files and an inability to distinguish stale information from healthy monitoring**. A free resource that sleeps, loses its filesystem or changes quotas cannot fill a durable monitoring role merely because its advertised RAM is generous.
+
+Five constraints should govern later choices:
+
+1. **Protect the existing host first.** The 250–350 MB allowance is shared, not a project entitlement. If the other workload already consumes it, the project’s permitted allocation may be zero.
+2. **Keep risk monitoring independent of research execution.** Research may pause or fail without silently stopping freshness checks, ledger persistence, alert dispatch or missing-heartbeat detection.
+3. **Separate availability from permission.** MOEX publicly documents free delayed data, but this does not establish several years of free futures history, every field, every timeframe or unrestricted downstream use. Its older developer manual contains materially narrower historical-access language. [MOEX, “Interfaces,” ISS section](https://www.moex.com/s3630) [MOEX, ISS Developer Manual v1.4, ©2016, access limitations](https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0)
+4. **Make reliability version-specific.** SQLite’s current documentation identifies a WAL corruption race fixed in 2026, including selected backports. The application’s actual SQLite library and patch provenance must therefore be checked before choosing concurrent WAL operation. [SQLite, “Write-Ahead Logging,” WAL-reset bug section](https://www.sqlite.org/wal.html)
+5. **Treat Telegram and free AI/cloud services as external dependencies, not safety guarantees.** Telegram API success is not user action or a trade fill; free notebooks and sleeping Spaces are not substitutes for durable, independently observed monitoring. [Telegram, Bot API](https://core.telegram.org/bots/api) [Google Colab, FAQ](https://research.google.com/colaboratory/intl/en-GB/faq.html) [Hugging Face, Spaces Overview](https://huggingface.co/docs/hub/en/spaces-overview)
+
+**No paid service is necessary to complete the next read-only assessment.** Conversely, this report does not establish that an entirely free arrangement can safely support unattended exposure. That conclusion requires measured resources, verified data rights, defined human coverage and tested recovery.
+
+---
+
+## 2. Inputs actually used and evidence boundaries
+
+### What was read
+
+The complete user prompt was the only project-specific input. Its hardware, operating-system versions, existing VPN, financial safeguards and workload ranges are treated as **user-supplied assertions**, not verified inventory.
+
+Public documentation was read for MOEX ISS, Telegram, BCS Trade API, SQLite, Ubuntu resource controls, Linux pressure metrics, DuckDB, Gemini API, Hugging Face and Google Colab. No other Rxx investigation, repository, attachment, server inventory or account confirmation was available.
+
+### How to interpret the numbers below
+
+- **Planning input:** supplied by the user.
+- **Derived estimate:** arithmetic using stated inputs and additional assumptions disclosed here.
+- **Proposed criterion:** a later acceptance threshold, not an observed capability or vendor guarantee.
+- **Unknown:** requires later observation, documentation or approval.
+
+Access date for all cited pages is **22 October 2026**. Publication, effective and version dates are identified separately where available. Undated live documentation establishes what the page says at this cutoff—not when the capability first became available.
+
+---
+
+## 3. Workload envelope: small collections, potentially large retention
+
+### 3.1 Dimensioning assumptions
+
+Use:
+
+\[
+C=\text{contracts collected daily},\quad
+U=\text{unique contracts in the snapshot watchlist}
+\]
+
+\[
+S=\left\lceil\frac{60H}{I}\right\rceil,\qquad
+R_{\text{day}}=C+US,\qquad
+R_{\text{year}}=D(C+US)
+\]
+
+Here, \(H\) is the daily snapshot coverage window in hours, \(I\) the interval in minutes and \(D\) the collection days per year.
+
+For this calculation:
+
+- \(C=30,100,300\).
+- Candidate pairs = 5, 15, 30.
+- \(U=10,30,60\): conservatively two distinct contracts per pair. Shared legs reduce this.
+- \(D=252\) is an **arithmetic convention**, not a verified MOEX calendar.
+- The 24-hour upper case is a **coverage stress envelope**, not a claim that these contracts trade continuously.
+- One observation per contract per interval is assumed. Revisions, retries and duplicated full responses require separate allowances.
+
+| Planning case | Daily universe \(C\) | Pairs / unique watchlist legs \(U\) | Coverage / interval | Observations per collection day | Per year | Three years |
+|---|---:|---:|---|---:|---:|---:|
+| Low | 30 | 5 / 10 | 12 h / 60 min | 150 | 37,800 | 113,400 |
+| Middle | 100 | 15 / 30 | 18 h / 30 min | 1,180 | 297,360 | 892,080 |
+| Upper | 300 | 30 / 60 | 24 h / 15 min | 6,060 | 1,527,120 | 4,581,360 |
+
+These are observation counts, **not necessarily API request counts**. A permitted endpoint may return several instruments or historical records per response.
+
+An event-based virtual ledger and low-volume notifications should be dimensioned separately. A suitable initial stress envelope is **100–1,000 ledger/outbox events per day**, explicitly a testing assumption rather than an expected signal rate. Bursty incident alerts matter more than the daily average.
+
+### 3.2 Storage sensitivity
+
+Assume **0.5–2 KiB per effective observation**, combining compact retained source material, normalized values, lineage and an allowance for indexing. This is an unmeasured planning range, not a source-specific payload measurement.
+
+\[
+B_{\text{data}}=R_{\text{year}}\times Y\times b\times v
+\]
+
+where \(Y\) is retention in years and \(v\) is the average retained-version multiplier.
+
+| Case | Three-year data at \(v=1\) | Interpretation |
+|---|---:|---|
+| Low | 0.054–0.216 GiB | Small enough that operational overhead may dominate |
+| Middle | 0.425–1.702 GiB | Plausible local archive; VPS placement still needs disk negotiation |
+| Upper | 2.185–8.739 GiB | Potentially a large fraction of the nominal 20 GB host before backups and temporary files |
+
+**Not included:** operating system, VPN data, existing workload, packages, logs, reference-data revisions, temporary downloads, database journals/WAL, backup staging or an additional local copy.
+
+Important sensitivities:
+
+- Halving the snapshot interval approximately doubles its contribution.
+- Extending retention from three to five years multiplies retained observations by \(5/3\).
+- Two retained versions on average double the corresponding storage.
+- Collecting all components on 365 rather than 252 days multiplies the table by approximately **1.45**.
+- Rotating expired contracts through the universe can increase lifetime instrument count beyond the concurrently active 300.
+- An unbounded “save the entire response every poll” policy can invalidate the compact-byte assumption.
+
+For comparison, **daily-only history for 300 contracts over three years** is 226,800 observations: approximately **111–443 MiB** under the same byte assumption. That is a strong reason to measure daily collection first rather than pre-allocate the upper snapshot case.
+
+### 3.3 Network and CPU sensitivity
+
+For an intentionally simple stress model, suppose each daily observation requires a separate request, with:
+
+- **8–64 KiB wire traffic per request**, including response and protocol allowance;
+- **5–100 ms application CPU per request**, including parsing and persistence-related work, but excluding large research jobs.
+
+These assumptions must later be replaced with measurements.
+
+| Case | Assumed requests/day | Estimated network/day | Estimated CPU seconds/day |
+|---|---:|---:|---:|
+| Low | 150 | 1.2–9.4 MiB | 0.75–15 |
+| Middle | 1,180 | 9.2–73.8 MiB | 5.9–118 |
+| Upper | 6,060 | 47.3–378.8 MiB | 30.3–606 |
+
+Even the upper CPU estimate averages roughly **0.04–0.70% of one CPU across a full day**, but that average conceals bursts. TLS setup, compression, synchronous commits, interpreter startup and a backlog processed at once can produce much higher short peaks.
+
+A broker stream is a different workload:
+
+\[
+B_{\text{stream}}=
+\text{received messages/sec}\times
+\text{mean message bytes}\times
+\text{connected seconds}
+\]
+
+**Subscription limits do not reveal incoming message rate.** Do not reuse these snapshot estimates for order-book streams.
+
+### 3.4 Bounded collection and portable output requirements
+
+Proposed constraints for later testing:
+
+- Start with **one network request in flight** on the VPS.
+- Test bounded chunks, initially no more than **1,000 records or 5 MiB decoded input**, whichever comes first.
+- Bound request duration, response size, retry count, retry age and total job runtime.
+- Checkpoint after each committed page/chunk: source, instrument, interval, requested range, cursor, last committed key and response hash.
+- Advance the checkpoint only after the associated data commit succeeds.
+- Resume interrupted jobs; do not restart a multi-year backfill from the beginning.
+- Keep large history downloads and analytical scans on the laptop.
+- Prevent overlapping collectors and overlapping migrations.
+- Count backlog by records, bytes and oldest age—not merely “job running.”
+
+Portable research outputs should contain a manifest, source URLs, retrieval timestamps, event/trading dates, schema version, units, instrument mapping, code/dependency identifiers, hashes and known gaps. Keep the immutable inputs needed to reproduce conclusions; avoid tying research outputs to a running dashboard or cloud session.
+
+---
+
+## 4. Resource-budget alternatives—not a final stack
+
+### 4.1 Negotiate the shared budget explicitly
+
+Let:
+
+\[
+B_{\text{project}}
+\leq
+B_{\text{shared}}-B_{\text{other workload}}
+\]
+
+This is necessary but insufficient. Whole-host headroom must also cover the OS, VPN, kernel memory, filesystem activity and safe recovery.
+
+The advertised “1 GB” must not silently be treated as 1 GiB available to applications. The **2 GB swap is not an additional reliable RAM budget**. Linux exposes CPU, memory and I/O stalls through `/proc/pressure/`; its documentation describes extended simultaneous stalls as thrashing. Supporting excerpt: “all non-idle tasks are stalled on a given resource simultaneously.” [Linux kernel, “PSI — Pressure Stall Information”](https://docs.kernel.org/accounting/psi.html)
+
+### 4.2 Candidate envelopes to test
+
+All figures below are **engineering estimates and proposed allocations**, not measurements or installed-software claims. Memory ranges refer to the aggregate project workload, including its children; later admission should use cgroup accounting, not only one process’s RSS.
+
+| Alternative | VPS steady / peak memory estimate | Proposed CPU envelope | Proposed project disk cap | Suitable role |
+|---|---:|---|---:|---|
+| **A. Laptop-first, thin VPS monitor** | 40–80 / 100–140 MiB | 1–3% long-run target; initially 15–20% of one CPU cap | 0.5–1 GiB, including bounded logs and staging | Freshness, virtual-ledger events, outbox, small daily pull |
+| **B. VPS daily collection plus watchlist snapshots** | 60–110 / 160–220 MiB | 2–5% long-run target; initially 20–25% cap | 1.5–3 GiB | Only if the shared budget and peak overlap permit it |
+| **C. Laptop-only research and monitoring** | No project VPS allocation | None | None on VPS | Lowest VPN risk; monitoring unavailable while laptop sleeps/offline |
+| **D. Research engine, history rebuilds or server database on VPS** | Not admitted under this desk assessment | Potentially disruptive bursts | Potentially substantial temporary space | Defer unless evidence overturns the lightweight assumptions |
+
+For laptop research, test an initial **2–6 GiB working set**, one job at a time, preserving roughly **4 GiB of system headroom**. These are provisional limits to benchmark, not a promise that a particular package will fit. Do not include GPU acceleration in the feasibility case; no CUDA capability is assumed.
+
+**Alternative A is the first candidate to benchmark.** Alternative B should be admitted only if A passes and the additional workload has a demonstrated purpose. If neither fits, keep the project off this VPS rather than consume VPN reserves.
+
+### 4.3 Controls must apply only to project units
+
+Ubuntu’s Noble resource-control documentation distinguishes:
+
+- `MemoryHigh`: throttling/reclaim pressure, not a hard ceiling.
+- `MemoryMax`: last-line memory containment that may invoke an OOM kill inside the unit.
+- `MemorySwapMax`: a unit-specific swap ceiling.
+- `CPUQuota`: maximum CPU time relative to **one CPU**.
+- `IOWeight`: relative I/O sharing, not guaranteed bandwidth.
+
+Supporting excerpts include “use `MemoryHigh=` as the main control mechanism” and `MemoryMax=` “as the last line of defense.” [Ubuntu 24.04/Noble, `systemd.resource-control(5)`, Memory, CPU and I/O sections](https://manpages.ubuntu.com/manpages/noble/man5/systemd.resource-control.5.html)
+
+Later configuration should target a dedicated project unit/slice only. **Do not change global swap policy, VPN units, root slices, firewall rules or network tuning to make the project fit.** Verify controller availability and effective limits before relying on them.
+
+---
+
+## 5. Runtime, storage and UI comparison
+
+### 5.1 Runtime and execution model
+
+| Candidate | Why test it | Main trade-off | Conditional placement |
+|---|---|---|---|
+| Minimal scripting runtime with bounded I/O and few dependencies | Easy inspection and iteration; suitable candidate for small collection jobs | Imported libraries and temporary objects can dominate peaks | Laptop research and possibly thin VPS worker |
+| Small compiled executable | Candidate for a compact deployment and explicit resource handling | Build/update/reproducibility burden; low memory is not automatic | Compare only if the scripting candidate fails its envelope |
+| Analytical runtime with dataframe/columnar libraries | Convenient for larger scans and research | Extra dependencies, materialization, parallelism and spill must be bounded | Laptop by default |
+| Containerized deployment | Can package dependencies and provide a repeatable image | Adds image storage and administration; does not create headroom | Only if an identified operational need justifies it |
+| Multiple services/message broker | Can separate independently scaled components | Adds state, failure modes and operational overhead | No demonstrated need at this workload |
+
+The requirement is **fault and resource isolation**, not a microservice count. A small collector, a supervisor/freshness function and a transactional outbox may be separate processes or carefully bounded components. A heavy research task must not share an uninterruptible execution path with alert dispatch.
+
+### 5.2 Storage candidates
+
+| Storage option | Strength | Limitation / required discipline | Best-fit role |
+|---|---|---|---|
+| Immutable source files plus manifest | Transparent provenance and easy transfer | Partial writes, duplicates and directory growth require explicit handling | Raw archive and portable handoffs |
+| SQLite rollback-journal mode | Candidate for transactional ledger, checkpoints and outbox without a database server | Keep writes short; coordinate readers/writers | First transactional candidate to test |
+| SQLite WAL mode | Useful concurrency option | Patch verification, checkpoints, WAL growth and backup handling are mandatory | Conditional alternative, not an automatic default |
+| DuckDB in-process | Analytical option for local research | Version-specific concurrency; memory setting is not total-process containment | Laptop analytics |
+| Client/server database | Stronger coordination where concurrency demands it | Service, memory, upgrades, authentication and backup overhead | Defer until a measured need appears |
+
+SQLite states: **“SQLite only supports one writer at a time per database file.”** That is compatible with a serialized, low-volume ledger, but argues against independent writers and long-held transactions. [SQLite, “Appropriate Uses For SQLite,” many concurrent writers](https://www.sqlite.org/whentouse.html)
+
+#### SQLite: version and durability gates
+
+The current WAL documentation says the WAL-reset bug was found on **3 March 2026**, fixed in **3.51.3, released 13 March 2026**, with backports in **3.44.6 and 3.50.7**. The stated trigger requires WAL mode and multiple connections attempting writes or checkpoints concurrently. Supporting excerpt: “two or more database connections … attempt to write or checkpoint at the same instant.” [SQLite, “Write-Ahead Logging,” WAL-reset bug](https://www.sqlite.org/wal.html)
+
+Therefore:
+
+- Inspect the **library loaded by the chosen runtime**, not just the standalone CLI version.
+- Check distribution backport evidence; a lower base version does not by itself prove vulnerability.
+- Do not change a host library used by other services merely to satisfy this project.
+- Until resolved, test rollback journaling or a single-connection design on a private copy.
+
+WAL also requires same-host access; its documentation says it “does not work over a network filesystem.” Long-lived readers can prevent checkpoints and allow WAL growth. `synchronous=FULL` syncs the WAL on each commit; `NORMAL` omits that per-commit sync. For acknowledged ledger, approval and outbox state, test durable settings rather than silently accepting weaker crash durability. [SQLite, “Write-Ahead Logging,” concurrency, checkpointing and performance sections](https://www.sqlite.org/wal.html)
+
+Use a supported consistent-backup method. SQLite’s Online Backup API produces a destination that becomes a **“snapshot”** of the source; copying only a live main database file is not the proposed backup procedure. [SQLite, “Using the SQLite Online Backup API”](https://www.sqlite.org/backup.html)
+
+#### DuckDB: analytical option, not a reason to add a server
+
+The documentation retrieved at this cutoff redirects to **DuckDB 2.0**. It distinguishes in-process read/write operation from server-mediated alternatives. For this project, assess the in-process analytical option against immutable snapshots; the newly documented server capability does not justify another server on the VPN host. [DuckDB 2.0, “Concurrency”](https://duckdb.org/docs/2.0/connect/concurrency.html)
+
+Its memory documentation warns: **“actual memory consumption can be higher than the specified memory limit.”** It also documents configurable threads and temporary spill location. Any later test therefore needs an OS-level memory envelope and explicit temporary-disk limit. [DuckDB 2.0, “Pragmas,” resource management](https://duckdb.org/docs/2.0/configuration/pragmas.html)
+
+### 5.3 Consistency, migrations and reproducibility
+
+Regardless of engine:
+
+- Commit ledger event, derived state and notification intent atomically where feasible.
+- Otherwise use an explicit recoverable commit protocol and reconciliation—not presumed cross-file atomicity.
+- Keep raw source revisions immutable; record corrections as new versions.
+- Store schema version and migration identifier.
+- Test migrations on a copy, with a pre-migration backup and compatibility check.
+- Prefer rebuilding derived tables from immutable inputs over mutating original evidence.
+- Export stable, documented formats rather than requiring a proprietary running environment.
+- Keep one authoritative writable ledger; analytical copies are not independent authorities.
+
+### 5.4 Private dark-only UI
+
+Stage 5 needs no public dashboard. Compare:
+
+1. A dark static report opened locally.
+2. A localhost-only UI on the laptop.
+3. A private VPS UI reached through a later-approved access method.
+
+The UI must be a read-only consumer of snapshots or short queries, not a prerequisite for collection, risk checks or alerts. Avoid holding a long analytical transaction against the live ledger. **Do not reuse port 443 or change the existing VPN/reverse-proxy configuration to expose it.**
+
+---
+
+## 6. Stable seams for data, ledger, alerts and later automation
+
+A few explicit contracts are sufficient; speculative frameworks are not.
+
+| Seam | Minimum information | Failure behavior |
+|---|---|---|
+| Market observations | Provider, instrument/contract, field units, source event time, retrieval time, trading date/session, delay entitlement, revision and quality | Missing/stale remains explicit; never silently substitute “latest” |
+| Instrument/calendar reference | Stable identity, expiry, multiplier, tick, currency, effective dates and source version | Block dependent calculations on unresolved material changes |
+| Virtual ledger | Signal eligibility, finite-capital decision, stale/rejected/unfilled/partial outcomes, state version | No discretionary omission or unlimited virtual funding |
+| Risk/account view | Pilot attribution, account interaction, external flows, collateral incidents, funding approvals and rule version | Freeze new exposure when attribution or reconciliation is uncertain |
+| Notification transport | Durable event ID, severity, creation/expiry, attempts, API result, acknowledgement | Retry safely; distinguish accepted, acknowledged and acted upon |
+| Later broker adapter | Capabilities, permissions, token expiry, rate limits, order identity, status and reconciliation | Ambiguous state must not trigger blind resubmission |
+
+### 6.1 What BCS public documentation supports
+
+The current BCS introduction lists futures among supported instruments, market and limit orders, portfolio access, and access/refresh tokens. It states **24-hour access tokens** and **90-day refresh tokens**, with read-only and trading/read permissions. Supporting excerpt: “Access-токен имеет срок жизни 24 часа”; refresh-token permissions include “Только для чтения.” [BCS, Trade API introduction and authorization](https://trade-api.bcs.ru/) [BCS, *Инструкция по использованию API*, p. 5; undated PDF](https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf)
+
+Its current restrictions page documents:
+
+| Interface/service | Published limit |
+|---|---|
+| HTTP portfolio, limits, reference data, orders, trades, order status and market data | 10 requests/second for each listed service |
+| HTTP non-trading operations | 3 requests/second |
+| Orders | 200,000 requests/day also shown |
+| Market-data WebSocket | 20 simultaneous connections; 10 client messages/second; 100 instruments per connection |
+| Portfolio / limits / margin-indicator WebSockets | 2 connections each |
+| Order WebSocket | 4 connections |
+
+The page also says HTTP limits apply per client account and recommends handling `429` with exponential delay. Its WebSocket table has an **“8кб”** entry under transmitted-data volume, but the retrieved text does not establish a bytes-per-second meaning; **do not dimension network throughput from it**. [BCS, “Ограничения,” HTTP and WebSocket tables; undated live documentation](https://trade-api.bcs.ru/restrictions)
+
+The official PDF describes order-book, quote, anonymized-trade and candle streaming sections. It also describes a client-generated UUID, `clientOrderId`, “для отслеживания и предотвращения дублирующих заявок” — for tracking and preventing duplicate orders. That supports retaining a stable order identifier; it does **not alone establish every retry window, timeout outcome or exactly-once guarantee**. [BCS, API instruction, p. 25 and market-data sections pp. 50–66; undated](https://cdn.bcs.ru/static/bcs/files/trade-api-docs.pdf)
+
+### 6.2 What remains unverified
+
+This research does not establish:
+
+- The user’s BCS account permissions, tariffs, market-data entitlement or qualified-investor/KPUR recognition.
+- Atomic execution of arbitrary two-leg spreads.
+- Stream replay, sequence-gap recovery or exactly-once order effects.
+- All cancellation/fill races and session-boundary behavior.
+- VTB account integration, collateral eligibility or margin consequences.
+
+The BCS order-status documentation supports lookup of the user’s order by identifier, returning 404 when absent. That is useful for a future reconciliation seam, but it is not permission to interpret every temporary absence as a safe reason to resend. [BCS, “Заявки” / order-status description](https://trade-api.bcs.ru/http/operations)
+
+A later automation gate must resolve ambiguous submissions through documented status/trade/account reconciliation. Replaying an event log must **never** automatically replay historical trade commands.
+
+---
+
+## 7. Telegram: inexpensive notifications, incomplete assurance
+
+### 7.1 Current costs, limits and recipient authorization
+
+Telegram’s official FAQ says bots can message users **“at no cost”** by default. It advises no more than approximately one message per second in one chat, limits groups to 20 messages/minute, and describes roughly 30 messages/second for bulk broadcasts before paid broadcasting. [Telegram, “Bots FAQ,” broadcasting limits; undated live page](https://core.telegram.org/bots/faq)
+
+Paid broadcasting is irrelevant to this low-volume private project. The documentation describes up to 1,000 messages/second and **0.1 Stars** for messages above the free broadcast amount. Keep paid broadcasting disabled; no Stars purchase or foreign payment method is needed for the proposed low-volume use. [Telegram, Bot API, paid broadcasts](https://core.telegram.org/bots/api)
+
+A bot cannot initiate a private conversation: **“A user must either add them to a group or send them a message first.”** User initiation is necessary but is not project authorization. [Telegram, “Bots,” how bots differ from users](https://core.telegram.org/bots)
+
+Later setup should therefore require:
+
+- Explicit owner initiation.
+- An allowlist of numeric user and chat IDs.
+- Separate authorization for commands and recipient management.
+- No automatic authorization based on username, forwarded message or group membership.
+- No broker trading command through Telegram in the initial monitoring stage.
+
+Telegram identifies accounts using phone numbers. This research did not test registration, recovery or delivery using the user’s existing number/network; it does not establish that a foreign number is necessary or that local delivery is guaranteed. [Telegram, Privacy Policy, §3.4](https://telegram.org/privacy/ru)
+
+### 7.2 Persistence, retries and deduplication
+
+Proposed outbox states:
+
+`created → pending → API accepted → acknowledged → resolved/expired`
+
+“API accepted” must not be labelled “delivered and read.” Telegram’s API describes successful requests through `ok=true` and returned results; it does not thereby report an investment action or broker fill. [Telegram, Bot API, making requests and `sendMessage`](https://core.telegram.org/bots/api)
+
+Required behavior:
+
+- Persist the notification intent before attempting transmission.
+- Give each event a stable ID and visible creation time.
+- Respect `retry_after` after flood-control errors.
+- Use bounded exponential backoff with jitter for transient failures.
+- Surface permanent failures such as recipient blocking or loss of chat access.
+- Give ordinary signals an expiry time; do not present an old recovered signal as current.
+- Preserve incident history while consolidating repeated reminders.
+
+The API defines `retry_after` as the seconds to wait before repeating a flood-controlled request. [Telegram, Bot API, `ResponseParameters`](https://core.telegram.org/bots/api)
+
+A network timeout after Telegram accepts a message but before the application records the result creates an ambiguous outcome. Without a documented idempotent send operation, **exactly-once delivery should not be claimed**. Prefer at-least-once handling for serious incidents, with stable event IDs and duplicate-labelled retries.
+
+For inbound updates, Telegram retains them for no more than **24 hours**. An update is confirmed once `getUpdates` uses an offset greater than its `update_id`; persist the processed action and cursor before advancing acknowledgement. [Telegram, Bot API, getting updates and `getUpdates`](https://core.telegram.org/bots/api)
+
+Outbound long polling is the first option to compare because it avoids a public webhook listener. If webhooks are ever chosen, use the documented secret-token header and do not rely on indefinite retries: Telegram promises only a “reasonable amount of attempts.” [Telegram, Bot API, `setWebhook`](https://core.telegram.org/bots/api)
+
+### 7.3 Privacy and independent outage detection
+
+Telegram cloud chats are not Secret Chats. Its policy states that cloud-chat messages and media are stored on its servers. Use minimal alerts: event ID, severity, freshness, instrument identifiers and required review—not account numbers, tokens, full holdings or core-portfolio balances. [Telegram, Privacy Policy, §3.3.1](https://telegram.org/privacy/ru)
+
+`protect_content` restricts forwarding and saving; it is not a general confidentiality guarantee. [Telegram, Bot API, `sendMessage`](https://core.telegram.org/bots/api)
+
+**A stopped host cannot reliably announce its own death.** Later monitoring needs an observer outside the VPS failure domain. An awake laptop can provide this during supervised trials, but cannot establish 24/7 coverage while asleep. If Telegram itself is unavailable, sending another Telegram alert is not an independent fallback.
+
+The project must define a manual checking deadline or separately approved fallback. Until then, it should not claim an unattended safety service.
+
+---
+
+## 8. Failure budget, safe stopping and recovery
+
+### 8.1 Proposed state model
+
+| State | Permitted behavior |
+|---|---|
+| **Healthy** | Collection and eligible virtual processing within approved limits |
+| **Degraded** | Continue risk/freshness checks; suspend expensive research and reduce optional collection |
+| **Entry-blocked** | No new exposure authorization; record stale/rejected outcomes |
+| **State-uncertain** | No automated order issuance; reconcile broker/ledger state |
+| **Recovery** | Validate restore and replay in non-executing mode |
+| **Operator-required** | Follow the predefined manual incident procedure |
+
+“Stop safely” means first stopping **optional work and new exposure**, not abandoning existing-position monitoring. It also does not mean “automatically flatten”: that action requires verified broker capabilities, account state and a separately approved execution policy.
+
+### 8.2 Failure/recovery/backup table
+
+All thresholds are proposed initial test criteria.
+
+| Failure | Detection / provisional budget | Containment | Recovery and required evidence |
+|---|---|---|---|
+| Process crash/restart loop | Missing 60-second heartbeat; flag after two missed intervals; investigate repeated restarts | Restart with backoff; never restart blindly at high frequency | Reopen durable state, verify checkpoint, reconcile uncertain events |
+| Stale/missing market data | Source-event and retrieval age against source delay and expected session | Block new signals; never forward-fill as fresh | Re-fetch bounded gap; preserve original and corrected versions |
+| External API outage / 429 | Timeouts, error rate and backlog age | Bounded retries; pause backfill before live monitoring | Resume from committed cursor; document missing coverage |
+| Disk pressure/full | Proposed warning below 3 GiB free or agreed recovery workspace; critical below 2 GiB | Stop optional writes before reserve is consumed; never delete VPN files | Remove only approved project temporaries; restore/rebuild if state invalid |
+| Inode exhaustion | Filesystem inode availability | Stop new file creation; avoid tiny-file explosion | Compact/rotate only project-owned files after evidence is preserved |
+| Memory/swap pressure | `MemAvailable`, swap-in/out, PSI and cgroup events | Kill/pause research first; project-local caps | Reduce batch size/imports; repeat coexistence test |
+| CPU/I/O contention | Job duration, scheduling lag, PSI and approved VPN health indicator | Throttle/pause project work | Re-admit only after baseline health returns |
+| Day/session/holiday boundary | Versioned calendar and contract/session identifiers | No assumption that midnight equals a trading-day boundary | Reconcile final/session records; distinguish closed market from outage |
+| Clock jump/drift | Time-sync status, UTC timestamps, monotonic elapsed time | Proposed entry block if unsynchronized or measured offset exceeds 1 second | Re-establish verified time; do not rewrite original event times |
+| Job overlap | Per-job lock and observed running-job identity | Skip duplicate work; record skipped run | Resume bounded backlog; investigate hung owner |
+| Corrupt state / schema mismatch | Integrity check on copy, version and invariant checks | Quarantine; disable execution | Restore known-good backup and replay immutable events |
+| Telegram unavailable | Outbox age, error status, missing external heartbeat | Persist events; activate agreed manual fallback | Send a current incident summary, not a storm of stale signals |
+| Broker disconnect/ambiguous order | Account/order/trade reconciliation | Do not blindly resubmit; block new exposure | Resolve status under broker-specific rules |
+| Backup/restore failure | Backup age, manifest/hash and restore drill | Mark recovery capability unavailable | Repair backup path; prove usable restore before re-admission |
+| VPS/provider loss | Observer outside host | Follow manual account-risk plan | Restore project on separate approved environment; do not improvise VPN rebuild |
+
+For delayed market data:
+
+\[
+\text{allowed observation age}
+=
+\text{documented source delay}
++\text{collection interval}
++\text{bounded transport allowance}
+\]
+
+A 15-minute-delayed feed cannot support a “one minute current” health label. Conversely, unchanged prices during a closed session are not necessarily stale; calendar context is required.
+
+### 8.3 Recovery objectives and backup policy
+
+Proposed objectives:
+
+- **Acknowledged local events:** survive ordinary process crashes after durable commit.
+- **Host-loss recovery point:** no older than 24 hours initially; any newer irrecoverable approvals or broker actions must be reconciled externally.
+- **Local restart/recovery:** target within five minutes after the host is healthy.
+- **Host-loss restore:** target within four hours **when the operator is available**, not a 24/7 SLA.
+
+A daily backup alone cannot guarantee zero loss of approved funding records after total host loss. Stronger requirements need more frequent independent copies or a separate durable approval record.
+
+Initial backup comparison:
+
+- Daily consistent project-state backup.
+- Seven daily and four weekly retained copies, subject to measured size.
+- At least one copy outside the VPS.
+- Encryption for account-linked data; recovery key available independently.
+- Monthly restore drill and a drill before material migrations.
+- Separate authority and procedure for any existing VPN backup.
+
+Retention deletion must preserve inputs supporting research results. Research reproducibility may require keeping selected point-in-time data longer than routine operational logs.
+
+### 8.4 Account-safety information the monitor must preserve
+
+The software boundary is not the account boundary. Because the pilot shares an account with the core LQDT holding, the later ledger must retain:
+
+- The RUB 30,000 initial pilot allocation and separate approval history.
+- At most RUB 15,000 cumulative **gross** emergency funding; no reuse through recycling sale proceeds.
+- Unapproved broker use of core collateral as an incident.
+- Matched LQDT-counterfactual data with identical true external flows.
+- No double deduction of continuing LQDT return on eligible retained collateral.
+- Cumulative excess result and its high-water mark without resetting losses at review.
+- The supplied provisional warning/action/outer-boundary rules and 90-calendar-day review.
+
+These are **user-supplied, unvalidated rules**, not proven loss limits. Tax treatment, collateral eligibility and broker-specific enforcement remain unresolved. Sale proceeds must not automatically be labelled economic loss.
+
+The 3–90 minute reaction range also means an alert cannot be assumed actionable within a minute. Human duty coverage, intervention quota and response expectations must be defined before claiming effective escalation.
+
+---
+
+## 9. Later benchmark matrix and acceptance gates
+
+### 9.1 Keep observation separate from load testing
+
+**Stage 3:** approved, bounded, read-only observation of the existing host.
+
+**Later local testing:** synthetic fixtures, failure injection and restore/replay on the laptop or another approved scratch environment.
+
+**Only after separate approval:** controlled coexistence tests on the VPS, with project-local caps and an immediate stop procedure.
+
+No benchmark below was executed.
+
+| Workload/check | Steady vs peak values to capture | Suggested measurement method—not executed | Initial go/no-go criterion |
+|---|---|---|---|
+| Existing host baseline | Typical and minimum available RAM; scheduled-job peaks; CPU, PSI, swap and disk | `free -m`; bounded `vmstat`; `/proc/pressure/*`; approved service counters | Observe a complete scheduled-workload cycle; preferably seven days |
+| Runtime idle supervisor | Idle median/p95 and startup peak memory; idle CPU | `/usr/bin/time -v` locally; later project cgroup counters | Fits negotiated envelope with margin; no spin loop |
+| Daily pull, 30/100/300 contracts | Bytes, CPU seconds, elapsed time, peak memory | Bounded permitted fixture or later small public pull | Completes before next deadline; safe resume after interruption |
+| Snapshot cases | 10/30/60 legs; hourly/30-/15-minute cycles | Fixture replay; scheduler lag and queue age | No overlap; each cycle completes within half its interval |
+| Ledger/outbox burst | 100–1,000-event fixture; commit latency and memory peak | Local test harness and process counters | No lost committed events; deterministic state; duplicates identified |
+| Backfill | Per-chunk peak, temporary space and checkpoint frequency | Local bounded historical fixture | Resumable; cannot starve supervisor; no unbounded accumulation |
+| Research scan | Cold-start peak, materialization, threads and spill | Local timing/memory tools; inspect scratch directory | Meets laptop budget; VPS placement denied unless separately proven |
+| Backup/checkpoint overlap | Peak disk space, duration and write stalls | Local copy first; later approved project-only test | Recovery reserve preserved; monitor deadlines unaffected |
+| Restart/timeout/corruption | Missing/duplicate events, restore time | Fault injection on local copies only | Replay cannot issue orders or re-authorize old funding |
+| UI access | Idle and request peak; query duration | Localhost test | UI failure does not affect monitoring; no public listener |
+| Broker adapter | Reconnect, token expiry, status uncertainty and message rate | Documented mocks/sandbox if available; later authorized read-only use | No undocumented assumptions; no blind retry of ambiguous commands |
+
+### 9.2 Provisional whole-host criteria
+
+For a candidate VPS option, start with these **negotiable acceptance thresholds**:
+
+- After reserving the project’s measured incremental peak, retain at least **200 MiB** `MemAvailable`; treat **150 MiB** as an initial abort boundary.
+- No OOM events or unexpected service restarts.
+- No persistent project-induced swapping; do not infer pressure merely from nonzero used swap.
+- Pause project research if memory `full avg60` exceeds **1%** or memory `some avg60` exceeds **5%** for two consecutive minutes. An already pressured baseline is a no-go, not a reason to relax the limit.
+- Preserve at least **3 GiB free disk**, plus enough workspace for the largest planned backup/checkpoint/migration; stop optional writes before **2 GiB**.
+- No missed protected-workload deadlines.
+- Supervisor scheduling lag p99 below **5 seconds** under the admitted workload.
+- No VPN disconnects or degradation beyond a user-agreed baseline tolerance.
+
+The memory thresholds are not universal safety constants. If the protected services need more reserve, they take precedence. If the host is already below these levels, no project load test should begin.
+
+Disk admission should satisfy:
+
+\[
+F_{\text{free}}
+\geq
+B_{\text{next batch}}
++B_{\text{temporary/journal}}
++B_{\text{backup or migration workspace}}
++B_{\text{protected reserve}}
+\]
+
+`IOWeight` or a CPU quota does not prove these criteria will hold; coexistence must be observed.
+
+---
+
+## 10. Stage-3 read-only preflight and later least-privilege prerequisites
+
+### 10.1 Read-only access/preflight checklist
+
+Before any access:
+
+- Confirm the actual provider and host identity.
+- Obtain explicit approval for access method, time window and command list.
+- Confirm which existing scheduled cycle must be observed.
+- Identify a user-approved VPN-health indicator and abort authority.
+- Agree output redaction and storage.
+- Do not request tokens, account credentials or full VPN configurations.
+
+Possible commands, **suggested only**:
+
+| Purpose | Bounded read-only examples |
+|---|---|
+| OS/kernel/systemd inventory | `cat /etc/os-release`; `uname -r`; `systemd --version` |
+| Memory/pressure | `free -m`; `vmstat 1 30`; `cat /proc/pressure/memory`; equivalent CPU/I/O files |
+| Disk/inodes | `df -hT`; `df -i`; approved filesystem metadata |
+| Time state | `timedatectl status`; use an already installed time-client status command if applicable |
+| Existing service health | `systemctl is-active x-ui`; selected `systemctl show` properties |
+| Scheduled jobs | Approved review of `systemctl list-timers --all` and relevant schedules |
+| Existing listeners | `ss -ltn`, local metadata only—not a network scan |
+| Tool versions | Commands for already installed candidate tools; runtime SQLite version and patch provenance |
+
+Do not install a missing tool during this preflight. Avoid broad filesystem scans, unbounded journals and process-environment dumps. `systemctl cat`, logs and command lines may contain secrets; inspect only specifically approved material and redact locally.
+
+### 10.2 No-touch protection list
+
+Without a separate authorized change:
+
+- Preserve ports **22, 443 and 20724**.
+- Do not restart, stop, upgrade or reconfigure Xray, 3X-UI or `x-ui`.
+- Do not read/export their credentials or modify their data.
+- Do not change firewall/nftables/iptables, routing, DNS, interfaces, congestion control or sysctl.
+- Do not alter SSH, certificates, global swap settings or protected timers.
+- Do not run package upgrades, container-daemon installation, stress tests, `fio`, `iperf` or port scans.
+- Do not reboot.
+- Do not expose a dashboard or add a public listener.
+- Do not “clean up” another service’s logs or data to obtain space.
+
+### 10.3 Prerequisites for a later deployment proposal
+
+A later deployment proposal should include:
+
+- Dedicated unprivileged project identity.
+- Access only to project-owned code, data and logs.
+- No general `sudo`, VPN groups or VPN-data access.
+- Project-specific CPU, memory, swap, task and file limits.
+- Explicit writable paths, log caps and backup destination.
+- Reproducible dependency manifest and tested rollback.
+- Owner-approved secrets provisioning.
+- Independent observer/manual fallback.
+- Verified restore/replay and schema-migration tests.
+
+Ubuntu documents `NoNewPrivileges` as preventing privilege gain through `execve`, and `ProtectSystem=strict` as making most of the filesystem read-only inside the service namespace. `ReadWritePaths` can allow specific writable paths. These are candidates for the project service, **not permission to alter protected services**. [Ubuntu Noble, `systemd.exec(5)`, privileges and filesystem namespacing](https://manpages.ubuntu.com/manpages/noble/man5/systemd.exec.5.html)
+
+---
+
+## 11. Minimum security and replay posture
+
+| Area | Minimum requirement |
+|---|---|
+| Secrets | Separate bot, market-data and broker credentials; never put them in repository, report, URL logs, notebook output or shell history |
+| Broker permission | Read-only first; trading authority only at a separately approved gate |
+| Private UI | Local/private access, no default public binding, no token in browser URL |
+| Telegram authorization | Numeric ID allowlist; explicit recipient enrollment; safe handling of forwarded/replayed commands |
+| Logging | Redact headers, tokens, account identifiers and large source payloads; bounded retention |
+| Backups | Encrypt sensitive copies; restrict permissions; keep restore key outside the lost-host failure domain |
+| Dependencies | Pin and record versions; separate project dependencies from VPN dependencies |
+| Network | No global firewall changes; project-local restrictions only after approved testing |
+| Data validation | Bound response size; validate schema, units, timestamps and contract identity |
+| Restore/replay | Default non-executing mode; never replay orders, approvals or notification side effects automatically |
+
+Telegram warns that anyone possessing the bot token has **“full control over your bot.”** Treat token exposure as a revocation/rotation incident, not a harmless log leak. [Telegram, “Bots,” token guidance](https://core.telegram.org/bots)
+
+For replay, distinguish **state reconstruction** from **external action**. Reconstructed state may show that an order was intended; it does not authorize submitting it again. Restored funding approvals must retain their original identity and lifetime allowance effects.
+
+---
+
+## 12. Free services: terms, geography, payment and freshness
+
+### 12.1 Evidence-backed service comparison
+
+| Service | Evidence and applicable date | Consequence |
+|---|---|---|
+| **MOEX ISS** | Current Interfaces page: “delayed data (15 min) is provided for free.” Undated live page. [MOEX](https://www.moex.com/s3630) | Candidate delayed-data source; not proof of every historical field or timeframe |
+| **MOEX historical data** | Developer Manual v1.4, ©2016: “Orderbooks and historical data are only available to the paid subscribers”; history exceptions are described for indices. [MOEX manual](https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0) | Conflict/age requires endpoint- and use-specific clarification; no blanket free-history entitlement |
+| **MOEX settlement prices** | Official notice says settlement-price data are free with 15-minute delay and identifies `SETTLEPRICE_CLR`; publication date was not captured. [MOEX notice](https://www.moex.com/n98831) | Useful field-specific evidence; not proof of all archive permissions |
+| **Telegram Bot API** | Retrieved page identifies Bot API **10.3, 24 August 2026**; ordinary bot messaging free within limits. [Bot API](https://core.telegram.org/bots/api) [FAQ](https://core.telegram.org/bots/faq) | Fits low-volume alerts; no paid-broadcast requirement |
+| **Gemini API** | Additional Terms effective **23 March 2026**; active quotas depend on project/model and capacity is not guaranteed. [Terms](https://ai.google.dev/gemini-api/terms) [Rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) | Optional research aid only; no risk-control dependency |
+| **Hugging Face Spaces** | Current overview says CPU Basic has no hourly cost, but creating compute-based Gradio/Docker Spaces requires a paid plan, with a stated ZeroGPU exception. Undated page. [Overview](https://huggingface.co/docs/hub/spaces-overview.md) | “Possibly free resources” is not confirmed free persistent hosting |
+| **Hugging Face storage** | Current storage page says ephemeral disk is lost on restart/stop and recommends attached Storage Buckets for persistence. Undated page. [Storage](https://huggingface.co/docs/hub/en/spaces-storage) | Do not assume durable local disk or free persistent capacity |
+| **Google Colab** | FAQ: resources “are not guaranteed”; free notebooks can run “at most 12 hours” depending on availability/use and time out when idle. Undated page. [FAQ](https://research.google.com/colaboratory/intl/en-GB/faq.html) | Disposable interactive research only—not monitoring or keep-alive hosting |
+| **Existing VPS** | Provider and contract unknown | Cannot confirm transfer limits, backup inclusion, SLA, permitted workloads or payment continuity |
+
+### 12.2 Gemini geography and data handling
+
+Google’s supported-regions page lists Poland but not Russia at this cutoff. **A VPS in Poland does not establish the user’s residence, service eligibility or permission to route around restrictions.** The user’s reported access is useful context, not verification of every prospective use. [Google, “Available regions for Google AI Studio and Gemini API”](https://ai.google.dev/gemini-api/docs/available-regions)
+
+The terms instruct: **“Do not submit sensitive, confidential, or personal information to the Unpaid Services.”** They also describe human review. The same document contains important EEA/Switzerland/UK data-treatment exceptions and a separate paid-services requirement when making API clients available to users there. Those distinctions require the actual user/client circumstances; host location alone is insufficient. [Google, Gemini API Additional Terms, effective 23 March 2026, Unpaid/Paid Services](https://ai.google.dev/gemini-api/terms)
+
+Keep Gemini outside the deterministic monitoring path. Use only permitted public or sanitized research material. Exact free Flash model identity, quota and account eligibility remain unverified. Google states: **“Specified rate limits are not guaranteed and actual capacity may vary.”** [Google, Gemini API rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+
+### 12.3 Hugging Face payment and availability
+
+Hugging Face’s current overview creates an important distinction between **no hourly CPU Basic charge** and **eligibility to create a compute Space**. Its storage description also differs from older persistent-storage descriptions. Neither live page proves when a transition occurred or what happened to older accounts. [Hugging Face, Spaces Overview](https://huggingface.co/docs/hub/spaces-overview.md) [Spaces Storage](https://huggingface.co/docs/hub/en/spaces-storage)
+
+Its billing page states that individual compute services and PRO use credit-card billing. The retrieved page does not confirm acceptance of the user’s cards, and absence of a Russia-specific statement is not evidence of acceptance. Its Terms, labelled effective **15 September 2022**, require export/sanctions compliance and provide services “as is” and “as available.” [Hugging Face, Billing](https://huggingface.co/docs/hub/en/billing) [Terms of Service](https://huggingface.co/terms-of-service)
+
+No paid upgrade is proposed. Free interactive resources may be tested later only as disposable, permission-compliant research environments.
+
+---
+
+## 13. Data limitations and retrieval outcomes
+
+| Unverified item | Evidence/fallback used and year | Consequence |
+|---|---|---|
+| Actual RAM, CPU, disk and scheduled-workload peaks | User specs plus derived 2026 estimates | No measured VPS feasibility claim |
+| VPS provider terms, SLA, backups and payment | Provider unknown; no substitute assumed | Provider identification needed before deployment |
+| Free historical depth, fields, OI, frequency and usage rights | Current undated MOEX pages versus ©2016 manual | No finest-free-timeframe conclusion or blanket history permission |
+| Installed runtime/systemd/SQLite versions | Ubuntu Noble and current vendor docs | Application library and distribution patches must be checked later |
+| BCS account entitlement and detailed retry/stream semantics | Current undated official web docs and PDF | Automation remains conditional |
+| Telegram registration and end-to-end reachability | Current official API/FAQ/privacy; no test | No foreign-number necessity or delivery guarantee asserted |
+| Gemini quota, model identity and eligibility | Terms effective March 2026 and current region/quota docs | Optional service only |
+| Hugging Face account eligibility, card acceptance and legacy treatment | Current docs; Terms labelled effective 2022 | No confirmed free persistent compute |
+| Human duty coverage, intervention quota and emergency availability | User reaction range only | No validated operational response budget |
+
+**Retrieval record:** on 22 October 2026, the BCS market-data WebSocket page returned only a navigation shell, and the operations page returned an index rather than full method details. The official BCS PDF provided supporting material; no bot-protection bypass was attempted. The upstream systemd page extraction was incomplete for the requested controls, so Ubuntu’s official Noble manuals were used. DuckDB LTS links returned redirects, which were followed to the versioned 2.0 documentation.
+
+No specialist retrieval tool was needed. The missing live detail is not treated as an absent feature or permission. No secondary estimate has been presented as a verified account/provider fact.
+
+---
+
+## 14. Stage 5–6 options, falsification criteria and project changes
+
+### Stage 5: research and virtual monitoring
+
+**Compare laptop research plus Alternative A against laptop-only operation first.** Add watchlist snapshots on the VPS only if measurements show that their incremental value justifies resource and data-permission costs.
+
+Stage-5 entry conditions:
+
+- Verified permitted source coverage and delay labels.
+- Reproducible point-in-time inputs.
+- Finite-capital virtual ledger with rejected/stale/partial outcomes.
+- Restorable state and bounded outbox.
+- Resource coexistence pass.
+- Explicit human coverage and missing-heartbeat procedure.
+
+### Stage 6: possible broker automation
+
+Do not infer readiness from Stage-5 success. Automation adds account authority, expiring credentials, stream uncertainty, ambiguous orders and interaction with a large core holding.
+
+Stage-6 entry requires broker-specific proof of permissions, reconciliation, duplicate handling, session behavior, collateral treatment, kill-switch behavior and manual recovery. It also requires an independently workable monitoring arrangement. No particular framework or database becomes mandatory merely because automation is considered.
+
+### What would falsify the lightweight VPS direction?
+
+| Finding | Required project change |
+|---|---|
+| Shared budget cannot accommodate measured peaks plus protected reserve | Keep project off the VPS; use supervised laptop operation or separately approved capacity |
+| Free data are too delayed, shallow or legally unclear | Reduce frequency/universe or defer the affected research; do not silently replace the source |
+| VPN health worsens during capped project work | Stop and remove the project workload; do not retune the VPN to accommodate it |
+| Ledger cannot restore/replay deterministically | No operational reliance until repaired |
+| Notification failure cannot be detected independently | Restrict to supervised windows; no unattended-monitoring claim |
+| Broker retry/order-state behavior remains ambiguous | Keep execution manual |
+| Account-level collateral use cannot be observed and attributed | Do not rely on internal pilot labels as containment |
+| Free cloud eligibility or terms change | Remove it from the workflow without impairing monitoring |
+| History/archive growth exceeds disk allowance | Move immutable history off-host; shorten optional local retention without deleting required evidence |
+| Operator cannot meet the defined incident procedure | Reduce operating coverage or stop exposure-bearing operation |
+
+## Final conclusion
+
+**Keep architecture reversible and admission evidence-driven.** The next justified step is a narrowly approved read-only preflight, followed by local bounded benchmarks—not deployment.
+
+The workload arithmetic supports testing a thin monitoring role, but does not prove the shared VPS can host it. Preserve the VPN unchanged; keep heavy research and multi-year history work on the laptop; require durable state, explicit freshness and safe replay; treat Telegram as a notification channel rather than proof of response; and exclude sleeping/free cloud compute from the safety-critical path.
+
+The minimal later materials needed are the **provider identity/terms, a sanitized read-only baseline, actual runtime/library versions, and the permitted data coverage for selected sample contracts**. No credentials or production changes are needed to resolve those questions.

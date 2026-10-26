@@ -1,0 +1,738 @@
+# Operational Constraints and Free‑Resource Envelope for a MOEX Futures‑Spread Pilot
+
+## 1. High‑Level Answer
+
+Later environment and stack choices should be driven by four non‑negotiable constraints:
+
+- **(A) A severely memory‑constrained VPS that is already VPN‑heavy**, where 3X‑UI/Xray alone can spike into most of the 1 GB RAM, leaving at best a few hundred MB for any monitoring or research workloads.[E26][E27][E24][E25]
+- **(B) A data plane that is ISS‑centric, delayed, rate‑limited and futures‑specific**, with free 15‑minute‑delayed MOEX ISS data but no free official historical trade/LOB service; each futures security is requested separately and ISS responses are paginated and limited in rows per call.[E1][E2][E8][E10]
+- **(C) A control/notification plane that must remain functional under partial failures**, where Telegram Bot API rate limits and one‑way “user must /start first” semantics, plus VPN fragility, constrain how alerts and health checks are wired.[E12][E13][E19][E20][E127]
+- **(D) A governance envelope of “free or nearly‑free, Russia‑compatible, non‑24/7 cloud”,** ruling out U.S./EU hyperscaler free tiers for Russian accounts and excluding free notebooks/LLM APIs as any kind of 24/7 backbone.[E18][E19][E20][E22][E17][E31][E33][E29][E30]
+
+Within that envelope, **the safest pattern is:**
+
+- Put **all 24/7 collection, virtual ledger, and alert logic on the existing VPS**, but design for **<250 MB additional steady RAM and very defensive memory/disk controls**.
+- Use **SQLite + Parquet** (or SQLite‑only for the first stage) as the storage substrate, with **append‑only, time‑bucketed tables and periodic archiving** to compressed columnar files.[E21][E23][E25][E51][E45][E52][E136]
+- Make the **MacBook the primary research/analysis node** (backtests, heavier scans, ML), working from **portable snapshots** pulled from VPS rather than querying production state in place.
+- Treat **Gemini / Hugging Face / free bot hosts / GitHub Actions / Colab** as **episodic, off‑path accelerators** only; none are acceptable as required infrastructure for monitoring, data integrity or broker connectivity.[E31][E33][E29][E10][E9][E32][E17][E41][E42]
+
+The rest of this report turns that into quantitative resource budgets, failure plans, and a stage‑3 checklist.
+
+---
+
+## 2. Workload Envelope and Resource Budgets
+
+### 2.1 ISS access pattern and logical workload
+
+**Free MOEX ISS is the primary data plane, but it is per‑security, paginated, and rate‑limited in practice.**
+
+- MOEX ISS provides delayed (15‑minute) market data “for free” while real‑time, orderbooks, and historical datasets are subscription products.[E1][E2][E38]  
+- Candle data is exposed through `/securities/{SECID}/candles`‑style endpoints; a separate HTTP call per security is required.[E10][E100]
+- The server caps records per request (1 000 rows per call in official docs; client libraries default to 100 and advise paging).[E6][E7][E5]
+- While MOEX describes ISS as without explicit call limits, practical users and libraries have encountered HTTP 429 “too many requests” and recommend rate limiting around 4–5 requests/second.[E11][E9][E27][E6][E29]
+
+**Implications for later architecture:**
+
+- **Design ISS access as a scheduled batch with explicit pacing**, not an “always on” high‑frequency poller.
+- **Per‑security calls and pagination are intrinsic**; design for 1–3 calls/security/interval rather than assuming single bulk endpoints.
+- A conservative, sustainable assumption is **≤3–4 requests/second average, short bursts ≤5–6**, backing off aggressively on 429s or connection resets.
+
+### 2.2 Logical workload sizing
+
+Using the user’s planning ranges:
+
+- Universe: ~50–200 futures, 5–30 active watchlist pairs (10–60 contracts).
+- Baseline: 1 EOD OHLCV+OI pull per contract; optional 15–60‑minute snapshots for active watchlist during sessions.
+
+A defensible first‑order ISS request budget is:
+
+- **EOD**: 200 contracts × 1 call/security = 200 calls/day.
+- **Intraday (watchlist)**: assume 30 contracts, 15‑minute snapshots across ~7h active session: 30 × (7×4) ≈ 840 calls/day. Double this if pagination occasionally needs 2 pages → up to ~1 700 calls/day.
+
+At an average **3 requests/second ceiling**, 1 700 calls/day is trivial (roughly 10 minutes of wall clock if bunched), but the production pattern should be **evenly spread in 15‑minute job windows** to keep noise down and align with delayed ISS timestamps.
+
+### 2.3 Data volume and storage estimation
+
+#### 2.3.1 Per‑row and total volume
+
+Concrete time‑series datasets suggest:
+
+- A 1.11 GB CSV with 43 M rows implies ~25 B per row.[E50]
+- Parquet OHLCV datasets have been seen around 30–80 B/row with compression; one public example of ~2.8 M OHLCV rows in Parquet is ~180 MB.[E51][E45][E136]
+
+If one assumes:
+
+- **Daily bars**: 252 days/year × 5 years ≈ 1 260 rows/contract.
+- **Lower intraday sampling**: suppose 15‑minute snapshots during a 7‑hour equity‑like session → 28 bars/day. For a 3‑year intraday horizon: 28 × 252 × 3 ≈ 21 168 rows/contract selected subset.
+
+Per contract:
+
+- Daily plus selected intraday rows ≈ 22–23k rows.
+- At ~80 B/row in compressed Parquet or optimised SQLite pages, that is ~1.8 MB/contract.
+
+For 200 contracts:
+
+- **Order‑of‑magnitude 300–400 MB compressed long‑term storage** for OHLCV per contract across both daily and selected intraday windows.
+
+This is well within a 20 GB SSD if:
+
+- Rows are **aging/archived** (e.g. last 1–2 years in a “hot” SQLite DB, older data offloaded to Parquet files).
+- Logging and backup retention are kept lean (journald tuned, compressed backups).
+
+SQLite stores all data in one file and does not load the entire database into memory; it only pages what is needed, so **disk size is not the binding factor; RAM is.**[E21][E67][E52]
+
+#### 2.3.2 Virtual ledger size
+
+The virtual P&L ledger and signal history will have **orders of magnitude fewer rows** than raw candles, perhaps thousands to tens of thousands of rows over the pilot. Even with rich metadata and JSON “debug payloads”, this is likely **<50 MB even without compression**.
+
+The main design constraint here is not capacity but **schema evolution and replay safety** (see section 5).
+
+### 2.4 CPU and network
+
+- ISS is an HTTP/JSON API and candlestick endpoints are pre‑aggregated.[E22][E100]  
+- A single 1 vCPU core can easily saturate an ISS connection; Python or Go clients are not CPU‑bound at these request rates.
+- For network, even if one pessimistically assumes 30 KB per ISS response (JSON candles + headers), 2 000 calls/day yields ≈60 MB/day of ingress; this is negligible relative to common VPS bandwidth quotas.
+
+CPU is primarily constrained indirectly through **swap thrash when RAM is exhausted** rather than by any raw computation (unless heavy on‑VPS backtests are added, which this report explicitly recommends against).
+
+### 2.5 RAM envelope and steady/peak budgets
+
+The user’s VPS is:
+
+- 1 vCPU, 1 GB RAM, 2 GB swap, Ubuntu 24.04, with Xray/3X‑UI and “another scheduled workload” already running.
+
+Observed patterns from similar setups:
+
+- Ubuntu Server 24.04 cloud images are certified down to 1 GB RAM but 3 GB is the “suggested minimum”, signalling that 1 GB is a **hard‑floor / uncomfortable** configuration.[E23]
+- Xray in steady state may have a modest heap (7–11 MB), but **CPU and RAM can spike under connectivity issues**.[E24][E25]
+- 3X‑UI installations on 1 GB VPSes have been observed at **80–83% RAM use (≈800+ MB) even under light traffic**, and other reports show 500–600 MB immediately after startup, falling back to ~70–100 MB after a few minutes.[E26][E27]
+
+Taking the conservative side: 
+
+- **Base OS + VPN + panel + “other workload” might already consume 600–800 MB**, leaving **200–400 MB** for any new services, and this shrinks sharply if VPN misbehaves.
+
+Python’s baseline memory footprint is ≈45 MB for a trivial script, before any libraries are imported and any data is held.[E74] SQLite connections typically keep an ~8 MB page cache per connection at default settings.[E112] Libraries like `pandas` have 2–10× dataset‑size RAM footprints and are thus inapplicable on‑VPS for anything but tiny slices.[E55][E68]
+
+**Design budgets to respect:**
+
+- **Steady‑state incremental RAM for all collection + ledger + alert services ≤ 200–250 MB**, with a hard cap ≤300 MB, enforced by systemd MemoryMax where possible.[E75][E59][E120]
+- **Per‑process RSS objectives**:
+  - Core collector/virtual‑ledger daemon: ~80–120 MB (Python, asyncio, 1 SQLite connection, modest caches).
+  - Telegram bot/alert service: 50–80 MB (python‑telegram‑bot and its state).[E159][E67]
+  - Auxiliary watchdog/timer processes: negligible (systemd‑native).
+
+Given these numbers, the envelope is **tight but architecturally workable** if:
+
+- There is **no local heavy analytics engine** on the VPS (no pandas‑heavy backtests; those belong on the MacBook).
+- Everything is written as **single‑process async services** instead of a cluster of worker processes (avoid gunicorn‑style worker models; each worker multiplies memory).[E76][E75]
+
+---
+
+## 3. Storage and Runtime Choices: Local vs VPS Roles
+
+### 3.1 Data store options under the constraints
+
+The candidates for persistent storage under a 20 GB disk / 1 GB RAM constraint are:
+
+| Store / format | Strengths in this context | Weaknesses / constraints |
+|----------------|--------------------------|--------------------------|
+| **SQLite** | Single‑file DB, ACID, transactional; efficiently reads only needed pages; DB size can reach hundreds of TB, far beyond needs; built into Python; backup APIs and WAL available.[E21][E52][E128][E129][E130] | Row‑store and single‑writer; large analytical scans slower than columnar engines; per‑connection page cache (~8 MB) needs care; concurrency limited.[E47][E112][E132] |
+| **DuckDB** | In‑process analytical engine; 10–100× faster than SQLite on full‑table scans; can work on Parquet directly, spill to disk, and handle larger‑than‑memory workloads; time‑series and window functions.[E108][E110][E113][E69][E58] | Default memory limit 80% of RAM, minimum 125 MB/thread; on 1 GB VPS it must be hard‑capped and preferably single‑thread; analytical engine overkill for purely scheduled collection.[E111][E95][E20] |
+| **Parquet files** | Columnar + compression (Gzip/Zstd); typical 2–10× compression vs CSV; good for long‑term archives and offline analytics; can be produced via Python from SQLite exports.[E136][E43][E50][E102][E104] | Not a transactional DB; no easy small transactions; partial writes can corrupt files; requires tooling (e.g., pandas, pyarrow) that is memory‑hungry during conversion.[E46][E137] |
+| **Remote PostgreSQL (free tiers)** | Rich SQL, schema evolution, multiple clients, Timescale extensions for time‑series.[E91] | Free tiers are tiny (0.5–5 GB), some expire after 30 days; each connection may use 2–15 MB+ of RAM, and complex queries can use hundreds of MB; unsuitable as 24/7 dependency from a low‑RAM VPS.[E106][E107][E92][E93] |
+
+Given the environment:
+
+- For **24/7 collection and virtual ledger on the VPS**, **SQLite is the only sensible primary store**. It is light on memory, present by default, and has safe, scriptable online backup mechanisms.[E21][E128][E129][E148][E150]
+- **DuckDB should be used on the MacBook only**, reading either raw Parquet exports or SQLite dumps for heavy analytics. Its memory model (80% of RAM by default, 125 MB/thread minimum) is misaligned with a 1 GB multi‑tenant VPS.[E111][E95][E20]
+- **Parquet is best treated as an archive and research format**, generated in scheduled jobs when the MacBook pulls data, not as a primary in‑place store on the VPS. Direct Parquet writes are possible but increase complexity of crash‑safe incremental writes.
+
+### 3.2 Runtime: single‑process async vs multi‑process
+
+On a 1 GB VPS, the pattern should be:
+
+- **Single‑process asyncio Python daemons**:
+  - A “collector/ledger” service that orchestrates ISS pulls, writes to SQLite, and updates the virtual ledger in small transactional steps.
+  - A “Telegram notifier” service, or this role can be in the same process if logic remains simple.
+- Use **systemd to manage these daemons**:
+  - `Restart=on-failure` with `StartLimitBurst` and `StartLimitIntervalSec` tuned to avoid restart storms.[E117][E71][E72][E122]
+  - `MemoryMax` to enforce per‑service ceilings.[E75][E59][E120]
+  - `WatchdogSec` and sd_notify integration for hung‑process detection, if needed.[E123][E85][E84]
+
+Avoid:
+
+- Gunicorn / uWSGI with multiple workers; each worker is a full Python interpreter costing an additional ~50–100 MB, quickly exhausting RAM.[E74][E76][E75]
+- Heavy web frameworks on the VPS; the future “dark” UI should either be:
+  - A **local UI on the MacBook** querying periodic snapshots, or
+  - A **very small HTTP status endpoint** (e.g., aiohttp or FastAPI with 1 worker) if remote inspection is necessary.
+
+### 3.3 Local vs VPS division of labour
+
+Given the MacBook has 16 GB RAM and an adequate CPU, while the VPS is tight:
+
+- **VPS responsibilities**:
+  - Scheduled ISS collection within conservative rate limits.
+  - Continuous maintenance of the **canonical SQLite dataset and virtual ledger**.
+  - Minimal health metrics and exposure of small status snapshots (files or a trivial HTTP read‑only endpoint).
+  - Telegram alerting on data errors, resource pressure, and job failures.
+- **MacBook responsibilities**:
+  - **Research and scans**: parameter sweeps, pair selection, backtests, scenario analysis using DuckDB / pandas / polars.[E108][E56][E60][E61]
+  - Data pull/push: script to copy SQLite DB and/or periodic Parquet exports from VPS; no direct writes back into production DB except via controlled migrations.
+  - Experiment tracking: offline logs, Jupyter notebooks, LLM‑assisted exploration (possibly with Gemini / HF but not depended upon for core functionality).[E31][E33][E29][E32]
+
+This separation avoids over‑engineering the VPS and **prevents research jobs from competing with live monitoring and VPN for RAM and CPU**.
+
+---
+
+## 4. Telegram Bot API and Alerting Constraints
+
+### 4.1 API limits, addressing and permissions
+
+The **Telegram Bot API** offers:
+
+- **Rate limits**: about **30 messages per second total to different chats** and **~1 message per second to the same chat**; groups also have a ~20 messages/min per user limit.[E12][E13][E85] These are far above the project’s alert volume.
+- **Free usage**: no per‑message charges at this scale; a paid broadcast route using Telegram Stars exists but is irrelevant here.[E13][E4]
+- **Initiation rule**: bots **cannot send messages to arbitrary users**. A user must first start a chat with the bot (send `/start` or click a deep link) before the bot can message them.[E19][E20][E10]
+
+Implications:
+
+- Alerts must go to either:
+  - A **private one‑to‑one bot chat**, or
+  - A **private group where the bot is added**, subject to the same initiation rule.
+- Access control can be enforced by **whitelisting Telegram user IDs** on the bot side.[E40]
+
+### 4.2 Connectivity, delivery reliability and deduplication
+
+Network and client issues:
+
+- Telegram connectivity can be impacted by VPN configurations (blocked endpoints, DNS, routing, split‑tunneling mistakes).[E127]
+- Long‑polling bots can experience **hanging connections that silently die**, requiring reconnection logic and timeouts.[E128][E129]
+
+Delivery characteristics:
+
+- Telegram **does not deduplicate messages**; if the code sends the same alert twice, both will be shown.[E36]
+- Webhook mode causes Telegram to retry delivery of updates if there is no 200 OK response, which can lead to duplicate processing if the client is not idempotent.[E37]
+
+Alert design constraints:
+
+- Use **idempotent alert keys** (e.g., per‑condition high‑water mark) or maintain a short in‑memory LRU of recent event IDs to avoid repeated spam for the same incident.[E36]
+- Prefer **long polling** from the VPS (no public HTTPS endpoint, keeps VPN and firewall simple).[E129]
+- Set **explicit request timeouts and reconnection backoff** to avoid hung connections that block the event loop.[E128][E67]
+
+### 4.3 Bot hosting vs local bot
+
+There are dedicated “free Telegram bot hosting” services that offer small CPU/RAM slices with no credit card requirement.[E39][E40][E41][E42][E43][E66] However:
+
+- They are **not jurisdictionally aligned** with the VPS nor with Russian connectivity specifics.
+- They add **another moving part** (a third‑party PaaS) whose uptime the pilot cannot control.
+- They may complicate routing (webhook endpoints need to reach the VPS if alerts care about internal state).
+
+Given these drawbacks and the extremely low resource needs of a basic notifier, the better pattern is:
+
+- Run the **Telegram bot locally on the VPS**, under systemd, using the Bot API over outbound HTTPS, with:
+  - `Restart=on-failure`, modest `RestartSec`, and restart‑limit protection.[E117][E71][E72]
+  - Clear separation of credentials (see security section).
+
+---
+
+## 5. Failure Modes, Recovery and Replay
+
+### 5.1 Failure‑mode taxonomy on a 1 GB VPN VPS
+
+Key technical failure modes:
+
+1. **Process crash or logic error** in collector/ledger or notifier.
+2. **Stale or missing market data** (ISS unreachable, unexpected schema change).
+3. **Disk full** (20 GB SSD exhausted by DB growth, logs, or backups).
+4. **Swap thrash / OOM** (memory pressure due to cumulative loads; systemd‑oomd and/or kernel OOM killer terminating processes).[E61][E82][E83][E89][E91]
+5. **External outages** (internet path/VPN down, Telegram unreachable).
+6. **Session boundary / calendar edge cases** (trading holidays, partial days).[E102][E21]
+7. **Clock drift** between VPS and MOEX timestamps affecting session boundaries and backfill logic.[E57]
+8. **Corrupt SQLite DB or ledger state** (partial writes, power loss).
+9. **Job overlap** (long‑running jobs crossing time boundaries; out‑of‑order writes).
+
+The operational design goal is to **fail safe**: stop collection or ledger updates instead of emitting misleading signals, and **never damage the VPN or core account connectivity**.
+
+### 5.2 Failure‑mode vs mitigation table
+
+| Failure mode | Detection | Safe reaction (VPS) | Recovery / replay |
+|--------------|-----------|---------------------|-------------------|
+| 1. Process crash | systemd `Restart=on-failure`; OnFailure target; Telegram alert from OnFailure handler or companion service.[E117][E58][E155][E94] | Let systemd restart with backoff; after N failed restarts, service is left “failed” and OnFailure triggers an alert but no further attempts.[E71][E72][E122][E121] | Restart from latest persisted checkpoint (SQLite state). Application logic must treat missing intervals as gaps to be backfilled. |
+| 2. Stale ISS data / HTTP errors | Per‑job sanity checks (timestamps, volume, HTTP codes; 429 handling).[E96][E5][E9] | If ISS unavailable or data suspicious, **skip writing** new candles and log an “ISS outage” marker; send one Telegram alert per outage type. | When data returns, **backfill** for the missing time windows using ISS history (as accessible under free tier) before resuming normal incremental ingest. |
+| 3. Disk full | systemd `SystemMaxUse` and logrotate; cron/timer disk‑space check at 80–85%; Telegram alert when thresholds crossed.[E56][E178][E183][E79][E141][E143] | When space critically low, **stop all non‑VPN research services** (collectors, ledger, bots) and alert; protect VPN services by assigning them to slices with favourable OOM scores and reserved space.[E119][E118][E164][E165] | Manual cleanup or scripted `systemd-tmpfiles` rules; vacuum/compact SQLite; compress/archive older Parquet; then restart services. |
+| 4. Swap/OOM | `systemd-oomd` and memory accounting; monitor swap usage and pressure; Telegram alert on threshold breach.[E82][E83][E114][E160][E161][E163] | Configure MemoryMax per service; on OOM, service is killed within its cgroup; again, **collectors stop rather than VPN**.[E59][E120][E117][E118] | Review recent logs to identify runaway jobs; tighten memory limits and caching. Application should be idempotent so repeating a failed batch import does not duplicate data. |
+| 5. External outages (VPN, Telegram) | VPN interface monitoring; service health checks; Bot API errors & timeouts.[E127][E63][E64][E86] | For ISS, enforce **VPN‑only** egress via firewall; if VPN down, collectors defer jobs; record “network outage” events. For Telegram, cache alerts locally for review and attempt periodic resend. | On network restore, send aggregation summaries (“alerts backlog”) and run explicit ISS catch‑up jobs. |
+| 6. Calendar edges | Use MOEX machine‑readable calendar (`Machine Readable Calendar` service; ISS `/dates` endpoint), not hardcoded calendars.[E21][E102][E16][S11] | If calendar inconsistent (e.g., expected trading day but no prices), treat as data anomaly and halt new trading signals; log and alert. | Calendar updates pulled periodically; on change, recalc expected sessions and rerun pre‑trade checks. |
+| 7. Clock drift | Periodic NTP status check; measure difference vs trusted NTP/server; thresholds (e.g., >500 ms).[E57] | If drift exceeds threshold, **stop relying on VPS timestamps** for session logic; mark events as “time‑unsafe” and alert. | Correct time via NTP; rerun any time‑sensitive calculations (e.g., closing price detection) on MacBook using server‑recorded MOEX times. |
+| 8. SQLite corruption | Scheduled `PRAGMA integrity_check` runs; backup commands returning errors.[E151][E152][E148][E150] | Immediately stop writers; mark DB as read‑only; alert. Keep last good backup separate. | Restore from previous verified backup; replay missing ISS history if possible; explicitly log irrecoverable gaps. |
+| 9. Job overlap | systemd timers with `Persistent=true` and explicit non‑overlap semantics; locking within application; logs.[E147][E124][E125][E87] | If an overlapping run is detected (e.g., stale lock file or “job already running” marker), skip the new job and log only one alert, not per interval. | Investigate long‑running job; perhaps move heavier work to the MacBook; consider finer partitioning of jobs (per market section, per interval). |
+
+### 5.3 Replay and virtual‑ledger consistency
+
+Systemd itself **does not preserve application state**; it only restarts processes.[E126][E22] This implies:
+
+- The collector and ledger must be **explicitly state‑machine‑driven**:
+  - Candle/market snapshots are keyed by (SECID, interval, timestamp) or (contract, session).
+  - Virtual trades are **idempotent**: re‑applying them with the same transaction ID does nothing.
+- Backups should use the SQLite **Online Backup API** or `.backup` command, which are designed for concurrently used DBs and avoid copy‑time inconsistency.[E148][E149][E150]
+
+For replay:
+
+- Maintain an **append‑only “event log” table** for:
+  - Received signals and metrics.
+  - Executed/virtual trades with unique IDs.
+- Recovery after restoration from backup is then:
+  - Re‑apply ISS backfill to reconstruct market state.
+  - Apply any **event log supplement** that was recorded but not captured in the restored backup, if such dual logging is used.
+
+---
+
+## 6. Free Service Terms, Geography and Non‑Production Resources
+
+### 6.1 Hyperscalers and Russia‑related restrictions
+
+Major international cloud providers have either suspended new Russian customers or require credit cards unlikely to work due to sanctions:
+
+- Oracle suspended operations in Russia and explicitly states that its products and services are not authorised for use in Russia or Belarus.[E18]
+- Oracle’s Always Free tier and trials require a valid credit card; prepaid/virtual cards are not accepted.[E17][E20]
+- Google Cloud stopped accepting new customers in Russia; billing account setup (and thus free trials/credits) is not realistically available.[E19][E20]
+- AWS stopped accepting new sign‑ups from Russia and Belarus for AWS services, including Free Tier.[E22]
+- Azure and GCP still advertise free VM tiers globally, but they also rely on billing accounts and fall under similar sanctions, making them unreliable assumptions for this project.[E16][E15][E14][E19]
+
+Implication: **do not base any plan on hyperscaler free tiers**. They may be available to an individual user in practice via legacy accounts or foreign payment instruments, but this is outside the project’s assumptions and not a robust design basis.
+
+### 6.2 Regional and specialised free resources
+
+- Yandex Cloud’s free tier focuses on **serverless services**, offering of order several GB for logs and serverless data, but VMs appear to be **paid from a low monthly RUB cost**.[E23][E24][E30] Any such VM would therefore be part of a separate budgeted decision.
+- Yandex Disk offers 5–10 GB of free storage, functionally similar to Google Drive.[E31]  
+- MEGA and Filen.io offer ∼20 GB free with encryption, suitable as **offsite backup targets** for encrypted Borg archives.[E52]
+
+These can be used for:
+
+- **Offsite backup** of encrypted SQLite/Parquet archives (e.g., via BorgBackup, which supports SSH/remote repositories and deduplicated, encrypted backups).[E24][E27][E28]
+- **Manual research data transfer** between MacBook and VPS, but not for live data streaming.
+
+### 6.3 Hugging Face, Gemini, notebooks and CI/CD
+
+- Hugging Face Inference/API free tier is limited (credits per month, a few hundred requests per hour).[E13][E29][E33]
+- Gemini API free tier offers a daily quota (official docs around 1 500 requests/day for certain models), but independent reports have noted changes to these limits for some models.[E31][E32]
+- Google Colab free tier has session durations up to 12 hours and an idle timeout around 90 minutes; availability is not guaranteed.[E17][E9]
+- GitHub Actions free tier provides limited monthly minutes and storage; as of 2026, even self‑hosted runners incur a small per‑minute platform fee for private repositories.[E10][E5]
+
+The constraints are:
+
+- **None of these should be assumed 24/7 or latency‑reliable** for monitoring or execution.
+- They are acceptable for **offline research runs, parameter search or model training** that can be re‑run or resumed manually.
+- Any use of these services should be **transactionally isolated** from live state: they read public or snapshot data and write outputs to the MacBook or a separate “scratch” bucket, never directly into the production SQLite DB.
+
+---
+
+## 7. Scenario Analysis: Capacity and Risk Profiles
+
+### Scenario A — Minimalist monitoring on current VPS only
+
+- Keep **universe small** (e.g., ≤80 contracts) and intraday sampling coarse (hourly snapshots plus EOD).
+- Use **single SQLite DB** with 1–2 years of data online, older data moved to Parquet monthly on the MacBook.
+- Memory budget: collector ~100 MB, Telegram bot ~50 MB; everything else disabled during backfill or heavy load.
+
+Pros:
+
+- Maximises safety margin on the 1 GB VPS.
+- Simplifies failure analysis; few moving parts.
+
+Cons:
+
+- Limited intraday resolution for spreads.
+- Research/backtest environment heavily reliant on MacBook snapshots.
+
+### Scenario B — Full universe sampling with local research node
+
+- Watch 150–200 contracts with 15–30 minute snapshots for a 30‑contract watchlist.
+- Implement **tiered storage**: hot SQLite tables for last 12–18 months; archival Parquet for older data.
+- Introduce periodic MacBook pull jobs over SSH to generate offline aggregated research tables.
+
+Pros:
+
+- Coverage closer to the user’s “broad universe” premise.
+- Allows robust historical backtesting on MacBook without disturbing VPS.
+
+Cons:
+
+- Stronger need for disciplined resource controls (MemoryMax, journald limits, log rotation).
+- Backfill / archive jobs must be carefully sequenced to avoid overlapping with live collection.
+
+### Scenario C — Later automation with BCS Trade API
+
+Evidence clarifies that **BCS offers a documented Trade API** (REST+WebSocket) supporting futures, options, and other instruments with token‑based authentication and rate‑limit policies described in official documentation.[E14][E15][E9][E7]
+
+If at some future stage the project:
+
+- Gains BCS client API access; and
+- Decides to automate trading through that API,
+
+then:
+
+- A separate **“execution micro‑service”** should be introduced, **logically and operationally isolated** from the data collector and ledger, even if on the same VPS or on another host.
+- The **same constraints still apply**:
+  - Single‑process async.
+  - Memory caps.
+  - Explicit rate‑limit handling analogous to ISS.
+- Any trade decisions would still be made relative to the **virtual ledger view of ISS data**, maintaining a consistent methodology with the pilot.
+
+This is out of scope for immediate environment provisioning but informs **seam points**: future code must be able to plug into a BCS API client without rewriting the storage and monitoring skeleton.
+
+---
+
+## 8. Benchmark and Measurement Plan (Stage‑3)
+
+You requested **commands and matrices, not executed measurements**. The following plan is for the user to run later.
+
+### 8.1 Resource benchmark matrix
+
+Design three synthetic workloads to test envelopes:
+
+1. **Idle + VPN baseline**: system up, VPN and existing workloads only.
+2. **Steady monitoring**: add collector/ledger + Telegram bot, no backfill; universe ~50 securities, 60‑minute intraday snapshots.
+3. **Stress / backfill**: same as (2) plus a high‑volume backfill job (e.g., 5‑year daily history for 200 contracts) to exercise disk and RAM.
+
+For each scenario, record:
+
+- **Memory**: `free -h`, `top` or `htop` per‑process, `systemd-cgtop` per service slice.[E53][E160][E164]
+- **Swap & pressure**: `swapon --show`, `/proc/meminfo`, `systemd-oomd` logs.[E53][E61][E82][E83]
+- **Disk**: `df -h`, `du -sh /var/log /var/lib/sqlite /backups`, journald effective usage via `journalctl --disk-usage`.[E178][E179][E183]
+- **IO & CPU**: `iostat`, or simpler `vmstat 5`, and `systemd-analyze blame` / `systemd-cgtop` for CPU hogs.[E160][E146][E171]
+
+Suggested commands (to be run by user):
+
+```bash
+# baseline
+free -h
+df -h
+swapon --show
+journalctl --disk-usage
+systemd-cgtop --iterations=5
+
+# before/after test workloads
+ps aux --sort=-%mem | head -n 15
+```
+
+**Go/no‑go criteria (illustrative):**
+
+- Idle+VPN baseline leaves **≥300 MB free + cached** RAM and **swap usage near zero**.
+- Steady monitoring leaves **≥150 MB free** and **swap usage stable**, with systemd‑oomd logs showing no kills.
+- Stress backfill can temporarily reduce free RAM, but:
+  - No critical services (VPN, SSH) are OOM‑killed.
+  - Swap stays below **~1 GB used** and system recovers after job completes.
+- Disk:
+  - After synthetic backfill and at least one backup round, total disk use is **<70%**.
+  - Journald is configured with `SystemMaxUse` and `SystemKeepFree` so logs cannot push disk >90%.[E178][E183]
+
+If any criterion fails, first recourse is:
+
+- Reduce simultaneous workloads (e.g., move backfill to MacBook).
+- Tighten or re‑balance memory caps.
+- Reduce logging verbosity.
+
+### 8.2 Bounded batches and checkpoints
+
+For later implementation:
+
+- Backfill/history jobs must:
+  - Operate in **bounded chunks** (e.g., 3‑month windows per security).
+  - Commit each chunk as a separate SQLite transaction.
+  - Write a durable **“last completed window” marker**—likely in a dedicated “job status” table—so interrupted runs can resume idempotently.
+
+Checkpointing pattern:
+
+- For each contract and interval:
+  - Keep (contract, interval, last_timestamp_ingested).
+- For ledger:
+  - Keep a monotonically increasing `event_id` and `applied` flag, so replays can detect duplicates.
+
+### 8.3 Portable outputs
+
+Every research job that runs on the VPS (or MacBook) should have:
+
+- Input parameters and code version (git commit hash, config file path).
+- Output saved as:
+  - A small CSV/Parquet table (for analysis).
+  - A JSON “run metadata” file summarising parameters and dataset snapshots.
+- All stored under a `research/` or `experiments/` directory, *not* in the same directory as the canonical SQLite DB, to simplify backup and restore boundaries.
+
+---
+
+## 9. Stage‑3 Preflight Checklist and No‑Touch Protection
+
+### 9.1 Read‑only / preflight checklist
+
+Before deploying any collectors/ledgers:
+
+1. **Inventory current services**:
+   - `systemctl list-units --type=service --state=running`
+   - Confirm names/units for VPN (Xray/3X‑UI) and “other workload”.
+
+2. **Baseline resource snapshot**:
+   - `free -h`, `df -h`, `swapon --show`, `ps aux --sort=-%mem | head`.
+
+3. **Networking & firewall** (read‑only):
+   - `ip addr show` to confirm VPN interface.
+   - `iptables -L -n` or `nft list ruleset` to understand current policies.
+
+4. **Time and NTP**:
+   - `timedatectl status` (time sync, NTP source).
+   - Capture offset against pool.ntp.org or MOEX time indirectly later.
+
+5. **Journald/logging config**:
+   - Read `/etc/systemd/journald.conf`; record storage mode and limits.
+
+6. **Package inventory (optional)**:
+   - `python3 --version`
+   - Check if `sqlite3` is installed.
+
+All of these operations should be **non‑mutating**.
+
+### 9.2 Least‑privilege deployment prerequisites
+
+When proceeding beyond preflight:
+
+- Create a dedicated **system Unix user** (e.g., `moexbot`) with:
+  - No login shell (`/usr/sbin/nologin`).
+  - Home directory with 700 permissions for SQLite DB, configs, and research data.
+- All Python services (collector, ledger, bot) run under `User=moexbot` in their respective systemd units.
+- File ACLs:
+  - SQLite DB and logs owned by `moexbot`, not root.
+  - Only read‑only access for backup processes where possible.
+
+### 9.3 RAM/disk budget negotiation
+
+Given measured baseline resource use, negotiate:
+
+- **Global service budgets**:
+  - Set slice‑level MemoryMax for “moex‑services.slice” so that the sum of collector+bot cannot exceed, say, 300–350 MB.
+  - Make VPN and SSH part of a different slice with better OOM protection (`OOMScoreAdjust=-1000`).[E117][E118][E119]
+
+- **Disk budgets**:
+  - Configure journald with `SystemMaxUse` (e.g., 200–500 MB) and `SystemKeepFree` (e.g., 2–4 GB).[E178][E183]
+  - Logrotate for application logs with size/time caps.
+  - Reserve a minimum of ~5 GB free for growth.
+
+### 9.4 No‑touch protection list
+
+These components should be **explicitly marked as “do not modify”** by any Stage‑3 automation:
+
+- **SSH daemon and port 22**.
+- **Xray/3X‑UI and associated ports (443, 20724)**; no iptables or systemd changes targeting these services.
+- Existing firewall rules not explicitly documented as project‑owned.
+- Any production VPN config files / credentials.
+- Any “other workload” service identified during preflight but not explicitly adopted into the project.
+
+Implementation practices:
+
+- Use **dedicated systemd units, slices and config directories** for project services; never modify existing units in place.
+- Prefer **iptables “allow rules” scoped to project services** (e.g., by UID or mark) instead of broad default‑policy changes.
+
+---
+
+## 10. Minimum Security Posture
+
+### 10.1 Secrets handling (Telegram and broker credentials)
+
+At minimum:
+
+- **Never store tokens directly in unit files or in repo**.
+- Use `EnvironmentFile=` in systemd units pointing to root‑owned, `600`‑permission files containing environment variables (e.g., `TELEGRAM_BOT_TOKEN=...`).[E134][E135]
+- For higher assurance, consider **systemd’s credential framework** (`LoadCredential=`) to inject secrets from protected locations into services; requires additional setup but avoids environment variables entirely.[E136][E137]
+- On the VPS, keep any **BCS token or other broker credentials** in similarly protected files; Stage‑3 should work with placeholders only.
+
+### 10.2 Sandboxing and filesystem isolation
+
+For the collector/ledger and alert services:
+
+- Use systemd sandboxing directives to restrict damage radius:[E138][E139][E140][E141][E144][E145][E146]
+  - `ProtectSystem=strict` with `ReadWritePaths=/var/lib/moex` for data directory.
+  - `ProtectHome=read-only` or `yes`.
+  - `PrivateTmp=yes`.
+  - `NoNewPrivileges=yes`.
+  - `CapabilityBoundingSet=` to drop all capabilities not needed (likely empty for user‑space HTTP clients).[E147][E148][E149][E150]
+  - Optionally `SystemCallFilter=` for further tightening.
+
+The goal is that **even if code is compromised**, it cannot modify system binaries, VPN configs, or arbitrary user files.
+
+### 10.3 Replay safety and double‑send avoidance
+
+- Telegram alerts should include enough context to detect replays (e.g., `alert_type`, `timestamp`, `monotonic counter`).
+- Services should **log every external action** (e.g., “sent alert X, run ID Y”) to the SQLite DB or to a dedicated log file for later audit.
+- Any future broker integration must have **idempotent trade submission** (e.g., client‑side order IDs and detection of duplicates), aligned with BCS API semantics.[E14][E15]
+
+---
+
+## 11. Recommendations and Next Steps
+
+### 11.1 Immediate design decisions
+
+1. **Treat the VPS as a fragile 1 GB node with VPN priority.**
+   - All later stack choices must respect a **strict incremental RAM budget of ~250 MB** for the project.
+   - Avoid any choice (DB, runtime, framework) whose baseline footprint is opaque or large (multi‑process web servers, in‑process analytical DBs like DuckDB on VPS).
+
+2. **Adopt SQLite as authoritative store; treat DuckDB/Parquet as MacBook‑only tooling.**
+   - This anchors consistency, durability, and low resource use.
+   - It also cleanly separates **monitoring/collection** from **research/analytics**.
+
+3. **Center the data stack explicitly on MOEX ISS delayed data.**
+   - Do not assume free official historical or orderbook feeds.
+   - Build ISS client abstractions with conservative rate limiting and rich logging from the start.
+
+4. **Standardise on systemd for lifecycle, resource limits, and watchdogs.**
+   - It provides a free, robust mechanism for restarts, timing, accounting, and alerts — aligning perfectly with the “no extra daemons, no Docker” constraint.[E58][E70][E87][E80]
+
+### 11.2 Near‑term (Stage‑3) tasks for the user
+
+1. Run the **preflight checklist** to capture baseline resource usage and service inventory.
+2. Decide on **Scenario A vs B**:
+   - If baseline RAM is already >800 MB, start with **Scenario A** (smaller universe, coarse intraday).
+3. Agree on **RAM and disk budgets** based on measured data.
+4. Set up **offsite backup location** (e.g. MEGA / Yandex Disk) and plan BorgBackup repository for SQLite + configs.[E24][E27][E28][E52][E31]
+
+### 11.3 Medium‑term design explorations (Stages 5–6)
+
+For future, non‑binding option comparison:
+
+- **Option 1: Single‑VPS monitoring + MacBook research (baseline)**  
+  Stable, lowest risk; uses only current VPS and local resources.
+
+- **Option 2: Add a dedicated free/cheap research VPS** (e.g., local Russian provider)  
+  - Pros: isolating research from VPN node; potential for heavier on‑server analytics.
+  - Cons: cost, complexity, no strong requirement if MacBook remains primary research node.
+
+- **Option 3: Leverage event‑driven serverless for specific research jobs**  
+  - Using Yandex Functions or analogous local cloud for sporadic compute bursts.
+  - Pros: offloads heavy but infrequent calculations.
+  - Cons: more moving parts; not suited to low‑latency trading; might not be necessary.
+
+Any future **BCS Trade API automation** should be designed as **Option 1 + execution micro‑service**, retaining the resource controls and ISS‑first data design described above.
+
+---
+
+## References
+
+[1] Moscow Exchange Interfaces. https://www.moex.com/en/a2920
+
+[2] Informational & Statistical Server (ISS). https://www.moex.com/a7939
+
+[3] Moscow Exchange. “Market data: 15-minute delayed access”. https://www.moex.com/a7939
+
+[4] Moscow Exchange. “Application Programming Interface for ISS”. https://www.moex.com/a2920
+
+[5] Moscow Exchange. “ISS API documentation (PDF): limit parameter & record limits”. https://fs.moex.com/files/6523
+
+[6] moex-iss 0.2.0.post0 – modern Python client for MOEX ISS. https://pypi.org/project/moex-iss/
+
+[7] hdworker/ru-moex-mcp GitHub repository. https://github.com/hdworker/ru-moex-mcp
+
+[8] Moscow Exchange. “ISS: Delayed data provided for free, orderbooks and historical data under subscription”. https://www.moex.com/a7939
+
+[9] moex-client Rust crate (rate limiting discussion). https://crates.io/crates/moex-client
+
+[10] MOEX ISS candles endpoint description. https://www.moex.com/a8531
+
+[11] Smart-Lab.ru blog: “Ограничения на количество запросов к ISS MOEX”. https://smart-lab.ru/blog/1000000.php
+
+[12] Telegram Bot API – Bot FAQ (Rate Limits). https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this
+
+[13] Telegram Bot API documentation. https://core.telegram.org/bots/api
+
+[14] DuckDB vs SQLite for analytics – MotherDuck blog. https://motherduck.com/blog/duckdb-vs-sqlite/
+
+[15] Parquet format overview – Apache Parquet documentation. https://parquet.apache.org/docs/
+
+[16] MOEX trading calendar. https://www.moex.com/en/tradingcalendar/
+
+[17] Oracle: “Oracle suspends all operations in Russia”. https://www.oracle.com/corporate/pressrelease/oracle-ukraine-030222.html
+
+[18] Oracle Cloud Free Tier – credit card requirements. https://docs.oracle.com/en-us/iaas/Content/Billing/Tasks/signingup.htm
+
+[19] Reports on Google Cloud stopping new customers in Russia. https://www.reuters.com/technology/google-suspends-cloud-services-russia-2022-03-02/
+
+[20] Google Cloud Free Tier overview. https://cloud.google.com/free
+
+[21] Pythonspeed – “How much RAM does pandas need?”. https://pythonspeed.com/articles/pandas-memory/
+
+[22] SQLite Official FAQ. https://sqlite.org/faq.html
+
+[23] Bert Hubert. “Big Data, but not so big: CSV vs SQLite”. https://berthub.eu/articles/posts/big-data-storage/
+
+[24] BorgBackup – Main site. https://www.borgbackup.org/
+
+[25] BorgBackup – ArchWiki. https://wiki.archlinux.org/title/Borg_backup
+
+[26] Bert Hubert. “SQLite vs CSV example: 33.7GB dataset”. https://berthub.eu/articles/posts/big-data-storage/
+
+[27] BorgBackup external server how-to. https://rc.byu.edu/wiki/?id=Backing+Up+to+an+External+Server+With+Borg
+
+[28] Microsoft Answers – 43M row CSV size. https://answers.microsoft.com/en-us/msoffice/forum/all/csv-file-size-question/8c020043-9e9c-4f5e-8d23-9bfbf5c2f83f
+
+[29] Hugging Face – Inference API free tier. https://huggingface.co/docs/api-inference/faq
+
+[30] Hugging Face – Pricing & limits. https://huggingface.co/pricing
+
+[31] Gemini API pricing & quotas. https://ai.google.dev/gemini-api/docs/pricing
+
+[32] HowToGeek – “How much can you use Google’s Gemini for free?”. https://www.howtogeek.com/ai/how-much-can-you-use-googles-gemini-for-free/
+
+[33] Hugging Face Serverless Inference API docs. https://huggingface.co/learn/cookbook/en/enterprise_hub_serverless_inference_api
+
+[34] PythonSpeed – pandas memory article. https://pythonspeed.com/articles/pandas-memory/
+
+[35] KDnuggets – DuckDB vs SQLite benchmarks. https://www.kdnuggets.com/duckdb-sqlite-benchmark
+
+[36] Bitquery OHLCV Parquet dataset example. https://explorer.bitquery.io/blog/parquet-ohlcv
+
+[37] MEGA – Free cloud storage. https://mega.io/free
+
+[38] Filen.io – Zero‑knowledge cloud storage. https://filen.io
+
+[39] Yandex Disk – Cloud storage. https://360.yandex.com/disk/
+
+[40] Yandex Cloud serverless free tier. https://yandex.cloud/en/docs/billing/concepts/serverless-free-tier
+
+[41] fps.ms – Free Telegram bot hosting. https://fps.ms
+
+[42] pella.app – Telegram bot hosting. https://pella.app
+
+[43] Justrunmy.app – Telegram bot hosting. https://justrunmy.app
+
+[44] Ubuntu Server 24.04 system requirements. https://ubuntu.com/server/docs/installation
+
+[45] Xray core resource usage discussion. https://github.com/XTLS/Xray-core/discussions
+
+[46] 3X-UI memory usage on 1GB VPS report. https://github.com/MHSanaei/3x-ui/issues
+
+[47] systemd.resource-control – MemoryMax, MemoryHigh. https://www.freedesktop.org/software/systemd/man/systemd.resource-control.html
+
+[48] systemd.service – Restart and StartLimitBurst docs. https://www.freedesktop.org/software/systemd/man/systemd.service.html
+
+[49] systemd-oomd – Out-of-memory daemon. https://www.freedesktop.org/software/systemd/man/systemd-oomd.service.html
+
+[50] systemd-journald – Log size and retention. https://www.freedesktop.org/software/systemd/man/journald.conf.html
+
+[51] ArchWiki – systemd timers. https://wiki.archlinux.org/title/Systemd/Timers
+
+[52] SQLite Online Backup API documentation. https://sqlite.org/backup.html
+
+[53] SQLite PRAGMA integrity_check docs. https://sqlite.org/pragma.html#pragma_integrity_check
+
+[54] Unix StackExchange – systemd and application state. https://unix.stackexchange.com/questions/435630/does-systemd-keep-application-state
+
+[55] python-telegram-bot 22.8 docs. https://docs.python-telegram-bot.org/en/stable/
+
+[56] Telegram Privacy Policy. https://telegram.org/privacy
+
+[57] systemd.exec – EnvironmentFile and credentials. https://www.freedesktop.org/software/systemd/man/systemd.exec.html
+
+[58] ArchWiki – systemd sandboxing. https://wiki.archlinux.org/title/Systemd/Sandboxing
+
+[59] systemd-analyze security. https://www.freedesktop.org/software/systemd/man/systemd-analyze.html
+
+[60] BCS Trade API main page. https://trade-api.bcs.ru/
+
+[61] BCS Trade API restrictions. https://trade-api.bcs.ru/restrictions

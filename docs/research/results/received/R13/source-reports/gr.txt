@@ -1,0 +1,205 @@
+# Incremental Evidence Protocol for Regime Conditioning in Moscow Exchange Futures Spread Arbitrage
+
+## Deterministic No-Regime Baseline Specifications and Market Microstructure Context
+
+Evaluating whether market-wide or instrument-family regime conditioning yields genuine out-of-sample net performance over a deterministic baseline requires establishing a mathematical reference frame. On the Moscow Exchange (MOEX) derivatives market (FORTS), statistical arbitrage strategies operate under structural constraints defined by clearing schedules, variation margin settlements, initial margin (Гарантийное обеспечение - GO) requirements, and significant local interest rate dynamics.
+
+To ensure that candidate regime-conditioned strategies are evaluated against a non-trivial benchmark rather than an ex-post oracle, two deterministic, fixed-parameter baseline models are established. These models run without state-dependent adjustments, with all calibration parameters estimated strictly on historical training windows.
+
+### Baseline 1: Deterministic Fixed-Parameter Carry and Calendar Spread Strategy
+
+The carry and calendar spread baseline targets relative mispricings across contract maturities within liquid MOEX futures families, such as foreign exchange (Si, CNH), equity indices (IMOEX, RTS), and commodities (BR, GOLD). The theoretical spread value $S_{t}^{\text{carry}}$ is formulated as a function of the risk-free rate $r_t$, carrying/storage costs $c_t$, and convenience yield $y_t$:
+
+$$S_{t}^{\text{carry}} = F_{t, T_2} - F_{t, T_1} \cdot \exp\left((r_t + c_t - y_t)(T_2 - T_1)\right)$$
+
+Where $F_{t, T_1}$ and $F_{t, T_2}$ represent the near-leg and far-leg futures prices at time $t$, expiring at $T_1$ and $T_2$. Trading signals are governed by static $k$-standard-deviation thresholds derived exclusively from trailing training data:
+
+$$\text{Signal}_t = \begin{cases} +1 & \text{if } \frac{S_t - \mu_S}{\sigma_S} \le -k_{\text{entry}} \quad (\text{Long Far / Short Near}) \\ -1 & \text{if } \frac{S_t - \mu_S}{\sigma_S} \ge +k_{\text{entry}} \quad (\text{Short Far / Long Near}) \\ 0 & \text{if } \left|\frac{S_t - \mu_S}{\sigma_S}\right| \le k_{\text{exit}} \quad (\text{Flat}) \end{cases}$$
+
+Here, $\mu_S$ and $\sigma_S$ represent the sample mean and standard deviation of the spread over the training window, while $k_{\text{entry}}$ and $k_{\text{exit}}$ are static parameters fixed prior to out-of-sample testing.
+
+### Baseline 2: Deterministic Fixed-Parameter Mean-Reversion Strategy
+
+The mean-reversion baseline assumes an Ornstein-Uhlenbeck (OU) continuous-time stochastic process for the spread $S_t = P_{1,t} - \beta P_{2,t} - \alpha$, where the hedge ratio $\beta$ is estimated via Ordinary Least Squares (OLS) or Johansen cointegration on training data:
+
+$$dS_t = \theta (\mu - S_t) dt + \sigma dW_t$$
+
+The parameter vector $\boldsymbol{\psi} = \{\theta, \mu, \sigma, \beta\}$ is held constant throughout each out-of-sample testing slice. The stationary half-life of mean reversion is $t_{1/2} = \frac{\ln(2)}{\theta}$. Signal generation relies on deterministic z-score thresholds $Z_t = \frac{S_t - \mu}{\sigma/\sqrt{2\theta}}$, paired with a time-based exit at $t_{\text{max}} = 2 \times t_{1/2}$.
+
+### Execution Constraints and Parameterized Friction Matrix
+
+To reflect live trading conditions, signals from all model variants are subjected to execution delays and cost parameters. Generated signals incur an execution latency $\Delta t \in [3, 90]$ minutes, with a median reaction time of $\tilde{\Delta t} \in [5, 15]$ minutes, representing manual workflow via VTB or automated submission via BCS. The capital base is fixed at RUB 30,000 all-in, requiring integer contract allocations and strict initial margin (GO) buffering relative to MOEX rules.
+
+| Parameter / Cost Element | Conservative Scenario | Base Scenario | Stress Scenario |
+| :--- | :--- | :--- | :--- |
+| **MOEX Exchange & Clearing Fee** | RUB 1.50 / contract | RUB 1.50 / contract | RUB 2.00 / contract |
+| **Brokerage Commission (VTB/BCS)** | RUB 1.00 / contract | RUB 1.50 / contract | RUB 3.00 / contract |
+| **Half-Bid-Ask Spread Drag** | 1 tick / leg | 2 ticks / leg | 4 ticks / leg |
+| **Execution Slippage** | 1 tick / leg | 2 ticks / leg | 5 ticks / leg |
+| **Signal Latency ($\Delta t$)** | 5 minutes | 15 minutes | 90 minutes |
+| **Initial Margin (GO) Buffer** | 100% of standard GO | 120% of standard GO | 150% of stress GO |
+
+### Matched LQDT Counterfactual Performance Framework
+
+Every strategy variant is evaluated against a matched counterfactual benchmark based on the money market fund **LQDT** (VIYAM Money Market ETF), which tracks the Russian Overnight Money Market Rate Index (RUSFAR). For a pilot allocation of RUB 30,000 drawn from a core account holding exceeding RUB 40 million in LQDT, the diverted capital remains invested in LQDT within the counterfactual universe.
+
+The primary metric for strategy evaluation is the net RUB excess performance over LQDT ($\Delta \Pi_t^{\text{net}}$):
+
+$$\Delta \Pi_t^{\text{net}} = \Pi_t^{\text{strategy}} - \Pi_t^{\text{LQDT}}$$
+
+Where:
+
+$$\Pi_t^{\text{strategy}} = \text{Realized PnL}_t + \text{Unrealized VarMargin}_t - \text{Total Fees}_t - \text{Slippage}_t + \text{Interest on Free Collateral}_t$$
+
+$$\Pi_t^{\text{LQDT}} = V_0 \times \left( \prod_{\tau=1}^{t} (1 + r_{\tau}^{\text{LQDT}}) - 1 \right)$$
+
+Capital management rules set strict action thresholds: a formal warning occurs at a RUB 5,000 excess drawdown; liquidation to flat occurs upon reaching a RUB 10,000 drawdown from the excess high-water mark or a cumulative LQDT shortfall of RUB 10,000; and an outer shortfall boundary is fixed at RUB 15,000. Emergency funding injections (up to RUB 15,000 gross cumulative) are restricted strictly to averting forced broker liquidation during extreme volatility spikes, and may never fund fresh positions or reset lifetime loss limits.
+
+---
+
+## Taxonomies of Regime Indicators: Observable vs. Latent State Models
+
+Regime conditioning seeks to modulate strategy behavior based on market state transitions. However, introducing state dependency increases search degrees of freedom and creates risks of fitting historical noise. To evaluate incremental value, candidate indicators are categorized into Simple Observable Indicators and Latent/Inferred Change-Point Models.
+
+### Simple Observable Regime Indicators
+
+Observable indicators are calculated directly from point-in-time market data at decision time $t$, requiring no unobservable state estimation.
+
+The **Volatility State** ($R_{\text{vol}, t}$) measures the ratio of short-term realized volatility to long-term realized volatility across the target futures family:
+
+$$R_{\text{vol}, t} = \frac{\sigma_{\text{short}, t}}{\sigma_{\text{long}, t}} = \frac{\sqrt{\frac{252}{N_s} \sum_{i=0}^{N_s-1} r_{t-i}^2}}{\sqrt{\frac{252}{N_l} \sum_{j=0}^{N_l-1} r_{t-j}^2}}$$
+
+Using $N_s = 5$ days and $N_l = 60$ days, market environments are partitioned into High Volatility ($R_{\text{vol}, t} > 1.5$), Normal Volatility ($0.75 \le R_{\text{vol}, t} \le 1.5$), and Compressed Volatility ($R_{\text{vol}, t} < 0.75$).
+
+The **Liquidity State** ($L_t$) evaluates market access using a normalized combination of bid-ask spreads and order book depth:
+
+$$L_t = \frac{P_{t}^{\text{ask}} - P_{t}^{\text{bid}}}{P_{t}^{\text{mid}}} \times \frac{1}{\text{Depth}_t^{\text{top5}}}$$
+
+State cutoffs establish Normal Liquidity ($L_t \le \text{P}_{75}(L)$) versus Impaired Liquidity ($L_t > \text{P}_{75}(L)$), where $\text{P}_{75}$ represents the 75th percentile over trailing training data.
+
+The **Monetary Policy and Carry State** ($M_t$) captures central bank policy shifts and interest rate volatility:
+
+$$M_t = \text{RUSFAR}_t - \text{CBR Key Rate}_t$$
+
+Shifts in Central Bank of Russia (CBR) policy rates or money market benchmark spreads alter futures basis dynamics and implied carrying costs across financial contracts.
+
+### Latent State and Change-Point Models
+
+Latent state frameworks infer underlying regimes from observed price sequences.
+
+**Hidden Markov Models (HMM)** assume spread returns $r_t$ are generated by an unobserved discrete Markov chain $S_t \in \{1, \dots, M\}$ governed by transition matrix $\mathbf{P} = (p_{ij})$. Conditional on state $S_t = k$, returns follow a normal distribution $r_t \mid S_t = k \sim \mathcal{N}(\mu_k, \sigma_k^2)$. To prevent future information leakage, state inference must use forward filtering probabilities $\alpha_t(k) = P(S_t = k \mid \mathcal{F}_t)$ based strictly on historical data $\mathcal{F}_t = \{r_1, \dots, r_t\}$. Full-sample backward smoothing algorithms (e.g., Baum-Welch smoothing) are excluded from out-of-sample testing as they introduce forward-looking bias.
+
+**Bayesian Online Changepoint Detection (BOCPD)** tracks the run-length $r_t$, defined as the time elapsed since the most recent structural break. The posterior distribution of the run-length updates recursively:
+
+$$P(r_t = k \mid \boldsymbol{x}_{1:t}) \propto \sum_{r_{t-1}} P(r_t \mid r_{t-1}) P(x_t \mid r_{t-1}, \boldsymbol{x}_{t}^{(r)}) P(r_{t-1} \mid \boldsymbol{x}_{1:t-1})$$
+
+Where $P(r_t \mid r_{t-1})$ uses a hazard rate $H(k) = \frac{1}{\lambda}$ representing the prior probability of a structural change. When the reset probability $P(r_t = 0 \mid \boldsymbol{x}_{1:t})$ exceeds a threshold $\gamma_{\text{reset}}$, a regime shift is signaled.
+
+**Cumulative Sum (CUSUM) Filters** monitor structural changes in the mean or variance of model residuals:
+
+$$W_t = \frac{1}{\sigma \sqrt{T}} \sum_{i=1}^{t} (e_i - \bar{e})$$
+
+Where $e_i$ represents 1-step-ahead baseline forecast errors. A structural break is identified when $|W_t| > c_{\alpha}$, where $c_{\alpha}$ is derived from boundary crossing distributions.
+
+| Model Category | Key Model Type | Parameters Estimated | Lookback Window | Real-Time Latency | VPS Memory Footprint | Overfitting Risk |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Observable State** | Volatility Ratio | None (Deterministic) | 5-day / 60-day | $< 1$ ms | $< 1$ MB | Very Low |
+| **Observable State** | Liquidity Composite | Percentile Cutoff ($P_{75}$) | 30-day trailing | $< 1$ ms | $< 1$ MB | Low |
+| **Observable State** | Policy Carry Spread | CBR Key Rate Spread | Point-in-time calendar | $< 1$ ms | $< 1$ MB | Low |
+| **Latent State** | 2-State HMM / GARCH | $\{\mu_k, \sigma_k, \mathbf{P}\}_{k=1}^2$ | 250-day rolling refit | 15–50 ms | 15–30 MB | High (Label switching) |
+| **Latent State** | BOCPD Filter | Hazard Rate $\lambda$, Priors | Recursive online | 5–20 ms | 5–10 MB | High (Parameter sensitivity) |
+| **Latent State** | CUSUM Filter | Boundary Value $c_{\alpha}$ | 120-day expanding | $< 2$ ms | $< 2$ MB | Moderate |
+
+---
+
+## Preregistered Hypothesis Cards and Architectural Isolation
+
+To prevent unconstrained model tuning, regime conditioning must not alter entry thresholds, position sizing, exit boundaries, and pair eligibility simultaneously. Each regime intervention mechanism is isolated within a preregistered Hypothesis Card.
+
+### Hypothesis Card 1: Volatility-Gated Entry Filter
+
+Hypothesis Card 1 evaluates restricting new position entries during high-volatility regimes to prevent executing trades when spread mean-reversion half-lives expand. The target mechanism modulates the entry gate parameter $G_t \in \{0, 1\}$. New position entries are permitted if and only if $R_{\text{vol}, t} \le 1.5$. When $R_{\text{vol}, t} > 1.5$, $G_t$ is set to 0, suppressing fresh signal generation while existing positions remain managed under baseline exit rules. The decision-time information set relies on close prices up to bar $t-1$. The primary failure mode occurs when transient volatility spikes generate profitable mean-reversion opportunities that are skipped by the entry gate.
+
+### Hypothesis Card 2: Liquidity-Scaled Position Sizing
+
+Hypothesis Card 2 tests scaling position sizing inversely with bid-ask spread drag and market depth to reduce inventory risk during illiquid periods. The target mechanism modulates the position sizing multiplier $w_t \in [0.0, 1.0]$. The sizing rule sets $w_t = 1.0$ for $L_t \le \text{P}_{50}(L)$, $w_t = 0.5$ for $\text{P}_{50}(L) < L_t \le \text{P}_{75}(L)$, and $w_t = 0.0$ for $L_t > \text{P}_{75}(L)$. Within a RUB 30,000 capital allocation, integer contract rounding causes $w_t = 0.5$ to round down to 0 contracts for single-contract positions, making this rule act as an implicit entry filter. The decision-time information set is constructed from order book depth and spreads recorded at bar $t-1$. The primary failure mode involves frequent trade truncation leading to disproportionate fixed commission drag relative to gross gains.
+
+### Hypothesis Card 3: Change-Point Triggered Exit Acceleration
+
+Hypothesis Card 3 investigates accelerating position exits upon detecting structural regime shifts, overriding baseline OU mean-reversion holding durations. The target mechanism alters the mandatory exit signal $E_t \in \{0, 1\}$. A forced market exit ($E_t = 1$) is triggered if the BOCPD posterior probability $P(r_t = 0 \mid \boldsymbol{x}_{1:t}) > 0.65$ or if the CUSUM statistic $|W_t| > c_{0.05}$. The decision-time information set uses recursive run-length probabilities updated at bar $t$ using data up to $t-1$. The primary failure mode stems from false-positive change-point triggers that generate whipsaw losses and unnecessary transaction costs.
+
+### Hypothesis Card 4: Macro-Policy Key Rate Pair Exclusion
+
+Hypothesis Card 4 targets suspending trading across specific futures contract families during central bank policy announcements or severe macroeconomic shocks. The target mechanism modifies the eligible pair universe $\Omega_t$. Currency futures spreads (e.g., Si/CNH) are excluded from $\Omega_t$ during windows defined by $t_{\text{CBR}} \pm 2 \text{ days}$, where $t_{\text{CBR}}$ represents an announced CBR interest rate decision date. The decision-time information set uses the published CBR meeting schedule known ex-ante. The primary failure mode is foregoing profitable basis convergence trades that occur during post-announcement volatility normalization.
+
+---
+
+## Out-of-Sample Validation Protocol and Walk-Forward Skeleton
+
+Evaluating incremental regime performance requires a walk-forward validation structure designed to prevent data leakage and forward-looking bias.
+
+### Walk-Forward Split Architecture
+
+The chronological validation structure partitions historical MOEX futures data into $K$ sequential rolling blocks:
+
+1.  **Training Window:** Fixed at 250 trading days (1 calendar year). Baseline parameters ($\mu, \sigma, \beta, \theta$), observable percentiles ($\text{P}_{75}(L)$), and latent state transition matrices ($\mathbf{P}$) are estimated strictly within this window.
+2.  **Purging Window:** Placed at the end of each training block and sized to the maximum holding period $t_{\text{max}} = 2 \times t_{1/2}$ to eliminate parameter overlap with test observations.
+3.  **Embargo Window:** A fixed 5-day embargo follows the training block to prevent serial correlation leakage into the evaluation period.
+4.  **Test Window:** Fixed at 60 trading days (1 calendar quarter). Strategy parameters and regime thresholds remain fully frozen during test block execution.
+5.  **Final Untouched Holdout:** A 6-month historical period is reserved and kept untouched until all strategy rules and hypothesis cards are finalized.
+
+### Hardware and Resource Execution Constraints
+
+Strategy development and deployment must adhere to hardware and environment boundaries:
+
+*   **Development / Research Host:** MacBook Pro Intel 6-core i7, 16 GB RAM. Allocated for offline walk-forward cross-validation, parameter sweeps, and model estimation.
+*   **Target Execution VPS:** 1 vCPU, 1 GB RAM, 2 GB swap, 20 GB disk. The shared background memory budget available for strategy execution is **250–350 MB**.
+*   **Operational Footprint:** Continuous high-frequency MCMC updates or high-dimensional latent state filtering cannot run within the 1 vCPU / 1 GB RAM VPS limits without risking out-of-memory (OOM) process termination. Online regime inference algorithms must be computationally lightweight, compiled natively, and execute within millisecond timeframes.
+
+### Statistical Significance and Ablation Testing Protocol
+
+To confirm that regime conditioning provides genuine incremental value rather than random variance, candidate models must pass a three-tier ablation protocol:
+
+*   **Tier 1: Net Excess Return Threshold:**
+
+$$\Delta \Pi_{\text{Regime}}^{\text{net}} > \Delta \Pi_{\text{Baseline}}^{\text{net}} + \text{RUB } 2,000$$
+
+The RUB 2,000 buffer per 90-day evaluation period compensates for the added operational complexity of regime tracking.
+
+*   **Tier 2: Paired Bootstrap Significance Test:**
+    Resample paired out-of-sample excess returns $\Delta r_t = r_t^{\text{Regime}} - r_t^{\text{Baseline}}$ using a Stationary Block Bootstrap to account for temporal dependence. The null hypothesis $H_0: \mathbb{E}[\Delta r_t] \le 0$ must be rejected at the $p < 0.025$ significance level.
+*   **Tier 3: Minimum Trade Activity Criterion:**
+    The regime-conditioned variant must generate at least $N_{\text{trades}} \ge 30$ executed trades per 90-day test block. Strategies that remain inactive for extended periods fail the deployment gate due to capital underutilization relative to the LQDT benchmark.
+
+---
+
+## Macro-Policy Shifts, Operational Risk, and Falsification Criteria
+
+A common flaw in regime-switching literature is mistaking policy-defined market disruptions for predictable, stationary regimes. On MOEX, major macroeconomic shocks represent non-stationary structural breaks that cannot be reliably forecasted by statistical models trained on historical price data.
+
+### Policy-Defined Events vs. Learned Predictive States
+
+Historical MOEX trading disruptions demonstrate that structural market shifts caused by policy decisions or geopolitical shocks require explicit risk boundaries rather than probabilistic regime forecasts:
+
+1.  **Exchange Trading Suspensions:** The February–March 2022 MOEX trading halt suspended equity and derivatives trading. Latent state models trained on pre-2022 data could not forecast the suspension or the price gaps that occurred upon market reopening.
+2.  **Emergency Key Rate Adjustments:** Rapid CBR key rate shifts (such as hikes to 20% in 2022 or 18%–20%+ in 2024) fundamentally altered money market yield curves and implied carrying costs overnight.
+3.  **Sanctions and Infrastructure Shifts:** External sanctions impacting financial infrastructure (such as MOEX clearing adjustments in June 2024) caused structural shifts in currency basis pricing.
+
+These exogenous disruptions mandate deterministic risk controls—such as mandatory de-risking prior to scheduled policy announcements and hard stop-loss limits—rather than probabilistic state estimation.
+
+### Explicit Discard and Deferral Criteria
+
+Candidate regime conditioning models must be formally **DISCARDED or DEFERRED** if any of the following conditions occur during walk-forward validation:
+
+1.  **Latency Sensitivity Failure:** The net excess return of the regime variant over the baseline ($\Delta \Pi_{\text{Regime}}^{\text{net}} - \Delta \Pi_{\text{Baseline}}^{\text{net}}$) drops below zero when signal execution delay increases from 5 minutes to 15 minutes.
+2.  **Integer Lot Sizing Truncation:** Within the RUB 30,000 capital framework, sizing multipliers ($w_t$) reduce target positions below 1 contract for over 50% of generated signals, resulting in missed mean-reversion cycles.
+3.  **Transaction Fee Drag:** The regime model increases trading frequency such that cumulative MOEX and broker fees consume more than 25% of gross strategy returns.
+4.  **Drawdown Trigger Breach:** The regime variant hits the RUB 10,000 action threshold or RUB 15,000 outer shortfall limit during testing while the baseline strategy remains within warning limits.
+5.  **State Instability / Whipsaw:** Latent state models switch states more than 3 times within a single trading day, generating repeated entry and exit transaction costs.
+
+### Strategic Recommendation
+
+Evaluating market microstructure mechanics, fee structures, and manual execution lags leads to the following conclusions:
+
+*   **Primary Recommendation:** **DEFER** the deployment of complex latent state regime models (HMM, BOCPD, CUSUM) for the initial live pilot. Latent state models introduce parameter instability, computational complexity, and risk of state whipsaw under manual execution delays (5–15 minutes).
+*   **Secondary Conditional Recommendation:** If regime conditioning is evaluated empirically, restrict testing to **Simple Observable Volatility Gating (Hypothesis Card 1)** and ex-ante **Macro-Policy Exclusion Windows (Hypothesis Card 4)**. These observable rules introduce no computational overhead, protect capital during macro dislocations, and operate reliably within the VPS memory allocation (250–350 MB RAM).

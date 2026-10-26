@@ -1,0 +1,314 @@
+# Operational Feasibility, Resource Allocation, and Infrastructure Design for MOEX Futures-Spread Analytics
+
+## Executive Summary and Core Architecture
+
+Operating an automated data collection, quantitative spread analytics, and virtual ledger engine within a low-resource Virtual Private Server (VPS) hosting environment requires strict isolation boundaries and deterministic resource management. The operational environment consists of a single-core virtual server (1 vCPU, 1 GB RAM, 2 GB swap, 20 GB SSD running Ubuntu 24.04 x86_64) hosting an active, mission-critical Xray/3X-UI VPN service utilizing ports 22, 443, and 20724. The background resource budget available for analytics, ingestion, and event-driven logging is capped at a shared, unverified allowance of 250–350 MB RAM.
+
+To maintain network stability and prevent kernel Out-Of-Memory (OOM) process termination from disrupting the primary VPN daemon, the analytical stack relies on a decoupled processing topology. Continuous, low-overhead data ingestion and state-tracking are isolated on the VPS host using an optimized SQLite engine operating under strict `cgroups v2` resource boundaries. Heavy analytical tasks, multi-year strategy backtesting, and broad parameter optimizations are scheduled off-host on a local workstation (MacBook Pro Intel 6-core i7, 16 GB RAM) using DuckDB attached directly to synchronized SQLite database replicas or cold compressed Parquet snapshots.
+
+Data ingress relies on unauthenticated, rate-limited public REST endpoints from the Moscow Exchange Informational & Statistical Server (MOEX ISS). Downstream automated trade execution targets the BCS Trade API via REST and WebSocket protocols, alongside legacy support for broker connectivity platforms such as Transaq TXmlConnector and Alor OpenAPI. Real-time system monitoring and signal dispatch are routed through a non-blocking, rate-limited Telegram Bot API dispatch loop. 
+
+Risk controls and capital allocation accounting are evaluated against a matched Liquidity ETF (LQDT) counterfactual holding, enforcing automated drawdowns and shortfall thresholds without assuming unverified collateral eligibility or broker credit terms.
+
+---
+
+## 1. Workload Dimensioning, Data Architecture, and Memory Bounding
+
+Designing a data collection and virtual ledger runtime within a resource-constrained hosting environment requires deterministic bounding of CPU, memory, storage, and network resource consumption. Processing workloads are dimensioned based on operational parameters across the Moscow Exchange (MOEX) derivatives market (FORTS). The continuous monitoring universe comprises $N_{\text{universe}} \in [10, 300]$ active futures contracts, from which a focused watchlist of $N_{\text{watchlist}} \in [5, 30]$ candidate calendar and inter-commodity spread pairs (representing 10 to 60 contract legs) is selected.
+
+### Ingestion Pipeline Workload Parameters
+
+Data ingestion flows through three distinct pipelines: End-Of-Day (EOD) historical archive updates, 15-minute intraday market snapshots for active watchlists, and event-driven virtual ledger state logging.
+
+The EOD collection pipeline fetches daily Open, High, Low, Close, Volume (OHLCV), and Open Interest (OI) metrics across the entire universe $N_{\text{universe}} = 300$. Each standardized JSON payload per contract measures approximately $120 \text{ bytes}$ in raw structured form. The daily storage growth $\Delta S_{\text{EOD}}$ is calculated as:
+
+$$\Delta S_{\text{EOD}} = 300 \text{ contracts} \times 120 \text{ bytes/contract} = 36 \text{ KB/day}$$
+
+Over a three-year historical baseline ($\approx 750$ trading days), the total raw historical footprint $S_{\text{hist}}$ across 300 contracts accumulates to:
+
+$$S_{\text{hist}} = 300 \text{ contracts} \times 750 \text{ days} \times 120 \text{ bytes/record} \approx 27.0 \text{ MB}$$
+
+Intraday snapshot collection operates on the active watchlist $N_{\text{watchlist}} = 30$ pairs (representing 60 underlying contract legs). Sampling occurs at 15-minute intervals across the 14-hour MOEX derivatives trading session (56 intervals per session). Each raw point-in-time snapshot contains quote depth, last trade, bid/ask spreads, and open interest, averaging $150 \text{ bytes}$ per leg record. The daily intraday snapshot storage growth $\Delta S_{\text{intraday}}$ is:
+
+$$\Delta S_{\text{intraday}} = 60 \text{ legs} \times 56 \text{ intervals/day} \times 150 \text{ bytes/record} = 504 \text{ KB/day}$$
+
+Annually ($\approx 250$ trading days), intraday raw snapshots generate $126.0 \text{ MB}$ of uncompressed telemetry.
+
+Virtual ledger updates and risk state telemetry operate on an event-driven basis. Assuming an upper bound of 100 signal updates, position state adjustments, and risk recalculations per day, with each record consuming $250 \text{ bytes}$, the ledger storage expansion is $25 \text{ KB/day}$ ($6.25 \text{ MB/year}$).
+
+| Workload Parameter | Baseline Setting (10 Contracts) | Planning Setting (300 Contracts) | Stress Bound (500 Contracts) |
+| :--- | :--- | :--- | :--- |
+| **EOD Daily Ingress Volume** | 10 contracts / 1.2 KB per day | 300 contracts / 36 KB per day | 500 contracts / 60 KB per day |
+| **Intraday Snapshot Volume** | 5 pairs (10 legs) / 84 KB per day | 30 pairs (60 legs) / 504 KB per day | 50 pairs (100 legs) / 840 KB per day |
+| **Daily Storage Accumulation** | ~85.2 KB per day | ~540 KB per day | ~900 KB per day |
+| **Annual Storage Expansion** | ~21.3 MB per year | ~135.0 MB per year | ~225.0 MB per year |
+| **Network Bandwidth Consumption** | ~150 KB per day | ~850 KB per day | ~1.45 MB per day |
+| **Steady-State Ingestion Memory** | 28 MB RAM | 42 MB RAM | 65 MB RAM |
+| **Peak Ingestion Memory Allocation** | 45 MB RAM | 85 MB RAM | 140 MB RAM |
+
+### Storage Amplification and Input/Output Bottlenecks
+
+While an annual raw storage expansion of $\approx 135 \text{ MB}$ is minimal relative to a 20 GB SSD, unbuffered row-by-row disk writes create operational risks. Frequent unbuffered disk writes under default Linux filesystem configurations induce high Input/Output wait ($\text{iowait}$) spikes. On a single-vCPU architecture shared with an encrypted VPN daemon, elevated $\text{iowait}$ blocks execution threads, causing packet buffer overflows in Xray, dropped VPN connections, and latent control loops.
+
+Dynamic memory allocations during large HTTP response parsing can trigger transient memory spikes up to 4x the raw payload size due to string object instantiations in high-level runtimes. To mitigate this, data intake must process bounded stream chunks, flushing to an append-only, compressed raw snapshot file (zstd-compressed JSON Lines or binary Parquet) before committing summarized state entries into the structured database.
+
+---
+
+## 2. Storage Engine Architecture, Runtime Seams, and Workstation Synchronization
+
+Selecting an embedded data engine for a low-resource environment requires balancing transactional integrity, analytical query speed, and memory overhead. The runtime architecture serves two operational contexts: continuous real-time monitoring and state tracking on the low-memory VPS, and deep strategy backtesting and historical parameter optimization on the local workstation.
+
+| Architecture Metric | SQLite Engine (OLTP Focus) | DuckDB Engine (OLAP Focus) | Standard Raw Parquet Archives |
+| :--- | :--- | :--- | :--- |
+| **Engine Design** | Embedded Row-Oriented C-Library | Embedded Columnar C++ Engine | Static Compressed Binary Files |
+| **Memory Footprint** | Minimal (< 2 MB base + cache) | Moderate (~20 MB base + vector RAM) | Streaming Memory Allocation |
+| **Single-Row Write Speed** | Sub-millisecond (WAL mode) | Inefficient for small writes | Requires full file rewrite |
+| **Analytical Aggregations** | Sequential row scans | Vectorized SIMD (10-100x faster) | Fast via vectorized reader |
+| **Concurrency Model** | Multi-reader / Single-writer | Single-process process lock | File-system multi-reader |
+| **Operational Designation** | Live VPS Ledger & State Monitor | Local Desktop Research Engine | Cold Historical Archive Store |
+
+### SQLite Pragmas for Low-Memory VPS Deployments
+
+SQLite is selected as the primary operational database for the VPS due to its deterministic memory footprint. To achieve concurrent access, low write latency, and protection against database corruption during unexpected host reboots, specific pragmas must be enforced upon connection initialization:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA cache_size = -8000;
+PRAGMA temp_store = MEMORY;
+PRAGMA busy_timeout = 5000;
+PRAGMA wal_autocheckpoint = 1000;
+```
+
+Activating Write-Ahead Logging (`WAL`) alters SQLite's transactional mechanism. Instead of modifying the main database file directly or utilizing a rollback journal that blocks readers, changes are appended to a `db-wal` sidecar file. Readers continue executing against the main database concurrently with active write operations.
+
+Pairing `WAL` with `synchronous = NORMAL` eliminates full filesystem syncs (`fsync`) on individual commits, deferring sync operations to WAL checkpoints. This reduces disk write amplification, conserving SSD endurance and minimizing CPU wait states on the shared VPS.
+
+### Decoupled Processing via Workstation Synchronization
+
+While SQLite handles single-row state updates and key-value lookups for the virtual ledger, its row-oriented engine slows during multi-year analytical queries across hundreds of futures series. DuckDB is an in-process, columnar OLAP engine that utilizes SIMD vectorization to execute analytical aggregations faster than SQLite. However, DuckDB's runtime buffer allocation can consume hundreds of megabytes during query execution, exceeding the VPS host's 250–350 MB shared background allowance.
+
+To resolve this architectural trade-off, DuckDB's native SQLite attachment capability is leveraged on the local MacBook Pro workstation. The workstation syncs the SQLite database or raw Parquet archives from the VPS via `rsync` over SSH. Analytical research queries execute locally in DuckDB without incurring RAM or CPU overhead on the live VPS host:
+
+```sql
+ATTACH '/path/to/synced_vps_trading.db' AS vps_db (TYPE SQLITE);
+
+SELECT 
+    vps_db.contract_pair,
+    AVG(vps_db.spread_close) AS mean_spread,
+    STDDEV(vps_db.spread_close) AS spread_std
+FROM vps_db.intraday_snapshots
+WHERE snapshot_time >= NOW() - INTERVAL '30 days'
+GROUP BY vps_db.contract_pair;
+```
+
+### Integration Seams for Market Data and Broker APIs
+
+The runtime architecture uses isolated interfaces to decouple external market data and broker protocols from core internal state logic:
+
+*   **MOEX ISS REST Seam**: Unauthenticated public REST endpoints provide historical daily bars and intraday Open Interest statistics (`iss.moex.com`). Network handling modules intercept HTTP status codes 429 (Rate Limit Exceeded) and 529 (Service Overloaded), parsing the `X-Retry-After` header to enforce exponential backoff.
+*   **BCS Trade API Seam**: The later-stage automation branch targets the BCS Trade API (`trade-api.bcs.ru`), which exposes REST and WebSocket interfaces for order execution, account state updates, and streaming quote depth. To preserve system portability, execution logic wraps broker calls behind an abstracted gateway interface, supporting fallback to manual entry via VTB or alternative broker connectors (such as Transaq TXmlConnector or Alor OpenAPI) without requiring schema changes.
+
+```sql
+CREATE TABLE IF NOT EXISTS virtual_ledger (
+    ledger_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    pair_identifier TEXT NOT NULL,
+    leg_a_ticker TEXT NOT NULL,
+    leg_b_ticker TEXT NOT NULL,
+    signal_type TEXT CHECK(signal_type IN ('ENTRY_LONG', 'ENTRY_SHORT', 'EXIT_PROFIT', 'EXIT_STOP', 'EMERGENCY_FLAT')),
+    leg_a_price REAL NOT NULL,
+    leg_b_price REAL NOT NULL,
+    quantity INTEGER NOT NULL,
+    theoretical_pnl REAL NOT NULL,
+    realized_pnl REAL DEFAULT 0.0,
+    execution_status TEXT CHECK(execution_status IN ('SIMULATED', 'MANUAL_VTB_PENDING', 'MANUAL_VTB_FILLED', 'BCS_API_FILLED', 'REJECTED')),
+    lqdt_counterfactual_value REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS risk_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    excess_drawdown REAL NOT NULL,
+    cumulative_lqdt_shortfall REAL NOT NULL,
+    action_triggered TEXT NOT NULL,
+    emergency_funding_drawn REAL DEFAULT 0.0
+);
+```
+
+---
+
+## 3. Telemetry, Alerting Infrastructure, and Telegram API Constraints
+
+Real-time alerting and risk telemetry are delivered through a dedicated Telegram Bot API integration. Telegram notifications serve as the operational channel for manual trade signals, drawdown warnings, and system health alerts.
+
+| Telegram API Constraint | Documented Ceiling | Operational Applied Limit |
+| :--- | :--- | :--- |
+| **Individual Chat Limit** | 1 message per second | Rate-limiter throttles to 0.5 msg/sec |
+| **Group / Channel Limit** | 20 messages per minute | Batch aggregator caps at 10 msg/min |
+| **Global Bot Dispatch Limit** | 30 messages per second | Global queue throttled to 2 msg/sec |
+| **Maximum Message Payload** | 4,096 UTF-8 characters | Chunked at 3,500 characters with plain-text fallback |
+| **HTTP Error 429 Handling** | Rate limit window returned in payload | Backoff reads `retry_after` header plus random jitter |
+
+### Asynchronous Queue and Deduplication Logic
+
+To prevent background analytical tasks or database writes from blocking risk alerts, the Telegram dispatch loop runs as an isolated, non-blocking worker thread. Outgoing notifications are queued in an internal SQLite table (`telegram_alert_queue`), ensuring alert persistence across system restarts.
+
+The dispatch loop retrieves pending records ordered by priority and timestamp, checking an idempotency hash to eliminate redundant transmissions. The idempotency key is derived as:
+
+$$\text{Key}_{\text{idemp}} = \text{SHA256}(\text{alert\_type} \parallel \text{contract\_pair} \parallel \lfloor \text{timestamp} / 60 \rfloor)$$
+
+If an alert matching the generated key was successfully sent within the prior 300 seconds, the new message is suppressed as duplicate telemetry. HTTP POST requests are sent asynchronously to `api.telegram.org`. Successful transmissions (HTTP 200) mark the queue record as sent, while rate-limit responses (HTTP 429) pause the dispatch thread for the duration specified in the `retry_after` payload header.
+
+---
+
+## 4. Operational Failure Budget, System Resilience, and VPN Protection
+
+Operating on a shared 1 vCPU host alongside an active Xray/3X-UI VPN daemon requires strict operational limits. System stability is governed by a single overriding operational rule: **Research and strategy execution processes must never degrade, disrupt, or trigger Out-Of-Memory termination of the VPN service or SSH access daemon.**
+
+### Cgroups v2 Resource Isolation via Systemd
+
+Resource control is implemented natively at the Linux kernel level using `cgroups v2` via systemd service parameters, avoiding container engines that consume memory. The background research service (`/etc/systemd/system/moex-research.service`) is constrained by explicit resource caps:
+
+```ini
+[Unit]
+Description=MOEX Futures Spread Research Engine
+After=network.target x-ui.service
+
+[Service]
+Type=simple
+User=researcher
+WorkingDirectory=/opt/moex-research
+ExecStart=/opt/moex-research/venv/bin/python main.py
+
+MemoryAccounting=true
+MemoryHigh=250M
+MemoryMax=300M
+MemorySwapMax=50M
+
+OOMScoreAdjust=800
+
+CPUAccounting=true
+CPUQuota=50%
+
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=5m
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+To protect critical host network services, the VPN daemon configuration (`/etc/systemd/system/x-ui.service.d/override.conf`) is assigned protective properties:
+
+```ini
+[Service]
+OOMScoreAdjust=-500
+MemoryMin=150M
+```
+
+Assigning `OOMScoreAdjust=800` to the research worker and `OOMScoreAdjust=-500` to the VPN daemon ensures resource isolation. If total host RAM usage approaches capacity ($1024 \text{ MB RAM} + 2048 \text{ MB Swap}$), the Linux kernel OOM killer targets the trading research worker while shielding the VPN daemon and SSH service.
+
+### Automated Safety Trip Controls
+
+The research application implements continuous internal checks that trigger safe shutdowns before hitting system resource limits:
+
+*   **Disk Space Safety Trip**: If available disk space on the root partition `/` drops below $1.5 \text{ GB}$, data ingestion pauses, database WAL files are truncated via `PRAGMA wal_checkpoint(TRUNCATE);`, and an urgent notification is dispatched.
+*   **Stale Feed Safety Trip**: If no valid MOEX ISS ticks or quotes are received for $> 30 \text{ minutes}$ during active trading sessions, pair state tracking switches to `STALE_DATA_HALT`, suppressing trade signal generation.
+*   **Clock Drift Safety Trip**: Time synchronization is checked against Network Time Protocol (NTP) servers on each polling cycle. If clock drift exceeds $\pm 2.0 \text{ seconds}$, signal generation halts to prevent invalid time-series sequence alignment.
+
+---
+
+## 5. External Free Cloud Resources and Operational Boundary Limits
+
+Integrating external free cloud platforms requires evaluating their terms of service, geographic constraints, and lifecycle restrictions. Free cloud services are classified as non-guaranteed, ephemeral resources suitable only for offline analytical enrichment, rather than live 24/7 monitoring or primary database hosting.
+
+| Provider Platform | Documented Free Capacity | Operational Restrictions & Vulnerabilities | Feasibility Status |
+| :--- | :--- | :--- | :--- |
+| **Google Gemini 3 Flash** | 10 RPM, 250k TPM, 1,500 RPD | Ingress IP blocks on Russian host ranges; requires proxy routing | Applicable for offline enrichment |
+| **Google Gemini 3.1 Flash-Lite** | 15 RPM, 1M TPM, 1,000 RPD | Strict daily request cap enforced | Applicable for offline batch runs |
+| **Hugging Face Spaces** | `cpu-basic` (2 vCPU / 16 GB RAM) | Sleep state after 48h idle; Ephemeral disk | Infeasible for continuous hosting |
+| **Render / Koyeb Containers** | 512 MB RAM / Shared CPU | Mandatory sleep after 15–60 min of idle web traffic | Infeasible for 24/7 background tracking |
+
+### Google Gemini API Limitations and Geographic Access
+
+Google AI Studio exposes free access to Gemini Flash models (Gemini 3 Flash, Gemini 3.1 Flash-Lite). However, operational constraints prevent their use in live core workflows:
+
+1.  **Geographic Access Controls**: Direct API requests originating from Russian IP ranges are blocked by Google endpoints. Routing traffic requires an external proxy, adding network latency and failure risks.
+2.  **Rate Limits and Quotas**: Gemini 3 Flash enforces limits of 10 Requests Per Minute (RPM) and 1,500 Requests Per Day (RPD). Exceeding these limits returns HTTP 429 errors.
+
+Consequently, Gemini API integrations are restricted to asynchronous offline tasks—such as news sentiment summarization or contract parsing—executed locally on the workstation.
+
+### Hugging Face Spaces Infrastructure Constraints
+
+Hugging Face Spaces provides container hosting on free `cpu-basic` hardware (2 vCPU, 16 GB RAM). However, platform lifecycle rules prevent deployment as primary monitoring infrastructure:
+
+*   **Inactivity Hibernation**: Free `cpu-basic` Spaces automatically enter sleep mode after 48 hours of inactivity (or 15–30 minutes for web apps lacking active HTTP traffic). Automated background scripts or cron jobs do not reliably prevent sleep without external web traffic.
+*   **Ephemeral Storage**: Storage on free Spaces is non-persistent. Any local SQLite database or state tracking files are wiped whenever the container restarts or wakes from hibernation.
+*   **Policy Constraints**: Policy changes require paid subscriptions (PRO/Team) for persistent Docker or Gradio runtimes, restricting free accounts to static or ZeroGPU ephemeral runtimes.
+
+Hugging Face Spaces cannot serve as the operational virtual ledger or continuous market monitoring host.
+
+---
+
+## 6. Implementation Plan, Preflight Safeguards, and Benchmark Matrix
+
+This section outlines resource allocation targets, preflight checks, failure recovery protocols, and architectural stage choices required prior to operational execution.
+
+### Benchmark Measurement Matrix
+
+The benchmark matrix defines resource usage thresholds across operational states. All testing commands listed are proposed for execution during Stage 3 testing and must **not** be executed during the current desk-research stage.
+
+| Operating State | RAM Target Range | Disk I/O Threshold | Verification Command (Proposed Stage 3) | Target Passage Criteria |
+| :--- | :--- | :--- | :--- | :--- |
+| **Idle System Host** | 180 – 220 MB RAM | < 0.5 MB/s | `free -m; vmstat 1 5` | Host RAM < 250 MB, Swap = 0 MB |
+| **Active VPN Daemon** | 220 – 260 MB RAM | < 1.0 MB/s | `systemctl status x-ui; ss -tulpn` | VPN ports 22/443 active, Latency < 50 ms |
+| **Research Worker Active** | +35 – 50 MB RAM | < 100 KB/s | `systemd-cgtop; ps aux --sort=-%mem` | Combined RAM < 310 MB |
+| **Snapshot Batch Peak** | +60 – 85 MB RAM | < 5.0 MB/s | `cat /sys/fs/cgroup/system.slice/moex-research.service/memory.peak` | Zero OOM terminations, Swap < 50 MB |
+
+### Preflight Safeguards and Protection Boundaries
+
+Prior to deploying services or software in Stage 3, the following preflight requirements and system protection rules must be satisfied:
+
+| Category | Stage 3 Requirement | Operational Limit | Protected System Resource |
+| :--- | :--- | :--- | :--- |
+| **Read-Only Inspection** | Verify host RAM and cgroups v2 mount points | Read-only commands only; no config edits in `/etc` | System Configuration |
+| **SSH Access** | Retain OpenSSH on Port 22 | Do not alter `sshd_config` or access permissions | Remote Access Gateway |
+| **VPN Infrastructure** | Maintain Xray and 3X-UI process paths | Preserve ports 22, 443, 20724; do not flush `iptables` | VPN Tunneling |
+| **Memory Allocation** | Enforce 250–350 MB shared budget limit | Set `MemoryMax=300M` in service file | Host Kernel Scheduler |
+| **Disk Availability** | Confirm root partition space | Ensure > 10 GB free space on `/` before ingestion | Filesystem Integrity |
+
+### Operational Failure Modes and Recovery Protocols
+
+| Failure Mode | Identified Root Cause | Recovery Protocol | System Safeguard |
+| :--- | :--- | :--- | :--- |
+| **Host Memory Spike** | Process memory exceeds 1024 MB | Kernel OOM killer terminates research process | `OOMScoreAdjust=-500` shields VPN daemon |
+| **Database File Lock** | Concurrent write lock contention | Retries write using 5-second timeout | `PRAGMA busy_timeout = 5000;` |
+| **Data Feed Outage** | MOEX ISS HTTP 429 / 529 response | Applies exponential backoff; halts stale signals | Pauses signal generation after 30 min idle |
+| **Disk Exhaustion** | Database WAL file growth | Truncates WAL file; halts ingestion if disk < 1.5 GB | Triggers disk space alert |
+| **NTP Time Drift** | Host clock desynchronization | Resyncs via NTP; suspends processing if drift > 2s | Halts operations to prevent timeline drift |
+
+### Architectural Options Comparison (Stages 5–6)
+
+| System Layer | Option Selected | Technical Rationale | Operational Constraint |
+| :--- | :--- | :--- | :--- |
+| **Operational Database** | SQLite Engine (`WAL` mode, `synchronous=NORMAL`) | Low RAM usage (< 10 MB); safe crash recovery | Bounded page cache via PRAGMAs |
+| **Analytical Database** | DuckDB Engine (Local Workstation Attachment) | Fast vectorized aggregations without VPS RAM load | Restricted to local workstation execution |
+| **Alert Telemetry** | Telegram Bot API (Async Dispatch Loop) | Zero subscription cost; structured event alerts | Enforces rate limits (0.5 msg/sec) |
+| **Process Governance** | Systemd Cgroups v2 (`MemoryMax=300M`) | Kernel-level resource limits; no container overhead | Target OOM score preserves VPN |
+| **External Cloud Services** | Ephemeral Batch Layer (Local Workstation Proxy) | Gemini API used only for offline batch parsing | Non-critical, non-blocking execution |
+
+### Risk Limits and Counterfactual Accounting Framework
+
+Capital allocation and risk tracking are evaluated against a matched Liquidity ETF (LQDT) counterfactual position. Unvalidated operational risk rules define system behavior across drawdown thresholds:
+
+| Control Threshold | Monetary Trigger | Automated System Action |
+| :--- | :--- | :--- |
+| **Warning Threshold** | RUB 5,000 excess drawdown | Telegram alert dispatched to primary operator |
+| **Action Threshold** | RUB 10,000 drawdown or LQDT shortfall | Strategy execution halts; trading limited to closing open exposure |
+| **Outer Boundary Limit** | RUB 15,000 cumulative shortfall | Liquidation triggered; pilot strategy terminated |
+| **Review Window Boundary** | 90 calendar days without reset | Formal operational review required before resetting limits |
+| **Emergency Capital Cap** | RUB 15,000 gross cumulative cap | Used solely to prevent disorderly liquidation; cannot fund new trades |
+
+Under this accounting framework, core capital remaining in the LQDT position accrues interest without double-counting yield deductions. Any emergency funds drawn are tracked against the gross RUB 15,000 allocation limit, preserving core capital safety throughout strategy execution.

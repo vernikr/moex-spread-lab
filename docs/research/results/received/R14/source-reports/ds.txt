@@ -1,0 +1,426 @@
+# R14 — Optional text/news, library and channel evidence
+
+**Decision context:** private MOEX futures-spread research; RUB 30,000 pilot; manual execution at VTB; medium-term spread ideas; zero-trade days allowed. Text is an optional extension, not a prerequisite.
+
+**Research cutoff:** 22 October 2026 (latest public page observed). The brief was prepared 2026-10-07; later public pages are used only to establish source mechanics and current availability, not to claim what was known on 2026-10-07.
+
+**Inputs actually read:** public official pages and API responses listed in Appendix A. **Not read:** private reports, channel exports, books in full, account documents, paid databases, Gemini API responses. No backtest, no trading, no broker/account check, and no measured text value were produced. Conclusions that depend on unread materials are marked conditional.
+
+---
+
+## 1. Bottom line
+
+1. **No text source in this scan has demonstrated — and none is likely to demonstrate without a controlled test — a large incremental edge over prices plus dated event flags** for a 3–90 minute manual MOEX futures-spread process. The relevant information is mostly either (a) already structured as a dated event, (b) numeric rather than linguistic, or (c) too fast-decaying for the stated reaction latency.
+
+2. **Two official sources are worth a bounded prospective test, not a historical LLM backtest:**
+   - **Bank of Russia policy documents** — especially the key-rate release, the medium-term forecast, and the “Summary of the Key Rate Discussion” — for medium-term curve/carry context.
+   - **MOEX ISS `sitenews` operational notices** — contract-specification changes, risk-parameter changes, trading-schedule changes — as an operational-risk filter, not as a directional alpha signal.
+
+3. **Gemini Flash is the wrong tool for the historical part of this project.** The Gemini API and Google AI Studio are not available in Russia according to Google’s current regional list; outside the EEA/UK/Switzerland, free-tier prompts are used for product improvement. More fundamentally, a 2026 model processing 2020 text carries pretraining look-ahead contamination; historical “LLM features” would not be clean predictors. The only clean Gemini use is **prospective shadow mode** after a lawful access path is confirmed.
+
+4. **Build the simple baselines first.** The deterministic alternatives — scheduled-event flags, regex/keyword flags on official titles, structured numeric tables, and simple lexical counts — are likely to capture most of the usable signal at far lower cost and with no model-version risk. Text-model features should be rejected unless they beat these baselines on identical chronological splits and after conservative costs.
+
+5. **The project should not pay a data-licensing or engineering cost for text until the baselines fail.** MOEX ISS terms restrict use of ISS information to familiarisation and prohibit use for profit without a contract; e-disclosure API access appears to require a token and terms, with historical events only from 2020-07-01. These are material constraints, not minor footnotes.
+
+---
+
+## 2. Evidence base and dating
+
+### 2.1 What was verified
+
+| Item | Verification | Date / status |
+|---|---|---|
+| CBR key-rate release publication time | The 11 Sep 2026 release states “Время публикации пресс-релиза … – 13:30 по московскому времени” and ends with “11.09.2026 13:30:00”. | 11 Sep 2026, 13:30 MSK |
+| CBR key-rate decision and forecast | 11 Sep 2026: hold at 14.00%; inflation forecast 6.0–7.0% for 2026; explicit forward-guidance language. 24 Jul 2026: cut 25 bp to 14.00%; average key-rate path 14.5–14.6% in 2026 and 10.5–12.5% in 2027. | 2026 |
+| CBR “Summary of the Key Rate Discussion” | Announced for publication on the sixth working day after each decision from Feb 2024; for the 11 Sep 2026 meeting it was published 23 Sep 2026. | Rule since Feb 2024; observed 23 Sep 2026 |
+| MOEX ISS `sitenews` fields | The endpoint returns `id`, `tag`, `title`, `published_at`, `modified_at`; the item endpoint returns `body`. | Live API |
+| MOEX revision lineage exists | Item 105342: published 2026-10-22 12:56:17, modified 15:40:11. Item 105332: published 10:36:41, modified 10:40:12. | 22 Oct 2026 |
+| MOEX contract-specification notice | ETHA futures parameter change published 28 Sep 2026 13:10, effective 6 Oct 2026; includes before/after parameter table. | 28 Sep 2026 |
+| MOEX Derivatives Telegram | Official channel `@moex_derivatives`; described as “Официальный канал Срочного рынка Московской биржи”. | Current |
+| CBR RSS | Feeds listed at `cbr.ru/development/rss/`: `RssNews`, `eventrss`, `RssPress`, `RssCurrency`. Direct feed fetch failed in this environment (see §8). | Page updated 13 Aug 2025 |
+| e-disclosure API | Disclosure Data API covers events and “details about changing Messages and Documents”; minimum `fromEventDate` 2020-07-01; message type “Change” exists. | Tutorial v1.11, 2023 |
+| Gemini regional restriction | Google’s available-regions page lists supported countries; Russia is absent. A secondary summary states the list “does not include … Russia”. | Page dated 2026-04-28 in search metadata |
+| Gemini free-tier data use | Outside EEA/CH/UK, free-tier content is used for product improvement and may be human-reviewed; inside EEA/CH/UK, paid data rules apply even on free quota. | Terms effective 23 Mar 2026 |
+| Gemini free quotas | Official page says limits are model-specific and visible in AI Studio, not published as a fixed table; third-party reporting for Gemini 2.5 Flash: 15 RPM, 1,500 RPD, 1M TPM. | Unverified / changing |
+
+### 2.2 What was not verified
+
+- Actual Gemini quota for the user’s project/model; whether any lawful Russian access path exists; whether the user has an EEA/UK/CH account eligible for free-tier paid-data treatment.
+- MOEX ISS licensing status for a private trading use; whether the user’s existing market-data agreement covers `sitenews`.
+- e-disclosure API commercial terms and whether historical bulk access is included.
+- Historical depth and completeness of MOEX `sitenews`.
+- Telegram edit/delete history and exact first-visible timestamps.
+- Any measured predictive value of any text feature.
+
+---
+
+## 3. Ranked source / hypothesis / feature table
+
+Ranking is by **expected incremental value per unit of legal, engineering and data risk**, not by source prestige. “Baseline” means the simpler deterministic alternative that must be beaten first.
+
+| Rank | Source / verified identity | Candidate text feature | Licensing / access | Historical availability and timestamps | Conflicts / provenance | Simpler baseline that may already capture it | Expected incremental value | Verdict |
+|---:|---|---|---|---|---|---|---|---|
+| 1 | **Bank of Russia** — `cbr.ru`, official press releases, medium-term forecast, Summary of Key Rate Discussion | Constrained extraction of: (a) inflation-forecast range for current/next year; (b) wording on monetary-conditions tightness; (c) explicit forward-guidance signal; (d) dispersion of views in the Summary | Public; CBR asks for attribution when reusing press material; commercial reuse should be checked | Press releases long history; exact 13:30 MSK publication. Summary since Feb 2024; observed 23 Sep 2026 for 11 Sep meeting (~12 calendar days later) | Official policy communication; no promotional bias; but the release is itself a market-moving event | Scheduled meeting flag + actual key-rate decision + numeric forecast table + policy-rate path | **Low–moderate.** Numeric decision and forecast table capture most of the information; text nuance may add a small residual, mostly at the Summary horizon | **Prospective test only.** Small sample (~8 decisions/year; ~24 Summaries since 2024) limits statistical power. No historical Gemini. |
+| 2 | **MOEX ISS `sitenews`** — `iss.moex.com/iss/sitenews` | Event classification into {contract-spec change, risk-parameter/margin change, trading schedule/halt, listing/delisting, technical release}; extraction of effective date and affected tickers | ISS information is “only for familiarisation” and may not be used for profit without a contract; verify | `published_at` and `modified_at` per item; body endpoint; historical depth unknown; revisions occur within minutes | Official exchange; no directional opinion; commercial interest in orderly markets | Regex/keyword rules on titles; structured tables for numeric risk parameters | **Low as alpha; moderate as operational risk reduction.** A learned classifier may improve recall on long-tail notices, but the event itself is already dated and structured | **Use as deterministic filter first.** Gemini classification only if regex audit shows material misses. |
+| 3 | **e-disclosure.ru / Interfax-CIDC API** | Event-severity classification; correction/revision flags; explanatory-language extraction | Access token; commercial terms; data available only during access period | Events from 2020-07-01; `Change` message type; `EventId` and message types | Accredited disclosure agent; commercial; issuer-provided content | Event type codes, dates, `Change` flags, attachments | **Very low.** The structured event is already the baseline; text adds little for dividends/corporate actions, which are explicitly out of scope | **Do not export.** Keep event flags as baseline B1. |
+| 4 | **MOEX Derivatives Telegram** — `@moex_derivatives` | Faster operational alerts; cross-check of sitenews | Telegram terms; no official historical API | No edit history; current export cannot prove historical visibility; images may contain tables | Official but promotional in tone | MOEX `sitenews` + NCC risk-parameter pages | **Unverifiable.** Possible latency advantage cannot be measured historically | **Prospective monitoring only**, not a backtest source. |
+| 5 | **Broker channels** — VTB `@brokervtb`, BCS `@bcs_world_of_investments` | Margin/liquidity warnings; technical notices | Promotional; no archive | Unverifiable; posts may be edited/deleted | Broker commercial incentives; not authoritative for exchange rules | MOEX/NCC official notices | **Negative/low.** Decision-critical claims must come from exchange/CCP, not broker marketing | **Reject** for decision-critical claims. |
+| 6 | **Media / analyst commentary** — Interfax, RBC, Vedomosti, Kommersant, Telegram commentators | Sentiment, topic, narrative | Paywalls, copyright, syndication; no clean archive | Revisions, duplicates, syndication; promotional/opinion content | Commercial media and commentator incentives | Price + event flags + official text | **Low; high contamination risk** | **Reject** for this project. |
+
+**Reading the table.** Rank 1 is first because the text is official, the publication time is exact, and the policy path is economically relevant to carry and curve slope. It is not first because the text is likely to be profitable. Rank 2 is second because contract-specification and margin changes are directly relevant to a futures spread, but the value is operational rather than directional. Rank 3 is the boundary of the task: e-disclosure event flags are the baseline that text must beat; the text itself is unlikely to add much. Ranks 4–6 fail the verifiability or incentive tests.
+
+---
+
+## 4. Hypothesis-by-hypothesis analysis
+
+### 4.1 H1 — CBR policy-path text may add medium-term curve/carry information
+
+**Economic channel.** The key rate and expected policy path affect the cost of carry, the slope of the futures curve, and the relative attractiveness of near versus far contracts. A change in the expected path can move calendar spreads even when the spot policy rate is unchanged.
+
+**What the text adds beyond the event flag.** The scheduled meeting is a known event. The actual decision is a number. The medium-term forecast is a table of ranges. The residual linguistic information is:
+- whether the statement signals a pause, a prolonged hold, or readiness to tighten/ease;
+- whether the balance of risks is described as shifting;
+- whether the Summary reveals a wider dispersion of views than the decision itself suggests;
+- whether the forecast language changes in a way not captured by the numeric range.
+
+The 11 Sep 2026 release, for example, says “Совокупность … может потребоваться более жесткая денежно-кредитная политика, чем в базовом сценарии” — a conditional tightening bias that is not fully captured by the 14.00% decision or the 6.0–7.0% forecast. This is exactly the kind of nuance a constrained extraction could encode.
+
+**Why the incremental value is likely small.**
+- The release is published at 13:30 MSK with a known schedule; the market and algorithmic traders react within seconds to minutes.
+- The manual reaction median is 5–15 minutes, so the user is structurally late for the initial repricing.
+- The numeric forecast table is structured and can be parsed without an LLM.
+- The Summary is published much later — 23 Sep for the 11 Sep meeting — so its information is stale for short-horizon trading; it could only matter for medium-term positioning if the market underreacts to the dispersion of views.
+- The sample is tiny: ~8 decisions per year, and only ~24 Summaries since Feb 2024. A learned text model cannot be trained reliably on this; a simple lexical feature or a hand-coded schema is the only feasible approach.
+
+**Baseline that must be beaten.** B1: scheduled meeting flag + actual decision + numeric forecast path + previous decision. B2: simple lexical counts (e.g., counts of “повышение”, “снижение”, “жесткая”, “мягкая”, “пауза”) in the release and Summary. Only if B3 (constrained Gemini extraction) beats B2 on identical chronological splits with conservative costs should the text feature be retained.
+
+**Verdict.** Worth a **prospective shadow test**, not a historical Gemini backtest. The test should ask whether the Summary’s dispersion/tone predicts the 1–4 week change in the near–far spread beyond the policy rate and forecast. If it does not, drop it.
+
+---
+
+### 4.2 H2 — MOEX operational notices can reduce operational risk in spread positions
+
+**Economic channel.** A futures spread is exposed to contract-specification changes, margin/risk-parameter changes, trading-schedule changes, and halts. These do not predict direction, but they can change the economics of an existing spread, force additional collateral, or invalidate a planned roll.
+
+**What the text adds beyond the event flag.** The event is already dated and structured. The text model would classify the notice into a category and extract the effective date and affected contracts. This is a **filtering and triage** task, not an alpha task. A regex baseline on the title is strong:
+- “изменени… параметров фьючерса”
+- “риск-параметр… на срочном рынке”
+- “приостановк… торгов”
+- “расписани… торгов”
+- “допуск… к торгам”
+
+The ETHA notice illustrates the structure: a dated article with a before/after parameter table and an effective date. A regex can find it; a table parser can extract the numbers; a text model adds little.
+
+**Why a learned classifier might still help.** Long-tail notices may use unexpected wording. A constrained Gemini classifier could improve recall on notices that regex misses. But this is an operational-risk reduction, not a return-enhancing feature. The cost of a miss is a stale spread or an unexpected margin call, not a lost alpha opportunity.
+
+**Baseline that must be beaten.** B1: regex/keyword rules on `title` and `body`; B2: simple TF-IDF or keyword-count classifier. B3 only if the regex audit shows material misses.
+
+**Verdict.** Use `sitenews` as a **deterministic event feed** and build the regex filter first. A Gemini classifier is optional and should be judged on **recall of relevant notices per 100 reviewed**, not on trading P&L.
+
+---
+
+### 4.3 H3 — Corporate-disclosure text is baseline, not a new signal
+
+Dividends, corporate actions, and other formally disclosed events are explicitly a separate factual input stream in this project. The e-disclosure API provides event types, dates, and a `Change` message type for revisions. These are already structured event flags. Text on top of them could classify severity or detect a correction, but the event code and the `Change` flag already do most of that work. The historical API is limited to events from 2020-07-01 and requires access terms. **Do not build a text pipeline here.** Keep e-disclosure event flags as baseline B1.
+
+---
+
+### 4.4 H4 — Telegram is not a historical source
+
+The official MOEX Derivatives channel `@moex_derivatives` exists and is verified as the derivatives-market channel. But Telegram does not expose a reliable edit history or historical visibility timestamp through a normal export. A current export can show the current text, not what was visible at 10:36 last Tuesday. Posts may be edited or deleted. Images may contain tables that are not machine-readable. Therefore:
+- **Do not use Telegram for historical backtests.**
+- **Prospective monitoring only**, with local timestamping and screenshot/hash capture at first observation.
+- If a Telegram post and a `sitenews` item cover the same event, use `sitenews` as the primary record and Telegram only as a latency cross-check.
+
+---
+
+### 4.5 H5–H6 — Broker and media channels are rejected for decision-critical claims
+
+Broker channels are promotional and not authoritative for exchange rules. VTB’s `@brokervtb` is described as an official broker channel for investments and personal finance, with a disclaimer that it does not provide individual investment recommendations. BCS’s `@bcs_world_of_investments` is an official company/product news channel. Neither is a reliable archive of margin or contract changes. Media commentary is paywalled, syndicated, and opinion-heavy. For a project where a missed contract change or a false signal costs real money, these are not acceptable primary sources.
+
+---
+
+## 5. Bounded export briefs
+
+The following briefs are **bounded**: they specify exactly what to capture, from where, with which identifiers, and why a deeper export is or is not worth it. They are designed to support a later controlled test, not to authorise a whole-channel scrape.
+
+### 5.1 CBR policy documents
+
+| Field | Specification |
+|---|---|
+| Verified identity | `cbr.ru`, Bank of Russia; press-release URL pattern `https://www.cbr.ru/press/pr/?file=DDMMYYYY_133000key.htm` |
+| Specific episodes | 11 Sep 2026 hold at 14.00% (`11092026_133000key.htm`); 24 Jul 2026 cut 25 bp to 14.00% (`24072026_133000key.htm`); 23 Sep 2026 Summary for the 11 Sep meeting; 23 Oct 2026 next scheduled meeting |
+| Original links / IDs | Release filename encodes date and 13:30 MSK; Summary URL on `cbr.ru`; meeting calendar at `cbr.ru/dkp/cal_mp/` |
+| Timestamps | Release: 13:30 MSK / 10:30 UTC. Summary: observed 23 Sep 2026, no fixed intraday time; capture first-fetch time. |
+| Fields to capture | `release_id` (filename), `publication_ts_msk`, `title`, `body_text`, `forecast_table`, `summary_url`, `summary_publication_date`, `content_sha256`, `first_fetch_utc`, `http_status` |
+| Edit history | CBR pages may update links; capture a local snapshot at first fetch and a second hash 24 h later. If a public archive is needed, use a lawful web archive, but do not assume it proves first visibility. |
+| Transcript availability | Not needed; the text release is the primary document. Press-conference Q&A is optional and would introduce additional timing/transcript problems. |
+| Deeper export worth it? | **Yes, but small.** ~8 releases + ~8 Summaries per year. The constraint is not volume; it is statistical power and contamination. Historical Gemini processing is not clean. Prospective capture is worth it. |
+
+### 5.2 MOEX ISS `sitenews`
+
+| Field | Specification |
+|---|---|
+| Verified identity | `iss.moex.com/iss/sitenews`; item endpoint `iss.moex.com/iss/sitenews/{id}.json` |
+| Specific episodes | `id=105342` — Spectra 9.12 technical release, published 2026-10-22 12:56:17, modified 15:40:11; `id=105332` — price-corridor/risk-range change for `RU000A10FDS3`, published 10:36:41, modified 10:40:12; ETHA parameter change article `n104613`, published 2026-09-28 13:10, effective 2026-10-06 |
+| Original links / IDs | `https://iss.moex.com/iss/sitenews.json?start=0`; `https://iss.moex.com/iss/sitenews/{id}.json`; article URLs `https://www.moex.com/n104613` |
+| Timestamps | `published_at` and `modified_at` per item; `body` endpoint has `published_at` but no separate `modified_at` in the content block — use the list endpoint’s `modified_at` for lineage. Timezone: MSK per MOEX site convention; verify against exchange documentation before aligning to bars. |
+| Fields to capture | `id`, `tag`, `title`, `published_at`, `modified_at`, `body`, `body_sha256`, `first_fetch_utc`, `event_category` (regex), `affected_tickers`, `effective_date` |
+| Edit history | `modified_at` proves revisions exist. Capture the body at first fetch and again after 24 h; do not use a later body as if it were available at `published_at`. |
+| Transcript availability | Not applicable; text is native. |
+| Deeper export worth it? | **Only filtered categories.** The whole feed is noisy (listing, REPO eligibility, technical releases). Export only notices matching the spread-relevant regex set, plus a random sample of non-matches for false-negative audit. |
+
+### 5.3 MOEX Derivatives Telegram
+
+| Field | Specification |
+|---|---|
+| Verified identity | `@moex_derivatives`, official derivatives-market channel |
+| Specific episodes | ETHA parameter change; risk-parameter changes; new contract launches |
+| Original links / IDs | Telegram post IDs; no stable public URL beyond the channel |
+| Timestamps | Telegram client-local time; edit/delete history not exposed. Capture first-observation UTC locally. |
+| Fields to capture | `post_id`, `first_seen_utc`, `text`, `image_ocr_text` (if any), `forwarded_from`, `edited_flag` |
+| Edit history | **Not available.** A current export cannot prove historical visibility. |
+| Transcript availability | Text is native; images may require OCR and may be incomplete. |
+| Deeper export worth it? | **No for historical backtest.** Prospective capture only, as a latency cross-check against `sitenews`. |
+
+### 5.4 e-disclosure (baseline only)
+
+| Field | Specification |
+|---|---|
+| Verified identity | `e-disclosure.ru`, Interfax-CIDC Disclosure Data API |
+| Specific episodes | Dividend record-date events; consolidation/corporate-action events |
+| Fields to capture | `EventId`, `MessageType`, `EventDate`, `Body`, `Attachments`, `Change` flag |
+| Historical availability | From 2020-07-01; access token and terms required |
+| Deeper export worth it? | **No.** Event codes and dates are already the baseline. Do not build a text pipeline here. |
+
+---
+
+## 6. Targeted library retrieval plan
+
+This is not a book-summary plan. It identifies specific documents and sections that answer precise unresolved questions.
+
+| Unresolved question | Exact source / section | Why it matters |
+|---|---|---|
+| How do I test whether Gemini’s historical “predictions” are contaminated by pretraining? | **Glasserman & Lin (2023/2024), “Assessing Look-Ahead Bias in Stock Return Predictions Generated By GPT Sentiment Analysis,” arXiv:2309.17322; Journal of Financial Data Science 6(1):25–42.** Read abstract and the sections on de-biasing, company-identifier removal, and in-sample vs out-of-sample results. | Provides the entity-masking test and the distinction between look-ahead bias and the distraction effect. |
+| What is the direct statistical test for lookahead bias in a pretrained model? | **Sarkar & Vafa (2024), “Lookahead Bias in Pretrained Language Models,” ICML 2025 Workshop / SSRN.** Read the test design based on events that are unpredictable given a prespecified information set. | Gives a falsification test that can be applied to any Gemini-generated historical feature. |
+| Is there a time-consistent model alternative? | **He, Lv, Manela & Wu (2025), “Chronologically Consistent Large Language Models,” arXiv:2502.21206v3.** Read abstract and the asset-pricing/news-forecasting section. | Shows how to train on only information available at each point; an alternative if the project ever moves beyond Gemini. |
+| What is the simplest defensible lexical baseline? | **Tetlock (2007), “Giving Content to Investor Sentiment,” Journal of Finance 62(3):1139–1167**; **Loughran & McDonald (2011), “When Is a Liability Not a Liability?,” Journal of Finance 66(1):35–65**. | Establishes the media-sentiment and finance-dictionary baselines that any LLM feature must beat. |
+| What Russian-language evidence exists for news-impact features? | **Riabykh, Surzhko, Konovalikhin & Koltcov (2022), “STTM: an efficient approach to estimating news impact on stock movement direction,” PeerJ Computer Science 8:e1156**. | Provides a Russian-market baseline and feature-engineering reference; not a validation of Gemini. |
+| What schema should the CBR policy-path extraction use? | **CBR, “Основные направления единой государственной денежно-кредитной политики”** (annual), sections on the forecast, reaction function, and risk balance; **CBR Summary of the Key Rate Discussion**, sections “Ситуация в экономике и инфляция,” “Денежно-кредитные условия,” “Выводы для денежно-кредитной политики”. | Defines the economically meaningful fields, rather than letting the model invent a “sentiment” score. |
+| What fields does the disclosure API expose, and how are revisions represented? | **Interfax-CIDC, “Tutorial: Disclosure Data API,” v1.11 (2023), §2.3 Access, §4.1 Request parameters, §4.2 Response, §7.3 Attributes**. | Confirms the 2020-07-01 minimum date, the `Change` message type, and the structured nature of the baseline. |
+| Does the MOEX ISS developer manual document `sitenews`? | **MOEX ISS Developer Manual (2016)** documents market data and history but not the `sitenews` schema. Use live API introspection instead: `iss.moex.com/iss/sitenews.json` and item endpoints. | Prevents relying on an outdated manual; the live schema is the authority. |
+
+---
+
+## 7. Leakage-aware ablation protocol
+
+### 7.1 Design principles
+
+1. **Freeze the hypothesis and source list before looking at outcomes.** No adding sources after seeing which ones “worked.”
+2. **Chronological walk-forward splits only.** No random shuffling. Every preprocessing step, dictionary, label, threshold, and prompt is fitted or frozen using only information available at the decision time.
+3. **Purge and embargo around events.** Remove a window around each event from the training side to avoid leakage from overlapping labels.
+4. **Final untouched holdout.** At least 6 months, never inspected until the protocol is complete.
+5. **Primary metric is net RUB excess over the matched LQDT counterfactual**, after per-contract fees, spread, slippage, and the specified funding/liquidity rules. Secondary metrics: hit rate, turnover, maximum drawdown, and operational-notice recall.
+6. **Every source/feature tried must be logged**, including failed and abandoned ones.
+
+### 7.2 Baselines and treatment arms
+
+| Arm | Content | Purpose |
+|---|---|---|
+| **B0** | Price-only technical references: momentum, carry/roll yield, spread z-score, volatility | Establishes whether text is needed at all. |
+| **B1** | Deterministic event flags: CBR scheduled meeting + actual decision; MOEX notice regex categories; e-disclosure event type codes | The strongest simple alternative. Text must beat this, not just prices. |
+| **B2** | Simple lexical features on the same text: keyword counts, TF-IDF, finance-dictionary counts, title length | The “no-LLM” text baseline. |
+| **B3** | Constrained Gemini extraction: fixed JSON schema, supplied as-of text only, no free-form trade opinion | The treatment arm. |
+| **B4** | Entity-masked Gemini extraction: company/ticker names removed from the prompt | Contamination diagnostic, not a production feature. |
+
+**Schema for B3.** The model must output only:
+- `event_type` (enum: policy_decision, policy_summary, contract_change, margin_change, schedule_change, other);
+- `direction` (enum: tighten, ease, hold, neutral, not_applicable);
+- `affected_contracts` (list of tickers, extracted verbatim);
+- `effective_time` (ISO timestamp or null);
+- `evidence_span` (verbatim quote from the supplied text);
+- `confidence` (0–1).
+
+No “buy/sell” output. No market commentary. The model is a **feature extractor**, not a trade adviser.
+
+### 7.3 Latency and cost scenarios
+
+| Scenario | Signal-to-action delay | Assumption |
+|---|---:|---|
+| Fast | 3 min | Best-case manual reaction; unrealistic for most days but useful as a bound. |
+| Base | 15 min | Median of the stated 5–15 min range. |
+| Slow | 90 min | Upper bound of the stated range; tests whether any residual survives. |
+
+Costs: per-contract fee/spread/slippage sets in conservative/base/stress scenarios. The pilot capital is RUB 30,000 all-in, integer contracts. A text feature that only works at 3 minutes and zero costs is not usable.
+
+### 7.4 Quota and model-version assessment
+
+- **Free-tier quota:** Official documentation no longer publishes a fixed per-model RPM/RPD table; limits are visible in AI Studio. A third-party report for Gemini 2.5 Flash gives 15 RPM and 1,500 RPD. Treat this as unverified and changing.
+- **Quota adequacy for prospective use:** 1,500 RPD is ample for ~20–50 official releases/day. Quota is not the binding constraint.
+- **Quota adequacy for historical use:** Irrelevant, because historical use is contaminated. Even if the quota allowed it, a 2026 model processing 2020 text is not a clean 2020 predictor.
+- **Model/version risk:** Gemini model versions change; outputs are nondeterministic even at low temperature. Log the exact model ID, prompt, temperature, timestamp, and response for every call. Cache responses by `(model_id, prompt_sha256, source_sha256)`.
+- **Data-use risk:** Outside EEA/CH/UK, free-tier prompts are used for product improvement and may be human-reviewed. Do not send private account documents, broker statements, or non-public source libraries. Only send published official text.
+
+### 7.5 Rejection criteria
+
+Reject the text feature if any of the following holds:
+
+1. **B3 does not beat B2** on the primary metric in walk-forward with conservative costs. A small improvement in classification accuracy is not enough.
+2. **The improvement disappears at 15-minute latency.** If the edge only exists at 3 minutes, it is not compatible with manual execution.
+3. **Entity-masked B4 differs materially from B3.** This indicates pretraining contamination; the historical result is not credible.
+4. **The feature depends on `modified_at` content** that was not available at `published_at`. Revisions are not decision-time information.
+5. **The source’s licensing prohibits profit use**, or the user cannot confirm a lawful access path.
+6. **The sample is too small for the claimed inference.** For CBR Summaries, ~24 observations cannot support a learned model; only a prespecified simple feature is admissible.
+7. **The result is sensitive to prompt wording or model version** beyond a pre-specified tolerance. This is a reproducibility failure.
+
+### 7.6 Bias checklist
+
+| Bias | Mitigation |
+|---|---|
+| Look-ahead / pretraining contamination | Entity masking; prospective-only evaluation; chronological model alternative. |
+| Selection bias | Preregister sources and hypotheses; log every source tried. |
+| Survivorship bias | Include expired/delisted contracts and failed notices. |
+| Revision bias | Use `published_at` snapshot; archive first-fetch body; treat `modified_at` as audit only. |
+| Timezone mismatch | Convert MSK to UTC; align with bar close; document the conversion. |
+| Duplicate/syndication | Deduplicate by title/body hash; prefer original issuer URL. |
+| Publication bias | Include no-action releases and non-events; do not condition on market reaction. |
+| Cost underestimation | Stress scenario must include spread widening and slippage; text features must survive it. |
+
+---
+
+## 8. Quota, latency, cost, and access assessment
+
+### 8.1 Gemini access is the gating issue
+
+Google’s available-regions page lists the countries and territories where the Gemini API and AI Studio are available; Russia is not among them. A secondary summary explicitly states the list “does not include … Russia, Belarus, Iran, Cuba, Syria, North Korea” and others. Technical workarounds (VPN, foreign IP) do not create a lawful entitlement and may breach the terms. This is not a detail to be resolved by engineering; it must be resolved by a lawful access path.
+
+If the user has access through an EEA/UK/CH account, the free tier gets paid-tier data rules (no training, 55-day abuse retention). If the account is outside those regions, free-tier content is used for product improvement. The user’s actual account region is unknown.
+
+### 8.2 Latency is structurally unfavourable
+
+The CBR release is at 13:30 MSK. The manual reaction median is 5–15 minutes. By the time a Gemini call is made, the response parsed, and a human acts, the initial repricing is likely complete. For scheduled events, the text model is competing with faster automated systems. For unscheduled MOEX notices, the same logic applies, though the affected contract may be narrower and the repricing slower. The latency scenario table in §7.3 is designed to test this explicitly.
+
+### 8.3 Cost is not only API cost
+
+Even at zero API cost, the project would incur:
+- engineering time to build and maintain the pipeline;
+- storage/archiving for first-fetch snapshots and audit logs;
+- legal/licensing review for MOEX ISS and e-disclosure;
+- model-version maintenance and prompt regression testing;
+- opportunity cost of not spending that time on execution/cost modeling, which is likely more decision-relevant for a RUB 30,000 pilot.
+
+The free Gemini allowance removes only the per-call fee; it does not remove these costs.
+
+---
+
+## 9. Material conflicts and unknowns
+
+1. **MOEX ISS licensing vs free access.** The endpoint is publicly reachable without authentication, but the terms say ISS information is for familiarisation and may not be used for profit without a contract. This is a conflict between technical access and legal permission. Do not assume “free to fetch” means “free to trade on.”
+2. **CBR RSS access failure.** The RSS page lists the feeds, but direct fetch of `https://www.cbr.ru/rss/RssPress` failed in this environment. The HTML press-release page is accessible. Do not conclude the feed is broken; record the retrieval failure and test again later.
+3. **Gemini technical reachability vs terms.** Some third-party pages claim the API endpoint can be reached from Russia with workarounds, while AI Studio is blocked. Technical reachability does not equal lawful access. This is unresolved and must be treated as a gating condition.
+4. **e-disclosure API terms.** The tutorial documents the API but does not establish that bulk historical access is free. The access-token and “during access period” language suggests commercial terms. Do not budget zero.
+5. **Historical depth of `sitenews`.** The current API returns recent items; the earliest available ID and the completeness of older items were not established. A historical study must first measure coverage.
+6. **Telegram edit history.** No reliable edit/delete history is available. Current exports cannot prove historical visibility. This is a hard limitation, not a temporary inconvenience.
+7. **No measured text value.** This report contains no backtest and no performance claim. Any statement about expected value is a hypothesis, not a result.
+8. **Broker-specific rules.** VTB margin, commission, and collateral treatment for the pilot contracts were not verified. The text feature’s operational value depends on those rules.
+
+---
+
+## 10. Falsification criteria and possible project changes
+
+### Falsification criteria
+
+The text extension should be considered **falsified for this project** if:
+
+- B3 fails to beat B2 on identical chronological splits with conservative costs;
+- the edge is only present at 3-minute latency and disappears at 15 minutes;
+- entity masking materially changes the result;
+- the feature depends on post-publication revisions;
+- the source cannot be lawfully used for trading;
+- the sample is too small to distinguish the feature from noise;
+- the result is not reproducible across model versions or prompt variants.
+
+### Possible project changes
+
+1. **Default: no text model.** Build B1 (event flags + regex on official notices) and use it as an operational filter. Reallocate the optional-extension effort to execution cost, margin, and roll modeling.
+2. **If text is pursued:** restrict to **prospective shadow mode** on CBR releases/Summaries and MOEX spread-relevant notices, for 90 days, with a lawful access path and a prespecified schema. Do not run a historical Gemini backtest.
+3. **If Gemini access cannot be made lawful:** use a local deterministic NLP pipeline (regex, tables, dictionary counts). If a learned model is later justified, use a chronologically consistent open-weight model, not a general pretrained Gemini model.
+4. **If the CBR Summary test fails:** drop the policy-text branch and keep only the MOEX operational filter.
+5. **If the MOEX regex audit shows high recall:** drop the Gemini classifier entirely; the operational value is already captured.
+
+---
+
+## 11. What was actually read vs only proposed
+
+### Read (public, permitted sources)
+
+- CBR RSS index page.
+- CBR key-rate release 11 Sep 2026.
+- CBR key-rate release 24 Jul 2026.
+- CBR key-rate decision calendar.
+- CBR Summary publication announcement (6th working day).
+- CBR Summary 23 Sep 2026 search record.
+- MOEX ISS `sitenews` list and item endpoints.
+- MOEX ETHA futures parameter-change article.
+- MOEX ISS terms-of-use search record.
+- MOEX Derivatives Telegram channel description.
+- e-disclosure API tutorial v1.11.
+- Gemini available-regions page and secondary summary.
+- Gemini rate-limits page.
+- Gemini free-tier data-use analysis.
+- Glasserman & Lin abstract.
+- He et al. abstract.
+- Tetlock and Loughran–McDonald bibliographic records.
+- STTM bibliographic record.
+
+### Only proposed (not performed)
+
+- Any Gemini API call, quota measurement, or model-version test.
+- Any historical backtest or walk-forward evaluation.
+- Any entity-masking experiment.
+- Any MOEX ISS licensing confirmation.
+- Any e-disclosure API access or cost confirmation.
+- Any Telegram export or edit-history audit.
+- Any broker/account/margin check.
+- Any measurement of text-feature predictive value.
+
+### Minimal materials needed to resolve the remaining gating question
+
+Only one item is truly blocking: **confirmation of a lawful Gemini access path and account region**, or a decision to abandon Gemini for this project. If the user can confirm that they have a supported-region account with free-tier access and accept the data-use terms, the prospective shadow test can be designed. If not, the project should proceed with deterministic baselines only. Secondary but useful: confirmation of whether the user’s MOEX data agreement covers `sitenews` for private trading use, and the actual VTB commission/margin schedule for the pilot contracts.
+
+---
+
+## Appendix A — URLs and API endpoints read
+
+- `https://cbr.ru/development/rss/` — CBR RSS index.
+- `https://www.cbr.ru/press/pr/?file=11092026_133000key.htm` — 11 Sep 2026 key-rate release.
+- `https://www.cbr.ru/press/pr/?file=24072026_133000key.htm` — 24 Jul 2026 key-rate release.
+- `https://www.cbr.ru/dkp/cal_mp/` — key-rate decision calendar.
+- `https://iss.moex.com/iss/sitenews.json?start=0` — MOEX news list.
+- `https://iss.moex.com/iss/sitenews/105342.json` — MOEX news body example.
+- `https://www.moex.com/n104613` — ETHA futures parameter change.
+- `https://www.e-disclosure.ru/PortalContent/InfoMaterial/599` — e-disclosure API tutorial v1.11.
+- `https://ai.google.dev/gemini-api/docs/rate-limits?hl=en` — Gemini rate limits.
+- `https://ai.google.dev/gemini-api/docs/available-regions` — Gemini available regions.
+- `https://arxiv.org/abs/2309.17322` — Glasserman & Lin.
+- `https://arxiv.org/abs/2502.21206` — He et al.
+- `https://t.me/moex_derivatives` — MOEX Derivatives Telegram.
+- `https://t.me/MoscowExchangeOfficial` — MOEX official Telegram (verified identity).
+- `https://t.me/centralbank_russia` — Bank of Russia official Telegram (verified identity).
+
+## Appendix B — Proposed checks, not performed
+
+1. Measure actual Gemini free-tier RPM/RPD for the user’s project and model.
+2. Test whether the API endpoint is reachable from the user’s lawful access path and whether the terms permit the use.
+3. Measure MOEX `sitenews` historical coverage and earliest available item.
+4. Audit regex recall on a random sample of 200 spread-relevant notices.
+5. Confirm MOEX ISS licensing for private trading use.
+6. Confirm e-disclosure API cost and historical access.
+7. Run the 90-day prospective shadow test.
+8. Run the walk-forward ablation with B0–B4.
+9. Run the entity-masking contamination test.
+10. Measure the actual latency from release to first observable price/spread change for the selected contracts.
+
+---
+
+**Final judgement.** The most defensible text extension for this project is **not a Gemini sentiment model**. It is a **small, deterministic, official-source event filter** — CBR policy dates and MOEX contract/margin notices — with a bounded prospective test of whether the CBR Summary’s dispersion adds medium-term curve information beyond the policy rate and forecast. Gemini may be used only in a lawful prospective shadow mode, and only if it beats the simple lexical baseline. On current evidence, the probability that a Gemini text feature adds verifiable value after costs and latency is **low**, and the project should be prepared to drop it and reallocate effort to execution and cost modeling.

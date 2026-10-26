@@ -1,0 +1,223 @@
+# R15 — Optional neural strategies under limited compute  
+**Research date:** 2026-10-22  
+**Status:** Optional extension, conditional on the data class and baselines stated in the prompt. No training, backtesting, account checks or live execution were performed. All quantitative “results” below are either cited from public sources or explicitly marked as planning assumptions/calculations.
+
+---
+
+## Executive answer
+
+**The burden of proof is on the neural model, and on this data class that burden is high.** Public evidence for small tabular financial datasets repeatedly finds that tree ensembles and regularised linear models outperform neural networks when the effective sample is in the hundreds-to-low-thousands and independent episodes are scarce. A neural candidate is therefore worth testing only as a **bounded, pre-registered challenger** that must beat no-trade, a deterministic spread baseline and a simple linear/tree baseline **under identical splits, purging/embargo, costs, integer contracts and LQDT counterfactual**. If it cannot do so with a **deflated** out-of-sample metric after inference delay and selection-risk adjustment, the correct decision is to discard the neural branch and retain the simpler baseline.
+
+On the stated hardware, **CPU inference of a small model is feasible**; the AMD GPU path on an Intel Mac is experimental and should not be treated as a production dependency. Free Hugging Face CPU Spaces can support optional experimentation, but they are shared, rate-limited and not a production entitlement. The dominant risks are **data sufficiency, panel leakage, and selection bias**, not model capacity.
+
+**Recommendation:** Defer any neural training until a clean, purged daily panel, a deterministic baseline and a linear/tree baseline exist and have been evaluated net of costs. If the simpler baselines already beat no-trade, test at most **one small neural family** with **one pre-registered architecture search budget**. If the simpler baselines do not beat no-trade, a neural model is very unlikely to justify its incremental maintenance burden.
+
+---
+
+## 1. Decision framework, objective and baselines
+
+### 1.1 Supervised objective and decision linkage
+
+The primary metric must be **net RUB excess over the matched LQDT counterfactual**, not predictive accuracy. A workable objective hierarchy is:
+
+| Layer | Specification | Why |
+|---|---|---|
+| **Label / outcome** | Forward spread return over a horizon \(h\) that matches the intended holding period (e.g. 1–10 trading days), computed on the actual contract pair and net of the cost scenario. | Aligns prediction with the P&L the strategy can capture. |
+| **Decision** | Enter if predicted net edge exceeds a cost-aware threshold \(c\) (fees + spread + slippage + LQDT opportunity cost), and if capital/ margin rules pass. | Prevents “accuracy without economics.” |
+| **Primary metric** | Cumulative net RUB excess over LQDT, using identical external flows and the counterfactual rules in the standalone context. | Directly addresses the user’s decision. |
+| **Secondary** | Deflated Sharpe ratio, drawdown from excess high-water mark, hit rate, turnover, fill quality. | Guards against selection and risk. |
+
+The information set at decision time must be **strictly lagged EOD data** available before the intended entry. If the strategy reacts to a daily close, the decision timestamp must be after the close and after any publication lag; the 3–90 minute inference-to-action delay must be modelled as a cost of acting on stale information, not ignored.
+
+### 1.2 Baselines that must be beaten before neural complexity
+
+Run these **in order**; each must pass the economic and statistical gates before the next is added:
+
+| Order | Model | Role | Minimum evidence to proceed |
+|---|---|---|---|
+| 0 | **No-trade** | Opportunity cost of LQDT. | The neural model must beat the LQDT counterfactual net of costs. |
+| 1 | **Deterministic spread baseline** | Fixed-parameter, economically motivated entry/exit (e.g. z-score of calendar spread with fixed thresholds). | If this cannot beat no-trade, the data/strategy premise is weak. |
+| 2 | **Linear model** (ridge / logistic with economic features) | Tests whether a simple linear signal exists. | If linear fails out-of-sample, nonlinearity is unlikely to rescue it on small data. |
+| 3 | **Tree ensemble** (shallow gradient boosting or random forest with strong regularisation) | Strong tabular baseline; often the toughest competitor on small financial data. | Neural must beat this, not just linear. |
+| 4 | **Neural challenger** | Only if 0–3 are implemented and 1–3 show some net positive signal. | Must beat **all** prior baselines under identical conditions. |
+
+Public evidence supports this ordering. A 2026 IEEE study on tabular financial crash prediction with limited sample size found that tree-based ensembles significantly outperformed GRU, LSTM, Transformer and logistic regression, with deep models ranging from AUC 0.72–0.81 versus tree models above 0.82. A separate analysis of factor models versus ML concluded that “factor models outperform random forests and neural networks when sample size is below 500–1000 observations” and that ML becomes competitive around 2,000 samples and dominant above 10,000. These are not MOEX-specific, but they are directly relevant to the data class: **small, noisy, tabular, non-stationary**.
+
+**Training success is not investment evidence.** A neural model that improves a validation score but does not improve net RUB excess after costs, delay and integer-contract frictions has not added value.
+
+---
+
+## 2. Data sufficiency, effective episodes and leakage
+
+### 2.1 What the free MOEX daily panel can realistically support
+
+MOEX’s ISS documentation states that “delayed market data” can be obtained free, but “orderbooks and historical data are only available to the paid subscribers”. For futures, intraday open-interest (FUTOI) data is explicitly subscription-based; the free “Starter” token has FUTOI delayed at \(T-15\) days. A free **end-of-day daily OHLCV panel** may therefore be obtainable via delayed ISS history/candles endpoints, but the **exact coverage, open-interest availability and delisting history are unverified** and should be treated as a data prerequisite, not an assumption.
+
+If the free panel contains only daily OHLCV without reliable open interest, a large part of the economically meaningful spread signal (carry, inventory, roll pressure) is missing. That weakens the case for a complex model: the neural model would be asked to extract nonlinearity from a thin feature set, which increases overfitting risk.
+
+### 2.2 Effective independent episodes
+
+The raw number of daily observations can look large—e.g. 200 contracts × 500 days ≈ 100,000 rows—but the **effective number of independent episodes is far smaller** because:
+
+- Calendar spreads within the same commodity curve are highly correlated.
+- Contracts on the same underlying share the same macro/commodity shock.
+- Overlapping labels create dependence across adjacent dates.
+- Regime shifts (rate changes, sanctions, margin changes, exchange holidays) create non-stationarity.
+
+A crude planning calculation: if there are \(K\) economically distinct spread families and \(E\) independent macro/regime episodes per family, the effective episode count is roughly \(K \times E\), not the row count. With tens of contracts and a few hundred days, \(E\) may be in the **low tens**, not thousands. This is the regime in which neural networks are most likely to memorise noise and fail out-of-sample.
+
+**Consequence:** The neural branch should be discarded early if the cleaned panel cannot produce a plausible number of non-overlapping episodes after purging and embargo. A useful early gate is: **if the number of independent, non-overlapping label periods after purging is below ~1,000, treat neural training as low-priority and require an exceptionally strong economic prior to proceed.** This threshold is a planning heuristic, not a proven law; it is informed by the sample-size evidence cited above.
+
+### 2.3 Panel cross-instrument leakage and normalisation
+
+Panel data introduces three specific leakage paths:
+
+1. **Cross-sectional normalisation leakage.** If features are z-scored or rank-normalised across all contracts using future data, information from the test period contaminates training. All transforms must be fitted **within each training fold only**, using only contracts and dates available at that time.
+2. **Embedding leakage.** Contract embeddings or latent factors estimated on the full panel, including future delisted contracts or future liquidity regimes, leak future information. Embeddings must be fitted per training window or replaced by transparent, hand-specified features.
+3. **Overlap leakage.** If labels use an \(h\)-day forward window, training observations whose label windows overlap the test period must be purged; an embargo after each test fold removes serial correlation. This is the core of López de Prado’s purging/embargo framework (AFML Ch. 7) and CPCV (Ch. 12).
+
+**AFML applicability critique.** Purging/embargo and CPCV are directly applicable to this panel because labels overlap and regime dependence is strong. However, CPCV assumes a reasonably stable data-generating process across folds and enough data to form multiple training/test combinations. With a short MOEX futures history and scarce independent episodes, CPCV can produce **many paths from the same few episodes**, giving a false sense of robustness. The deflated Sharpe ratio (AFML Ch. 8) is useful for multiple-testing correction, but it requires the number of independent trials to be logged honestly. On this data class, CPCV should be used for **diagnosis and sensitivity**, not as a substitute for a final untouched holdout. The final holdout must remain chronologically last and untouched until the very end.
+
+### 2.4 Multiple architecture trials
+
+Every architecture, feature set, label horizon, normalisation choice, threshold and hyperparameter must be logged. The number of trials \(N\) enters the deflated Sharpe calculation; hiding trials invalidates the correction. A practical rule: **pre-register a maximum trial budget** (e.g. \(\le 30\) configurations for the neural family, including architecture variants) and stop when the budget is exhausted, regardless of results. If the best neural result is not significant after deflation, discard the branch.
+
+---
+
+## 3. Candidate small model families and hardware reality
+
+### 3.1 Justified families, in order of parsimony
+
+Do not start with LSTMs or Transformers. On this data class, the only neural families worth testing are **small, strongly regularised feed-forward or very shallow recurrent models**:
+
+| Family | Why it might be justified | Minimum guardrails |
+|---|---|---|
+| **Regularised MLP** (1–3 hidden layers, dropout, weight decay, early stopping) | Can approximate nonlinear interactions if the feature set is small and the sample is sufficient. | Feature count should be small (e.g. ≤20 economically motivated features); parameter count should be far below the number of effective episodes. |
+| **Shallow GRU/LSTM** (1 layer, small hidden size) | Only if there is a genuine sequential structure that linear/tree models cannot capture; rarely justified on daily EOD data with scarce episodes. | Must beat a lagged-feature MLP and a tree ensemble; otherwise reject. |
+| **Tabular-specific neural model** (e.g. a small entity-embedding model) | Could handle contract-family heterogeneity, but embeddings are a leakage and overfitting risk. | Embeddings fitted per training window; ablations with and without embeddings. |
+
+Transformers and deep CNNs are **not justified** at this stage: they have too many parameters relative to the effective sample, and public evidence on small tabular financial data shows them underperforming tree ensembles.
+
+### 3.2 Training and inference resources
+
+| Resource | Reality | Implication |
+|---|---|---|
+| **Intel 6-core i7, 16 GB RAM** | Sufficient for training small MLPs and shallow GBMs on a daily panel of this size; CPU training may be slow for many trials but is feasible for a bounded search. | Use CPU for baseline models and small neural models; do not assume GPU acceleration. |
+| **Radeon Pro 5300M 4 GB, macOS** | PyTorch MPS is officially oriented to Apple Silicon; Intel Macs with Radeon are described as “experimental” for MPS. ROCm on macOS is not a supported production path. | Do not make the AMD GPU a dependency. Treat any GPU use as optional and non-reproducible until validated. |
+| **VPS 1 vCPU / 1 GB RAM + 2 GB swap** | Not suitable for training; may be suitable for lightweight inference if the model is exported to a small artifact and the 250–350 MB background budget is respected. | Defer VPS inference; do not assume it can host a training or heavy inference workload. |
+| **Hugging Face free tier** | CPU-Basic Spaces: $0, but capped at 2 vCPUs and 16 GB RAM; GPU/ZeroGPU Spaces have quota limits and may require payment. Free inference API runs mostly on CPU and is rate-limited. | HF free compute is suitable for **optional prototyping**, not production or guaranteed experimentation. Do not assume foreign payment or GPU entitlement. |
+
+**Bottom line:** The hardware supports a **CPU-first, small-model experiment**. If a neural model cannot be trained and inferred on CPU within a bounded budget, it is not a good fit for this project.
+
+---
+
+## 4. Reproducibility, licensing, stability and maintainability
+
+| Dimension | Requirement | Risk if neglected |
+|---|---|---|
+| **Code and environment** | Pin Python, PyTorch/scikit-learn versions; record random seeds; log all trials; store model artifacts and preprocessing pipelines. | Results cannot be reproduced or audited; deflated metrics are invalid. |
+| **Model/license** | Use permissively licensed libraries and models (e.g. PyTorch BSD-style, scikit-learn BSD, ONNX Apache-2.0). Check the license of any pretrained model or dataset. | Legal/rights restrictions may block later automation. |
+| **Offline CPU inference** | Export the final model to ONNX or TorchScript; verify inference on CPU with the same preprocessing; measure latency. | MPS/GPU-specific code may not run on the VPS or later broker infrastructure. |
+| **Numerical stability** | Monitor loss for NaNs, exploding gradients, saturation; use gradient clipping, early stopping and small learning rates. | Unstable training can produce spuriously good or bad results. |
+| **Calibration and uncertainty** | Use probabilistic outputs or conformal intervals; evaluate calibration on out-of-sample folds. | A point prediction without uncertainty cannot be translated into position sizing or risk limits. |
+| **Drift and fail-to-baseline** | Define a monitoring rule: if live/paper performance falls below the deterministic baseline for a pre-specified period, revert to baseline. | A neural model that degrades silently is worse than a simple baseline. |
+| **Incremental maintainability** | Count the extra code, dependencies, retraining jobs and monitoring burden relative to the linear/tree baseline. | If the neural branch adds >1–2 person-days per month without clear net RUB benefit, it is not justified. |
+
+Public sources on calibration in small financial samples are mixed: some Bayesian deep-learning approaches claim better calibration, but others report that calibration accuracy is “not particularly convincing” in small samples. This reinforces the need to evaluate calibration explicitly rather than assume it.
+
+---
+
+## 5. Staged experiment, cost and resource matrix
+
+### 5.1 Stage gates
+
+| Stage | Goal | Minimum evidence to proceed | Approx. effort |
+|---|---|---|---|
+| **0. Data audit** | Verify free EOD panel coverage, open interest, delisting history, contract metadata, trading calendar. | Clean panel with documented coverage and gaps; no future data in features. | 1–2 days |
+| **1. Baselines** | Implement no-trade, deterministic spread, ridge/logistic and shallow GBM under purged walk-forward. | At least one simple baseline beats no-trade net of base costs; otherwise stop. | 3–5 days |
+| **2. Neural feasibility** | Train 1–3 small neural configurations on CPU with pre-registered trial budget. | Neural beats the best simple baseline on the primary metric in at least one purged fold, but not necessarily the final holdout. | 3–7 days |
+| **3. Full walk-forward** | Run all models through identical chronological splits, purging/embargo, cost scenarios and integer contracts. | Neural beats all baselines on net RUB excess after deflation; drawdown within the user’s action rules. | 5–10 days |
+| **4. Holdout** | Evaluate once on the final untouched holdout. | Holdout confirms the walk-forward conclusion; otherwise discard neural. | 1–2 days |
+| **5. Paper/incubation** | Log decisions, fill quality, inference delay and monitoring. | No live capital until paper results are consistent with backtest. | Deferred |
+
+### 5.2 Cost scenarios (planning assumptions, not measured MOEX outcomes)
+
+| Scenario | Exchange fee (per contract) | Broker commission | Spread/slippage | Use |
+|---|---|---|---|---|
+| **Base** | RUB 1.25 (exchange fee) | Add broker tariff (unverified) | Historical median spread if available | Central case |
+| **Conservative** | RUB 1.25 | Higher broker tariff | Wider spread + slippage | Downside |
+| **Stress** | RUB 1.25 | Higher broker tariff + financing | Wide spread + delayed fill | Capital survival |
+
+The exchange fee alone is small relative to a RUB 30,000 pilot, but **per-contract broker commissions, spread and slippage can dominate** when contracts are small and turnover is frequent. A neural model that increases turnover must overcome a higher cost burden, not just improve accuracy.
+
+### 5.3 Resource matrix
+
+| Activity | CPU i7 / 16 GB | Radeon 4 GB | HF free CPU | VPS | Recommendation |
+|---|---|---|---|---|---|
+| Data cleaning / feature engineering | Feasible | Not needed | Not needed | Not needed | CPU |
+| Linear / tree baselines | Feasible | Not needed | Optional | Not needed | CPU |
+| Small MLP training (≤100k rows) | Feasible | Experimental | Optional, rate-limited | Not suitable | CPU |
+| Shallow GRU training | Slow but possible | Experimental | Not recommended | Not suitable | CPU, only if justified |
+| Hyperparameter search | Feasible if bounded | Not recommended | Not recommended | Not suitable | CPU, pre-registered budget |
+| Offline inference | Feasible | Not needed | Not needed | Possible if small | CPU/ONNX |
+| Final holdout | CPU | Not needed | Not needed | Not needed | CPU |
+
+---
+
+## 6. Falsification criteria and early discard rules
+
+The neural branch should be discarded if **any** of the following is observed:
+
+1. **No economic signal in baselines.** If no-trade or the deterministic spread baseline already dominates net of costs, the neural model has no economic problem to solve.
+2. **Neural fails to beat the tree ensemble** on the primary metric in purged walk-forward, even before the final holdout.
+3. **Neural improvement disappears after costs and delay.** A statistically significant accuracy gain that does not survive integer contracts, fees and the 3–90 minute delay is not economically useful.
+4. **Deflated Sharpe is not significant** after logging all trials, or the number of trials is so large that deflation cannot distinguish skill from search.
+5. **Effective episodes are too few.** If the purged, non-overlapping episode count is below the planning threshold and the neural model cannot demonstrate stability across regimes, discard.
+6. **Calibration is poor** or uncertainty intervals are too wide to support any position size within the risk rules.
+7. **Maintenance burden is disproportionate.** If the neural pipeline adds material operational complexity and monitoring risk without a clear, repeatable net RUB advantage, retain the simpler baseline.
+
+**What would change the project’s direction?** A genuinely new, economically motivated feature set (e.g. reliable free open-interest dynamics, carry/roll data, or a stable cross-sectional signal) would raise the prior for a nonlinear model. Without such a feature, the neural branch is a solution looking for a problem.
+
+---
+
+## 7. What remains deferred
+
+- **Any live or paper trading** of a neural model. This report does not authorise it.
+- **GPU-dependent training or inference.** The AMD/macOS path is experimental; CUDA is unavailable on this hardware.
+- **Automated execution at BCS or VTB.** Broker-specific API, collateral recognition and KPUR consequences remain unverified.
+- **Tax and legal conclusions.** The broker withholds NDFL on futures for Russian brokers, but the interaction with the LQDT holding, account treatment and KPUR status requires separate verification.
+- **Production deployment on the VPS.** Resource limits and the shared 250–350 MB budget are unverified.
+- **Paid data subscriptions.** The free panel may be insufficient; a paid data decision should be made only after the free data audit.
+
+---
+
+## Appendix: Inputs actually read, assumptions and unknowns
+
+**Inputs actually read (public sources):**
+- MOEX ISS developer manual (2016, PDF) — free delayed data vs paid historical/orderbook access.
+- MOEX FUTOI documentation (PDF) — subscription and delayed free-token access.
+- MOEX exchange fee formulas (PDF) — RUB 1.25 futures fee example.
+- Hugging Face Space hardware rules (2026) — CPU-Basic free, GPU quota/payment.
+- Hugging Face inference API overview (2026) — mostly CPU, rate-limited free tier.
+- AMD/macOS guidance (2026) — Intel Mac with Radeon is experimental for MPS.
+- IEEE study on tree vs deep models for tabular financial data (2026) — tree ensembles outperform deep models.
+- Factor models vs ML analysis (2026) — linear/factor models competitive below ~1,000 samples.
+- CPCV/Hopfield paper (2024) — CPCV implementation and 21-day purge/embargo example.
+- Russian tax article (2026) — broker withholds NDFL on futures.
+
+**Planning assumptions (not measured):**
+- The free MOEX EOD panel will contain enough history and contract metadata to construct calendar spreads.
+- The effective independent episode count is likely in the low tens to low hundreds, not thousands.
+- Broker commissions and slippage are material but can be parameterised in the base/conservative/stress scenarios.
+- The LQDT counterfactual yield can be approximated from public fund data; the matched-flow calculation requires actual external flows.
+
+**Unknowns:**
+- Exact free MOEX daily futures coverage, open-interest availability and delisting history.
+- Broker-specific margin/collateral recognition for the pilot and future scale.
+- Whether the user’s KPUR status is recognised by VTB/BCS for the intended instruments.
+- Realised inference-to-action delay distribution and fill quality.
+- Whether any neural model can produce a stable, calibrated signal on this data class—**this is the open question the staged experiment is designed to answer, not a result claimed here**.
+
+---
+
+**Final judgement:** A neural model is **not justified as a first move**. The evidence-based sequence is: audit the free data, establish simple baselines, and only then test a single small, CPU-trainable neural challenger with a pre-registered search budget and deflated evaluation. If that challenger cannot beat the tree ensemble and the deterministic spread baseline net of costs and delay, the correct decision is to discard it and keep the simpler system.

@@ -1,0 +1,94 @@
+# Forecasting Objective and Baselines  
+The goal is to predict profitable futures‐spread trades over a chosen horizon (e.g. next day or multi-day) using only information available up to the decision point.  In practice we would label each candidate trade by its net return after costs (fees, slippage, margin) over the holding period.  For example, a cost-aware *triple-barrier* labeling rule can be used: set a dynamic profit-taking barrier, a stop-loss barrier, and a time-out (expiration) horizon, and label each instance by the first barrier hit. This ensures that trade signals exceed costs and adapt to volatility.  
+
+At decision time, features would include past OHLCV and open interest of the instruments (and of related futures), plus any known covariates (e.g. calendar, macro data) up to that point. Care must be taken to avoid peeking into future data: all scaling (e.g. z-normalization) or embeddings (e.g. target-encode categorical IDs) must be fitted on training data only. For numeric features a standard approach is to subtract the mean and divide by the standard deviation of each feature. 
+
+We would compare any neural model to simple baselines.  A **no-trade** baseline (always holding cash, i.e. zero PnL) is the lowest bar.  Deterministic rule-based strategies (e.g. fixed mean-reversion or carry-spread signals) and conventional linear regressions or decision trees trained under identical splits provide more meaningful benchmarks.  For example, one might fit a linear regression or classification (buy/sell/hold) on past returns, or a small random forest on recent spread levels.  Crucially, we **must** measure performance against a matched “liquid funds” counterfactual as described (core account stays invested elsewhere).  As a reference, even naive baselines can achieve high classification accuracy by predicting “no-trade” most days, but such baselines yield no excess return.  The candidate model must **outperform** all such baselines after costs (e.g. a fixed-margin threshold strategy or short moving-average crossover) in net RUB PnL. (Training-day accuracy alone is not investment evidence.)  
+
+**Baseline comparison checklist:**  
+- No-trade (always cash) – yields 0 excess PnL but sets a minimal risk benchmark.  
+- Fixed deterministic rule – e.g. enter spread when it deviates from its mean by a fixed threshold and exit on touch, or a constant carry strategy. These should be coded and backtested as a “fixed-parameter” rule.  
+- Simple ML models – train a linear regression/classifier or small decision-tree (under the same data splits and cost assumptions) on lagged price/spread features. These should be properly regularized and validated.  
+
+Each baseline’s net PnL curve (after the same trading costs and using integer contracts) will be compared to the neural candidate. We would only proceed with neural models if they show a statistically significant excess PnL (or risk‐adjusted metric) over these baselines.  
+
+# Data and Validation Methodology  
+**Data scope:** We assume access to an end-of-day panel of MOEX futures contracts (OHLCV and open interest) over the available history (possibly limited by delistings). The dataset is likely modest in size (tens to hundreds of contracts, daily resolution) and exhibits nonstationarity and regime changes.  
+
+**Validation plan:** A strict **walk-forward** (rolling time‐series) validation must be used. Standard k-fold CV is not applicable, because of temporal leakage. For example, if we label 5-day returns, then the label of day *t* involves data up to *t+4*. Using that in adjacent folds can leak future information. Instead, we would iterate training on an expanding (or rolling) window and test on subsequent unseen days. After each fold, the model is refit on new data. Importantly, we must **purge** and **embargo** overlapping samples as in López de Prado’s method: any training sample whose label- or feature-window overlaps the test fold is removed (purge), and a small buffer of days around the test fold is skipped (embargo) to avoid leakage. This ensures no data “leaks” forward. For example: 
+
+- *Walk-forward example:* Train on 2 years [Jan 2018–Dec 2019], test on next 6 months [Jan–Jun 2020]; then roll forward (train Jan 2018–Jun 2020, test Jul–Dec 2020), etc.  
+- *Purging:* If trading signals use returns over 10 days, drop any training sample whose 10-day period would intersect a test period.   
+- *Embargo:* Omit an extra 1–5 days at the boundary of train/test to be safe.  
+
+**Data issues:** We must check for sparse data and non‐independent episodes. For example, some futures may have only a few years of history, and economic cycles (e.g. crisis vs calm) create regime shifts.  Cross-asset information leakage is possible if, say, a shock in oil futures propagates to currency futures. All feature engineering (lags, normalizations, embeddings) must be fit only on training windows to avoid future leakage. We should also monitor for concept drift: e.g. validate whether model errors grow over time or if retraining is needed after each fold.  
+
+**Label balance:**  If most days require no trade (which yields zero profit), accuracy metrics become misleading. We will focus on financial metrics (net PnL, Sharpe, drawdown) rather than raw accuracy. We would typically use probability or quantile predictions translated into position sizes or confidence-scores, then compute the realized net PnL.  
+
+# Small Neural Model Candidates and Hardware Feasibility  
+We focus on *tiny time-series models* due to compute limits. For example, IBM’s **TinyTimeMixer (TTM)** is a *“compact pre-trained model”* for multivariate forecasting with **<1 million parameters**, explicitly designed for CPU/laptop inference. TTMs deliver strong zero-shot performance on common datasets and can be fine-tuned on new data with minimal compute. 
+
+Other candidate families (all with published small versions) include: 
+
+- **Timestral (Mistral AI):** A patch-based transformer for time series. e.g. *Timestral-5M* has 5.2M parameters; its architecture uses 8 layers and 192-dim embeddings, and it supports CPU or GPU inference out of the box. This model outputs probabilistic (quantile) forecasts and is released under a modified MIT license. Timestral can use past lags and covariates (numerical and target-encoded categorical). 
+- **Chronos-Bolt (AutoGluon):** A family based on a T5-style encoder-decoder. Chronos-Bolt tiny/mini/small are 9M, 21M, and 48M parameters respectively. These models are optimized for speed and memory (claiming up to 250× faster inference than originals) and have Apache-2 licensing. Chronos-Bolt can do zero-shot forecasting on diverse time series. 
+- **Kronos (NeoQuasar):** Transformer models trained on “tokenized” OHLC bars. Kronos-mini is only 4.1M parameters, Kronos-small 24.7M, and Kronos-base 102M. They are MIT-licensed. Kronos models can ingest up to 512 bars of history. The small versions might fit an AMD GPU (4GB) or run on CPU; the mini (4M) is very lightweight. 
+- **Custom MLP/Conv/RNN:** In principle one could implement a small LSTM or 1D-CNN manually (e.g. <1M weights) and train from scratch on the MOEX panel. However, published evidence suggests that pre-trained tiny models (like above) often outperform purely local small nets, especially with limited data. Still, a simple feedforward net on lagged returns or an LSTM for the spread series can be used as a sanity check. 
+
+Each candidate’s license and requirements must be checked. For example, Timestral’s modified MIT license allows free use; Chronos and TTM are Apache-2.0; Kronos is MIT.  
+
+**Hardware feasibility:** Training will likely happen on the local Intel i7 CPU (no big GPU). Inference can target either the AMD GPU (via ROCm or PyTorch’s DirectML) or CPU (PyTorch CPU). Many of these models offer PyTorch implementations that can run on CPU. For example, Timestral-5M explicitly supports “inference: PyTorch on CPU or GPU”. Given AMD GPU constraints (no CUDA), we assume use of CPU fallback or ROCm; we must measure inference latency on the CPU (and if possible GPU). For small models (few million parameters), even CPU inference per time step should be in the order of milliseconds—meeting our 3–90 minute action window easily. 
+
+Overall, we will experiment only with models in the 1–50M param range as above. Hugging Face and open-source implementations allow using these models without subscription fees. (We will not rely on paid GPU services.) Free HF Spaces/GPU endpoints exist but are limited; for training we may use our own CPU or try free cloud GPU trials if needed for bigger models.  
+
+# Experimental Design  
+We will execute a staged validation:
+
+1. **Data Preparation:** Assemble a panel of all eligible MOEX futures (OHLCV, open interest) with synchronized dates. Engineer features (past log-returns, spreads, moving averages, volumes, etc.) and label events using a rule such as the triple-barrier method. Include transaction cost parameters (fees, spread, slippage) as per conservative/base/stress scenarios. Split the data chronologically into training/validation/test blocks (e.g. 80/10/10 years or similar) to preserve chronology.  
+
+2. **Baseline Backtests:** Implement the baseline strategies (no-trade, fixed-rule, linear models). Backtest each with the exact same trade logic (entry/exit and costs). Record cumulative excess PnL over the counterfactual “core liquidity funds” profile. These baselines will establish target performance and risk thresholds (e.g. max allowable drawdown).  
+
+3. **Model Training & Selection:** For each neural candidate family, train (or fine-tune) a range of small models on the training set only. For example, fine-tune Timestral or Kronos on our futures data, or train a small LSTM from scratch. Optimize hyperparameters (batch size, learning rate) within the constraints of CPU training. All model fitting (normalization, training) is done only on the training fold data.  
+
+4. **Walk-Forward Evaluation:** Evaluate each trained model on sequential test periods via walk-forward. At each fold, retrain on all available past data (optionally purging overlap) and test on the next block. Apply an embargo buffer between train/test if using overlapping labels. Collect predictions and simulate the trades signaled by the model (e.g. long/short or none) with the same cost model. Compute *net PnL* over time and aggregate metrics (excess return, Sharpe, drawdown).  
+
+5. **Comparison and Discard:** After full evaluation, compare models to baselines and to each other. Use criteria such as “excess net PnL > 0 in base case” and “no unacceptable drawdown (e.g. < RUB 10k)” to decide if a model is viable. Models consistently underperforming the no-trade or simple baselines, or failing during simulation (e.g. diverging loss), will be discarded early. If no model beats the baseline, we may halt further exploration.  
+
+6. **Ablations:** To isolate useful components, we can ablate features (e.g. drop certain inputs) or model capacities (e.g. smaller context lengths) and measure impact on PnL. Any gain in raw prediction error must translate to PnL after cost and risk adjustment; e.g. a slightly better MAE with very low alpha may not justify a strategy that underperforms after fees.  
+
+Throughout, we **log everything**: model architectures, training losses, hyperparameters, and realized trade logs (filled, partial, or stale). Hyperparameter choices are validated via the walk-forward procedure only (no peeking at test periods). The final holdout test (never used in any training or selection) will give the true out-of-sample performance.  
+
+# Reproducibility, Licensing, and Deployment Considerations  
+- **Reproducibility:** We will fix random seeds where possible and document library versions. Pre-trained models (e.g. Timestral, Kronos) should be version-pinned. Training logs and outputs will be retained. Publishing any code or notebooks should include environment specs.  
+
+- **Licensing:** We will use only fully open-source models and code. All candidate model licenses (Apache-2.0, MIT, etc.) are permissive. We will verify that any data (MOEX EOD) usage complies with terms (e.g. no redistribution of proprietary data).  
+
+- **Runtime Environment:** Our inference must work on the given hardware. We will aim for CPU-only or minimal GPU (AMD) usage. We must ensure the chosen frameworks support AMD (PyTorch with ROCm or DirectML), or else rely solely on CPU. Models must be test-run for inference speed and memory on the Intel i7 (16GB RAM). For example, Timestral-5M explicitly allows CPU inference. Numeric stability is generally good for these architectures, but we will monitor for NaNs or divergences during inference.  
+
+- **Calibration & Uncertainty:** Since the end goal is PnL, we focus on point forecasts of returns or signals. However, some models output quantiles (Timestral, Chronos). We may use these to estimate risk bounds. It would be prudent to check calibration (e.g. if 90% interval covers ~90% of outcomes) before relying on probabilistic outputs. Poorly calibrated models could lead to overconfident trades. 
+
+- **Drift detection:** We will monitor model performance over time. A sudden drop in PnL or accuracy may indicate regime change. The plan is to retrain/recalibrate models periodically (as part of future work beyond the pilot) if needed.  
+
+- **Fail-safe to baseline:** In deployment, we would include logic to abandon neural signals if they fall below baseline. For instance, if cumulative PnL gets more than RUB 5k below baseline, trigger a manual review. That aligns with the prescribed risk rules.  
+
+- **Maintainability:** Small pre-trained models often require less maintenance than large ones, but fine-tuning or feature engineering can still drift. We should treat the model as a replaceable component. Keep the training scripts and data pipeline modular.  
+
+# Staged Experiment and Resource Plan  
+We propose the following stages and approximate resource usage (indicative):  
+
+- **Stage 1 (Weeks 1-2):** Data engineering and baseline coding. Assemble historical futures panel, define spread targets, implement no-trade and deterministic baselines, set up walk-forward splits with purge/embargo. *Compute:* minimal (data munging, Python/pandas).  
+- **Stage 2 (Weeks 3-4):** Simple models. Train and evaluate linear and tree models; test normalization/feature pipelines. *Compute:* CPU (quick for linear; small trees).  
+- **Stage 3 (Weeks 5-8):** Neural candidates. For each family (Timestral, Chronos, TTM, Kronos): obtain pretrained weights or implement architecture, fine-tune or train on our data, validate. *Compute:* Training on CPU may take hours per model; consider on-demand free GPU (e.g. Colab) for larger (Chronos-base) if needed. Inference (CV) is fast on CPU.  
+- **Stage 4 (Weeks 9-10):** Analysis and ablations. Compare all models’ PnL, perform sensitivity tests (e.g. vary holding period). Decide on any remaining candidates. *Compute:* low.  
+- **Stage 5 (Week 11):** Final reporting. Summarize results, including fallback scenarios if nothing works.  
+
+**Dataset needs:** EOD prices for all relevant MOEX futures over the past ~5–10 years (if available), plus fundamentals if used. Preprocessing scripts to align contracts, handle rollovers, etc.  
+
+**Early discard criteria:** If, after stage 3, no neural model achieves any positive excess PnL in the base cost scenario, or all exhibit unacceptably large drawdowns vs baseline, we would halt further attempts. Conversely, if one family (e.g. Timestral) clearly leads, we focus resources there.  
+
+**Privacy/rights:** All code and models are our IP or open. The data (market prices) is public or licensed by MOEX – we must ensure no re-distribution beyond the project. We will not use any proprietary internal models or data.  
+
+# Conclusions  
+While neural time-series models are hyped, under strict constraints and small data, they are not guaranteed winners. We will proceed methodically: start with baselines, carefully validate to avoid leakage, and only adopt neural models if they clearly beat simple alternatives net of costs. Tiny pre-trained models (TTM, Timestral-5M, etc.) offer a compromise between expressivity and resource usage. Ultimately, the key measure is realized excess RUB PnL over the counterfactual. If after full validation no neural strategy passes, the “optional extension” answer is that neural models do *not* add reliable value in this setup. All findings (model files, training logs, backtest trades) will be recorded for reproducibility, and any promising signals would be vetted in a small live test before scaling up. 
+
+**Sources:** We have drawn on recent model cards and papers for architecture/licensing details, and best practices from financial ML (e.g. triple-barrier labeling, purged CV). These guide our planned methodology and resource evaluation.

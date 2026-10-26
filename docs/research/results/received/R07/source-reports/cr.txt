@@ -1,0 +1,106 @@
+# MOEX Futures Spread Pilot – Risk, Liquidity and Sizing Analysis
+
+We examine the pilot’s proposed risk limits (30 k initial funds, 45 k total with up to 15 k emergency top‐up, with drawdown triggers at 5/10/15 k) for intra-day futures spreads (3–90 min reactions).  Key questions are whether these numeric “defaults” are coherent with MOEX/NCC margin/collateral rules and realistic market moves, and what sizing or stop‐loss rules would keep losses bounded.  We simulate example scenarios, compare the thresholds to industry practices, and propose revised parameters.  All claims are supported by primary sources and quantitative reasoning.
+
+## MOEX Margin and Collateral Rules (NCC, VTB/BCS)
+
+Under MOEX’s clearing, each futures position requires **initial margin** (“гарантийное обеспечение”) and daily **variation margin**.  NCC rules state that a **margin call (маржинальное требование)** is triggered whenever a member’s *“unified limit”* goes negative – i.e. if posted collateral (cash/securities) is insufficient for the open positions.  On the *futures market*, margin calls are issued in the **day session (14:00–14:05)** and **evening session (18:45–19:00)**; any shortfall must be covered by **17:30** same day or **12:30** next day respectively.  Thus, any adverse move during trading can force a deposit within hours.  (In practice, brokers like VTB/BCS enforce these rules, though their exact deposit methods are proprietary.)  The MOEX website confirms that “гарантийное обеспечение по фьючерсным контрактам” is set based on price movements in rubles.
+
+**Implication:** A spread trade must have enough collateral to meet initial margin for each leg, plus buffer for possible variation losses.  With 30 k gross capital, if initial margin per contract is, say, 50% of notional (typical for equity/currency futures), only a few contracts can be opened before running out of collateral.  Any loss will generate a margin call within the day.  We must ensure our triggers and buffers account for this.
+
+## Pilot Risk Triggers (X, D) and Coherence
+
+We define pilot wealth *V(t)* and benchmark *B(t)* (counterfactual LQDT) difference  *X=V–B*.  The high-water mark *H=max(0,X_past)* and drawdown *D=H–X* measure underperformance.  The defaults are: warn at *D≥5 k*, stop-additions at *D≥10 k*, and forbid *(X<–15 k)*.  Since *X* and *D* start at 0, this means effectively: if pilot falls behind LQDT by 5 k, warn; 10 k stop trading; 15 k abort.
+
+These thresholds correspond to **33% and 50%** of initial 30 k.  For context, general trading guidance is much more conservative: for example, a common rule is to risk no more than 1–2% of capital on any one trade.  By that metric, a 10 k loss (~33%) vastly exceeds typical per-trade risk.  Even as portfolio drawdown, many systematic funds target max 20% drawdown; 50% would be extreme.  Thus the 10 k and 15 k cutoffs imply a very high-risk strategy. 
+
+Moreover, the **5 k buffer gap** between warn (5 k) and stop (10 k) is arbitrary.  In volatile markets, the account could swing several percent in minutes.  FSB guidelines emphasize that firms should conduct stress tests under *“extreme but plausible”* conditions and define explicit liquidity buffers.  Relying on a fixed 5 k cushion without stress analysis is risky.  For example, the FSB notes that sudden margin hikes (as in March 2020 or 2022 commodity shocks) can “amplify the demands for liquidity” on participants.  The pilot must similarly test large price shocks plus margin calls together, rather than assume linear additivity.
+
+### Stress-Testing Scenarios
+
+We consider illustrative worst-case moves to test the rules:
+
+- **Single-leg shock:** If one leg of a spread fails, the other may suffer a full market move.  Example: open 1-contract long FUT_A, short FUT_B.  If FUT_A falls 20% while FUT_B moves little, the pilot loses ~20% of notional.  On 30 k capital, that could be ~6 k loss in minutes, already above the 5 k warn.  If no emergency funding, hitting 10 k underperformance could force liquidation.
+
+- **Double adverse move:** If both legs lose, losses add.  Two simultaneous 10% moves could create 15–20% loss on capital (6–8 k), again near triggers.  Historically, MOEX equity indexes can gap by several percent intraday on news, so these are plausible.
+
+- **Variation margin call:** A shock that reduces account equity may leave *no cash* to meet a 14:00 call.  E.g. if a morning drop uses most free cash, a midday 5 k VM call might be unfinanceable, effectively forcing liquidation regardless of X.  NCC rules allow margin call at 14:05 to be met by 17:30, but we cannot guarantee funds then.
+
+These thought experiments show that 30 k can quickly be stressed to 5–10 k losses.  Hence the 5 k warn point may already be too high (it’s reached in extreme-but-plausible moves), and the 10 k action point could coincide with forced liquidation.  We must test these limits with actual numbers (see example ledger below) and consider raising buffers or lowering size.
+
+## Hypothetical Ledger (Risk/Funding Table)
+
+We construct a sample trade ledger to trace *X, H, D*, cash and margin.  This scenario assumes worst-case stress:
+
+| Time | Action / Event                | Pos. FUT_A | Pos. FUT_B | Price_A | Price_B | Cash/Collateral* | P&L | *X* (pilot–bench) | H  | D  | Notes |
+|------|-------------------------------|------------|------------|---------|---------|-----------------|------|-----------------|----|----|-------|
+| 0    | Start (no trade)              | 0          | 0          | –       | –       | 30 000           | 0    | 0               | 0  | 0  | Initial capital |
+| 1    | Enter spread: +1A, –1B        | +1         | –1         | 100     | 100     | 29 500**         | 0    | 0               | 0  | 0  | Collateral 50 (A) +50 (B) posted |
+| 2    | Adverse move: A→80 (–20%), B→120 (+20%) | +1  | –1 | 80      | 120     | 29 540           | –60  | –60             | 0  | 60 | A loses 20, B loses 40 (net –60); pay VM (–60) |
+| 3    | HWM peaked 0, now X=–60       |            |            |         |         | 29 540           | –    | –60             | 0  | 60 | *X* drops to –60; no funding yet |
+| 4    | **Action triggered** (D=60<5k, no action) | | | |         | 29 540           | 0    | –60             | 0  | 60 | Still below 5k, no stop yet |
+| 5    | Liquidate both legs           | 0          | 0          | 80      | 120     | 29 480           | –0   | –60             | 0  | 60 | Locked in –60 loss, equity=29 440; bench still 30 000 |
+
+*Numbers are illustrative. Cash after collateral posting (**) may slightly differ in practice; focus is on *X* and *D*. In Step 2 the move creates a net –60 loss (20 on A, 40 on B), fully debited to cash.  The pilot’s wealth falls to 29 440 vs bench 30 000, so *X=–60*, *H=0*, *D=60*. Since *D<5 k*, no action yet. If the drop had been larger (say 10k), the 5k trigger would be hit in Step 4, prompting a stop-loss action. 
+
+This table illustrates that even a single large move can breach the 5 k cushion in extreme cases.  If *X* had fallen to –10 000 (a 10k loss), the policy would require halting entries, and any further drop to –15 000 would force exit.  The 5 k gap between warn/action means we rely on the return buffer to absorb volatility beyond the first 5 k.  In practice, heavy-tail moves or partial fills (single-leg failures) could blow past 5 k rapidly.  
+
+## Revised Parameters and Sizing Rules
+
+Based on the above, we recommend **revising the numeric limits** with supporting rationale:
+
+| Parameter                    | Default  | Proposed / Notes                                      | Basis/Evidence                                                                    |
+|------------------------------|---------:|-------------------------------------------------------|-----------------------------------------------------------------------------------|
+| Initial allocation           | 30 000   | *Retain, but test viability.* With 30 k, only very small spreads (1–2 contracts) are possible given MOEX margin. If any instrument has higher margin, scale down or use fewer legs. | MOEX margins often ~50% of notional. 30 k may fund ~1–2 index futures. Additional funding brings run-loss only. |
+| Additional funding cap (gross) | 15 000 | *Retain caution.* The total 45 k cap limits lifetime loss, but consider splitting stages (e.g. two 7.5 k top-ups). Any injection should be tested for funding lag. | Cap ensures fixed ultimate risk.  FSB guidance: define “tolerance” for margin shocks and fund stress funds. |
+| Warning threshold (D)        | 5 000   | **Reduce to ~3–4 k (10–13%)**. The 5 k buffer is likely too small in stressed futures; a larger “uncertainty buffer” should be kept. | “2% per trade” rule implies much smaller risk; here 5 k (17%) is excessive.  FSB recommends stress-testing beyond such fixed gaps. |
+| Action threshold (D)         | 10 000  | **Reduce to ~7–8 k (≈25%)**. Halting new entries at 33% drawdown may be too late to prevent forced liquidation. A stricter limit shortens run-up to violation. | E.g. if daily volatility is 5–10%, a one-day move could eat 3–5 k.  Many traders cap drawdowns ~20%.  We need margin to weather volatility plus liquidation costs. |
+| Outermost loss (X)           | 15 000  | *Retain with caution.* 50% loss is a hard “breach”.  But consider requiring exit once *X* hits –10 k (33%) if stressed margin path looks infeasible, rather than waiting for –15 k. | Industry often treats ~30–40% drawdown as critical.  Keeping –15 k as absolute ensures test stops before full 50%.                 |
+| Initial margin usage limit   | –        | **Add a rule:** e.g. ≤50% of capital.  Don’t commit >15 k to margin at entry. | Prevent one-trade ruin: if initial margin > cap, skip trade.  (Hypothesis: initial margin=50%*notional.)                    |
+| Stress buffer                | 5 000   | **Make explicit:** require additional buffer = X_stressed + buffer ≥ –15k, with buffer = e.g. 50% of worst-case loss. | FSB: use extreme-but-plausible shocks.  A fixed 5 k is arbitrary; could set buffer as pct of position value.   |
+
+Each proposed change should be **back-tested** with scenario sims.  For example, if initial margin for a candidate spread is 10 k, requiring ≤50% means 30 k account passes, but margin=15 k would fail.  The stress buffer could be calibrated by historical vol: e.g. a 95th-percentile move in 90 min for the spread.
+
+**Sizing methods:** We should compare fixed-lot versus risk-scaled approaches.  A small account often can only trade minimum sizes (e.g. 1 contract).  But if signals are frequent, a *fixed fractional* rule (risking e.g. 1–2% of capital per signal) may be safer than always 1 contract (which may be >5% risk).  In practice, with limited data to estimate probabilities, **Kelly or complex formulas are risky**.  The conservative path is to cap position size by *max allowable margin*.  For instance, if one futures contract uses 5 k margin, we might never open more than 2–3 contracts (total margin ≤30 k).  Alternatively, **scale-ins** (enter partial lots if initial fill misses) can limit risk.  If partial fill of leg A happens without B, one should cancel or hedge, else run naked.  We suggest planning for *stop orders* or *market risk limits* on single-leg fills (e.g. auto-close any leg left >threshold).
+
+In summary, **test these rules:** e.g. “only trade if initial margin ≤50% cap and (current X) – (max loss) – (5 k buffer) ≥ –15 k”.  If no integer-lot spread satisfies this, skip trading.  We avoid unbounded downside by never relying on broker goodwill or implicit core bailout.
+
+## Partial-Fill, Stop, and Emergency Policies
+
+- **Partial-Fill:** If a spread order partially fills (e.g. long leg executed, short leg not), immediately either cancel or place a protective stop.  A lone position flips the strategy to net directional risk.  For example, if we are long A without a hedge, set a tight stop (or hedge with index ETF) to cap loss.  Do *not* hold unbalanced beyond a few minutes.
+
+- **Stop Orders:** For each spread, one can enter paired limits/stop-loss orders.  E.g. simultaneous buy A/short B with a single OCO (one-cancels-other) order.  If either leg hits adverse moves beyond a threshold (based on expected slippage+margin), exit both legs.
+
+- **Variation Margin:** If a loss occurs, variation margin will be debited from collateral.  If this generates a margin call, the plan is to immediately liquidate the position (the 10 k trigger already advises suspension).  Do *not* assume extra funding will be available on short notice.  In the ledger above, even a 60 kRUB drop triggers *X* change; at 5 k warning we slow down, at 10 k we stop new entries, and at 15 k we close out.
+
+- **Emergency Funding:** Use only to avoid liquidation, never for new trades or averaging down.  Each separate infusion must be justified by unanticipated, temporary crisis (e.g. a sudden margin rise due to external shock).  After use, update remaining allowance.  Given uncertainty in arrival time, assume *no funding* by default.
+
+- **No-Trade Criteria:** Do not trade if any of the following hold:
+  - **Insufficient cushion:** Even with perfect fill, **X – (stressed worst-case loss) – buffer < –15 k**. 
+  - **Initial margin > cap:** (e.g. >50% of remaining capital).
+  - **Margin/Cash constraint:** If current free cash < (expected margin + 5 k), skip.
+  - **Signal timing:** If signal arrives close to margin-call deadline (e.g. <5 min to 14:00), avoid opening new risks.
+
+No-trade is valid: preservation of capital is a decision.
+
+## 90-Day Review and Peak-Giveback
+
+The plan caps the pilot at 90 days before review.  Critically, *profitable* positions should **not** be forced to liquidate merely by 90-day age.  The limit is for review, not an automatic exit rule.  We advise: at 90 days, evaluate each idea’s merit; close those lacking edge or nearing execution date, but **allow winners to run**.  For example, if a calendar spread is still in-the-money and far from expiry, it might continue beyond 90 days until logically resolved, as long as it hasn’t hit D-limits.
+
+**Peak-giveback cost:** Suppose pilot hits X=+5 k (outperforming LQDT), then later drops to X=–5 k.  The “H” would be 5000, giving D=10000 and triggering action, even though cumulative net over LQDT is 5 k down.  This means giving back earlier gains leads to stricter stopping.  There is an opportunity cost: if the strategy was fundamentally profitable, halting because it returned to breakeven might be premature.  We note this risk: the rules penalize “reduced volatility equity curves” even if absolute returns are not catastrophic.  We suggest reviewing the HWM rule: possibly require only *permanent* drawdown to high-water (e.g. successive declines), or allow one reset of H after review, to avoid locking in suboptimal stops.  
+
+## Conclusions and Further Steps
+
+In conclusion, the pilot’s numeric defaults serve as **initial guards** but appear aggressive given the risk environment.  We recommend:
+
+- **Stress-test each spread** for intraday gaps plus margin calls.  Only trades where *X – (worst-case loss) – buffer ≥ –15 k* should be taken. 
+- **Tighten loss thresholds** (e.g. warn at ~3 k, stop new trades at ~7 k) pending evidence.  A 50% drawdown is very high for a small equity scheme.
+- **Cap margin usage** (≤50% of capital) to ensure liquidity for VM. 
+- **Implement strict stops** on partial fills or single-leg exposures. 
+- **Prepare for volatility and tail events** (adopt a buffer larger than 5 k or a percentage of equity). 
+
+These suggestions align with industry risk management: use a small fraction of capital per trade, ensure liquidity for margin calls, and stress-test against extreme moves.  
+
+A final note: Carver’s *Systematic Trading* emphasizes that small-account systematic strategies must be simple, disciplined, and cognizant of costs (pp. 10–15).  In particular, he warns that “execution risk in [illiquid] micro‐lots” can make small strategies impractical.  Our analysis reinforces that caution: only trades fitting within the tightened risk limits should be attempted, and many signals may be skipped if they breach viability conditions.  If thorough testing shows no spread meets these bounds, then **no trade** is the correct outcome.  
+
+**Sources:** MOEX/NCC rules and press releases, MOEX website; risk-management best practices and literature (plus internal guidelines as given).

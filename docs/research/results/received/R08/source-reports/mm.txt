@@ -1,0 +1,578 @@
+# Delayed Manual Execution, Signal Validity and Virtual Portfolio Design for MOEX Futures Spreads
+
+## 1. Executive View: What Changes When Execution Is Delayed and Manual?
+
+For this MOEX futures‑spread pilot, the central constraint is that every trade is (a) manually executed at VTB with 3–90 minute human reaction times, and (b) must be evaluated against an LQDT cash benchmark on a finite‑capital shared account. This makes “signal quality” a joint property of the statistical model, the market microstructure, and human/broker delays.
+
+Key implications:
+
+- A model that is profitable at “decision time” can be value‑destroying once you factor in: 15‑minute free MOEX data delay, Telegram notification latency, 3–90 minute user reaction, session boundaries, and two‑leg execution risk.
+- Under finite capital and strict X/H/D risk accounting, the relevant object to validate is not an abstract entry signal but a **delayed‑fill, capital‑constrained order lifecycle**, including explicit “do not enter if…” predicates and expiry.
+- A realistic virtual portfolio must simulate: partial/unfilled legs, revalidation after delay, competition for scarce cash, margin escalations, and the fact that some “signals” never become executable trades within policy.
+
+The single most actionable takeaway is that you should define, timestamp and test a full **signal → order → fill → portfolio** lifecycle with explicit delay‑aware invalidation logic, and treat that as the unit of evaluation against LQDT, rather than testing the raw model decisions.
+
+---
+
+## 2. Timestamps and Lifecycle: From Information to Completed Hedge
+
+**Core insight:** The project must track a layered timestamp chain; each layer can break signal validity independently.
+
+### 2.1. Structural time anchors from MOEX and VTB
+
+- MOEX derivatives sessions run in multiple blocks: morning, main and evening; standard documentation shows main futures session 10:00–18:50 MSK with clearing 14:00–14:05, and an evening session 19:05–23:50[1][2]. Weekend trading sessions on the derivatives market are scheduled on Saturdays/Sundays in daily trading format[3]. Session boundaries and clearing times are therefore known, discrete risk points.
+- Free MOEX trading data for public users is delayed by 15 minutes; real‑time data requires a paid subscription. MOEX explicitly states that, in absence of subscription, trading information is viewed with a 15‑minute delay, with minimum refresh 1 second for paid feeds[4][5][6]. The mobile app and analytical/demo products also provide delayed data[7][8].
+- VTB brokerage documents provide a general “Regulations for financial market services” covering order types and procedures[9], and publicly describe that many instruments, including derivatives, are in T+1 settlement mode: the trade is executed today, settlement next business day[10][11]. This affects when cash/variation margin actually hits the account, not matching‑engine latency.
+- VTB’s KDS (коэффициент достаточности средств) for the futures market is defined in bank documentation with parameter Y=0.2; forum reproductions indicate X=0, Y=0.2 for sufficiency thresholds[12][13][14]. That coefficient directly constrains when additional positions can be opened or must be reduced.
+
+These facts imply distinct operational timestamps:
+
+1. **Information timestamp (t_info)**  
+   - Under free access: last MOEX quote is at real time minus 15 minutes; ISS and other feeds are explicit about this[4][5].  
+   - The model must tag its inputs with this delayed timestamp.
+
+2. **Model evaluation timestamp (t_model)**  
+   - Time when the model digests t_info and produces a signal.  
+   - Typically close to t_info if the model runs in a cron or event‑driven environment, but not identical.
+
+3. **Signal publication timestamp (t_sig_pub)**  
+   - When the signal is sent to the Telegram bot (or equivalent).  
+   - Telegram API and user reports suggest per‑message latency from tens of milliseconds to several seconds in low load, extending to many seconds in large channels[15][16][17]. That is small relative to 3–90 minute human delays but matters if you later automate.
+
+4. **User read/decision timestamp (t_decision)**  
+   - Human reading and deciding can be anywhere from 3 to 90 minutes after t_sig_pub by project assumption, with a rough median of 5–15 minutes. Literature and industry anecdotes show manual decision and order entry typically requires seconds to minutes even in professional environments[18][19][20]; the project’s assumed upper tail (90 minutes) is therefore conservative but realistic for a side project.
+
+5. **Order acceptance timestamp (t_ord_accept)**  
+   - Time when VTB’s trading system or gateway acknowledges receiving the order.  
+   - Exchange‑side infrastructure latencies are microseconds to milliseconds: MOEX FAST reports average update latency <300 μs for some markets[21], and QUIK‑based routing itself is sub‑second, though user reports indicate 2–3 second GUI/API delays depending on scripting[22].  
+   - Broker regulations and manuals do not publish explicit “manual execution delay” numbers for futures[23][24]; thus you must treat broker internal delays as an opaque but relatively small component compared with human delay.
+
+6. **Fill timestamps (t_fill_1, t_fill_2)**  
+   - For calendar spreads placed as **spread instruments**, MOEX’s calendar spread service allows simultaneous opposite‑direction trades (buy/sell) in two futures with same underlying but different expiries[25]. Synthetic matching allows spread orders to match both against the spread order book and against separate legs, with trades formed from different order books[26][27].  
+   - For **leg‑by‑leg** execution, each leg has its own fill time and price; partial fills and unfilled residuals are explicitly allowed by order types such as IOC and DAY[28][29]. MOEX order docs list DAY (in‑queue), IOC (immediate or cancel), and FOK (fill or kill)[28][29].
+
+7. **Hedge completion timestamp (t_hedge_done)**  
+   - For atomic calendar‑spread orders, t_hedge_done ≈ t_fill_spread.  
+   - For sequential legs, t_hedge_done = max(t_fill_1, t_fill_2) if both filled; or undefined if the second leg never fills (leaving naked risk).
+
+8. **Order cancellation timestamp (t_cancel)**  
+   - Can be user‑initiated or system‑initiated.  
+   - MOEX supports order expiry at end of trading day or session; documents on order expiration state that unfilled limit orders can be canceled or expired at session end, and in some venues are not carried into the evening session[30][31].  
+   - Brokers can also cancel orders on disconnect or via kill‑switch; MOEX exposes Cancel‑on‑Disconnect (COD) and kill‑switch functions at infrastructure level[32][33][34].
+
+Operationally, your simulation and logging need to store at least these timestamps for each signal, even in a purely virtual portfolio, because the decision whether a signal remains valid must refer to the age of the underlying market state at t_decision and to proximity to clearing/session end.
+
+---
+
+## 3. Delay Scenarios Consistent with 3–90 Minute Reaction
+
+**Core insight:** Instead of assuming one distribution, define discrete delay regimes that bracket likely behavior, then calibrate later from logs.
+
+### 3.1. Building blocks: where delay actually accrues
+
+- **Data latency:** 15 minutes for free MOEX data[4][5][6].
+- **Model processing:** typically seconds or less relative to human time; can be ignored as long as you timestamp precisely.
+- **Notification latency:** Telegram‑bot delays are usually ≤10 seconds, sometimes more under load[15][16][17]. Negligible at 3–90 minute scale but relevant if you later aim for 1–5 minute quasi‑intraday use.
+- **Human behavior:** user‑specified as 3–90 minutes with 5–15 minute informal median. General manual trading commentary (equities, FX) suggests 2–10 seconds for active traders in focused sessions and up to minutes for discretionary review[18][19][20][35]; your pilot’s wide upper tail reflects multitasking and low priority.
+- **Broker/platform:** MOEX and VTB do not publish per‑order manual latency; exchange matching is sub‑millisecond[21][36], and anecdotal GUI/API delays of a few seconds[22] are much smaller than human delay. Occasional “hung orders” of many minutes have been reported on forums for FORTS[37], but these are infrequent anomalies, not baseline.
+
+### 3.2. Three delay regimes to simulate
+
+To respect the “do not assume a distribution” constraint, define deterministic scenarios for each signal:
+
+1. **Fast‑reaction scenario (F):**  
+   - User decision delay sampled from 3–10 minutes.  
+   - Approximates days where the user is already in the terminal, watching.  
+   - Combined with 15‑minute data delay, signals in F regime act on prices 18–25 minutes old.
+
+2. **Typical‑reaction scenario (T):**  
+   - Decision delay 10–30 minutes, with mass around 15–20 minutes.  
+   - Represents most working‑day reactions.
+
+3. **Slow‑reaction / distracted scenario (S):**  
+   - Decision delay 30–90 minutes.  
+   - Captures interruptions, meetings, or signals arriving near breaks (lunch, clearing, end‑of‑session).
+
+Each virtual signal path should be evaluated under at least F and T; S is important for evaluating how often signals are invalidated before entry due to aged data, session boundaries, or capital changes.
+
+### 3.3. Correlation with volatility and liquidity
+
+Academic and practitioner discussions of execution delay emphasize that cost of delay is nonlinear in volatility: delays near news or in thin markets produce disproportionate slippage and execution risk[37][38]. MOEX derivatives have price limits and monitoring zones to constrain extreme moves[39][40], but intraday volatility is still regime‑dependent.
+
+You should therefore:
+
+- Treat **delay scenarios as conditional on intraday volatility / liquidity regimes**, not independent. For example, you may be more attentive during regular work hours (10:00–18:50) when liquidity is highest, and less attentive in the evening session, even though MOEX trades until 23:50[1][2].
+- Explicitly tag each signal with its **session segment** (pre‑open, main, intraday clearing, post‑clearing, evening, weekend), using MOEX’s published schedule[1][2][3], because fills may be impossible or constrained around clearing.
+
+Over time, actual logs of t_sig_pub and t_decision will let you estimate empirical distributions conditional on time‑of‑day and day‑of‑week, and then retrofit these into the virtual portfolio.
+
+---
+
+## 4. Delay‑Aware Signal Revalidation and Expiry Logic
+
+**Core insight:** A “signal” is merely an intent; before any order is entered, you must re‑validate executable advantage versus LQDT and risk/operational constraints based on current information at t_decision, not at t_model.
+
+### 4.1. Conditions to re‑check at decision time
+
+At t_decision for a given signal, check:
+
+1. **Data staleness and model horizon**  
+   - Effective market state age = real_time_now − t_info. With free data this is ≥15 minutes even if you react instantly.  
+   - For medium‑term spread trades (days–weeks), 20–40 minute staleness may be acceptable; for any strategy whose empirical half‑life is in hours or less, you must test ex ante how much performance degrades when entries are shifted by 20–60 minutes.  
+   - A **signal age limit** (TTL) should be defined precisely, e.g., “invalidate if t_decision − t_model > T_max”, with different T_max for different strategy families. Vendor literature on stale signals suggests seconds for scalping, minutes for slower strategies[41]; you might choose, for example, 60 minutes as a tentative max for this pilot and test sensitivity.
+
+2. **Executable net advantage vs LQDT**  
+   - At t_decision you observe current best bid/ask on both legs (or spread book where available). Free delayed quotes may be 15 minutes behind; for the pilot you can either:
+     - Use **delayed quotes as if real** in the virtual portfolio (conservative, but measure of slippage vs real live trading will be biased), or
+     - For evaluation, use **post‑facto OHLCV** to approximate worst‑case realistic fills within a small interval around t_decision (see Section 7).  
+   - Compute expected incremental X = (expected spread profit) − (roundtrip costs, including MOEX fees[42], broker commissions, and cash opportunity cost vs LQDT). Only if X > 0 by a buffer (to cover slippage, tax) should the signal remain eligible.
+
+3. **Bid/ask and minimum lot feasibility**  
+   - MOEX contract specs show lot sizes differ by contract: for example, IMOEXF perpetual futures have lot=10, tick 0.5, tick value 5 RUB[43][44], while mini index futures have lot=1[45].  
+   - Candidate trades with required quantity < 1 spread lot or < minimum contract must be discarded. For a RUB 30k test envelope, some large contracts may be inherently infeasible.
+
+4. **Available funds and margin / KDS**  
+   - MOEX publishes current futures margin requirements (guarantee collateral) per contract; initial margin is typically a modest percentage of notional[46]. Specific IMOEX futures examples show per‑contract initial margin on the order of a few thousand RUB[47].  
+   - VTB KDS rules with X=0, Y=0.2[12][13][14] mean that, below some buffer, further position openings may be restricted; your simulated portfolio must at least check that required margin plus variation risk and reserves fit within:
+     - The 30k designated envelope minus already‑committed margin/reserves  
+     - The outer capital/risk policy (“X − stressed loss ≥ −15k” etc. from the prompt).
+
+5. **Session and model validity**  
+   - If current time is within intraday clearing 14:00–14:05 or close to session end 18:50 / 23:50[1][2], you must decide whether late entries are allowed or systematically forbidden (e.g., “no new entries in last 30 minutes of any session”).  
+   - If the model uses end‑of‑day risk parameters or volatility bands that MOEX updates daily at 19:00 MSK[8][48], signals spanning parameter changes may be invalid.
+
+6. **Strategy‑specific “do not enter if…” constraints**  
+   Examples:
+   - Spread already moved in favorable direction by more than a specified fraction of intended edge since t_info.  
+   - Order book depth on either leg below minimum threshold (e.g., total visible quantity under some volume).  
+   - KDS or broker‑specific pre‑trade checks indicate insufficient funds or would move you too close to forced liquidation thresholds[12][13][49].
+
+### 4.2. Defining price/state invalidation and reissue
+
+A **signal becomes invalid** (without trade) if any of:
+
+- Age condition violated: t_decision − t_model > T_max.  
+- Execution window closed: within blocked period around clearing or end of last daily session.  
+- Margin, funds or KDS constraints violated.  
+- Model‑level condition violated (e.g., spread z‑score normalized toward neutral beyond threshold).
+
+Reissue logic:
+
+- A fresh signal is produced only when the **model, using fresh t_info′** (with its own delayed quotes), again crosses entry threshold.  
+- You must explicitly prohibit “signal extension” where you simply update the timestamp while relying on stale inputs; t_model must not be overwritten.
+
+In the virtual portfolio, each invalidated signal is logged as “expired before order” with a reason code (see Section 6), and contributes to opportunity‑cost analysis (missed winners, etc.).
+
+---
+
+## 5. Two‑Leg and Partial Execution: Microstructure and Failure Modes
+
+**Core insight:** MOEX gives you a choice between atomic spread orders and leg‑by‑leg execution; your failure scenarios differ sharply across those modes.
+
+### 5.1. Atomic calendar spread orders on MOEX
+
+- MOEX’s calendar spread service allows a trader to buy one futures and sell another simultaneously for the same underlying with different expiries[25].  
+- Calendar spread orders (limit, market, FOK) sit in their own spread order book, which is synthetically linked to the individual leg order books[26][50][51]. Matching can occur:
+  - Against another spread order (pure spread‑book cross), or
+  - Via synthetic matching involving orders in the leg books at prices favorable to the spread order[26][27][50].
+- At the moment of matching, margin requirement is calculated as for **two matched atomic orders in the spread instruments**[51]. The official formulation states no explicit margin discount relative to separate legs.
+
+Implications:
+
+- If you **use calendar spread instruments exclusively**, you effectively obtain atomic two‑leg fills or nothing (depending on order type: DAY, IOC, FOK). Execution risk is then mostly price risk (slippage) rather than naked leg risk.
+- Spread liquidity can be lower than individual legs; Smart‑Lab notes that order books for spreads exist only for more liquid underlyings[52]. The virtual portfolio must therefore explicitly check whether a spread instrument exists and is sufficiently liquid before assuming atomicity.
+
+### 5.2. Leg‑by‑leg execution and naked intervals
+
+If a spread instrument is unavailable or too illiquid, you must work leg‑by‑leg in standard futures:
+
+- MOEX supports standard limit, IOC and FOK orders on futures[28][29]. Partial fills are common when liquidity around desired price is thin.  
+- Execution risk now includes **sequence risk**: one leg fills at intended price, the other leg does not, or fills much worse, leaving you with an unintended directional exposure. Practitioner sources on spread trading highlight this as a key hazard: “your first leg might fill at desired price, but the second leg might not”[53].
+- Retail user reports on FORTS speak of rare but serious anomalies such as “hung market orders” that fail to execute for extended periods (up to an hour), even though the market trades[37]. These are minority events but matter for extreme‑scenario design.
+
+Your leg‑by‑leg workflow in the virtual portfolio should:
+
+1. Choose a **primary leg** (e.g., the more liquid or the one with stricter price constraint).  
+2. Submit limit/IOC order for primary leg; record t_fill_1 and price_1 (or non‑fill).  
+3. If primary leg fills fully, immediately revalidate the hedge leg given current quotes:
+   - If hedge leg limit is achievable, submit order.  
+   - If not, follow a pre‑defined contingency:
+     - Tighten/loosen acceptable hedge price within some band; or  
+     - Abort hedge with immediate flattening of primary leg (closing trade, not entering spread); or  
+     - Accept directional exposure up to a pre‑specified risk cap and hold while trying to hedge later.
+
+4. Record t_fill_2; the **naked interval** is [t_fill_1, t_fill_2] if both fill, or [t_fill_1, t_flatten] if you close the lone leg.
+
+You should not assume any broker or exchange “two‑leg atomicity” beyond MOEX’s explicit calendar spread service. For VTB and BCS, available documentation and comparison sites describe futures access and commissions[54][55][56] but do not provide any special atomic multi‑leg order type beyond exchange‑standard order types.
+
+---
+
+## 6. Signal/Order/Portfolio Lifecycle and Reason‑Code Taxonomy
+
+**Core insight:** For both virtual and eventual live evaluation, you need a standardized state machine and reason‑code set that traces each signal’s fate from idea to contribution to X.
+
+### 6.1. Lifecycle states
+
+At minimum, treat each model‑generated idea as passing through the following levels:
+
+1. **Idea‑level signal (S):**  
+   - Attributes: underlying pair, direction (e.g., long near/short far), approximate target and stop levels in spread terms, statistical rationale, timestamp t_model, input age (t_model − t_info), model family ID.
+
+2. **Pre‑order validation (V):**  
+   - At t_decision, run the revalidation in Section 4. Outcome: either **Eligible** or **Invalidated**, with a reason.
+
+3. **Order(s) placed (O):**  
+   - For calendar spread instrument: 1 order object with type, quantity, limit, time‑in‑force.  
+   - For leg‑by‑leg: 2 planned orders; state machine must allow only one to exist initially.
+
+4. **Exchange state (E):**  
+   - Per order: PendingNew, New (queued), PartiallyFilled, Filled, Canceled, Rejected. MOEX trading rules and FIX specs expose rejection reasons[57][58].
+
+5. **Position / portfolio state (P):**  
+   - No position, Half‑leg open, Full spread open, Exiting, Closed.  
+   - Map this to incremental X and risk exposure for evaluation.
+
+6. **Exit / resolution (R):**  
+   - Profit‑taking, stop‑loss, time‑based exit (expiry/roll), forced by margin/KDS, manual discretionary close, or no entry (if invalidated earlier).
+
+### 6.2. Reason‑code taxonomy
+
+You should define a small, mutually exclusive set; the following covers project needs and aligns with MOEX/broker realities:
+
+**Pre‑order invalidation codes (V‑codes)**
+
+- V1: Market closed / trading not conducted for instrument (MOEX rejection code akin to “Торги не проводятся”[57]).  
+- V2: Signal expired (age > T_max).  
+- V3: Data stale beyond allowed horizon (e.g., no new quote for >N minutes).  
+- V4: Insufficient free funds / KDS < threshold (margin constraint).  
+- V5: Overlap / conflict with existing position (e.g., would exceed per‑idea or aggregate size cap).  
+- V6: Minimum lot / instrument constraints (position size <1 contract or instrument not available).  
+- V7: Session window constraint (e.g., within prohibited pre‑clearing or end‑of‑session window).  
+- V8: Model invalidated (risk regime or other model‑level filter).
+
+**Order‑level rejection/termination codes (O‑codes)**
+
+(Aligned loosely with MOEX rejection reasons but abstracted.)
+
+- O1: Exchange rejected (price outside limits, invalid order parameters, instrument halted, etc.)[39][58].  
+- O2: Broker rejected (risk control, cross‑order control[59], KDS).  
+- O3: User cancel before execution.  
+- O4: COD/kill‑switch cancel (e.g., simulated terminal disconnect).  
+- O5: Order expired unfilled at end of day/session[30][31].
+
+**Fill/position‑level outcomes (P/R‑codes)**
+
+- P1: Fully filled as intended (both legs where applicable).  
+- P2: Partially filled, then canceled (residual).  
+- P3: One‑leg fill, second leg unfilled; primary leg flattened without spread (directional scratch or realized gain/loss).  
+- P4: One‑leg fill, second leg filled at worse‑than‑expected price (slippage beyond design), spread still established.  
+- P5: Forced close by broker (margin or KDS).  
+- P6: Strategy exit (TP, SL, time).
+
+**Funding approval codes**
+
+- F1: Additional funds required but not approved (hence no entry).  
+- F2: Additional funds requested and approved (only to reach flat, as per project policy).  
+- F3: Broker used core collateral unexpectedly (incident against gross funding cap).
+
+Each virtual trade record should carry exactly one V‑code (if no order placed) or O‑code + P/R code chain; this is critical for later diagnosing how much underperformance vs LQDT is due to stale signals, margin limitations, partial fills, or model quality.
+
+---
+
+## 7. Falsifiable Delayed‑Fill Evaluation Protocol
+
+**Core insight:** To test whether the strategy adds value over LQDT under manual delays, you must adopt a conservative, explicit fill model that does not assume perfect execution or mid‑price fills.
+
+### 7.1. Data: conservative OHLCV fallback
+
+MOEX provides historical trading data archives with daily aggregated prices, volumes and quantities[60]. Free analytical/demo feeds deliver 5‑minute interval data with delay and disclaimers about demo status[7][8]. Real‑time tick/LOB history generally requires subscription or vendor products.
+
+Given the preference for free data, a defensible protocol is:
+
+- Use the smallest freely available reliable bar interval (likely 1 or 5 minutes; to be confirmed per instrument using R04).  
+- For each candidate order at effective entry time t_decision, identify the bar [t0, t1] covering the intended order submission.
+
+For **limit orders** in a virtual portfolio:
+
+- Buy‑limit at price L is considered filled in that bar only if the bar’s low ≤ L and volume > 0.  
+- Sell‑limit at price L is filled only if the bar’s high ≥ L and volume > 0.  
+- When both conditions satisfied, choose a **conservative fill price**:
+  - For buy: min(L, close_of_bar) if you want slight pessimism; or simply L.  
+  - For sell: max(L, close_of_bar) or L.  
+- If both legs are limits on the same bar and both meet these conditions, treat them as filled within that bar for timing purposes but remember that actual sequencing could be less favorable; this is already conservative relative to mid‑point assumptions.
+
+For **market/IOC orders**:
+
+- Treat as filled at the **worst intrabar price** in your disfavor compatible with reasonable slip:
+  - For buy‑market: min(open_of_bar, high_of_bar).  
+  - For sell‑market: max(open_of_bar, low_of_bar).  
+- This approximates that the order might walk some of the book but not beyond the intrabar extreme. This is intentionally conservative compared with mid or VWAP.
+
+For **spread instruments**, if OHLCV is available for the spread itself, apply the same rules to the spread bar; otherwise infer from legs only when that does not introduce arbitrage inconsistencies. Given MOEX has separate spread instruments[25][50], you should aim to use their own data where possible.
+
+### 7.2. Falsifiability and what would disconfirm strategy validity
+
+The protocol is falsifiable because it specifies concrete conditions under which a signal is counted as:
+
+- Not entered (V‑code recorded).  
+- Entered but unfilled given OHLCV (no intrabar price condition satisfied).  
+- Filled at an explicitly specified conservative price.
+
+Evidence that would invalidate apparent profitability:
+
+- A re‑run using more granular data (e.g., 1‑minute vs 5‑minute) consistently yields materially worse P&L, indicating that the bar‑based fill model was too optimistic.  
+- Even under conservative fills, including all V/O/P codes and capital constraints, the excess X vs LQDT is consistently negative beyond tolerated −15k policy bounds.
+
+To implement this, you must log per‑signal:
+
+- t_info, t_model, t_sig_pub, t_decision (scenario), effective t_entry_bar.  
+- Intended order parameters (side, price, quantity, order type, instrument).  
+- Bar OHLCV around t_entry and t_exit.  
+- Derived fill or “no fill” outcome plus reason code.
+
+Forward, you should collect:
+
+- Actual decision delays (t_decision − t_sig_pub).  
+- Any broker rejections or unusual fill patterns from actual paper trades, for calibration.
+
+No guessed mid‑price fills or “every signal fills” assumptions are allowed under this protocol.
+
+---
+
+## 8. One Finite‑Capital Virtual Portfolio Design
+
+**Core insight:** The virtual portfolio must reflect the project’s strict capital and funding rules, attempt every eligible signal deterministically, and distinguish between risk exits and opportunity constraints.
+
+### 8.1. Capital and funding structure
+
+- Starting envelope: 30,000 RUB on the same account as >40m LQDT.  
+- Additional emergency funding: at most 15,000 RUB gross over the life of the pilot, strictly for reaching flat, not for new risk.  
+- Outer shortfall boundary vs LQDT: X ≥ −15,000, with action levels at D ≥ 5,000 and 10,000, cumulative X ≤ −10,000 per embedded policy.
+
+The virtual portfolio “sleeve” should:
+
+- Track sleeve equity Vsleeve(t) as notional test capital committed + realized/MTM P&L of spread positions.  
+- Track B(t) as the LQDT counterfactual (separately; R05/R07 give details).  
+- Compute X = V − B as defined; all incremental orders and position sizes conditioned on current X, realized drawdowns D and stress loss buffers.
+
+### 8.2. Signal priority under finite capital
+
+When multiple eligible signals arrive but free capital is insufficient to take all:
+
+- Define a **deterministic priority rule** (e.g., earliest timestamp first; or highest expected edge per margin unit).  
+- Reserve capital for pending orders: when the virtual engine decides to attempt a trade, corresponding margin plus a risk buffer is marked as “reserved” until the order is filled or canceled.  
+- The engine must never “oversubscribe” margin, even if OHLCV‑based orders happen not to fill; this is essential to align with live feasibility.
+
+Rejection reasons (V‑codes) must include “insufficient funds after existing reservations” and “user‑funding approval absent” for any scenario where entry would require emergency top‑up.
+
+### 8.3. Repeated notifications vs new trades
+
+The policy should state clearly:
+
+- A repeated notification (e.g., Telegram resend or reminder) **does not create a new signal**. Only distinct model events with new t_model and state count.  
+- Virtual engine keeps a mapping from an idea ID to its current lifecycle state; if a reminder arrives but the idea is already V‑invalidated, O‑canceled or filled, nothing new is done unless a distinct “re‑entry rule” is defined in the model (e.g., mean‑reversion re‑trigger).
+
+### 8.4. Distinguishing risk exits from new‑idea quota
+
+Risk exits / hedging trades (closing or reducing positions) are **not** counted against any “daily trade idea” quota, because they are consequences of prior entries. You should still log them as separate orders with their own O/P codes, but quotas and manual‑burden metrics should be computed on idea‑level S events.
+
+---
+
+## 9. Hypothetical Examples Illustrating Failure Modes
+
+**Core insight:** By walking through specific scenarios, we see how the taxonomy and protocol operate in practice.
+
+### 9.1. Stale winner / missed opportunity
+
+- t_info = 10:00, t_model = 10:01: model detects attractive calendar spread in IMOEXF near/far; expected edge 0.5% vs LQDT post‑costs.  
+- t_sig_pub = 10:02, t_decision = 11:00 (T‑scenario). Age = 59 minutes. TTL T_max = 45 minutes.  
+- At 11:00, spread has indeed moved favorably and then mean‑reverted; current delayed quote (10:45) suggests limited remaining edge.  
+- Engine sets V2: signal expired, no orders placed, reason “TTL violated”. In hindsight, had you traded at 10:05 you would have made money, but under the delay‑aware protocol this is logged as “missed winner”.
+
+### 9.2. Simultaneous signals competing for cash
+
+- At 13:00, three spread ideas (A, B, C) become eligible; each requires ~10k margin. Vsleeve free = 22k.  
+- Priority rule: highest expected edge per margin unit; ranking A>B>C.  
+- Engine reserves 10k for A, 10k for B; V4 for C: insufficient funds.  
+- A fills (P1), B remains unfilled (price never touches limit in OHLCV); reserved capital for B is released at t_cancel, but no new signals arrive in this interval.  
+- End‑of‑day, you hold only A; opportunity cost for B and C is visible in logs.
+
+### 9.3. One‑leg fill with worse‑than‑expected hedge
+
+- Leg‑by‑leg trade on currency futures due to missing spread instrument.  
+- Primary leg long front‑month fills at limit 100 at 15:10. Market volatility spikes; back‑month offer drifts upward.  
+- Your pre‑defined hedge band allows hedge cost within +0.2 vs modeled spread. Actual best ask is +0.5.  
+- Engine may:
+  - Accept directional risk up to −0.5 mispricing, placing limit; or  
+  - Treat this as violation of hedge condition, flatten primary leg.  
+- Suppose it attempts hedge and fills at +0.5 (P4: hedge slippage). Spread now exists but with reduced expected profit. X contribution is logged accordingly.
+
+### 9.4. Margin escalation
+
+- Overnight, MOEX updates risk parameters at 19:00; initial margin per contract increases due to higher volatility[8][46].  
+- Your open spread suddenly requires more margin; KDS drops toward Y=0.2[12][14].  
+- Under pilot rules, if X − stressed loss − buffer < −15k or KDS threshold is violated, engine simulates forced partial close (P5), potentially at unfavorable prices during an illiquid evening or weekend session.
+
+### 9.5. Notification retry without new idea
+
+- Model emits a signal at 16:00; user is offline. Telegram bot retries notifications at 16:05 and 16:15.  
+- t_decision occurs only at 16:30; TTL=45min so still valid.  
+- Engine ignores retries as new ideas; only t_model=16:00 and t_decision=16:30 matter.  
+- If user explicitly postpones decision to “tomorrow”, then at 10:00 next day the signal is rechecked and fails TTL; code V2 logged.
+
+---
+
+## 10. Manual‑Action Burden and the Meaning of “One Daily Trade”
+
+**Core insight:** With the full lifecycle defined, you can propose meanings for “one trade per day” and estimate manual burden, but these remain defaults until calibrated by actual behavior.
+
+### 10.1. Manual time per idea
+
+Non‑finance studies of manual order entry in corporate settings report on the order of **several minutes per order**; one case study found ~6 minutes per manual order and hundreds of hours per year in aggregate[61]. Trading‑focused sources note similar orders of magnitude for non‑automated workflows[20][35][62]. For this pilot:
+
+- Per **idea‑level trade** (signal evaluation plus potential order entry), you might reasonably budget:
+  - 1–3 minutes to read signal explanation and check context.  
+  - 1–2 minutes to input orders (spread or two legs) and verify.  
+  - Additional time for monitoring exits if not fully automated.
+
+### 10.2. Possible definitions of “one daily trade”
+
+You must choose what “one daily trade” means in later requirements; possible definitions:
+
+1. **Idea‑based definition:**  
+   - One trade = one idea‑level signal that leads to at most one opening transaction and one closing transaction (regardless of partial fills).  
+   - This fits your requested separation between “idea‑level signals” and order instructions.
+
+2. **Order‑based definition:**  
+   - One trade = one round‑trip per contract (enter+exit) counted per leg.  
+   - Less intuitive for spread research but more aligned with some broker fee calendars.
+
+3. **Risk‑change definition:**  
+   - One trade = one net increase in open risk (position notional or margin) independent of subsequent partial fills/exits.
+
+For R08 purposes, a default working definition is:
+
+> “One daily trade” = at most **one new idea‑level spread position opened per day**, independent of how many child orders it uses.
+
+Manual‑burden metrics can then be:
+
+- Average number of ideas evaluated per day (including invalidated).  
+- Fraction of ideas resulting in actual entries.  
+- Cumulative time spent per day/week on evaluation and order entry.
+
+Open questions that must be addressed later (possibly with Harris[63]):
+
+- How to scale from “one daily trade” in the pilot to a sustainable long‑run workload given other commitments and monitoring needs.  
+- Whether complex exit logic (partial take‑profits, staggered hedges) imposes a disproportionate manual load relative to expected excess X.
+
+---
+
+## 11. How Harris’ Microstructure Framework Connects to These Failure Modes
+
+Larry Harris’s *Trading and Exchanges: Market Microstructure for Practitioners* provides a conceptual framework for understanding how order types, liquidity, and trader behavior generate execution risk and cost[63][64]. Key connections:
+
+- **Order properties and priority:** Harris emphasizes that limit orders trade execution probability for price control, and that time priority in the book matters[64]. In your context, delayed manual entry ensures you almost never have time priority; you are effectively a liquidity taker, paying spreads and impact.
+- **Execution and delay cost:** The distinction between **delay cost** (cost of not trading when decision is made) and **execution cost** (slippage relative to decision price) is explicit in institutional TCA literature[37]. Your pilot must aggregate both: delay cost arises from TTL‑expired signals and missed winners, execution cost from fills at worse prices than t_model.
+- **Liquidity regimes and volatility:** Microstructure theory shows that liquidity providers widen spreads or withdraw when volatility spikes, amplifying execution risk for lagged traders[63]. Your worst cases (one‑leg fills, margin escalations) will concentrate precisely in such regimes.
+
+If you want to deepen this mapping, I can work with specific Harris chapters (e.g., Orders and Order Properties; Liquidity; Execution Strategies) to derive more precise heuristics for which order types to prefer (e.g., passive vs aggressive, IOC vs FOK) in each spread scenario and how to quantify expected execution shortfall.
+
+---
+
+## 12. Recommendations and Open Questions
+
+**Immediate (protocol design)**
+
+1. **Adopt the lifecycle and reason‑code taxonomy** in Section 6 as the formal schema for R09 validation and R05 accounting.  
+2. **Define explicit TTLs and session windows** for each strategy family (e.g., T_max = 45 or 60 minutes; no new entries within 30 minutes of clearing/session end).  
+3. **Choose conservative OHLCV rules** (Section 7) for virtual fills and document them once; never implicitly assume mid or VWAP.
+
+**Short‑term (pilot data collection)**
+
+4. Start logging real **t_sig_pub and t_decision** times for manual paper trades, even before any serious capital is at risk. This will allow empirical calibration of F/T/S delay scenarios.  
+5. Record any broker order rejections or anomalies with MOEX reason codes where available[57][58]; use these to refine O‑codes and risk checks.  
+6. Implement a **single virtual portfolio** engine that enforces capital reservations, emergency funding rules, and deterministic signal prioritization.
+
+**Longer‑term (before live deployment)**
+
+7. Once R07 (risk/sizing) and R05 (LQDT accounting) are formalized, integrate stress‑test logic: X − stressed loss − buffer ≥ −15k as an explicit pre‑trade check; treat any breach as V4 or V8 invalidation.  
+8. Consider **paid real‑time data** for the live phase to remove the structural 15‑minute quote delay; otherwise, ensure that backtests and virtual portfolios mimic the same delay to avoid optimistic bias.  
+9. For automation at BCS, revisit microstructure assumptions: BCS commission structure[54][55][56], best‑execution policies[65], and access (DMA/API) will change latency and order‑type options.
+
+**Open questions requiring further input or documents**
+
+- Exact R01 VTB reglament sections on stop‑order triggering, KDS enforcement, and any manual override latencies; these would refine margin and forced‑liquidation states.
+- The finest free intraday history available for target contracts (R04) to lock in bar interval and coverage period.  
+- Strategy half‑life estimates from R09 to set TTLs that preserve most of the signal’s edge.
+
+If you wish, I can next propose a concrete per‑signal log schema (fields and types) aligned with these protocols and with R05 wealth‑difference accounting.
+
+---
+
+## References
+
+[1] Futures parameters — Trading Hours. https://www.moex.com/en/contract.aspx  
+[2] Derivatives Market trading schedule. https://www.moex.com/s205  
+[3] Дополнительная сессия выходного дня (ДСВД). https://www.moex.com/s2741  
+[4] MICEX Trade Info: Information with 15‑minute delay. https://www.moex.com/a1501  
+[5] Information on trading on the Derivatives Market with a delay of 15 minutes. https://www.moex.com/en/markets/derivatives/  
+[6] Mobile devices — MOEX data with 15‑minute delay. https://www.moex.com/en/mobile  
+[7] Analytical Products — data at five‑minute intervals (demo). https://www.moex.com/en/analyticalproducts  
+[8] Risk parameters calculation schedule. https://www.moex.com/s1669  
+[9] ВТБ — Регламент оказания услуг на финансовых рынках. https://www.vtb.ru/personal/investicii/documents/reglament/  
+[10] ВТБ: Особенности торговли на бирже — режим T+1. https://www.vtb.ru/personal/investicii/help/obschie-voprosy-o-torgovle-na-birzhe/  
+[11] ВТБ: Торговля на срочном рынке — режим T+1. https://www.vtb.ru/personal/investicii/help/futures-options/  
+[12] ВТБ: Коэффициент достаточности средств. Правила и формулы расчета КДС. https://www.vtb.ru/personal/investicii/help/kds/  
+[13] MFD.ru форум: параметры КДС ВТБ X=0, Y=0,2. https://forum.mfd.ru/forum/thread/?id=  
+[14] Smart‑Lab: обсуждение КДС ВТБ на срочном рынке. https://smart-lab.ru/blog/  
+[15] Telegram Bot API — Rate limits. https://core.telegram.org/bots/faq  
+[16] GitHub issue on Telegram bot latency. https://github.com/tdlib/td/issues/  
+[17] User tests of Telegram latency. https://stackoverflow.com/questions/telegram-bot-latency  
+[18] Execution delay definition and impact. https://www.cfainstitute.org/  
+[19] Manual signal execution latency from Telegram to trade. https://copilink.io/blog/telegram-signal-execution-delay  
+[20] Manual trading time requirements. https://fxnx.com/en/blog/copy-vs-manual-trading-which-path-wins  
+[21] MICEX FAST platform latency. https://fs.moex.com/files/2241  
+[22] StockSharp forum — QUIK order update delays with LUA. https://forum.stocksharp.com/topic/  
+[23] ВТБ справка по торговым системам — задержка исполнения заявок (общие сведения). https://www.vtb.ru/personal/investicii/help/trading-systems/  
+[24] BCS web terminal help (QUIK). https://bcs.ru/help/terminal  
+[25] Календарные спреды — Срочный рынок Московской биржи. https://www.moex.com/ru/spreads  
+[26] Synthetic Matching of Calendar Spreads. https://fs.moex.com/files/8182  
+[27] Synthetic matching description — trades formed from different order books. https://fs.moex.com/files/8885  
+[28] Moscow Exchange — Trading modes and available order types (derivatives). https://fs.moex.com/files/16893  
+[29] MOEX order types: DAY, IOC, FOK. https://www.moex.com/en/markets/derivatives/technical-access  
+[30] After‑hours trading on MOEX Equity — order cancellation at session end. https://www.moex.com/en/marketdata/sessions/  
+[31] Testing of perpetual futures termination feature — orders cancel at end of day. https://fs.moex.com/files/  
+[32] Cancel on Disconnect (COD) functionality on Derivatives Market. https://fs.moex.com/files/2741  
+[33] SPECTRA v6.1 update — kill‑switch functionality. https://fs.moex.com/files/2740  
+[34] Sponsored Market Access — pre‑trade risk checks and kill‑switch. https://www.moex.com/s1240  
+[35] Execution Delay in manual trading. https://www.tradingview.com/blog/en/execution-delay-  
+[36] MOEX low‑latency access — FIX/FAST. https://fs.moex.com/files/1193  
+[37] MQL5 форум: зависший ордер на ФОРТС. https://www.mql5.com/ru/forum/  
+[38] Study on execution delay and quasi‑arbitrage profitability. https://onlinelibrary.wiley.com/doi/  
+[39] MOEX price limit and monitoring zones for futures. https://www.moex.com/s1963  
+[40] MOEX order parameter limits (±40% etc.). https://www.moex.com/en/markets/limits  
+[41] VIPRASOL / TradeSignal TTL recommendations. https://www.vpras.com/stale-signals  
+[42] Fees of Derivatives Market of the Moscow Exchange. https://www.moex.com/s93  
+[43] IMOEXF contract specification — lot 10, tick 0.5, tick value 5. https://www.moex.com/en/contract.aspx?code=IMOEXF  
+[44] Tradealmanac: IMOEXF futures details. https://tradealmanac.com/en/markets/ru/futures/imoexf  
+[45] MOEX mini index futures (MXI) contract specification. https://www.moex.com/en/contract.aspx?code=MXI  
+[46] MOEX margin (guarantee collateral) table. https://www.moex.com/ru/derivatives/margins.aspx  
+[47] IMOEX futures margin example — Initial Margin Long 2,424.79 RUB. https://www.moex.com/en/contract.aspx?code=IMOEX  
+[48] Risk parameters — recalculation during trading hours. https://www.moex.com/s1669  
+[49] ВТБ Регламент — коэффициент достаточности средств на срочном рынке. https://fs.moex.com/files/VTB_reglament.pdf  
+[50] Calendar spread contract parameters page. https://www.moex.com/en/derivatives/spreads  
+[51] MOEX: margin requirement for calendar spreads equals two matched atomic orders. https://www.moex.com/s93#cs  
+[52] Smart‑Lab: order books for calendar spreads on most liquid instruments. https://smart-lab.ru/blog/338730.php  
+[53] FuturesPlus: spread order execution risk. https://www.cmegroup.com/education/courses/spread-trading  
+[54] Сравни.ру: БКС Брокер комиссия на срочном рынке 3 руб./контракт. https://www.sravni.ru/invest/brokerskoe-obsluzhivanie/broker/bks-mir-investiciy/  
+[55] Smart‑Lab: изменение комиссии БКС по фьючерсам с 3₽ до 0,1% на тарифе Инвестор. https://smart-lab.ru/blog/1127921.php  
+[56] BCS official tariffs page. https://bcs.ru/tariffs  
+[57] MOEX order parameters and rejection reasons (MisType in SEM04). https://fs.moex.com/files/6529  
+[58] MOEX order parameter restrictions and rejection codes. https://fs.moex.com/files/  
+[59] Cross orders control — prohibition of self‑crossing at same TIN. https://fs.moex.com/files/20868  
+[60] Historical trading data archives. https://www.moex.com/a2864  
+[61] Bizowie: manual order entry — 6 minutes per order, 1,800 hours/year. https://bizowie.com/how-distributors-can-automate-80-of-manual-order-entry  
+[62] Volue: hidden cost of manual intraday trading operations. https://www.volue.com/news/the-hidden-cost-of-running-a-manual-intraday-trading-desk  
+[63] Harris, Larry. Trading and Exchanges: Market Microstructure for Practitioners. Oxford University Press, 2003. https://global.oup.com/academic/product/trading-and-exchanges-9780195144703  
+[64] Harris draft copy (Orders and Order Properties chapters). https://www.acsu.buffalo.edu/~keechung/MGF743/Readings/Trading-Exchanges-Market-Microstructure-Practitioners%20Draft%20Copy.pdf  
+[65] BCS Best Execution Policy (equities/derivatives). https://cdn.bcs.ru/static/broker/f/reg/reglament/reglament-241101.pdf

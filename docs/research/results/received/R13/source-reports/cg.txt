@@ -1,0 +1,444 @@
+# R13 — Optional regime conditioning: incremental evidence test
+
+**Research cutoff:** 23 October 2026  
+**Context supplied:** research pack prepared 7 October 2026  
+**Status:** Conditional research design; no measured strategy results  
+**Scope:** Whether observable or learned market/instrument states improve out-of-sample net decisions over a no-regime baseline for a selective MOEX futures-spread project.
+
+## Executive decision
+
+**Keep regime conditioning optional. Test a few simple, observable states only after a data/provenance gate; do not require hidden-state or change-point models.** There is a plausible economic mechanism for conditional performance—volatility, executable liquidity and the shape of a futures curve can change risk and trading costs—but a state label does not, by itself, demonstrate predictive incremental value. No baseline has yet been selected or tested, and no historical data, broker-account checks or executed backtests were available for this report. Therefore no claim is made that conditioning improves performance, is profitable, or is operationally feasible.
+
+A defensible ladder is:
+
+1. **No-regime baseline:** one fixed-parameter carry/calendar-spread hypothesis and/or one fixed-parameter mean-reversion hypothesis, evaluated separately. Parameters are chosen only on training data.
+2. **One simple state at a time:** trailing volatility, point-in-time liquidity, and a strategy-specific carry state where it is economically distinct from the underlying signal. Each candidate changes **entry eligibility only** in the first test.
+3. **Only if simple candidates survive:** consider a one-sided, causal change detector or a hidden-state model whose live decisions use filtered probabilities, never full-sample smoothed labels.
+
+Policy-defined trading sessions, contract lifecycle events, suspensions and last-trading dates are deterministic eligibility constraints, not learned predictive regimes. They belong in the baseline execution logic and must use the rules/specification effective on the historical date.
+
+### Decision in one line
+
+Proceed to a small preregistered **incremental evidence test**, not a regime-model build. If data provenance fails, or the simple tests fail predeclared net-value and uncertainty criteria, defer regime conditioning.
+
+---
+
+## 1. Inputs actually read and limits of this report
+
+### Supplied inputs
+
+The task prompt itself was the only project-specific input read. It supplies the fixed capital, LQDT counterfactual, costs/delay scenarios, risk-action rules and walk-forward skeleton reproduced in the scope below. No repository, prior Rxx report, strategy specification, local file, book, account or broker confirmation was available.
+
+### Public sources read
+
+- MOEX, *MOEX ISS — Developer manual*, version 1.4 (copyright 2016), especially printed pp. 3–4 and 8: types of market/history data and stated access restrictions.
+- MOEX current derivatives overview and contract search, retrieved 23 October 2026: available market categories, current contract identifiers, last trading/expiration dates, previous trading-day turnover and open-position summaries.
+- MOEX, *Rules of Organized Trading on the Derivatives Market*: current version effective 14 July 2026 and a history of prior effective versions.
+- MOEX trading-calendar page for 2026, retrieved 23 October 2026.
+- Bank of Russia, *Key Rate* history (page updated 22 October 2026) and *Publication Schedule*, retrieved 23 October 2026.
+- Methods references: White (2000/online publication record), Sullivan, Timmermann & White (1999), Bailey et al. (2017), Hamilton (1989), Bai & Perron (2003), and Hansen (2005).
+
+### Checks proposed, not performed
+
+No bulk data request, historical-access entitlement test, API coverage check, timestamp audit, event-vintage reconstruction, instrument-universe selection, broker or tax check, fill reconstruction, resource benchmark, backtest, bootstrap, or real-money feasibility assessment was performed. Public pages confirm that some information is presented; they do **not** prove a complete, free, timestamped historical series suitable for a signal-to-fill simulation.
+
+The live MOEX pages and current versions of rules are evidence about the pages/rules observed at retrieval time. They do not, by themselves, prove what a trader could see at an earlier historical decision time. For every historical date, recover the contemporaneous document/version and its effective time where possible.
+
+---
+
+## 2. Research question and estimand
+
+### Null and alternative
+
+- **Null, H0:** after costs, capital constraints, execution delay, missed/rejected/partial fills and the matched LQDT counterfactual, the regime variant has no reliable, economically meaningful improvement over its own no-regime baseline.
+- **Alternative, H1:** a prespecified, decision-time-observable state changes one declared action and improves net out-of-sample results, with uncertainty and search bias controlled.
+
+An association between a state and historical returns is not sufficient. The state must be observable when the action is made; the action must be specified in advance; the incremental benefit must persist chronologically out of sample; and the benefit must survive realistic execution/capital constraints.
+
+### Baseline comparison must be paired
+
+For each strategy family, freeze a deterministic no-regime baseline on training data. Compare its regime variants **only against that same family’s baseline**, over the same calendar periods, contracts, input-data coverage, execution scenarios and funding rules. Do not compare a regime-conditioned mean-reversion system with a different carry system and attribute the cross-strategy difference to the regime layer.
+
+Keep separate baselines for:
+
+- a carry/calendar-spread hypothesis with a family-appropriate economic definition and fixed training-selected parameters; and
+- a mean-reversion hypothesis with a fixed spread construction, residual/normalization rule and training-selected parameters.
+
+These are examples of baseline families, not selected strategies. Their exact instruments, spread construction, parameters and intended holding horizon remain unselected and must be frozen before the corresponding test.
+
+### Primary metric
+
+For each variant, let the primary endpoint be **net terminal RUB excess over a matched LQDT counterfactual**:
+
+`X_T = terminal wealth(strategy path) − terminal wealth(matched LQDT counterfactual)`
+
+Both paths must apply identical true external contributions and withdrawals at identical timestamps. In the counterfactual, capital diverted from the core LQDT holding for the pilot remains invested in LQDT. Correctly mark pilot cash, positions, variation margin, fees and any collateral-related cash movements; do not deduct the LQDT return on eligible retained collateral twice. A transfer or sale of core collateral is not automatically an economic loss equal to the sale proceeds; its actual investment/counterfactual treatment and any broker-triggered use must be recorded.
+
+The main incremental statistic is:
+
+`ΔX_T = X_T(regime variant) − X_T(no-regime baseline)`
+
+Calculate it from matched runs, not separately optimized scorecards. Report the full excess-equity curve and its pathwise drawdown as well as terminal `X_T`. Use the supplied drawdown/shortfall action rules as **pilot controls**, not as proof of a maximum possible loss or as a regime-model selection target. The pilot’s RUB 10,000–15,000 LQDT shortfall tolerance is not, by itself, a hurdle for a regime variant’s incremental value.
+
+Include trading fees, the prescribed per-contract spread/slippage sets (conservative/base/stress), integer-contract constraints, daily variation margin, rejected/stale/partial/unfilled orders, action latency and the actual opportunity cost relative to the counterfactual. Do not count retained-collateral LQDT return twice. Tax residence and account treatment remain unresolved; only the loss of the long-term holding deduction is explicitly excluded by the supplied assumption.
+
+### Fixed operating assumptions
+
+Hold constant across variants:
+
+- RUB 30,000 total pilot allocation including margin, variation-margin liquidity and reserves, in the same account as a core LQDT holding exceeding RUB 40 million; this does not ring-fence collateral or establish broker eligibility.
+- Maximum cumulative emergency funding of RUB 15,000 gross for the entire pilot; entry must pass with zero emergency funding. An approved use can only avert disorderly liquidation/de-risk existing positions, never create fresh exposure or average down. At the RUB 10,000 shortfall trigger, use is only to reach flat. Unapproved broker use of core collateral counts toward the gross allowance and is an incident.
+- User-reported manual action delay of 3–90 minutes, typical median 5–15 minutes; the distribution is unknown. Do not substitute an assumed constant delay or a same-bar fill.
+- A virtual portfolio attempts every eligible signal without discretionary omission, subject to finite capital; log all rejected, stale, unfilled and partial outcomes. Define the human trade/intervention quota and emergency availability before operational assessment.
+- The same conservative/base/stress per-contract fee/spread/slippage schedules and fill logic for baseline and regime variants.
+
+No variant may loosen the funding rules, rely on emergency funding to make entry viable, ignore the 90-day review, or reset the cumulative shortfall/lifetime funding limits.
+
+---
+
+## 3. Regime taxonomy: deterministic constraints first, learned states last
+
+### A. Policy-defined masks are not predictive regimes
+
+Apply these before any learned state logic: exchange trading calendar/session status; contract listing, maturity, last trading and expiration dates; published suspensions or altered trading rules; settlement/roll eligibility; and any mandatory broker/exchange constraints that are actually documented for the historical date. A mask can prevent an invalid trade without claiming to forecast returns. Report results both with the correct policy masks and, as a diagnostic only, the number of opportunities they removed.
+
+MOEX’s current rule archive lists the version effective from **14 July 2026** and older versions with different effective ranges. That is a concrete reason to retain date-valid rule snapshots instead of projecting the current rules backward. The MOEX 2026 trading calendar is also a time/session source, not a learned state. Sources: [MOEX trading rules archive](https://www.moex.com/ru/documents/301); [MOEX 2026 trading calendar](https://www.moex.com/ru/tradingcalendar?market=derivatives-market&type=trading).
+
+Do not infer a “regime” from missing bars or non-trading hours. Missing/stale data should trigger a data-quality status, not a learned market state. Do not label the run-up to expiry as predictive unless a separate hypothesis is declared; the known expiry schedule is a deterministic lifecycle fact.
+
+### B. Simple observable candidate states
+
+| Candidate | Decision-time information set | First-test state rule | Declared action | Main caveat |
+|---|---|---|---|---|
+| **Trailing volatility** | Completed bars available before the signal/action timestamp; fixed trailing window; same underlying or same spread definition used throughout a test fold | One high-volatility flag: trailing realized volatility exceeds the **training-only 75th percentile**. Compute threshold in training and freeze it for the test fold. No threshold sweep. | Entry eligibility only: the initial candidate is to suppress new mean-reversion entries in the high-volatility state. No sizing, exit or duration change. | This directional hypothesis is plausible but not established. A daily close-only dataset cannot reconstruct a 3–90 minute delayed fill path. Do not use an in-progress bar’s final high/low/close. |
+| **Liquidity** | Prior completed-session contract turnover/volume, and only if genuinely available at decision time, contemporaneous executable bid/ask spread or depth; timestamped quote age | One illiquid flag: prior-session turnover below the **training-only 25th percentile** within the same contract family, unless verified point-in-time executable quotes support a preregistered spread threshold. No alternative cut-point search. | Entry eligibility only: exclude new entries in the illiquid state. Costs still apply to all trades; this is not permission to erase slippage. | Turnover is a proxy, not executable liquidity. The contemporaneous bid/ask spread already belongs in execution cost; don't double-count it as both a cost and a separate benefit. Historical order-book availability may require a subscription. |
+| **Carry/curve state** | Synchronously observed prices for relevant maturities, contract-expiry dates and a family-valid annualization convention known at the signal time | A training-only state of the curve slope/annualized basis relative to its own family/maturity distribution; the exact sign, threshold and economic interpretation must be fixed for the instrument family before test. | Entry eligibility only, and only when the carry-state hypothesis is distinct from the baseline signal. | If the baseline’s signal is itself the same curve slope, the “regime” may simply re-label the signal or add a tuned threshold. Without a distinct mechanism and point-in-time maturity mapping, defer this card rather than inventing a universal carry state. |
+| **Macro/event context** | Official value plus publication timestamp and, where applicable, the first-published vintage; scheduled event only once its time was public | **Not in the first test.** Consider later only for a strategy-specific mechanism and adequate independent episodes. | No action assigned in this report. | Key-rate effective dates are not identical to publication times; revisions and clustered macro episodes can leak information or create pseudo-replication. |
+
+The 75th/25th percentile rules above are **proposed design defaults**, not optimized or validated parameters. They must be placed in the preregistration before inspecting out-of-sample results. If the trading hypothesis does not support the stated direction, rewrite the card before running anything; do not test both directions and keep the winner without counting that search.
+
+For volatility, a possible definition is trailing realized volatility from a fixed return series, for example `sqrt(sum(r_i^2))` over a fixed trailing window. Pick the bar frequency/window from the actual strategy horizon and data coverage before testing. For a spread, define the spread return/scale consistently and avoid mixing its raw volatility with a single-leg volatility without a stated mechanism.
+
+For a carry curve, a candidate annualization such as `365 / (T_far − T_near) × ln(F_far / F_near)` is mathematically available only when the price ratio and contract maturities have a defensible comparable interpretation. It is not a universal “fair carry” across currencies, equity indices, rates and commodities. Where the hypothesis requires a spot/funding proxy, convenience yield or currency-specific convention, those inputs and their availability must be documented rather than assumed.
+
+### C. Learned hidden state or change point
+
+Do not start with a hidden Markov model, retrospective break search or many-state clustering. The methods are useful for different statistical questions, but their historical labels are particularly easy to leak into trading decisions:
+
+- Hamilton’s regime-switching formulation models occasional unobserved shifts and infers states from time-series behavior. In an application, distinguish a **filtered** probability using information available through time *t* from a **smoothed** probability that uses later observations. Only the former can be a live feature.
+- Bai–Perron multiple-break methods estimate break dates/number of structural changes and confidence intervals. A break date fitted to a full sample is retrospective; it is not a valid signal at that historical date unless a causal online alarm would actually have fired then.
+- State indices in latent models can switch labels between fits. Anchor state meaning to a predeclared training-only characteristic (e.g. states ordered by training-estimated volatility), then map each fold independently; never equate “state 1” across folds by its numeric label alone.
+
+If eventually tested, freeze model family, number of states, training window, fit schedule, transition rules, probability threshold and action before each test fold. Use only one predeclared state-driven action. If states are unstable, sparse, hard to align across folds or mostly correspond to the same few macro episodes, discard the model.
+
+---
+
+## 4. Preregistered hypothesis cards
+
+Each card needs its own versioned record before the test, with the baseline parameters, code/config hash, data coverage and date. The table below is the minimal initial family; adding a threshold, state, action or instrument after seeing results creates a new trial and must be logged.
+
+### H0 — No incremental regime value
+
+- **Question:** Does any prespecified simple state add net out-of-sample RUB excess over its matched baseline?
+- **Action:** None; baseline only.
+- **Primary comparison:** `ΔX_T` and the paired excess-equity path.
+- **Decision:** Retain the baseline unless a regime card clears all predeclared evidence and operational gates.
+
+### H1 — High-volatility entry gate for mean reversion
+
+- **Mechanism:** Recent volatility may indicate that a deviation is occurring in a fast-moving market in which an immediate mean-reversion entry is less reliable or more costly to execute.
+- **State:** trailing realized volatility above the training-only 75th percentile; calculations stop at the latest completed/available bar.
+- **Action:** entry eligibility only; do not open fresh mean-reversion trades while high-volatility is active. Existing positions follow the baseline exit logic.
+- **Comparison:** same baseline signal/exit/size, only this entry gate changes.
+- **Falsifiers:** no positive paired net uplift; uplift vanishes under conservative/stress costs or realistic delay; the state cannot be timestamped; too few independent high-volatility episodes; result depends on one crisis episode; or the signal is missed in a way not represented by data.
+
+### H2 — Low-liquidity entry gate
+
+- **Mechanism:** thin/expensive instruments can make a nominal spread edge unexecutable under manual response latency.
+- **State:** prior completed-session turnover below the training-only 25th percentile within the same instrument family. Use a quote-spread threshold only if historically timestamped bid/ask observations are actually available and a threshold can be justified before the test.
+- **Action:** entry eligibility only; exclude low-liquidity entries; don't change exits or sizes.
+- **Comparison:** exact same entry signals otherwise, with identical conservative/base/stress per-contract costs on both runs.
+- **Falsifiers:** no net uplift after costs; volume proxy does not distinguish realized execution quality; result depends on missing/unavailable intraday inputs; extra missed opportunities outweigh avoided costs; or the gate is effectively duplicating a cost rule already in the baseline.
+
+### H3 — Curve/carry conditioning (conditional; not yet fully specified)
+
+- **Mechanism:** a separately observed term-structure state may indicate a different economic environment for a family-specific calendar spread.
+- **State:** family-specific curve-slope/annualized-basis classification, using synchronously available prices and a maturity-aware rule fixed in training. The direction, threshold and data fields must be justified before preregistration.
+- **Action:** entry eligibility only. Do not alter size, holding duration or exits in the first test.
+- **Prerequisite:** show that the state feature is economically distinct from the baseline trading signal. If the baseline already enters on the same curve slope, do not call thresholding that signal a new regime contribution unless the hypothesis explicitly tests that interaction and the added degree of freedom is counted.
+- **Falsifiers:** no written mechanism before inspecting held-out outcomes; state labels rely on future settlement or revised contract mappings; inconsistent meaning across instrument families; too few independent state episodes; or gains exist only under one maturity/roll convention.
+
+### H4 — Hidden state/change point (deferred)
+
+- **Trigger to consider:** at least one simple state card shows repeatable, net incremental value on chronological validation folds but leaves a concrete, preregistered limitation that requires a dynamic state estimate.
+- **Only permissible first test:** one specified model family, one specified number of states/alarms, training-only fit, causal filtering/online alarm and a single entry-only action.
+- **Falsifiers:** smoothed/future-informed states; state labels cannot be mapped stably; transitions too sparse; sensitivity to initialization/window; gain disappears after search adjustment or final holdout; or resource/maintenance overhead is unjustified.
+
+### State/action isolation
+
+In the first test, regime information changes **entry eligibility only**. Position size, exit/stop rules, holding duration, contract/pair universe and funding rules remain identical. The only exceptions are deterministic contract/session eligibility masks common to both baseline and regime variants. Do not change entry, size, exit, duration and pair eligibility simultaneously and then attribute performance to “the regime.” If entry gating survives, later effects on sizing or exits require separate cards and fresh untouched evidence.
+
+---
+
+## 5. Validation protocol and search-bias control
+
+### Step 0 — Data feasibility and provenance gate
+
+Before fitting any state:
+
+1. Choose a small candidate universe based on economic comparability, historical contract mapping, costs, contract size/margin and the intended holding horizon—not only historical liquidity rankings computed on the full sample.
+2. Verify that the required historical prices/settlements, trading dates, contract definitions, maturity/last-day events, volume/turnover and (where required) timestamped quotes are actually accessible under the desired free-data policy. Record request URL, retrieval timestamp, documented access level, coverage, revisions and any failed request.
+3. Inspect point-in-time correctness: timestamp timezone, session boundaries, time of settlement publication, missing records, stale records, contract codes across rolls and effective dates of trading-rule revisions.
+4. Confirm which signal and fill decisions can be represented at the chosen timeframe. Daily bars alone do not identify what price was available after a 3–90 minute reaction delay. If the data cannot support execution reconstruction, the result is a **signal-only exploratory study**, not a realistic execution backtest.
+5. Freeze the LQDT counterfactual cash-flow mapping, futures mark/variation-margin treatment, all cost schedules, funding caps, capital allocation ordering and the handling of partial/rejected/unfilled orders.
+
+**Data stop rule:** if required historical decision-time inputs cannot be verified lawfully and reproducibly, do not substitute a revised current web page, a full-sample label, or an unverified vendor field. Either redesign the test around the data genuinely available or defer it.
+
+### Step 1 — Chronological walk-forward
+
+- Split chronologically into training and subsequent evaluation windows; maintain a final untouched holdout at the end.
+- Fit strategy parameters, state thresholds, feature scaling, model selection, state ordering and any hyperparameters on the training window only.
+- Freeze each fold's decisions before running that fold. If periodic retraining is intended, specify the exact retraining schedule and ensure each refit uses only data available at that time.
+- Insert a gap/embargo between train and test sized from actual signal lookback, maximum holding/overlap horizon, settlement/exit dependence and overlapping labels—not an arbitrary fixed number of days.
+- Do not inspect or tune on the final holdout. After the final code/config is frozen, evaluate it once; report even an unfavorable result.
+- A state threshold learned from a fold's training distribution stays fixed for that fold's test. A rolling feature may update with newly observed past data, but never with future test data.
+
+The length and number of windows cannot responsibly be fixed without knowing the real data history, holding overlap and number of independent market episodes. Decide this from coverage and a prospective precision/power assessment before seeing test results. If the available history cannot support a useful number of independent episodes, the answer is **inconclusive/defer**, not “add more states.”
+
+### Step 2 — Fixed comparison scenarios
+
+Run the baseline and each candidate in the same:
+
+- conservative, base and stress per-contract fee/spread/slippage schedules;
+- capital limit of RUB 30,000 including required margin, variation-margin liquidity and reserves, with integer contracts;
+- prescribed reaction-delay scenarios spanning 3–90 minutes, explicitly including the typical 5–15-minute range without assuming it is the full delay distribution;
+- finite-capital and event-by-event opportunity protocol; and
+- funding/counterfactual and risk-action rules.
+
+When more than one signal competes for finite capital, specify one deterministic allocation/order policy (for example, timestamp order with a fixed tie-breaker) and use it in both runs. Never manually omit a bad-looking signal. Record signals that would have triggered, accepted/rejected status, arrival/quote age, executable bid/ask, order attempt, partial/unfilled outcome, fill time/price, costs and subsequent valuation. For scenarios without sufficient intraday quotes, report the limitation instead of inventing fills.
+
+### Step 3 — Paired uncertainty, dependence and common episodes
+
+- Calculate a **paired** time-series difference `ΔX_t` between the regime and baseline runs under identical assumptions.
+- Estimate uncertainty with resampling units that preserve serial dependence, position overlap and shared shocks—contiguous time blocks/market episodes rather than independent-trade resampling. Apply the same time blocks to all correlated instruments and variants so one market episode does not masquerade as many independent observations.
+- Report the distribution and interval for incremental terminal `ΔX`, the excess curve, drawdown differences, trade count/coverage and sensitivity to cost/delay scenarios. Do not report a single Sharpe ratio or p-value as sufficient evidence.
+- Count all tried variants, including failed hypotheses and thresholds. Use a data-snooping adjustment suitable to the candidate family (e.g. White's Reality Check or Hansen's Superior Predictive Ability test, with method and assumptions stated). Probability of backtest overfitting / combinatorially symmetric cross-validation may be an additional diagnostic; it does not replace chronological forward testing or a final untouched holdout.
+- State sparsity is measured by **independent episodes/time blocks as well as raw trades**. The minimum adequate number is to be determined before test from a desired precision/power criterion; if not met, label the result inconclusive and do not fit a more complex model to compensate.
+
+White's work directly addresses reuse of time-series data during specification search; Sullivan, Timmermann and White examine technical rules while adjusting for data-snooping across the rule universe. Bailey et al. propose PBO/CSCV because a simple holdout can be unreliable for investment backtests. These are reasons to control the *entire search*, not a guarantee that any correction makes a small financial sample conclusive.
+
+### Step 4 — Ablation order
+
+| Order | Run | Purpose | Allowed decision |
+|---|---|---|---|
+| 0 | No-regime baseline | Establish reference net path | Baseline only |
+| 1 | Baseline + volatility gate | Isolate volatility information | Keep/drop H1 only |
+| 2 | Baseline + liquidity gate | Isolate liquidity information | Keep/drop H2 only |
+| 3 | Baseline + valid carry state | Isolate curve-state information | Keep/drop H3 only, if its prerequisite passes |
+| 4 | One combined pair of already-surviving simple gates | Assess interaction with added search counted | Only if preregistered as a new experiment; not part of the first three-card test |
+| 5 | One deferred learned-state candidate | Resolve a demonstrated remaining limitation | Only after simple gates survive and new holdout/evidence budget is defined |
+
+Do not run all combinations (volatility × liquidity × carry × states × thresholds) and keep the most profitable. If the combined result is searched, its trial count and selection method must be reported.
+
+---
+
+## 6. Leakage and integrity test checklist
+
+The following checks are mandatory before any result can be described as out-of-sample evidence.
+
+### Time and feature leakage
+
+- Every input has `event_time`, `publication/availability_time`, `retrieval_time` and source/version provenance as applicable. Decision-time features use data whose actual availability timestamp is no later than the simulated decision time.
+- No full-sample normalization, quantiles, feature scaling, variable selection, state count, change-point date, state ordering or hyperparameter search.
+- No same-day final volume/turnover, final bar close/high/low, end-of-day open interest or settlement value when the simulated action precedes its publication/availability.
+- For daily data, labels become available only at the correct close/settlement publication time; for intraday decisions, a completed-bar-only feature cannot use the remainder of that bar.
+- Refit/freeze timing is explicit. No later data alter an earlier action or earlier state assignment.
+- HMM uses filtered probabilities for deployment-like tests; a smoothed probability or retrospectively assigned state is allowed only as clearly labelled descriptive analysis, never as a feature.
+- Change-point alarm is generated by a causal, one-sided procedure at its actual detection time; a retrospective breakpoint cannot be backdated.
+
+### Contract, data and execution leakage
+
+- Contract identifiers, multipliers, expiry dates and roll mappings are effective-dated. No survivorship-only universe: include expired/discontinued contracts and periods when they were actually eligible, where accessible.
+- Correct trading sessions and closure/suspension periods are applied using the historical effective rules; holidays/overnight breaks are not treated as zero volatility or missing trading state.
+- No use of current constituent/universe rankings to select historical contracts unless historical membership/eligibility is reconstructed.
+- Entry prices use data available after the assumed action delay, with executable side, quote age, partial/unfilled logic and latency; never fill a signal at a price observed before the trader could act.
+- Costs include the appropriate number of legs, turns and fees; liquidity filters cannot silently remove slippage from trades that remain. Cost definitions stay identical between the variants.
+- Integer contract counts, margin/variation-margin liquidity, core collateral, emergency limits, allocation priority and simultaneous signals are simulated consistently.
+- Actual and LQDT-counterfactual paths use identical true external flows; core LQDT left invested in the counterfactual is not treated as free pilot cash in the strategy run.
+
+### Statistical leakage and interpretation
+
+- The trial log captures ideas, variants, dates tried, code/config hash, outcome and whether the trial influenced later design. Failed trials remain in the record.
+- Overlapping holding periods and correlated contracts are not treated as independent samples. Shared macro or policy events are counted as a few common episodes, not hundreds of independent trade confirmations.
+- Label meaning remains anchored across refits; sparse states, unstable state transitions and state mergers/splits are recorded.
+- The reported result is incremental net RUB excess, not a causal claim. A profitable state does not establish that the state *caused* the outcome or that it transfers to another family, period or broker.
+
+Any material failure above invalidates the affected experiment and requires redesign/re-run without using the tainted result for selection.
+
+---
+
+## 7. Required input fields and publication-date treatment
+
+The exact schema depends on the selected spread and verified data access; this is a minimum record, not a claim that every field is freely available.
+
+| Field group | Required fields / metadata | Point-in-time rule and evidence status |
+|---|---|---|
+| Futures prices | exchange/market, contract code, instrument family, bar interval, event timestamp, timezone, open/high/low/close, volume if available, settlement price and its publication time, multiplier/tick | Keep source field definitions, units and timestamps. Daily settlement may be suitable for signals only if its release time is known; it does not alone simulate a delayed intraday fill. Historical coverage/free status remains to be verified. |
+| Execution quote/trades | bid/ask, quote time, quote age, available depth if licensed, trades, spread, order arrival time, fill time/price, rejection/partial/unfilled result | Must be observable at the decision/action time and legal to retrieve. A later daily summary is not an executable quote history. |
+| Contract specification | contract ID/code history, underlying, lot/multiplier, tick size/value, settlement type, first/last trading day, expiration date, session and roll policy, effective-from/to and document version | Use the contemporaneous official specification and version effective on each backtest date. Current MOEX pages do not prove earlier values. |
+| Turnover/open interest | definition, currency/units, daily or intraday timestamp, publication/availability time, revision status, contract-level identity | MOEX's current search displays prior-session turnover/open-position summaries; a reproducible historical series and time-of-availability must be independently verified. |
+| Exchange event calendar | date, session status/hours, special sessions, closures, suspension/change notice, publication timestamp, effective date | Deterministic filter, common to both variants; do not learn a predictive regime from the same closure rule. |
+| Bank of Russia macro fields, only if later justified | key-rate value, decision announcement timestamp, effective date, first-publication timestamp, event calendar, release version/vintage for any revised statistic | Use original release availability, not the date label in a later historical table alone. The CBR lists key-rate publication at 13:30 on decision days and warns its publication calendars may change. |
+| Trade/portfolio ledger | signal ID/time, baseline signal, state value/threshold/version, intended legs, attempted/accepted order, delay, actual/simulated execution status, size, margin, variation margin, fees, slippage, cash, P&L, rejected signals and reason | Keep all candidate signals, not only filled/winning trades. Derive the matched counterfactual at the same external cash-flow times. |
+| Model/trial ledger | baseline identifier, strategy/config hash, training/test dates, cutoff timestamps, features, quantiles, state count, fit/retrain dates, gaps/embargo, costs, delay, funding rule, results, confidence procedure, trial ancestry | All tried variants and failures are retained; final holdout must remain untouched until design freeze. |
+
+### Source chronology: publication, effective time and retrieval time
+
+These times must remain separate:
+
+- **Publication/availability:** when a participant could first observe the release/data.
+- **Effective time:** when a rule, rate or contract specification starts applying.
+- **Event/reference time:** the market/economic date the record describes.
+- **Retrieval/access time:** when the research process downloaded/read it.
+
+For example, the Bank of Russia's key-rate history says its rate applies on every calendar day and the page was updated 22 October 2026; its publication schedule says the key rate is published at 13:30 on the day the Board fixes it. A dated row alone should not be assigned to a simulated decision earlier than the actual release. Use both the release and applicable effective date. Similarly, MOEX rule documents have explicit effective ranges; the currently available rule is not a point-in-time proxy for an older rule.
+
+If first-publication macro vintages or historic intraday quotes cannot be obtained, omit those features from a production-like test. Do not backfill them with the latest revised value and label it point-in-time.
+
+---
+
+## 8. Resources and practical sequencing
+
+### Preferred first implementation
+
+Use a local, reproducible daily/low-frequency research dataset on the Mac for initial integrity checks and simple features. These calculations are mostly rolling statistics, percentiles and paired portfolio ledgers; the first question is data correctness and execution observability, not model throughput. Avoid putting a data-intensive or fitting workload on the 1-vCPU/1-GB VPS while its VPN and other workloads already consume unknown resources. No production probing or deployment is part of this task.
+
+A hidden-state model or multiple-break procedure should be considered only after data and simple-state evidence justify it. Their main cost is not necessarily CPU: it is additional parameter search, state interpretation, fold-to-fold instability, maintenance and audit burden. No actual runtime or memory benchmark was performed, so no numerical resource claim is made.
+
+### Data-access risk
+
+MOEX's 2016 ISS manual says its service provides delayed market data free or real-time by subscription, while order books and historical data are subscriber-only; the manual later distinguishes some available historical index data from other historical data. This is a source statement with a 2016 publication/copyright context, not a verified 2026 entitlement matrix. Current MOEX public pages expose contract search and some summary fields, while MOEX's online derivatives open-position page says that its Algopack online service requires a paid subscription. These pages do not establish whether a complete futures settlement/volume history, intraday trades, historical quotes or historical order books are free today.
+
+Therefore the first research task should be a **small coverage and permissions audit** using a few representative contracts and explicit dates. Record a successful and failed request, returned columns, available dates and timestamps, access/fee restrictions and any rate limits. Do not download huge datasets or assume a public page implies historical API access. If the finest free defensible data are daily only, use them to explore signal hypotheses, but do not claim that they validate the 3–90-minute manual execution process.
+
+### Suggested stages
+
+1. **Data audit:** prove required rows and timestamps exist, and write down gaps.
+2. **One frozen baseline:** check contract history, signal timing, costs and matched LQDT ledger.
+3. **Three simple hypothesis cards:** H1 and H2 first; H3 only if the strategy has a distinct economic curve-state mechanism.
+4. **Walk-forward comparison:** one state at a time, paired costs/delays/capital; keep all outcomes.
+5. **Evidence review:** interval, multiple-search adjustment, common-episode sensitivity and final-holdout protocol.
+6. **Optional complexity decision:** only then decide whether a single causal hidden-state/change-point model is worth testing.
+
+Technology stack, broker API, automation, production data entitlements, actual trade execution, legal/account treatment and deployment are later gates and were not evaluated here.
+
+---
+
+## 9. Explicit retain / discard criteria
+
+Retain a regime card for further research only if **all** of the following hold:
+
+1. The state and its source inputs are reproducibly observable at the actual decision timestamp, including publication/effective times and historical contract mappings.
+2. Its mechanism, state threshold, action and test family were preregistered; its only intervention in the initial test is entry eligibility.
+3. The paired incremental terminal excess `ΔX_T` is positive and economically worthwhile under a hurdle fixed **before** holdout inspection. The hurdle must represent the value needed to justify added complexity, missed trades and maintenance; it cannot be chosen from the holdout. The supplied pilot drawdown/shortfall thresholds are risk controls, not this hurdle.
+4. The evidence has a useful predeclared uncertainty interval after serial-dependence and search adjustment; results are not carried by one episode, a few correlated trades or one instrument alone.
+5. The conclusion does not depend on optimistic fees/slippage, a single assumed reaction delay, unrealistic fills, extra emergency funding, or relaxed capital constraints. Report stress results even if they fail.
+6. No material leakage, missing-data, survivor selection or counterfactual error remains.
+7. Incremental value exceeds its extra implementation/monitoring burden in a way that matters at the RUB 30,000 pilot scale and does not violate the LQDT risk controls.
+
+**Discard or defer** if any one of these applies: no verified point-in-time data; only full-sample/smoothed states work; no positive net incremental uplift; uplift is economically too small relative to added complexity; result is unstable across walk-forward folds; it vanishes under costs or realistic delays; state samples are too sparse for the preregistered precision criterion; the effect is one shared macro episode; thresholds were chosen by searching the holdout; or model upkeep is unjustified. “Not enough evidence” means defer, not proof that the effect is exactly zero.
+
+If simple states do not survive, do not rescue the thesis by expanding the number of states or testing every combination. Revisit only if a specific new economic mechanism or a genuinely better timestamped input becomes available, and preregister it as a new research attempt.
+
+---
+
+## 10. Evidence register: sources, dates and supporting excerpts
+
+All online pages below were retrieved for this research on 23 October 2026 unless a page-specific update or publication date is stated. The short quotations are evidence pointers; conclusions beyond them are identified as design implications rather than source statements.
+
+### MOEX market data and operational constraints
+
+**[1] Moscow Exchange, *MOEX ISS — Developer manual*, version 1.4, ©2016, printed p. 3 and p. 8.**  
+URL: https://www.moex.com/files/4be999zbzp80bx2bgmwayrtyx0  
+Excerpt, p. 3: “It is possible to get delayed market data for free or subscribe for real-time” and “Orderbooks and historical data are only available to the paid subscribers.”  
+Excerpt, p. 8: the `/iss/history` namespace provides historical data; the manual says historical data except indices are available for subscribers only, while index data are available for all users.  
+**Use/limit:** This establishes what the 2016 manual said, not current 2026 product entitlements. Verify actual endpoints, fields, permissions and free coverage before relying on it.
+
+**[2] Moscow Exchange, *Derivatives market*, current page, accessed 23 October 2026.**  
+URL: https://www.moex.com/ru/derivatives  
+Excerpt, page sections “Сервисы” and “Расписание торгов”: it links daily trading statistics, open positions, contract search and the schedule; the page states that trading times are Moscow time (GMT+3).  
+**Use/limit:** Identifies official places to inspect; not a historical market-data guarantee.
+
+**[3] Moscow Exchange, *Derivatives contracts search*, current page, accessed 23 October 2026.**  
+URL: https://www.moex.com/ru/derivatives/contracts-search  
+Excerpt, headings around lines 66–78 of the retrieved page: “Краткий код,” “Название контракта,” “Последний день обращения,” “Дата экспирации,” “Объем торгов за пред. торговый день, руб.” and “Открытые позиции за пред. торговый день, руб.”  
+**Use/limit:** Demonstrates current displayed contract/lifecycle and prior-session summary fields. It does not establish a downloadable, point-in-time historical time series for every field.
+
+**[4] Moscow Exchange, *Online open positions on futures*, current page, accessed 23 October 2026.**  
+URL: https://www.moex.com/ru/derivatives/open-positions-online.aspx  
+Excerpt: “С 3 марта данный сервис аналитики Algopack станет платным: 600 ₽ в месяц” and “Для просмотра онлайн данных необходимо оформить подписку.”  
+**Use/limit:** The page indicates subscription restrictions for this online service. Do not generalize this price/entitlement to every MOEX historical data product.
+
+**[5] Moscow Exchange, *Rules of Organized Trading on the Derivatives Market*, current document archive, accessed 23 October 2026.**  
+URL: https://www.moex.com/ru/documents/301  
+Excerpt: current version “Действует: с 14.07.2026”; prior edition shown as valid from 19 May through 13 July 2026.  
+**Use/limit:** Effective-date differences require historical rules to be respected; the archive does not replace retrieving every applicable historical specification or notice.
+
+**[6] Moscow Exchange, *Trading calendar — derivatives market*, 2026 page, accessed 23 October 2026.**  
+URL: https://www.moex.com/ru/tradingcalendar?market=derivatives-market&type=trading  
+Excerpt in the captured page: “Часы торгов 2026 г. по Москве (UTC+3)” and a displayed ordinary-day schedule of 06:50–23:50.  
+**Use/limit:** Evidence for Moscow-time session context on this page, not a statement that every instrument/session/day shares the same hours. Use the applicable historical/special-session calendar.
+
+### Bank of Russia point-in-time macro sources
+
+**[7] Bank of Russia, *Key Rate*, data page updated 22 October 2026; retrieved 23 October 2026.**  
+URL: https://www.cbr.ru/eng/hd_base/KeyRate/  
+Excerpt: “Data is available from 17.09.2013 to 22.10.2026, inclusive,” and “The key rate set by the Board of Directors of the Bank of Russia applies on every calendar day.” The page marks its last update as 22.10.2026.  
+**Use/limit:** Establishes page range/update and the rate’s daily application. A historical table row is not, on its own, proof that a new decision was public earlier that day; join to the release timestamp and effective date.
+
+**[8] Bank of Russia, *Publication Schedule*, retrieved 23 October 2026.**  
+URL: https://www.cbr.ru/eng/calendar/  
+Excerpt: “on day of fixing by the Board of Directors of the Bank of Russia | Key rate | 13.30”; the page warns that official publication calendars “are subject to change.”  
+**Use/limit:** Use actual dated notices/releases for historical timing; do not freeze today’s future schedule as though it were the original schedule known at all previous times.
+
+### Statistical methods
+
+**[9] White, Halbert. “A Reality Check for Data Snooping.” *Econometrica*, vol. 68, no. 5, pp. 1097–1126 (2000; publisher page records first online publication 10 December 2003).**  
+URL: https://doi.org/10.1111/1468-0262.00152  
+Publisher abstract excerpt: “Data snooping occurs when a given set of data is used more than once for purposes of inference or model selection”; it describes a test of whether the best model in a specification search has predictive superiority over a benchmark.  
+**Use:** Justifies accounting for the complete model/threshold search, not selecting only the best result.
+
+**[10] Sullivan, Ryan; Allan Timmermann; Halbert White. “Data-Snooping, Technical Trading Rule Performance, and the Bootstrap.” *The Journal of Finance*, 54(5), pp. 1647–1691 (1999).**  
+URL: https://doi.org/10.1111/0022-1082.00163  
+Publisher abstract excerpt: the paper uses White’s Reality Check bootstrap to assess technical rules while “quantifying the data-snooping bias” across the rule universe.  
+**Use:** Relevant to families of tried trading rules and their joint search; it does not establish that a particular MOEX futures strategy works.
+
+**[11] Bailey, David H.; Jonathan Borwein; Marcos López de Prado; Qiji Jim Zhu. “The Probability of Backtest Overfitting.” *Journal of Computational Finance* (2017).**  
+URL: https://doi.org/10.21314/JCF.2016.322  
+Author/publication page: https://escholarship.org/uc/item/4w1110bb  
+Abstract excerpt: standard holdout methods “tend to be unreliable and inaccurate” in the context of investment backtests; the paper proposes probability-of-backtest-overfitting methods using combinatorially symmetric cross-validation.  
+**Use/limit:** A useful supplementary diagnostic for strategy-selection risk; it does not replace chronological walk-forward validation and an untouched final period.
+
+**[12] Hamilton, James D. “A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle.” *Econometrica*, vol. 57, no. 2, pp. 357–384 (March 1989).**  
+URL: https://ideas.repec.org/a/ecm/emetrp/v57y1989i2p357-84.html  
+Abstract excerpt: the paper models “occasional, discrete shifts” and presents algorithms for inferring “unobserved shifts.”  
+**Use/limit:** Establishes the statistical lineage of latent regime models. The filtered-versus-smoothed rule in this report is a requirement for causal simulation, not a claim that the abstract itself is a deployment guide.
+
+**[13] Bai, Jushan; Pierre Perron. “Computation and analysis of multiple structural change models.” *Journal of Applied Econometrics*, vol. 18, no. 1, pp. 1–22 (2003; DOI record notes copyright 2002).**  
+URL: https://doi.org/10.1002/jae.659  
+Accessible abstract: https://ideas.repec.org/a/jae/japmet/v18y2003i1p1-22.html  
+Abstract excerpt: the methods estimate break dates, confidence intervals and the number of breaks.  
+**Use/limit:** These retrospective estimation capabilities must not be mistaken for a time-*t* alarm. Online deployment needs a separately specified causal detector.
+
+**[14] Hansen, Peter R. “A Test for Superior Predictive Ability.” Working paper in 2001; published in *Econometrica* in 2005.**  
+Accessible working-paper record: https://papers.ssrn.com/sol3/Delivery.cfm/SSRN_ID264569_code244328.pdf?abstractid=264569  
+The surfaced abstract says the proposed test compares favorably with the Reality Check, with studentization and a sample-dependent null distribution. The PDF host returned an access error during this retrieval; bibliographic/abstract metadata were visible in search results, but the full text was **not** read.  
+**Use/limit:** Treat SPA as a candidate test to be evaluated by the eventual analyst, not as a method implemented or verified in this investigation.
+
+---
+
+## Final assessment
+
+The most credible incremental hypotheses are **volatility-conditioned entry eligibility** and **a liquidity gate that is demonstrably observable before a trade**. A carry-state split may also be testable, but only for a concrete strategy family in which it is not merely the original signal under a new name. Their value is unknown until verified data and the prescribed walk-forward tests exist.
+
+The first go/no-go question is whether official histories contain the required point-in-time inputs at a usable resolution under acceptable access terms. If not, no statistical sophistication repairs the missing decision-time evidence. If that gate passes, run one simple state at a time, compare net RUB excess against its own no-regime baseline, account for the full search, and preserve a final untouched holdout. If no candidate clears the criteria, **defer regime conditioning** and keep the simpler baseline.

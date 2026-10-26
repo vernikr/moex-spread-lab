@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 2 **research prompt pack delivered**; the user will conduct the research. No findings accepted, production server accessed or orders submitted. Stage 3 has not started.
+Stage 2 **research prompt pack delivered**; 15 user-supplied research reports are now received in [the intake archive](docs/research/results/received/). Findings are not yet validated or accepted. No production server was accessed or orders submitted. Stage 3 has not started.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Stage 2 artifact and changes](docs/stages/02-research.md)

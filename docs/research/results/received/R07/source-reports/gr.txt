@@ -1,0 +1,389 @@
+# R07 — Pilot Risk, Funding Liquidity, Stress Protocol, and Position Sizing Framework
+
+## Narrative Risk Framework and Account Accounting Architecture
+
+The operational evaluation of a derivatives strategy operating alongside a large core equity or money-market holding requires a strict separation of accounting concepts. When trading futures spreads on Moscow Exchange (MOEX) within a Unified Brokerage Account (Единая брокерская позиция — EBP) at brokers such as VTB or BCS, mixing strategy performance with core account collateral creates significant risk of hidden leverage, unintended core liquidations, and severe tax friction. A multi-ledger accounting architecture must be maintained to isolate relative strategy performance from total account recourse.
+
+Under the Unified Brokerage Account structure, account assets are pooled into a single collateral ledger evaluated by the National Clearing Centre (NCC / НКЦ) and the broker's clearing systems. To prevent unintended interactions, the investor's assets must be segmented conceptually into two distinct sub-ledgers:
+
+1. **Core Money Market Sleeve:** This sleeve contains the core capital holding in excess of RUB 40,000,000 invested in the VIM Liquidity ETF (LQDT). This asset is pledged as non-cash collateral under broker haircut rules (typically subject to a 10% to 15% valuation discount).
+2. **Futures Pilot Sleeve:** This sleeve represents the dedicated test allocation of RUB 30,000 in cash, designed to absorb variation margin fluctuations, transaction costs, and exchange initial margin requirements.
+
+### Relative Economic Loss versus Absolute Strategy P&L
+
+Strategy performance cannot be evaluated solely by nominal profit and loss ($\text{P\&L}$). Because funds allocated to the pilot are diverted from or run alongside a benchmark holding in the VIM Liquidity ETF (LQDT), true strategy performance must be measured relative to a matched counterfactual benchmark.
+
+Let $V(t)$ represent the total strategy-enabled wealth at time $t$. Let $B(t)$ represent the matched counterfactual benchmark wealth, defined as the value of the exact initial capital allocation had it remained fully invested in LQDT from inception $t=0$, accruing compound daily money-market returns without trading activity:
+
+$$B(t) = B(0) \cdot \prod_{k=1}^{t} \left(1 + r_{\text{LQDT}, k}\right) + \sum_{i} \text{ExternalFlows}_i(t)$$
+
+The relative economic excess performance $X(t)$ is defined as:
+
+$$X(t) = V(t) - B(t), \quad \text{with } X(0) = 0$$
+
+Absolute strategy P&L reflects nominal variation margin collected or paid, minus trading commissions and execution costs. In contrast, relative economic loss $X(t)$ captures the true opportunity cost of capital. If nominal strategy P&L is $+100$ RUB over a given period, but the counterfactual LQDT holding $B(t)$ generated $+300$ RUB over the same duration, the relative economic loss $X(t)$ equals $-200$ RUB. All drawdown triggers and stop-loss protocols must evaluate $X(t)$ rather than nominal P&L.
+
+### Peak Drawdown and Excess-Curve Dynamics
+
+Drawdown must be measured from the historical peak of relative excess performance $X(t)$, rather than from absolute capital baseline. Let $H(t)$ denote the high-water mark of relative excess performance up to time $t$:
+
+$$H(t) = \max\left(0, \max_{s \in [0, t]} X(s)\right)$$
+
+The excess-curve drawdown $D(t)$ at time $t$ is formulated as:
+
+$$D(t) = H(t) - X(t)$$
+
+This formulation ensures that accrued relative gains are protected. A strategy that accumulates $+4,000$ RUB in relative excess gain ($X(t) = +4,000$, $H(t) = +4,000$) and subsequently drops to $X(t) = -2,000$ RUB experiences an excess-curve drawdown $D(t) = 6,000$ RUB. Under delegated risk rules, this event breaches the $D(t) \ge 5,000$ RUB warning threshold, even though absolute net loss from inception is only $-2,000$ RUB.
+
+### Cash and Variation Margin Dynamics vs. Initial Margin
+
+On the MOEX Derivatives Market, trade settlement occurs through twice-daily clearing sessions operated by the National Clearing Centre (NCC / НКЦ):
+* **Intraday Clearing Session:** 14:00 – 14:05 MSK
+* **Evening Clearing Session:** 18:50 – 19:05 MSK
+
+Initial Margin ($\text{IM}$) is a collateral reservation enforced by the NCC and the broker to cover potential portfolio revaluation risk. It does not represent a cash outflow. Variation Margin ($\text{VM}$), however, is the actual daily cash balance adjustment resulting from contract revaluation during clearing sessions. 
+
+Accumulated negative variation margin drains free account cash ($C_{\text{free}}$). If free cash becomes negative, the broker's EBP mechanism automatically incurs an uncollateralized cash debit or pledges/liquidates collateral assets to restore the cash balance. Initial margin constraints limit new position entries, whereas negative variation margin cash flow threatens liquid cash availability and risks forced position reduction.
+
+### Single-Leg Execution Risk in Manual Spread Trading
+
+Futures spread trading involves entering two distinct contract legs (e.g., long near-month contract, short far-month contract, or cross-commodity pairs). Because initial execution at VTB is manual, orders for the two legs cannot be executed simultaneously. Reaction times range between 3 and 90 minutes, with a median latency of 5 to 15 minutes.
+
+During the interval between executing Leg 1 and filling Leg 2, the portfolio is exposed to unhedged directional market risk. If market volatility surges during this execution gap, single-leg directional price drift can generate rapid adverse variation margin or trigger elevated single-contract initial margin requirements before the offsetting spread leg is established.
+
+### Account-Wide Recourse, EBP Mechanisms, and Core Asset Protection
+
+In a unified account containing both the >RUB 40M LQDT core position and the RUB 30k futures test allocation, the broker views total account equity as a single collateral pool. Brokers apply collateral valuation haircuts (typically 10% to 15% for liquid money market ETFs like LQDT).
+
+If the futures pilot incurs negative variation margin exceeding unallocated cash, the broker's automated risk systems do *not* reject settlement or isolate the RUB 30k sleeve. Instead, the broker automatically draws against the collateral value of the core LQDT holding. If margin deficits persist, the broker issues a margin call and ultimately executes forced liquidations of core LQDT shares.
+
+Core collateral must never be silently drawn upon or treated as test funds. Any unauthorized broker draw against core LQDT constitutes a critical protocol incident.
+
+### Tax Friction and Preservation of Long-Term Holding Deductions (ЛДВ)
+
+Under Article 219.1 of the Tax Code of the Russian Federation (НК РФ Статья 219.1), investors are eligible for the Long-Term Holding Tax Deduction (Льгота на долгосрочное владение — ЛДВ) on securities held continuously for more than three years on taxable brokerage accounts. The deduction cap is RUB 3,000,000 per year of ownership (e.g., RUB 9,000,000 tax-free profit after three years).
+
+Tax accounting on Russian brokerage accounts strictly enforces the First-In, First-Out (FIFO) method for securities sales. If the broker's EBP system automatically liquidates a portion of the core LQDT position to satisfy a futures variation margin call, FIFO accounting dictates that the oldest acquired LQDT shares are liquidated first.
+
+Premature forced liquidation of core LQDT shares resets the continuous three-year holding clock for those specific shares, destroying accumulated progress toward the ЛДВ tax exemption. A forced sale of RUB 100,000 in core LQDT to cover a transient futures margin call can cause substantial multi-year tax leakage, far exceeding the total capital allocated to the futures pilot.
+
+---
+
+## Evaluation of Delegated Thresholds, Buffer Mechanics, and Invariant Testing
+
+The delegated pilot parameter framework establishes specific monetary thresholds for risk monitoring, action intervention, outer loss boundaries, and emergency funding limits. These parameters must be critically evaluated for internal consistency, mathematical feasibility, and operational survival under real MOEX market conditions.
+
+| Parameter Concept | Delegated Value | Operational Mechanics & Limits | Evaluation & Mathematical Feasibility |
+| :--- | :--- | :--- | :--- |
+| **Initial Test Sleeve** | RUB 30,000 | Dedicated cash and initial margin allocation within the EBP account. | Highly constrained; supports at most 1 integer spread contract pair. |
+| **Emergency Funding Cap** | RUB 15,000 | Gross cumulative lifetime limit for additional capital injections. | Strictly gated; requires explicit user approval; used *only* to reach flat. |
+| **Maximum Capital Base** | RUB 45,000 | Nominal sum of initial capital plus maximum emergency injections. | Upper bound of total strategy cash commitments. |
+| **Warning Threshold ($D$)** | $D \ge 5,000$ RUB | Excess-curve drawdown alert trigger. | Prompts manual portfolio review and risk reassessment. |
+| **Action Trigger ($D$ / $X$)** | $D \ge 10,000$ RUB or $X \le -10,000$ RUB | Immediate suspension of new entries; orderly position de-risking. | Mandates mandatory exit execution; prevents further exposure expansion. |
+| **Outer Shortfall Boundary** | $X \le -15,000$ RUB | Hard stop; absolute permitted relative economic loss boundary. | Breach threshold; must never be exceeded under stress scenarios. |
+| **Review Horizon** | 90 Calendar Days | Periodic performance audit without automatic loss reset. | Evaluates statistical persistence; long positions may remain open if valid. |
+
+### Falsification of the 5,000 RUB Gap Sufficiency
+
+The delegated protocol assumes a RUB 5,000 buffer between the action trigger ($X \le -10,000$ RUB) and the absolute outer shortfall boundary ($X \le -15,000$ RUB). Quantitative stress testing demonstrates that this RUB 5,000 gap is **insufficient** to guarantee boundary preservation under real MOEX market conditions.
+
+Consider a scenario where a single inter-month or cross-commodity futures spread (e.g., Si USD/RUB futures or RTS index futures) is held when relative loss reaches $X = -10,000$ RUB, triggering the action threshold:
+
+1. **Market Jump Risk across Execution Delay ($\tau \in [3, 90]$ minutes):** Upon hitting $X = -10,000$ RUB, manual reaction requires 5 to 15 minutes median time (up to 90 minutes maximum). During extreme intraday volatility events, single-leg prices on MOEX can move by 1.5% to 3.0% within a 15-minute window. For a standard Si futures contract (notional value ~RUB 100,000 per lot), a 2-lot spread position generates an instant unrealized loss:
+
+$$\Delta \text{P\&L}_{\text{gap}} = 2 \text{ lots} \times 100,000 \text{ RUB} \times 0.025 = 5,000 \text{ RUB}$$
+
+2. **Bid-Ask Spread Widening and Slippage during Unwinding:** In stressed market conditions, order book depth deteriorates. Crossing the bid-ask spread on both legs of an illiquid calendar or inter-commodity spread adds 50 to 150 ticks of execution slippage per contract, consuming an additional RUB 1,000 to RUB 2,000.
+
+3. **Intraday Margin Multiplier Spikes:** NCC rules allow clearing risk parameters to be revised intraday. In fast markets, NCC can increase base Initial Margin requirements by $1.5\times$ to $2.0\times$. If free cash $C_{\text{free}}$ is exhausted, the account incurs intraday broker borrowing fees or forced liquidation penalty charges.
+
+Summing the gap movement (RUB 5,000), execution slippage (RUB 1,500), and transaction fees yields a post-trigger incremental loss of RUB 6,500. Total relative economic loss becomes:
+
+$$X_{\text{final}} = -10,000 - 6,500 = -16,500 \text{ RUB}$$
+
+This breaches the outer shortfall boundary of $-15,000$ RUB. Consequently, the RUB 5,000 gap between action and outer boundary is falsified as an adequate safety margin for manual execution.
+
+### Formal Entry and Review Invariant Inequality
+
+To guarantee that no position entry or continuation causes an unapproved breach of the RUB $-15,000$ outer limit, every trade signal and formal review must evaluate the following strict invariant inequality:
+
+$$X(t) - \Delta_{\text{stress}}(t, \tau) - \mathcal{B}_{\text{uncertainty}} \ge -15,000 \text{ RUB}$$
+
+Where:
+* $X(t)$ is the current relative economic excess wealth balance.
+* $\Delta_{\text{stress}}(t, \tau)$ is the deterministic worst-case stress loss calculated over the maximum manual reaction delay window $\tau = 90$ minutes, incorporating historical 99.5th percentile price gap shocks, bid-ask spread widening, and exchange/broker execution fees.
+* $\mathcal{B}_{\text{uncertainty}}$ is an explicit, positive uncertainty buffer designed to absorb intraday NCC risk-parameter hikes, overnight clearing adjustments, and benchmark yield fluctuations.
+
+### Cash and Margin Liquidity Inequalities over Delayed Execution Windows
+
+In addition to relative economic wealth constraints, a trade must satisfy explicit cash and margin liquidity constraints across execution latency $\tau$ and clearing cycles.
+
+#### Initial Margin Entry Constraint
+
+At the moment of order placement ($t$), total committed Initial Margin across all open and pending contracts, adjusted for potential intraday broker markups $\gamma_{\text{stress}} \ge 1.3$, must not exceed available dedicated pilot cash minus reserved buffers:
+
+$$\sum_{j=1}^{M} \text{IM}_{\text{req}, j} \cdot \gamma_{\text{stress}} \le C_{\text{pilot}}(t) - \mathcal{B}_{\text{cash\_reserve}}$$
+
+Where $C_{\text{pilot}}(t)$ is cash allocated strictly to the futures sleeve, excluding core LQDT collateral.
+
+#### Clearing Settlement Liquidity Constraint
+
+To prevent the broker's EBP system from drawing against core LQDT collateral during the 14:00 MSK or 18:50 MSK clearing sessions, liquid pilot cash $C_{\text{pilot\_free}}$ must absorb maximum expected negative variation margin:
+
+$$C_{\text{pilot\_free}}(t) + \text{VM}_{\text{min\_stress}}(\Delta t) \ge 0$$
+
+Where $\text{VM}_{\text{min\_stress}}(\Delta t)$ represents the negative 99th percentile variation margin outflow calculated over the clearing interval $\Delta t$.
+
+---
+
+## Initial Margin Ceilings, Stress Multipliers, and Tail Risk Modeling
+
+Risk control in derivatives portfolios requires empirical stress testing grounded in exchange clearing mechanics, rather than unvalidated heuristics or Gaussian distribution assumptions.
+
+### Evaluation of the 50% Initial Margin Ceiling and 5,000 RUB Stress Buffer Heuristics
+
+Provisional risk models often propose two rules of thumb:
+1. Limiting initial margin allocation to 50% of test funds ($\text{IM} \le \text{RUB } 15,000$).
+2. Setting a fixed RUB 5,000 stress buffer.
+
+Quantitative testing reveals that both heuristics fail on MOEX due to contract integer quantization.
+
+On MOEX, initial margin requirements for a single contract leg on major futures (such as Si, Eu, or RTS) typically range from RUB 12,000 to RUB 22,000. For a basic calendar spread consisting of two legs (1 long, 1 short), total gross initial margin before spread discounts is RUB 24,000 to RUB 44,000. Even with MOEX's calendar spread discount factor $K = 0.2$ (which reduces margin on matching inter-month legs by up to 80%), initial margin for a single spread pair regularly consumes RUB 8,000 to RUB 16,000.
+
+A strict 50% IM ceiling (RUB 15,000) on a RUB 30,000 account permits the execution of exactly **one** minimum-lot spread position and leaves zero capacity for multi-pair diversification or scale-in execution. Furthermore, a fixed RUB 5,000 static stress buffer is inadequate because margin requirements scale dynamically with asset volatility. During volatility spikes, fixed monetary buffers are rapidly overwhelmed by percentage-based exchange margin adjustments.
+
+### NCC Risk Parameters and Dynamic Margin Calculation
+
+The National Clearing Centre (NCC) calculates initial margin requirements using risk parameters updated daily at 19:00 MSK and reassessed continuously during trading sessions. Key NCC parameters include:
+* **Market Risk Rates ($R_s, R_m, R_v$):** Minimum price change risk coefficients categorized into 1st, 2nd, and 3rd concentration levels.
+* **Concentration Limits ($Q_1, Q_2$):** Portfolio size thresholds above which elevated risk rates apply.
+* **Spread Margin Discounts:** Reduced margin requirements applied to calendar spreads or correlated economic pairs (e.g., Si vs. CNY/RUB) based on inter-contract correlation metrics.
+
+During periods of heightened market volatility or geopolitical stress, NCC enforces three collateral protection mechanisms:
+1. **Intraday Margin Rate Increases:** NCC expands market risk rates ($R_s$) by $50\%$ to $100\%$ without prior notice, instantly increasing initial margin requirements across open positions.
+2. **Spread Discount Suspension:** In stressed market regimes where inter-month or inter-commodity correlations break down, NCC can modify or eliminate spread discount coefficients ($K$), causing calendar spread margin requirements to jump up to $5\times$ toward full gross margin requirements.
+3. **Stress Collateral Calls:** NCC issues extraordinary margin calls payable within short timeframes (e.g., before 17:30 MSK), forcing clearing members to post additional liquid funds.
+
+### Fat-Tailed Price Return Distributions versus Gaussian Assumptions
+
+MOEX futures returns display significant heavy-tail behavior, high kurtosis, and structural price gapping. Standard statistical risk models that rely on Gaussian normal distribution assumptions severely underestimate tail risk events. Under standard Gaussian assumptions, a 5-sigma price jump is modeled as an virtually impossible event occurring once in millions of trading days. On MOEX, empirical return distributions show that 5-sigma price gaps and sudden intraday limit shifts occur regularly during geopolitical transitions and macroeconomic shocks.
+
+To account for non-Gaussian tail risk, stress multipliers must be derived from empirical historical shocks on MOEX (such as the market dislocations of March 2020, February 2022, and late 2024).
+
+The required margin stress multiplier $\gamma_{\text{margin}}$ is formulated as:
+
+$$\gamma_{\text{margin}} = \frac{\text{IM}_{\text{peak\_stressed}}}{\text{IM}_{\text{baseline}}} = \mu_{\text{rate\_hike}} \cdot \frac{1}{1 - \Delta K_{\text{spread\_reduction}}}$$
+
+Where:
+* $\mu_{\text{rate\_hike}} \in [1.5, 2.0]$ reflects NCC base rate expansion during crises.
+* $\Delta K_{\text{spread\_reduction}}$ captures the partial or total removal of calendar spread discounts.
+
+Under a combined stress scenario where base risk rates increase by $50\%$ ($\mu_{\text{rate\_hike}} = 1.5$) and spread discount efficiency falls from $80\%$ to $40\%$, the effective initial margin requirement increases by a combined multiplier:
+
+$$\gamma_{\text{margin}} = 1.5 \cdot \frac{1 - 0.2}{1 - 0.6} = 1.5 \cdot 2.0 = 3.0$$
+
+A spread position requiring RUB 10,000 initial margin under normal market conditions can require up to RUB 30,000 initial margin during market dislocations. On a RUB 30,000 account, this forces instant account liquidation if no unallocated cash buffer exists.
+
+---
+
+## Position Sizing Paradigms and Tiny-Lot Feasibility Analysis
+
+Designing position sizing rules for small account allocations requires balancing mathematical optimization against discrete lot size constraints.
+
+### Position Sizing Methodology Comparison
+
+| Sizing Paradigm | Mathematical Formulation | Applicability to RUB 30k Pilot | Risk & Execution Characteristics |
+| :--- | :--- | :--- | :--- |
+| **Fixed Minimum Contracts** | $N = 1 \text{ contract pair}$ | **Mandatory Default**. | Simple execution; highly non-linear percentage risk exposure. |
+| **Bounded Risk-Scaled Sizing** | $N = \min\left(N_{\text{max}}, \left\lfloor \frac{\text{Capital} \times \text{Risk}_{\%}}{\text{Loss}_{\text{stressed}}} \right\rfloor\right)$ | Infeasible due to integer truncation. | Truncates to $N=0$ or $N=1$; cannot fine-tune risk percentages. |
+| **Fractional Kelly Criterion** | $f^* = \frac{p \cdot b - q}{b} \cdot \text{Fraction}$ | **Unsafe & Invalid**. | Requires precise win probability $p$ and payoff ratio $b$; causes extreme over-leverage. |
+| **Capped Scale-In Strategy** | $N_1 = 1, N_2 = 1 \text{ (Total } N \le 2\text{)}$ | Infeasible on RUB 30k base. | Exceeds cash balance on second leg; violates entry invariants. |
+| **Low-Risk Profile** | Target Volatility = 5%–10% | Yields fractional sizing ($N < 1$). | Cannot be traded on exchange due to lot integer rules. |
+| **High-Risk Profile** | Target Volatility = 30%–50% | Default outcome of 1 contract. | Operates near account capacity; high vulnerability to gap losses. |
+
+### Mathematical Invalidation of Fractional Kelly on Small Futures Accounts
+
+The Fractional Kelly Criterion determines trade leverage based on expected edge and return variance:
+
+$$f^* = \kappa \cdot \left( \frac{\mu - r_f}{\sigma^2} \right)$$
+
+Where $\kappa \in (0, 1]$ is the Kelly fraction (e.g., Half-Kelly $\kappa = 0.5$).
+
+Fractional Kelly sizing is mathematically invalid for the RUB 30,000 pilot due to three structural factors:
+1. **Uncertainty in Edge Calibration:** Estimating mean excess return $\mu$ and variance $\sigma^2$ for futures spreads requires extensive out-of-sample data. Small sample sizes create wide confidence intervals around $\mu$, leading to unstable Kelly estimates.
+2. **Negative Skewness Danger:** Spread strategies frequently display fat-tailed negative skewness (small consistent gains interrupted by sharp gap losses). Unadjusted Kelly formulas severely over-allocate capital to negative-skew strategies, causing high probabilities of catastrophic drawdown.
+3. **Discrete Integer Truncation:** Sizing formulas output continuous variables (e.g., $f^* \implies N = 0.34$ contracts). Because exchange contracts trade strictly as integers ($N \in \mathbb{Z}^+$), rounding $0.34$ contracts to $1.0$ contract increases applied leverage by $294\%$, invalidating the Kelly risk control framework.
+
+### Discrete Integer Rounding Effects on RUB 30,000 Capital Base
+
+On the MOEX Derivatives Market, fractional contracts do not exist. The integer lot constraint introduces extreme non-linearity in risk allocations.
+
+Consider three representative spread ideas evaluated on a RUB 30,000 pilot account:
+
+1. **GAZR (Gazprom) Inter-Month Calendar Spread:** Initial Margin per spread pair is approximately RUB 8,500. This represents $28.3\%$ of pilot capital. Exactly 1 pair can be executed. A 2-lot position requires RUB 17,000 IM, consuming $56.7\%$ of capital and leaving insufficient cash buffer for variation margin fluctuations.
+2. **CNY/RUB Currency Spread (CR futures vs. Si futures ratio):** Initial Margin per spread pair is approximately RUB 14,000. This represents $46.7\%$ of pilot capital. Exactly 1 pair can be executed. Attempting 2 pairs requires RUB 28,000 IM, leaving only RUB 2,000 free cash and triggering instant entry rejection under stress invariants.
+3. **Si (USD/RUB) Inter-Month Calendar Spread:** Initial Margin per spread pair is approximately RUB 22,000. This represents $73.3\%$ of pilot capital. Exactly 1 pair can be executed. Free cash remaining is RUB 8,000. Under a $1.5\times$ intraday margin hike, required margin jumps to RUB 33,000, exceeding total account capital and forcing immediate position liquidation.
+
+The RUB 30,000 pilot account cannot perform multi-trade portfolio diversification or continuous position scaling. The pilot operates as a binary single-contract stress test.
+
+---
+
+## Capacity Scaling, Promotion Gates, and Operational Constraints
+
+Transitioning a trading strategy from a RUB 30,000 pilot to production scale (RUB 10,000,000 – 20,000,000) requires formal promotion gates and rigorous infrastructure analysis.
+
+### Quantitative Promotion Gates for Capital Scaling
+
+Advancing from Stage 1 (RUB 30k pilot) to Stage 2 (RUB 10M–20M production scale) must be governed by strict quantitative gates rather than short-term nominal profits.
+
+The promotion audit workflow mandates that six distinct criteria be satisfied concurrently:
+
+1. **Minimum Execution Duration:** The strategy must operate actively for at least 90 calendar days and complete a minimum of 30 round-turn trades to ensure statistical relevance.
+2. **Relative Excess Performance:** Cumulative relative excess wealth must remain positive ($X(t) > 0$) relative to the matched LQDT counterfactual benchmark.
+3. **Drawdown Boundary Integrity:** Realized maximum excess-curve drawdown must remain well within the warning boundary ($D_{\text{max}} < \text{RUB } 5,000$).
+4. **Risk-Adjusted Efficiency:** The strategy must achieve a realized MAR Ratio ($\text{CAGR} / D_{\text{max}}$) of at least 1.5 and a realized Sharpe Ratio of at least 0.8.
+5. **Execution Latency Compliance:** Order execution latency must adhere to established limits, maintaining a median reaction time $\le 15$ minutes and a maximum delay $\le 90$ minutes.
+6. **Zero Core Collateral Incidents:** The account must experience zero unapproved broker draws or liquidations against core LQDT collateral.
+
+A pilot that generates high returns over a brief period (e.g., +RUB 5,000 in 10 days) through high directional leverage fails these promotion gates. Capital scale expansion is prohibited until all six promotion conditions are satisfied.
+
+### Production Capacity and Market Impact Analysis (RUB 10M–20M)
+
+Scaling to a RUB 10M–20M capital base changes execution dynamics:
+
+1. **Market Depth and Order Book Consumption:** On MOEX futures spreads, order book depth in secondary contract months is thin. An order size of 100 to 250 contracts in Si or RTS calendar spreads will sweep multiple price levels, causing market impact costs (slippage) of 10 to 30 ticks per trade. Slippage models must incorporate non-linear market impact functions:
+
+$$\text{Slippage}(N) = \gamma_0 + \gamma_1 \cdot \left(\frac{N}{\text{ADV}_{5\text{min}}}\right)^\alpha$$
+
+Where $N$ is order size, $\text{ADV}_{5\text{min}}$ is average 5-minute volume, and $\alpha \approx 0.5$.
+
+2. **Funding Concentration:** At a RUB 20M scale, maintaining 100% liquid cash for initial margin creates substantial cash drag relative to money market yields. Capital structuring at Stage 2 requires placing 70% to 80% of unallocated capital into interest-bearing collateral assets (such as OFZ treasury bonds or LQDT shares) while maintaining 20% to 30% in cash to absorb variation margin fluctuations.
+
+### Hardware, Infrastructure, and Execution Constraints
+
+Hardware and network infrastructure constraints dictate system capabilities:
+
+* **Local Development Environment:** MacBook Pro Intel Core i7 (6-core, 16 GB RAM, Radeon Pro 5300M). Suitable for offline model backtesting, historical data processing, and signal generation routines.
+* **Remote VPS Environment:** 1 vCPU, 1 GB RAM, 2 GB Swap, 20 GB Disk Space. Shared background memory budget is 250 MB to 350 MB.
+  * *Operational Assessment:* Running full automated execution software, local databases, and real-time order-book parsing on 1 GB RAM is unviable. Memory spikes will trigger Linux Out-Of-Memory (OOM) process terminations, causing silent service failures. VPS deployment must be restricted to lightweight, headless event listeners (e.g., Python scripts using minimal memory) that transmit alerts via Telegram APIs.
+* **Trading Schedule vs. System Monitoring:** MOEX Derivatives market hours span 10:00 to 23:50 MSK. Automated infrastructure monitoring may operate 24/7, but trading signals and execution routines must remain dormant outside exchange trading sessions.
+
+---
+
+## Worked Ledgers, Risk State Framework, and Parameter Specifications
+
+### Comprehensive Risk State Ledger across Operational Scenarios
+
+The following worked ledgers detail account states across five operational scenarios on the shared EBP account containing a RUB 40,000,000 core LQDT holding.
+
+| Operational Metric | Scenario A: Normal Trading State | Scenario B: Partial Fill / Latency Lag | Scenario C: Adverse Clearing Gap | Scenario D: Broker Margin Hike | Scenario E: Emergency Stop Trigger |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Core LQDT Position Value** | RUB 40,000,000 | RUB 40,000,000 | RUB 40,000,000 | RUB 40,000,000 | RUB 40,000,000 |
+| **Dedicated Pilot Sleeve Cash ($C_{\text{pilot}}$)** | RUB 30,000 | RUB 30,000 | RUB 30,000 | RUB 30,000 | RUB 30,000 |
+| **Open Futures Positions** | 1 Pair Si Spread | 1 Leg Long Si (Unhedged) | 1 Pair Si Spread | 1 Pair Si Spread | 1 Pair Si Spread (Exiting) |
+| **Benchmark Counterfactual $B(t)$** | RUB 30,150 | RUB 30,150 | RUB 30,200 | RUB 30,200 | RUB 30,250 |
+| **Nominal Futures P&L** | +RUB 1,200 | -RUB 2,500 | -RUB 9,800 | -RUB 4,500 | -RUB 10,800 |
+| **Current Strategy Wealth $V(t)$** | RUB 31,200 | RUB 27,500 | RUB 20,200 | RUB 25,500 | RUB 19,200 |
+| **Relative Excess Wealth $X(t)$** | **+RUB 1,050** | **-RUB 2,650** | **-RUB 10,000** | **-RUB 4,700** | **-RUB 11,050** |
+| **High-Water Mark $H(t)$** | RUB 1,050 | RUB 1,050 | RUB 1,050 | RUB 1,050 | RUB 1,050 |
+| **Excess Drawdown $D(t)$** | **RUB 0** | **RUB 3,700** | **RUB 11,050** | **RUB 5,750** | **RUB 12,100** |
+| **NCC Required Initial Margin** | RUB 12,000 | RUB 22,000 | RUB 12,000 | RUB 28,000 | RUB 0 (Orders Pending) |
+| **Free Pilot Cash ($C_{\text{pilot\_free}}$)** | RUB 19,200 | RUB 5,500 | RUB 8,200 | -RUB 2,500 | RUB 19,200 |
+| **Broker Core Collateral Draw** | **RUB 0** | **RUB 0** | **RUB 0** | **RUB 2,500 (VIOLATION)** | **RUB 0** |
+| **Action Protocol Triggered** | None (Normal) | Latency Warning | **Action Threshold ($D \ge 10\text{k}$)** | **Warning Threshold ($D \ge 5\text{k}$)** | **Outer Boundary Risk Stop** |
+| **Required Management Action** | Hold position | Execute Leg 2 or abort | **Suspend entries; Liquidate** | Deposit cash or close leg | **Emergency Exit to Flat** |
+
+*In Scenario D, free pilot cash becomes negative (-RUB 2,500) due to a broker initial margin hike, causing an unapproved automatic draw against core LQDT collateral. This triggers an immediate protocol incident review.*
+
+### Parameter Audit Matrix
+
+The following parameter matrix establishes the retained, revised, and deferred operational specifications for the pilot risk protocol.
+
+| Parameter Name | Provisional Value | Revised / Recommended Value | Status | Rationale & Evidence Basis | Live-Trading Prerequisites |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Initial Pilot Allocation** | RUB 30,000 | RUB 30,000 | **Retained**. | Fixed test allocation; isolated sleeve cash. | Broker account sleeve isolation confirmed. |
+| **Emergency Capital Cap** | RUB 15,000 | RUB 15,000 | **Retained**. | Lifetime gross additional funding ceiling; flat-exit only. | Separate manual authorization workflow set up. |
+| **Warning Threshold ($D$)** | RUB 5,000 | RUB 4,000 | **Revised**. | Tightened to provide earlier warning before manual exit. | Automated Telegram drawdown alerts active. |
+| **Action Trigger ($D$ / $X$)** | RUB 10,000 | RUB 8,000 | **Revised**. | Tightened from RUB 10,000 to prevent gap breaches of -15,000 limit. | Orderly manual unwind protocol documented. |
+| **Outer Shortfall Boundary** | -RUB 15,000 | -RUB 15,000 | **Retained**. | Non-negotiable absolute relative loss ceiling. | Hard risk stop logic validated. |
+| **IM Ceiling (% Cash)** | 50% | **Dynamic Constraint** | **Revised**. | Static 50% ceiling fails on MOEX integer lot sizes. | Dynamic IM stress check invariant implemented. |
+| **Static Stress Buffer** | RUB 5,000 | **Volatility-Scaled Buffer** | **Revised**. | Static RUB 5,000 buffer is insufficient during volatility spikes. | Real-time parameter update feed verified. |
+| **Review Window** | 90 Days | 90 Calendar Days | **Retained**. | Audit horizon without forced loss resets. | Logging of relative performance $X(t)$ configured. |
+| **Fractional Kelly Sizing** | Disabled | **Prohibited** | **Retained**. | Mathematically invalid on tiny integer-lot accounts. | Fixed 1-contract sizing enforced. |
+
+---
+
+## Review Horizon Conventions and Peak Giveback Evaluation
+
+### Operational Mechanics of the 90-Day Formal Review
+
+The 90-calendar-day review convention serves as an operational checkpoint to evaluate strategy viability. It must **not** be interpreted as a mechanical forced liquidation date for all open positions, nor as an automatic reset of historical drawdowns or emergency funding allowances.
+
+1. **Position Survival Rule:** If a long-term economic spread position remains structurally valid, compliant with entry invariants, and within loss limits at day 90, it does not require liquidation solely due to the calendar review date. Liquidation of profitable or valid positions introduces unnecessary transaction costs and bid-ask cross friction.
+2. **No Loss or Benchmark Resets:** The relative economic loss counter $X(t)$, high-water mark $H(t)$, and cumulative consumed emergency funding allowance are **never** reset to zero at day 90. Resetting metrics creates a false baseline, masking cumulative drawdowns and allowing strategies to breach lifetime risk boundaries.
+3. **Formal Review Decisions:** The 90-day review yields one of three mandatory outcomes:
+   * *Continuation:* Strategy meets performance gates; trading continues under current parameters.
+   * *Modification:* Strategy displays structural drift; parameters are tightened or trade frequency reduced.
+   * *Termination:* Strategy exhibits negative excess return ($X(t) < 0$) or persistent execution failure; pilot is permanently shut down.
+
+### Opportunity Cost Analysis of Peak Giveback Rules
+
+Provisional risk rules often mandate closing positions if gains give back a specific percentage of their peak value (e.g., exiting if relative gains fall from +RUB 4,000 to +RUB 2,000). While peak giveback rules protect nominal gains, they introduce structural trade-offs in spread trading:
+
+1. **Chipping Away Edge in Mean-Reverting Spreads:** Futures spreads inherently oscillate around mean economic equilibrium levels. Prematurely exiting a spread position during a minor mean-reverting retracement cuts long-term strategy edge and increases realized transaction drag.
+2. **Asymmetric Payoff Distortion:** Enforcing rigid giveback stops converts naturally fat-tailed positive distributions into truncated distributions, reducing long-term strategy Sharpe ratios.
+3. **Recommended Alternative (Position Inertia):** Rather than using strict monetary giveback stops, position adjustments should adopt Carver's **Position Inertia** framework. Positions are held through noise and rebalanced only when target size shifts substantially or when relative excess drawdown $D(t)$ breaches formal risk thresholds.
+
+---
+
+## Carver's Systematic Sizing and Operational Disciplines
+
+Robert Carver's *Systematic Trading* (2015) provides an established framework for systematic position sizing, volatility targeting, and execution discipline. Applying these principles to small-scale derivatives trading highlights both structural insights and tiny-lot limitations.
+
+### Volatility Targeting and Cash Volatility Conversions
+
+Carver establishes **Volatility Targeting** as the core mechanism for controlling portfolio risk. Rather than fixing nominal capital allocations, position sizes are dynamically scaled inversely to asset volatility:
+
+$$\text{Position Size} = \frac{\text{Capital} \times \text{Target Volatility}_{\%}}{\text{Instrument Annual Cash Volatility}}$$
+
+Where Instrument Annual Cash Volatility is calculated using the **Block Value** concept.
+
+For a futures contract, the Block Value represents the monetary exposure of a 1% movement in the underlying instrument price:
+
+$$\text{Block Value} = 0.01 \times \text{Underlying Price} \times \text{Contract Multiplier}$$
+
+Annual Instrument Cash Volatility $\sigma_{\text{cash}}$ is derived as:
+
+$$\sigma_{\text{cash}} = \text{Block Value} \times \sigma_{\% \text{annual}} \times 100$$
+
+Where $\sigma_{\% \text{annual}}$ is the annualized price return volatility (calculated using exponential moving averages, such as EMA-36, or 25-day lookback windows).
+
+### Adaptation of Carver Frameworks to Tiny-Lot Futures Spreads
+
+Applying Carver's systematic principles to the tiny-lot MOEX futures environment requires specific parameter adaptations:
+
+* **Volatility Targeting Adaptation:** Volatility targeting formulas output continuous recommended sizes (e.g., $N = 0.35$ lots). Due to exchange integer lot quantization ($N \in \{0, 1\}$), the target volatility calculation cannot be dynamically fine-tuned; it collapses to a binary choice between 0 and 1 minimum contract pair.
+* **Kelly Fraction Adjustment:** Carver recommends capping maximum volatility targets at Half-Kelly levels for symmetric strategies. For spread strategies exposed to fat-tailed negative skewness during liquidity shocks, Carver mandates scaling down allocation targets to **Quarter-Kelly** equivalents.
+* **Position Inertia Rule:** Carver defines Position Inertia as a buffer zone around current holdings to eliminate unnecessary rebalancing costs. Trading occurs only when the calculated target position differs from the existing holding by more than $10\%$ to $20\%$. On a 1-lot account, Position Inertia prevents over-trading by keeping the single contract open until risk rules force a complete exit to zero.
+* **Diversification Multiplier Collapse:** Carver applies a Diversification Multiplier ($DM \in [1.0, 2.5]$) to scale up instrument weights when combining uncorrelated strategies. For a 1-lot single-spread portfolio, instrument correlation is undefined, collapsing the multiplier to $DM \equiv 1.00$.
+
+---
+
+## Conclusions and Protocol Recommendations
+
+### Critical Conclusions
+
+1. **Inadequacy of Delegated Action Buffer:** The delegated RUB 5,000 gap between the action trigger ($X \le -10,000$ RUB) and the outer boundary ($X \le -15,000$ RUB) is **insufficient** to absorb joint market gaps, bid-ask spread widening, and execution delays ($\tau \in [3, 90]$ minutes) on MOEX futures spreads.
+2. **Binary Operational Reality of Pilot:** Due to integer lot rules on MOEX, an allocation of RUB 30,000 cannot perform risk-scaled sizing, scale-in entries, or multi-trade diversification. The pilot functions as a binary single-lot execution and stress validation test.
+3. **Tax and Collateral Isolation Imperative:** Operating the pilot on a shared account containing >RUB 40M in core LQDT holdings creates severe tax risks. Any automated broker draw against core collateral to satisfy futures variation margin triggers FIFO liquidations under Art. 219.1 NK RF, destroying continuous holding progress toward the ЛДВ tax exemption.
+
+### Actionable Protocol Recommendations
+
+1. **Tighten Action Intervention Thresholds:** Revise the warning threshold to $D \ge 4,000$ RUB and the action trigger to $D \ge 8,000$ RUB / $X \le -8,000$ RUB. This expands the safety buffer to RUB 7,000, ensuring the absolute $-15,000$ RUB outer boundary is preserved during delayed manual liquidations.
+2. **Enforce Dynamic Entry Invariant:** Require every prospective trade entry to verify the strict invariant inequality:
+
+$$X(t) - \Delta_{\text{stress}}(t, \tau = 90\text{min}) - \mathcal{B}_{\text{uncertainty}} \ge -15,000 \text{ RUB}$$
+
+Reject any trade signal where single-lot initial margin plus worst-case gap stress exceeds available pilot cash.
+3. **Strict Collateral Isolation and Incident Protocols:** Configure broker account controls to block automatic borrowing against core LQDT shares. Establish an immediate protocol incident review if free pilot cash drops below zero ($C_{\text{pilot\_free}} < 0$).
+4. **Mandatory Execution Schedule:** Operate all execution and monitoring routines strictly within official MOEX trading sessions (10:00 – 23:50 MSK), using lightweight VPS event listeners to manage memory constraints.

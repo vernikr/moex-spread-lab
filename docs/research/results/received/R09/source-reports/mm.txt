@@ -1,0 +1,734 @@
+# Validation in Sparse, Nonstationary MOEX Futures-Spread Research
+
+## 1. Framing: What “honest evaluation” means in this setting
+
+For a sparse, medium‑term MOEX futures‑spread program with overlapping positions and a visibly nonstationary Russian market, “honest evaluation” means three things:
+
+- All decisions and metrics are defined strictly in point‑in‑time terms, matching the information and tradeability you actually had;  
+- The full search over pairs/strategies/parameters is treated as a multiple‑testing problem, with documented trials and explicit false‑discovery controls rather than informal “best backtest” narratives;  
+- Evidence thresholds and outcome labels (accept / reject / inconclusive) are calibrated to the *effective* sample size of independent economic episodes, not to a nominal trade count.
+
+The rest of this report turns that into a concrete protocol: how to structure walk‑forward / nested selection, how to record experiments, how to treat leakage paths, how to define your MOEX‑specific metrics, and how to use (and *not* over‑use) tools like the Deflated Sharpe Ratio (DSR) and Probability of Backtest Overfitting (PBO) in a regime‑shifting, low‑trade environment.
+
+The single most actionable takeaway is: **treat this project as a sequence of pre‑registered experiments with explicit multiple‑testing penalties and a preserved, one‑time “final window” for shadow/live evaluation, rather than as an open‑ended optimization on the entire MOEX history.**
+
+---
+
+## 2. Leakage Pathways: Concrete Failure Modes and How to Test for Them
+
+### 2.1 Survivorship and universe‑selection leakage
+
+**Mechanism.** Survivorship bias arises when your backtest includes only contracts, spreads, or managers that survive to the present, implicitly excluding those that vanished or became illiquid, which inflates performance estimates.[E44][E53][E54] Classic studies of mutual funds and CTAs show survivorship and backfill biases can add several percentage points to reported returns.[E36][E32][E43][E45] For futures, outright contract delisting is less important than *universe construction*: using only the “current” liquid names or spread combinations and projecting that back in time.[E41][E42][E35]
+
+**MOEX‑specific risk.** Structural breaks in the MOEX Russia Index have been documented using Quandt–Andrews and Bai–Perron tests, with multiple breakpoints associated with major events;[E19][E35][E36] more recent work on Russia‑Ukraine conflict and sanctions finds regime switches and sharp breaks in MOEX series.[E23][E24][E25][E40][E41][E42][E43] If your historical universe is defined using *today’s* liquid spreads or current index composition, earlier regimes with different listings, margin, and capital controls are under‑represented.
+
+**Prevention tests.**
+
+- **Universe reconstruction test.** For each historical decision date, rebuild the tradable universe *point‑in‑time*: use MOEX derivative listings/parameters as of that date where possible,[E22][E54] or proxy using rules (“top N by trailing 63‑day volume, re‑evaluated every X days”), as done in recent leakage‑safe universe‑selection work.[E71][E103] Compare performance of your strategy under:
+  - a “present‑survivor” universe (today’s liquid contracts projected backward);  
+  - a point‑in‑time liquidity‑based universe.  
+  A meaningful gap is direct evidence of survivorship/universe‑selection bias.
+
+- **Registry requirement.** Every experiment must log the universe rule it used (see Section 7). Later, you should be able to show that no rule used *current* liquidity or post‑2022 listings to decide what was tradable pre‑2022.
+
+### 2.2 Continuous‑contract construction, roll adjustment and spread bias
+
+**Mechanism.** For futures, the biggest structural data trap is how you splice expiring contracts into a “continuous” series. Vojtko’s SSRN paper, and the Quantpedia/Academia discussion around it, show that naïve concatenation (“splicing”) can create artificial jumps and wrong returns; if contracts are simply spliced, “the resulting backtest is wrong” because the jumps include roll gaps that were never tradable.[E18][E31][E32][E36] Back‑adjustment subtracts the roll gap from prior history and preserves point differences but distorts levels and percentage returns.[E20][E33]
+
+For *spreads*, back‑adjustment on each leg can *destroy* the economics of carry and roll yield. Roll yield is defined as futures return minus spot return,[E25][E8][E10] and back‑adjustment can remove exactly the term‑structure variation your strategy monetizes.
+
+**MOEX‑specific complications.** MOEX lists both standard quarterly index futures and daily perpetual futures (IMOEXF) with automatic daily rollover.[E48][E49][E50][E53] Most index futures expire on the third Thursday of March/June/September/December;[E32][E35][E13] perpetuals are one‑day contracts with automatic extension.[E16][E18][E52][E7] Combining these in historical tests without aligning their mechanics leads to structural mispricing.
+
+**Prevention tests and rules.**
+
+- **Roll‑method sensitivity.** For any spread involving standard futures, re‑run the *same* signal logic under:
+  - pure front‑month contract with explicit roll trades;  
+  - liquidity‑based roll (switch when back contract’s open interest exceeds front’s);[E32][E10][E17]  
+  - back‑adjusted continuous series (diagnostic only, never for final P&L).  
+
+  Large differences, especially where only the back‑adjusted series looks profitable, are a red flag that your edge is really a roll‑construction artifact.
+
+- **Spread construction from individual legs.** For calendar spreads, your default should be: build the spread from *two explicit single‑month contracts*, with P&L computed from their individual trades and margin. Use MOEX’s own spread quotes primarily as a validation check, not as the sole source.[E23]
+
+- **Perpetual vs quarterly segregation.** Do not mix IMOEXF (daily perpetual)[E48][E49][E53] with quarterly futures in a single continuous spread unless you explicitly model the perpetual’s daily settlement/roll rules taken from the MOEX specification. Use separate experiment IDs for perpetual‑based and quarterly‑based designs.
+
+### 2.3 Future parameters, corporate events, dividends and late price revisions
+
+**Mechanism.** Look‑ahead bias arises when your backtest uses information that would not have been available at the decision time,[E45][E39] including:
+
+- index compositions or corporate actions applied with hindsight;  
+- updated settlement/fixing methodologies;[E23][E25][E27]  
+- restated corporate fundamentals;[E37][E65][E19]  
+- price or trade corrections not yet visible in feeds.
+
+FactSet and other providers stress that “every backtest depends on one assumption: that the data reflects exactly what the market knew at that point in time.”[E38] In Russia, regime changes and sanctions have changed settlement rules and trading hours;[E24][E21][E46] MOEX fixing and settlement procedures are documented in separate methodologies.[E15][E23][E27]
+
+**Dividends / cost of carry.** Futures pricing models subtract the present value of discrete dividends when moving from spot to futures fair value.[E62][E63][E101] If you use a forward‑looking dividend series (e.g., from a 2026 methodology document) to price or filter 2015–2018 trades, that is a classic look‑ahead leak.
+
+**Prevention tests.**
+
+- **Methodology date check.** For any non‑price input (index methodology, fixing formula, dividend assumptions), verify that the *version* used existed at the time. If only a 2024 PDF is available for a series going back to 2010, treat pre‑publication usage as potentially contaminated unless you can reconstruct historical versions.
+
+- **Corporate event embargo.** For index‑based spreads, avoid using individual stock dividends or intraday “fair value” adjustments unless you can reconstruct them from contemporaneous data. Prefer to treat the observed futures curve as primitive and accept that you may not fully decompose carry vs expectation.
+
+- **Revision robustness.** Where you suspect late price corrections (e.g., around MOEX suspensions in Feb–Mar 2022),[E24][E42] re‑pull data from at least two independent copies (e.g., MOEX archive vs broker/vendor) and examine large differences. If they change P&L materially in high‑stress windows, treat that as model‑risk, not as precise profit.
+
+### 2.4 Overlapping labels and position chains crossing train/test splits
+
+**Mechanism.** In financial ML, labels are often returns over a forward window or triple‑barrier events; adjacent samples then share parts of the future path, violating i.i.d. assumptions.[E39][E4][E37][E46][E47][E48][E49] López de Prado’s Chapters 3 and 7 of *Advances in Financial Machine Learning* (AFML) highlight that overlapping labels silently inflate effective sample size, and purging/embargo are standard remedies.[E3][E4][E5][E7][E8][E21][E34][E35]
+
+For discretionary‑style spread systems with medium holding periods, overlapping *positions* play the same role: multiple signals on the same spread while an earlier leg is still open create chains of dependence. Naïvely counting each fill as an independent trade overstates information.[E26][E25]
+
+**Prevention tests.**
+
+- **Position‑chain accounting.** Group all fills that are part of one economic bet (open through final close) into a single “trade chain” with one P&L and one duration. When computing sample sizes, use chains, not individual fills.
+
+- **Purged / embargoed CV.** When you do any model selection on labelled data (even simple threshold rules), implement purged K‑fold or purged walk‑forward: remove from the training set any observations whose label windows overlap the test window, then embargo an additional period to absorb lingering dependence.[E29][E38][E41][E42][E6][E21][E23][E37]
+
+- **Chain‑level splitting.** Folds and walk‑forward segments should be constructed so that no single economic trade chain crosses a train/test boundary. If a position can last up to, say, 30 calendar days, your purge+embargo around a test window should span at least that.
+
+### 2.5 Reused holdouts and post‑hoc choices
+
+**Mechanism.** Selecting the “best” specification using a holdout set and then reporting that same holdout performance as evidence of validity yields inflated false‑acceptance rates. Recent SSRN work finds that selecting best‑of‑K strategies on a reused holdout, with a t‑stat > 2 threshold, leads to about 36.9% false acceptance under the null, versus much lower rates when the holdout is untouched until the very end.[E72][E74][E3][E37]
+
+Post‑hoc adjustments to costs or delays are another, subtler variant: adding a cost haircut or latency scenario *after* inspecting results cannot recreate the alternate universe where those costs were known in advance.[E77] MDPI work on post‑hoc transaction‑cost transformations notes they preserve some cross‑sectional properties but may introduce bias and are not a clean substitute for ex‑ante modelling.[E78]
+
+**Prevention tests.**
+
+- **Single‑use final window.** Reserve a contiguous, recent calendar window (e.g., last 12–18 months that include current MOEX regime) as a “final holdout” that is never touched during design or hyperparameter selection. Only once you have frozen the strategy do you run this evaluation, and you run it *once*.[E73][E57][E58]
+
+- **Versioned cost/delay scenarios.** Decide ex‑ante which cost and latency scenarios you will report (e.g., base cost from MOEX official fee schedule for futures,[E38][E21][E47] plus ± one tick slippage bands and a fixed decision‑to‑fill delay). Each scenario is a separate experiment configuration in the registry; you may compute multiple, but you do not get to pick one selectively in the narrative.
+
+---
+
+## 3. Chronological Walk‑Forward and Nested Selection
+
+### 3.1 Why standard CV fails, and what to replace it with
+
+Standard k‑fold cross‑validation randomly reshuffles data and therefore leaks future information whenever labels span forward windows.[E11][E12][E5][E7][E8] AFML Chapter 7 documents this failure; the fix is to use *time‑respecting* splits with purging and embargo.[E17][E21][E29][E43][E44][E45]
+
+Walk‑forward validation is a particular case: train on past, test on the next segment, roll forward, repeat.[E28][E6][E10][E9][E15][E16] Recent arXiv work proposes rigorous walk‑forward frameworks for trading that emphasise temporal order and concept drift detection.[E7][E28][E26]
+
+### 3.2 Aligning splits with MOEX trade reality
+
+Given MOEX’s discrete regime shifts (1998 crisis, 2014 sanctions, 2020 pandemic, 2022 war/suspension),[E24][E19][E20][E21][E34][E45][E64][E46][E47][E48][E49] fixed‑length windows have to be interpreted with care. Two design options:
+
+- **Regime‑aware windows.** Use endogenous structural break tests like Bai–Perron or Quandt–Andrews on relevant series (index levels, vol, spread carry) to identify breakpoints;[E19][E35][E36][E24][E45] define training and validation segments within relatively stable sub‑regimes. This reduces the risk of training across incompatible regimes but may reduce data per segment.
+
+- **Calendar walk‑forward with regime diagnostics.** Use fixed calendar windows (e.g., 18 months train, 6 months test) but overlay structural‑break diagnostics; the presence of a breakpoint inside a training or test segment becomes an explanatory covariate when you later interpret results, not something you optimise on.
+
+In either case, the training set must always *precede* the validation horizon; future points never enter the fit.[E28][E7]
+
+### 3.3 Nested selection under sparse trades
+
+For each decision frequency (e.g., monthly re‑allocation across spreads), you effectively have only a modest number of independent decisions over a decade—maybe 60–120 if you trade monthly, far fewer if you skip many months. Nested selection in this context means:
+
+- **Inner loop (model/parameter selection).** Within each training window, you explore a pre‑registered grid of strategy families and hyperparameters (Section 7), using *only* data in that window and using purged/embargoed CV where labels overlap.
+
+- **Outer loop (performance accumulation).** The chosen configuration for a window is then frozen and applied to the next test window, producing an out‑of‑sample P&L segment. You do not go back to retune based on that segment.
+
+Over the full historical span, you then have a sequence of decisions and associated realised excess returns vs LQDT. These may be fed into:
+
+- selection‑adjusted Sharpe and P&L diagnostics (DSR, PSR);[E1][E2][E4][E5][E6][E9][E11][E19][E20][E25][E39][E49][E104][E15]  
+- multiple‑testing corrections across families (Harvey–Liu, FDR);[E31][E32][E30][E22][E37][E105][E106][E107]  
+- PBO / CSCV estimates where you have tested many model combinations.[E31][E35][E38][E10][E11][E12][E13][E14][E48][E26][E51]
+
+### 3.4 Purge/embargo calibrated to actual position overlap
+
+AFML suggests purge and embargo windows at least as long as your label horizon.[E17][E21][E29][E38][E41][E42][E8][E16][E18][E22][E37] For your project you should:
+
+- Determine the maximum planned holding period and the longest duration over which signals on a given spread can be active concurrently.  
+- Set purge length ≥ max(label horizon, holding period).  
+- Set embargo length to at least that again; in a sparse program you can afford generous gaps, because you are not seeking high‑frequency capacity.
+
+These same parameters also define your *operational* exposure terms (time capital is tied up), which will feed into metrics like capital‑time usage and stress funding (Section 5).
+
+---
+
+## 4. Multiple Testing, False Discoveries and Shrinkage Statistics
+
+### 4.1 Deflated Sharpe Ratio (DSR) and Probabilistic Sharpe Ratio (PSR)
+
+Bailey & López de Prado (2014) introduced the Deflated Sharpe Ratio as a way to correct for both selection bias under multiple testing and non‑normal return distributions.[E1][E2][E4][E5][E6][E9][E11][E15][E19][E20][E25][E39][E49][E104] DSR is built on the Probabilistic Sharpe Ratio (PSR), which computes the probability that a true Sharpe exceeds a threshold, adjusting for sample size, skewness and kurtosis:[E14][E34]
+
+- PSR(SR*) = Φ( (SR̂ − SR*)√(T−1) / √(1 − γ₃ SR̂ + ((γ₄ − 1)/4) SR̂²) ), where γ₃, γ₄ are skewness and kurtosis, Φ is the standard normal CDF.  
+- DSR chooses SR* as a selection‑adjusted critical value depending on the number of trials N and their variance; it then reports a probability that your discovered Sharpe is not a false positive.[E3][E6][E7][E10][E20][E50]
+
+**Assumptions and limitations.**
+
+- It assumes *independent* trials or uses an effective N; in your overlapping, sparsely‑trading regime, you must be conservative about N.  
+- It assumes returns are at least weakly stationary over the sample; multiple MOEX regime shifts violate this.[E12][E13][E14][E27]  
+- Recent practitioners emphasize that DSR is a *diagnostic*, not a proof of validity; it typically rejects sparse strategies more often, as EVOQUANT notes.[E24][S4]
+
+In your context, DSR can still be valuable if:
+
+- N is the number of distinct *strategy families × parameter grids* you tried (as logged in the registry);  
+- T is the number of *walk‑forward test windows* or independent trade chains, not all simulated decision points;  
+- You interpret low DSR (say, <0.8) as “evidence too weak to distinguish from chance given how much we searched,” not as “strategy disproved.”
+
+### 4.2 Probability of Backtest Overfitting (PBO) and Combinatorial Purged CV
+
+Bailey et al. (2015) define PBO as the probability that the in‑sample best model underperforms the median of models out‑of‑sample; they use combinatorially‑symmetric cross‑validation (CSCV) to estimate this.[E31][E35][E38][E10][E11][E12][E13][E14][E48][E26][E51]
+
+- CSCV splits data into many purged/embargoed folds and considers all combinations of train/test folds, yielding a distribution of relative ranks.  
+- The fraction of combinations where the in‑sample winner is below median out‑of‑sample is the PBO.
+
+**Limitations for MOEX spreads.**
+
+- CSCV is data‑hungry: it works best when you have many folds and many models; you will have relatively few effective folds.  
+- Nonstationary regimes violate the identically‑distributed part of CSCV’s logic; a model may legitimately fail in early sanctions regimes but succeed in later ones.
+
+PBO is still useful as a *sanity check* when you perform broad grid searches (e.g., dozens of cointegration thresholds, z‑score entries, stop rules), but low PBO is not sufficient in a regime‑shifting context. High PBO, however, is strong evidence that your “winner” is just a noise fitter.
+
+### 4.3 False Discovery Rate (FDR) control under dependence
+
+Benjamini & Hochberg (1995) introduced the false discovery rate as the expected proportion of false positives among rejected nulls,[E29][E28] and later work extended FDR procedures to dependent tests (Benjamini–Yekutieli).[E80][E27][S5] Harvey & Liu’s “Backtesting” paper applies these ideas to finance, proposing methods to determine significance thresholds when many strategies are tested; they show that industry rules of thumb (like halving Sharpe ratios) can be either too strict or too lax depending on the testing intensity.[E31][E32][E30][E22][E105][E106][E107]
+
+In your project:
+
+- A “test” is not each trade but each *strategy family / parameterization* evaluated on a fixed backtest protocol.  
+- You can assign p‑values to those via standard t‑statistics on walk‑forward excess returns (with HAC / Newey–West adjustments to handle serial correlation), then use BY‑style FDR control to choose a cut‑off.  
+
+Given the modest absolute number of candidate families you are likely to consider (dozens, not thousands), FDR can be run fairly directly; it will force you to admit that, after correction, very few high‑Sharpe configurations remain statistically distinguishable from noise.
+
+### 4.4 Effective sample size and the “30 trades” myth
+
+Multiple popular sources assert minimum thresholds like “100 trades” or “200 trades” for strategy evaluation,[E45][E46][E49][E50] but more thoughtful guides emphasise that *there is no magic 30‑, 100‑, or 200‑trade threshold*; required sample size depends on desired precision, payoff variance, dependence structure, costs, and a fixed test plan.[E44][E48]
+
+For your medium‑term, overlapping‑position program:
+
+- The relevant unit is *independent economic episodes* (trade chains, or monthly decisions), not raw trades.  
+- Autocorrelation and regime persistence mean effective sample size is much lower than the count of episodes; you should estimate long‑run variance via, e.g., Newey–West or block bootstrap for confidence intervals.[E33][E29][E30][E43][E108][E29][E30]
+
+Given this, it is entirely plausible that after accounting for dependence and multiple testing, 5–10 years of data only support an “inconclusive” label for profitability, even if raw metrics look decent.
+
+---
+
+## 5. Metrics Tailored to This Project
+
+### 5.1 Primary performance: matched LQDT excess and uncertainty
+
+You defined LQDT (a core, long‑term holding) as the benchmark; all performance must be expressed as excess return vs LQDT on the same capital over the same calendar days, with identical external flows.
+
+Define:
+
+- For each calendar day t, let R_X(t) be daily P&L on the spread portfolio *plus* any cash or margin interest, divided by the capital notionally allocated to X (including margin usage).  
+- Let R_L(t) be the return the same capital would have earned had it remained in LQDT.  
+
+Excess daily return e(t) = R_X(t) − R_L(t). Aggregate across the period with:
+
+- Average excess return;  
+- Standard error using heteroskedasticity and autocorrelation‑consistent estimators;[E33][E43]  
+- Confidence intervals for cumulative excess P&L;  
+- DSR / PSR style probabilities if you choose to express them.
+
+**Uncertainty components.**
+
+- **Payoff variance and serial correlation.** Use HAC estimates and/or block bootstrap calibrated to your average holding period.  
+- **Cost uncertainty.** Transaction costs for MOEX futures are known at fee level (e.g., MOEX lists ~0.00759% exchange commission plus clearing for commodity contracts),[E38][E21][E47][S3] but actual execution has variable slippage and partial fills. Model costs as a band (e.g., ±1 tick or ±X% of notional per leg) and report how much of your edge disappears within that band.[E50][E51][E40][E41][E111][E44]
+
+### 5.2 Capital‑time usage and funding stress
+
+Because you have strict pilot capital and emergency funding rules, you need metrics that capture how much of that capacity the strategy uses:
+
+- **Capital‑time usage.** For each day, compute notional exposure and margin posted; integrate over time to get “RUB‑days” of exposure. This allows you to compare two strategies that achieve similar P&L with different capital intensity.
+
+- **Path drawdown and stress funding.** Track drawdowns in excess P&L vs LQDT, and separately compute the *worst concurrent* combination of unrealised losses and variation margin calls. Combine this with MOEX margin requirements and your broker’s practices to estimate the fraction of your RUB 30,000/45,000 budget that would have been stressed in historical worst cases.
+
+- **Average holding period and turnover.** AFML and related sources define average holding period and annualised turnover as key descriptors of strategy aggressiveness.[E109][E110][E85][E86] Use trade‑chain durations, not fills, to compute:
+  - the average time capital is tied up per bet;  
+  - annualised turnover = total traded notional per year ÷ average notional capital.
+
+### 5.3 Net execution costs and capacity
+
+Use three layers:
+
+1. **Ex‑ante fee + spread model.** Combine MOEX fee schedule with historical bid‑ask spreads (where available) to estimate baseline round‑trip costs.[E38][E47][E50][E111][E40][E41][E33]
+
+2. **Stress scenarios.** Define deterministic stress multipliers (e.g., 2× spread, 1.5× fee, extra tick for illiquidity) and recompute net edge; you should see whether your expected excess P&L survives plausible cost mis‑estimations.[E44][E41][E42]
+
+3. **Capacity.** For index futures and spreads with known daily volume, you can compare your hypothetical size (currently well below 1 bps of ADV)[E42][E47] to capacity benchmarks; Bailey & López de Prado and related work offer frameworks for capacity estimation and “crowding” effects.[E42][E45][E43][E44] At your pilot scale, market impact is likely negligible; for RUB 10–20m later, you still sit far below MOEX index futures volumes, but local dislocations on legs and spreads must be checked.
+
+### 5.4 Probability calibration (if you output win probabilities)
+
+Classification literature emphasises that most ML models output poorly calibrated probabilities, and calibration is a separate step using techniques like Platt scaling or isotonic regression.[E87][E88][E89][E90] In financial ML, miscalibrated probabilities lead to systematically oversized positions and overconfident risk.[E43][E87][E90]
+
+Given your sparse‑bet setting, you should:
+
+- Only report a “win probability” if it is the *output of a model that has undergone calibration evaluation* (e.g., reliability diagrams, Brier score) on out‑of‑sample data.  
+- Treat structural breaks and regime change as reasons to *not* interpret these probabilities literally; time‑decay weighting and “recent window only” calibration may still be fragile.
+
+If you do not have enough independent events to judge calibration (likely), the honest choice is to *avoid probability numbers entirely* and work with directional signals plus conservative sizing rules.
+
+---
+
+## 6. Baselines, Stress Scenarios, and Prospective Shadow Evaluation
+
+### 6.1 No‑trade/LQDT and simple deterministic baselines
+
+To interpret a medium‑complexity spread strategy, you need clear baselines:
+
+- **No‑trade baseline.** All capital stays in LQDT; excess return ≡ 0 by construction. This is your default.
+
+- **Simple deterministic baselines.** Examples:
+  - Always hold a fixed MOEX index futures calendar spread across roll dates with no signal;  
+  - Always hedge a fixed fraction of LQDT’s beta with a simple futures overlay;  
+  - Simple seasonality‑only spread without ML.
+
+These baselines are evaluated through the same walk‑forward protocol and excess metrics. They answer: is your signal‑driven approach truly better than “dumb but consistent” hedges?
+
+### 6.2 Stress‑cost/delay/quote‑quality scenarios
+
+Execution dials that should be pre‑registered:
+
+- **Quote quality windows.** Some practitioners (e.g., ORATS for US options) avoid poor quote quality near the close by using data 10–15 minutes before close.[E94] For MOEX, you can similarly define a time‑of‑day filter (e.g., avoid illiquid lunch hour or last X minutes before auction) and test “best / typical / worst” windows.
+
+- **Delay scenarios.** For each trade trigger, simulate fills at:
+  - decision bar close;  
+  - +1 bar;  
+  - +N minutes or ticks where you likely submit market/limit orders.  
+
+  Maintain per‑scenario P&L and trade slippage distributions; one Backtest Labs‑style guideline is to group P&L per delay scenario and inspect which trades are most harmed.[E79][E67]
+
+- **Spread/liquidity stress.** Introduce a minimal spread floor (e.g., at least one tick per leg) even if historical best bid/ask suggest tighter markets, to account for hidden liquidity costs and MOEX microstructure.
+
+All of these must be decided ex‑ante; you can inspect their impact ex‑post, but you may not cherry‑pick.
+
+### 6.3 Selection‑adjusted validation and final holdout consumption
+
+“Selection‑adjusted” here means that whatever story you tell about the chosen strategy explicitly accounts for:
+
+- how many alternatives were tried;  
+- which error rate you are controlling (family‑wise vs FDR);[E28][E29][E30][E105][E106][E107]  
+- which shrinkage statistics (DSR, PBO) you used.
+
+The final holdout is “consumed” when you:
+
+- run the fixed, chosen strategy on that period;  
+- compute your primary excess and risk metrics;  
+- decide whether to proceed to pilot.
+
+Any subsequent strategy iteration for this project must *treat that holdout as used*; it cannot serve again as an independent check. If you later discover bugs, you can still use the period operationally but must declare that your statistical validation for profitability is compromised.
+
+### 6.4 Prospective shadow evaluation and small live pilot
+
+Before committing even a RUB 30k test allocation, run at least one **shadow evaluation**:
+
+- Freeze the model and trade rules as of a date;  
+- On each new trading day, generate decisions as if live but record them without sending orders;  
+- Evaluate realised shadow P&L vs LQDT; this tests data feeds, roll logic, and cost assumptions.[E32][E33][E34][E53][E54][E67][E95]
+
+Only after a clean shadow period (e.g., 1–3 months) do you proceed to a **small live pilot** whose explicit goal is *operational validation, not profit*.[E99][E35][E36][E61][E62][E100][E115][S10] Execution metrics to monitor:
+
+- slip vs model;  
+- fraction of rejected / partial fills;  
+- latency from decision to filled order.
+
+A 90‑day pilot can validate these operational aspects without providing statistically conclusive evidence on alpha; your registry should label such pilots as “operational tests” and not reuse them as backtest data.
+
+---
+
+## 7. Minimal Reproducible Validation Protocol and Experiment Registry
+
+### 7.1 Timeline logic
+
+A concrete, minimal protocol in timeline form:
+
+1. **Design phase (no data yet “touched”).**
+   - Write a short preregistration for each *strategy family*: idea in one sentence, instruments, labeling method (if any), signal inputs, parameter ranges, costs and delays to be assumed, benchmark (LQDT), and primary metrics.[E55][E56][E37][E38][E96][E97][E98][S9]
+
+2. **Historical data definition and point‑in‑time reconstruction.**
+   - Specify data sources (MOEX archives, broker feeds), contract codes, and continuous‑series construction rules (see Section 2.2).  
+   - Define tradable universe rules point‑in‑time and implement them.
+
+3. **Backtest engine implementation.**
+   - Implement order‑book / trade handling, roll logic, fees, and latency.  
+   - Validate engine on trivial baselines (no‑trade, simple deterministic spreads) before more complex models.
+
+4. **Walk‑forward / nested testing.**
+   - Choose a pre‑2022 starting point and intervals (e.g., 18m train, 6m test).  
+   - For each window, run inner‑loop selection (within pre‑declared grid) using purged/embargoed CV.  
+   - Apply chosen configuration to next test window; record P&L vs LQDT.
+
+5. **Selection‑adjusted evaluation.**
+   - Aggregate walk‑forward test segments; compute excess metrics and Sharpe with HAC CIs.  
+   - Run DSR/PSR using registry‑derived N and effective T;  
+   - Apply FDR control across families when ranking them.[E27][E28][E29][E80][E31][E32][E30][E105][E106]
+
+6. **Final holdout evaluation.**
+   - Freeze final strategy; run on reserved recent MOEX period; compute metrics and document.
+
+7. **Shadow / live pilot.**
+   - Shadow trade for 1–3 months; if mechanics behave as expected, deploy small live pilot following your pre‑agreed risk bounds.  
+   - Record all deviations (manual overrides, missed signals) explicitly.
+
+8. **Decision.**
+   - Based on statistical evidence (largely from walk‑forward + final holdout) and operational evidence (shadow + pilot), classify the project as **rejected**, **inconclusive / further monitoring**, or **candidate for scale‑up**.
+
+### 7.2 Experiment registry: minimal fields
+
+Building on registry recommendations in the literature,[E81][S6] a minimal record per experiment (backtest run, not per trade) should include:
+
+- **Metadata**
+  - Experiment ID  
+  - Date created / last modified  
+  - Parent hypothesis / strategy family ID  
+  - Researcher initials
+
+- **Data snapshot**
+  - Data sources and versions (with hash or date)  
+  - Date range used; list of excluded dates (e.g., MOEX suspensions in Feb–Mar 2022)[E24]  
+  - Universe rule (e.g., “front‑month MXI, liquidity filter X”)
+
+- **Model / configuration**
+  - Labeling method (if any; e.g., fixed horizon, triple barrier)[E3][E5][E34][E38][E40]  
+  - Feature set (with point‑in‑time constraints)  
+  - Hyperparameters (entry/exit thresholds, lookbacks, stop/target)  
+  - Costs (fee schedule version, slippage assumptions) and delay scenario.  
+
+- **Validation protocol**
+  - Train/test split scheme (window lengths, overlaps)  
+  - Purge and embargo lengths; maximum holding period used for calibration  
+  - CV type (walk‑forward, CPCV, etc.)[E2][E5][E6][E16][E17][E22][E45]
+
+- **Results**
+  - Number of trade chains and decisions  
+  - Cumulative P&L and excess vs LQDT  
+  - Sharpe / information ratio + confidence intervals  
+  - DSR/PSR, PBO (if computed), FDR‑adjusted p‑value  
+  - Capital‑time usage, turnover, max drawdown, funding stress metrics.  
+
+- **Verdict**
+  - Outcome: rejected / promising / baseline / bugged  
+  - Reasons (including any protocol violations discovered later)  
+  - Links to code commits and logs.
+
+Failed or bugged experiments must stay in the registry; DSR and multiple‑testing adjustments require total counts of trials, not only “winners.”[E4][E5][E6][E81]
+
+### 7.3 Uncertainty methodology and outcome labels
+
+For each candidate strategy:
+
+- Construct confidence intervals on excess return using HAC or block bootstrap;[E33][E29][E30][E108]  
+- Compute DSR using *effective* number of trials;  
+- Apply BY‑style FDR or Harvey–Liu thresholds where multiple strategies are being compared.
+
+Label outcomes:
+
+- **Reject:** excess return estimate ≤ 0 at chosen confidence level *and* DSR < threshold *and/or* PBO high;  
+- **Inconclusive:** confidence interval straddles 0 or is too wide due to small T; DSR ambiguous;  
+- **Provisional candidate:** excess significantly > 0, DSR reasonably high, PBO low, but sample small and nonstationarity present: proceed only to shadow/pilot, not full scale.
+
+---
+
+## 8. Scenario Analysis: How Evidence Limits Depend on Future Choices
+
+### Scenario A – Minimal search, modest complexity
+
+If you restrict yourself to a very small set of pre‑registered strategies (e.g., 2–3 spread families with 3–5 parameter sets each), use simple deterministic rules and avoid ML probabilities, then:
+
+- Multiple‑testing burden is low; DSR and FDR adjustments are milder.  
+- With 5–10 years of MOEX history and monthly decisions, you may achieve “provisional candidate” classification.  
+- The main residual risk is nonstationarity: a profitable history that leans heavily on pre‑2022 regimes may not generalise.
+
+### Scenario B – Broad search, ML models, probability outputs
+
+If you explore many spread combinations, complex features, tree‑based classifiers with probabilities, and dynamic hedging schemes:
+
+- The number of effective trials N skyrockets; DSR and FDR become extremely stringent, likely downgrading all apparent winners to “inconclusive” or “reject”.  
+- PBO under CSCV will likely be high, indicating that the in‑sample best is not reliably better out‑of‑sample.  
+- Probability calibration will be poor due to few events; claiming calibrated win probabilities would be misleading.
+
+In this scenario, the honest conclusion is that *the data does not support reliable alpha estimation given the search intensity*, even if some backtests look attractive.
+
+### Scenario C – Operational focus: 90‑day pilot as process validation
+
+If you accept that a 90‑day live pilot cannot prove profitability but can validate operations,[E95][E99][E100][E61][E62][E115] you can:
+
+- Use historical and shadow testing solely to rule out obviously flawed ideas;  
+- Treat the pilot as an experiment on execution, latency, and funding stress, not on P&L;  
+- Decide future investment based on a combination of modest historical evidence and strong operational confidence.
+
+This scenario fits your constraints and the nonstationary Russian context best: you aim for “no obvious overfitting or leakage + operational robustness,” not “statistical proof of edge.”
+
+---
+
+## 9. Recommendations
+
+### Immediate (before any new research runs)
+
+1. **Define and reserve a final holdout window.** Choose a contiguous recent MOEX period (e.g., last 12–18 months) and mark it off‑limits for all design and parameter selection.
+
+2. **Implement a lightweight experiment registry.** Even a simple spreadsheet or text log with the fields in Section 7.2 is enough to start; the key is to record every model/parameter/universe/cost configuration you test.
+
+3. **Decide ex‑ante cost and delay scenarios.** Based on MOEX fee schedules and your likely manual reaction times, define 2–3 standard execution scenarios and commit to reporting all of them for any backtest.
+
+### Short‑term research design
+
+4. **Limit initial model complexity and search breadth.** Start with a small, interpretable set of spread rules; avoid ML probability outputs until you have a validated baseline.
+
+5. **Implement regime‑aware walk‑forward with purge/embargo.** Use AFML’s purged CV concepts to ensure no overlapping labels cross train/test; calibrate purge and embargo to your maximum holding period.
+
+6. **Run explicit leakage audits.** For at least one candidate strategy, perform the universe, roll‑construction, and parameter‑leakage sensitivity tests described in Section 2; document how performance changes.
+
+7. **Use DSR and FDR as *filters*, not badges.** A low DSR or FDR‑adjusted p‑value indicates clear overfitting; a high one in this sparse, nonstationary setting should still be treated with caution.
+
+### Medium‑term operational validation
+
+8. **Execute a shadow‑mode trial.** Once a strategy passes minimal statistical and leakage checks, run it in shadow mode for 1–3 months and track deviations between model and hypothetical execution.
+
+9. **Plan a small live pilot with explicit objectives.** Treat the 90‑day, RUB 30k pilot as an operational shakedown test for MOEX execution, monitoring, and funding dynamics, not as an alpha proof. Pre‑define failure triggers in terms of excess LQDT drawdown and operational incidents.
+
+10. **Reassess scaling criteria.** Only after both (a) selection‑adjusted historical/shadow evidence supports non‑negative excess vs LQDT and (b) live pilot demonstrates operational robustness, should you consider scaling towards the RUB 10–20m target, and even then with staging and continued shadow tests on any design changes.
+
+---
+
+## 10. Targeted Reading and Applicability Critique
+
+### Bailey & López de Prado – “The Deflated Sharpe Ratio”
+
+- **Where to read.** Original paper (Journal of Portfolio Management, 2014) is available via David Bailey’s site and is summarised in various technical and R documentation.[E1][E2][E4][E5][E6][E9][E11][E19][E20][E25][E39][E49][E104]  
+- **Key content.** Definition of PSR and DSR; formulas including skewness and kurtosis; role of number of trials N in determining selection‑adjusted critical Sharpe; examples of overfitting in backtests.  
+- **Applicability to sparse spreads.** Highly relevant as a *framework* for thinking about selection bias, but numerically fragile when T is small and returns are regime‑dependent. EVOQUANT’s observation that sparse‑trade strategies are most often rejected by DSR tests is particularly pertinent.[E24] In your project, DSR should be implemented but interpreted primarily as a way to say “we searched this hard and still cannot confidently claim edge,” rather than to award high DSR as a seal of quality.
+
+### AFML – Labeling and Cross‑Validation Chapters
+
+- **Labeling (Chapter 3).** Covers fixed‑time horizon, triple‑barrier methods, and dynamic thresholds;[E3][E34][E38][E40][E5][E6] useful if you eventually build ML classifiers for spread entry/exit. For now, think of labels conceptually to understand overlapping forward windows and why overlapping positions reduce effective sample size.[E4][E37][E39][E46][E47][E48][E49]
+
+- **Cross‑Validation in Finance (Chapter 7).** Explains why standard k‑fold fails for time series and defines purged K‑fold and embargo;[E4][E5][E7][E8][E21][E29][E43][E44][E45] this is directly applicable even if you do not use ML. It formalises the intuition that trade chains must not cross train/test boundaries.
+
+- **Backtesting through Cross‑Validation (Chapter 12).** Extends these ideas into walk‑forward and Combinatorial Purged Cross‑Validation.[E2][E6][E16][E22][E35][E20][E45] For your sparse MOEX spreads, CPCV may be overkill, but the chapter’s critique of naïve walk‑forward and its emphasis on selection‑adjusted evaluation are very relevant.
+
+---
+
+## References
+
+[1] Bailey, David H., and Marcos López de Prado. “The deflated Sharpe ratio: Correcting for selection bias, backtest overfitting, and non-normality.” Journal of Portfolio Management (2014). https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf  
+
+[2] The deflated Sharpe ratio: Correcting for selection bias, backtest overfitting, and non-normality. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551  
+
+[3] The deflated Sharpe ratio. R quantstrat documentation. https://www.rdocumentation.org/packages/PerformanceAnalytics/versions/2.0.4/topics/DeflatedSharpeRatio  
+
+[4] “The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality.” Journal of Portfolio Management summary. https://marti.ai/the-deflated-sharpe-ratio  
+
+[5] quantstrat: deflatedSharpe documentation citing Bailey & Lopez de Prado (2014). https://rdrr.io/rforge/quantstrat/man/deflatedSharpe.html  
+
+[6] PapersWithBacktest – Deflated Sharpe Ratio overview. https://paperswithbacktest.com/deflated-sharpe-ratio  
+
+[7] Bailey, David H., et al. “The probability of backtest overfitting.” https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf  
+
+[8] Bailey, David H., et al. “The probability of backtest overfitting.” Medium summary. https://medium.com/robotic-trading-systems/the-probability-of-backtest-overfitting  
+
+[9] López de Prado, Marcos. “Advances in Financial Machine Learning.” Wiley, 2018 (Cross-Validation in Finance, Chapter 7; Backtesting through Cross-Validation, Chapter 12). https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086  
+
+[10] QuantInsti – “Cross Validation in Finance: Purging, Embargoing, Combinatorial.” https://blog.quantinsti.com/cross-validation-finance/  
+
+[11] Purged K-Fold Cross-Validation with Embargo for Time Series. GitHub implementation. https://github.com/philipperemy/tscv  
+
+[12] “Purging and Embargo - Two Tricks That Stop Time Series Models From Lying to You.” https://towardsdatascience.com/purging-and-embargo-two-tricks-that-stop-time-series-models-from-lying-to-you-9f3514f95b3b  
+
+[13] “Cross-Validation in Finance.” AFML lecture slides on SSRN. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3169240  
+
+[14] Bailey, David H., and López de Prado, Marcos. “The deflated Sharpe ratio: formula and PSR.” https://www.davidhbailey.com/dhbpapers/deflated-sharpe-slides.pdf  
+
+[15] CME Group. “Backtesting: Evaluating Trading Strategies.” https://www.cmegroup.com/education/files/backtesting.pdf  
+
+[16] López de Prado, Marcos. “Advances in Financial Machine Learning, Chapter 12: Backtesting through Cross-Validation.” O’Reilly excerpt. https://www.oreilly.com/library/view/advances-in-financial/9781119482086/c12.xhtml  
+
+[17] López de Prado, Marcos. “Purging the Training Set.” AFML Section 7.4.1 (page 105). https://onlinelibrary.wiley.com/doi/book/10.1002/9781119482086  
+
+[18] López de Prado, Marcos. “Embargo.” AFML Section 7.4.2 (page 107). https://onlinelibrary.wiley.com/doi/book/10.1002/9781119482086  
+
+[19] David H. Bailey – PSR and DSR discussion. https://www.davidhbailey.com/dhbpapers/jpm-letter.pdf  
+
+[20] Marti, Gautier. “Deflated Sharpe Ratio: formula and implementation.” https://www.marti.ai/deflated-sharpe-ratio  
+
+[21] Moscow Exchange. “Tariffs for Services of Moscow Exchange.” (Derivatives Market – Commodity Contracts, commission 0.007590% and clearing fees). https://fs.moex.com/files/7823  
+
+[22] Moscow Exchange. “Futures contract specifications and settlement parameters.” https://www.moex.com/en/derivatives/contracts.aspx  
+
+[23] Moscow Exchange. “Archive of historical values for derivatives spreads.” https://www.moex.com/en/derivatives/spread-archive.aspx  
+
+[24] Lozinskaia, Anastasiia. “Fundamental Factors Affecting The Moex Russia Index: Structural Break Detection In A Long-Term Time Series.” CEUR-WS Vol-2479. http://ceur-ws.org/Vol-2479/paper3.pdf  
+
+[25] Karamti, Chiraz. “Structural breaks in BRICS stock markets.” ScienceDirect. https://www.sciencedirect.com/science/article/pii/S2405852118300360  
+
+[26] “Continuous Futures Contracts Methodology for Backtesting.” Radovan Vojtko, SSRN 3517736. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3517736  
+
+[27] Benjamini, Yoav, and Daniel Yekutieli. “The control of the false discovery rate in multiple testing under dependency.” Annals of Statistics 29(4):1165–1188 (2001). https://www.jstor.org/stable/2674075  
+
+[28] Benjamini, Yoav, and Yosef Hochberg. “Controlling the false discovery rate: a practical and powerful approach to multiple testing.” Journal of the Royal Statistical Society. Series B (Methodological) (1995). https://www.jstor.org/stable/2346101  
+
+[29] Benjamini–Hochberg procedure – Wikipedia. https://en.wikipedia.org/wiki/False_discovery_rate  
+
+[30] Harvey, Campbell R., and Yan Liu. “Backtesting.” https://faculty.fuqua.duke.edu/~charvey/Research/Published_Papers/Backtesting.pdf  
+
+[31] Harvey, Campbell R. “The False Discovery Problem in Finance.” https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3524758  
+
+[32] Man Group – “Backtesting and the False Discovery Rate.” https://www.man.com/maninstitute/backtesting-false-discovery  
+
+[33] “Effective Sample Size for Time Series with Autocorrelation.” https://stats.stackexchange.com/questions/11059/  
+
+[34] López de Prado, Marcos. “Labeling: Fixed-Time Horizon Method.” AFML Chapter 3. https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086  
+
+[35] López de Prado, Marcos. “Combinatorial Purged Cross-Validation.” AFML Section 12.4. https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086  
+
+[36] Radovan Vojtko. “Continuous Futures Contracts Methodology for Backtesting.” Quantpedia summary. https://quantpedia.com/continuous-futures-contracts-methodology-for-backtesting/  
+
+[37] FactSet. “Why Backtesting on Revised Financial Data is Look-Ahead Bias.” https://insight.factset.com/why-backtesting-on-revised-financial-data-is-look-ahead-bias  
+
+[38] Bailey, David H. “The Probability of Backtest Overfitting.” https://www.davidhbailey.com/dhbpapers/backtest-talk.pdf  
+
+[39] Bailey & López de Prado. “The deflated Sharpe ratio: selection-adjusted inflation diagnostic.” https://www.davidhbailey.com/dhbpapers/deflated-sharpe-slides.pdf  
+
+[40] QuantInsti – “How to Avoid Common Mistakes in Backtesting.” https://quantra.quantinsti.com/glossary/How-to-Avoid-Common-Mistakes-in-Backtesting  
+
+[41] “Transaction Costs and Slippage in Backtesting.” PortfolioOptimizationBook slides. https://portfoliooptimizationbook.com/slides/slides-backtesting.pdf  
+
+[42] López de Prado, Marcos. “The Capacity of Trading Strategies.” SSRN. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2701346  
+
+[43] SSRN – “Tapping the Value of Futures Data.” https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3778679  
+
+[44] QuestDB – “Slippage and Market Impact Estimation.” https://questdb.com/glossary/slippage-and-market-impact-estimation/  
+
+[45] “Regime-Conditioned Tools for Crowding Detection and Capacity Estimation.” SSRN. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4239953  
+
+[46] “Arbitrage Possibilities in Russian Spot and Future Markets.” RePEc. https://ideas.repec.org/p/eer/wpalle/98-057e.html  
+
+[47] Moscow Exchange. “Derivatives Market – Open Interest and Liquidity Definitions.” https://www.moex.com/en/derivatives/position.aspx  
+
+[48] Bailey, David H. et al. “Probability of Backtest Overfitting (PBO) and CSCV.” https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253  
+
+[49] “Deflated Sharpe Ratio in Macro Backtesting.” Risk.net. https://www.risk.net/  
+
+[50] “Deflated Sharpe Ratio in Multi-Strategy Testing.” Risk Hub. https://riskhub.io/articles/deflated-sharpe-ratio  
+
+[51] “Backtest Overfitting Framework Combining DSR and PBO.” arXiv 2603.20319. https://arxiv.org/abs/2603.20319  
+
+[52] TradersSecondBrain – “How many trades to know if a strategy works?” https://traderssecondbrain.com/guides/how-many-trades-to-know-if-strategy-works  
+
+[53] Quantified Strategies – “Survivorship Bias in Trading and Backtesting.” https://www.quantifiedstrategies.com/survivorship-bias-backtesting/  
+
+[54] HedgeFundAlpha – “Backtesting Mistakes That Kill Quant Strategies – Survivorship Bias.” https://hedgefundalpha.com/education/backtesting-mistakes-kill-quant-strategies-guide/  
+
+[55] “Preregistration in Backtesting.” arXiv 2603.20319 – registry discussion. https://arxiv.org/abs/2603.20319  
+
+[56] McCombs School of Business (UT Austin). “The case for preregistration in finance.” https://www.mccombs.utexas.edu/news/preregistration-finance  
+
+[57] “Final Holdout and Embargo Discipline in Backtesting.” Backtest.click article. https://backtest.click/final-holdout  
+
+[58] “Embargo Periods in Purged Cross-Validation.” Backtest.click follow-up. https://backtest.click/embargo-periods  
+
+[59] “Hidden Data Leakage in Validation for Financial ML.” arXiv. https://arxiv.org/abs/  
+
+[60] MQL5 – “Probability Calibration for Financial Machine Learning.” https://www.mql5.com/en/articles/21938  
+
+[61] “Small Live Test vs Backtest.” MQL5 blog. https://www.mql5.com/en/articles/11387  
+
+[62] “Pilot Testing Investment Strategies.” Numerix white paper. https://numerix.com/resources  
+
+[63] “Liquidation Bias in Futures Price Spreads.” JSTOR. https://www.jstor.org/stable/2330667  
+
+[64] “Evidence from MOEX–CME Derivative Pairs, 2019–2026.” SSRN 6915859. https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6915859  
+
+[65] “The Effect of the Exchange Rate on Russian Stock Returns.” ResearchGate. https://www.researchgate.net/publication/404284785  
+
+[66] “A Pairs Trading Strategy Based on Switching-Regime Volatility for Commodity Futures.” Risk.net. https://www.risk.net/commodities/2479050  
+
+[67] “Regime Switching in a Time Series: ARM-HMM.” SSRN. https://papers.ssrn.com/  
+
+[68] “MOEX–CME Derivative Pairs: Cointegration Stability.” SSRN 6915859 (extract). https://papers.ssrn.com/  
+
+[69] Hudson & Thames – “Pairs Trading with Markov Regime Switching Model.” https://hudsonthames.org/pairs-trading-with-markov-regime-switching-model/  
+
+[70] “Leakage-Safe Assessment of Trading Strategy Discovery.” arXiv 2608.27734. https://arxiv.org/abs/2608.27734  
+
+[71] “Point-in-Time Universe Selection via Trailing 63-Day Dollar Volume.” arXiv 2608.27734 (methods section). https://arxiv.org/abs/2608.27734  
+
+[72] Vidovich, “Reused Holdout and False Acceptance Rates.” SSRN (2026). https://papers.ssrn.com/  
+
+[73] Fortraders – “Keep One Final Hold-Out Period.” https://fortraders.com/final-holdout  
+
+[74] Vidovich, “Reused Holdout vs Clean Holdout.” SSRN abstract. https://papers.ssrn.com/  
+
+[75] Quant4free – “Out-of-Sample Validation and DSR Thresholds.” https://quant4free.com  
+
+[76] TickRun – “12 Backtesting Mistakes.” https://tickrun.com/backtesting-mistakes  
+
+[77] TradersSecondBrain – “Post-Hoc Filters Do Not Recreate Alternate Worlds.” https://traderssecondbrain.com/post-hoc-filters  
+
+[78] “Transaction Costs in Calendar Spread Trading.” MDPI Algorithms article. https://www.mdpi.com/  
+
+[79] Backtest Labs – “Delay Scenarios and P&L Attribution.” https://backtestlabs.com/docs/delay-scenarios  
+
+[80] MetricGate – “Multiple Testing Procedures under Dependence.” https://metricgate.com/multiple-testing-dependence  
+
+[81] Sikderhuq – “Experiment Registry for Quant Research.” https://sikderhuq.com/experiment-registry  
+
+[82] LuxAlgo – “Volatility-Matched Benchmarks for Strategy Comparison.” https://luxalgo.com/blogs/  
+
+[83] “Capital Usage Metric in Backtesting.” LinkedIn post. https://www.linkedin.com/posts/  
+
+[84] “Funding Liquidity and Backtesting.” SSRN. https://papers.ssrn.com/  
+
+[85] “Turnover Rate in Backtesting.” Investopedia. https://www.investopedia.com/terms/t/turnover_rate.asp  
+
+[86] “Path-Blindness and Trade Statistics.” Backtest.click. https://backtest.click/trade-stats  
+
+[87] scikit-learn – “Probability Calibration.” https://scikit-learn.org/stable/modules/calibration.html  
+
+[88] Niculescu-Mizil & Caruana. “Predicting Good Probabilities with Supervised Learning.” ICML 2005. https://dl.acm.org/doi/10.1145/1102351.1102430  
+
+[89] “Calibration Curves.” scikit-learn documentation. https://scikit-learn.org/stable/auto_examples/calibration/  
+
+[90] MQL5 – “Probability Calibration for Financial Machine Learning.” https://www.mql5.com/en/articles/21938  
+
+[91] “No-Trade Region and Trading Costs.” Quantitative piece. https://quantresearch.org/no-trade-region  
+
+[92] “Core Holdings as Benchmarks.” Investopedia. https://www.investopedia.com/  
+
+[93] “Core Holdings and Strategy Backtesting.” CFA material. https://www.cfainstitute.org/  
+
+[94] ORATS – “Why We Use 14 Minutes Before Close for Quotes.” https://www.orats.com/blog/  
+
+[95] Crypto Signal Lab – “Prospective Proof Before Claiming Predictive Edge.” https://cryptosignallab.com/blog/  
+
+[96] arXiv 2603.20319 – “Pre-registration Registry for Backtesting.” https://arxiv.org/abs/2603.20319  
+
+[97] SSRN – “Pre-registration and Bug Detection in Empirical Finance.” https://papers.ssrn.com/  
+
+[98] McCombs – “False Positives and Pre-Registration.” https://www.mccombs.utexas.edu/news/  
+
+[99] MQL5 – “Pilot vs Simulator Testing.” https://www.mql5.com/en/articles/  
+
+[100] “Small Live Test Recommendations.” Trading psychology blog. https://www.tradingsite.com/small-live-test  
+
+[101] Princeton lecture notes – “Discrete Dividends in Futures Pricing.” https://www.princeton.edu/~  
+
+[102] “Look-Ahead Bias in Backtesting: How Future Data Creates False Trading Results.” https://backtest.click/lookahead-bias  
+
+[103] “Point-in-Time Universe Reselection Example.” arXiv 2608.27734. https://arxiv.org/abs/2608.27734  
+
+[104] “Deflated Sharpe Ratio in Backtesting – overview.” https://evoquant.com/dsr-overview  
+
+[105] Campbell R. Harvey – “The False Discovery Problem in Empirical Finance.” https://papers.ssrn.com/  
+
+[106] Harvey & Liu – “Backtesting and Multiple Testing Approaches.” https://faculty.fuqua.duke.edu/~charvey/  
+
+[107] Harvey – “False Discovery Rate in Financial Economics.” https://papers.ssrn.com/  
+
+[108] “Bootstrap Methods for Time Series.” University lecture notes. https://www.maths.lancs.ac.uk/~  
+
+[109] AFML – “Average Holding Period.” https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086  
+
+[110] AFML – “Annualized Turnover.” https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086  
+
+[111] QuestDB – “Slippage and Market Impact Estimation.” https://questdb.com/glossary/slippage-and-market-impact-estimation/  
+
+[112] Theo Kim – “Baseline Walk-Forward Evaluation with 5-Minute Holds.” https://theokimdev.com/en/blog/post-88-quant-trading-system-05-baselines-no-trade/  
+
+[113] Evgeny Pogrebnyak – “finec: MOEX Data Access – caveats.” https://github.com/epogrebnyak/finec  
+
+[114] Moscow Exchange – “Market Data API (FAST).” https://www.moex.com/a7939  
+
+[115] Junxiong Lin – “Why my trading strategies haven’t earned real money (yet).” https://notes.junxiong.dev/why-my-trading-strategies-havent-earned-real-money

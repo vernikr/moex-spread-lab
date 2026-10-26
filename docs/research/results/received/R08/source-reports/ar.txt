@@ -1,0 +1,598 @@
+# R08 — Delayed manual execution, signal validity and virtual portfolio
+
+**Status:** Evidence-backed research report. Not software, not an investment recommendation, not authorisation to trade or fund an account.
+**Research-date / facts cutoff:** 15 October 2026 (Europe/Moscow, MSK, UTC+3). Pack prepared 2026-10-07. Underlying supplied reports observed sources mainly on 2026-10-07/08; R07 verified two external items on 2026-10-14; three MOEX pages and the Harris table of contents were re-checked for this report on 2026-10-15 (see Appendix C).
+**Decision researched:** How a medium-term MOEX futures-spread idea survives a manual, delayed, human execution chain — data lag, Telegram delivery, a human who is unavailable for a large part of the trading day, two-leg order placement at VTB (later potentially BCS), finite RUB 30,000 pilot capital measured against a matched LQDT counterfactual — and how that chain must be simulated honestly in **one** realistic virtual portfolio before any live conclusion is drawn.
+
+**Inputs actually read for this report**
+
+| Input | Read? | What was taken from it |
+|---|---|---|
+| R08 task prompt (`R08-execution.md`) | Yes, in full | Mandate, provisional policy, six investigations, required outputs |
+| R01 — broker rules, KPUR, collateral, liquidation (consolidation of 9 reports, sources observed 2026-10-07) | Yes | §§0, 5, 7, 8, 9, 11 in detail; claims table §2 selectively |
+| R02 — full VTB/BCS costs (consolidation of 9 reports, 2026-10-07/08) | Yes | §§1, 9, 10, 15 and formula appendix in detail |
+| R04 — free data, fields, intervals, history, limitations | Yes | §§1, 7, 8, 9, 10 in detail |
+| R05 — LQDT benchmark, cash-flow accounting, tax scenarios | Yes | §§0, 2, 7 in detail |
+| R06 — contract universe, pair families, specifications (ISS snapshot 2026-10-07 23:50 MSK) | Yes | §§0, 4, 5, 9, 10, 12 in detail |
+| R07 — risk, stress, funding, sizing | Yes | §§0, 3, 4, 7, 10 in detail |
+| R09 — validation protocol, leakage, multiple testing (consolidation, cutoff 2026-10-07/08) | Yes | §§1, 4, 5, 9, 10, 13 in detail |
+| User clarification, 2026-10-15 (this conversation) | Yes | Unavailability window, emergency-response statement, daily-trade statement — analysed in §3; two ambiguities remain and are **not** silently resolved |
+| MOEX pages: Unified Trading Session (`moex.com/s3886`), Calendar Spreads (`moex.com/ru/spreads`), Interfaces (`moex.com/a7939`) | Yes, fetched 2026-10-15 | Current session schedule incl. an internal inconsistency; calendar-spread order types; ISS delay statement |
+| Harris, *Trading and Exchanges* (Oxford University Press, 2003) | **No — only publisher table of contents checked** | Chapter request in §14 is a reading proposal, not a summary of the book |
+
+**Checks only proposed, not performed (by this report and, per their own statements, by the supplied reports):** no backtest or replay was run; no broker account, tariff assignment, KPUR category or collateral limit was inspected; no written broker query was sent; no QUIK/VTB/BCS order-mode test was executed; no Telegram delivery test, VPS deployment or live shadow recording was started; no paid data was bought; Harris was not read. Every statement below about "what the protocol will show" is a falsifiable prediction, not a result.
+
+**Conventions.** `[USER 2026-10-15]` = supplied by the user in this conversation. `[PROPOSAL]` = a test candidate proposed here or in R07, not approved. `[ASSUMPTION]` = an explicit working assumption that a later gate must confirm. Ruble amounts are RUB. Contract figures dated 2026-10-07 are snapshots from R06/R02, never current quotes.
+
+---
+
+## 0. Executive verdict
+
+1. **The binding delay is not the 3–90 minute human reaction. It is the sum of three clocks that the project does not control:** (i) the free-data clock — ISS delayed "at least 15 minutes" by rule and measured at 15 min 02 s [R04 §1, §7.2], giving a documented event-to-action chain of **18–105 minutes** [R04 §1.6, adopted in R07 P9]; (ii) the human-availability clock supplied on 2026-10-15 — unavailable 00:00 until 11:00–12:00 [USER 2026-10-15], which covers the 06:50 opening auction, the whole morning session, and the 09:00 (or 10:00 — MOEX's own page conflicts, §2.1) margin-requirement issuance; and (iii) the broker clock — VTB's restrictive closing times of 16:00 MSK (Unified Brokerage Account portfolios) and 14:00 MSK (Derivatives portfolio), discretionary forced closure, and **no guaranteed grace period or pre-closure warning** [R01 §0 point 4, §7]. A signal or a margin event that lands in the blackout window is not "delayed by 90 minutes"; it is in a different regime, and the protocol must model it as such (§5, scenario family F).
+
+2. **On free data, no strategy that lives shorter than ≈20–30 minutes is verifiable or executable in this project.** R04's agreed stack is: daily layer as the long research axis, hourly/10-minute layer for intraday dynamics, M1 candles as raw material and diagnostics only, monitoring by 10-minute polling behind a 15-minute lag with an action threshold of ≥20–30 minutes, and a broker bid/ask check immediately before acting [R04 §1 point 6, §9]. Any R08 replay that fills signals off 1-minute candle prices at signal time would contradict the evidence base it is built on.
+
+3. **Atomic spread execution must not be assumed at VTB.** Three different things are routinely conflated and are separated in §2.2: exchange-level calendar-spread instruments (MOEX service, same underlying / different expiries only, order types limit / market / fill-or-kill — re-verified 2026-10-15), clearing-level margin offsets (NCC MMS/MKS groups [R06 §5]), and broker-level indivisible joint orders (a narrow exception in BCS Appendix No. 6 §5.4.9 and 6681-U §§12–13 [R01-10]). For VTB manual execution, no supplied report establishes either a calendar-spread instrument channel or an indivisible joint order. **Default for all VTB simulation: two independent leg orders with a priced, time-boxed unhedged interval** (§7). BCS's special calendar-spread application exists on paper [R01 §5] but BCS is a later automation stage, and its availability to this account is unconfirmed.
+
+4. **The user's "one trade per day = one purchase or sale (can be a bit more)" [USER 2026-10-15] cannot be applied literally to a two-leg spread without banning the strategy.** One spread entry is two purchases/sales; entry plus exit is four. Read literally as one *leg order* per day, an entry would have to sit naked overnight, which the project's own naked-leg override forbids. §3.3 therefore proposes — and does **not** silently assert — the counting unit the virtual portfolio will use (one *idea-level Manual Action Episode* per day, leg orders counted separately for burden, risk exits exempt from the entry quota), and shows what the literal reading implies (entries possible only via a single-order calendar-spread instrument whose VTB access is unproven). **This is the single user decision that most changes the R08 simulation design; it is requested explicitly in §15.**
+
+5. **The virtual portfolio must be one portfolio, quota- and blackout-aware, attempting every eligible signal under deterministic priority, with capital reserved at acceptance — not a set of per-signal paper trades.** R09 requires every eligible signal, including stale, rejected, unfilled, partial and zero-trade days, to be recorded with a disposition and reason code [R09 §5.1], and R02 requires the same universe of ideas to be held "in one virtual portfolio … not improving the result by selecting successful executions" [R02 §10.4]. Section 8 specifies that portfolio; §10 gives the deterministic priority and reservation rules.
+
+6. **With no historical bid/ask available for free [R04 §1 point 3], the honest historical product is a bounded, conservative OHLCV replay — an interval, not a point estimate — plus a forward collection plan that starts manufacturing the missing evidence.** No midpoint fills, no "every signal fills", no settlement-price fills (§9). If the conservative bound of the interval does not clear the matched-LQDT hurdle after the full R02 cost stack, the correct R09 outcome is **"inconclusive"**, which R09 explicitly legitimises: "Most sparse histories should be allowed to end 'inconclusive'" [R09 §1 point 7].
+
+7. **Entry economics are computable now; entry permission is not.** R02/R06 supply the full cost algebra and per-pair snapshots (full round-turn friction incl. exchange fees: CNYRUBF/CRZ6 10.7 RUB, GLDRUBF/GLZ6 33.0 RUB, IMOEXF/MMZ6 32.3 RUB per 1:1 pair, snapshot 2026-10-07 [R06 §10.1–10.3, §12.1]; VTB broker fee 0 RUB/contract-side until 2026-12-31, then 1 RUB [R02 §1.3]). But live entry additionally requires the five written VTB confirmations listed in R01 §0 (margin-perimeter isolation, KPUR category, LQDT haircut actually applied, notification channel/timing under 6681-U §23, absence of contract clauses 15/19 derogations) — none obtained. **R08's virtual portfolio is therefore the only sanctioned next step; this report makes no claim of actual trading feasibility**, exactly as R01's verdict requires: public research and a capital-limited virtual test are "Допустимо" (permitted); a real test on the current VTB account as an isolated experiment is "Недопустимо до письменного подтверждения условий" (not permitted until written confirmation) [R01 §0 table].
+
+8. **The delegated money triggers stay as governance, with R07's revision adopted as a test candidate:** retain warning at excess-drawdown `D ≥ 5,000`, action at `D ≥ 10,000` or `X ≤ −10,000`, breach at `X < −15,000`, lifetime gross emergency funding `E ≤ 15,000` (gross contributions ≤ 45,000, no resets) [R05 §7.1; R07 §3.1 P2–P5]; **replace** the fixed 5,000 gap between action trigger and outer boundary with a computed buffer `u = max(5,000, 2.5 × σ_delay(book) + C_exit)` [R07 §4.1 gate 1 — PROPOSAL], because the fixed gap is only ≈1.03 σ-days on a 3-pair IMOEX book and ≈1.45 σ-days on a 5-pair CNY book [R07 §0 point 1]. These are action rules, not statistical bounds and not guaranteed maximum losses [R09 §1 point 8].
+
+---
+
+## 1. Mandate, evidence method, and how to read uncertainty
+
+R08 asks for six investigations: (1) timestamp definitions; (2) plausible delay scenarios within the stated 3–90 min range / ≈5–15 min median without claiming a known distribution, including delay–volatility–illiquidity correlation and session/weekend effects; (3) post-delay revalidation, invalidation and expiry/reissue; (4) two-leg and partial execution; (5) one realistic finite-capital virtual portfolio attempting every eligible signal; (6) signal communication format. Required outputs are a lifecycle/reason-code taxonomy, a falsifiable delayed-fill protocol with a conservative OHLCV fallback and a forward-collection list, six named hypothetical examples, manual-burden metrics, and — if useful — a targeted Harris reading request. All six are delivered in §§4–14 respectively.
+
+Evidence method, following the supplied consolidations: primary documents (MOEX/NCC pages and PDFs, 6681-U, broker regulations and tariff appendices, ISS measurements) outrank dated snapshots, which outrank secondary anecdotes. Where supplied reports conflict, the conflict is carried into §15 rather than averaged away — the same discipline R01 §11 and R06 §14 apply to their own inputs. Two conflicts were found **inside a single official page** during this report's 2026-10-15 re-check (§2.1); they are flagged, not resolved by preference.
+
+Three epistemic labels are used throughout: **established** (primary document read by at least one supplied report and not contradicted), **snapshot** (true for a dated observation, e.g. 2026-10-07 ISS values), and **unknown** (not closable from public documents — account-level facts, VTB order modes for spread instruments, the user's two ambiguities in §3). Unknown is never treated as zero cost or as permission: R05's rule that unconfirmed collateral credit counts as zero in the real limit [R05 §0 point 11] is applied by analogy to unconfirmed broker functionality — unconfirmed atomicity counts as *no atomicity*.
+
+---
+
+## 2. Consolidated evidence base that R08 depends on
+
+### 2.1 Sessions, clearing and the exchange clock (MOEX, MSK = UTC+3)
+
+Under the Unified Trading Session (ETS, from 2026-03-23), the derivatives day is continuous: opening auction 06:50–07:00, morning additional session 07:00–09:00, main session 09:00–19:00, evening additional session 19:00–23:50; margin requirements to clearing members are issued at 09:00 and must be met by 17:30; expiries occur in trading at 14:00 or 19:00 depending on specification; settlement prices are determined at 19:00 (published 19:00–20:00); mark-to-market clearing runs 23:50–00:30; the settlement clearing session that actually moves variation margin (VM) money runs at 20:00 on T+1; weekend additional sessions run 09:50–10:00 (auction) and 10:00–19:00 with **no clearing during the weekend** [W1; R06 §4.1]. There is no intraday clearing: margin risk accumulates over ≈17 trading hours between evaluations [R06 §4.2 point 1].
+
+**Conflicts carried, not resolved.** (a) The same MOEX ETS page's FAQ block still describes the pre-expansion schedule (08:50–09:00 auction, 09:00–10:00 morning, 10:00–19:00 main) and states margin requirements are issued at **10:00**, while its schedule table states **09:00** [W1, fetched 2026-10-15]. R06 §4.1 records the same disagreement across MOEX releases (n98363 vs s3886 vs n101980). (b) R01 §11.1 item 5 records that NCC's risk-parameter page still mentions the abolished intraday clearing. **Consequence for R08:** the protocol must never hard-code one session table. It must consume a *versioned calendar object* (`calendar_version` with `announcement_at / effective_at / received_at`, per R04 §10.2) and treat the margin-issuance instant as a parameter `t_MT ∈ {09:00, 10:00}` until the dated calendar for the evaluation window settles it. Any result that flips between the two values must be reported both ways.
+
+Two further session facts shape execution: deliverable equity futures are exercised in the 23:50–00:30 clearing session with delivery trades on the stock market the next trading day, so a spread leg in such a contract must be closed before the *broker's* delivery deadline, which is earlier and account-specific [R06 §4.2 point 4]; and in the weekend session, requirements are only determined by Monday's clearing, funding is calculated only within the main session, and **exit from perpetual contracts is not provided at weekends** [R06 §4.2 point 5, quoting the MOEX weekend-session page]. A perpetual leg is therefore effectively closed for exit on Saturday–Sunday even where the quarterly leg trades — a leg-specific `MARKET_CLOSED` state, not a market-wide one (§10).
+
+### 2.2 Three kinds of "spread support" — execution atomicity ≠ margin offset ≠ broker risk indivisibility
+
+| Layer | What exists on primary evidence | What it does **not** give |
+|---|---|---|
+| **Exchange execution** — MOEX "Calendar Spread" (CS) service | "позволяет одновременно совершать противоположно направленные сделки (продажа и покупка) с двумя фьючерсами разных дат исполнения на один базовый актив"; supported order categories: **limited, market, fill-or-kill**; synthetic matching crosses the spread book with the outright leg books; fee `Fee_CS = T × F × (1 − K)`, K = 0.2 during the marketing period; when matched, initial margin is reserved "в таком же размере, как при сведении двух атомарных заявок" (in the same amount as for two atomic leg orders) [W2, fetched 2026-10-15; R06 §5.5; fee model R02 §5.5] | Only same-underlying calendar pairs. Nothing for perpetual↔quarterly, cross-underlying or issuer pairs — i.e. **nothing for the flagship families of R06 §0 point 3**. Availability of CS instruments *through VTB's manual channels* is not established by any supplied report (a 2022 forum anecdote claiming VTB does not offer them was found in this report's search and is **not relied on**: secondary, undated account context, four years old) |
+| **Clearing margin** — NCC inter-month (MMS, 55 positions) and inter-contract (MKS, 21 groups) spread groups with initial-margin discounts, published at MOEX "Параметры срочного рынка" (moex.com/s206) | Recognises price dependence for margin purposes; discounts published per group (examples: 100% for PLTM/PLDM groups, 50% groups with `window_size = 0.5`) [R06 §5.1–5.3] | Margin relief is not execution atomicity. Near expiry the offset is removed under the "Полу-неттинг" rule and margin is charged on the larger leg — requirements can rise 2–3× [R06 §5.2, §12.1]. Whether VTB passes any offset to this client account is unconfirmed [R01 §5] |
+| **Broker risk check** — 6681-U §§12–13 and BCS Appendix No. 6 §5.4.9 | A *joint order whose partial execution is not permitted* is a recognised, narrow exception; "две обычные заявки им не становятся" (two ordinary orders do not become one) [R01-10, R01 §2] | Applies only where the broker offers that order type. **BCS** documents a special calendar-spread application [R01 §5]. **VTB**: no supplied report establishes a joint/indivisible order or CS-instrument access; ordinary manual input gives no indivisibility, and the unexecuted leg must be risk-checked on its own worst case [R01 §5, row "Неисполненная нога и заявки"] |
+
+**R08 default (conservative, per §1):** at VTB, every non-calendar spread is simulated and, later, would be executed as two independent orders. Calendar pairs (e.g. CNY-12.26/CNY-3.27, for which R06 §10.10 notes a traded spread instrument with quotes since March 2026) may be simulated via the CS instrument **only** in a labelled scenario branch `EXEC_ATOMIC_EXCHANGE`, never merged into the primary result, until VTB access to that instrument is confirmed in writing or by a read-only terminal inspection. This directly implements the task instruction: "Only assume atomic exchange/broker spread support if R01/R03 proves it" — R01 proves it for neither VTB channel above; no R03 report was supplied.
+
+### 2.3 Data: what "now" means on the free stack
+
+- ISS real-time requires subscription; **delayed data (15 min) is free** [W3]; the delay is defined as "не менее 15 минут" (not less than 15 minutes) [R04 §7.1] and was measured at 15 min 02–03 s by three independent probes [R04 §1, §7.2]. Anonymous ISS provides **no order book and no bid/ask history at all**, and the day's trade tape only for the current day [R04 §1 point 3]. Candle fields are `open, close, high, low, value, volume, begin, end`, with `value = 0` for futures [R04 §1 point 1].
+- Timestamps must be kept separate: exchange event time (`TIME`/`TRADETIME`), record-update time (`UPDATETIME`), system time (`SYSTIME`), margin-calculation time (`IMTIME`), candle bucket bounds (`begin`/`end`), and local `received_at`/`ingested_at` [R04 §7.3]. A candle's `end` is a bucket boundary, not a trade time.
+- `CLOSE ≠ SETTLEPRICE` in all 16 checked SiZ6 days [R04, cited in R07 §10 point 3]; settlement prices are published 19:00–20:00 after determination and are **not** an executable quote at candle close (§9, settlement-as-fill is leakage pathway 8 in R09 §4.2).
+- Rights are a gating unknown, not a footnote: MOEX's market-data policy treats any programmatic (Non-display) use, including recording and systematisation, as contract-only, and the ISS page restricts use to familiarisation without profit extraction [R04 §1 point 4]. **Until MOEX/broker written clarification, an automated screener that systematically records ISS data sits in a legal-risk zone**; the manual-contour design in §11 (human reads, human decides) is partly a consequence of this, not only of the manual-execution mandate.
+- Finest defensible structure (answer to the task's research question): M1 is the finest *free* timeframe and is diagnostics/raw material; the decision layer that free data can defend is daily with an hourly/10-minute robustness layer; monitoring cadence 10-minute polling behind the 15-minute lag; pre-action truth is the **broker's** bid/ask, not ISS [R04 §9].
+
+### 2.4 Costs: the algebra the revalidation gate must run
+
+All formulas from R02 Appendix B / §9.1, snapshot rates as of 2026-10-07:
+
+- Exchange+clearing fee per contract-side (taker, anonymous): `FutFee = Round(Round(|FutPrice| × Round(W/R;5);2) × (Base_MOEX + Base_NCC);2)`; maker = 0; scalper (open+close same day) = 0.5 × FutFee; calendar-spread anonymous = `T × F × (1 − 0.2)` during the marketing period; taker rates by group: FX 0.00462%, index 0.0066%, commodity 0.0132%, interest-rate 0.0165%, equity 0.0198% of contract value [R02 §1.1 point 3, §5.2].
+- Broker per contract-side: **VTB 0 RUB until 2026-12-31 inclusive, 1 RUB from 2027-01-01** [R02 §1.1 points 1–2] — a 90-day pilot started after mid-October 2026 straddles this boundary, so the cost model is **two-period** [R02 §1.2 point 5]. BCS "Trader" 1.20→0.08 RUB by assets/turnover tier + 299 RUB/month in months with trades [R02 §1.1 point 4]. BCS "Investor" (0.1% of notional on each sale) is disqualifying for spread trading [R02 §1.1 point 4].
+- Full round turn of a two-leg pair, q contracts per leg = 4q contract-sides: `C_RT = 2q × (b_A + F_A + b_B + F_B)`; full economic cost `C_full = C_RT + execution friction + allocated incremental fixed fees + event costs (roll/expiry/forced closure) + financing + U(unknown, never zeroed silently)` [R02 §9.1, Appendix B].
+- Friction is the same order as, or larger than, explicit fees: crossing the full quoted spread on all four executions cost 137.14 RUB vs 38.64 RUB exchange fees per RTS pair round turn (3.5×), 80 vs 7.04 RUB for wheat (11×), but only 0.17–0.76× for Si, MXI, Brent, gold, Sberbank futures in the single end-of-evening-session snapshot of 2026-10-07 [R02 §10.1]. R02's measurement protocol — ≥20 trading days of spread/depth observation in the main session before trusting any friction number [R02 §10.4] — is adopted into §9.4.
+- VTB charges for initial margin not covered by rubles: `(ГО − рубли)⁺ × (key rate + 2%) × T/365` = 16% p.a. at the 14% key rate in force since 2026-07-27 [R02 §3.5, R07 §3.2]. Hence R07's two funding models: (a) cash sleeve — the whole RUB 30,000 carries the matched-LQDT hurdle (≈14% p.a., ≈690 RUB per 60 days); (b) pledged LQDT units + small cash VM buffer — hurdle ≈2–4% p.a. on the sleeve, but VM still needs real rubles and haircuts bind [R07 §3.2]. **Revalidation (§6) must state which model it is pricing under; mixing them is the double-count R05 §5 forbids.**
+
+### 2.5 Contracts: the only families R08 examples may use
+
+R06's filter outcome (141 daily observations, 2026-03-23 → 2026-10-07, the only aligned window since the ETS regime break): the economically defensible, margin-recognised flagship families are perpetual↔quarterly on one asset — GLDRUBF/GLZ6, CNYRUBF/CRZ6, IMOEXF/MMZ6, GAZPF/GZZ6, SBERF/SRZ6, RGBIF/RBZ6 — whose economics are **daily funding plus basis convergence to a known expiry**, not statistical mean reversion [R06 §0 point 3]. Snapshot economics (2026-10-07, *not* yields):
+
+| Pair (1:1 in base units) | Gross initial margin / pair | Full round-turn cost | Daily σ of spread (RUB/pair) | Net carry on notional (snapshot) | R06 status |
+|---|---|---|---|---|---|
+| CNYRUBF/CRZ6 | 2,291 | 10.7 RUB (0.042%) | 688 | +3.1% p.a. | passes conditionally [R06 §10.2, §12.1] |
+| GLDRUBF/GLZ6 | 2,745 | 33.0 RUB (0.144%) | 531 | +7.1% p.a. | passes conditionally; quoted spreads 100/108 ticks wide — limit orders only [R06 §10.1] |
+| IMOEXF/MMZ6 | 5,134 | 32.3 RUB (0.069%) | 1,614 | +13.7% p.a. | passes conditionally, max 2 pairs at 30k [R06 §10.3, §12.1] |
+| GAZPF/GZZ6 | 3,481 | 36.4 RUB | ≈2.11% log-σ scaled | +7.6% p.a. | passes conditionally [R06 §10.4] |
+| SBERF/SRZ6 | 10,210 | 75.9 RUB | 3.83% log-σ | +8.3% p.a. | 1 pair max; return correlation anomaly 0.601 flagged [R06 §10.4] |
+| RGBIF/RBZ6 | 2,336 | 13.8 RUB | 1.08% log-σ | negative | capital-feasible, **rejected on carry sign**; funding sign unstable [R06 §12.1; R07 §10 point 9] |
+
+Realistic minimum at RUB 30,000: 1–2 pairs of CNY or GL families, gross margin 2,291–5,490 RUB, VM reserve 24,000–28,000 RUB; any pair with gross margin > 10,000 RUB leaves no reserve [R06 §12.1; R07 §0 point 2]. Scale identities (MXZ6/MMZ6, BRX6/BMX6, RIZ6/RMZ6) have spread dispersion **below** round-turn cost and are excluded as spread sources [R06 §10.6]. Hedge ratios for the flagships are exactly 1:1 in base-asset units with zero residual base exposure; nominal-value hedging would manufacture a −2.4% phantom residual on GL [R06 §10.1, §9].
+
+### 2.6 Accounting and risk rails (R05/R07, embedded provisional policy)
+
+Primary metric: `X(t) = V(t) − B(t)` between synchronously marked whole-account wealth with the strategy and the matched no-pilot LQDT counterfactual, `X(0) = 0` before incremental costs, `H = max(0, past X)`, `D = H − X`; genuine external flows mirrored in both paths; pilot-induced core sales/liquidations **not** mirrored in B; core-sale proceeds are a change of asset form, not the economic loss; retained eligible collateral keeps earning in both paths and must not be charged twice [R05 §2, §4; task prompt]. Thresholds are evaluated in cumulative RUB, never as a percentage of the >40m core (≈0.075% — a meaningless denominator) [R05 §0 point 9, R09 §9.1]. Marks: one frozen price hierarchy, conservative flattening values (long at bid, short at ask) for trigger evaluation, settlement marks reported separately from fills [R09 §9.1–9.2].
+
+Risk rails as delegated, with R07's tested revisions: entry/continuation gate `X − L_stress − u ≥ −15,000` under **joint** shocks (price gap + spread-offset removal + delay, not additive best cases), plus an **independent cash-path gate** — free rubles ≥ stressed VM over the delay window + fees + settlement-lag reserve, because VM is money-only and LQDT sale proceeds arrive T+1 [R07 §4.1 gates 1–2; R01 §0 point 3]. Cluster gate: pairs sharing a factor (RUB carry, same family, shared leg) count as one cluster capped at 60% of the book σ-budget [R07 §4.1 gate 4]. Registered stress scenarios S1–S6 (overnight gap + margin escalation + slow human; LQDT haircut shock KPUR 8%→KNUR 18% at VTB; one-leg liquidity evaporation; forced-closure path; funding-timing failure; market closure/suspension) [R07 §4.2] are reused as replay scenarios in §9.
+
+### 2.7 Validation rails (R09)
+
+- Point-in-time means *actually available* at decision time, with event / publication / receipt / vintage timestamps kept apart; a later-edited page does not prove historical availability [R09 §4.1; R04 §7.3].
+- The evaluation object for overlapping, multi-day positions is the **daily portfolio ledger**, not per-trade P&L [R09 §2.3]. Purge width = actual label/holding overlap; embargo where dependence requires; every transform (hedge ratio, z-score moments, volatility thresholds, pair ranking) fitted only inside the permitted information set, verified by a truncation/old-signal invariance test [R09 §5.3–5.4, §4.2 pathway 5].
+- Trials accounting: the wide search is logged in full; the primary delay/cost scenario and decision threshold are frozen before the confirmation block is opened once; delay-scenario *selection* after seeing results converts scenarios into trials and must be counted [R09 §6, §5.2].
+- Default: **no numerical win probabilities are displayed** [R09 §11.1]; signal confidence is communicated as evidence grades (§11).
+- Sparse outcomes may legitimately end "inconclusive"; a 90-day pilot validates operations (signal arrival, both-leg execution, margin behaviour, reaction-time distribution, incident handling), not profitability (illustrative t ≈ 0.5 at annualised excess Sharpe 1) [R09 §1 points 7–8].
+
+---
+
+## 3. Human availability and the daily-trade quota — as supplied 2026-10-15
+
+### 3.1 What was supplied
+
+> "недоступен с полуночи до 11-12 дня. в целом готов к emergency response ранним утром, одна сделка в день — одна покупка или продажа (можно чуть больше)" [USER 2026-10-15]
+
+Faithful reading: (a) unavailable from 00:00 until 11:00–12:00; (b) in general, willing to perform emergency response early in the morning; (c) one trade per day = one purchase or one sale, with slight exceedance tolerated.
+
+### 3.2 Two ambiguities that are flagged, not resolved
+
+**Ambiguity A — timezone and the emergency carve-out.** The user is located in Gdańsk; the exchange clock is MSK (UTC+3 year-round [W1]), while Gdańsk is CEST (UTC+2) until late October, then CET (UTC+1). "Midnight to 11–12" in Gdańsk time is 01:00–13:00 MSK in summer — an even deeper bite into the main session. `[ASSUMPTION]` This report interprets all user times as **MSK** and requests confirmation (§15, Q1). Separately, (a) and (b) are in tension: a hard blackout 00:00–11/12 cannot simultaneously contain a reliable early-morning emergency response. Two readings are modelled, with the conservative one primary:
+- **A-hard (primary for all sizing and gates):** no human action is possible 00:00–11:00/12:00. Emergency alerts may be *sent* but are queued unseen; nothing in position sizing, margin planning or the virtual portfolio may credit a wake-up.
+- **A-soft (sensitivity only):** an emergency push can interrupt the blackout "early in the morning" with an unknown, longer latency. Modelled in scenario F2 (§5) with wake+revalidation+action sampled from the slow tail; results under A-soft may never be used to pass an entry gate, only to describe incident outcomes.
+
+**Ambiguity B — what counts as "one trade".** See §3.3.
+
+### 3.3 The counting unit: proposal and the cost of the literal reading
+
+Counting units defined for all R08 accounting (burden metrics in §13 use the same units):
+
+| Unit | Definition | Example |
+|---|---|---|
+| Leg Order (LO) | One buy or sell order in one contract (one contract-side) | Buy 1 GLZ6 |
+| Order Action (OA) | One submit / cancel / replace instruction on one order | Cancel unfilled GLZ6 limit |
+| Manual Action Episode (MAE) | One continuous human intervention serving one idea-level purpose, containing ≥1 OA/LO | "Enter CNY pair": submit leg-1 limit, submit leg-2 limit, one cancel/replace = 1 MAE, 2 LO, 3 OA |
+| Idea Entry / Idea Exit | The MAE(s) that open / close one spread position | Entry MAE + (days later) exit MAE |
+| Risk Action | Hedge completion, naked-leg unwind, margin-driven de-risking, forced-closure response | Never counts against the *entry* quota (below) |
+
+`[PROPOSAL — requires user confirmation, §15 Q2]` **Quota default Q-IDEA:** at most **1 new-idea entry MAE per calendar day** (MSK trading day), soft — an occasional second entry MAE is logged as `QUOTA_SOFT_EXCEEDED`, not concealed and not treated as a breach; leg orders inside the episode are not separately quota-counted (they are burden-counted). Risk Actions, hedge completions, cancels and exits are **exempt from Q-IDEA** but fully burden-counted; exempting them is what prevents the quota itself from manufacturing naked-leg risk. This matches "можно чуть больше" as a soft cap and matches R08's instruction to "distinguish risk exits from new-idea quotas".
+
+**Literal reading Q-LEG (1 LO/day), costed honestly:** a two-leg entry needs 2 LO on 2 different days → the first leg sits unhedged overnight, violating the project's rule that naked-leg danger overrides monetary triggers (task prompt) and R07's immediate hedge-or-unwind rule [R07 §7]. Entry+exit = 4 LO = 4 days minimum per round trip, during which the position cannot be exited in one day either. Under Q-LEG the only coherent entries are single-order instruments — the exchange CS instrument for calendar pairs (§2.2), whose VTB accessibility is unproven. **Q-LEG therefore ≈ "no two-leg manual pilot at VTB"**. The virtual portfolio is built under Q-IDEA as primary and reports, for every day, what Q-LEG would have blocked (§8.6) — so the user's eventual choice is informed by the simulation rather than pre-judged by it.
+
+### 3.4 Availability mapped onto the exchange day (MSK, A-hard, worst case returns 12:00)
+
+| Window (MSK) | Exchange / broker event | Human | R08 consequence |
+|---|---|---|---|
+| 00:00–00:30 | Mark-to-market clearing of previous day (23:50–00:30) computes VM, margins, price limits [W1] | Unavailable | VM result exists before the human's day starts; no same-night reaction is possible |
+| 06:50–09:00 | Opening auction + morning session [W1] | Unavailable | No opening-auction participation; signals generated here queue into scenario F |
+| 09:00 (or 10:00 — §2.1 conflict) | Margin requirement issued to clearing member; broker NPR machinery runs (NCC recalculates margin every 3 min since 2025-05-19; broker recalculation duty ≥ every 10 min under 6681-U) [W1; R01 §7.1, §11.1 item 10] | Unavailable | The margin clock starts ≈3 h before the earliest possible human check. Positions must be sized so that **no plausible overnight move requires action before 12:00** (§6 gate G7) |
+| 11:00–12:00 | Main session | Returns (variable) | First revalidation window of the day; queued signals are revalidated or expired, never executed on stale terms (§6.3) |
+| 12:00–14:00 | Main session; **VTB Derivatives-portfolio restrictive closing time 14:00** [R01 §0] | Available | If the account's portfolio type carries the 14:00 restrictive time, the effective forced-closure response window after return can be as short as 2 h |
+| 14:00 | In-trading expiry for some contracts [W1] | Available | Expiry-day legs must be closed/rolled before this instant, with the blackout in mind |
+| 12:00–16:00 | Main session; **VTB EBS restrictive closing time 16:00** [R01 §0] | Available | Last reliable same-day de-risking window under VTB |
+| 17:30 | Deadline to meet the morning margin requirement (clearing-member level) [W1] | Available | Broker-internal deadlines for the client may be earlier; the 14:00/16:00 restrictive times dominate planning |
+| 19:00 | Settlement prices determined; second in-trading expiry instant [W1] | Available | Settlement marks become available for the day's accounting (publication 19:00–20:00) |
+| 19:00–23:50 | Evening session (part of the *same* trading day under ETS) [W1] | Available until 00:00 | Thinner liquidity (R02's friction snapshot was taken at end of evening session and is not main-session evidence [R02 §10.1]); default entry window proposal excludes it (§17) |
+| Sat–Sun 10:00–19:00 | Weekend session, no clearing, no perpetual exit [R06 §4.2] | Unavailable until 11/12, then available | Perpetual-leg exits impossible regardless of availability; weekend signals for such pairs = `MARKET_CLOSED_LEG` |
+
+Net structural conclusion: **the human is present for the afternoon/evening risk-management window but absent for the morning risk-information window.** The pilot's defence cannot be "react quickly in the morning"; it must be "never enter a position whose stressed morning state requires a morning action" — which is exactly R07's S1 scenario ("overnight gap + morning margin call + slow human") [R07 §4.2] promoted from stress case to design constraint.
+
+---
+
+## 4. Timestamp ontology (Investigation 1)
+
+Every event in the lifecycle carries the following timestamps, stored separately and never overwritten by later revisions (PIT discipline [R09 §4.1; R04 §7.3]). All stored in UTC plus MSK rendering; the *decision-relevant* clock for availability is MSK [ASSUMPTION §3.2].
+
+| # | Timestamp | Definition | Source of truth | Failure it exposes |
+|---|---|---|---|---|
+| t0 | `t_info_event` | Exchange event time of the last market observation used (trade/quote/candle bucket end) | `TIME`/`TRADETIME`, candle `end` [R04 §7.3] | Using bucket end as if it were receipt time |
+| t1 | `t_info_published` | When the source published the observation | `UPDATETIME`/`SYSTIME` [R04 §7.3] | Later-edited pages masquerading as historical availability |
+| t2 | `t_info_received` | Local receipt/ingestion instant | Screener log `received_at` | The 15-min ISS lag becomes measurable: t2 − t0 |
+| t3 | `t_eval` | Model evaluation completes on the frozen input set (input hash recorded) | Screener log | Re-running evaluation on revised data and back-dating the signal |
+| t4 | `t_signal` | Signal created and registered (signal_id, version, input vintage) | Signal registry | **Signal birth. It cannot be refreshed by re-notification (§6.3)** |
+| t5 | `t_notif_sent` | Alert handed to Telegram | Bot/API log | Screener→Telegram outage |
+| t6 | `t_notif_delivered` | Delivered to user's device (Telegram server ack / client receipt where available) | Telegram receipt if obtainable; else "unknown", never assumed = t5 | Push outage, device offline, VPN failure |
+| t7 | `t_seen` | User actually reads it | Explicit in-Telegram acknowledgement (button/tap or reply) — delivery is **not** seen | The gap t7 − t6 is unobservable without acknowledgement design; shadow mode must instrument it |
+| t8 | `t_decide` | User decision (accept / reject / defer) recorded | User ack payload | Decision latency t8 − t7, separable from notification latency |
+| t9 | `t_reval` | Fresh broker bid/ask for **both** legs captured, ages recorded | Broker terminal/API snapshot | Executing against ISS-delayed prices instead of executable ones |
+| t10 | `t_order_submit_i` | Leg order i submitted | Terminal log | Manual entry latency t10 − t8 |
+| t11 | `t_broker_accept_i` / `t_exchange_accept_i` | Broker acknowledgement, then exchange registration | Order reports | Assuming acceptance from submission; asynchronous acks (§7.4) |
+| t12 | `t_fill_i` (per partial) | Each partial fill of leg i with price/qty | Trade reports | Partial-fill and queue realism |
+| t13 | `t_hedge_complete` | Instant the spread becomes hedged (both legs filled to target ratio) or is unwound flat | Derived: last required t_fill | **Unhedged interval = t13 − first t_fill** (§7) |
+| t14 | `t_cancel_req` / `t_cancel_ack` | Cancellation requested / confirmed | Order reports | Trading on an order believed cancelled |
+| t15 | `t_mark` | Synchronised mark instant for V/B valuation (price hierarchy + leg ages stored) | Valuation log | `CLOSE ≠ SETTLE` contamination [R04] |
+| t16 | `t_funding_req` / `t_funding_credit` | Emergency funding approved / actually credited | Bank/broker evidence | Approval ≠ arrival (T+1 LQDT proceeds, cut-offs) [R07 S5] |
+
+Derived latencies reported for every signal: data lag `t2−t0`, evaluation `t3−t2`, notification `t6−t5`, human reaction `t8−t7` (the 3–90 min quantity of the task, *measured*, not assumed), execution `t13−t10`, total event-to-action `t10−t0` (documented range on free data 18–105 min *before* blackout effects [R04 §1.6]).
+
+**Outages are modelled as separate states, not as long delays:** `OUTAGE_DATA` (feed stale/disconnected — quote ages grow), `OUTAGE_MODEL` (screener down — no t3/t4 produced; on recovery, inputs are re-fetched fresh, never replayed from the outage window as if live), `OUTAGE_NOTIFY` (t5 without t6), `OUTAGE_HUMAN` (blackout, §3), `OUTAGE_BROKER` (terminal/API unreachable, VPN failure — VTB's own app guidance recommends disabling VPN, and QUIK access is key-based [R01 §2, R01-44]; an active-VPS/VPN stack is therefore a named fragility), `OUTAGE_MARKET` (halt/suspension/closed session — MOEX suspended derivatives intraday as recently as 2025-09-11 [R09 §3.1, cited in R07 S6]). Each outage interval is logged with start/end; signals whose validity window intersects an outage are disposed by the expiry rules of §6.3, not silently extended.
+
+---
+
+## 5. Delay scenarios (Investigation 2)
+
+### 5.1 What is known and what is not
+
+Given by the task/user: manual reaction 3–90 min, typical median ≈5–15 min; distribution unknown. Added by evidence: free-data lag ≥15 min before the human even sees an event [R04 §7]; margin machinery runs from 09:00 regardless of the human [W1, R01 §7.1]; forced closure is discretionary with no guaranteed warning [R01 §0]. **No probability distribution over reaction time is claimed anywhere in this report.** The scenarios below are a deterministic stress lattice plus regime cases; probabilities enter only after forward calibration (§5.4).
+
+### 5.2 Scenario lattice (primary = P; all latencies in minutes, human component = t8−t7)
+
+| ID | Name | Human reaction | Data state at decision | Total event→first-order (indicative) | Role |
+|---|---|---|---|---|---|
+| P-A | Attentive floor | 3 | Broker quotes fresh (age < 1 min) | ≈5–20 (data lag excluded only if broker feed is the trigger; ≈20 if ISS-triggered) | Best-case bound; never used to pass a gate alone |
+| P-B | Typical median | 10 (inside stated 5–15) | Broker quotes fresh; ISS signal 15 min old | ≈28 | **Primary scenario** for headline replay [PROPOSAL: freeze as primary per R09 §5.2] |
+| P-C | Slow | 30 | Spreads widened 1.5× vs signal-time [PROPOSAL test value] | ≈48 | Sensitivity |
+| P-D | Stated tail | 90 | Spreads widened 2× (R02 stress convention: doubled quoted spread [R02 §10.2]) | ≈108 | Sensitivity; sizing constraint per R07 P9 |
+| F1 | Blackout queue | Signal born 00:00–11:00 → first possible t7 at 11:00–12:00 | Whatever is fresh at revalidation | 60–720 | **Regime, not a draw from the 3–90 distribution.** Most such signals must expire (§6.3) |
+| F2 | Blackout + emergency interruption (A-soft only) | Wake latency 30–90 + revalidation, on top of event age | Stressed | 60–180 | Incident description only; forbidden in entry gates (§3.2) |
+| C1 | Correlated stress | 60–90 *because* the market is stressed (user busy, spreads wide, Telegram noisy) | One leg unsynchronised or quote age > 20–30 min → `NO ENTRY` branch fires [R07 §7, §10 point 3] | — | Tests the correlation the task requires: delay, volatility and illiquidity rising together |
+
+### 5.3 Correlation structure (assumed mechanisms, to be calibrated)
+
+Three mechanisms are pre-registered as hypotheses, not facts: (M1) *Morning clustering* — gap/volatility events concentrate at the 06:50–09:00 open and the 09:00 margin issuance, i.e. inside the blackout (§3.4); (M2) *Attention competition* — stressed markets generate more alerts exactly when each alert takes longer to process (quota + MAE serialisation, §8); (M3) *Liquidity co-movement* — the pairs with the widest standing spreads (GL legs 100–108 ticks [R06 §10.1]) widen further in stress (R02 stress = doubled width [R02 §10.2]), so the tail-delay scenario must also carry the tail-friction scenario. In replay, P-D/C1 therefore pair 90-minute delay with doubled spreads and, for GL, limit-order-only fills with explicit non-fill probability mass (§9.2) — delay and cost are never stressed independently.
+
+### 5.4 Later calibration without look-ahead
+
+In shadow operation, every signal logs t0…t16 (§4). Calibration proceeds per R09 walk-forward discipline: the reaction-time model used to evaluate window *k+1* is fitted **only** on completed observations from windows ≤ k (truncation invariance [R09 §4.2 pathway 5]); blackout observations are fitted as a separate regime (availability at signal birth is known at t4, so conditioning on it is causal); the fitted object is a scenario *weighting*, and if headline conclusions flip between the unweighted lattice and the calibrated weighting, both are reported and the difference is attributed to the delay model, not to the strategy. The 20-trading-day spread/depth measurement programme of R02 §10.4 runs concurrently so friction calibration ages at the same rate.
+
+---
+
+## 6. Revalidation after delay (Investigation 3)
+
+A signal is an *idea with an expiry*, not an order. Between t4 and any order, the following gate runs **in full, at t9, on broker prices**. Any failure produces a reason code (§10), never a silent retry.
+
+### 6.1 The gate (all conditions required)
+
+| Gate | Check | Evidence anchor |
+|---|---|---|
+| G1 Freshness | Both legs' broker bid/ask age ≤ `AGE_MAX` ([PROPOSAL test values: 60 s in main session when attended; ISS-derived inputs ≤ 20–30 min old and used only as thesis context, never as execution price); leg timestamp skew ≤ `SKEW_MAX` ([PROPOSAL: 5 s broker, 60 s ISS diagnostics) | R04 §10.4 points 2–3; R07 §10 point 3 (`NO ENTRY` if quote age > 30 min or legs unsynchronised) |
+| G2 Executable net advantage | Recompute the spread from the *executable sides* (buy at ask, sell at bid, in base-unit terms per R06 §9). `Edge_exec = (FairValue − ExecutableSpread) signed to the trade − C_full(q)` where C_full is the two-period R02 stack (§2.4) incl. allocated fixed fees, financing under the *declared* funding model (R07 §3.2 a/b), and the LQDT hurdle over the *remaining* expected holding period. Require `Edge_exec ≥ Edge_min` ([PROPOSAL: Edge_min = uncertainty haircut from §9.2's conservative bound width; a fixed RUB floor may be added at preregistration) | R02 §9–10; R07 §3.2; R09 §9.6 hurdle waterfall |
+| G3 Minimum lot & margin | Integer hedge (flagships 1:1 [R06 §9]); gross margin (both legs, NCC basis + broker add-on allowance) ≤ 33% of remaining envelope [R07 §4.1 gate 3 — PROPOSAL tightened from the delegated 50%]; **stressed margin with spread offset removed** (×2–3 near expiry [R06 §12.1]) + buffer u ≤ envelope. Minimum lot failing either arm ⇒ reject the idea. No fractional contracts exist | R07 §4.1 gate 3; R06 §5.2 |
+| G4 Cash path | Free rubles (not LQDT credit, not unexecuted orders, not T+1 proceeds) ≥ stressed VM over the delay/exit window + fees + settlement-lag reserve | R07 §4.1 gate 2; R01 §0 point 3 |
+| G5 Accounting state | Current synchronised X, D recomputed at t15-quality marks; D ≥ 5,000 → warning checklist state; D ≥ 10,000 or X ≤ −10,000 → **entries suspended**; entry inequality `X − L_stress − u ≥ −15,000` under joint S1–S6 shocks | R05 §7.1; R07 §4.1 gate 1 |
+| G6 Model & event validity | Spec/funding parameters are from the version effective at t9 (K1/K2, IndexDiv, settlement source per leg [R06 §10.2–10.3]); funding sign not flipped vs thesis (RGBIF-style instability = reject [R07 §10 point 9]); no known event inside the reaction+holding window: dividends (expected-dividend table), expiry (time to 14:00/19:00 expiry instant > reaction window + buffer), spec changes | R06 §8.5 event filter [via R07 §4.1 gate 5]; R06 §10.2 (CNY fixing-vs-TOM settlement-source divergence is a registered residual risk, not hedgeable inside the pair) |
+| G7 Availability & quota | Now inside attended window (≥12:00 MSK worst case) **and** stressed state at tomorrow 09:00 requires no action before tomorrow 12:00 (the §3.4 design constraint); Q-IDEA not exhausted (or soft-exceedance consciously logged); no open naked-leg incident; alerting path alive (else `MONITORING_DOWN`) | §3; R07 §10 point 7 |
+| G8 Session | Both legs (and the CS instrument, if the atomic branch is ever used) in a tradable session state at t9 and expected to remain so until t13 deadline; weekend perpetual-leg closure honoured | §2.1; R06 §4.2 point 5 |
+
+### 6.2 Price/state invalidation (any one ⇒ signal dead in current version)
+
+Spread executable price beyond the signal's limit bound; `Edge_exec < Edge_min` at t9; funding sign flip or K1/K2/spec change since t4; either leg halted, unsynchronised, or quote age breached; margin parameters changed (GO snapshot differs from signal-time snapshot beyond tolerance); session boundary crossed (e.g. revalidation would complete after 23:50 or inside a clearing window); capital state changed (another signal reserved the envelope, §8); X/D state moved into suspension; event embargo entered. Invalidation is a *state*, recorded with the triggering field's old and new values — the audit trail that lets the later analysis distinguish "the idea was wrong" from "the idea was stale".
+
+### 6.3 Expiry and reissue (idempotency)
+
+Each signal carries `TTL = min(model TTL [PROPOSAL test candidates: 30 min attended / expires at blackout start if unattended], time to next session boundary, time to registered event, capital-reservation TTL)`. On TTL lapse → `EXPIRED`, reservation released. **A fresh notification, a Telegram retry, or a new screener run on the same input vintage cannot resurrect it.** Reissue is permitted only as a *new version*: new t3 evaluation on inputs with t2 > previous inputs' t2, new `signal_id` version linked to its parent (` supersedes`), gates G1–G8 re-run, and — for trials accounting — the reissue counted per the registry rule frozen at preregistration (default: reissues of one parent count as one trial family, per R09 §6.1's "what counts as a trial" discipline). Repeated notification of the same version is suppressed by idempotency key `signal_id + version` (§11, Example 6).
+
+---
+
+## 7. Two-leg and partial execution (Investigation 4)
+
+### 7.1 Mode selection (in strict order of preference, each labelled in simulation)
+
+1. `EXEC_ATOMIC_EXCHANGE` — exchange CS instrument, **calendar pairs only**, and only in the labelled sensitivity branch until VTB access is proven (§2.2). Order categories available at the exchange: limit, market, fill-or-kill [W2]. Even here, "atomic" describes matching; margin reservation equals the two-leg amount [W2], so G3's stressed-margin arm is unchanged.
+2. `EXEC_JOINT_BROKER` — broker indivisible joint order. Documented only for BCS (Appendix No. 6 §5.4.9; special calendar-spread application [R01 §5]). Not available to the VTB-first design; reserved for the later BCS stage, again only after account-level confirmation.
+3. `EXEC_SEQUENTIAL` — **the VTB primary mode**: two independent orders, placed and acknowledged separately.
+
+### 7.2 Sequential protocol [PROPOSAL — test candidates to be calibrated, not approved rules]
+
+- **Which leg first.** Default: the *less liquid* leg first (for GL: either leg — both quote 100+ ticks wide, so both are "less liquid"; for CNY: CRZ6 at 4 ticks vs CNYRUBF at 2 ticks quoted width [R06 §10.1–10.2]), because the liquid leg is the hedge instrument whose price is most likely to still be available; the liquid-leg order is then placed as a **marketable limit** bounded by the worst acceptable spread from §6. Harris's framing applies (§14): the standing limit order grants a free trading option to the market — on a 100-tick-wide book that option is expensive, which is why R06's verdict for GL is "limit orders only" *inside* the spread, accepting non-fill risk as the price of not crossing 100 ticks.
+- **Unhedged interval.** Clock starts at first `t_fill`. Test-candidate tolerances: target hedge completion ≤ 2 min, hard deadline `HEDGE_DEADLINE` ≤ 5 min attended (both far inside the human's other latencies; these are *attended-execution* parameters, only meaningful once the user is at the terminal). On deadline breach or bound breach, the filled leg is unwound with a marketable limit at the best available price — the loss taken is whatever it is; **averaging into a naked leg or "waiting for it to come back" is prohibited** (naked-leg danger overrides monetary triggers, task prompt; immediate complete-or-unwind rule [R07 §7]).
+- **Price bound.** The pair is executed against a *spread* limit, not two independent price limits: leg-2's limit = leg-1 fill price ± maximum acceptable spread (from G2's bound). If leg-2 cannot fill inside the bound, leg-1 is unwound (above). Independent leg limits that can both fill at a jointly unacceptable spread are a design error this rule exists to prevent.
+- **Partial fills.** Hedge (or unwind) **only the filled quantity** of leg 1; unfilled remainders of both orders are cancelled at the episode's end (`t_cancel_ack` awaited before the MAE is closed). Each partial tranche re-checks G3/G4 before any *additional* tranche is attempted [R07 §7]. A partially filled spread is marked at conservative flattening values and carries a `PARTIAL_OPEN` state until completed or unwound.
+- **Asynchronous acknowledgements.** Submission ≠ acceptance ≠ fill, per leg (t10/t11/t12). The protocol state machine (§10) forbids placing leg 2 on the *assumption* leg 1 was accepted; it keys off leg-1's fill report. Conversely, a missing leg-2 acknowledgement within the attended window triggers cancel-and-verify, never a blind duplicate (a duplicate buy is the classic manual double-fill).
+- **Missing quotes / worse-than-expected exits.** No quote on the hedge leg at decision instant ⇒ treat as unfilled-market: unwind leg 1 if its quote exists; if *neither* quote exists (halt), the naked leg is an incident (log, alert, exit at next reliable opportunity — the "flat-first" blackout bias [R07 §7]). Exit slippage worse than the G2 bound on a *risk exit* does not block the exit: risk exits are price-insensitive by design; the excess cost is booked to implementation shortfall (§9.3), not debated in real time.
+- **Order-type hygiene.** Entries: limit or marketable-limit only (R02 §10.4's "вход только лимитными заявками" adopted); market orders reserved for emergency exits (forced-closure approach, naked-leg unwind past deadline). Stop-style conditional orders at VTB are **not** assumed to exist in a usable form — no supplied report establishes VTB stop-order behaviour on futures, so no protective-stop logic may be designed into the pilot until that is confirmed (an unconfirmed stop is a fictional risk control).
+
+### 7.3 What the broker may do while the human is mid-episode
+
+Forced closure chooses instruments "самостоятельно по своему усмотрению" (at the broker's own discretion) [R01 §0]; the reconstructed VTB closing order places spread components late but not last, and BCS's algorithm (instrument class vs margin-level ordering) is not determinable for a spread without a broker answer [R01 §11.1 item 16]. The episode protocol therefore assumes a broker closure can interleave with manual action: before submitting any order, the terminal position table — not the user's memory — is the state; after any broker action alert, all working orders are cancelled and re-verified. Prices on forced closure are bounded by regulation to no worse than the min/max anonymous-trade prices of the preceding 15 minutes, executed in practice with market orders in possibly thin liquidity [R01 §11.1 discussion]. None of this is controllable; all of it must be *reconcilable* in the ledger (§8.5).
+
+---
+
+## 8. One realistic finite-capital virtual portfolio (Investigation 5)
+
+### 8.1 Identity and ledgers
+
+Exactly **one** virtual portfolio (`PORTFOLIO_ID = VP-R08-01`) exists for the evaluation. It holds: cash sleeve (RUB), open spread positions in whole contracts, reservations, the emergency-funding ledger E (gross, never restored by returns/withdrawals), and the accounting triple V/B/X/H/D computed exactly as in §2.6 — the sleeve ledger reconciles to the whole-account X through the core-impact bridge of R05 §4.3 so that a 30k sleeve is never compared against the >40m core (task prompt; [R05 §2.1]). Funding model (R07 §3.2 a: cash sleeve, or b: pledged units + cash VM buffer) is declared at preregistration; the headline run uses one, the other is a registered sensitivity. Primary layer pre-investor-tax, tax sensitivities separate; only the loss of the LQDT long-term holding deduction is excluded from the tax layer (task prompt; [R05 §9]).
+
+### 8.2 Signal intake: attempt every eligible signal
+
+Every signal that passes the *model's* eligibility (universe, event embargo, data sufficiency) is presented to the portfolio — "attempt" means it enters the state machine of §10 and receives a disposition. There is no discretionary omission and no ex-post deletion; rejected, stale, unfilled, partial, quota-deferred and capital-blocked outcomes are first-class records [R09 §5.1; R02 §10.4]. Zero-signal days and zero-trade days are valid portfolio days.
+
+### 8.3 Deterministic priority (frozen at preregistration; no ex-post reordering)
+
+When signals/orders compete in the same evaluation instant, process in this order:
+1. **Risk Actions** on open positions (hedge completion, naked-leg unwind, margin de-risking, expiry-forced exits) — earliest deadline first.
+2. **Exits** of open positions whose exit rule fired.
+3. **Revalidations** of queued signals near TTL lapse (revalidate-or-expire before admitting new work).
+4. **New entries** by (t4, then signal_id lexicographic) — first-come, *never* ranked by ex-post edge, signal size, or outcome (ranking by anything known only later is selection leakage [R09 §4.2]).
+Ties beyond signal_id are impossible (ids are unique). The priority rule is part of the evaluated procedure: the deployment procedure is the evaluated procedure [R09 §5.2].
+
+### 8.4 Capital reservations
+
+At gate-pass (t9) and before t10, the portfolio places a **reservation** = stressed margin (offset-removed arm of G3) + stressed VM buffer over the hedge/exit window + `C_exit` estimate, earmarked against the envelope. Reservations: block later signals (`CAPITAL_RESERVED` dispositions show *which* reservation blocked them — required by Example 3); expire with the signal TTL; convert to actual margin accounting at t13; release on unwind/expiry/rejection. Previous rescue money or retained earnings never enlarge the entry envelope (entries must pass with zero emergency funding, task prompt; [R07 §4.1 gate 6]).
+
+### 8.5 Funding approvals in simulation
+
+The virtual portfolio **cannot approve funding**. Any path requiring emergency funding branches: with no approval event in the scenario script, the position is de-risked to flat (`FUNDING_APPROVAL_ABSENT`) and the counterfactual "funding arrived in time" is reportable only as a labelled sensitivity. Approval, when scripted, still carries an arrival timestamp (t16) — bank hours, T+1 LQDT settlement, broker cut-offs — and funding ≠ restart approval; X/H/D/E never reset on funding, review, restart or withdrawal (task prompt; [R05 §4.5–4.6]). Broker-initiated use of core collateral, if ever simulated as an incident scenario, counts once into gross E (collateral-to-cash conversion not double-counted) and forces sleeve de-risking [R07 §7].
+
+### 8.6 Quota and availability inside the portfolio
+
+The portfolio enforces §3 as registered: blackout regime F for signal births 00:00–12:00 (worst case), Q-IDEA = 1 entry MAE/day (soft), Risk Actions exempt. For transparency it also computes two shadow counters (not portfolios): entries that Q-LEG (literal) would have blocked, and entries that a no-blackout counterfactual would have taken — each reported as *counts and RUB opportunity-cost bounds*, never as alternative P&L curves to choose from (choosing the best-looking counterfactual after the fact is the multiple-comparison failure R09 §7 exists to prevent).
+
+### 8.7 Seeded delay experiments
+
+`[PROPOSAL]` Master seed registered before any run (e.g. derived from the preregistration hash; the literal value is recorded in the run manifest). Each eligible signal is evaluated under the **primary** availability+delay model (P-B human latency inside attended windows, F-regime in blackout, C1 correlation switches on registered volatility/liquidity flags). The full lattice of §5.2 is then replayed as *paired sensitivities* on the same signal set with the same seed: identical signals, identical priority, only the delay/friction regime varies. Paired reporting (same signals, Δ outcome by regime) is what makes "how much does delay cost this strategy?" answerable without inventing a delay distribution. Scenario count and the identity of the primary are frozen in the trial registry; exploring scenarios and then promoting the kindest one to "primary" is prohibited [R09 §6].
+
+---
+
+## 9. Falsifiable delayed-fill evaluation protocol (Required output)
+
+### 9.1 Three evidence tiers — claims may only be made at the tier the data supports
+
+| Tier | Data | What it can prove | What it cannot |
+|---|---|---|---|
+| E0 — Research replay | Daily ISS history (OHLC, SETTLEPRICE, OPENPOSITION from 2001-09-07; contract listing map) [R04 §1 point 2] | Existence/persistence of spread dislocations, convergence behaviour, seasonality, opportunity counts over long horizons | Any fill price, synchrony, capacity, margin path [R04 §8] |
+| E1 — Conditional execution replay | Candles M1/M10/H1 (ISS, from listing; futures-minute floor 2011-03-14) [R04 §1 point 1] + R02 cost stack + §5 delay lattice | Bounded execution outcomes (interval estimates, §9.2); timeframe suitability; delay-regime sensitivity | Point-estimate returns; queue position; partial-fill truth |
+| E2 — Observed execution | Forward self-collected BBO+sizes, trade prints, order/fill reports (§9.4) | Actual implementation shortfall, reaction distribution, one-leg incident rate | History before collection start (backfill is impossible for bid/ask — it does not exist retrospectively [R04 §1 point 3]) |
+
+The strategy's timeframe claim is itself falsifiable: if E1 bounds at the H1/M10 layer are too wide to separate edge from zero while D1 shows structure, the honest conclusion is "medium-term daily strategy, intraday dynamics unresolvable on free data" — not a retreat to M1 point estimates.
+
+### 9.2 Conservative OHLCV fallback fill rules (E1)
+
+1. **Tradable instant.** A signal computed on bar *k*'s close can act no earlier than the first bar whose *end* exceeds t4 + data lag (15 min ISS) + scenario human latency, rounded up to whole bars; in blackout, the first attended revalidation instant. Fresh signal timestamps never refresh stale inputs (§6.3 applies inside the replay too).
+2. **Synchronous spread construction.** Spread bars use only buckets where **both** legs have a bar with volume > 0 and identical bucket bounds. `High(A) − Low(B)` and any cross-bucket extreme is forbidden as an executable spread [R04 §1 point 5]. Where ISS synchronous BBO history would be needed and does not exist, the replay says so.
+3. **No midpoint, ever.** Entry/exit valuation uses a *bound pair*: favourable bound (best synchronous closes) and **conservative bound** — entry at the worst synchronous close of the spread within the action window, plus full friction: quoted-spread crossing where a dated quote exists, else the R09 cost band of at least ±1 tick per leg [R09 §9.6] (GL: the dated 100–108-tick widths [R06 §10.1] set the scale — a 1-tick band on GL would be a fabricated precision), plus `C_RT` (two-period broker fee §2.4). Headline results use the conservative bound; the favourable bound is reported only to show interval width.
+4. **Fill existence.** A limit-priced leg fills in a bar only if the bar's synchronous range *trades through* the limit (touch alone = no fill, queue unknown), both legs satisfy their fill conditions within the hedge window (§7.2), and filled quantity ≤ registered participation cap ([PROPOSAL: ≤ 10% of the bar's volume per leg — R09 capacity discipline [R09 §9.7]; RIH7-type legs at 111 contracts/day [R02 §10.1] will correctly fail this]). Otherwise: unfilled / partial per §10 codes. Marketable actions in stress scenarios use the conservative bound price, not the bar close.
+5. **Marks vs fills.** Positions are marked at synchronous closes (research) and at conservative flattening values (trigger evaluation); settlement prices are a third, separately-labelled series used only for clearing reconciliation. Booking settlement as a fill is leakage [R09 §4.2 pathway 8].
+6. **Margin path.** Daily (E0/E1) margin is modelled from *forward* GO snapshots only (§9.4); historical GO does not exist in the free contour [R04 §10.3], so historical margin-breach claims are scenario claims (offset-removed ×2–3 [R06 §12.1]), labelled as such.
+
+### 9.3 Metrics (all pre-registered; definitions per R09 §9)
+
+Primary: terminal and path `X(t)` vs matched LQDT in RUB, `D(t)`, shortfall `S(t) = max(0, −X(t))` (distinct triggers — D can fire while X > 0 [R09 §9.2]), capital-time (RUB-days split margin / VM liquidity / reserve / LQDT diversion [R09 §9.3]), stress-funding path (max `IM + cumulative VM deficit`, time-to-meet, gross E usage [R09 §9.4]). Execution: full implementation shortfall vs the t4 decision spread (Perold: decision-price vs achieved, incl. opportunity cost of the unfilled [W5; R09 §9.6]), decomposed into data-lag, human-delay, spread-crossing, and unfilled-opportunity components — this decomposition *is* R08's research question in one number set. Operational: disposition mix (§10), stale rate, one-leg incidents and unhedged-interval distribution, hedge-deadline breaches, quota exceedances, MAE/LO per day (§13), blackout-born signal outcomes. Uncertainty: dependence-aware (block) resampling on the daily portfolio ledger; Gaussian tails are not assumed [R07 §4.3; R09 §8].
+
+### 9.4 What must be collected forward (starts before any live claim; storage per R04 §10–11)
+
+Priority order (R04 §10.4 logic — "collect backwards what exists, record forwards what does not"):
+1. **Daily snapshots from day one** (after rights clarification, §2.3): contracts/specs versions, GO/price limits (`INITIALMARGIN, HIGHLIMIT, LOWLIMIT, PREVSETTLEPRICE, STEPPRICE, MINSTEP, LOTVOLUME, LASTTRADEDATE…`), dated tariff/broker-parameter snapshots, session-calendar versions, daily history + LQDT executable prices. ≈0.5 MB/day class volume; laptop-feasible, VPS-feasible for snapshots [R04 §11].
+2. **Signal/order journal** with t0…t16 and input hashes (§4, Appendix B) — the calibration asset for §5.4.
+3. **Live shadow BBO** (after channel/rights clarity): both legs' bid/ask + sizes at t4, t9, t10, t12, t13 with `received_at` in UTC, connection/reconnect flags, trading status; gaps recorded as gaps, never back-filled [R04 §10.4 point 2]. Resource envelope: narrow sub-universe (near+next series of the flagship families), not the 496-series universe; the existing VPS (1 vCPU / 1 GB + shared 250–350 MB budget, unverified) is a *snapshot and alerting* host only until a measured load test says otherwise — no production probing now (task prompt).
+4. **Friction series:** ≥20 main-session trading days of quoted spread/depth for the candidate pairs before any friction number graduates from "snapshot" to "estimate" [R02 §10.4].
+5. **Human factors log:** t7 acknowledgements (or their absence) — without it, the reaction distribution stays assumed forever.
+
+### 9.5 Pre-registered falsification criteria for the *execution* claim (the strategy claim is R09's; these are R08's)
+
+The delayed-manual design is falsified (→ redesign or abandon the manual channel, §17) if, in E1-conservative or E2-shadow evaluation over the registered window:
+- **F-1:** Conservative-bound `Edge_exec` at revalidation is ≤ 0 for ≥ 50% of signals that were positive at signal-time closes (the delay destroys the typical idea, not just the tail).
+- **F-2:** Blackout-born signals that survive to revalidation with edge intact are < 10% of blackout-born signals (signal generation is systematically mistimed vs availability → fix generation windows, §17, before judging the strategy).
+- **F-3:** One-leg incidents exceed 5% of sequential entries, or any unhedged interval exceeds the registered deadline without unwind (manual two-leg sequencing is not controllable at this reaction speed).
+- **F-4:** Realised adverse move over measured reaction windows exceeds buffer `u` on ≥ 5% of stress days (R07's buffer falsification [R07 §4.3] applied to execution windows).
+- **F-5:** The E1 interval width (favourable minus conservative terminal X) exceeds the interval's own conservative point — i.e. free data cannot distinguish the strategy from zero at any delay scenario (→ E2 collection period or paid sample per R04 scenario C, §17; do not narrow the interval by assumption).
+- **F-6:** Manual burden (§13) exceeds the confirmed quota/attention budget on > 20% of active days in shadow (the human channel, not the market, is the binding constraint).
+
+Thresholds marked [PROPOSAL] values above (50/10/5/20%) are test candidates to be frozen at preregistration; their role is to be *capable* of failing.
+
+---
+
+## 10. Lifecycle and reason-code taxonomy (Required output)
+
+### 10.1 States
+
+`MODEL_ELIGIBLE → SIGNALLED(t4) → NOTIFIED → SEEN → DECIDED → REVALIDATING → {READY, REJECTED_*} → RESERVED → ORDERING(leg states) → {HEDGED_OPEN, PARTIAL_OPEN, NAKED_INCIDENT} → OPEN → {EXITING, DE_RISKING} → CLOSED / UNWOUND` — with side exits to `EXPIRED`, `STALE`, `SUPERSEDED` from any pre-order state. Broker-forced transitions (`FORCED_CLOSING`, `FORCED_CLOSED`) can interrupt any open state and are reconciled, never edited away.
+
+Leg-level states (per leg order): `NOT_PLACED → SUBMITTED → BROKER_ACCEPTED → EXCHANGE_ACCEPTED → {PARTIALLY_FILLED → FILLED, REJECTED, CANCEL_PENDING → CANCELLED, EXPIRED_SESSION}`. The pair state is a function of leg states plus quantities; there is no pair state in which leg quantities are "assumed".
+
+### 10.2 Reason-code taxonomy (every disposition carries ≥1 code; codes are data, not commentary)
+
+| Family | Code | Meaning |
+|---|---|---|
+| Market/session | `MARKET_CLOSED` / `MARKET_CLOSED_LEG` | Session closed / one leg untradable (incl. weekend perpetual exit closure §2.1) |
+| | `MARKET_HALTED` | Halt/suspension (exchange or single-series) |
+| | `SESSION_BOUNDARY` | Action would cross 23:50/clearing/expiry instant |
+| Data | `STALE_DATA` | Input age > gate at decision (leg, threshold, observed age recorded) |
+| | `LEG_UNSYNC` | Leg timestamps skew > SKEW_MAX |
+| | `QUOTE_MISSING` | No executable quote on a required leg |
+| | `DATA_OUTAGE` / `MODEL_OUTAGE` / `NOTIFY_OUTAGE` | §4 outage states |
+| Signal validity | `EXPIRED_TTL` | TTL lapsed before action |
+| | `INVALIDATED_PRICE` / `INVALIDATED_STATE` | §6.2 triggers (triggering field + old/new values stored) |
+| | `EDGE_GONE` | Revalidated Edge_exec < Edge_min (values stored) |
+| | `SUPERSEDED` | Replaced by a fresh-data version (§6.3) |
+| | `NOTIF_DUPLICATE_SUPPRESSED` | Retry/re-delivery of same idempotency key |
+| Capital/account | `INSUFFICIENT_FUNDS_CASH_PATH` | G4 failure |
+| | `MARGIN_GROSS_FAIL` / `MARGIN_STRESSED_FAIL` | G3 arms |
+| | `CAPITAL_RESERVED` | Blocked by another signal's reservation (blocking id stored) |
+| | `CLUSTER_LIMIT` | Factor-cluster cap (R07 gate 4) |
+| | `ACCOUNT_SUSPENDED_XD` | D ≥ 10,000 or X ≤ −10,000 state |
+| | `FUNDING_APPROVAL_ABSENT` | Path needs emergency funding; no approval event (§8.5) |
+| | `CORE_COLLATERAL_INCIDENT` | Broker touched core (incident, gross-E count) |
+| Human/quota | `HUMAN_BLACKOUT` | Born/queued in 00:00–12:00 window |
+| | `QUOTA_ENTRY_DEFERRED` | Q-IDEA exhausted; signal queued to TTL, not dropped silently |
+| | `QUOTA_SOFT_EXCEEDED` | Conscious second entry MAE (burden-flagged) |
+| | `USER_REJECTED` / `USER_DEFERRED` | Explicit human decision at t8 |
+| | `MONITORING_DOWN` | Alerting/verification path down; entries barred [R07 §10 point 7] |
+| Execution | `UNFILLED` / `PARTIAL_FILL` | Limit not reached / partial quantity (per leg) |
+| | `LEG1_ONLY_NAKED` | First leg filled, hedge not completed (incident) |
+| | `HEDGE_DEADLINE_BREACH` | Unhedged interval > deadline (unwind outcome linked) |
+| | `ORDER_REJECTED_BROKER` / `ORDER_REJECTED_EXCHANGE` | Ack-level rejection |
+| | `OVERLAP_SAME_LEG` / `OVERLAP_PAIR_OPEN` | Conflicts with open position/reservation on shared leg/pair |
+| Risk override | `EXPIRY_GUARD` / `DELIVERY_GUARD` / `EVENT_EMBARGO` | §6 G6 blocks |
+| | `FORCED_CLOSURE_BROKER` | Broker-initiated closure (reconciliation link) |
+
+Overlap semantics (task-required): `OVERLAP_SAME_LEG` blocks a new entry that would net against or double a leg already committed (open or reserved) unless the strategy's registered rule defines the pair as the same position (add-to-position is a separate, pre-registered rule with its own per-idea aggregate cap [R07 §0], never an improvisation).
+
+---
+
+## 11. Signal communication (Investigation 6)
+
+### 11.1 Separation of layers
+
+An **idea signal** (research object) states what the model saw and what would have to still be true at execution. An **order instruction** (execution object) is produced only *at the terminal, after G1–G8 pass*, and contains exact orders. Telegram carries idea signals and risk alerts — never standing order instructions, because by the time a human reads them their prices are stale by construction (§2.3). This separation is also the control that makes "repeated notification ≠ another trade" (§6.3) enforceable by a human, not just by software.
+
+### 11.2 Mandatory signal card (idea layer)
+
+```
+SIGNAL  CNY-2026-…-0147  v1            [IDEA — NOT AN ORDER]
+Born (t4): 2026-… 13:05 MSK   Inputs: ISS candles to 12:50 (age 15m, delayed feed)
+Thesis: CNYRUBF/CRZ6 funding+basis convergence to 17.12.2026 expiry [family MKS-3]
+Legs: SHORT 1× CNYRUBF  |  LONG 1× CRZ6   (1:1 in CNY 1,000; integer, no residual)
+At signal closes: spread 247 RUB/pair; model fair …; edge after full costs ≈ … RUB
+  (cost stack: round-turn 10.7 RUB snapshot 07.10 + crossing band …; VTB fee period 0 RUB)
+Risk if entered now (snapshot params): gross margin 2,291 RUB; stressed (offset off) …;
+  1σ/day ≈ 688 RUB; stressed loss L_stress …; cash-path need …
+Holding uncertainty: days–weeks; hard deadline: exit/roll before 17.12.2026 14:00/19:00
+  expiry instant (per spec); NOT a promised holding period.
+Evidence grade: B — spec-confirmed link, 141 obs post-23.03.2026, funding sign 151/151
+  positive historically [R06 §10.2]. NO win probability is stated (policy [R09 §11.1]).
+EXECUTABLE BOUNDS (checked fresh at the terminal, not from this card):
+  Enter only if: broker BBO both legs ≤ 60 s old; executable spread ≥ … RUB;
+  Edge_exec ≥ …; both legs in main session; no event before …
+DO NOT ENTER IF: blackout/quota exhausted; quote stale; funding sign flipped;
+  GO snapshot changed; X/D in suspension; either leg near expiry/delivery guard.
+Expires (TTL): 13:35 MSK or session boundary, whichever first. Reissue needs fresh data.
+```
+
+Confidence is communicated as: evidence grade (A = primary-document link + multi-regime observations; B = spec link + single-regime 141-observation window; C = hypothesis with named explanatory variable — the only grades the current evidence base can honestly issue are B/C for flagship economics, since the aligned window is one regime [R06 §2]), sample size, and the specific falsifier ("what would kill this idea"), replacing any invented probability. Expected net effect is shown as a RUB range from the §9.2 bounds, not a point.
+
+### 11.3 Risk alerts (separate, higher-priority channel semantics)
+
+Margin-state, naked-leg, broker-action and outage alerts carry: position, trigger value vs threshold, **deadline instant** (e.g. VTB restrictive time today), and available actions. They are exempt from entry quota and from the "one idea/day" rhythm; during blackout they are sent (for the record and for A-soft) but the system state must assume no reader until 12:00 (§3.2).
+
+---
+
+## 12. Hypothetical worked examples (Required output)
+
+*All six are labelled arithmetic illustrations on dated snapshots (R06/R02, 2026-10-07) with invented intraday price paths. None is a trade, a backtest result, or a claim that these prices occurred. Contract parameters are real snapshots; the intraday moves are chosen to exercise the protocol.*
+
+### Example 1 — Stale winner (GLDRUBF/GLZ6, blackout birth)
+
+08:20 MSK: ISS-based screener (data to 08:05) flags GL spread dislocation: at synchronous closes the pair implies edge ≈ +180 RUB over the 33.0 RUB round-turn snapshot cost [R06 §10.1]. Human is in blackout (§3). The signal's TTL (30 min attended / blackout rule) lapses at 08:50 → `EXPIRED_TTL` + `HUMAN_BLACKOUT`; reservation never placed. At 12:05 revalidation on fresh evaluation, the dislocation has converged: executable edge ≈ +12 RUB < Edge_min → disposition `EDGE_GONE` on the *new* version; a naive OHLCV backtest that "filled" at the 08:20 candle close would book ≈ +147 RUB of profit that the realistic portfolio correctly records as **forgone opportunity cost** inside implementation shortfall (§9.3), with zero position, zero margin use. Lesson priced by F-2 (§9.5): if most signals are born in the blackout, the *generation* schedule is wrong, not the market.
+
+### Example 2 — Missed opportunity (CNYRUBF/CRZ6, attended, data lag decisive)
+
+13:00: signal born on ISS data 15 min old [R04 §7]. Human reacts in 9 min (P-B). At t9 (13:11) broker BBO shows the executable spread already 6 RUB worse and Edge_exec, after the 10.7 RUB round-turn [R06 §10.2] and crossing band, is below Edge_min → `EDGE_GONE`, no orders. The E1 replay's conservative bound agrees (worst synchronous close in the action window ≈ same conclusion); the favourable bound would have shown a fill — which is exactly why the favourable bound is never headlined (§9.2 rule 3). Recorded: data-lag component of shortfall ≈ full edge; human component ≈ small. The scarce resource was the feed, not the human.
+
+### Example 3 — Simultaneous signals competing for cash (capital + quota interaction)
+
+13:05, three signals pass model eligibility in the same evaluation cycle: CNY pair (gross margin 2,291), GL pair (2,745), IMOEX pair (5,134) [R06 §12.1]. Priority (§8.3): no risk actions pending → entries by (t4, id): CNY first. Reservations at stressed terms (offset removed, ≈×2 test value + VM buffer + exit cost) earmark ≈ 2×2,291 + buffer for CNY; GL then reserves similarly; by IMOEX's turn, remaining envelope cannot satisfy G3's stressed arm + cash-path G4 simultaneously with both reservations live → `CAPITAL_RESERVED (blocked_by: CNY…, GL…)`; Q-IDEA also exhausted after the first entry MAE → the other two carry `QUOTA_ENTRY_DEFERRED` and expire on TTL (`EXPIRED_TTL`). No human "picked the best one"; tomorrow, yesterday's losers do not get priority compensation (that would be outcome-based selection). Gross margins alone (sum 10,170 RUB) would have fitted 30,000 easily — the binding constraints were *stressed* margin, VM reserve, and quota, in that order.
+
+### Example 4 — One-leg fill (GLDRUBF/GLZ6, sequential execution)
+
+Attended, 14:20. Leg 1 (sell 1 GLDRUBF, limit inside its 100-tick-wide book [R06 §10.1]) fills at t12 after 6 minutes. Leg 2 (buy GLZ6) is submitted as a marketable limit bounded by the maximum acceptable spread; GLZ6's ask runs away beyond the bound within 3 minutes (unfilled remainder → `UNFILLED`). Hedge deadline (5 min test value) breaches at +5 min → `LEG1_ONLY_NAKED` incident; the filled GLDRUBF is bought back with a marketable limit at +7 min, crossing a wide book. Illustrative arithmetic: adverse move 22 ticks × 0.1 RUB = 2.2 RUB price loss + crossing/friction on two extra executions ≈ tens of RUB — small money, *maximum* process severity: the incident, not the RUB, is the output. It counts in F-3 (§9.5), forces same-day review, and — had it occurred near the 14:00/16:00 broker restrictive times with the user absent — is the scenario the morning-sizing constraint G7 exists to prevent. Had leg 1 filled only 0 (limit never reached), the episode closes as `UNFILLED` with zero risk — the accepted price of limit-only discipline on this pair.
+
+### Example 5 — Margin escalation during the blackout (IMOEXF/MMZ6, morning)
+
+Position: 2× IMOEX pairs (gross margin 2 × 5,134 = 10,268 RUB snapshot [R06 §12.1]; book 1σ/day ≈ 2 × 1,614 ≈ 3,228 RUB, correlation-naive). Overnight, the spread moves −2σ (≈ −6,500 RUB VM direction) and NCC/broker parameters tighten; at 09:00 the margin requirement is issued [W1] while the human is unavailable; a hypothetical offset removal near the quarterly's expiry would roughly double-to-triple the pair's margin requirement [R06 §5.2]. The user returns at 12:00 to a risk alert whose *real* deadline is VTB's 16:00 restrictive time (EBS) — or 14:00 if the account sits in the Derivatives portfolio [R01 §0] — not the 17:30 clearing-member deadline. Pre-registered response: entries already suspended if D/X triggers fired (G5); de-risk to the size at which G3/G4 pass again, funding requested only to reach flat and only with explicit approval — in simulation, absence of a scripted approval ⇒ `FUNDING_APPROVAL_ABSENT` and flattening (§8.5). The example is R07 S1 instantiated; a book for which this morning is *not survivable by construction* fails G7 at entry and must never be opened — which is why the realistic book at 30k is 1–2 cheap pairs [R06 §12.1], not the 5-pair IMOEX maximum that gross margin alone would allow.
+
+### Example 6 — Notification retry (idempotency)
+
+13:05 signal `…-0147 v1` is delivered; Telegram retries delivery at 13:07 and the user, seeing it twice, opens the card twice. Idempotency key (`signal_id + version`) suppresses the second presentation as a trade candidate (`NOTIF_DUPLICATE_SUPPRESSED`); the user's single acknowledgement at 13:09 starts *one* MAE. At 13:40 the screener, on genuinely fresher inputs (t2 advanced), issues `v2 (supersedes v1)` after v1's TTL lapsed: this is a new decision object — full G1–G8, registry-linked — not a resurrection of v1 (§6.3). If instead the 13:40 message were v1 re-sent, the correct disposition remains *expired*, however attractive the remembered prices look. In the ledger, notification count (3) and trade candidates (1) are different metrics (§13) — conflating them is how manual systems double-enter.
+
+---
+
+## 13. Manual-action burden metrics and the quota question (Required output)
+
+### 13.1 Metrics (computed daily, reported as distributions over the evaluation window)
+
+*Volume:* signals born (by regime: attended/blackout), notifications sent/delivered/seen, entry MAEs, total MAEs, LO/day, OA/day, Risk Actions. *Attention:* minutes/day in episodes (t7→episode close), longest episode, alerts during blackout (sent vs seen), emergency interruptions/month (A-soft reality check). *Friction with the rules:* quota utilisation (entry MAE/day vs Q-IDEA), `QUOTA_SOFT_EXCEEDED` days, `QUOTA_ENTRY_DEFERRED` count, deferred signals that expired, entries blocked by capital vs by quota vs by availability (three different diagnoses). *Execution load:* unhedged-interval minutes, hedge-deadline breaches, cancels per entry, one-leg incidents. All reported against the *confirmed* quota once §15 Q2 is answered; until then against the Q-IDEA proposal, labelled as such.
+
+### 13.2 Where this leaves the "one trade per day" question
+
+The user's formulation is honoured as a **burden budget**, and §3.3 shows it cannot simultaneously be a leg-order count and a viable two-leg pilot. `[PROPOSAL for the later requirements gate — not asserted here:]`
+- Adopt Q-IDEA (1 entry MAE/day, soft, occasional 2) as the entry quota; LO/OA are measured, not capped, because capping them mid-episode manufactures naked legs.
+- Risk Actions unlimited by quota, always logged; a day with > 3 Risk Actions triggers next-day review (attention overload indicator).
+- Soft-exceedance budget: [PROPOSAL test value] ≤ 4 soft-exceeded days/month; beyond that the *strategy's signal rate*, not the user's discipline, is redesigned (fewer families, longer TTLs, generation only in attended windows §17).
+- If the user instead confirms Q-LEG literally, R08's recommendation flips to: calendar-pairs-only via the exchange CS instrument, contingent on VTB access proof; all other families virtual-only. The simulation already reports the Q-LEG shadow counter (§8.6) so this decision can be taken on evidence.
+
+---
+
+## 14. Targeted reading request — Harris, *Trading and Exchanges* (optional)
+
+The book was **not** read for this report; only the publisher's table of contents was verified (Oxford University Press, 2003: 22 chapters in 7 parts [W4]). If the user has lawful access, the following chapters — and only these — are requested as excerpts, mapped to R08 failure scenarios. The request is optional and blocks nothing.
+
+| Chapter (per publisher TOC [W4]) | R08 question it informs | Transfer warning |
+|---|---|---|
+| Ch. 4 *Orders and Order Properties* | Limit vs marketable-limit vs market orders; the limit order as a free option granted to the market → §7.2's leg-sequencing and why GL entries must sit inside a 100-tick book and accept non-fills | Harris's institutional US context (specialists, upstairs markets) does not describe MOEX's central limit order book; only the order-property logic transfers |
+| Ch. 6 *Order-driven Markets* | Price/time priority and queue position → why "touch = fill" is false in §9.2 rule 4 | Queue *parameters* must come from MOEX data, never from the text |
+| Ch. 14 *Bid/Ask Spreads* | Spread components (order processing, inventory, adverse selection) → interpreting R02's observed widths and their stress doubling [R02 §10.2] | Component sizes are market-specific; no coefficient may be imported |
+| Ch. 19 *Liquidity* | Immediacy as a priced service → the cost side of marketable orders in Examples 4–5 | — |
+| Ch. 21 *Liquidity and Transaction Cost Measurement* | Pre-/post-trade cost measurement framing for §9.3's shortfall decomposition (with Perold [W5] as the primary citation) | Measurement *design* transfers; benchmarks (VWAP etc.) need MOEX re-derivation |
+| Ch. 17 *Arbitrageurs* (secondary priority) | How convergence trades are actually implemented and where they bleed | Anecdotes are not evidence for MOEX pair economics (R06 §0 forbids correlation-first reasoning) |
+
+Explicitly **not** requested: dealer/block-trading and US market-structure chapters (5, 13, 15, 23–27) — no counterpart in a manual retail MOEX futures pilot, and importing their assumptions is the failure mode the task warns against.
+
+---
+
+## 15. Material conflicts, unknowns, and the minimal materials that resolve them
+
+### 15.1 Conflicts (carried from the evidence base; disposition stated)
+
+1. **Margin-requirement issuance 09:00 vs 10:00, main-session start 09:00 vs 10:00** — inside MOEX's own ETS page and across its releases [W1; R06 §4.1]. Disposition: parameterised calendar (§2.1); results sensitive to it reported both ways.
+2. **GO snapshots differ across reports** (e.g. R02's Si margin 13,810.59 RUB vs R06's SiZ6 ≈15.9% of notional ≈ 13.8k on its snapshot date; flagship margins in R06 §12.1 are far below R02's generic "most liquid contracts don't fit" framing). Not a contradiction: different contracts/dates/methods (ISS `INITIALMARGIN`, no broker add-ons, no offsets [R06 §12.1]). Disposition: R08 uses per-contract dated snapshots + stressed arms, never a generic margin number.
+3. **Calendar-spread margin**: MOEX states CS matching reserves margin "as for two atomic leg orders" [W2], while NCC MMS/MKS groups grant spread discounts [R06 §5]. Both can be true (reservation mechanics vs risk-based requirement, before broker pass-through). Disposition: G3 uses gross/stressed arms regardless of execution mode.
+4. **BCS forced-closure sequencing** is not determinable for a spread from public documents [R01 §11.1 item 16]; VTB's order is reconstructable only as a hypothesis. Disposition: §7.3 designs for interleaving rather than predicting sequence.
+5. **R05's pre-R01 caution** (collateral credit = 0 until confirmed [R05 §0 point 11]) vs **R01's documentary finding** (LQDT in VTB's liquid-assets list, haircuts 18/13/8% (KNUR/KSUR/KPUR), snapshot 2026-10-07 [R01 §0]). Resolution: list membership is established; *this account's* applied haircut, perimeter and VM mechanics are not. R08 therefore credits LQDT collateral in simulation only in funding-model (b) labelled runs [R07 §3.2], never in the cash-path gate G4.
+
+### 15.2 Unknowns that block specific conclusions (and nothing else)
+
+| # | Unknown | Blocks | Minimal resolving material |
+|---|---|---|---|
+| U1 | VTB account facts: portfolio type (EBS vs Derivatives — decides 16:00 vs 14:00 restrictive time), KPUR category and basis, applied LQDT haircut, tariff assignment, notification channel/timing under 6681-U §23, clauses 15/19 presence [R01 §0, §12] | Any live feasibility claim; Example 5's deadline | **One written VTB query** (question set already drafted in R01 §12.2/12.4). No credentials needed by researchers |
+| U2 | VTB manual access to exchange CS instruments; VTB futures order types usable manually (incl. any stop/conditional behaviour) | `EXEC_ATOMIC_EXCHANGE` branch; any stop-based risk design | Read-only terminal inspection or broker written answer (§2.2) |
+| U3 | MOEX data rights for systematic ISS recording / Non-display use [R04 §1 point 4] | Automated screener legality; §9.4 items 1–3 automation | Written MOEX/broker clarification |
+| U4 | Historical bid/ask, depth, GO series | Any executable-backtest claim (permanently, for the past) | Forward collection (§9.4) or a small paid sample for chosen contracts/crisis dates [R04 §10.4 point 7] — optional |
+| U5 | Actual reaction distribution, blackout interruptibility, Telegram seen-timestamps | Calibrated (vs lattice) delay claims | Shadow-mode journal (§9.4 item 5) |
+| U6 | Tax residence/account treatment | After-tax X layer only | User confirmation (pre-tax primary unaffected [R05 §9]) |
+
+### 15.3 Questions to the user (minimal, decision-changing only)
+
+- **Q1 (timezone):** Are "00:00 to 11–12" MSK or Gdańsk time — and is the end of the window 11:00 or 12:00 (weekday/weekend difference)?
+- **Q2 (quota unit):** Confirm Q-IDEA (one *idea-level entry episode*/day, may contain both leg orders; exits/hedges exempt) — or is the literal one-leg-order/day intended, accepting its §3.3 consequence?
+- **Q3 (emergency semantics):** Can an emergency alert wake you before 11/12, through what channel, and what response time should shadow mode verify? (Until answered: A-hard, §3.2.)
+- **Q4 (funding model):** For the virtual portfolio's headline run — cash sleeve (a) or pledged LQDT + cash buffer (b) [R07 §3.2]? (Both will be simulated; one must be primary.)
+
+No other user input is required to begin §9.4 collection design and the E0/E1 replays. The Harris excerpts (§14) are optional.
+
+---
+
+## 16. Falsification criteria and decision gates (summary)
+
+**Execution-design falsifiers:** F-1…F-6 (§9.5). **Accounting/risk falsifiers (inherited):** buffer `u` retired if the fixed-5,000 variant breaches on ≥5% of stress days for a candidate book [R07 §4.3]; margin ceilings {33%, 50%} rejected as sole controls if a passing book breaches the cash-path gate under S1–S5 [R07 §4.3]. **Method falsifiers (inherited):** construction-sensitivity — a spread result that flips sign between explicit-contract accounting and any adjusted continuous series is an artefact [R09 §4.2 pathway 2]; settlement-as-fill or `High−Low` spread constructions invalidate a run on sight (§9.2). **Gates:** (i) E0/E1 protocol frozen → replay → (ii) shadow E2 with journal + BBO collection → (iii) burden/quota review against §13 → (iv) *only then*, and only with U1–U3 resolved, may a live-pilot question be posed. A 90-day clock, if a pilot ever starts, validates operations, not profitability [R09 §1 point 8], and its 5/10/15k rules never reset [R05 §4.6].
+
+---
+
+## 17. Possible project changes (proposed, not approved)
+
+1. **Generate entry signals only for attended windows** (first generation ≈11:30 MSK for a 12:00 return; suppress *entry* births 00:00–11:00, keep risk alerts) if F-2 fires — fixes mistiming without touching strategy logic.
+2. **Default entry window in the main session** (e.g. 12:00–18:30 MSK); evening-session entries require separate evidence (R02's friction snapshot is evening data and cannot justify evening entries [R02 §10.1]).
+3. **Restrict the first virtual universe to CNY + GL flagship pairs** (cheapest stressed margin, 1:1 integer hedges [R06 §12.1]); IMOEX pairs enter only after the buffer-`u` test, GL only with limit-only discipline acknowledged.
+4. **Adopt computed buffer `u` and the 33% gross-margin ceiling as protocol parameters** (test candidates [R07 §4.1], replacing the bare 50%/5,000 heuristics in simulation).
+5. **Start §9.4 forward collection (snapshots + journal) immediately upon rights clarification** — it is the only path that converts E1 intervals into E2 evidence, and every month of delay is a month of bid/ask history that will never exist.
+6. **Keep BCS in its planned role** (later automation stage): its documented joint-order/calendar-spread application [R01 §5] is a reason to test atomic execution *there first* in shadow, not a reason to assume it at VTB now.
+7. **Do not build risk logic on unconfirmed VTB stop orders, unconfirmed CS access, or A-soft emergency availability** (§§2.2, 3.2, 7.2) — each fictional control is worse than an admitted absence, because it suppresses position-size discipline.
+
+---
+
+## Appendix A — Formula sheet (as used above)
+
+- Excess accounting: `X = V − B`; `H = max(0, max past X)`; `D = H − X`; `S = max(0, −X)` [R05 §2.4; R09 §9.2]. (Convention: current X included in H so D ≥ 0; frozen in the journal before first entry [R05 §2.4].)
+- Round turn: `C_RT = 2q × (b_A + F_A + b_B + F_B)`; `FutFee` per §2.4; CS anonymous fee `T × F × (1 − 0.2)` in marketing period [R02 Appendix B].
+- Full cost: `C_full = C_RT + friction + Δfixed fees + events + financing + U` [R02 §9.1].
+- Entry/continuation: `X − L_stress − u ≥ −15,000`, `u = max(5,000, 2.5 × σ_delay(book) + C_exit)` [R07 §4.1 — PROPOSAL]; independent cash-path gate [R07 §4.1 gate 2].
+- Implementation shortfall (per signal): `(achieved − decision) signed to trade, over filled qty + opportunity cost over unfilled qty + explicit costs`, decision price = synchronous executable spread at t4 where obtainable, else the §9.2 conservative-bound convention — the convention is part of the registered method (after Perold [W5]; decomposition §9.3).
+- Quoted spread in RUB: `(OFFER − BID) / MINSTEP × STEPPRICE`; conservative 4-execution crossing `= 4 × spread_RUB × q` [R02 Appendix B].
+
+## Appendix B — Forward log schema (minimum fields)
+
+`signal_id, version, supersedes, family_id, legs[secid, side, qty, hedge_ratio], t0_event, t1_published, t2_received, t3_eval, input_hash, data_vintage, t4_signal, thesis_params, fair_value, bounds(enter_only_if, do_not_enter_if), TTL, t5_sent, t6_delivered, t7_seen, t8_decide, decision, t9_reval, bbo_both_legs(price, qty, age_ms, skew_ms), GO_snapshot(gross, stressed), X_D_at_reval, gates G1–G8 (pass/fail + values), reservation_id, t10_submit[], t11_acks[], t12_fills[](price, qty), t13_hedge_complete, unhedged_seconds, t14_cancels[], disposition, reason_codes[], C_full_breakdown, IS_decomposition, MAE_id, quota_counters, calendar_version, calendar_tMT_param, funding_model, marks(t15, hierarchy, leg_ages), E_ledger_events` — one row per signal version, immutable once written; corrections are new rows (vintage discipline [R09 §4.1]).
+
+## Appendix C — Sources and traceability
+
+**Supplied reports (primary evidence base; observation dates as stated in each):** R01 (broker rules/KPUR/collateral/liquidation; primary docs incl. 6681-U of 2024-02-12, VTB liquid-assets list `spisok071026.xlsx` 2026-10-07, VTB Regulation ed. 2026-07-31 / Appendix No. 9, BCS Appendices No. 6/7/11); R02 (VTB `prof_privilegiya.pdf`, Appendix No. 9 §§3.2/16–17, BCS Appendix No. 11, MOEX/NCC fee schedules effective 2026-09-08/2026-09-21); R04 (ISS Guide v1.4 (2016), MOEX market-data policy, measured ISS probes 2026-10); R05 (LQDT fund rules PDU No. 3915-17, NCC LQDT parameters 2025-04-23, Tax Code arts. 214.1/224 as read 2026-08-04); R06 (ISS snapshot 2026-10-07 23:50:14 MSK, MOEX s206 read 2026-10-08, contract specifications); R07 (sources §14 therein, incl. Bank of Russia key-rate decision 2026-07-24, accessed 2026-10-14); R09 (Bailey & López de Prado, *JPM* 40(5) 2014, 94–107; Bailey et al., *J. Comput. Finance* 20(4) 2017, 39–70; López de Prado, *AFML*, Wiley 2018 — bibliographic details per R09 Appendix B).
+
+**Web sources re-checked for this report (accessed 2026-10-15):**
+- [W1] Moscow Exchange, "Единая торговая сессия на срочном рынке" — moex.com/s3886. Excerpts: "С 23 марта 2026 года срочный рынок … переходит на Единую торговую сессию (ЕТС)"; schedule table 06:50–07:00 auction, 07:00–09:00 morning, 09:00–19:00 main, 19:00–23:50 evening, margin requirement 09:00 / fulfilment 17:30, clearing 23:50–00:30, settlement session 20:00 T+1; the same page's FAQ states margin requirements "выставляются в 10:00" and the older 08:50/10:00 session split (conflict §2.1).
+- [W2] Moscow Exchange, "Календарные спреды" — moex.com/ru/spreads. Excerpts: "позволяет одновременно совершать противоположно направленные сделки … с двумя фьючерсами разных дат исполнения на один базовый актив"; "поддерживаемые категории заявок: лимитированная, рыночная, fill or kill"; `Fee_CS = T × F × (1 − K)`, K = 0.2; margin on matching reserved as for two atomic leg orders.
+- [W3] Moscow Exchange, "Interfaces" — moex.com/a7939. Excerpt (ISS): "Access to real-time data requires subscription, delayed data (15 min) is provided for free."
+- [W4] Larry Harris, *Trading and Exchanges: Market Microstructure for Practitioners*, Oxford University Press (2003) — publisher book page, academic.oup.com/book/52292: chapter list (Ch. 4 Orders and Order Properties; Ch. 6 Order-driven Markets; Ch. 14 Bid/Ask Spreads; Ch. 17 arbitrageurs; Ch. 19 Liquidity; Ch. 21 Liquidity and Transaction Cost Measurement). Table of contents only; text not read.
+- [W5] André F. Perold, "The Implementation Shortfall: Paper Versus Reality", *Journal of Portfolio Management* 14(3), 1988, 4–9 — definition and decomposition as cited in R09 §9.6/Appendix B (paper vs reality portfolios; delay, execution and opportunity-cost components). Cited from the bibliographic record; full text not re-read for this report.
+
+**Retrieval log (this report):** normal fetch succeeded for W1–W3 (no access failure, no specialist retrieval needed or used); web search used for methodology leads (Perold/Harris) and MOEX schedule corroboration, with a secondary GlobalExchanges note (2026-08-14) corroborating the 09:00 main-session start from 2026-09-14 — used only as corroboration, the MOEX page [W1] being primary. One 2022 forum anecdote on VTB calendar-spread support was found and deliberately **excluded** from evidence (§2.2). No paywalled, authenticated or private material was accessed; no credentials were used.
+
+*End of report R08.*

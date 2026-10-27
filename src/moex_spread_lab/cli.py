@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .iss import DEFAULT_FAR, DEFAULT_ISS_BASE_URL, DEFAULT_NEAR, fetch_iss_catalog
 from .research import run_research_pipeline
 from .w0 import W0Error, replay, scan_secrets, validate_manifest, write_json
 
@@ -29,6 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
     pipeline_parser.add_argument("--output", type=Path, required=True)
+
+    iss_parser = subparsers.add_parser("iss-intake", help="read a current MOEX ISS futures catalog")
+    iss_parser.add_argument("--output", type=Path, required=True)
+    iss_parser.add_argument("--base-url", default=DEFAULT_ISS_BASE_URL)
+    iss_parser.add_argument("--board", default="RFUD")
+    iss_parser.add_argument("--near", default=DEFAULT_NEAR)
+    iss_parser.add_argument("--far", default=DEFAULT_FAR)
     return parser
 
 
@@ -59,6 +67,23 @@ def main() -> int:
                 "release_state": result["release_state"],
                 "report_hash": result["report_hash"],
             }, sort_keys=True))
+            return 0
+        if args.command == "iss-intake":
+            result = fetch_iss_catalog(
+                base_url=args.base_url,
+                board=args.board,
+                near_secid=args.near,
+                far_secid=args.far,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(json.dumps({
+                "admission_status": result["admission_status"],
+                "candidate": result["candidate"]["candidate_id"],
+                "instrument_count": result["instrument_count"],
+                "raw_response_sha256": result["source"]["raw_response_sha256"],
+                "rights_status": result["source"]["rights_status"],
+            }, ensure_ascii=False, sort_keys=True))
             return 0
     except W0Error as exc:
         print(f"W0 validation failed: {exc}")

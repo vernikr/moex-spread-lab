@@ -23,7 +23,7 @@
       "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "ecf7f4f753246677b160254036d2babb5cfa06aaeb41b4ae54c9ee59047be8d2",
+  "config_hash": "7ed017df1184912d4a8d9f2ce08940bacc37864b0c1d77ea84063e47d302735d",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -43,6 +43,13 @@
       "manifest_path": "config/modules/w1-w7.json",
       "manifest_sha256": "f4d70c8dc5fbecf3dc7ba1a54ce10e18ecd99dfed50a64aaa0a6c932b4e8ef72",
       "module_id": "moex-spread-lab.research-waves",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "iss-intake.v1",
+      "manifest_path": "config/modules/w1-intake.json",
+      "manifest_sha256": "dee3c21f566ace2575c51dedc73c55a5c4cd38822339c496ef011b1113933c87",
+      "module_id": "moex-spread-lab.iss-intake",
       "release": "0.1.0"
     }
   ],

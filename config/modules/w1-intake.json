@@ -1,0 +1,40 @@
+{
+  "module_id": "moex-spread-lab.iss-intake",
+  "release": "0.1.0",
+  "contract_version": "iss-intake.v1",
+  "kind": "data",
+  "capabilities": [
+    "read_only_catalog",
+    "board_explicitness",
+    "price_role_separation",
+    "source_hashing",
+    "candidate_admission_gate"
+  ],
+  "inputs": [
+    "MOEX ISS futures RFUD catalog response"
+  ],
+  "outputs": [
+    "iss-intake.v1"
+  ],
+  "dependencies": [],
+  "owner": "project-core",
+  "resource_profile": {
+    "network": "explicit-read-only-probe",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "unresolved_public_iss_terms",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none",
+    "receipt_time_is_recorded": true
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "conditional-read-only"
+  }
+}

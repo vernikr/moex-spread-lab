@@ -1,6 +1,6 @@
 {
   "all_fixture_gates_passed": true,
-  "config_hash": "7ed017df1184912d4a8d9f2ce08940bacc37864b0c1d77ea84063e47d302735d",
+  "config_hash": "14c02b0be13be0caf73fa6efa6d0167f3d3c086b10c3164d1576cac69beb11bf",
   "fixture_hash": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca",
   "fixture_rights_status": "synthetic_test_data",
   "gates": {

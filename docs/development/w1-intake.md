@@ -49,6 +49,25 @@ The historical data question has three separate answers:
 
 Therefore the next intake can use more detail than daily data for analytical and delay-sensitivity tests, while execution results remain interval/scenario-based until a quote or broker evidence source is collected.
 
+## Instrument timeframe inventory
+
+The repeatable inventory command checks `candleborders` for every instrument in the current RFUD catalog and writes one row per instrument:
+
+```bash
+uv run python -m moex_spread_lab.cli iss-timeframe-inventory \
+  --output data/w1/instrument-timeframes.json \
+  --csv-output data/w1/instrument-timeframes.csv \
+  --workers 8 \
+  --timeout 8 \
+  --cache-dir data/w1/candleborders-cache
+```
+
+The JSON is the provenance-rich result; the CSV is the convenient filterable list. The cache makes the run resumable. Delete `data/w1/candleborders-cache/` before a deliberate fresh coverage scan.
+
+The completed 2026-10-27 scan covered 506 instruments: 483 had `1m` as the smallest available candle interval and 23 had no candle borders. No request failures remained after retrying the initial transient failures. For `CNYRUBF` and `CRZ6`, the smallest available interval is `1m`; both also expose `10m`, `1h` and `1d` borders.
+
+Every inventory result records `price_interpretation=candle_price_proxy_for_medium_term_analysis`: candle values are the project's working price proxy for medium-term research, not a claim of historical bid/ask reconstruction.
+
 ## Boundary
 
 This adapter does not collect history, reconstruct fills, infer a live mark, authorize a broker or admit a strategy. The next data step is a dated daily-candle intake for both legs with explicit coverage and a labelled current-parameter fallback where needed.

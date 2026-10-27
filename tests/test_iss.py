@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from moex_spread_lab.iss import normalize_iss_intake
+from moex_spread_lab.iss import normalize_candle_borders, normalize_iss_intake
 
 
 def payload():
@@ -30,6 +30,27 @@ def payload():
 
 
 class IssIntakeTests(unittest.TestCase):
+    def test_candle_borders_select_smallest_available_interval(self):
+        result = normalize_candle_borders(
+            {
+                "borders": {
+                    "columns": ["begin", "end", "interval", "board_group_id"],
+                    "data": [
+                        ["2022-01-01", "2026-10-27", 24, 45],
+                        ["2022-01-01", "2026-10-27", 10, 45],
+                        ["2022-01-01", "2026-10-27", 1, 45],
+                    ],
+                },
+            },
+            secid="CNYRUBF",
+            url="https://iss.moex.com/test/candleborders",
+            received_at="2026-10-27T06:00:00+00:00",
+            raw_sha256="borders-hash",
+        )
+        self.assertEqual(result["minimum_interval"], 1)
+        self.assertEqual(result["minimum_timeframe"], "1m")
+        self.assertEqual([item["timeframe"] for item in result["available_intervals"]], ["1m", "10m", "1d"])
+
     def test_current_snapshot_keeps_price_roles_separate(self):
         result = normalize_iss_intake(
             payload(),

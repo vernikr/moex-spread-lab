@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import csv
+import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 from .w0 import W0Error
@@ -23,6 +27,15 @@ DEFAULT_NEAR = "CNYRUBF"
 DEFAULT_FAR = "CRZ6"
 PROJECT_RIGHTS_STATUS = "accepted_project_assumption_personal_use"
 HISTORICAL_SPECIFICATION_STATUS = "current_snapshot_fallback_assumed"
+CANDLE_INTERVAL_LABELS = {
+    1: "1m",
+    4: "4h",
+    7: "1w",
+    10: "10m",
+    60: "1h",
+    24: "1d",
+    31: "1mo",
+}
 
 SECURITY_FIELDS = (
     "SECID",
@@ -75,6 +88,11 @@ def _url(base_url: str, board: str) -> str:
     )
 
 
+def _candleborders_url(base_url: str, board: str, secid: str) -> str:
+    root = base_url.rstrip("/")
+    return f"{root}/iss/engines/futures/markets/forts/boards/{board}/securities/{secid}/candleborders.json?iss.meta=off"
+
+
 def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     if not isinstance(block, dict) or not isinstance(block.get("columns"), list) or not isinstance(block.get("data"), list):
         raise IssIntakeError(f"ISS block is malformed: {name}")
@@ -85,6 +103,178 @@ def _rows(block: Any, name: str) -> list[dict[str, Any]]:
             raise IssIntakeError(f"ISS row has invalid width: {name}[{index}]")
         rows.append(dict(zip(columns, values)))
     return rows
+
+
+def normalize_candle_borders(payload: dict[str, Any], *, secid: str, url: str, received_at: str, raw_sha256: str) -> dict[str, Any]:
+    rows = _rows(payload.get("borders"), "borders")
+    intervals = []
+    for row in rows:
+        interval = row.get("interval")
+        if not isinstance(interval, int) or interval <= 0:
+            raise IssIntakeError(f"invalid candle interval for {secid}: {interval}")
+        begin = row.get("begin")
+        end = row.get("end")
+        intervals.append({
+            "interval": interval,
+            "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
+            "begin": begin,
+            "end": end,
+            "coverage_status": "borders_available",
+        })
+    intervals.sort(key=lambda item: item["interval"])
+    return {
+        "secid": secid,
+        "source": {
+            "url": url,
+            "received_at": received_at,
+            "raw_response_sha256": raw_sha256,
+        },
+        "available_intervals": intervals,
+        "minimum_interval": intervals[0]["interval"] if intervals else None,
+        "minimum_timeframe": intervals[0]["timeframe"] if intervals else None,
+        "coverage_status": "available" if intervals else "no_candle_borders",
+    }
+
+
+def _fetch_json(url: str, *, timeout: float, opener: Callable[..., Any]) -> tuple[dict[str, Any], str, str]:
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": "moex-spread-lab/0.1 W1 coverage probe"},
+        method="GET",
+    )
+    received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with opener(request, timeout=timeout) as response:
+            raw = response.read()
+            status = getattr(response, "status", 200)
+            content_type = response.headers.get("Content-Type", "")
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        raise IssIntakeError(f"ISS request failed: {exc}") from exc
+    if status != 200:
+        raise IssIntakeError(f"ISS request returned HTTP {status}")
+    if b"<html" in raw[:1024].lower() or "json" not in content_type.lower():
+        raise IssIntakeError("ISS response is not JSON; possible access/error page")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise IssIntakeError("ISS response is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        raise IssIntakeError("ISS JSON root is not an object")
+    return payload, received_at, hashlib.sha256(raw).hexdigest()
+
+
+def fetch_candle_coverage(
+    instruments: list[dict[str, Any]],
+    *,
+    base_url: str = DEFAULT_ISS_BASE_URL,
+    board: str = DEFAULT_BOARD,
+    timeout: float = 20.0,
+    workers: int = 2,
+    delay_seconds: float = 0.1,
+    cache_dir: Path | None = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, Any]:
+    if workers < 1:
+        raise IssIntakeError("coverage workers must be positive")
+    if delay_seconds < 0:
+        raise IssIntakeError("coverage delay must not be negative")
+
+    def fetch_one(instrument: dict[str, Any]) -> dict[str, Any]:
+        secid = instrument["secid"]
+        url = _candleborders_url(base_url, board, secid)
+        cache_path = cache_dir / f"{secid}.json" if cache_dir else None
+        if cache_path and cache_path.exists():
+            try:
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                if cached.get("secid") == secid and cached.get("source", {}).get("url") == url:
+                    for interval_row in cached.get("available_intervals", []):
+                        interval_row["timeframe"] = CANDLE_INTERVAL_LABELS.get(
+                            interval_row.get("interval"), f"interval_{interval_row.get('interval')}"
+                        )
+                    if cached.get("available_intervals"):
+                        cached["minimum_timeframe"] = cached["available_intervals"][0]["timeframe"]
+                    return {**instrument, "candle_coverage": cached}
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                pass
+        if delay_seconds:
+            time.sleep(delay_seconds)
+        try:
+            payload, received_at, raw_sha256 = _fetch_json(url, timeout=timeout, opener=opener)
+            coverage = normalize_candle_borders(payload, secid=secid, url=url, received_at=received_at, raw_sha256=raw_sha256)
+            if cache_path:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(json.dumps(coverage, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            return {**instrument, "candle_coverage": coverage}
+        except IssIntakeError as exc:
+            return {
+                **instrument,
+                "candle_coverage": {
+                    "secid": secid,
+                    "source": {"url": url},
+                    "available_intervals": [],
+                    "minimum_interval": None,
+                    "minimum_timeframe": None,
+                    "coverage_status": "request_failed",
+                    "error": str(exc),
+                },
+            }
+
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(fetch_one, instrument) for instrument in instruments]
+        for future in as_completed(futures):
+            results.append(future.result())
+    results.sort(key=lambda item: item["stable_id"])
+    status_counts: dict[str, int] = {}
+    timeframe_counts: dict[str, int] = {}
+    for result in results:
+        coverage = result["candle_coverage"]
+        status = coverage["coverage_status"]
+        status_counts[status] = status_counts.get(status, 0) + 1
+        timeframe = coverage["minimum_timeframe"] or "unavailable"
+        timeframe_counts[timeframe] = timeframe_counts.get(timeframe, 0) + 1
+    return {
+        "schema_version": "iss-timeframe-inventory.v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "board": board,
+        "source": {
+            "provider": "moex_iss",
+            "rights_status": PROJECT_RIGHTS_STATUS,
+            "rights_basis": "user_decision_A-05",
+            "coverage_endpoint": "candleborders",
+            "network_mode": "read_only_probe",
+            "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
+        },
+        "instrument_count": len(results),
+        "coverage_status_counts": status_counts,
+        "minimum_timeframe_counts": timeframe_counts,
+        "instruments": results,
+    }
+
+
+def write_timeframe_inventory(result: dict[str, Any], output: Path, csv_output: Path | None = None) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if csv_output is None:
+        return
+    csv_output.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["stable_id", "secid", "security", "asset_code", "expiry", "minimum_timeframe", "minimum_interval", "available_timeframes", "coverage_status"]
+    with csv_output.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for instrument in result["instruments"]:
+            coverage = instrument["candle_coverage"]
+            writer.writerow({
+                "stable_id": instrument["stable_id"],
+                "secid": instrument["secid"],
+                "security": instrument.get("security"),
+                "asset_code": instrument.get("asset_code"),
+                "expiry": instrument.get("expiry"),
+                "minimum_timeframe": coverage.get("minimum_timeframe"),
+                "minimum_interval": coverage.get("minimum_interval"),
+                "available_timeframes": ",".join(item["timeframe"] for item in coverage.get("available_intervals", [])),
+                "coverage_status": coverage.get("coverage_status"),
+            })
 
 
 def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str, raw_sha256: str) -> dict[str, Any]:

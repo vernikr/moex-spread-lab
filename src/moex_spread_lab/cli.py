@@ -6,7 +6,14 @@ import argparse
 import json
 from pathlib import Path
 
-from .iss import DEFAULT_FAR, DEFAULT_ISS_BASE_URL, DEFAULT_NEAR, fetch_iss_catalog
+from .iss import (
+    DEFAULT_FAR,
+    DEFAULT_ISS_BASE_URL,
+    DEFAULT_NEAR,
+    fetch_candle_coverage,
+    fetch_iss_catalog,
+    write_timeframe_inventory,
+)
 from .research import run_research_pipeline
 from .w0 import W0Error, replay, scan_secrets, validate_manifest, write_json
 
@@ -37,6 +44,16 @@ def build_parser() -> argparse.ArgumentParser:
     iss_parser.add_argument("--board", default="RFUD")
     iss_parser.add_argument("--near", default=DEFAULT_NEAR)
     iss_parser.add_argument("--far", default=DEFAULT_FAR)
+
+    coverage_parser = subparsers.add_parser("iss-timeframe-inventory", help="build an instrument candle-timeframe inventory")
+    coverage_parser.add_argument("--output", type=Path, required=True)
+    coverage_parser.add_argument("--csv-output", type=Path)
+    coverage_parser.add_argument("--base-url", default=DEFAULT_ISS_BASE_URL)
+    coverage_parser.add_argument("--board", default="RFUD")
+    coverage_parser.add_argument("--workers", type=int, default=2)
+    coverage_parser.add_argument("--delay-seconds", type=float, default=0.1)
+    coverage_parser.add_argument("--timeout", type=float, default=8.0)
+    coverage_parser.add_argument("--cache-dir", type=Path, default=Path("data/w1/candleborders-cache"))
     return parser
 
 
@@ -83,6 +100,26 @@ def main() -> int:
                 "instrument_count": result["instrument_count"],
                 "raw_response_sha256": result["source"]["raw_response_sha256"],
                 "rights_status": result["source"]["rights_status"],
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "iss-timeframe-inventory":
+            catalog = fetch_iss_catalog(base_url=args.base_url, board=args.board)
+            inventory = fetch_candle_coverage(
+                catalog["instruments"],
+                base_url=args.base_url,
+                board=args.board,
+                timeout=args.timeout,
+                workers=args.workers,
+                delay_seconds=args.delay_seconds,
+                cache_dir=args.cache_dir,
+            )
+            write_timeframe_inventory(inventory, args.output, args.csv_output)
+            print(json.dumps({
+                "instrument_count": inventory["instrument_count"],
+                "coverage_status_counts": inventory["coverage_status_counts"],
+                "minimum_timeframe_counts": inventory["minimum_timeframe_counts"],
+                "output": str(args.output),
+                "csv_output": str(args.csv_output) if args.csv_output else None,
             }, ensure_ascii=False, sort_keys=True))
             return 0
     except W0Error as exc:

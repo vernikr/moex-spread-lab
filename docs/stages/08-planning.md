@@ -221,7 +221,7 @@ No new business decision is required to start W0–W3. Later gates may require t
 
 - a redacted LQDT price/statement fixture for account-level benchmark reconciliation;
 - applicable VTB tariff and account/collateral evidence;
-- a choice between a narrower research universe and an authorized higher-quality executable-data source if free-data rights remain unresolved;
+- a choice between a narrower research universe and a higher-quality executable-data source if analytical history or execution evidence remains insufficient; A-05 removes this choice as a blocker for the private local ISS pipeline;
 - operational response and availability observations for a future shadow workflow.
 
 These inputs are gates for stronger conclusions, not prerequisites for building the offline schemas and replay fixtures.

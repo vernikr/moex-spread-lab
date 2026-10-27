@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog intake now includes a read-only current probe** alongside the W0–W7 offline mechanics. The CNYRUBF/CRZ6 candidate remains not admitted because historical provenance, executable quotes and ISS rights are unresolved. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog intake now includes a read-only current probe** alongside the W0–W7 offline mechanics. Under decision A-05, CNYRUBF/CRZ6 is conditionally admitted for analytical research; historical executable quotes remain unavailable and execution claims stay blocked. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)

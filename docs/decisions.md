@@ -1,6 +1,6 @@
 # Decision register
 
-Updated 2026-10-07 after the user’s second instruction. User answers override proposed interpretations; delegated defaults remain distinct from direct user choices and from verified facts.
+Updated 2026-10-27 after the user's W1 data-use clarification. User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
 
 | ID | Confirmed user decision | Boundary / unresolved part |
 |---|---|---|
@@ -8,6 +8,7 @@ Updated 2026-10-07 after the user’s second instruction. User answers override 
 | A-02 | Exceeding the planned RUB 30,000 requires explicit user approval. | The delegated default permits proposals for at most 15,000 additional gross funding over the whole pilot, for existing-position liquidity/de-risking only. Each use still needs explicit approval. Emergency availability and delegated ceiling selection are not approval to transfer money. |
 | A-03 | Use one realistic virtual portfolio. Attempt all eligible signals without discretionary omission; record constraints and reasons for nonexecution. | No fictional fills when price, capital, tradability or validity prevents execution. No second unconstrained portfolio requested. |
 | A-04 | Acceptable final **underperformance versus LQDT** over several months: **RUB 10,000–15,000**. Emergency top-ups are possible. | The user resolved the numeric wording and then the benchmark-relative loss basis. Delegated risk defaults below specify action rules; per-idea/aggregate stress calibration and tax basis remain unverified. |
+| A-05 | For this private, single-user pet project, treat freely accessible public market data as available for the project's local research, storage and calculations; do not block the research pipeline on unresolved ISS-use terms. If better historical contract evidence is unavailable, use the current contract parameters as an explicitly labelled fallback assumption. | This is a project operating assumption, not a legal opinion or proof of MOEX permission. It does not create redistribution, public-service, broker, live-trading or unattended-runtime authorization. Historical executable bid/ask remains a separate data limitation. |
 
 ## Delegated operational defaults (not empirical findings)
 

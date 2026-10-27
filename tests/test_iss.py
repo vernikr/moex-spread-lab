@@ -43,7 +43,7 @@ class IssIntakeTests(unittest.TestCase):
         self.assertEqual(near["last_trade_close"], None)
         self.assertEqual(near["analytical_close"], None)
         self.assertEqual(near["live_mark"], None)
-        self.assertEqual(result["admission_status"], "not_admitted")
+        self.assertEqual(result["admission_status"], "conditionally_admitted_analytical_only")
 
     def test_candidate_blockers_are_explicit(self):
         result = normalize_iss_intake(
@@ -53,8 +53,9 @@ class IssIntakeTests(unittest.TestCase):
             raw_sha256="raw-hash",
         )
         reasons = result["candidate"]["reasons"]
-        self.assertTrue(any("historical" in reason for reason in reasons))
-        self.assertTrue(any("rights" in reason for reason in reasons))
+        self.assertTrue(any("executable bid/ask" in reason for reason in reasons))
+        self.assertEqual(result["source"]["rights_status"], "accepted_project_assumption_personal_use")
+        self.assertTrue(result["candidate"]["assumptions"])
 
     def test_normalized_output_is_json_serializable(self):
         result = normalize_iss_intake(

@@ -21,6 +21,8 @@ DEFAULT_ISS_BASE_URL = "https://iss.moex.com"
 DEFAULT_BOARD = "RFUD"
 DEFAULT_NEAR = "CNYRUBF"
 DEFAULT_FAR = "CRZ6"
+PROJECT_RIGHTS_STATUS = "accepted_project_assumption_personal_use"
+HISTORICAL_SPECIFICATION_STATUS = "current_snapshot_fallback_assumed"
 
 SECURITY_FIELDS = (
     "SECID",
@@ -136,6 +138,7 @@ def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str
             },
             "source_vintage": "current_snapshot",
             "historical_evidence": False,
+            "historical_specification_basis": HISTORICAL_SPECIFICATION_STATUS,
         })
     instruments.sort(key=lambda item: item["stable_id"])
     quality_summary: dict[str, int] = {}
@@ -149,7 +152,8 @@ def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str
             "url": url,
             "received_at": received_at,
             "raw_response_sha256": raw_sha256,
-            "rights_status": "unresolved_public_iss_terms",
+            "rights_status": PROJECT_RIGHTS_STATUS,
+            "rights_basis": "user_decision_A-05",
             "network_mode": "read_only_probe",
         },
         "instrument_count": len(instruments),
@@ -163,6 +167,7 @@ def _candidate_status(instruments: list[dict[str, Any]], near_secid: str, far_se
     near = by_sec_id.get(near_secid)
     far = by_sec_id.get(far_secid)
     reasons: list[str] = []
+    assumptions: list[str] = []
     if near is None:
         reasons.append(f"near instrument not found: {near_secid}")
     if far is None:
@@ -172,17 +177,18 @@ def _candidate_status(instruments: list[dict[str, Any]], near_secid: str, far_se
             reasons.append("asset-code relationship is not the configured CNY/RUB candidate")
         if near["source_vintage"] != "current_snapshot" or far["source_vintage"] != "current_snapshot":
             reasons.append("unexpected source-vintage state")
-        reasons.extend([
-            "current snapshot is not historical point-in-time evidence",
-            "historical settlement series and historical executable bid/ask are not present",
-            "ISS automated-use and storage rights remain unresolved",
-        ])
+        assumptions.append("historical contract parameters use the current snapshot until a dated specification is available")
+        reasons.append("historical executable bid/ask is unavailable; execution replay remains blocked")
+    if near is not None and far is not None and any(item["quote_quality"] != "two_sided_quote" for item in (near, far)):
+        reasons.append("one or both candidate instruments have invalid or missing current quotes")
     return {
         "candidate_id": f"{near_secid}/{far_secid}",
         "near_secid": near_secid,
         "far_secid": far_secid,
-        "status": "not_admitted" if reasons else "admitted",
+        "status": "conditionally_admitted_analytical_only" if near is not None and far is not None and not any("invalid or missing" in reason for reason in reasons) else "not_admitted",
         "reasons": reasons,
+        "assumptions": assumptions,
+        "execution_status": "blocked_historical_quote_evidence" if near is not None and far is not None else "not_evaluable",
     }
 
 

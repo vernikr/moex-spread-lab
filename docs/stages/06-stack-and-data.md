@@ -64,7 +64,7 @@ Use as the first candidate for offline exploratory studies only, subject to the 
 
 **Reuse implementation pattern from Stage 7:** discover boards before history requests, resolve documented aliases, paginate history, request an explicit field list and retain the raw response with request parameters, receipt time and hash. For shares/ETFs, prefer `LEGALCLOSEPRICE` when the source supplies and defines it; for futures, preserve settlement and last-trade fields separately rather than applying the equity rule.
 
-**Gate:** obtain and archive the applicable written interpretation/permission for the intended personal research and automated collection scenario. Until then, ISS may support a clearly labelled local research experiment only; it is not the approved source for an unattended signal runtime or live trading.
+**Project decision:** A-05 permits this private single-user local research pipeline to proceed when ISS data are publicly accessible. The assumption is recorded as project provenance, not as a legal conclusion. It does not authorize redistribution, a public service, broker use, unattended signal runtime or live trading.
 
 ### 2. MOEX and NCC primary documents — specification and event evidence
 
@@ -155,13 +155,13 @@ Before implementation proceeds beyond fixtures, the selected baseline must demon
 
 1. A clean run can be rebuilt from a pinned module/artifact manifest with no network access.
 2. The same source vintage produces the same normalized observations, strategy proposals and LQDT accounting.
-3. A missing tariff, specification, rights flag or executable-price requirement produces a named blocked/inconclusive result.
+3. A missing tariff, specification or executable-price requirement produces a named blocked/inconclusive result; A-05 supplies the local private-research assumption for the ISS rights flag.
 4. The initial candidate universe can be narrowed or expanded through configuration without changing portfolio-core code.
 5. A tariff provider can be replaced with a second scenario and the report shows the difference without changing strategy logic.
 6. The data layer distinguishes event, publication and receipt time and rejects reused contract codes, stale data and post-decision corrections.
 7. The virtual portfolio replays delayed manual execution using conservative bounds and never fabricates bid/ask, depth or fills.
 8. The local run stays within workstation resource limits; no VPS deployment is needed to pass the offline gates.
-9. A rights or broker-perimeter failure blocks automation and live conclusions while leaving non-sensitive research artifacts reproducible.
+9. A rights or broker-perimeter failure blocks public/unattended automation and live conclusions while leaving local analytical artifacts reproducible under A-05.
 
 ## Business assumptions carried forward
 

@@ -46,7 +46,7 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 | BR-05 | Account for manual response from 3 to 90 minutes | Every signal has a decision-time revalidation and a recorded delay scenario |
 | BR-06 | Preserve the user's one realistic virtual portfolio | All eligible signals are attempted according to a frozen priority rule; omissions, rejections and partial fills remain outcomes |
 | BR-07 | Make a signal explainable | A report identifies the relationship, data vintage, costs, expected holding period, size basis, invalidation conditions and uncertainty |
-| BR-08 | Permit a safe conclusion when evidence is weak | Missing data, rights, costs, margin or fills produce an explicit block/inconclusive result rather than a zero assumption |
+| BR-08 | Permit a safe conclusion when evidence is weak | Missing data, costs, margin or fills produce an explicit block/inconclusive result rather than a zero assumption; the user's A-05 private-research assumption is recorded rather than treated as an unresolved local-pipeline blocker |
 
 ## Functional requirements
 
@@ -138,7 +138,7 @@ The first implementation may begin only when it can pass these checks on a small
 The following remain intentionally open until later evidence or implementation measurements:
 
 - exact broker/account configuration and collateral treatment;
-- final data source and permitted automated-use terms;
+- final data source; for the private local pipeline, A-05 supplies an operating assumption on publicly accessible data, while broker/public/unattended use remains separately gated;
 - final timeframe and storage engine;
 - Telegram deployment details;
 - final sizing formula and risk thresholds;

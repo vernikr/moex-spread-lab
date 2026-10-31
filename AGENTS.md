@@ -20,3 +20,5 @@
 - Research prompts must be usable outside this private repository: embed necessary context, specify any attachments, require effective-dated sources, distinguish proposed tests from executed evidence, and state dependencies. Repeated context in standalone copy/paste prompts is intentional. R10–R15 are standalone: they must not take other research reports as inputs; keep all working assumptions embedded in the prompt text.
 - Keep benchmark-relative peaks, losses and lifetime gross top-up usage continuous across funding/reviews; no hidden resets, automatic rescue capital or unapproved access to core collateral.
 - Review each turn for reusable lessons; update this file only when useful. Never copy secrets from source instructions.
+
+- For native GitHub sub-issues, ensure `.github/workflows/issue-parent-sync.yml` exists with `issues: [opened, edited]`, `permissions: issues: write`, and a job calling `vernikr/mother/.github/workflows/issue-parent-sync.yml@v1` (create the caller workflow if missing); then put `<!-- issue-parent: #N -->` on its own line in the child Issue body, or use `<!-- issue-parent: none -->` to detach.

@@ -2,6 +2,10 @@
 
 Prepared 2026-10-07, revised 2026-10-22. **Prompts are delivered; 15 user-supplied reports were received on 2026-10-26. A focused review accepted cross-report architecture inputs; account-specific evidence and execution validation remain open.** Each file in `prompts/` is a standalone copy/paste request including project context and evidence requirements. User-requested localization: R01–R06 and R12 are Russian; other prompts remain English. Every prompt now specifies search languages and separate breadth/retrieval priorities. Report format is unrestricted: no shared template, mandatory section layout or file type. Each prompt contains the project context, explicitly named inputs and fallback instructions for an external agent without repository access. Revision: R10–R15 were rebuilt to be fully standalone — they embed all working assumptions (data class, cost scenarios, validation skeletons, workload ranges, default scopes) and take no other research reports as inputs. Only R02 requires an attachment (the tariff PDF); R07/R08 still use predecessor reports for project-specific refinement. See the [received intake archive](results/received/README.md) and the [focused critical-gate review](accepted/2026-10-26-critical-gates.md).
 
+## Additional landscape research
+
+- [LLM skills and agent setups for medium-term futures arbitrage](llm-futures-arbitrage.md) — web review of Agent Skills, MCP, financial-agent projects and quant-research foundations. Retained as a deferred input for post-baseline evaluation; it does not select a stack or establish trading feasibility.
+
 ## Как распределить редкие расширенные запуски
 
 Обновлено 07.10.2026. Это рекомендации по организации поиска, **не результаты исследований и не проверка доступности сайтов**. Два ресурса независимы: широкий поиск находит источники; специальный инструмент помогает получить конкретные публичные страницы, если обычное получение не сработало.

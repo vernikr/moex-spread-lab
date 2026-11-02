@@ -183,6 +183,20 @@ When resources or evidence are limited, use this order:
 
 The plan deliberately accepts a narrower or zero-trade result in preference to a broad but weak conclusion.
 
+## Deferred research — LLM skills and agent setups
+
+The landscape review [LLM skills and agent setups for futures arbitrage](../research/llm-futures-arbitrage.md) is a retained research input, not a stack selection or trading approval. Revisit it after the first deterministic baseline and the relevant fixture gates have passed.
+
+The follow-up should evaluate only potentially useful, reproducible components:
+
+- custom skills for provenance, contract lifecycle, spread statistics, execution stress, risk gates and post-trade review;
+- read-only MCP tools with typed outputs and explicit source/freshness fields;
+- Qlib/RD-Agent-style hypothesis and validation loops;
+- structured role, memory and adversarial-review patterns from financial-agent projects; and
+- measured model cost, latency, repeatability and incremental value against the deterministic baseline.
+
+The LLM layer must remain outside numeric truth, sizing, margin, order state and execution authorization. A failed or inconclusive comparison is a valid reason to defer it again.
+
 ## Acceptance gates for Stage 9 development
 
 Development may begin only after the following fixture-level gates are demonstrated:

@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--cache-dir", type=Path, default=Path("data/benchmark-cache"))
     benchmark_parser.add_argument("--delay-seconds", type=float, default=0.1)
 
-    baseline_parser = subparsers.add_parser("analytical-baseline", help="run a delayed daily candle-close spread baseline")
+    baseline_parser = subparsers.add_parser("analytical-baseline", help="run a delayed candle-close spread baseline")
     baseline_parser.add_argument("--near-candles", type=Path, required=True)
     baseline_parser.add_argument("--far-candles", type=Path, required=True)
     baseline_parser.add_argument("--benchmark", type=Path, required=True)
@@ -95,6 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_parser.add_argument("--entry-z", type=float, default=2.0)
     baseline_parser.add_argument("--exit-z", type=float, default=0.5)
     baseline_parser.add_argument("--quantity", type=int, default=1)
+    baseline_parser.add_argument("--interval", type=int, default=24, choices=(1, 10, 60, 24))
+    baseline_parser.add_argument("--decision-delay-bars", type=int, default=1)
     return parser
 
 
@@ -325,15 +327,16 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "analytical-baseline":
-            from .analytics import build_daily_series, run_mean_reversion_baseline, write_analytics
+            from .analytics import build_series, run_mean_reversion_baseline, write_analytics
 
-            series = build_daily_series(
+            series = build_series(
                 args.near_candles,
                 args.far_candles,
                 args.benchmark,
                 args.contracts,
                 near=args.near,
                 far=args.far,
+                interval=args.interval,
             )
             result = run_mean_reversion_baseline(
                 series,
@@ -342,6 +345,7 @@ def main() -> int:
                 entry_z=args.entry_z,
                 exit_z=args.exit_z,
                 quantity=args.quantity,
+                decision_delay_bars=args.decision_delay_bars,
             )
             write_analytics(result, args.output)
             print(json.dumps({

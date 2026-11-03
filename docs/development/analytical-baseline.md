@@ -56,3 +56,18 @@ uv run python -m moex_spread_lab.cli analytical-baseline \
 ```
 
 The detailed ignored local report is `data/analytics/cnyrubf-crz6-1d-baseline.json`.
+
+## Intraday delay sensitivity
+
+The same fixed parameters were replayed on the synchronized H1 and M10 close proxies. The delay is measured in bars; no same-bar fill is used.
+
+| Timeframe | Delay | Marked rows | Trades | Gross P&L, RUB | Final `X`, RUB |
+|---|---:|---:|---:|---:|---:|
+| H1 | 1 bar | 4,386 | 228 | −989 | −8,018 |
+| H1 | 3 bars | 4,386 | 228 | −469 | −7,498 |
+| M10 | 1 bar | 19,060 | 1,110 | +1,014 | −6,015 |
+| M10 | 3 bars | 19,060 | 1,110 | −545 | −7,574 |
+
+For intraday rows, the matched LQDT mark uses the previous available daily close within the day and the same-date daily close only on the last common bar of that day. This avoids repeating a future end-of-day value across earlier bars. The resulting intraday `X` is still analytical because the benchmark does not have intraday account marks.
+
+These runs are delay diagnostics, not a parameter selection. The high turnover makes unresolved exchange, clearing, broker, slippage and exit costs especially material; no net advantage is claimed.

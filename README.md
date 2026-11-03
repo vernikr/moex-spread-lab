@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware decomposition and frozen H2-S1 proxy backtest, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation and the research gate decision are delivered** alongside the W0–W7 offline mechanics. The current baseline and H2-S1 configuration are not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware decomposition with dated regime controls, frozen H2-S1 proxy backtest, current-tariff sensitivity, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation and the research gate decision are delivered** alongside the W0–W7 offline mechanics. The current baseline and H2-S1 configuration are not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)

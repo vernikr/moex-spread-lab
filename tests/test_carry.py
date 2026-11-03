@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.carry import build_carry_strategy, build_carry_study
+from moex_spread_lab.carry import _transaction_cost_profile, build_carry_strategy, build_carry_study
 
 
 def source(secid, rows):
@@ -16,6 +16,17 @@ def source(secid, rows):
 
 
 class CarryTests(unittest.TestCase):
+    def test_current_moex_taker_tariff_is_separate_from_unverified_profiles(self):
+        profile = _transaction_cost_profile(
+            "moex_current_taker",
+            1.0,
+            near_price=12.0,
+            far_price=12.2,
+        )
+        self.assertEqual(profile["exchange_clearing_rate"], 0.0000462)
+        self.assertEqual(profile["status"], "current_official_moex_taker_rate_account_broker_unverified")
+        self.assertAlmostEqual(profile["round_trip_cost"], 2.23608, places=6)
+
     def test_funding_and_basis_are_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             contracts = Path(directory) / "contracts.json"

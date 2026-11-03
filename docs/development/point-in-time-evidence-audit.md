@@ -41,6 +41,7 @@ H2-S1 now carries an explicit `exit_before_perpetual_execution_window` policy. B
 ## Consequences for H2-S1
 
 - The funding direction and lot conversion are supported better than in the previous audit.
+- The local run now labels 150 observations under `K1=0.03%` and 199 under `K1=0%`; all 348 holding-day rows pass the rounded `K2=0.35%` consistency check.
 - The gross funding decomposition can remain an analytical result, with the regime label added to its provenance.
 - H2-S1 remains a proxy-only result because it used current snapshot contract fields, illustrative costs, settlement marks and no assignment/roll handling.
 - The open position at data end is not an expiry result: the available history ends on 27.10.2026, while CRZ6 expires on 17.12.2026.

@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     carry_strategy_parser.add_argument("--benchmark", type=Path, required=True)
     carry_strategy_parser.add_argument("--contracts", type=Path, required=True)
     carry_strategy_parser.add_argument("--output", type=Path, required=True)
-    carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress"), default="base")
+    carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress", "moex_current_taker"), default="base")
     carry_strategy_parser.add_argument("--initial-capital", type=float, default=30000.0)
     return parser
 

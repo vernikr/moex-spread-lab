@@ -1,6 +1,6 @@
 {
   "module_id": "moex-spread-lab.carry-study",
-  "release": "0.1.0",
+  "release": "0.2.0",
   "contract_version": "carry-study.v1",
   "kind": "analytics",
   "capabilities": [

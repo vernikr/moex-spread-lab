@@ -26,6 +26,17 @@ The basis component is calculated from daily settlement changes using the curren
 
 The result is a gross decomposition, not an investable return. It does not subtract exchange, clearing, broker, slippage, exit, financing or fixing-basis costs.
 
+## Dated funding controls
+
+The run labels every observation with the public CNYRUBF funding regime:
+
+| Regime | Observations | Effective `K1` | `K2` |
+|---|---:|---:|---:|
+| `cnyrubf-k1-003-k2-035` | 150 | 0.03% | 0.35% |
+| `cnyrubf-k1-000-k2-035` | 199 | 0% | 0.35% |
+
+All 348 holding-day `SWAPRATE` observations were within the rounded `K2` cap check; no review rows were generated. This check is a consistency control, not a reconstruction of missing funding or proof that the historical specification was complete.
+
 ## Important limitations
 
 1. `CNYRUBF` follows CNYRUB_TOM while `CRZ6` settles against CNYFIXME, so the two legs have a residual fixing-vs-TOM risk at expiry.
@@ -46,6 +57,8 @@ uv run python -m moex_spread_lab.cli carry-study \
   --cache-dir data/carry-history-cache \
   --output data/analytics/cnyrubf-crz6-carry-study.json
 ```
+
+For the separate tariff sensitivity run, use `--cost-scenario moex_current_taker` on `carry-strategy`. This applies the current official MOEX FX taker exchange/clearing rate to reference prices at the end of the input window; it is not a historical account tariff.
 
 ## H2-S1 continuation
 

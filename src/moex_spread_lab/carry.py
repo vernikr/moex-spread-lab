@@ -21,6 +21,22 @@ CARRY_SCHEMA = "carry-study.v1"
 HISTORY_SCHEMA = "iss-history.v1"
 STRATEGY_SCHEMA = "carry-strategy.v1"
 HISTORY_PAGE_SIZE = 100
+FUNDING_REGIMES = (
+    {
+        "id": "cnyrubf-k1-003-k2-035",
+        "effective_from": "2023-08-22",
+        "k1": 0.0003,
+        "k2": 0.0035,
+        "source": "MOEX notice n63166 and perpetual-futures page",
+    },
+    {
+        "id": "cnyrubf-k1-000-k2-035",
+        "effective_from": "2026-01-19",
+        "k1": 0.0,
+        "k2": 0.0035,
+        "source": "MOEX notice n96856 and perpetual-futures page",
+    },
+)
 HISTORY_FIELDS = (
     "BOARDID", "TRADEDATE", "SECID", "CLOSE", "SETTLEPRICE", "SWAPRATE",
     "OPENPOSITION", "VALUE", "VOLUME", "WAPRICE", "NUMTRADES", "ASSETCODE",
@@ -37,6 +53,14 @@ class CarryStrategyError(CarryError):
 
 def _round(value: float) -> float:
     return round(float(value), 8)
+
+
+def _funding_regime(date_key: str) -> dict[str, Any]:
+    regime = FUNDING_REGIMES[0]
+    for candidate in FUNDING_REGIMES:
+        if date_key >= candidate["effective_from"]:
+            regime = candidate
+    return regime
 
 
 def _fetch_json(url: str, *, timeout: float = 30.0, opener: Callable[..., Any] = urlopen) -> tuple[dict[str, Any], str]:
@@ -209,6 +233,11 @@ def build_carry_study(
         if swaprate is None:
             raise CarryError(f"missing CNYRUBF SWAPRATE on {date_key}")
         funding_received = 0.0 if previous_date is None else swaprate * near_contract["lot_size"]
+        regime = _funding_regime(date_key)
+        funding_cap_per_unit = None if previous_date is None else regime["k2"] * near_rows[previous_date]["settle"]
+        cap_status = "not_applicable_initial_observation"
+        if funding_cap_per_unit is not None:
+            cap_status = "within_rounded_k2_cap" if abs(swaprate) <= funding_cap_per_unit + 0.00001 else "above_k2_cap_review_required"
         cumulative_mark += daily_basis_pnl
         cumulative_funding += funding_received
         rows.append({
@@ -219,6 +248,11 @@ def build_carry_study(
             "daily_basis_pnl_short_near_long_far": _round(daily_basis_pnl),
             "daily_funding_received_short_near": _round(funding_received),
             "daily_gross_carry_pnl": _round(daily_basis_pnl + funding_received),
+            "funding_regime_id": regime["id"],
+            "funding_k1": regime["k1"],
+            "funding_k2": regime["k2"],
+            "funding_cap_per_unit": _round(funding_cap_per_unit) if funding_cap_per_unit is not None else None,
+            "funding_cap_status": cap_status,
             "cumulative_basis_pnl": _round(cumulative_mark),
             "cumulative_funding_received": _round(cumulative_funding),
             "cumulative_gross_carry_pnl": _round(cumulative_mark + cumulative_funding),
@@ -247,6 +281,11 @@ def build_carry_study(
             "positive_funding_rows": sum(value > 0 for value in funding_values),
             "negative_funding_rows": sum(value < 0 for value in funding_values),
             "zero_funding_rows": sum(value == 0 for value in funding_values),
+            "funding_regime_counts": {
+                regime["id"]: sum(row["funding_regime_id"] == regime["id"] for row in rows)
+                for regime in FUNDING_REGIMES
+            },
+            "funding_cap_review_rows": sum(row["funding_cap_status"] == "above_k2_cap_review_required" for row in rows),
             "transaction_costs_included": False,
             "historical_executable_fills": False,
         },
@@ -258,6 +297,7 @@ def build_carry_study(
             "rub_per_price_unit": _round(multiplier),
             "historical_specification_status": "current_snapshot_fallback_assumed",
             "fixing_mismatch_risk": "CNYRUBF_TOM_vs_CRZ6_CNYFIXME",
+            "funding_regimes": list(FUNDING_REGIMES),
         },
         "provenance": {
             "near_history": near_provenance,
@@ -302,7 +342,36 @@ def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
     return rows, hashlib.sha256(raw).hexdigest()
 
 
-def _transaction_cost_profile(name: str, tick_value: float) -> dict[str, Any]:
+def _transaction_cost_profile(
+    name: str,
+    tick_value: float,
+    *,
+    near_price: float | None = None,
+    far_price: float | None = None,
+    near_lot_size: int = 1000,
+    far_lot_size: int = 1000,
+) -> dict[str, Any]:
+    if name == "moex_current_taker":
+        if near_price is None or far_price is None:
+            raise CarryStrategyError("MOEX tariff scenario requires reference prices")
+        rate = 0.0000462
+        near_side = near_price * near_lot_size * rate
+        far_side = far_price * far_lot_size * rate
+        round_trip = 2 * (near_side + far_side)
+        return {
+            "scenario": name,
+            "exchange_clearing_rate": rate,
+            "near_reference_price": _round(near_price),
+            "far_reference_price": _round(far_price),
+            "near_leg_side_cost": _round(near_side),
+            "far_leg_side_cost": _round(far_side),
+            "entry_cost": _round(near_side + far_side),
+            "exit_cost": _round(near_side + far_side),
+            "round_trip_cost": _round(round_trip),
+            "status": "current_official_moex_taker_rate_account_broker_unverified",
+            "source": "https://www.moex.com/s93",
+            "funding_component": "actual_SWAPRATE_included;_broker_and_other_costs_not_included",
+        }
     profiles = {
         "low": {"exchange": 0.5, "clearing": 0.5, "broker": 0.5, "slippage_ticks": 0.5, "exit": 0.5},
         "base": {"exchange": 1.0, "clearing": 1.0, "broker": 1.0, "slippage_ticks": 1.0, "exit": 1.0},
@@ -321,6 +390,7 @@ def _transaction_cost_profile(name: str, tick_value: float) -> dict[str, Any]:
         + values["slippage_ticks"] * tick_value + values["exit"]
     ), 8)
     values["round_trip_cost"] = round(values["entry_cost"] + values["exit_cost"], 8)
+    values["scenario"] = name
     values["funding_component"] = "actual_SWAPRATE_included;_illustrative_funding_cost_not_added"
     values["status"] = "illustrative_unverified"
     return values
@@ -362,7 +432,17 @@ def build_carry_strategy(
     if observed_dates and observed_dates[-1] >= expiry_date - timedelta(days=15) and len(observed_dates) >= assignment_window_trading_days:
         assignment_window_start = observed_dates[-assignment_window_trading_days]
         assignment_window_status = "observed_common_eod_calendar"
-    cost_profile = _transaction_cost_profile(transaction_cost_scenario, contracts[near]["tick_value"])
+    last_row = rows[-1]
+    near_reference_price = float(last_row["near_settle"]) if "near_settle" in last_row else None
+    far_reference_price = float(last_row["far_settle"]) if "far_settle" in last_row else None
+    cost_profile = _transaction_cost_profile(
+        transaction_cost_scenario,
+        contracts[near]["tick_value"],
+        near_price=near_reference_price,
+        far_price=far_reference_price,
+        near_lot_size=contracts[near]["lot_size"],
+        far_lot_size=contracts[far]["lot_size"],
+    )
     benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
     benchmark_dates = sorted(benchmark)
     if not benchmark_dates:

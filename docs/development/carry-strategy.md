@@ -35,6 +35,8 @@ Run window: `2025-06-17`–`2026-10-27`; 349 common EOD observations; initial vi
 | Matched LQDT value | RUB 37,005.30 |
 | Final `X = V_proxy − B` | **−RUB 7,610.59** |
 
+For comparison, applying the current official MOEX FX taker exchange/clearing rate of `0.00462%` to the end-of-window reference prices gives **RUB 32.63** of exchange/clearing transaction costs and `X = −RUB 7,383.21`. This is a current tariff sensitivity only: broker commission, historical tariff applicability, slippage and execution evidence remain unresolved.
+
 The matched LQDT path is observed over this window. The strategy marks are EOD settlement proxies; no historical executable quote, fill, queue or two-leg synchronization evidence was available. The open position is not treated as a completed exit. The input ends on 27.10.2026, before the CRZ6 ten-trading-day execution window; therefore that event is labelled `not_observable_in_input_window` and no assignment payment is manufactured.
 
 ## Interpretation
@@ -53,6 +55,18 @@ uv run python -m moex_spread_lab.cli carry-strategy \
   --cost-scenario base \
   --initial-capital 30000 \
   --output data/analytics/cnyrubf-crz6-carry-strategy.json
+```
+
+Current-tariff sensitivity:
+
+```bash
+uv run python -m moex_spread_lab.cli carry-strategy \
+  --carry-study data/analytics/cnyrubf-crz6-carry-study.json \
+  --benchmark data/benchmark/lqdt-lineage.json \
+  --contracts data/w1/current-intake.json \
+  --cost-scenario moex_current_taker \
+  --initial-capital 30000 \
+  --output data/analytics/cnyrubf-crz6-carry-strategy-moex-current.json
 ```
 
 The cost scenario is illustrative and unverified. Its funding component is not added because the actual MOEX `SWAPRATE` field is already included in the gross carry decomposition; this does not make exchange, clearing, broker or slippage values verified.

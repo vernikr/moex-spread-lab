@@ -1,7 +1,10 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-from moex_spread_lab.iss import normalize_candle_borders, normalize_iss_intake
+from moex_spread_lab.iss import analyze_candle_pair, fetch_candle_series, normalize_candle_borders, normalize_candles, normalize_iss_intake
 
 
 def payload():
@@ -30,6 +33,101 @@ def payload():
 
 
 class IssIntakeTests(unittest.TestCase):
+    def test_pair_check_reports_common_timestamps_and_ohlc_quality(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def series(secid, begins):
+                return {
+                    "schema_version": "iss-candles.v1",
+                    "secid": secid,
+                    "interval": 24,
+                    "timeframe": "1d",
+                    "rows": [
+                        {
+                            "begin": begin,
+                            "open": 1,
+                            "close": 1.1,
+                            "high": 1.2,
+                            "low": 0.9,
+                            "price_proxy_kind": "candle_close",
+                        }
+                        for begin in begins
+                    ],
+                }
+            near = root / "near.json"
+            far = root / "far.json"
+            near.write_text(json.dumps(series("CNYRUBF", ["2026-01-01", "2026-01-02"])), encoding="utf-8")
+            far.write_text(json.dumps(series("CRZ6", ["2026-01-02", "2026-01-03"])), encoding="utf-8")
+            result = analyze_candle_pair(near, far)
+        self.assertEqual(result["synchronization"]["common_timestamp_count"], 1)
+        self.assertEqual(result["near"]["invalid_ohlc_count"], 0)
+        self.assertEqual(result["synchronization"]["pair_analytical_status"], "usable_common_proxy_rows")
+
+    def test_candle_rows_use_close_as_explicit_price_proxy(self):
+        result = normalize_candles(
+            {
+                "candles": {
+                    "columns": ["open", "close", "high", "low", "value", "volume", "begin", "end"],
+                    "data": [[12.0, 12.1, 12.2, 11.9, 0, 10, "2026-10-01 10:00:00", "2026-10-01 10:09:59"]],
+                },
+            },
+            secid="CRZ6",
+            interval=10,
+            url="https://iss.moex.com/test/candles",
+            received_at="2026-10-27T06:00:00+00:00",
+            raw_sha256="candle-hash",
+        )
+        self.assertEqual(result[0]["price_proxy"], 12.1)
+        self.assertEqual(result[0]["price_proxy_kind"], "candle_close")
+
+    def test_candle_pagination_fetches_pages_and_deduplicates(self):
+        calls = []
+
+        class Response:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            def __init__(self, body):
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return self.body
+
+        def opener(request, timeout):
+            query = parse_qs(urlparse(request.full_url).query)
+            start = int(query["start"][0])
+            calls.append(start)
+            rows = [] if start >= 500 else [
+                [12.0, 12.1, 12.2, 11.9, 0, 10, f"2026-10-01 10:{index:02d}:00", f"2026-10-01 10:{index:02d}:59"]
+                for index in range(500)
+            ]
+            return Response(json.dumps({
+                "candles": {
+                    "columns": ["open", "close", "high", "low", "value", "volume", "begin", "end"],
+                    "data": rows,
+                },
+            }).encode())
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = fetch_candle_series(
+                secid="CRZ6",
+                interval=10,
+                from_date="2026-10-01",
+                till_date="2026-10-02",
+                cache_dir=Path(directory),
+                delay_seconds=0,
+                opener=opener,
+            )
+        self.assertEqual(calls, [0, 500])
+        self.assertEqual(result["row_count"], 500)
+        self.assertEqual(result["page_count"], 2)
+
     def test_candle_borders_select_smallest_available_interval(self):
         result = normalize_candle_borders(
             {

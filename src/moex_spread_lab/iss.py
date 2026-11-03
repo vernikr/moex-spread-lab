@@ -10,6 +10,7 @@ import hashlib
 import json
 import csv
 import time
+from urllib.parse import urlencode
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +37,8 @@ CANDLE_INTERVAL_LABELS = {
     24: "1d",
     31: "1mo",
 }
+CANDLE_PAGE_SIZE = 500
+CANDLE_FIELDS = ("open", "close", "high", "low", "value", "volume", "begin", "end")
 
 SECURITY_FIELDS = (
     "SECID",
@@ -93,6 +96,18 @@ def _candleborders_url(base_url: str, board: str, secid: str) -> str:
     return f"{root}/iss/engines/futures/markets/forts/boards/{board}/securities/{secid}/candleborders.json?iss.meta=off"
 
 
+def _candles_url(base_url: str, board: str, secid: str, interval: int, from_date: str, till_date: str, start: int) -> str:
+    root = base_url.rstrip("/")
+    query = urlencode({
+        "iss.meta": "off",
+        "interval": interval,
+        "from": from_date,
+        "till": till_date,
+        "start": start,
+    })
+    return f"{root}/iss/engines/futures/markets/forts/boards/{board}/securities/{secid}/candles.json?{query}"
+
+
 def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     if not isinstance(block, dict) or not isinstance(block.get("columns"), list) or not isinstance(block.get("data"), list):
         raise IssIntakeError(f"ISS block is malformed: {name}")
@@ -134,6 +149,192 @@ def normalize_candle_borders(payload: dict[str, Any], *, secid: str, url: str, r
         "minimum_timeframe": intervals[0]["timeframe"] if intervals else None,
         "coverage_status": "available" if intervals else "no_candle_borders",
     }
+
+
+def normalize_candles(payload: dict[str, Any], *, secid: str, interval: int, url: str, received_at: str, raw_sha256: str) -> list[dict[str, Any]]:
+    rows = _rows(payload.get("candles"), "candles")
+    columns = set(payload.get("candles", {}).get("columns", []))
+    missing = set(CANDLE_FIELDS) - columns
+    if missing:
+        raise IssIntakeError(f"candle fields missing for {secid}: {sorted(missing)}")
+    normalized = []
+    for row in rows:
+        begin = row.get("begin")
+        end = row.get("end")
+        if not isinstance(begin, str) or not isinstance(end, str):
+            raise IssIntakeError(f"candle timestamps missing for {secid}")
+        close = row.get("close")
+        if close is None:
+            raise IssIntakeError(f"candle close missing for {secid}")
+        normalized.append({
+            "secid": secid,
+            "interval": interval,
+            "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
+            "begin": begin,
+            "end": end,
+            "open": row.get("open"),
+            "close": close,
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "value": row.get("value"),
+            "volume": row.get("volume"),
+            "price_proxy": close,
+            "price_proxy_kind": "candle_close",
+            "price_proxy_assumption": "user_A-06_candle_is_usable_medium_term_price_proxy",
+            "source": {
+                "url": url,
+                "received_at": received_at,
+                "raw_response_sha256": raw_sha256,
+            },
+        })
+    return normalized
+
+
+def fetch_candle_series(
+    *,
+    secid: str,
+    interval: int,
+    from_date: str,
+    till_date: str,
+    base_url: str = DEFAULT_ISS_BASE_URL,
+    board: str = DEFAULT_BOARD,
+    timeout: float = 20.0,
+    delay_seconds: float = 0.1,
+    cache_dir: Path | None = None,
+    max_pages: int | None = None,
+    retries: int = 3,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, Any]:
+    if interval <= 0 or delay_seconds < 0 or retries < 0:
+        raise IssIntakeError("invalid candle interval, delay or retries")
+    series_cache = cache_dir / secid / str(interval) if cache_dir else None
+    all_rows: list[dict[str, Any]] = []
+    page = 0
+    while True:
+        start = page * CANDLE_PAGE_SIZE
+        url = _candles_url(base_url, board, secid, interval, from_date, till_date, start)
+        cache_path = series_cache / f"page-{page:06d}.json" if series_cache else None
+        page_result: dict[str, Any] | None = None
+        if cache_path and cache_path.exists():
+            try:
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                if cached.get("url") == url and isinstance(cached.get("rows"), list):
+                    page_result = cached
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                page_result = None
+        if page_result is None:
+            if delay_seconds:
+                time.sleep(delay_seconds)
+            last_error: IssIntakeError | None = None
+            for attempt in range(retries + 1):
+                try:
+                    payload, received_at, raw_sha256 = _fetch_json(url, timeout=timeout, opener=opener)
+                    last_error = None
+                    break
+                except IssIntakeError as exc:
+                    last_error = exc
+                    if attempt < retries:
+                        time.sleep(min(2.0, 0.25 * (attempt + 1)))
+            if last_error is not None:
+                raise last_error
+            rows = normalize_candles(payload, secid=secid, interval=interval, url=url, received_at=received_at, raw_sha256=raw_sha256)
+            page_result = {"url": url, "page": page, "start": start, "rows": rows}
+            if cache_path:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+        rows = page_result["rows"]
+        if rows and all_rows and rows[0]["begin"] == all_rows[-1]["begin"]:
+            raise IssIntakeError(f"candle pagination did not advance: {secid} interval={interval} start={start}")
+        all_rows.extend(rows)
+        page += 1
+        if not rows or len(rows) < CANDLE_PAGE_SIZE or (max_pages is not None and page >= max_pages):
+            break
+    deduped = {row["begin"]: row for row in all_rows}
+    rows = [deduped[key] for key in sorted(deduped)]
+    return {
+        "schema_version": "iss-candles.v1",
+        "secid": secid,
+        "board": board,
+        "interval": interval,
+        "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
+        "from": from_date,
+        "till": till_date,
+        "page_count": page,
+        "raw_row_count": len(all_rows),
+        "row_count": len(rows),
+        "duplicate_count": len(all_rows) - len(rows),
+        "coverage_status": "available" if rows else "empty",
+        "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
+        "rows": rows,
+    }
+
+
+def write_candle_series(result: dict[str, Any], output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
+    try:
+        near_series = json.loads(near_path.read_text(encoding="utf-8"))
+        far_series = json.loads(far_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise IssIntakeError(f"cannot read candle series: {exc}") from exc
+    if near_series.get("schema_version") != "iss-candles.v1" or far_series.get("schema_version") != "iss-candles.v1":
+        raise IssIntakeError("pair check requires iss-candles.v1 series")
+    if near_series.get("interval") != far_series.get("interval"):
+        raise IssIntakeError("pair check requires equal intervals")
+
+    def quality(series: dict[str, Any]) -> dict[str, Any]:
+        rows = series.get("rows", [])
+        begins = [row.get("begin") for row in rows]
+        valid_ohlc = 0
+        proxy_markers = 0
+        for row in rows:
+            values = [row.get(field) for field in ("open", "close", "high", "low")]
+            if all(isinstance(value, (int, float)) for value in values) and row["low"] <= min(row["open"], row["close"], row["high"]) and row["high"] >= max(row["open"], row["close"], row["low"]):
+                valid_ohlc += 1
+            if row.get("price_proxy_kind") == "candle_close":
+                proxy_markers += 1
+        return {
+            "secid": series.get("secid"),
+            "row_count": len(rows),
+            "first_begin": begins[0] if begins else None,
+            "last_begin": begins[-1] if begins else None,
+            "duplicate_begin_count": len(begins) - len(set(begins)),
+            "out_of_order_count": sum(1 for left, right in zip(begins, begins[1:]) if left >= right),
+            "valid_ohlc_count": valid_ohlc,
+            "invalid_ohlc_count": len(rows) - valid_ohlc,
+            "price_proxy_marker_count": proxy_markers,
+        }
+
+    near_rows = near_series.get("rows", [])
+    far_rows = far_series.get("rows", [])
+    near_by_begin = {row["begin"]: row for row in near_rows}
+    far_by_begin = {row["begin"]: row for row in far_rows}
+    common = sorted(set(near_by_begin) & set(far_by_begin))
+    return {
+        "schema_version": "iss-candle-pair-quality.v1",
+        "interval": near_series.get("interval"),
+        "timeframe": near_series.get("timeframe"),
+        "near": quality(near_series),
+        "far": quality(far_series),
+        "synchronization": {
+            "common_timestamp_count": len(common),
+            "near_only_count": len(set(near_by_begin) - set(far_by_begin)),
+            "far_only_count": len(set(far_by_begin) - set(near_by_begin)),
+            "first_common_begin": common[0] if common else None,
+            "last_common_begin": common[-1] if common else None,
+            "pair_analytical_status": "usable_common_proxy_rows" if common else "no_common_rows",
+        },
+        "price_interpretation": "candle_close_is_A-06_medium_term_price_proxy",
+        "execution_evidence_status": "historical_bid_ask_unavailable",
+    }
+
+
+def write_pair_quality(result: dict[str, Any], output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _fetch_json(url: str, *, timeout: float, opener: Callable[..., Any]) -> tuple[dict[str, Any], str, str]:

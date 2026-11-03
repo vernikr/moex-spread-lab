@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan_parser = subparsers.add_parser("secret-scan", help="scan repository files for credential patterns")
     scan_parser.add_argument("--root", type=Path, default=Path.cwd())
+    scan_parser.add_argument("--tracked-only", action="store_true")
 
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
@@ -54,6 +55,25 @@ def build_parser() -> argparse.ArgumentParser:
     coverage_parser.add_argument("--delay-seconds", type=float, default=0.1)
     coverage_parser.add_argument("--timeout", type=float, default=8.0)
     coverage_parser.add_argument("--cache-dir", type=Path, default=Path("data/w1/candleborders-cache"))
+
+    candles_parser = subparsers.add_parser("iss-candles", help="download paginated ISS candle series")
+    candles_parser.add_argument("--secid", action="append", required=True)
+    candles_parser.add_argument("--interval", action="append", type=int, required=True, help="ISS interval: 1, 10, 60 or 24")
+    candles_parser.add_argument("--from-date", required=True)
+    candles_parser.add_argument("--till-date", required=True)
+    candles_parser.add_argument("--output-dir", type=Path, required=True)
+    candles_parser.add_argument("--cache-dir", type=Path, default=Path("data/w1/candles-cache"))
+    candles_parser.add_argument("--base-url", default=DEFAULT_ISS_BASE_URL)
+    candles_parser.add_argument("--board", default="RFUD")
+    candles_parser.add_argument("--timeout", type=float, default=20.0)
+    candles_parser.add_argument("--delay-seconds", type=float, default=0.1)
+    candles_parser.add_argument("--max-pages", type=int)
+    candles_parser.add_argument("--retries", type=int, default=3)
+
+    pair_parser = subparsers.add_parser("iss-candle-pair-check", help="check synchronization and OHLC quality for two candle series")
+    pair_parser.add_argument("--near", type=Path, required=True)
+    pair_parser.add_argument("--far", type=Path, required=True)
+    pair_parser.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -70,7 +90,7 @@ def main() -> int:
             print(json.dumps({"run_id": manifest["run_id"], "config_hash": manifest["config_hash"]}, sort_keys=True))
             return 0
         if args.command == "secret-scan":
-            findings = scan_secrets(args.root.resolve())
+            findings = scan_secrets(args.root.resolve(), tracked_only=args.tracked_only)
             if findings:
                 print(json.dumps({"status": "failed", "findings": findings}, sort_keys=True))
                 return 1
@@ -120,6 +140,59 @@ def main() -> int:
                 "minimum_timeframe_counts": inventory["minimum_timeframe_counts"],
                 "output": str(args.output),
                 "csv_output": str(args.csv_output) if args.csv_output else None,
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "iss-candles":
+            from .iss import fetch_candle_series, write_candle_series
+
+            results = []
+            for secid in args.secid:
+                for interval in args.interval:
+                    result = fetch_candle_series(
+                        secid=secid,
+                        interval=interval,
+                        from_date=args.from_date,
+                        till_date=args.till_date,
+                        base_url=args.base_url,
+                        board=args.board,
+                        timeout=args.timeout,
+                        delay_seconds=args.delay_seconds,
+                        cache_dir=args.cache_dir,
+                        max_pages=args.max_pages,
+                        retries=args.retries,
+                    )
+                    output = args.output_dir / f"{secid}_{result['timeframe']}.json"
+                    write_candle_series(result, output)
+                    results.append({
+                        "secid": secid,
+                        "timeframe": result["timeframe"],
+                        "row_count": result["row_count"],
+                        "page_count": result["page_count"],
+                        "duplicate_count": result["duplicate_count"],
+                        "output": str(output),
+                    })
+            summary = args.output_dir / "summary.json"
+            summary.parent.mkdir(parents=True, exist_ok=True)
+            summary.write_text(json.dumps({
+                "schema_version": "iss-candle-intake-summary.v1",
+                "from": args.from_date,
+                "till": args.till_date,
+                "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
+                "series": results,
+            }, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(json.dumps({"series": results, "summary": str(summary)}, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "iss-candle-pair-check":
+            from .iss import analyze_candle_pair, write_pair_quality
+
+            result = analyze_candle_pair(args.near, args.far)
+            write_pair_quality(result, args.output)
+            print(json.dumps({
+                "timeframe": result["timeframe"],
+                "common_timestamp_count": result["synchronization"]["common_timestamp_count"],
+                "near_only_count": result["synchronization"]["near_only_count"],
+                "far_only_count": result["synchronization"]["far_only_count"],
+                "status": result["synchronization"]["pair_analytical_status"],
             }, ensure_ascii=False, sort_keys=True))
             return 0
     except W0Error as exc:

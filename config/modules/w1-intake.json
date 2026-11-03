@@ -9,7 +9,9 @@
     "price_role_separation",
     "source_hashing",
     "candidate_admission_gate",
-    "candle_coverage_inventory"
+    "candle_coverage_inventory",
+    "paginated_candle_intake",
+    "pair_time_alignment"
   ],
   "inputs": [
     "MOEX ISS futures RFUD catalog response"

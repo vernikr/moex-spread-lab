@@ -191,9 +191,12 @@ def iter_scan_files(root: Path) -> Iterable[Path]:
             yield path
 
 
-def scan_secrets(root: Path) -> list[dict[str, str]]:
+def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
-    for path in iter_scan_files(root):
+    paths = git_tracked_files(root) if tracked_only else iter_scan_files(root)
+    for path in paths:
+        if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
+            continue
         try:
             content = path.read_bytes()
         except OSError:

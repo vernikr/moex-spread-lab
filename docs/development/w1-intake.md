@@ -66,8 +66,38 @@ The JSON is the provenance-rich result; the CSV is the convenient filterable lis
 
 The completed 2026-10-27 scan covered 506 instruments: 483 had `1m` as the smallest available candle interval and 23 had no candle borders. No request failures remained after retrying the initial transient failures. For `CNYRUBF` and `CRZ6`, the smallest available interval is `1m`; both also expose `10m`, `1h` and `1d` borders.
 
-Every inventory result records `price_interpretation=candle_price_proxy_for_medium_term_analysis`: candle values are the project's working price proxy for medium-term research, not a claim of historical bid/ask reconstruction.
+Every inventory result records `price_interpretation=candle_price_proxy_for_medium_term_analysis`. Under decision A-06, the candle close is the project's working price proxy for medium-term research, with delay and cost sensitivity. It is not a claim of historical bid/ask reconstruction.
+
+## Historical candle intake
+
+Paginated candle download for a selected instrument set is resumable by SECID, interval and page:
+
+```bash
+uv run python -m moex_spread_lab.cli iss-candles \
+  --secid CNYRUBF --secid CRZ6 \
+  --interval 24 --interval 60 --interval 10 --interval 1 \
+  --from-date 2022-12-05 \
+  --till-date 2026-10-27 \
+  --output-dir data/w1/candles \
+  --cache-dir data/w1/candles-cache \
+  --delay-seconds 0.1
+```
+
+ISS pages are capped at 500 rows. Each normalized row preserves the source hash and timestamps and adds `price_proxy=close`, `price_proxy_kind=candle_close` and the A-06 assumption marker. The JSON outputs and cache remain under ignored `data/`.
+
+## Completed pair intake
+
+For the common CNYRUBF/CRZ6 research window, M1 was collected from 2025-06-16 through 2026-10-27 because CRZ6 has no earlier coverage. The downloaded series contain:
+
+| Timeframe | CNYRUBF rows | CRZ6 rows | Common timestamps | OHLC errors |
+|---|---:|---:|---:|---:|
+| 1d | 992 | 344 | 344 | 0 / 0 |
+| 1h | 15,844 | 4,412 | 4,408 | 0 / 0 |
+| 10m | 88,358 | 19,090 | 19,082 | 0 / 0 |
+| 1m, common window | 313,178 | 110,333 | 107,386 | 0 / 0 |
+
+Pair-quality reports are generated locally as `data/w1/pair-quality-*.json`. Non-common timestamps are reported rather than forward-filled or discarded silently. The series are analytically usable under A-06; the execution evidence status remains `historical_bid_ask_unavailable`.
 
 ## Boundary
 
-This adapter does not collect history, reconstruct fills, infer a live mark, authorize a broker or admit a strategy. The next data step is a dated daily-candle intake for both legs with explicit coverage and a labelled current-parameter fallback where needed.
+This adapter does not reconstruct fills, infer a live mark, authorize a broker or admit a strategy. The next data step is spread economics and a matched LQDT analytical ledger over the synchronized candle rows.

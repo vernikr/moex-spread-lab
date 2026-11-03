@@ -39,6 +39,9 @@ class W0Tests(unittest.TestCase):
     def test_secret_scan_ignores_clean_fixture(self):
         self.assertEqual(scan_secrets(ROOT / "fixtures"), [])
 
+    def test_tracked_secret_scan_uses_git_index(self):
+        self.assertEqual(scan_secrets(ROOT, tracked_only=True), [])
+
     def test_research_waves_pass_fixture_gates_but_remain_inconclusive(self):
         report = run_research_pipeline(ROOT / "config/run-manifest.json", ROOT / "fixtures/research/offline.json")
         self.assertTrue(report["all_fixture_gates_passed"])

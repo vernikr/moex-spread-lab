@@ -23,7 +23,7 @@
       "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "ee3804774bc9f10c9c268110110dccd4ce307c1e41b09830e77c6d913973a483",
+  "config_hash": "fa686cad1fd875e8e8a05346049c43cf52ffbd86106ea79ec4613498c22ad250",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -64,6 +64,13 @@
       "manifest_path": "config/modules/execution-ledger.json",
       "manifest_sha256": "13b94d3d8e125dd52e100a7aeb4f4ddbdf4d4ee6ce25446d63bec735c146825e",
       "module_id": "moex-spread-lab.execution-ledger",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "validation-report.v1",
+      "manifest_path": "config/modules/validation.json",
+      "manifest_sha256": "eb8b0063cc08550c947de00f78f005b6773d76b15ff00cad92c54dd9b24d7e71",
+      "module_id": "moex-spread-lab.validation",
       "release": "0.1.0"
     }
   ],

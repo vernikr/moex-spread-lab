@@ -105,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
     ledger_parser = subparsers.add_parser("execution-ledger", help="build a rebuildable analytical execution and portfolio ledger")
     ledger_parser.add_argument("--baseline", type=Path, required=True)
     ledger_parser.add_argument("--output", type=Path, required=True)
+
+    validation_parser = subparsers.add_parser("validate-analytics", help="build a chronological W7 validation report")
+    validation_parser.add_argument("--baseline", type=Path, required=True)
+    validation_parser.add_argument("--ledger", type=Path, required=True)
+    validation_parser.add_argument("--sensitivity", type=Path, action="append", default=[])
+    validation_parser.add_argument("--output", type=Path, required=True)
+    validation_parser.add_argument("--train-fraction", type=float, default=0.6)
+    validation_parser.add_argument("--confirmation-fraction", type=float, default=0.2)
     return parser
 
 
@@ -394,6 +402,27 @@ def main() -> int:
                 "execution_attempt_count": result["summary"]["execution_attempt_count"],
                 "final_X": result["summary"]["final_X"],
                 "executable_value_available": result["summary"]["executable_value_available"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "validate-analytics":
+            from .validation import build_validation, write_validation
+
+            result = build_validation(
+                args.baseline,
+                args.ledger,
+                args.sensitivity,
+                train_fraction=args.train_fraction,
+                confirmation_fraction=args.confirmation_fraction,
+            )
+            write_validation(result, args.output)
+            print(json.dumps({
+                "release_state": result["release_state"],
+                "verdict": result["verdict"],
+                "timeframe": result["timeframe"],
+                "sealed_confirmation_rows": result["splits"]["sealed_confirmation"]["row_count"],
+                "final_X": result["splits"]["sealed_confirmation"]["final_X"],
+                "blocker_count": len(result["conclusion_blockers"]),
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

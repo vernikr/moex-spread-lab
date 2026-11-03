@@ -131,6 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
     carry_strategy_parser.add_argument("--output", type=Path, required=True)
     carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress", "moex_current_taker", "vtb_online_prime_current"), default="base")
     carry_strategy_parser.add_argument("--initial-capital", type=float, default=30000.0)
+    carry_strategy_parser.add_argument("--hypothesis", choices=("h2-s1", "h3-funding-only"), default="h2-s1")
+    account_risk_parser = subparsers.add_parser("account-risk-check", help="run the working VTB EBS/KPUR margin stress screen")
+    account_risk_parser.add_argument("--near", default="CNYRUBF")
+    account_risk_parser.add_argument("--far", default="CRZ6")
+    account_risk_parser.add_argument("--contracts", type=Path, required=True)
+    account_risk_parser.add_argument("--carry-study", type=Path)
+    account_risk_parser.add_argument("--output", type=Path, required=True)
+    account_risk_parser.add_argument("--initial-capital", type=float, default=30000.0)
+    account_risk_parser.add_argument("--stress-vm-buffer", type=float, default=5000.0)
+    account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
+    account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
     return parser
 
 
@@ -496,6 +507,7 @@ def main() -> int:
                 args.contracts,
                 transaction_cost_scenario=args.cost_scenario,
                 initial_capital=args.initial_capital,
+                strategy_variant="funding_only" if args.hypothesis == "h3-funding-only" else "basis_median",
             )
             write_carry_strategy(result, args.output)
             print(json.dumps({
@@ -506,6 +518,40 @@ def main() -> int:
                 "final_X": result["summary"]["final_X"],
                 "gross_pnl": result["summary"]["gross_pnl"],
                 "transaction_costs": result["summary"]["transaction_costs"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "account-risk-check":
+            from .account_risk import assess_vtb_pair
+
+            observed_daily_pnl = None
+            if args.carry_study:
+                try:
+                    carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
+                    observed_daily_pnl = [
+                        float(row["daily_gross_carry_pnl"])
+                        for row in carry_study.get("rows", [])[1:]
+                    ]
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                    raise W0Error(f"cannot read carry study for risk screen: {exc}") from exc
+            result = assess_vtb_pair(
+                args.contracts,
+                args.near,
+                args.far,
+                initial_capital=args.initial_capital,
+                stress_vm_buffer=args.stress_vm_buffer,
+                uncertainty_buffer=args.uncertainty_buffer,
+                key_rate=args.key_rate,
+                observed_daily_pnl=observed_daily_pnl,
+            )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(json.dumps({
+                "schema_version": result["schema_version"],
+                "current_snapshot_passed": result["summary"]["current_snapshot_passed"],
+                "all_working_scenarios_passed": result["summary"]["all_scenarios_passed"],
+                "pair_margin_no_offset_rub": result["pair"]["pair_margin_no_offset_rub"],
+                "most_severe_remaining_capital_rub": result["summary"]["most_severe_remaining_capital_rub"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

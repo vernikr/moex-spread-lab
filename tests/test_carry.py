@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from moex_spread_lab.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
 from moex_spread_lab.carry import _transaction_cost_profile, build_carry_strategy, build_carry_study
 
 
@@ -16,6 +17,25 @@ def source(secid, rows):
 
 
 class CarryTests(unittest.TestCase):
+    def test_vtb_account_risk_screen_uses_no_offset_and_stress_buffers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contracts = Path(directory) / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            result = assess_vtb_pair(
+                contracts,
+                "NEAR",
+                "FAR",
+                observed_daily_pnl=[-450.0, 20.0],
+            )
+
+        self.assertEqual(result["pair"]["pair_margin_no_offset_rub"], 1900.0)
+        self.assertEqual(result["stress_inputs"]["effective_vm_buffer_rub"], 5000.0)
+        self.assertTrue(result["summary"]["all_scenarios_passed"])
+        self.assertAlmostEqual(ebs_undercovered_margin_charge(1900.0, 0.0, key_rate=0.14), 0.8328767, places=6)
+
     def test_current_moex_taker_tariff_is_separate_from_unverified_profiles(self):
         profile = _transaction_cost_profile(
             "moex_current_taker",
@@ -113,6 +133,8 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["daily"][5]["position"], 0)
         self.assertEqual(result["parameters"]["assignment_policy"], "exit_before_perpetual_execution_window")
         self.assertEqual(result["parameters"]["assignment_window_status"], "not_observable_in_input_window")
+        self.assertFalse(result["parameters"]["assignment_event"]["payment_modelled"])
+        self.assertTrue(result["summary"]["account_risk_gate_current_snapshot"])
 
     def test_strategy_exits_when_assignment_window_is_observed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -154,6 +176,47 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["parameters"]["assignment_window_start_date"], dates[5])
         self.assertEqual(result["trades"][0]["exit_decision_date"], dates[5])
         self.assertTrue(any(signal["reason"] == "perpetual_execution_window" for signal in result["signals"]))
+
+    def test_funding_only_hypothesis_has_separate_rule_id_and_entry_condition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = root / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+            carry = {
+                "schema_version": "carry-study.v1",
+                "near": "NEAR",
+                "far": "FAR",
+                "rows": [{
+                    "date": date,
+                    "basis_far_minus_near": basis,
+                    "daily_funding_received_short_near": 1.0,
+                    "daily_gross_carry_pnl": 1.0,
+                } for date, basis in zip(dates, (1.0, 1.0, 1.0, 1.0, 1.0, 1.0))],
+            }
+            carry_path = root / "carry.json"
+            carry_path.write_text(json.dumps(carry), encoding="utf-8")
+            benchmark = root / "benchmark.json"
+            benchmark.write_text(json.dumps({
+                "schema_version": "lqdt-lineage.v1",
+                "rows": [{"date": date, "price": 1.0, "source_kind": "observed", "source_ticker": "LQDT"} for date in dates],
+            }), encoding="utf-8")
+            result = build_carry_strategy(
+                carry,
+                benchmark,
+                contracts,
+                transaction_cost_scenario="low",
+                initial_capital=30000,
+                warmup_observations=2,
+                strategy_variant="funding_only",
+            )
+
+        self.assertEqual(result["rule_id"], "H3-F1")
+        self.assertEqual(result["parameters"]["entry_condition"], "mean_previous_20_daily_funding_received > 0")
+        self.assertEqual(result["hypothesis"], "funding_only_carry")
 
 
 if __name__ == "__main__":

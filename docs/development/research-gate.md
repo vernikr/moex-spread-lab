@@ -53,6 +53,7 @@ Offline work may continue without broker access, funding, deployment or order su
 - keep the price-only baseline and any future funding-aware carry hypothesis as separate experiments;
 - treat the current H2 funding decomposition as gross evidence only, not as a tested strategy result;
 - treat H2-S1 as a separate frozen proxy backtest with `final X = −RUB 7,610.59`; it is not promoted and is not combined with the H1 ledger;
+- treat H3-F1 as a separate frozen funding-only proxy backtest with `final X = −RUB 7,694.91`; it is not promoted and is not combined with H1 or H2-S1;
 - use the [point-in-time evidence audit](point-in-time-evidence-audit.md) to segment CNYRUBF funding regimes and keep perpetual assignment handling explicit;
 - audit dated contract history and expiry/roll specifications separately before any pre-2020 claim;
 - preserve the no-order-book boundary under A-08 and model manual reaction delay plus cost sensitivity;
@@ -68,4 +69,5 @@ Parameter optimization of this baseline, M1 promotion of this high-turnover rule
 - [W7 validation](w7-validation.md)
 - [Pilot policy](../risk/pilot-policy.md)
 - [Account and risk blockers](../blockers/b01-account-and-risk.md)
+- [VTB EBS/KПУР account-risk screen](vtb-account-risk-check.md)
 - [Workflow and research blockers](../blockers/b02-research-and-workflow.md)

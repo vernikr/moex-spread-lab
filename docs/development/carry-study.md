@@ -41,7 +41,7 @@ All 348 holding-day `SWAPRATE` observations were within the rounded `K2` cap che
 
 1. `CNYRUBF` follows CNYRUB_TOM while `CRZ6` settles against CNYFIXME, so the two legs have a residual fixing-vs-TOM risk at expiry.
 2. The study spans the documented `2026-01-19` funding-parameter change and the `2026-03-23` unified-session change. A production-quality historical carry study needs effective-dated rule segments.
-3. Current tick value and initial margin are used as labelled fallback assumptions.
+3. Current tick value and initial margin are used as labelled fallback assumptions; the one-lot EBS/KПУР stress screen is documented separately in [vtb-account-risk-check.md](vtb-account-risk-check.md).
 4. The history endpoint provides EOD settlement and funding fields, not historical executable bid/ask or fills.
 5. `CRZ6` is one fixed dated contract; the study does not roll into `CRH7` and therefore is not a recurring calendar strategy.
 
@@ -64,9 +64,9 @@ For the separate tariff sensitivity run, use `--cost-scenario vtb_online_prime_c
 
 The decomposition was used as the input to one separately frozen proxy strategy. H2-S1 produced 14 closed proxy round trips, one position open at the data end and final `X = −RUB 7,610.59` under the base illustrative cost scenario. This is a no-promotion result for that rule; it is not added to the decomposition total and does not reject the pair.
 
-## Next H2 gate
+## Further H2 work
 
-Before turning this decomposition into a strategy test, define and freeze:
+Before any new H2 hypothesis, define and freeze:
 
 - improved evidence for effective-dated specifications, funding rules and fixing/expiry treatment before another strategy hypothesis;
 - entry rule based on basis versus expected remaining funding and fixing risk;

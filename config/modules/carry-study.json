@@ -1,6 +1,6 @@
 {
   "module_id": "moex-spread-lab.carry-study",
-  "release": "0.2.0",
+  "release": "0.3.0",
   "contract_version": "carry-study.v1",
   "kind": "analytics",
   "capabilities": [
@@ -8,8 +8,10 @@
     "swaprate_intake",
     "basis_funding_decomposition",
     "frozen_carry_strategy_proxy_backtest",
+    "funding_only_carry_hypothesis",
     "perpetual_execution_window_policy",
     "user_confirmed_vtb_tariff_profile",
+    "vtb_ebs_kpur_margin_stress_screen",
     "separate_hypothesis_from_mean_reversion"
   ],
   "inputs": [
@@ -18,7 +20,8 @@
   ],
   "outputs": [
     "carry-study.v1",
-    "carry-strategy.v1"
+    "carry-strategy.v1",
+    "vtb-account-risk.v1"
   ],
   "dependencies": [],
   "owner": "project-core",
@@ -39,6 +42,6 @@
   },
   "health": {
     "supported_python": ">=3.12,<3.13",
-    "status": "proxy_backtest_only_until_point_in_time_specs_costs_and_account_risk_evidence"
+    "status": "proxy_backtest_and_account_risk_screen_until_point_in_time_specs_costs_and_account_reconciliation"
   }
 }

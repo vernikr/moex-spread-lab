@@ -12,6 +12,6 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 | 6 | Stack and data sources | Evidence-based selections and limitations | Artifact delivered; conditional sources and gates recorded |
 | 7 | Reuse from previous projects | Reuse assessment, point-in-time checks, explicit updates to stages 4–6 | Artifact delivered; price/event/data-source revisions recorded |
 | 8 | Planning | Prioritized delivery and validation plan | Artifact delivered; offline vertical slice and Stage-9 gates defined |
-| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W1 catalog, timeframe inventory and CNYRUBF/CRZ6 candle intake delivered, spread economics next |
+| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W1–W7 mechanics, CNYRUBF/CRZ6 carry study, H2-S1 proxy, EBS/KПУР stress screen and assignment-event policy delivered; further hypotheses remain separate |
 
 Research findings may change the initial concept. No stage assumes profitable or even feasible real trading with the test allocation.

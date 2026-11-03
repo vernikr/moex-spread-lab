@@ -13,6 +13,7 @@ from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from .account_risk import assess_vtb_pair
 from .analytics import load_contracts
 from .w0 import W0Error
 
@@ -413,14 +414,21 @@ def build_carry_strategy(
     warmup_observations: int = 20,
     expiry_buffer_days: int = 5,
     assignment_window_trading_days: int = 10,
+    strategy_variant: str = "basis_median",
 ) -> dict[str, Any]:
-    """Evaluate the frozen H2-S1 rule on settlement proxies with one-row delay."""
+    """Evaluate a frozen carry hypothesis on settlement proxies with one-row delay."""
     if carry_result.get("schema_version") != CARRY_SCHEMA:
         raise CarryStrategyError("unsupported carry decomposition schema")
     rows = carry_result.get("rows")
     if not isinstance(rows, list) or len(rows) <= warmup_observations:
         raise CarryStrategyError("carry decomposition does not contain the required warmup")
-    if initial_capital <= 0 or warmup_observations < 1 or expiry_buffer_days < 0 or assignment_window_trading_days < 1:
+    if (
+        initial_capital <= 0
+        or warmup_observations < 1
+        or expiry_buffer_days < 0
+        or assignment_window_trading_days < 1
+        or strategy_variant not in {"basis_median", "funding_only"}
+    ):
         raise CarryStrategyError("invalid carry strategy parameters")
     near = carry_result.get("near")
     far = carry_result.get("far")
@@ -449,6 +457,13 @@ def build_carry_strategy(
         far_price=far_reference_price,
         near_lot_size=contracts[near]["lot_size"],
         far_lot_size=contracts[far]["lot_size"],
+    )
+    account_risk = assess_vtb_pair(
+        contracts_path,
+        near,
+        far,
+        initial_capital=initial_capital,
+        observed_daily_pnl=(float(row["daily_gross_carry_pnl"]) for row in rows[1:]),
     )
     benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
     benchmark_dates = sorted(benchmark)
@@ -521,7 +536,7 @@ def build_carry_strategy(
                 exit_reason = None
                 if assignment_window_signal:
                     exit_reason = "perpetual_execution_window"
-                elif float(row["basis_far_minus_near"]) >= trailing_basis_median:
+                elif strategy_variant == "basis_median" and float(row["basis_far_minus_near"]) >= trailing_basis_median:
                     exit_reason = "basis_reached_trailing_median"
                 elif trailing_funding <= 0:
                     exit_reason = "trailing_funding_non_positive"
@@ -531,10 +546,19 @@ def build_carry_strategy(
                     if index + 1 < len(rows):
                         pending = {"action": "exit", "execute_index": index + 1, "decision_date": date_key, "reason": exit_reason}
                     signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": index + 1 < len(rows)})
-            elif not expiry_signal and not assignment_window_signal and trailing_funding > 0 and float(row["basis_far_minus_near"]) <= trailing_basis_median and pending is None:
+            elif (
+                not expiry_signal
+                and not assignment_window_signal
+                and trailing_funding > 0
+                and (strategy_variant == "funding_only" or float(row["basis_far_minus_near"]) <= trailing_basis_median)
+                and pending is None
+            ):
                 if index + 1 < len(rows):
                     pending = {"action": "entry", "execute_index": index + 1, "decision_date": date_key, "reason": "positive_trailing_funding_and_low_basis"}
-                signals.append({"date": date_key, "action": "entry", "reason": "positive_trailing_funding_and_low_basis", "execution_available": index + 1 < len(rows)})
+                entry_reason = "positive_trailing_funding" if strategy_variant == "funding_only" else "positive_trailing_funding_and_low_basis"
+                if pending is not None:
+                    pending["reason"] = entry_reason
+                signals.append({"date": date_key, "action": "entry", "reason": entry_reason, "execution_available": index + 1 < len(rows)})
 
         benchmark_mark_row = benchmark_mark(date_key)
         strategy_value = initial_capital + cumulative_gross - cumulative_cost
@@ -573,6 +597,19 @@ def build_carry_strategy(
         row["H"] = round(peak, 8)
         row["D"] = round(peak - row["X"], 8)
     closed = [trade for trade in trades if trade["status"] == "closed_proxy_round_trip"]
+    assignment_event = {
+        "event_type": "perpetual_to_quarterly_execution_window",
+        "far_contract": far,
+        "far_expiry": far_expiry,
+        "window_length_trading_days": assignment_window_trading_days,
+        "window_start_date": assignment_window_start.isoformat() if assignment_window_start else None,
+        "status": assignment_window_status,
+        "policy": "exit_before_perpetual_execution_window",
+        "payment_rate": 0.03,
+        "payment_modelled": False,
+        "payment_note": "No 3% execution payment is added unless the window is observable in the input.",
+        "source": "MOEX notice n89495",
+    }
     return {
         "schema_version": STRATEGY_SCHEMA,
         "release_state": "exploratory_inconclusive",
@@ -580,13 +617,18 @@ def build_carry_strategy(
         "near": near,
         "far": far,
         "direction": "short_near_long_far",
-        "rule_id": "H2-S1",
+        "rule_id": "H2-S1" if strategy_variant == "basis_median" else "H3-F1",
+        "hypothesis": "funding_filtered_basis_reversion" if strategy_variant == "basis_median" else "funding_only_carry",
         "parameters": {
             "warmup_observations": warmup_observations,
             "trailing_funding_condition": "mean_previous_20_daily_funding_received > 0",
-            "entry_condition": "current_basis <= median_previous_20_basis",
+            "entry_condition": (
+                "current_basis <= median_previous_20_basis"
+                if strategy_variant == "basis_median"
+                else "mean_previous_20_daily_funding_received > 0"
+            ),
             "exit_conditions": [
-                "current_basis >= median_previous_20_basis",
+                *(["current_basis >= median_previous_20_basis"] if strategy_variant == "basis_median" else []),
                 "mean_previous_20_daily_funding_received <= 0",
                 "date >= far_expiry - 5 calendar days",
             ],
@@ -598,8 +640,10 @@ def build_carry_strategy(
             "assignment_policy": "exit_before_perpetual_execution_window",
             "assignment_window_start_date": assignment_window_start.isoformat() if assignment_window_start else None,
             "assignment_window_status": assignment_window_status,
+            "assignment_event": assignment_event,
         },
         "cost_scenario": cost_profile,
+        "account_risk": account_risk,
         "summary": {
             "first_date": daily[0]["date"],
             "last_date": daily[-1]["date"],
@@ -617,6 +661,8 @@ def build_carry_strategy(
             "historical_executable_fills": False,
             "lqdt_benchmark_observed_or_proxy": sorted({row["benchmark_source_kind"] for row in daily}),
             "perpetual_assignment_event_observed": any(signal["reason"] == "perpetual_execution_window" for signal in signals),
+            "account_risk_gate_current_snapshot": account_risk["summary"]["current_snapshot_passed"],
+            "account_risk_gate_all_working_scenarios": account_risk["summary"]["all_scenarios_passed"],
         },
         "trades": trades,
         "signals": signals,

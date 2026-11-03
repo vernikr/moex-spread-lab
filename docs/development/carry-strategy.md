@@ -41,7 +41,7 @@ The matched LQDT path is observed over this window. The strategy marks are EOD s
 
 ## Interpretation
 
-The frozen H2-S1 rule does not pass a promotion gate in this run. Its result is close to the already rejected H1 baseline and remains before verified real costs and execution effects. This is evidence against this specific frozen rule over this window, not a rejection of CNYRUBF/CRZ6 or of every future carry design.
+The frozen H2-S1 rule does not pass a promotion gate in this run. Its result is close to the already rejected H1 baseline and remains before verified real costs and execution effects. The separate VTB EBS/KПУР stress screen passes the current pair through the 3× margin-shock scenario, but that is an offline feasibility screen, not account reconciliation or a safety guarantee. This is evidence against this specific frozen rule over this window, not a rejection of CNYRUBF/CRZ6 or of every future carry design.
 
 The result must not be combined with the H1 ledger as if both strategies had been traded together. The H2-S1 run has its own proxy path, costs, open-position state and benchmark comparison.
 
@@ -73,4 +73,4 @@ The cost scenario is illustrative and unverified. Its funding component is not a
 
 ## Next gate
 
-Do not optimize H2-S1. The [point-in-time evidence audit](point-in-time-evidence-audit.md) confirms the two CNYRUBF funding regimes in this window, while assignment/continuation handling, margin and account controls remain open. Historical quote/fill collection is excluded by A-08. Before another strategy hypothesis, improve evidence for expiry/fixing rules, dated costs and account risk controls. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.
+Do not optimize H2-S1. The [point-in-time evidence audit](point-in-time-evidence-audit.md) confirms the two CNYRUBF funding regimes in this window, and the assignment event plus working account-risk screen are now explicit. Historical quote/fill collection is excluded by A-08. Before another strategy hypothesis, improve evidence for expiry/fixing rules, dated costs and individual account controls. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.

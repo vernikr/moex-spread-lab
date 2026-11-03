@@ -6,7 +6,7 @@ Date: 2026-11-03
 
 The public primary-source review closes part of the H2 evidence gap. It confirms the funding sign, funding unit, the dated CNYRUBF `K1/K2` regime change, the CR contract unit and fixing, and the current CRZ6 expiry. It does **not** turn the H2-S1 result into an executable or historically complete result.
 
-The next implementation should use the dated funding regimes and explicitly model the perpetual-leg execution/assignment window. The user has now confirmed EBS and КПУР; working account assumptions are recorded in `vtb-account-risk-profile.md`. Historical account terms and point-in-time margin remain open. Under A-08, historical order-book and actual-fill data are a declared unavailable input rather than a future collection task.
+The dated funding regimes are now used by H2, and the perpetual-leg execution/assignment window is represented as an explicit event with a no-payment policy when it is outside the input. The user has confirmed EBS and КПУР; working account assumptions and the minimum-lot stress screen are recorded in `vtb-account-risk-profile.md` and `vtb-account-risk-check.md`. Historical account terms and point-in-time margin remain open. Under A-08, historical order-book and actual-fill data are a declared unavailable input rather than a future collection task.
 
 ## Evidence matrix
 
@@ -20,7 +20,7 @@ The next implementation should use the dated funding regimes and explicitly mode
 | CR contract units | MOEX general FX-futures parameters: 1,000 CNY, tick `0.001` RUB, tick value RUB 1, cash-settled, `CNYFIXME` execution reference. | Confirms the current analytical conversion used by H2. Historical continuity of every specification field is not independently archived. | Confirmed for current specification |
 | CRZ6 date | MOEX contract search lists `CRZ6` / `CNY-12.26` with last trading and expiry date 17.12.2026. | Confirms the current far-leg date. | Current snapshot confirmed |
 | CNY fixing treatment | MOEX 12.07.2024 notice says CNY/RUB futures execution remains on `CNYFIXME` in the intermediate clearing; the general parameters page identifies `CNYFIXME` as the CR fixing. | The H2 TOM-versus-CNYFIXME residual risk is real and must remain explicit. | Confirmed; historical method version still needed |
-| Perpetual execution/assignment | MOEX 15.04.2025 notice describes a 3% one-time payment and a 10-trading-day instruction window for currency perpetual execution into quarterly futures. | H2-S1 did not model this mechanism or any assignment around quarterly dates. | Open implementation gap |
+| Perpetual execution/assignment | MOEX 15.04.2025 notice describes a 3% one-time payment and a 10-trading-day instruction window for currency perpetual execution into quarterly futures. | H2-S1 carries an explicit event record, exits before an observable window and does not add the payment when the window is absent. | Implemented as labelled policy; observed event absent |
 | Exchange and clearing fees | MOEX current futures tariff page gives current FX taker and execution tariff formulas, and says maker commission is zero. | Current exchange-level inputs are available for a new scenario; historical applicability and broker charges remain unresolved. | Current only |
 | Historical executable prices | Public EOD history has settlement, close and `SWAPRATE`; the project will not obtain historical bid/ask, depth, queue or fills. | H2 remains a settlement-proxy study with manual delay and cost sensitivity. | Deliberately unavailable by A-08 |
 | Historical ГО and account terms | NCC describes current risk-parameter services, but the historical/account-specific series and VTB/BCS terms are not established. | No safe capital or live-pilot conclusion. | Missing |
@@ -34,7 +34,7 @@ The H2 interval `2025-06-17`–`2026-10-27` must be labelled at least as:
 
 The actual ISS `SWAPRATE` values remain the preferred historical cash-flow input. The `K1/K2` series is needed to explain the mechanism and to validate/reconstruct missing values; it must not be used to overwrite observed `SWAPRATE` rows.
 
-The 15.04.2025 perpetual-execution change predates the H2 interval and therefore applies to its whole window. The H2-S1 implementation needs an event layer for this rule before any claim about continuous holding through quarterly dates.
+The 15.04.2025 perpetual-execution change predates the H2 interval and therefore applies to its whole window. H2-S1 now carries an event layer for this rule; the current input does not reach the event window.
 
 H2-S1 now carries an explicit `exit_before_perpetual_execution_window` policy. Because the local input ends before the CRZ6 ten-trading-day window, the run records `not_observable_in_input_window`; it does not infer a date from a generic weekday calendar and does not add the 3% execution payment.
 
@@ -43,7 +43,7 @@ H2-S1 now carries an explicit `exit_before_perpetual_execution_window` policy. B
 - The funding direction and lot conversion are supported better than in the previous audit.
 - The local run now labels 150 observations under `K1=0.03%` and 199 under `K1=0%`; all 348 holding-day rows pass the rounded `K2=0.35%` consistency check.
 - The gross funding decomposition can remain an analytical result, with the regime label added to its provenance.
-- H2-S1 remains a proxy-only result because it used current snapshot contract fields, illustrative costs, settlement marks and no assignment/roll handling.
+- H2-S1 remains a proxy-only result because it used current snapshot contract fields, illustrative costs and settlement marks. The assignment event is represented as a labelled exit policy, but no assignment/roll was observed in the input.
 - The open position at data end is not an expiry result: the available history ends on 27.10.2026, while CRZ6 expires on 17.12.2026.
 - A future run must distinguish ordinary two-leg offsetting from a perpetual-to-quarterly execution event. These are different economic paths and must not be silently treated as the same exit.
 

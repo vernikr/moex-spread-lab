@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware decomposition with dated regime controls, frozen H2-S1 proxy backtest, current-tariff sensitivity, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation and the research gate decision are delivered** alongside the W0–W7 offline mechanics. Under A-08, historical order-book and actual-fill data are outside the project scope; candle closes remain the accepted medium-term analytical proxy. The current VTB `Мой Онлайн Прайм` tariff is recorded under A-09. The current baseline and H2-S1 configuration are not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware decomposition with dated regime controls, frozen H2-S1 proxy backtest, current-tariff sensitivity, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation, VTB EBS/KПУР minimum-lot stress screen, explicit perpetual-execution event policy and the research gate decision are delivered** alongside the W0–W7 offline mechanics. Under A-08, historical order-book and actual-fill data are outside the project scope; candle closes remain the accepted medium-term analytical proxy. The current VTB `Мой Онлайн Прайм` tariff is recorded under A-09. The current baseline and H2-S1 configuration are not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -24,8 +24,10 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [CNYRUBF/CRZ6 contract-history audit](docs/development/contract-history-audit.md)
 - [H2 funding-aware carry decomposition](docs/development/carry-study.md)
 - [H2-S1 frozen carry strategy](docs/development/carry-strategy.md)
+- [H3-F1 funding-only carry hypothesis](docs/development/funding-only-strategy.md)
 - [CNYRUBF/CRZ6 point-in-time evidence audit](docs/development/point-in-time-evidence-audit.md)
 - [VTB account risk profile](docs/development/vtb-account-risk-profile.md)
+- [VTB EBS/KПУР account-risk screen](docs/development/vtb-account-risk-check.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

@@ -91,6 +91,8 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["daily"][2]["position"], 0)
         self.assertEqual(result["daily"][3]["position"], 1)
         self.assertEqual(result["daily"][5]["position"], 0)
+        self.assertEqual(result["parameters"]["assignment_policy"], "exit_before_perpetual_execution_window")
+        self.assertEqual(result["parameters"]["assignment_window_status"], "not_observable_in_input_window")
 
 
 if __name__ == "__main__":

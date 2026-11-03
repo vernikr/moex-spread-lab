@@ -36,6 +36,8 @@ The actual ISS `SWAPRATE` values remain the preferred historical cash-flow input
 
 The 15.04.2025 perpetual-execution change predates the H2 interval and therefore applies to its whole window. The H2-S1 implementation needs an event layer for this rule before any claim about continuous holding through quarterly dates.
 
+H2-S1 now carries an explicit `exit_before_perpetual_execution_window` policy. Because the local input ends before the CRZ6 ten-trading-day window, the run records `not_observable_in_input_window`; it does not infer a date from a generic weekday calendar and does not add the 3% execution payment.
+
 ## Consequences for H2-S1
 
 - The funding direction and lot conversion are supported better than in the previous audit.

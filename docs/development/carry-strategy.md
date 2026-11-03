@@ -16,6 +16,7 @@ At least 20 common EOD observations are required. On each subsequent observation
 - exit when the current basis reaches the previous-window median, or mean received funding is non-positive, or the date is within five calendar days of `CRZ6` expiry;
 - execute each signal on the next common EOD settlement observation;
 - hold at most one spread and do not roll `CRZ6`;
+- do not open or carry a position into the confirmed ten-trading-day perpetual execution window; if that window is observable in the input, exit on the next common observation;
 - mark an unclosed position at the last available observation as `open_at_data_end_no_executable_exit`.
 
 This rule is a deliberately simple funding filter plus basis reversion condition. It does not claim that basis convergence is guaranteed. The TOM-versus-CNYFIXME difference remains an explicit residual risk.
@@ -34,7 +35,7 @@ Run window: `2025-06-17`–`2026-10-27`; 349 common EOD observations; initial vi
 | Matched LQDT value | RUB 37,005.30 |
 | Final `X = V_proxy − B` | **−RUB 7,610.59** |
 
-The matched LQDT path is observed over this window. The strategy marks are EOD settlement proxies; no historical executable quote, fill, queue or two-leg synchronization evidence was available. The open position is not treated as a completed exit.
+The matched LQDT path is observed over this window. The strategy marks are EOD settlement proxies; no historical executable quote, fill, queue or two-leg synchronization evidence was available. The open position is not treated as a completed exit. The input ends on 27.10.2026, before the CRZ6 ten-trading-day execution window; therefore that event is labelled `not_observable_in_input_window` and no assignment payment is manufactured.
 
 ## Interpretation
 

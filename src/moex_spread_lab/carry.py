@@ -335,6 +335,7 @@ def build_carry_strategy(
     initial_capital: float = 30000.0,
     warmup_observations: int = 20,
     expiry_buffer_days: int = 5,
+    assignment_window_trading_days: int = 10,
 ) -> dict[str, Any]:
     """Evaluate the frozen H2-S1 rule on settlement proxies with one-row delay."""
     if carry_result.get("schema_version") != CARRY_SCHEMA:
@@ -342,7 +343,7 @@ def build_carry_strategy(
     rows = carry_result.get("rows")
     if not isinstance(rows, list) or len(rows) <= warmup_observations:
         raise CarryStrategyError("carry decomposition does not contain the required warmup")
-    if initial_capital <= 0 or warmup_observations < 1 or expiry_buffer_days < 0:
+    if initial_capital <= 0 or warmup_observations < 1 or expiry_buffer_days < 0 or assignment_window_trading_days < 1:
         raise CarryStrategyError("invalid carry strategy parameters")
     near = carry_result.get("near")
     far = carry_result.get("far")
@@ -355,6 +356,12 @@ def build_carry_strategy(
     except (TypeError, ValueError) as exc:
         raise CarryStrategyError(f"invalid expiry for {far}") from exc
     expiry_cutoff = expiry_date - timedelta(days=expiry_buffer_days)
+    observed_dates = [date.fromisoformat(row["date"]) for row in rows if date.fromisoformat(row["date"]) < expiry_date]
+    assignment_window_start: date | None = None
+    assignment_window_status = "not_observable_in_input_window"
+    if observed_dates and observed_dates[-1] >= expiry_date - timedelta(days=15) and len(observed_dates) >= assignment_window_trading_days:
+        assignment_window_start = observed_dates[-assignment_window_trading_days]
+        assignment_window_status = "observed_common_eod_calendar"
     cost_profile = _transaction_cost_profile(transaction_cost_scenario, contracts[near]["tick_value"])
     benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
     benchmark_dates = sorted(benchmark)
@@ -422,9 +429,12 @@ def build_carry_strategy(
             trailing_funding = statistics.fmean(float(item["daily_funding_received_short_near"]) for item in trailing)
             trailing_basis_median = statistics.median(float(item["basis_far_minus_near"]) for item in trailing)
             expiry_signal = current_date >= expiry_cutoff
+            assignment_window_signal = assignment_window_start is not None and current_date >= assignment_window_start
             if position:
                 exit_reason = None
-                if float(row["basis_far_minus_near"]) >= trailing_basis_median:
+                if assignment_window_signal:
+                    exit_reason = "perpetual_execution_window"
+                elif float(row["basis_far_minus_near"]) >= trailing_basis_median:
                     exit_reason = "basis_reached_trailing_median"
                 elif trailing_funding <= 0:
                     exit_reason = "trailing_funding_non_positive"
@@ -434,7 +444,7 @@ def build_carry_strategy(
                     if index + 1 < len(rows):
                         pending = {"action": "exit", "execute_index": index + 1, "decision_date": date_key, "reason": exit_reason}
                     signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": index + 1 < len(rows)})
-            elif not expiry_signal and trailing_funding > 0 and float(row["basis_far_minus_near"]) <= trailing_basis_median and pending is None:
+            elif not expiry_signal and not assignment_window_signal and trailing_funding > 0 and float(row["basis_far_minus_near"]) <= trailing_basis_median and pending is None:
                 if index + 1 < len(rows):
                     pending = {"action": "entry", "execute_index": index + 1, "decision_date": date_key, "reason": "positive_trailing_funding_and_low_basis"}
                 signals.append({"date": date_key, "action": "entry", "reason": "positive_trailing_funding_and_low_basis", "execution_available": index + 1 < len(rows)})
@@ -497,6 +507,10 @@ def build_carry_strategy(
             "quantity_per_leg": 1,
             "expiry": far_expiry,
             "expiry_buffer_days": expiry_buffer_days,
+            "assignment_window_trading_days": assignment_window_trading_days,
+            "assignment_policy": "exit_before_perpetual_execution_window",
+            "assignment_window_start_date": assignment_window_start.isoformat() if assignment_window_start else None,
+            "assignment_window_status": assignment_window_status,
         },
         "cost_scenario": cost_profile,
         "summary": {
@@ -515,6 +529,7 @@ def build_carry_strategy(
             "transaction_costs": round(cumulative_cost, 8),
             "historical_executable_fills": False,
             "lqdt_benchmark_observed_or_proxy": sorted({row["benchmark_source_kind"] for row in daily}),
+            "perpetual_assignment_event_observed": any(signal["reason"] == "perpetual_execution_window" for signal in signals),
         },
         "trades": trades,
         "signals": signals,

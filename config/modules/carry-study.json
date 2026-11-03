@@ -8,6 +8,7 @@
     "swaprate_intake",
     "basis_funding_decomposition",
     "frozen_carry_strategy_proxy_backtest",
+    "perpetual_execution_window_policy",
     "separate_hypothesis_from_mean_reversion"
   ],
   "inputs": [

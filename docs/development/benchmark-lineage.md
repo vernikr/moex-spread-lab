@@ -19,4 +19,8 @@ uv run python -m moex_spread_lab.cli benchmark-lineage \
   --cache-dir data/benchmark-cache
 ```
 
-The output keeps source ticker, source kind, board provenance and response hashes. If the Central Bank endpoint is unavailable or unparseable, the run remains `exploratory_proxy_only` and reports `CBR_RUONIA` as missing; no rate rows are invented. Only the `observed` VTBM/LQDT segment is eligible for a clean actual-fund benchmark conclusion.
+The CBR adapter follows the reference project's recovery path: request the RUONIA HTML table in bounded yearly chunks, then use the current XLSX export endpoint (`posted=False`, `backUrl=/hd_base/ruonia/dynamics/`) when the HTML response contains no rows. The XLSX is parsed through the small `openpyxl` dependency. The output keeps source ticker, source kind, board provenance, response hashes and the method used per chunk. If both CBR responses are unavailable or unparseable, the run remains `exploratory_proxy_only` and reports `CBR_RUONIA` as missing; no rate rows are invented. Only the `observed` VTBM/LQDT segment is eligible for a clean actual-fund benchmark conclusion.
+
+## Verified intake
+
+The 2026-11-03 run recovered CBR RUONIA from 2010-01-11 through 2026-10-27: 4,139 daily rates across 17 yearly chunks, all via the HTML method. The complete lineage now has 4,227 rows and status `observed_plus_labelled_proxy`; the observed VTBM/LQDT layer still begins on 2020-01-20. The ignored local artifact is `data/benchmark/lqdt-lineage.json`.

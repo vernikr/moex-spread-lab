@@ -3,7 +3,10 @@ name = "moex-spread-lab"
 version = "0.1.0"
 description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "certifi>=2024",
+    "openpyxl>=3.1,<4",
+]
 
 [project.scripts]
 moex-spread-lab = "moex_spread_lab.cli:main"

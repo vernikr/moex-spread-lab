@@ -271,7 +271,13 @@ def main() -> int:
 
             ruonia_cache = args.cache_dir / "CBR_RUONIA.json"
             cached = cached_source(ruonia_cache) if ruonia_cache.exists() else None
-            if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
+            if (
+                cached
+                and cached.get("from") == args.from_date
+                and cached.get("till") == args.till_date
+                and cached.get("status") == "available"
+                and "methods" in cached
+            ):
                 ruonia_source = cached
             else:
                 ruonia_source = fetch_cbr_ruonia_rates(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
@@ -282,6 +288,7 @@ def main() -> int:
             source_reports["CBR_RUONIA"] = {
                 "source": ruonia_source["source"],
                 "request_count": ruonia_source["request_count"],
+                "methods": ruonia_source.get("methods", []),
                 "row_count": len(ruonia_source["rows"]),
                 "status": ruonia_source["status"],
                 "raw_response_hashes": ruonia_source["raw_response_hashes"],

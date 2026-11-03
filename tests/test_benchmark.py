@@ -1,6 +1,10 @@
 import unittest
+from datetime import datetime
+from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
+
+from openpyxl import Workbook
 
 from moex_spread_lab.benchmark import (
     adjust_vtbm_split,
@@ -62,6 +66,23 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(result["status"], "available")
         self.assertEqual(result["rows"][0]["date"], "2010-01-11")
         self.assertEqual(result["rows"][0]["rate"], 6.25)
+
+    def test_cbr_ruonia_falls_back_to_current_xlsx_export(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["DT", "ruo"])
+        sheet.append([datetime(2010, 1, 11), 2.98])
+        stream = BytesIO()
+        workbook.save(stream)
+        with patch("moex_spread_lab.benchmark._request_text", return_value=("", "html-hash")), patch(
+            "moex_spread_lab.benchmark._request_bytes",
+            return_value=(stream.getvalue(), "xlsx-hash", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ):
+            result = fetch_cbr_ruonia_rates("2010-01-01", "2010-12-31", delay_seconds=0)
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(result["methods"], ["xlsx"])
+        self.assertEqual(result["rows"][0]["date"], "2010-01-11")
 
 
 if __name__ == "__main__":

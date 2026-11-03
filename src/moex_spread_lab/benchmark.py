@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import ssl
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+
+import certifi
 
 from .w0 import W0Error
 
@@ -22,6 +27,7 @@ CHAIN = ("CBR_RUONIA", "FXMM", "RUSFAR", "VTBM", "LQDT")
 OBSERVED = {"VTBM", "LQDT"}
 HISTORY_PAGE_SIZE = 100
 RUSFAR_PAGE_SIZE = 500
+TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 class BenchmarkError(W0Error):
@@ -35,7 +41,7 @@ def _request_json(url: str, timeout: float = 30.0) -> tuple[dict[str, Any], str]
         method="GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
             raw = response.read()
     except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
         raise BenchmarkError(f"benchmark request failed: {exc}") from exc
@@ -51,10 +57,10 @@ def _request_json(url: str, timeout: float = 30.0) -> tuple[dict[str, Any], str]
 def _request_text(
     url: str,
     *,
-    form: dict[str, str],
+    form: dict[str, str] | None = None,
     timeout: float = 30.0,
 ) -> tuple[str, str]:
-    body = urlencode(form).encode("utf-8")
+    body = urlencode(form).encode("utf-8") if form else None
     request = urllib.request.Request(
         url,
         data=body,
@@ -63,10 +69,10 @@ def _request_text(
             "Content-Type": "application/x-www-form-urlencoded",
             "User-Agent": "moex-spread-lab/0.1 benchmark-intake",
         },
-        method="POST",
+        method="POST" if body is not None else "GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
             raw = response.read()
     except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
         return "", f"request_error:{type(exc).__name__}"
@@ -75,6 +81,24 @@ def _request_text(
     except UnicodeDecodeError:
         text = raw.decode("cp1251", errors="replace")
     return text, hashlib.sha256(raw).hexdigest()
+
+
+def _request_bytes(url: str, *, timeout: float = 30.0) -> tuple[bytes, str, str]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
+            "User-Agent": "moex-spread-lab/0.1 benchmark-intake",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
+            raw = response.read()
+            content_type = response.headers.get("Content-Type", "")
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        return b"", "", f"request_error:{type(exc).__name__}"
+    return raw, hashlib.sha256(raw).hexdigest(), content_type
 
 
 def _table_rows(block: dict[str, Any], name: str) -> list[dict[str, Any]]:
@@ -187,25 +211,46 @@ def fetch_cbr_ruonia_rates(
     finish = date.fromisoformat(till_date)
     rows: dict[str, dict[str, Any]] = {}
     response_hashes: list[str] = []
+    methods: list[str] = []
     request_count = 0
     cursor = start
     pattern = re.compile(r"<td>\s*(\d{2}\.\d{2}\.\d{4})\s*</td>\s*<td[^>]*>\s*([\d,\.]+)\s*</td>", re.IGNORECASE)
     while cursor <= finish:
         chunk_end = min(cursor + timedelta(days=364), finish)
-        text, response_hash = _request_text(
-            "https://www.cbr.ru/hd_base/ruonia/dynamics/",
-            form={
-                "UniDbQuery.Posted": "True",
-                "UniDbQuery.From": cursor.strftime("%d.%m.%Y"),
-                "UniDbQuery.To": chunk_end.strftime("%d.%m.%Y"),
-            },
-        )
+        from_dot = cursor.strftime("%d.%m.%Y")
+        till_dot = chunk_end.strftime("%d.%m.%Y")
+        query = urlencode({
+            "UniDbQuery.Posted": "True",
+            "UniDbQuery.From": from_dot,
+            "UniDbQuery.To": till_dot,
+        })
+        html_url = f"https://www.cbr.ru/hd_base/ruonia/dynamics/?{query}"
+        text, response_hash = _request_text(html_url, form={})
         request_count += 1
         response_hashes.append(response_hash)
-        for date_text, rate_text in pattern.findall(text):
+        html_rows = pattern.findall(text)
+        if html_rows:
+            methods.append("html")
+        else:
+            excel_query = urlencode({
+                "FromDate": cursor.strftime("%m/%d/%Y"),
+                "ToDate": chunk_end.strftime("%m/%d/%Y"),
+                "posted": "False",
+                "backUrl": "/hd_base/ruonia/dynamics/",
+            })
+            excel_url = f"https://www.cbr.ru/Queries/UniDbQuery/DownloadExcel/14315?{excel_query}"
+            raw, excel_hash, content_type = _request_bytes(excel_url)
+            request_count += 1
+            response_hashes.append(excel_hash)
+            html_rows = _read_ruonia_xlsx(raw) if raw and "spreadsheet" in content_type.lower() else []
+            methods.append("xlsx" if html_rows else "unavailable")
+        for date_text, rate_text in html_rows:
             try:
-                row_date = date.fromisoformat("-".join(reversed(date_text.split("."))))
-                rate = float(rate_text.replace(",", "."))
+                if isinstance(date_text, datetime):
+                    row_date = date_text.date()
+                else:
+                    row_date = date.fromisoformat("-".join(reversed(str(date_text).split("."))))
+                rate = float(str(rate_text).replace(",", "."))
             except ValueError:
                 continue
             if start <= row_date <= finish:
@@ -223,12 +268,52 @@ def fetch_cbr_ruonia_rates(
         "ticker": "CBR_RUONIA",
         "from": from_date,
         "till": till_date,
-        "source": "cbr_ruonia_html",
+        "source": "cbr_ruonia_html_or_xlsx",
         "request_count": request_count,
+        "methods": methods,
         "raw_response_hashes": response_hashes,
         "status": "available" if normalized else "unavailable_or_unparsed",
         "rows": normalized,
     }
+
+
+def _read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
+    if not raw:
+        return []
+    try:
+        from openpyxl import load_workbook
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except (ImportError, OSError, ValueError, KeyError):
+        return []
+    try:
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        header = next(rows, None)
+        if not header:
+            return []
+        names = [str(value).strip() if value is not None else "" for value in header]
+        date_index = names.index("DT") if "DT" in names else -1
+        rate_index = names.index("ruo") if "ruo" in names else -1
+        if date_index < 0 or rate_index < 0:
+            return []
+        result = []
+        for row in rows:
+            if len(row) <= max(date_index, rate_index):
+                continue
+            row_date = row[date_index]
+            rate = row[rate_index]
+            if row_date is None or rate is None:
+                continue
+            if isinstance(row_date, datetime):
+                parsed_date: Any = row_date
+            elif isinstance(row_date, date):
+                parsed_date = row_date
+            else:
+                parsed_date = str(row_date)
+            result.append((parsed_date, rate))
+        return result
+    finally:
+        workbook.close()
 
 
 def rate_rows_to_price(rows: list[dict[str, Any]], ticker: str) -> list[dict[str, Any]]:

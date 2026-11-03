@@ -113,6 +113,17 @@ def build_parser() -> argparse.ArgumentParser:
     validation_parser.add_argument("--output", type=Path, required=True)
     validation_parser.add_argument("--train-fraction", type=float, default=0.6)
     validation_parser.add_argument("--confirmation-fraction", type=float, default=0.2)
+
+    carry_parser = subparsers.add_parser("carry-study", help="build a funding-aware EOD carry decomposition")
+    carry_parser.add_argument("--near", default="CNYRUBF")
+    carry_parser.add_argument("--far", default="CRZ6")
+    carry_parser.add_argument("--from-date", required=True)
+    carry_parser.add_argument("--till-date", required=True)
+    carry_parser.add_argument("--contracts", type=Path, required=True)
+    carry_parser.add_argument("--output", type=Path, required=True)
+    carry_parser.add_argument("--cache-dir", type=Path, default=Path("data/carry-history-cache"))
+    carry_parser.add_argument("--delay-seconds", type=float, default=0.1)
+    carry_parser.add_argument("--timeout", type=float, default=30.0)
     return parser
 
 
@@ -423,6 +434,45 @@ def main() -> int:
                 "sealed_confirmation_rows": result["splits"]["sealed_confirmation"]["row_count"],
                 "final_X": result["splits"]["sealed_confirmation"]["final_X"],
                 "blocker_count": len(result["conclusion_blockers"]),
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "carry-study":
+            from .carry import build_carry_study, fetch_history, write_carry_study
+
+            near_source = fetch_history(
+                args.near,
+                args.from_date,
+                args.till_date,
+                cache_dir=args.cache_dir,
+                delay_seconds=args.delay_seconds,
+                timeout=args.timeout,
+            )
+            far_source = fetch_history(
+                args.far,
+                args.from_date,
+                args.till_date,
+                cache_dir=args.cache_dir,
+                delay_seconds=args.delay_seconds,
+                timeout=args.timeout,
+            )
+            result = build_carry_study(
+                near_source,
+                far_source,
+                args.contracts,
+                near=args.near,
+                far=args.far,
+            )
+            write_carry_study(result, args.output)
+            print(json.dumps({
+                "release_state": result["release_state"],
+                "study_role": result["study_role"],
+                "near": result["near"],
+                "far": result["far"],
+                "common_row_count": result["summary"]["common_row_count"],
+                "total_basis_pnl": result["summary"]["total_basis_pnl"],
+                "total_funding_received": result["summary"]["total_funding_received"],
+                "total_gross_carry_pnl": result["summary"]["total_gross_carry_pnl"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

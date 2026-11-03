@@ -23,7 +23,7 @@
       "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "fa686cad1fd875e8e8a05346049c43cf52ffbd86106ea79ec4613498c22ad250",
+  "config_hash": "4b1214b734af24737fe938202cd65cdfb8969afaec240643d6d258c64a3fbe9b",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -71,6 +71,13 @@
       "manifest_path": "config/modules/validation.json",
       "manifest_sha256": "eb8b0063cc08550c947de00f78f005b6773d76b15ff00cad92c54dd9b24d7e71",
       "module_id": "moex-spread-lab.validation",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "carry-study.v1",
+      "manifest_path": "config/modules/carry-study.json",
+      "manifest_sha256": "d5e085447c2033db2148462c38b316fa721e28d0e7d0aec30045612baebf32e6",
+      "module_id": "moex-spread-lab.carry-study",
       "release": "0.1.0"
     }
   ],

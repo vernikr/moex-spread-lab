@@ -51,6 +51,7 @@ Offline work may continue without broker access, funding, deployment or order su
 
 - preserve the baseline, ledger and W7 report as the current reference run;
 - keep the price-only baseline and any future funding-aware carry hypothesis as separate experiments;
+- treat the current H2 funding decomposition as gross evidence only, not as a tested strategy result;
 - audit dated contract history and expiry/roll specifications separately before any pre-2020 claim;
 - collect and validate applicable tariff, collateral and execution evidence through the research prompts;
 - add quote/fill fixtures only when they are clearly labelled as observed, simulated or unresolved;

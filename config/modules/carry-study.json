@@ -1,0 +1,40 @@
+{
+  "module_id": "moex-spread-lab.carry-study",
+  "release": "0.1.0",
+  "contract_version": "carry-study.v1",
+  "kind": "analytics",
+  "capabilities": [
+    "iss_eod_history",
+    "swaprate_intake",
+    "basis_funding_decomposition",
+    "separate_hypothesis_from_mean_reversion"
+  ],
+  "inputs": [
+    "iss-history.v1",
+    "iss-intake.v1"
+  ],
+  "outputs": [
+    "carry-study.v1"
+  ],
+  "dependencies": [],
+  "owner": "project-core",
+  "resource_profile": {
+    "network": "read-only-eod-history",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none",
+    "funding_is_not_assumed_zero": true
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "decomposition_only_until_point_in_time_specs_costs_and_execution_evidence"
+  }
+}

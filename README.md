@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the daily baseline, H1/M10 delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation and the research gate decision are delivered** alongside the W0–W7 offline mechanics. The current baseline configuration is not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware EOD decomposition, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation and the research gate decision are delivered** alongside the W0–W7 offline mechanics. The current baseline configuration is not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -22,6 +22,7 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [W7 chronological validation](docs/development/w7-validation.md)
 - [Stage-9 research gate decision](docs/development/research-gate.md)
 - [CNYRUBF/CRZ6 contract-history audit](docs/development/contract-history-audit.md)
+- [H2 funding-aware carry decomposition](docs/development/carry-study.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

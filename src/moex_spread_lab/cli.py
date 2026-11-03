@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     cost_group = baseline_parser.add_mutually_exclusive_group()
     cost_group.add_argument("--cost-scenario", choices=("low", "base", "stress"))
     cost_group.add_argument("--cost-profile", type=Path)
+
+    ledger_parser = subparsers.add_parser("execution-ledger", help="build a rebuildable analytical execution and portfolio ledger")
+    ledger_parser.add_argument("--baseline", type=Path, required=True)
+    ledger_parser.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -376,6 +380,20 @@ def main() -> int:
                 "final_X": result["summary"]["final_X"],
                 "max_drawdown_D": result["summary"]["max_drawdown_D"],
                 "cost_status": result["costs"]["status"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "execution-ledger":
+            from .ledger import build_ledger, write_ledger
+
+            result = build_ledger(args.baseline)
+            write_ledger(result, args.output)
+            print(json.dumps({
+                "release_state": result["release_state"],
+                "timeframe": result["timeframe"],
+                "execution_attempt_count": result["summary"]["execution_attempt_count"],
+                "final_X": result["summary"]["final_X"],
+                "executable_value_available": result["summary"]["executable_value_available"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

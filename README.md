@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the daily baseline, H1/M10 delay and illustrative cost sensitivity, plus M1 diagnostics are delivered** alongside the W0–W7 offline mechanics. Under decisions A-05/A-06, the pair is conditionally admitted for analytical research; historical executable quotes and verified account costs remain unavailable, so results are exploratory/inconclusive. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the daily baseline, H1/M10 delay and illustrative cost sensitivity, M1 diagnostics, and the W4/W5 analytical execution ledger are delivered** alongside the W0–W7 offline mechanics. Under decisions A-05/A-06, the pair is conditionally admitted for analytical research; historical executable quotes and verified account costs remain unavailable, so results are exploratory/inconclusive. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -18,6 +18,7 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [W1–W7: offline research waves](docs/development/w1-w7.md)
 - [W1: MOEX ISS catalog and price-role intake](docs/development/w1-intake.md)
 - [First analytical baseline](docs/development/analytical-baseline.md)
+- [W4/W5 analytical execution ledger](docs/development/execution-ledger.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.analytics import build_daily_series, build_series, get_cost_scenario, run_mean_reversion_baseline
+from moex_spread_lab.ledger import build_ledger
 
 
 def candle_payload(secid, closes, interval=24):
@@ -134,6 +135,43 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(result["summary"]["modeled_costs"], 0)
         self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
+
+    def test_ledger_preserves_nonexecution_and_rebuilds_proxy_metrics(self):
+        rows = []
+        spreads = [0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0]
+        for index, spread in enumerate(spreads):
+            rows.append({
+                "date": f"2026-01-{index + 1:02d}",
+                "timestamp": f"2026-01-{index + 1:02d} 00:00:00",
+                "near_close": 10.0 + spread / 1000,
+                "far_close": 10.0,
+                "spread_ticks": spread,
+                "benchmark_price": 1.0,
+                "benchmark_source_kind": "observed",
+            })
+        series = {
+            "near": "NEAR",
+            "far": "FAR",
+            "timeframe": "1d",
+            "contracts": {
+                "NEAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 900},
+                "FAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 1000},
+            },
+            "rows": rows,
+            "provenance": {},
+        }
+        baseline = run_mean_reversion_baseline(series, lookback=3, entry_z=1.0, exit_z=0.5)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline_path = root / "baseline.json"
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+            ledger = build_ledger(baseline_path)
+
+        self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
+        self.assertEqual(ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"], ledger["summary"]["execution_attempt_count"])
+        self.assertEqual(ledger["summary"]["final_X"], baseline["summary"]["final_X"])
+        self.assertTrue(ledger["gates"]["W5_event_replay"])
+        self.assertFalse(ledger["summary"]["executable_value_available"])
 
 
 if __name__ == "__main__":

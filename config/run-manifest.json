@@ -23,7 +23,7 @@
       "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "23d3f786af4fab6c35715efa45247afa7a899bbc98358f6bd3b3d6f14efbd203",
+  "config_hash": "ee3804774bc9f10c9c268110110dccd4ce307c1e41b09830e77c6d913973a483",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -50,6 +50,20 @@
       "manifest_path": "config/modules/w1-intake.json",
       "manifest_sha256": "cd38c044eae35630f38ef96d233a84d5bebe508ca17c9b05b04c32fae91b4d08",
       "module_id": "moex-spread-lab.iss-intake",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "analytical-baseline.v1",
+      "manifest_path": "config/modules/analytical-baseline.json",
+      "manifest_sha256": "462d6b4ef617eeb2b325d9d3d352203cbf8f91632caac2a32439dd1dc4a4cd6e",
+      "module_id": "moex-spread-lab.analytical-baseline",
+      "release": "0.1.0"
+    },
+    {
+      "contract_version": "execution-ledger.v1",
+      "manifest_path": "config/modules/execution-ledger.json",
+      "manifest_sha256": "13b94d3d8e125dd52e100a7aeb4f4ddbdf4d4ee6ce25446d63bec735c146825e",
+      "module_id": "moex-spread-lab.execution-ledger",
       "release": "0.1.0"
     }
   ],

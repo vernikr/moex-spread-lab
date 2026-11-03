@@ -39,7 +39,7 @@ The promotion gate remains closed because:
 2. account-applicable exchange, clearing, slippage, funding and exit costs are not evidenced for the historical window; the user's VTB broker commission is now evidenced as zero through 2026-12-31;
 3. current contract parameters are a fallback, not dated historical specifications;
 4. the ledger is a candle-close proxy projection, not an account valuation based on actual orders;
-5. account collateral, liquidation, KPUR, margin-offset and LQDT attribution reconciliation remain unresolved.
+5. account collateral, individual coefficients, margin-offset and LQDT attribution reconciliation remain unresolved; EBS and КПУР are now user-confirmed and documented in the [VTB account risk profile](vtb-account-risk-profile.md).
 
 The separate [contract-history audit](contract-history-audit.md) adds an important scope distinction: the draft price-only baseline is not a complete historical carry test. The pair remains eligible for a separately specified funding-aware hypothesis, subject to its own evidence and validation gates.
 

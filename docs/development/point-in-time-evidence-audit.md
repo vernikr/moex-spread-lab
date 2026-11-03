@@ -6,7 +6,7 @@ Date: 2026-11-03
 
 The public primary-source review closes part of the H2 evidence gap. It confirms the funding sign, funding unit, the dated CNYRUBF `K1/K2` regime change, the CR contract unit and fixing, and the current CRZ6 expiry. It does **not** turn the H2-S1 result into an executable or historically complete result.
 
-The next implementation should use the dated funding regimes and explicitly model the perpetual-leg execution/assignment window. Historical account terms and point-in-time margin remain open. Under A-08, historical order-book and actual-fill data are a declared unavailable input rather than a future collection task.
+The next implementation should use the dated funding regimes and explicitly model the perpetual-leg execution/assignment window. The user has now confirmed EBS and КПУР; working account assumptions are recorded in `vtb-account-risk-profile.md`. Historical account terms and point-in-time margin remain open. Under A-08, historical order-book and actual-fill data are a declared unavailable input rather than a future collection task.
 
 ## Evidence matrix
 

@@ -22,8 +22,8 @@ The supplied reports are the best available research corpus for the project. Non
 
 | Gate | Current disposition | Consequence |
 |---|---|---|
-| Shared-account recourse, applied KPUR category, LQDT haircut and liquidation path | Not confirmed for the user's account | No live trading decision; core LQDT is not treated as available pilot cash |
-| VTB/BCS account tariff, order route, spread support and client-specific fees | Partly documented publicly; personal applicability unknown | Keep fees and order capabilities parameterized |
+| Shared-account recourse, applied KPUR category, LQDT haircut and liquidation path | EBS and КПУР are user-confirmed; public VTB/NCC rules and dated LQDT haircut are recorded, while individual application remains unverified | No live trading decision; core LQDT is not treated as available pilot cash |
+| VTB/BCS account tariff, order route, spread support and client-specific fees | VTB current tariff is user-confirmed; exchange fees, route, spread support and client-specific controls remain parameterized | Keep fees and order capabilities parameterized |
 | ISS/data-use rights and current data availability | Technical access is reported; permitted automated collection is unresolved | Build a replaceable data-provider boundary; do not make automated collection a legal assumption |
 | Historical executable bid/ask and fill evidence | Not available and excluded from this project under A-08 | Historical results remain explicitly candle-proxy research; no historical fill claim is made |
 | Actual reaction-time, VPS headroom and operational reliability | Proposed or estimated only | Measure in later gates; do not convert estimates into safety limits |
@@ -48,7 +48,7 @@ These are architecture boundaries, not a final technology selection. Concrete st
 1. **Completed:** stage 3 read-only inventory and non-destructive VPS preflight. The VPN, existing services and ports were protected; no installation or deployment was performed.
 2. **Completed:** stage-4 requirements around the virtual portfolio, data lineage, manual workflow, LQDT accounting and rejection reasons. Account-specific broker facts remain configuration inputs rather than hard-coded assumptions.
 3. **Completed:** stage 5 architecture boundaries and decision records, including predeclared scale-in/out ladders, explicit portfolio events and contract-first modularity for independent providers/teams.
-4. **Completed:** stage 6 conditional stack and data-source baseline. The rights, account, executable-data and broker gates remain explicit; no implementation or deployment is authorized by the selection.
+4. **Completed:** stage 6 conditional stack and data-source baseline. The rights, account, executable-data and broker gates remain explicit; no implementation or deployment is authorized by the selection. The later user-confirmed EBS/KПУР profile is recorded in `docs/development/vtb-account-risk-profile.md`.
 5. **Completed:** stage 7 reuse analysis. Previous projects strengthen the ISS ingestion pattern, price-role separation and dividend provenance requirements; they do not close rights, account, execution or profitability gates.
 6. **Completed:** stage 8 delivery and validation plan. The first slice starts with offline fixtures, one candidate family, daily data, versioned specifications, costs, delayed revalidation and the matched LQDT ledger.
 7. Move to stage 9 development only after the fixture-level gates in `docs/stages/08-planning.md` pass. Broker access, deployment and live trading remain separately blocked.

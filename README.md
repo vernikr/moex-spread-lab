@@ -25,6 +25,7 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [H2 funding-aware carry decomposition](docs/development/carry-study.md)
 - [H2-S1 frozen carry strategy](docs/development/carry-strategy.md)
 - [CNYRUBF/CRZ6 point-in-time evidence audit](docs/development/point-in-time-evidence-audit.md)
+- [VTB account risk profile](docs/development/vtb-account-risk-profile.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

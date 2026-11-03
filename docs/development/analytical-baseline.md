@@ -71,3 +71,42 @@ The same fixed parameters were replayed on the synchronized H1 and M10 close pro
 For intraday rows, the matched LQDT mark uses the previous available daily close within the day and the same-date daily close only on the last common bar of that day. This avoids repeating a future end-of-day value across earlier bars. The resulting intraday `X` is still analytical because the benchmark does not have intraday account marks.
 
 These runs are delay diagnostics, not a parameter selection. The high turnover makes unresolved exchange, clearing, broker, slippage and exit costs especially material; no net advantage is claimed.
+
+## Illustrative cost sensitivity
+
+The runner now supports complete profiles with separate components. The values below are deliberately **illustrative and unverified**; they are not the user's tariff and are not historical execution evidence. Units are per leg and side unless stated otherwise:
+
+| Scenario | Exchange | Clearing | Broker | Slippage | Funding | Exit |
+|---|---:|---:|---:|---:|---:|---:|
+| low | RUB 0.50 | RUB 0.50 | RUB 0.50 | 0.5 tick | RUB 0.25/leg-day | RUB 0.50 |
+| base | RUB 1.00 | RUB 1.00 | RUB 1.00 | 1.0 tick | RUB 0.50/leg-day | RUB 1.00 |
+| stress | RUB 2.00 | RUB 2.00 | RUB 2.00 | 2.0 ticks | RUB 1.00/leg-day | RUB 2.00 |
+
+The fee document in the input register does not establish the applicable account tariff or exchange amount, so these profiles are sensitivity branches only. They are not used to replace the unresolved cost gate.
+
+| Timeframe | Scenario | Trades | Gross P&L, RUB | Modeled costs, RUB | Final `X`, RUB |
+|---|---|---:|---:|---:|---:|
+| 1d | low | 11 | −567 | 232.50 | −7,804.80 |
+| 1d | base | 11 | −567 | 465.00 | −8,037.30 |
+| 1d | stress | 11 | −567 | 930.00 | −8,502.30 |
+| H1 | low | 228 | −989 | 2,193.50 | −10,211.51 |
+| H1 | base | 228 | −989 | 4,387.00 | −12,405.01 |
+| H1 | stress | 228 | −989 | 8,774.00 | −16,792.01 |
+| M10 | low | 1,110 | +1,014 | 10,580.00 | −16,595.01 |
+| M10 | base | 1,110 | +1,014 | 21,160.00 | −27,175.01 |
+| M10 | stress | 1,110 | +1,014 | 42,320.00 | −48,335.01 |
+
+All cost runs use delay 1 bar. The M10 gross positive result is eliminated by even the low illustrative cost branch. This is a scenario result, not evidence that the real tariff equals any listed value.
+
+Reproduce a branch by adding `--cost-scenario low`, `--cost-scenario base` or `--cost-scenario stress` to the baseline command. A custom `cost-profile.v1` JSON can be supplied with `--cost-profile`.
+
+## M1 diagnostic
+
+M1 was replayed only to inspect turnover and delay sensitivity, with `analysis_role=diagnostic_only`. It is not a primary strategy result and was not used to select a timeframe or parameters:
+
+| Delay | Common minute rows | Virtual round trips | Gross P&L, RUB | Final `X`, RUB |
+|---:|---:|---:|---:|---:|
+| 1 bar | 107,364 | 6,835 | +4,635 | −2,394.01 |
+| 3 bars | 107,364 | 6,835 | +1,519 | −5,510.01 |
+
+Costs remain unknown in this diagnostic. With 6,835 round trips, any executable conclusion would require validated quotes, per-leg fill outcomes and effective costs; the M1 result therefore remains diagnostic/inconclusive.

@@ -100,4 +100,4 @@ Pair-quality reports are generated locally as `data/w1/pair-quality-*.json`. Non
 
 ## Boundary
 
-This adapter does not reconstruct fills, infer a live mark, authorize a broker or admit a strategy. The next data step is spread economics and a matched LQDT analytical ledger over the synchronized candle rows.
+This adapter does not reconstruct fills, infer a live mark, authorize a broker or admit a strategy. Spread economics, matched LQDT analytical marking, H1/M10 sensitivity and M1 diagnostics are now implemented over the synchronized candle rows; the execution evidence status remains unchanged.

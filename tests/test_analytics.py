@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.analytics import build_daily_series, build_series, run_mean_reversion_baseline
+from moex_spread_lab.analytics import build_daily_series, build_series, get_cost_scenario, run_mean_reversion_baseline
 
 
 def candle_payload(secid, closes, interval=24):
@@ -99,6 +99,41 @@ class AnalyticsTests(unittest.TestCase):
 
         self.assertEqual(series["rows"][0]["benchmark_mark_kind"], "prior_daily_close")
         self.assertEqual(series["rows"][-1]["benchmark_mark_kind"], "daily_close_same_date")
+
+    def test_cost_profile_keeps_components_separate_and_reduces_net_value(self):
+        rows = []
+        spreads = [0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0]
+        for index, spread in enumerate(spreads):
+            rows.append({
+                "date": f"2026-01-{index + 1:02d}",
+                "near_close": 10.0 + spread / 1000,
+                "far_close": 10.0,
+                "spread_ticks": spread,
+                "benchmark_price": 1.0,
+                "benchmark_source_kind": "observed",
+            })
+        series = {
+            "near": "NEAR",
+            "far": "FAR",
+            "contracts": {
+                "NEAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 900},
+                "FAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 1000},
+            },
+            "rows": rows,
+            "provenance": {},
+        }
+        result = run_mean_reversion_baseline(
+            series,
+            lookback=3,
+            entry_z=1.0,
+            exit_z=0.5,
+            cost_profile=get_cost_scenario("base"),
+        )
+
+        self.assertEqual(result["costs"]["status"], "illustrative_unverified")
+        self.assertGreater(result["summary"]["modeled_costs"], 0)
+        self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
+        self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
 
 
 if __name__ == "__main__":

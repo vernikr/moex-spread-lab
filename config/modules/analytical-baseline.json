@@ -1,0 +1,43 @@
+{
+  "module_id": "moex-spread-lab.analytical-baseline",
+  "release": "0.1.0",
+  "contract_version": "analytical-baseline.v1",
+  "kind": "analytics",
+  "capabilities": [
+    "unit_safe_spread_pnl",
+    "delayed_candle_close_proxy",
+    "matched_lqdt_marking",
+    "cost_scenario_sensitivity",
+    "m1_diagnostic_role"
+  ],
+  "inputs": [
+    "iss-candles.v1",
+    "lqdt-lineage.v1",
+    "iss-intake.v1",
+    "cost-profile.v1"
+  ],
+  "outputs": [
+    "analytical-baseline.v1"
+  ],
+  "dependencies": [],
+  "owner": "project-core",
+  "resource_profile": {
+    "network": "disabled",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none",
+    "price_proxy_is_labelled": true
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "exploratory_inconclusive_until_execution_and_cost_evidence"
+  }
+}

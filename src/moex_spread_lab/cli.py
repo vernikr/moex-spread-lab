@@ -97,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_parser.add_argument("--quantity", type=int, default=1)
     baseline_parser.add_argument("--interval", type=int, default=24, choices=(1, 10, 60, 24))
     baseline_parser.add_argument("--decision-delay-bars", type=int, default=1)
+    baseline_parser.add_argument("--analysis-role", choices=("primary_baseline", "diagnostic_only"), default="primary_baseline")
+    cost_group = baseline_parser.add_mutually_exclusive_group()
+    cost_group.add_argument("--cost-scenario", choices=("low", "base", "stress"))
+    cost_group.add_argument("--cost-profile", type=Path)
     return parser
 
 
@@ -327,7 +331,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "analytical-baseline":
-            from .analytics import build_series, run_mean_reversion_baseline, write_analytics
+            from .analytics import build_series, get_cost_scenario, run_mean_reversion_baseline, write_analytics
 
             series = build_series(
                 args.near_candles,
@@ -338,6 +342,16 @@ def main() -> int:
                 far=args.far,
                 interval=args.interval,
             )
+            cost_profile = None
+            if args.cost_scenario:
+                cost_profile = get_cost_scenario(args.cost_scenario)
+            elif args.cost_profile:
+                try:
+                    cost_profile = json.loads(args.cost_profile.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise W0Error(f"cannot read cost profile {args.cost_profile}: {exc}") from exc
+                if not isinstance(cost_profile, dict):
+                    raise W0Error("cost profile must be a JSON object")
             result = run_mean_reversion_baseline(
                 series,
                 initial_capital=args.initial_capital,
@@ -346,11 +360,14 @@ def main() -> int:
                 exit_z=args.exit_z,
                 quantity=args.quantity,
                 decision_delay_bars=args.decision_delay_bars,
+                analysis_role=args.analysis_role,
+                cost_profile=cost_profile,
             )
             write_analytics(result, args.output)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "timeframe": result["timeframe"],
+                "analysis_role": result["analysis_role"],
                 "first_date": result["summary"]["first_date"],
                 "last_date": result["summary"]["last_date"],
                 "common_row_count": result["summary"]["common_row_count"],

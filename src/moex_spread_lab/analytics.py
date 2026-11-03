@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from bisect import bisect_left
+from copy import deepcopy
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +16,85 @@ from .w0 import W0Error
 
 ANALYTICS_SCHEMA = "analytical-baseline.v1"
 REQUIRED_COST_COMPONENTS = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
+COST_SCENARIOS = {
+    "low": {
+        "schema_version": "cost-profile.v1",
+        "scenario": "low",
+        "status": "illustrative_unverified",
+        "evidence_status": "account_tariff_and_historical_execution_unverified",
+        "currency": "RUB",
+        "components": {
+            "exchange": {"value": 0.5, "unit": "rub_per_leg_side"},
+            "clearing": {"value": 0.5, "unit": "rub_per_leg_side"},
+            "broker": {"value": 0.5, "unit": "rub_per_leg_side"},
+            "slippage": {"value": 0.5, "unit": "ticks_per_leg_side"},
+            "funding": {"value": 0.25, "unit": "rub_per_leg_day"},
+            "exit": {"value": 0.5, "unit": "rub_per_leg_side"},
+        },
+    },
+    "base": {
+        "schema_version": "cost-profile.v1",
+        "scenario": "base",
+        "status": "illustrative_unverified",
+        "evidence_status": "account_tariff_and_historical_execution_unverified",
+        "currency": "RUB",
+        "components": {
+            "exchange": {"value": 1.0, "unit": "rub_per_leg_side"},
+            "clearing": {"value": 1.0, "unit": "rub_per_leg_side"},
+            "broker": {"value": 1.0, "unit": "rub_per_leg_side"},
+            "slippage": {"value": 1.0, "unit": "ticks_per_leg_side"},
+            "funding": {"value": 0.5, "unit": "rub_per_leg_day"},
+            "exit": {"value": 1.0, "unit": "rub_per_leg_side"},
+        },
+    },
+    "stress": {
+        "schema_version": "cost-profile.v1",
+        "scenario": "stress",
+        "status": "illustrative_unverified",
+        "evidence_status": "account_tariff_and_historical_execution_unverified",
+        "currency": "RUB",
+        "components": {
+            "exchange": {"value": 2.0, "unit": "rub_per_leg_side"},
+            "clearing": {"value": 2.0, "unit": "rub_per_leg_side"},
+            "broker": {"value": 2.0, "unit": "rub_per_leg_side"},
+            "slippage": {"value": 2.0, "unit": "ticks_per_leg_side"},
+            "funding": {"value": 1.0, "unit": "rub_per_leg_day"},
+            "exit": {"value": 2.0, "unit": "rub_per_leg_side"},
+        },
+    },
+}
 
 
 class AnalyticsError(W0Error):
     """Raised when analytical inputs cannot pass the baseline contract."""
+
+
+def get_cost_scenario(name: str) -> dict[str, Any]:
+    """Return a copy of an explicitly illustrative, unverified cost scenario."""
+    try:
+        return deepcopy(COST_SCENARIOS[name])
+    except KeyError as exc:
+        raise AnalyticsError(f"unknown cost scenario: {name}") from exc
+
+
+def _validate_cost_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    if profile.get("schema_version") != "cost-profile.v1":
+        raise AnalyticsError("unsupported cost profile schema")
+    components = profile.get("components")
+    if not isinstance(components, dict):
+        raise AnalyticsError("cost profile components are required")
+    normalized = deepcopy(profile)
+    for component in REQUIRED_COST_COMPONENTS:
+        item = components.get(component)
+        if not isinstance(item, dict):
+            raise AnalyticsError(f"cost profile is missing {component}")
+        value = _number(item.get("value"), f"cost profile {component}")
+        if value < 0:
+            raise AnalyticsError(f"cost profile {component} cannot be negative")
+        if not isinstance(item.get("unit"), str) or not item["unit"]:
+            raise AnalyticsError(f"cost profile {component} unit is required")
+        item["value"] = value
+    return normalized
 
 
 def _read_json(path: Path) -> tuple[dict[str, Any], str]:
@@ -41,6 +119,43 @@ def _number(value: Any, field: str, *, positive: bool = False) -> float:
 
 def _round(value: float) -> float:
     return round(float(value), 8)
+
+
+def _calendar_days(start_timestamp: str, end_timestamp: str) -> int:
+    try:
+        start = date.fromisoformat(start_timestamp[:10])
+        end = date.fromisoformat(end_timestamp[:10])
+    except (TypeError, ValueError) as exc:
+        raise AnalyticsError("trade timestamps must start with ISO dates") from exc
+    return max(1, (end - start).days)
+
+
+def _trade_cost_breakdown(
+    profile: dict[str, Any],
+    *,
+    entry_timestamp: str,
+    exit_timestamp: str,
+    quantity: int,
+    near_contract: dict[str, Any],
+    far_contract: dict[str, Any],
+) -> dict[str, float]:
+    components = profile["components"]
+    legs = 2 * quantity
+    exchange = float(components["exchange"]["value"]) * legs * 2
+    clearing = float(components["clearing"]["value"]) * legs * 2
+    broker = float(components["broker"]["value"]) * legs * 2
+    slippage_ticks = float(components["slippage"]["value"])
+    slippage = slippage_ticks * (near_contract["tick_value"] + far_contract["tick_value"]) * quantity * 2
+    funding = float(components["funding"]["value"]) * legs * _calendar_days(entry_timestamp, exit_timestamp)
+    exit_cost = float(components["exit"]["value"]) * legs
+    return {
+        "exchange": _round(exchange),
+        "clearing": _round(clearing),
+        "broker": _round(broker),
+        "slippage": _round(slippage),
+        "funding": _round(funding),
+        "exit": _round(exit_cost),
+    }
 
 
 def _date_key(value: Any, field: str) -> str:
@@ -151,8 +266,8 @@ def build_series(
     def benchmark_mark(timestamp: str, date_key: str) -> tuple[dict[str, Any] | None, str]:
         if interval == 24 or last_timestamp_by_date[date_key] == timestamp:
             return benchmark.get(date_key), "daily_close_same_date"
-        prior = [item for item in benchmark_dates if item < date_key]
-        return benchmark.get(prior[-1]) if prior else None, "prior_daily_close"
+        prior_index = bisect_left(benchmark_dates, date_key) - 1
+        return benchmark.get(benchmark_dates[prior_index]) if prior_index >= 0 else None, "prior_daily_close"
 
     near_contract = contracts[near]
     far_contract = contracts[far]
@@ -232,9 +347,18 @@ def run_mean_reversion_baseline(
     exit_z: float = 0.5,
     quantity: int = 1,
     decision_delay_bars: int = 1,
+    analysis_role: str = "primary_baseline",
     cost_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if initial_capital <= 0 or lookback < 2 or entry_z <= 0 or exit_z < 0 or quantity <= 0 or decision_delay_bars < 1:
+    if (
+        initial_capital <= 0
+        or lookback < 2
+        or entry_z <= 0
+        or exit_z < 0
+        or quantity <= 0
+        or decision_delay_bars < 1
+        or analysis_role not in {"primary_baseline", "diagnostic_only"}
+    ):
         raise AnalyticsError("invalid baseline parameters")
     rows = series.get("rows", [])
     contracts = series["contracts"]
@@ -247,14 +371,8 @@ def run_mean_reversion_baseline(
         raise AnalyticsError("minimum baseline quantity exceeds initial capital margin envelope")
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
     far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
-    cost_status = "unknown"
-    costs_per_round_trip: float | None = None
-    if cost_profile is not None:
-        if all(isinstance(cost_profile.get(component), (int, float)) for component in REQUIRED_COST_COMPONENTS):
-            costs_per_round_trip = sum(float(cost_profile[component]) for component in REQUIRED_COST_COMPONENTS) * 2 * quantity
-            cost_status = "illustrative_numeric_profile"
-        else:
-            cost_status = "unknown_components"
+    normalized_cost_profile = _validate_cost_profile(cost_profile) if cost_profile is not None else None
+    cost_status = "illustrative_unverified" if normalized_cost_profile is not None else "unknown"
 
     benchmark_start = rows[0]["benchmark_price"]
     position = 0
@@ -264,7 +382,7 @@ def run_mean_reversion_baseline(
     realized_costs = 0.0
     trades: list[dict[str, Any]] = []
     daily = []
-    displayed_cost = lambda value: _round(value) if costs_per_round_trip is not None else None
+    cost_totals = {component: 0.0 for component in REQUIRED_COST_COMPONENTS}
 
     def pnl_at(current_near: float, current_far: float) -> float:
         if position == 0:
@@ -274,9 +392,24 @@ def run_mean_reversion_baseline(
     def close_trade(date_key: str, current_near: float, current_far: float, reason: str) -> None:
         nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs
         gross = pnl_at(current_near, current_far)
-        cost = costs_per_round_trip if costs_per_round_trip is not None else 0.0
+        breakdown = (
+            _trade_cost_breakdown(
+                normalized_cost_profile,
+                entry_timestamp=entry_date or date_key,
+                exit_timestamp=date_key,
+                quantity=quantity,
+                near_contract=near_contract,
+                far_contract=far_contract,
+            )
+            if normalized_cost_profile is not None
+            else None
+        )
+        cost = sum(breakdown.values()) if breakdown is not None else 0.0
         realized_gross += gross
         realized_costs += cost
+        if breakdown is not None:
+            for component, value in breakdown.items():
+                cost_totals[component] += value
         trades.append({
             "entry_date": entry_date,
             "exit_date": date_key,
@@ -285,8 +418,9 @@ def run_mean_reversion_baseline(
             "entry_spread_ticks": _round((entry_near - entry_far) / near_contract["tick_size"]),
             "exit_spread_ticks": _round((current_near - current_far) / near_contract["tick_size"]),
             "gross_pnl": _round(gross),
-            "modeled_costs": displayed_cost(cost),
-            "net_pnl": _round(gross - cost) if costs_per_round_trip is not None else None,
+            "modeled_costs": _round(cost) if breakdown is not None else None,
+            "cost_breakdown": breakdown,
+            "net_pnl": _round(gross - cost) if breakdown is not None else None,
             "exit_reason": reason,
         })
         position = 0
@@ -327,7 +461,7 @@ def run_mean_reversion_baseline(
             "benchmark_value": _round(benchmark_value),
             "X": _round(strategy_value - benchmark_value),
             "gross_realized_pnl": _round(realized_gross),
-            "modeled_costs": displayed_cost(realized_costs),
+            "modeled_costs": _round(realized_costs) if normalized_cost_profile is not None else None,
             "benchmark_source_kind": row["benchmark_source_kind"],
             "benchmark_mark_kind": row.get("benchmark_mark_kind", "daily_close_same_date"),
         })
@@ -340,7 +474,7 @@ def run_mean_reversion_baseline(
         daily[-1]["strategy_value"] = _round(initial_capital + realized_gross - realized_costs)
         daily[-1]["X"] = _round(daily[-1]["strategy_value"] - daily[-1]["benchmark_value"])
         daily[-1]["gross_realized_pnl"] = _round(realized_gross)
-        daily[-1]["modeled_costs"] = displayed_cost(realized_costs)
+        daily[-1]["modeled_costs"] = _round(realized_costs) if normalized_cost_profile is not None else None
 
     peak = 0.0
     for row in daily:
@@ -348,13 +482,14 @@ def run_mean_reversion_baseline(
         row["H"] = _round(peak)
         row["D"] = _round(peak - row["X"])
     final = daily[-1]
-    net_status = "usable_for_gross_only" if cost_status != "illustrative_numeric_profile" else "illustrative_net_sensitivity"
+    net_status = "usable_for_gross_only" if normalized_cost_profile is None else "illustrative_net_sensitivity"
     return {
         "schema_version": ANALYTICS_SCHEMA,
         "release_state": "exploratory_inconclusive",
         "near": near,
         "far": far,
         "direction": "near_minus_far",
+        "analysis_role": analysis_role,
         "timeframe": series.get("timeframe", "1d"),
         "price_interpretation": "ISS candle close analytical proxy under A-06",
         "execution_evidence_status": "historical_bid_ask_unavailable",
@@ -383,7 +518,10 @@ def run_mean_reversion_baseline(
         "costs": {
             "status": cost_status,
             "components": list(REQUIRED_COST_COMPONENTS),
-            "profile": cost_profile,
+            "profile": normalized_cost_profile,
+            "total_by_component": {
+                component: _round(value) for component, value in cost_totals.items()
+            } if normalized_cost_profile is not None else None,
             "net_status": net_status,
         },
         "summary": {
@@ -392,8 +530,8 @@ def run_mean_reversion_baseline(
             "last_date": rows[-1]["date"],
             "trade_count": len(trades),
             "gross_pnl": _round(realized_gross),
-            "modeled_costs": displayed_cost(realized_costs),
-            "costs_applied": costs_per_round_trip is not None,
+            "modeled_costs": _round(realized_costs) if normalized_cost_profile is not None else None,
+            "costs_applied": normalized_cost_profile is not None,
             "final_strategy_value": final["strategy_value"],
             "final_benchmark_value": final["benchmark_value"],
             "final_X": final["X"],

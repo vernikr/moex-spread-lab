@@ -41,6 +41,8 @@ The promotion gate remains closed because:
 4. the ledger is a candle-close proxy projection, not an executable account valuation;
 5. account collateral, liquidation, KPUR, margin-offset and LQDT attribution reconciliation remain unresolved.
 
+The separate [contract-history audit](contract-history-audit.md) adds an important scope distinction: the draft price-only baseline is not a complete historical carry test. The pair remains eligible for a separately specified funding-aware hypothesis, subject to its own evidence and validation gates.
+
 Under the pilot policy, missing safety-critical evidence cannot be converted to zero cost, safe collateral, guaranteed fills or permission to fund/trade. The present result therefore cannot satisfy the W4/W5/W7 gates for an executable conclusion.
 
 ## Allowed continuation
@@ -48,6 +50,7 @@ Under the pilot policy, missing safety-critical evidence cannot be converted to 
 Offline work may continue without broker access, funding, deployment or order submission:
 
 - preserve the baseline, ledger and W7 report as the current reference run;
+- keep the price-only baseline and any future funding-aware carry hypothesis as separate experiments;
 - audit dated contract history and expiry/roll specifications separately before any pre-2020 claim;
 - collect and validate applicable tariff, collateral and execution evidence through the research prompts;
 - add quote/fill fixtures only when they are clearly labelled as observed, simulated or unresolved;

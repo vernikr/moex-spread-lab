@@ -21,6 +21,7 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [W4/W5 analytical execution ledger](docs/development/execution-ledger.md)
 - [W7 chronological validation](docs/development/w7-validation.md)
 - [Stage-9 research gate decision](docs/development/research-gate.md)
+- [CNYRUBF/CRZ6 contract-history audit](docs/development/contract-history-audit.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

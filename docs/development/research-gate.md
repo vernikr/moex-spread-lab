@@ -70,4 +70,5 @@ Parameter optimization of this baseline, M1 promotion of this high-turnover rule
 - [Pilot policy](../risk/pilot-policy.md)
 - [Account and risk blockers](../blockers/b01-account-and-risk.md)
 - [VTB EBS/KПУР account-risk screen](vtb-account-risk-check.md)
+- [Flagship futures-pair screen](pair-screen.md)
 - [Workflow and research blockers](../blockers/b02-research-and-workflow.md)

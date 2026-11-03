@@ -142,6 +142,12 @@ def build_parser() -> argparse.ArgumentParser:
     account_risk_parser.add_argument("--stress-vm-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
+    screen_parser = subparsers.add_parser("pair-screen", help="screen documented futures pairs with the fixed H1 control and account stress gate")
+    screen_parser.add_argument("--candles-dir", type=Path, required=True)
+    screen_parser.add_argument("--benchmark", type=Path, required=True)
+    screen_parser.add_argument("--contracts", type=Path, required=True)
+    screen_parser.add_argument("--output", type=Path, required=True)
+    screen_parser.add_argument("--initial-capital", type=float, default=30000.0)
     return parser
 
 
@@ -552,6 +558,24 @@ def main() -> int:
                 "all_working_scenarios_passed": result["summary"]["all_scenarios_passed"],
                 "pair_margin_no_offset_rub": result["pair"]["pair_margin_no_offset_rub"],
                 "most_severe_remaining_capital_rub": result["summary"]["most_severe_remaining_capital_rub"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "pair-screen":
+            from .screener import screen_pairs, write_screen
+
+            result = screen_pairs(
+                args.candles_dir,
+                args.benchmark,
+                args.contracts,
+                initial_capital=args.initial_capital,
+            )
+            write_screen(result, args.output)
+            print(json.dumps({
+                "schema_version": result["schema_version"],
+                "candidate_count": result["summary"]["candidate_count"],
+                "stress_pass_count": result["summary"]["stress_pass_count"],
+                "positive_h1_control_count": result["summary"]["positive_h1_control_count"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

@@ -23,7 +23,7 @@
       "sha256": "4f6a1b00649602d4e2510f49179bf3f151a3eb84f69fef47190ac8081ce4faca"
     }
   ],
-  "config_hash": "4b1214b734af24737fe938202cd65cdfb8969afaec240643d6d258c64a3fbe9b",
+  "config_hash": "3792869e887027c5a141b9d539f04173e8b29a8168028c2a282f7440c9a6100e",
   "configuration": {
     "locale": "en-US",
     "mode": "offline",
@@ -76,7 +76,7 @@
     {
       "contract_version": "carry-study.v1",
       "manifest_path": "config/modules/carry-study.json",
-      "manifest_sha256": "d5e085447c2033db2148462c38b316fa721e28d0e7d0aec30045612baebf32e6",
+      "manifest_sha256": "b1dc3807c1a16d49b2c6f85d38900cb55ac76df33a7aa62c28c88afab24793cd",
       "module_id": "moex-spread-lab.carry-study",
       "release": "0.1.0"
     }

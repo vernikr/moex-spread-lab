@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.carry import build_carry_study
+from moex_spread_lab.carry import build_carry_strategy, build_carry_study
 
 
 def source(secid, rows):
@@ -41,6 +41,56 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total_funding_received"], 5.0)
         self.assertEqual(result["summary"]["total_gross_carry_pnl"], -45.0)
         self.assertFalse(result["summary"]["transaction_costs_included"])
+
+    def test_strategy_uses_one_observation_execution_delay_and_lqdt_mark(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = root / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+            carry = {
+                "schema_version": "carry-study.v1",
+                "near": "NEAR",
+                "far": "FAR",
+                "rows": [
+                    {"date": dates[0], "basis_far_minus_near": 1.0, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 0.0},
+                    {"date": dates[1], "basis_far_minus_near": 1.0, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 0.0},
+                    {"date": dates[2], "basis_far_minus_near": 0.5, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 0.0},
+                    {"date": dates[3], "basis_far_minus_near": 0.4, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 7.0},
+                    {"date": dates[4], "basis_far_minus_near": 1.2, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 8.0},
+                    {"date": dates[5], "basis_far_minus_near": 1.2, "daily_funding_received_short_near": 1.0, "daily_gross_carry_pnl": 9.0},
+                ],
+            }
+            carry_path = root / "carry.json"
+            carry_path.write_text(json.dumps(carry), encoding="utf-8")
+            benchmark = root / "benchmark.json"
+            benchmark.write_text(json.dumps({
+                "schema_version": "lqdt-lineage.v1",
+                "rows": [{"date": date, "price": 1.0, "source_kind": "observed", "source_ticker": "LQDT"} for date in dates],
+            }), encoding="utf-8")
+            result = build_carry_strategy(
+                carry,
+                benchmark,
+                contracts,
+                transaction_cost_scenario="low",
+                initial_capital=30000,
+                warmup_observations=2,
+            )
+
+        self.assertEqual(result["summary"]["closed_trade_count"], 1)
+        self.assertEqual(result["summary"]["open_trade_count"], 0)
+        trade = result["trades"][0]
+        self.assertEqual(trade["entry_decision_date"], dates[2])
+        self.assertEqual(trade["entry_execution_date"], dates[3])
+        self.assertEqual(trade["exit_decision_date"], dates[4])
+        self.assertEqual(trade["exit_execution_date"], dates[5])
+        self.assertEqual(trade["gross_pnl"], 17.0)
+        self.assertEqual(result["daily"][2]["position"], 0)
+        self.assertEqual(result["daily"][3]["position"], 1)
+        self.assertEqual(result["daily"][5]["position"], 0)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import statistics
 import time
-from datetime import date
+from bisect import bisect_left
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -17,6 +19,7 @@ from .w0 import W0Error
 
 CARRY_SCHEMA = "carry-study.v1"
 HISTORY_SCHEMA = "iss-history.v1"
+STRATEGY_SCHEMA = "carry-strategy.v1"
 HISTORY_PAGE_SIZE = 100
 HISTORY_FIELDS = (
     "BOARDID", "TRADEDATE", "SECID", "CLOSE", "SETTLEPRICE", "SWAPRATE",
@@ -26,6 +29,10 @@ HISTORY_FIELDS = (
 
 class CarryError(W0Error):
     """Raised when EOD carry inputs fail the funding-aware study contract."""
+
+
+class CarryStrategyError(CarryError):
+    """Raised when a frozen carry strategy cannot be evaluated safely."""
 
 
 def _round(value: float) -> float:
@@ -262,5 +269,268 @@ def build_carry_study(
 
 
 def write_carry_study(result: dict[str, Any], output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
+    try:
+        raw = path.read_bytes()
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CarryStrategyError(f"cannot read LQDT benchmark {path}: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != "lqdt-lineage.v1":
+        raise CarryStrategyError("unsupported LQDT benchmark schema")
+    rows = {}
+    for row in payload.get("rows", []):
+        if not isinstance(row, dict) or not isinstance(row.get("date"), str):
+            raise CarryStrategyError("malformed LQDT benchmark row")
+        try:
+            price = float(row["price"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CarryStrategyError(f"invalid LQDT benchmark price on {row.get('date')}") from exc
+        if price <= 0:
+            raise CarryStrategyError(f"LQDT benchmark price must be positive on {row['date']}")
+        rows[row["date"]] = {
+            "date": row["date"],
+            "price": price,
+            "source_kind": row.get("source_kind", "unknown"),
+            "source_ticker": row.get("source_ticker", "unknown"),
+        }
+    if not rows:
+        raise CarryStrategyError("empty LQDT benchmark")
+    return rows, hashlib.sha256(raw).hexdigest()
+
+
+def _transaction_cost_profile(name: str, tick_value: float) -> dict[str, Any]:
+    profiles = {
+        "low": {"exchange": 0.5, "clearing": 0.5, "broker": 0.5, "slippage_ticks": 0.5, "exit": 0.5},
+        "base": {"exchange": 1.0, "clearing": 1.0, "broker": 1.0, "slippage_ticks": 1.0, "exit": 1.0},
+        "stress": {"exchange": 2.0, "clearing": 2.0, "broker": 2.0, "slippage_ticks": 2.0, "exit": 2.0},
+    }
+    try:
+        values = profiles[name].copy()
+    except KeyError as exc:
+        raise CarryStrategyError(f"unknown transaction cost scenario: {name}") from exc
+    values["entry_cost"] = round(2 * (
+        values["exchange"] + values["clearing"] + values["broker"]
+        + values["slippage_ticks"] * tick_value
+    ), 8)
+    values["exit_cost"] = round(2 * (
+        values["exchange"] + values["clearing"] + values["broker"]
+        + values["slippage_ticks"] * tick_value + values["exit"]
+    ), 8)
+    values["round_trip_cost"] = round(values["entry_cost"] + values["exit_cost"], 8)
+    values["funding_component"] = "actual_SWAPRATE_included;_illustrative_funding_cost_not_added"
+    values["status"] = "illustrative_unverified"
+    return values
+
+
+def build_carry_strategy(
+    carry_result: dict[str, Any],
+    benchmark_path: Path,
+    contracts_path: Path,
+    *,
+    transaction_cost_scenario: str = "base",
+    initial_capital: float = 30000.0,
+    warmup_observations: int = 20,
+    expiry_buffer_days: int = 5,
+) -> dict[str, Any]:
+    """Evaluate the frozen H2-S1 rule on settlement proxies with one-row delay."""
+    if carry_result.get("schema_version") != CARRY_SCHEMA:
+        raise CarryStrategyError("unsupported carry decomposition schema")
+    rows = carry_result.get("rows")
+    if not isinstance(rows, list) or len(rows) <= warmup_observations:
+        raise CarryStrategyError("carry decomposition does not contain the required warmup")
+    if initial_capital <= 0 or warmup_observations < 1 or expiry_buffer_days < 0:
+        raise CarryStrategyError("invalid carry strategy parameters")
+    near = carry_result.get("near")
+    far = carry_result.get("far")
+    if not isinstance(near, str) or not isinstance(far, str):
+        raise CarryStrategyError("carry contract identities are required")
+    contracts, contracts_hash = load_contracts(contracts_path, near, far)
+    far_expiry = contracts[far].get("expiry")
+    try:
+        expiry_date = date.fromisoformat(far_expiry)
+    except (TypeError, ValueError) as exc:
+        raise CarryStrategyError(f"invalid expiry for {far}") from exc
+    expiry_cutoff = expiry_date - timedelta(days=expiry_buffer_days)
+    cost_profile = _transaction_cost_profile(transaction_cost_scenario, contracts[near]["tick_value"])
+    benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
+    benchmark_dates = sorted(benchmark)
+    if not benchmark_dates:
+        raise CarryStrategyError("benchmark has no dates")
+
+    def benchmark_mark(date_key: str) -> dict[str, Any]:
+        index = bisect_left(benchmark_dates, date_key)
+        if index < len(benchmark_dates) and benchmark_dates[index] == date_key:
+            return {**benchmark[date_key], "mark_kind": "daily_close_same_date"}
+        if index == 0:
+            raise CarryStrategyError(f"benchmark has no mark on or before {date_key}")
+        prior = benchmark[benchmark_dates[index - 1]]
+        return {**prior, "mark_kind": "prior_daily_close"}
+
+    start_benchmark = benchmark_mark(rows[0]["date"])
+    position = False
+    entry_index: int | None = None
+    entry_decision_date: str | None = None
+    pending: dict[str, Any] | None = None
+    cumulative_gross = 0.0
+    cumulative_cost = 0.0
+    trades: list[dict[str, Any]] = []
+    daily = []
+    signals = []
+
+    for index, row in enumerate(rows):
+        date_key = row["date"]
+        current_date = date.fromisoformat(date_key)
+        increment = 0.0
+        if position and entry_index is not None and index > entry_index:
+            increment = float(row["daily_gross_carry_pnl"])
+            cumulative_gross += increment
+
+        if pending is not None and pending["execute_index"] == index:
+            action = pending["action"]
+            if action == "entry":
+                if position:
+                    raise CarryStrategyError("entry attempted while a position is open")
+                position = True
+                entry_index = index
+                entry_decision_date = pending["decision_date"]
+                cumulative_cost += cost_profile["entry_cost"]
+            elif action == "exit":
+                if not position or entry_index is None or entry_decision_date is None:
+                    raise CarryStrategyError("exit attempted without an open position")
+                cumulative_cost += cost_profile["exit_cost"]
+                trades.append({
+                    "entry_decision_date": entry_decision_date,
+                    "entry_execution_date": rows[entry_index]["date"],
+                    "exit_decision_date": pending["decision_date"],
+                    "exit_execution_date": date_key,
+                    "status": "closed_proxy_round_trip",
+                    "gross_pnl": round(sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:index + 1]), 8),
+                    "transaction_costs": cost_profile["round_trip_cost"],
+                    "net_pnl": round(sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:index + 1]) - cost_profile["round_trip_cost"], 8),
+                })
+                position = False
+                entry_index = None
+                entry_decision_date = None
+            pending = None
+
+        if index >= warmup_observations:
+            trailing = rows[index - warmup_observations:index]
+            trailing_funding = statistics.fmean(float(item["daily_funding_received_short_near"]) for item in trailing)
+            trailing_basis_median = statistics.median(float(item["basis_far_minus_near"]) for item in trailing)
+            expiry_signal = current_date >= expiry_cutoff
+            if position:
+                exit_reason = None
+                if float(row["basis_far_minus_near"]) >= trailing_basis_median:
+                    exit_reason = "basis_reached_trailing_median"
+                elif trailing_funding <= 0:
+                    exit_reason = "trailing_funding_non_positive"
+                elif expiry_signal:
+                    exit_reason = "expiry_buffer"
+                if exit_reason and pending is None:
+                    if index + 1 < len(rows):
+                        pending = {"action": "exit", "execute_index": index + 1, "decision_date": date_key, "reason": exit_reason}
+                    signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": index + 1 < len(rows)})
+            elif not expiry_signal and trailing_funding > 0 and float(row["basis_far_minus_near"]) <= trailing_basis_median and pending is None:
+                if index + 1 < len(rows):
+                    pending = {"action": "entry", "execute_index": index + 1, "decision_date": date_key, "reason": "positive_trailing_funding_and_low_basis"}
+                signals.append({"date": date_key, "action": "entry", "reason": "positive_trailing_funding_and_low_basis", "execution_available": index + 1 < len(rows)})
+
+        benchmark_mark_row = benchmark_mark(date_key)
+        strategy_value = initial_capital + cumulative_gross - cumulative_cost
+        benchmark_value = initial_capital * benchmark_mark_row["price"] / start_benchmark["price"]
+        daily.append({
+            "date": date_key,
+            "position": 1 if position else 0,
+            "gross_pnl_increment": round(increment, 8),
+            "cumulative_gross_pnl": round(cumulative_gross, 8),
+            "cumulative_transaction_costs": round(cumulative_cost, 8),
+            "strategy_value_proxy": round(strategy_value, 8),
+            "benchmark_value": round(benchmark_value, 8),
+            "X": round(strategy_value - benchmark_value, 8),
+            "benchmark_source_kind": benchmark_mark_row["source_kind"],
+            "benchmark_source_ticker": benchmark_mark_row["source_ticker"],
+            "benchmark_mark_kind": benchmark_mark_row["mark_kind"],
+            "valuation_status": "EOD_settlement_proxy_not_executable_fill",
+        })
+
+    if position and entry_index is not None and entry_decision_date is not None:
+        gross_open = sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:])
+        trades.append({
+            "entry_decision_date": entry_decision_date,
+            "entry_execution_date": rows[entry_index]["date"],
+            "exit_decision_date": None,
+            "exit_execution_date": None,
+            "status": "open_at_data_end_no_executable_exit",
+            "gross_pnl": round(gross_open, 8),
+            "transaction_costs": cost_profile["entry_cost"],
+            "net_pnl": round(gross_open - cost_profile["entry_cost"], 8),
+        })
+
+    peak = 0.0
+    for row in daily:
+        peak = max(peak, row["X"])
+        row["H"] = round(peak, 8)
+        row["D"] = round(peak - row["X"], 8)
+    closed = [trade for trade in trades if trade["status"] == "closed_proxy_round_trip"]
+    return {
+        "schema_version": STRATEGY_SCHEMA,
+        "release_state": "exploratory_inconclusive",
+        "study_role": "frozen_funding_filtered_basis_strategy_proxy_backtest",
+        "near": near,
+        "far": far,
+        "direction": "short_near_long_far",
+        "rule_id": "H2-S1",
+        "parameters": {
+            "warmup_observations": warmup_observations,
+            "trailing_funding_condition": "mean_previous_20_daily_funding_received > 0",
+            "entry_condition": "current_basis <= median_previous_20_basis",
+            "exit_conditions": [
+                "current_basis >= median_previous_20_basis",
+                "mean_previous_20_daily_funding_received <= 0",
+                "date >= far_expiry - 5 calendar days",
+            ],
+            "decision_delay_observations": 1,
+            "quantity_per_leg": 1,
+            "expiry": far_expiry,
+            "expiry_buffer_days": expiry_buffer_days,
+        },
+        "cost_scenario": cost_profile,
+        "summary": {
+            "first_date": daily[0]["date"],
+            "last_date": daily[-1]["date"],
+            "row_count": len(daily),
+            "signal_count": len(signals),
+            "closed_trade_count": len(closed),
+            "open_trade_count": sum(trade["status"] == "open_at_data_end_no_executable_exit" for trade in trades),
+            "final_strategy_value_proxy": daily[-1]["strategy_value_proxy"],
+            "final_benchmark_value": daily[-1]["benchmark_value"],
+            "final_X": daily[-1]["X"],
+            "final_H": daily[-1]["H"],
+            "final_D": daily[-1]["D"],
+            "gross_pnl": round(cumulative_gross, 8),
+            "transaction_costs": round(cumulative_cost, 8),
+            "historical_executable_fills": False,
+            "lqdt_benchmark_observed_or_proxy": sorted({row["benchmark_source_kind"] for row in daily}),
+        },
+        "trades": trades,
+        "signals": signals,
+        "daily": daily,
+        "provenance": {
+            "carry_decomposition_schema": CARRY_SCHEMA,
+            "benchmark_sha256": benchmark_hash,
+            "benchmark_path": str(benchmark_path),
+            "contracts_sha256": contracts_hash,
+            "contracts_path": str(contracts_path),
+            "historical_specification_status": "current_snapshot_fallback_assumed",
+            "execution_evidence_status": "historical_bid_ask_unavailable",
+        },
+    }
+
+
+def write_carry_strategy(result: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

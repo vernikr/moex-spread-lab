@@ -124,6 +124,13 @@ def build_parser() -> argparse.ArgumentParser:
     carry_parser.add_argument("--cache-dir", type=Path, default=Path("data/carry-history-cache"))
     carry_parser.add_argument("--delay-seconds", type=float, default=0.1)
     carry_parser.add_argument("--timeout", type=float, default=30.0)
+    carry_strategy_parser = subparsers.add_parser("carry-strategy", help="run the frozen funding-aware carry proxy strategy")
+    carry_strategy_parser.add_argument("--carry-study", type=Path, required=True)
+    carry_strategy_parser.add_argument("--benchmark", type=Path, required=True)
+    carry_strategy_parser.add_argument("--contracts", type=Path, required=True)
+    carry_strategy_parser.add_argument("--output", type=Path, required=True)
+    carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress"), default="base")
+    carry_strategy_parser.add_argument("--initial-capital", type=float, default=30000.0)
     return parser
 
 
@@ -473,6 +480,32 @@ def main() -> int:
                 "total_basis_pnl": result["summary"]["total_basis_pnl"],
                 "total_funding_received": result["summary"]["total_funding_received"],
                 "total_gross_carry_pnl": result["summary"]["total_gross_carry_pnl"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "carry-strategy":
+            from .carry import build_carry_strategy, write_carry_strategy
+
+            try:
+                carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise W0Error(f"cannot read carry study {args.carry_study}: {exc}") from exc
+            result = build_carry_strategy(
+                carry_study,
+                args.benchmark,
+                args.contracts,
+                transaction_cost_scenario=args.cost_scenario,
+                initial_capital=args.initial_capital,
+            )
+            write_carry_strategy(result, args.output)
+            print(json.dumps({
+                "rule_id": result["rule_id"],
+                "release_state": result["release_state"],
+                "closed_trade_count": result["summary"]["closed_trade_count"],
+                "open_trade_count": result["summary"]["open_trade_count"],
+                "final_X": result["summary"]["final_X"],
+                "gross_pnl": result["summary"]["gross_pnl"],
+                "transaction_costs": result["summary"]["transaction_costs"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

@@ -10,7 +10,7 @@ This is a separate hypothesis from the price-only H1 mean-reversion baseline. It
 
 The economic decomposition uses MOEX EOD settlement history and the `SWAPRATE` field. A positive CNYRUBF funding value is treated as received by the short perpetual leg, following the received R06 specification analysis. The study uses the current contract snapshot for unit conversion and therefore does not claim point-in-time historical specification completeness.
 
-This is **not yet a strategy backtest**: it has no entry rule, no delayed execution, no bid/ask fills, no verified costs, no fixing-vs-TOM adjustment and no historical margin series.
+The decomposition itself is **not a strategy backtest**: it has no entry rule, no delayed execution, no bid/ask fills, no verified costs, no fixing-vs-TOM adjustment and no historical margin series. The separately frozen H2-S1 proxy run is documented in [carry-strategy.md](carry-strategy.md).
 
 ## EOD result
 
@@ -47,10 +47,15 @@ uv run python -m moex_spread_lab.cli carry-study \
   --output data/analytics/cnyrubf-crz6-carry-study.json
 ```
 
+## H2-S1 continuation
+
+The decomposition was used as the input to one separately frozen proxy strategy. H2-S1 produced 14 closed proxy round trips, one position open at the data end and final `X = −RUB 7,610.59` under the base illustrative cost scenario. This is a no-promotion result for that rule; it is not added to the decomposition total and does not reject the pair.
+
 ## Next H2 gate
 
 Before turning this decomposition into a strategy test, define and freeze:
 
+- improved evidence for effective-dated specifications, funding rules and fixing/expiry treatment before another strategy hypothesis;
 - entry rule based on basis versus expected remaining funding and fixing risk;
 - exit, expiry buffer and no-roll rule;
 - point-in-time funding/specification segments;

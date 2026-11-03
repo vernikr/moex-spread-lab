@@ -35,9 +35,9 @@ Run window: `2025-06-17`–`2026-10-27`; 349 common EOD observations; initial vi
 | Matched LQDT value | RUB 37,005.30 |
 | Final `X = V_proxy − B` | **−RUB 7,610.59** |
 
-For comparison, applying the current official MOEX FX taker exchange/clearing rate of `0.00462%` to the end-of-window reference prices gives **RUB 32.63** of exchange/clearing transaction costs and `X = −RUB 7,383.21`. This is a current tariff sensitivity only: broker commission, historical tariff applicability, slippage and execution evidence remain unresolved.
+For comparison, applying the current official MOEX FX taker exchange/clearing rate of `0.00462%` to the end-of-window reference prices gives **RUB 32.63** of exchange/clearing transaction costs and `X = −RUB 7,383.21`. Under the user-provided VTB `Мой Онлайн Прайм` tariff, the VTB broker commission for derivatives is zero through 2026-12-31 inclusive, so this current-period sensitivity does not add a VTB broker fee. Historical exchange-fee applicability, post-2026 broker pricing, slippage and account controls remain open.
 
-The matched LQDT path is observed over this window. The strategy marks are EOD settlement proxies; no historical executable quote, fill, queue or two-leg synchronization evidence was available. The open position is not treated as a completed exit. The input ends on 27.10.2026, before the CRZ6 ten-trading-day execution window; therefore that event is labelled `not_observable_in_input_window` and no assignment payment is manufactured.
+The matched LQDT path is observed over this window. The strategy marks are EOD settlement proxies under A-08: this project will not obtain historical order-book or actual-fill data. The model therefore represents the user's manual reaction delay and cost sensitivity rather than claiming real fills. The open position is not treated as a completed exit. The input ends on 27.10.2026, before the CRZ6 ten-trading-day execution window; therefore that event is labelled `not_observable_in_input_window` and no assignment payment is manufactured.
 
 ## Interpretation
 
@@ -57,14 +57,14 @@ uv run python -m moex_spread_lab.cli carry-strategy \
   --output data/analytics/cnyrubf-crz6-carry-strategy.json
 ```
 
-Current-tariff sensitivity:
+Current VTB-tariff sensitivity:
 
 ```bash
 uv run python -m moex_spread_lab.cli carry-strategy \
   --carry-study data/analytics/cnyrubf-crz6-carry-study.json \
   --benchmark data/benchmark/lqdt-lineage.json \
   --contracts data/w1/current-intake.json \
-  --cost-scenario moex_current_taker \
+  --cost-scenario vtb_online_prime_current \
   --initial-capital 30000 \
   --output data/analytics/cnyrubf-crz6-carry-strategy-moex-current.json
 ```
@@ -73,4 +73,4 @@ The cost scenario is illustrative and unverified. Its funding component is not a
 
 ## Next gate
 
-Do not optimize H2-S1. The [point-in-time evidence audit](point-in-time-evidence-audit.md) confirms the two CNYRUBF funding regimes in this window, but assignment/continuation handling and execution evidence remain open. Before another strategy hypothesis, improve evidence for expiry/fixing rules, historical costs and executable quote/fill conditions. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.
+Do not optimize H2-S1. The [point-in-time evidence audit](point-in-time-evidence-audit.md) confirms the two CNYRUBF funding regimes in this window, while assignment/continuation handling, margin and account controls remain open. Historical quote/fill collection is excluded by A-08. Before another strategy hypothesis, improve evidence for expiry/fixing rules, dated costs and account risk controls. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.

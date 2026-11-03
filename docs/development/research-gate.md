@@ -35,10 +35,10 @@ The W4/W5 ledger recorded 22 entry/exit attempts but could not treat any as a hi
 
 The promotion gate remains closed because:
 
-1. historical executable bid/ask, depth, queue and fills are unavailable;
-2. account-applicable exchange, clearing, broker, slippage, funding and exit costs are not evidenced for the historical window;
+1. the project deliberately has no historical order-book or actual-fill data; the candle-close proxy is accepted for offline medium-term research but cannot support a claim about real fills;
+2. account-applicable exchange, clearing, slippage, funding and exit costs are not evidenced for the historical window; the user's VTB broker commission is now evidenced as zero through 2026-12-31;
 3. current contract parameters are a fallback, not dated historical specifications;
-4. the ledger is a candle-close proxy projection, not an executable account valuation;
+4. the ledger is a candle-close proxy projection, not an account valuation based on actual orders;
 5. account collateral, liquidation, KPUR, margin-offset and LQDT attribution reconciliation remain unresolved.
 
 The separate [contract-history audit](contract-history-audit.md) adds an important scope distinction: the draft price-only baseline is not a complete historical carry test. The pair remains eligible for a separately specified funding-aware hypothesis, subject to its own evidence and validation gates.
@@ -55,8 +55,8 @@ Offline work may continue without broker access, funding, deployment or order su
 - treat H2-S1 as a separate frozen proxy backtest with `final X = −RUB 7,610.59`; it is not promoted and is not combined with the H1 ledger;
 - use the [point-in-time evidence audit](point-in-time-evidence-audit.md) to segment CNYRUBF funding regimes and keep perpetual assignment handling explicit;
 - audit dated contract history and expiry/roll specifications separately before any pre-2020 claim;
-- collect and validate applicable tariff, collateral and execution evidence through the research prompts;
-- add quote/fill fixtures only when they are clearly labelled as observed, simulated or unresolved;
+- preserve the no-order-book boundary under A-08 and model manual reaction delay plus cost sensitivity;
+- use the user-provided VTB tariff as the current broker-cost input through 2026-12-31, while keeping exchange fees and unverified account controls separate;
 - rerun the same frozen report after new evidence, without resetting `X`, `H`, `D` or funding history.
 
 Parameter optimization of this baseline, M1 promotion of this high-turnover rule, scale-in design and live connectivity are deferred until the evidence blockers are closed. A future strategy hypothesis may be evaluated separately, with its own frozen specification, turnover, cost sensitivity and validation record. It must beat the matched LQDT path after verified costs and delayed execution while passing the finite-capital and risk gates; failure of one hypothesis must not be reported as rejection of the pair itself.

@@ -27,6 +27,15 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(profile["status"], "current_official_moex_taker_rate_account_broker_unverified")
         self.assertAlmostEqual(profile["round_trip_cost"], 2.23608, places=6)
 
+        vtb = _transaction_cost_profile(
+            "vtb_online_prime_current",
+            1.0,
+            near_price=12.0,
+            far_price=12.2,
+        )
+        self.assertEqual(vtb["vtb_broker_commission"], 0.0)
+        self.assertEqual(vtb["vtb_tariff_effective_to"], "2026-12-31")
+
     def test_funding_and_basis_are_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             contracts = Path(directory) / "contracts.json"

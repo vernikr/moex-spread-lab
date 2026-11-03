@@ -25,7 +25,7 @@ The supplied reports are the best available research corpus for the project. Non
 | Shared-account recourse, applied KPUR category, LQDT haircut and liquidation path | Not confirmed for the user's account | No live trading decision; core LQDT is not treated as available pilot cash |
 | VTB/BCS account tariff, order route, spread support and client-specific fees | Partly documented publicly; personal applicability unknown | Keep fees and order capabilities parameterized |
 | ISS/data-use rights and current data availability | Technical access is reported; permitted automated collection is unresolved | Build a replaceable data-provider boundary; do not make automated collection a legal assumption |
-| Historical executable bid/ask and fill evidence | Not available in the supplied free historical set | Historical results are exploratory until forward collection or an approved source supplies execution evidence |
+| Historical executable bid/ask and fill evidence | Not available and excluded from this project under A-08 | Historical results remain explicitly candle-proxy research; no historical fill claim is made |
 | Actual reaction-time, VPS headroom and operational reliability | Proposed or estimated only | Measure in later gates; do not convert estimates into safety limits |
 | Strategy edge versus LQDT | Not tested | No strategy, parameter set or profitability claim is accepted |
 

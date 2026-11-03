@@ -351,7 +351,7 @@ def _transaction_cost_profile(
     near_lot_size: int = 1000,
     far_lot_size: int = 1000,
 ) -> dict[str, Any]:
-    if name == "moex_current_taker":
+    if name in {"moex_current_taker", "vtb_online_prime_current"}:
         if near_price is None or far_price is None:
             raise CarryStrategyError("MOEX tariff scenario requires reference prices")
         rate = 0.0000462
@@ -361,6 +361,9 @@ def _transaction_cost_profile(
         return {
             "scenario": name,
             "exchange_clearing_rate": rate,
+            "vtb_broker_rate": 0.0,
+            "vtb_broker_commission": 0.0,
+            "vtb_tariff_effective_to": "2026-12-31",
             "near_reference_price": _round(near_price),
             "far_reference_price": _round(far_price),
             "near_leg_side_cost": _round(near_side),
@@ -368,8 +371,12 @@ def _transaction_cost_profile(
             "entry_cost": _round(near_side + far_side),
             "exit_cost": _round(near_side + far_side),
             "round_trip_cost": _round(round_trip),
-            "status": "current_official_moex_taker_rate_account_broker_unverified",
-            "source": "https://www.moex.com/s93",
+            "status": (
+                "current_moex_rate_plus_user_confirmed_vtb_zero_derivatives_broker_fee"
+                if name == "vtb_online_prime_current"
+                else "current_official_moex_taker_rate_account_broker_unverified"
+            ),
+            "source": ["https://www.moex.com/s93", "docs/inputs/moy_online_praym.pdf"],
             "funding_component": "actual_SWAPRATE_included;_broker_and_other_costs_not_included",
         }
     profiles = {

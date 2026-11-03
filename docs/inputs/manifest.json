@@ -17,6 +17,12 @@
       "handling": "verbatim user-supplied evidence"
     },
     {
+      "path": "moy_online_praym.pdf",
+      "sha256": "217255199ef8882060a8edac9c0910f6866101a40333e3ee0c7354bcaffd04da",
+      "received_on": "2026-11-03",
+      "handling": "verbatim user-supplied evidence"
+    },
+    {
       "path": "server-spec.redacted.md",
       "sha256": "4752adfe397d4c4dcff56bd0d5a4232e19fba19cf352e8007c625f8ea5eb85d6",
       "handling": "redacted copy; not the original byte stream"

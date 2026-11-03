@@ -38,7 +38,7 @@ The benchmark rows used in this overlap are all `observed` LQDT rows. The extend
 
 The result is `exploratory_inconclusive`, not a profitability conclusion:
 
-- exchange, clearing, broker, slippage, funding and exit costs are unresolved and are not silently set to zero;
+- exchange, clearing, broker, slippage, funding and exit costs are explicit scenarios; the user-confirmed VTB broker fee is zero through 2026-12-31, while other components remain separate and dated;
 - fills are next-close analytical proxies, not historical bid/ask executions;
 - current contract terms stand in for dated historical specifications;
 - the benchmark is a price-path analytical proxy, not an account statement reconciliation;
@@ -82,7 +82,7 @@ The runner now supports complete profiles with separate components. The values b
 | base | RUB 1.00 | RUB 1.00 | RUB 1.00 | 1.0 tick | RUB 0.50/leg-day | RUB 1.00 |
 | stress | RUB 2.00 | RUB 2.00 | RUB 2.00 | 2.0 ticks | RUB 1.00/leg-day | RUB 2.00 |
 
-The fee document in the input register does not establish the applicable account tariff or exchange amount, so these profiles are sensitivity branches only. They are not used to replace the unresolved cost gate.
+The current VTB tariff document establishes the broker-fee component through 2026-12-31, but does not establish margin, collateral, liquidation or post-2026 terms. Exchange, slippage, funding and exit profiles remain sensitivity branches and are not used to replace the remaining account-risk gate.
 
 | Timeframe | Scenario | Trades | Gross P&L, RUB | Modeled costs, RUB | Final `X`, RUB |
 |---|---|---:|---:|---:|---:|

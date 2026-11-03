@@ -113,7 +113,7 @@ The first data resolution is:
 - daily data for the economic feasibility and long-axis research;
 - hourly or 10-minute derived observations for robustness and delayed-signal sensitivity where permitted data support them;
 - M1 only as raw diagnostic input, never as proof of executable historical fills;
-- forward collection of missing execution evidence only after rights and source permissions are confirmed.
+ - no historical order-book or fill collection: A-08 fixes the offline input to candles plus delayed proxy scenarios; actual execution is a separate future operational gate.
 
 This resolution reflects the reports' common conclusion that free-data lag plus 3–90 minute manual response makes very short-lived opportunities unverifiable.
 
@@ -123,7 +123,7 @@ Tariffs are effective-dated provider artifacts, not constants inside strategies.
 
 | Profile | Use | Treatment |
 |---|---|---|
-| `VTB_USER_TARIFF_PROVISIONAL` | Manual research scenarios | Based on the supplied tariff document and R02, but not accepted as the user's active account tariff |
+| `VTB_USER_TARIFF_CURRENT_TO_2026_12_31` | Manual research scenarios | User-confirmed `Мой Онлайн Прайм`: VTB broker commission for derivatives is zero through 2026-12-31; exchange fee remains instrument-dependent; margin/account controls remain unresolved |
 | `VTB_PUBLIC_CURRENT` | Sensitivity only | Current public conditions with effective dates and unresolved account applicability |
 | `BCS_TRADER_SCENARIO` | Future broker comparison | Documented public scenario; account level and fixed-fee applicability remain unknown |
 | `COSTS_INCOMPLETE` | Safety default | Blocks any claim of net advantage or exposure-increasing action |
@@ -145,7 +145,7 @@ The 90-day research window must be able to cross tariff effective dates. A run r
 | First market data | MOEX ISS conditional research source with dynamic board/history adapter | Written rights/permission interpretation and reproducible access check |
 | Price roles | Separate settlement, analytical close, last trade, quote and live-mark fields | Instrument-specific field mapping and historical availability |
 | Corporate actions | Official-first event adapter with reviewed seed and secondary cross-checks | Availability vintages, source rights and conflict handling |
-| Executable prices | Future VTB/QUIK or authorized broker feed | Read-only shadow evidence; ISS cannot substitute |
+| Executable prices | Outside the offline project input under A-08 | The system reports candle-close proxies with reaction-delay and cost sensitivity; no historical fill claim |
 | First pair family | CNY/RUB same-underlying carry/calendar candidate | Current contract, margin, liquidity, costs and integer feasibility |
 | Notifications | Telegram outbox adapter | Offline replay first; user delivery and outage test later |
 

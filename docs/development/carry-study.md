@@ -58,7 +58,7 @@ uv run python -m moex_spread_lab.cli carry-study \
   --output data/analytics/cnyrubf-crz6-carry-study.json
 ```
 
-For the separate tariff sensitivity run, use `--cost-scenario moex_current_taker` on `carry-strategy`. This applies the current official MOEX FX taker exchange/clearing rate to reference prices at the end of the input window; it is not a historical account tariff.
+For the separate tariff sensitivity run, use `--cost-scenario vtb_online_prime_current` on `carry-strategy`. This applies the current official MOEX FX exchange/clearing rate and the user-confirmed zero VTB derivatives broker commission through 2026-12-31 to reference prices at the end of the input window; it is not a historical account tariff.
 
 ## H2-S1 continuation
 

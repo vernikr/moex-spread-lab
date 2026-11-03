@@ -23,8 +23,8 @@ The primary local research input is the received R06 report, based on MOEX/ISS a
 | Expiry | R06 reports CRZ6 expiry `2026-12-17`; the baseline ends before expiry. | Snapshot confirmed; dated specification chain not complete |
 | Initial margin | Current intake supplies a current snapshot, not a point-in-time series over the baseline. | Fallback only |
 | Exchange/clearing fees | R02 identifies dated MOEX/NCC tariff editions and ISS fee fields. | Historical contract-level application not calculated in baseline |
-| Broker fee | R02 reports VTB promotional and tariff conditions, but the user's applicable plan and service status are not confirmed. | Unknown for the account |
-| Executable quotes/fills | Candle data contain closes, not historical bid/ask, depth, queue or fills. | Missing |
+| Broker fee | The user supplied the current VTB `Мой Онлайн Прайм` tariff; it states zero broker commission for the derivatives market through `2026-12-31` inclusive. | Confirmed for the supplied tariff and period; optional services, post-2026 pricing and historical applicability remain open |
+| Executable quotes/fills | Candle data contain closes, not historical bid/ask, depth, queue or fills; A-08 records that this data will not be collected in this project. | Deliberately unavailable; proxy-only boundary accepted |
 
 ## Consequences for the existing result
 
@@ -34,7 +34,7 @@ The daily baseline is a valid **price-proxy experiment for a fixed mean-reversio
 2. it used current contract terms as a labelled fallback rather than a versioned specification at every decision date;
 3. it spans the `2026-01-19` funding-parameter change and the `2026-03-23` session-convention change;
 4. it used unknown or illustrative costs rather than an account-applicable historical schedule;
-5. it has no executable historical fill path.
+5. it has no historical fill path, by the project's declared A-08 scope.
 
 Therefore the result `X = −RUB 7,572.30` remains useful as a falsification result for the draft price-only baseline, but it must not be interpreted as a complete historical result for every CNY/RUB carry or calendar strategy.
 
@@ -55,14 +55,15 @@ No user action is required to preserve offline research or to begin the H2 desig
 2. point-in-time funding parameters and a reproducible funding series for CNYRUBF;
 3. historical initial-margin/risk inputs or an explicit conservative scenario treatment;
 4. dated exchange/NCC and account-applicable broker costs;
-5. executable quote/fill evidence, or an explicit decision to keep all results proxy-only.
+5. an explicit decision to keep all results proxy-only, which is now recorded as A-08.
 
-The first four may be researched from public primary documents. Account-applicable broker terms and any private quote/fill evidence require user-provided or broker-provided material; credentials and account identifiers are not needed.
+The first four may be researched from public primary documents. The project will not seek historical quote/fill data; any future real-trading decision would require a separate live-data and broker-operability gate.
 
 ## Sources and limits
 
 - `docs/research/results/received/R06/R06.md`, especially sections 0, 2, 6, 10.2, 11, 14 and 16: received research synthesis with MOEX/ISS/specification references and explicit limitations.
-- `docs/research/results/received/R02/R02.md`, sections 2.5 and 3.2: received tariff research with dated MOEX/NCC and VTB findings; account applicability remains unresolved.
+- `docs/research/results/received/R02/R02.md`, sections 2.5 and 3.2: received tariff research with dated MOEX/NCC and VTB findings.
+- `docs/inputs/moy_online_praym.pdf`: current user-provided VTB tariff evidence, received 2026-11-03 and recorded under A-09.
 - `data/w1/current-intake.json`: current ISS snapshot, explicitly marked `current_snapshot_fallback_assumed`.
 - `docs/development/analytical-baseline.md`: the tested price-only baseline and its proxy boundaries.
 

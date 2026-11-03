@@ -34,7 +34,7 @@ The output is intentionally under ignored `data/`. It contains current market ob
 The read-only probe returned a current RFUD catalog and found both configured CNY/RUB instruments. Under the user's fallback rule, the candidate is **`conditionally_admitted_analytical_only`**:
 
 1. current contract parameters may be used as a labelled fallback if dated historical terms are unavailable;
-2. the response does not provide historical executable bid/ask, so execution replay remains blocked;
+2. the response does not provide historical executable bid/ask; under A-08, execution replay remains a declared proxy model rather than a collection task;
 3. the data can support analytical candle research, but not a claim that historical orders could have been filled.
 
 The full catalog is retained in the local report only. A crossed quote is preserved as a quality issue and does not invalidate unrelated instruments.
@@ -45,9 +45,9 @@ The historical data question has three separate answers:
 
 - **Daily candles:** the primary broad analytical layer for the first pair;
 - **Intraday candles:** ISS can provide M1, M10 and H1-style candle intervals for some contracts and periods, with uneven coverage and pagination. Coverage must be checked per SECID; an intraday candle is still an OHLCV bar, not a quote history;
-- **Historical executable quotes:** the current ISS intake does not provide a timestamped historical bid/ask or order-book archive. Current delayed bid/ask is a snapshot and cannot reconstruct past fills.
+- **Historical executable quotes:** the current ISS intake does not provide a timestamped historical bid/ask or order-book archive. Under A-08 this is a permanent project boundary; current delayed bid/ask remains outside the offline replay.
 
-Therefore the next intake can use more detail than daily data for analytical and delay-sensitivity tests, while execution results remain interval/scenario-based until a quote or broker evidence source is collected.
+Therefore the next intake can use more detail than daily data for analytical and delay-sensitivity tests. Under A-08, the project will not collect historical order-book or actual-fill data; execution remains an interval/scenario model with explicit manual reaction delay and cost sensitivity.
 
 ## Instrument timeframe inventory
 
@@ -100,4 +100,4 @@ Pair-quality reports are generated locally as `data/w1/pair-quality-*.json`. Non
 
 ## Boundary
 
-This adapter does not reconstruct fills, infer a live mark, authorize a broker or admit a strategy. Spread economics, matched LQDT analytical marking, H1/M10 sensitivity and M1 diagnostics are now implemented over the synchronized candle rows; the execution evidence status remains unchanged.
+This adapter does not reconstruct fills, infer a live mark, authorize a broker or admit a strategy. Spread economics, matched LQDT analytical marking, H1/M10 sensitivity and M1 diagnostics are implemented over synchronized candle rows; A-08 accepts the close proxy for this project's medium-term research, while actual broker execution remains outside the data scope.

@@ -9,6 +9,7 @@
     "basis_funding_decomposition",
     "frozen_carry_strategy_proxy_backtest",
     "perpetual_execution_window_policy",
+    "user_confirmed_vtb_tariff_profile",
     "separate_hypothesis_from_mean_reversion"
   ],
   "inputs": [
@@ -38,6 +39,6 @@
   },
   "health": {
     "supported_python": ">=3.12,<3.13",
-    "status": "proxy_backtest_only_until_point_in_time_specs_costs_and_execution_evidence"
+    "status": "proxy_backtest_only_until_point_in_time_specs_costs_and_account_risk_evidence"
   }
 }

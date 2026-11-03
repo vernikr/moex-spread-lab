@@ -6,7 +6,7 @@ Date: 2026-11-03
 
 The public primary-source review closes part of the H2 evidence gap. It confirms the funding sign, funding unit, the dated CNYRUBF `K1/K2` regime change, the CR contract unit and fixing, and the current CRZ6 expiry. It does **not** turn the H2-S1 result into an executable or historically complete result.
 
-The next implementation should use the dated funding regimes and explicitly model the perpetual-leg execution/assignment window. Historical broker terms, executable quotes and point-in-time margin remain open.
+The next implementation should use the dated funding regimes and explicitly model the perpetual-leg execution/assignment window. Historical account terms and point-in-time margin remain open. Under A-08, historical order-book and actual-fill data are a declared unavailable input rather than a future collection task.
 
 ## Evidence matrix
 
@@ -22,7 +22,7 @@ The next implementation should use the dated funding regimes and explicitly mode
 | CNY fixing treatment | MOEX 12.07.2024 notice says CNY/RUB futures execution remains on `CNYFIXME` in the intermediate clearing; the general parameters page identifies `CNYFIXME` as the CR fixing. | The H2 TOM-versus-CNYFIXME residual risk is real and must remain explicit. | Confirmed; historical method version still needed |
 | Perpetual execution/assignment | MOEX 15.04.2025 notice describes a 3% one-time payment and a 10-trading-day instruction window for currency perpetual execution into quarterly futures. | H2-S1 did not model this mechanism or any assignment around quarterly dates. | Open implementation gap |
 | Exchange and clearing fees | MOEX current futures tariff page gives current FX taker and execution tariff formulas, and says maker commission is zero. | Current exchange-level inputs are available for a new scenario; historical applicability and broker charges remain unresolved. | Current only |
-| Historical executable prices | Public EOD history has settlement, close and `SWAPRATE`; no historical bid/ask, depth, queue or fills were obtained. | H2 remains a settlement-proxy study. | Missing |
+| Historical executable prices | Public EOD history has settlement, close and `SWAPRATE`; the project will not obtain historical bid/ask, depth, queue or fills. | H2 remains a settlement-proxy study with manual delay and cost sensitivity. | Deliberately unavailable by A-08 |
 | Historical ГО and account terms | NCC describes current risk-parameter services, but the historical/account-specific series and VTB/BCS terms are not established. | No safe capital or live-pilot conclusion. | Missing |
 
 ## Regime map for H2

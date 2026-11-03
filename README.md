@@ -4,7 +4,7 @@ Private, research-first project for selective medium-term MOEX futures spread si
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory and CNYRUBF/CRZ6 candle intake are delivered** alongside the W0–W7 offline mechanics. Under decisions A-05/A-06, the pair is conditionally admitted for analytical research; historical executable quotes remain unavailable and execution claims stay blocked. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage and the first daily analytical baseline are delivered** alongside the W0–W7 offline mechanics. Under decisions A-05/A-06, the pair is conditionally admitted for analytical research; historical executable quotes and complete costs remain unavailable, so the baseline is exploratory/inconclusive. No project service was deployed and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -17,6 +17,7 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 - [W0: reproducible run and evidence manifest](docs/development/w0.md)
 - [W1–W7: offline research waves](docs/development/w1-w7.md)
 - [W1: MOEX ISS catalog and price-role intake](docs/development/w1-intake.md)
+- [First analytical baseline](docs/development/analytical-baseline.md)
 - [Stage 2 artifact and changes](docs/stages/02-research.md)
 - [Provisional delegated risk rules](docs/risk/pilot-policy.md)
 - [User decisions](docs/decisions.md)

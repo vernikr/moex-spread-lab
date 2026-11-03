@@ -81,6 +81,20 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_parser.add_argument("--output", type=Path, required=True)
     benchmark_parser.add_argument("--cache-dir", type=Path, default=Path("data/benchmark-cache"))
     benchmark_parser.add_argument("--delay-seconds", type=float, default=0.1)
+
+    baseline_parser = subparsers.add_parser("analytical-baseline", help="run a delayed daily candle-close spread baseline")
+    baseline_parser.add_argument("--near-candles", type=Path, required=True)
+    baseline_parser.add_argument("--far-candles", type=Path, required=True)
+    baseline_parser.add_argument("--benchmark", type=Path, required=True)
+    baseline_parser.add_argument("--contracts", type=Path, required=True)
+    baseline_parser.add_argument("--output", type=Path, required=True)
+    baseline_parser.add_argument("--near", default="CNYRUBF")
+    baseline_parser.add_argument("--far", default="CRZ6")
+    baseline_parser.add_argument("--initial-capital", type=float, default=30000.0)
+    baseline_parser.add_argument("--lookback", type=int, default=20)
+    baseline_parser.add_argument("--entry-z", type=float, default=2.0)
+    baseline_parser.add_argument("--exit-z", type=float, default=0.5)
+    baseline_parser.add_argument("--quantity", type=int, default=1)
     return parser
 
 
@@ -308,6 +322,40 @@ def main() -> int:
                 "source_rows": result["source_rows"],
                 "missing_sources": result["missing_sources"],
                 "release_state": result["release_state"],
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "analytical-baseline":
+            from .analytics import build_daily_series, run_mean_reversion_baseline, write_analytics
+
+            series = build_daily_series(
+                args.near_candles,
+                args.far_candles,
+                args.benchmark,
+                args.contracts,
+                near=args.near,
+                far=args.far,
+            )
+            result = run_mean_reversion_baseline(
+                series,
+                initial_capital=args.initial_capital,
+                lookback=args.lookback,
+                entry_z=args.entry_z,
+                exit_z=args.exit_z,
+                quantity=args.quantity,
+            )
+            write_analytics(result, args.output)
+            print(json.dumps({
+                "release_state": result["release_state"],
+                "timeframe": result["timeframe"],
+                "first_date": result["summary"]["first_date"],
+                "last_date": result["summary"]["last_date"],
+                "common_row_count": result["summary"]["common_row_count"],
+                "trade_count": result["summary"]["trade_count"],
+                "gross_pnl": result["summary"]["gross_pnl"],
+                "final_X": result["summary"]["final_X"],
+                "max_drawdown_D": result["summary"]["max_drawdown_D"],
+                "cost_status": result["costs"]["status"],
+                "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0
     except W0Error as exc:

@@ -4,9 +4,21 @@ Date: 2026-11-03
 
 ## Decision
 
-**Do not promote CNYRUBF/CRZ6 from offline analytical research to an executable or funded pilot.** Keep the pair conditionally admitted for local research only. The current result is `inconclusive_no_pass`, with the executable/pilot gate **blocked**.
+**Do not promote the current CNYRUBF/CRZ6 baseline configuration from offline analytical research to an executable or funded pilot.** Keep the pair conditionally admitted for local research only. The current result is `inconclusive_no_pass`, with the executable/pilot gate **blocked**.
 
-This is an implementation gate conclusion based on the delivered artifacts. It is not a user authorization, a broker decision, an investment recommendation or a permanent economic rejection of every future version of the pair.
+This is an implementation gate conclusion based on the delivered artifacts. It is not a user authorization, a broker decision, an investment recommendation or a permanent economic rejection of the pair. It rejects the current draft rule and its promotion path, not every possible strategy, horizon, execution mode or future contract-evidence package for CNYRUBF/CRZ6.
+
+## Scope of the decision
+
+Three questions must remain separate:
+
+| Question | Current conclusion |
+|---|---|
+| Did this fixed mean-reversion baseline beat matched LQDT in the analytical run? | No; it ended at `X = −RUB 7,572.30` before unknown real costs. |
+| Can this baseline be promoted to an executable/funded pilot now? | No; execution, cost, dated-specification and account gates are blocked. |
+| Is CNYRUBF/CRZ6 permanently unsuitable for every future strategy? | Not established. The pair remains conditionally admitted for offline research. |
+
+The illustrative cost branches mainly show that this particular high-turnover baseline is fragile. They do not establish that every slower, carry-oriented, event-driven or otherwise differently designed strategy on the pair would fail.
 
 ## Evidence basis
 
@@ -41,7 +53,7 @@ Offline work may continue without broker access, funding, deployment or order su
 - add quote/fill fixtures only when they are clearly labelled as observed, simulated or unresolved;
 - rerun the same frozen report after new evidence, without resetting `X`, `H`, `D` or funding history.
 
-Parameter optimization, M1 promotion, scale-in design and live connectivity are deferred until the evidence blockers are closed. A future run must beat the matched LQDT path after verified costs and delayed execution while passing the finite-capital and risk gates; otherwise the same no-promotion decision remains valid.
+Parameter optimization of this baseline, M1 promotion of this high-turnover rule, scale-in design and live connectivity are deferred until the evidence blockers are closed. A future strategy hypothesis may be evaluated separately, with its own frozen specification, turnover, cost sensitivity and validation record. It must beat the matched LQDT path after verified costs and delayed execution while passing the finite-capital and risk gates; failure of one hypothesis must not be reported as rejection of the pair itself.
 
 ## Reproducible artifacts
 

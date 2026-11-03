@@ -36,6 +36,8 @@ The report verdict is **`inconclusive_no_pass`**. Chronological split, sealed co
 
 The result is not a live-trading recommendation and does not authorize funding, broker access or deployment.
 
+The resulting promotion decision is recorded in the [Stage-9 research gate](research-gate.md): retain the pair for offline research only and do not promote it to an executable or funded pilot.
+
 ## Reproduce
 
 ```bash

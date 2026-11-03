@@ -2,6 +2,8 @@
 
 Date: 2026-11-03
 
+The dated public-source follow-up is recorded in [point-in-time evidence audit](point-in-time-evidence-audit.md); this document remains the original scope audit for the price-only baseline.
+
 ## Scope
 
 This audit checks whether the contract and market-mechanics inputs used by the analytical baseline are evidenced for its actual overlap: `2025-06-17`–`2026-10-27`. It does not test a new strategy and does not infer fills.

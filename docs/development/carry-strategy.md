@@ -58,4 +58,4 @@ The cost scenario is illustrative and unverified. Its funding component is not a
 
 ## Next gate
 
-Do not optimize H2-S1. Before another strategy hypothesis, first improve evidence for effective-dated specifications, expiry/fixing rules, historical costs and executable quote/fill conditions. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.
+Do not optimize H2-S1. The [point-in-time evidence audit](point-in-time-evidence-audit.md) confirms the two CNYRUBF funding regimes in this window, but assignment/continuation handling and execution evidence remain open. Before another strategy hypothesis, improve evidence for expiry/fixing rules, historical costs and executable quote/fill conditions. Any new hypothesis requires a new frozen rule, separate run, continuous funding/benchmark accounting and the same no-promotion gate.

@@ -148,6 +148,17 @@ def build_parser() -> argparse.ArgumentParser:
     screen_parser.add_argument("--contracts", type=Path, required=True)
     screen_parser.add_argument("--output", type=Path, required=True)
     screen_parser.add_argument("--initial-capital", type=float, default=30000.0)
+    funding_screen_parser = subparsers.add_parser("funding-screen", help="screen flagship perpetual-to-quarterly pairs with the frozen funding-only hypothesis")
+    funding_screen_parser.add_argument("--from-date", required=True)
+    funding_screen_parser.add_argument("--till-date", required=True)
+    funding_screen_parser.add_argument("--contracts", type=Path, required=True)
+    funding_screen_parser.add_argument("--benchmark", type=Path, required=True)
+    funding_screen_parser.add_argument("--cache-dir", type=Path, default=Path("data/carry-screen-history-cache"))
+    funding_screen_parser.add_argument("--output", type=Path, required=True)
+    funding_screen_parser.add_argument("--initial-capital", type=float, default=30000.0)
+    funding_screen_parser.add_argument("--cost-scenario", choices=("low", "base", "stress"), default="stress")
+    funding_screen_parser.add_argument("--delay-seconds", type=float, default=0.2)
+    funding_screen_parser.add_argument("--timeout", type=float, default=60.0)
     return parser
 
 
@@ -576,6 +587,29 @@ def main() -> int:
                 "candidate_count": result["summary"]["candidate_count"],
                 "stress_pass_count": result["summary"]["stress_pass_count"],
                 "positive_h1_control_count": result["summary"]["positive_h1_control_count"],
+                "output": str(args.output),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "funding-screen":
+            from .funding_screen import screen_funding_pairs, write_funding_screen
+
+            result = screen_funding_pairs(
+                contracts_path=args.contracts,
+                benchmark_path=args.benchmark,
+                cache_dir=args.cache_dir,
+                from_date=args.from_date,
+                till_date=args.till_date,
+                initial_capital=args.initial_capital,
+                cost_scenario=args.cost_scenario,
+                delay_seconds=args.delay_seconds,
+                timeout=args.timeout,
+            )
+            write_funding_screen(result, args.output)
+            print(json.dumps({
+                "schema_version": result["schema_version"],
+                "candidate_count": result["summary"]["candidate_count"],
+                "stress_pass_count": result["summary"]["stress_pass_count"],
+                "positive_final_X_count": result["summary"]["positive_final_X_count"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
             return 0

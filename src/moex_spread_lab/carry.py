@@ -56,9 +56,11 @@ def _round(value: float) -> float:
     return round(float(value), 8)
 
 
-def _funding_regime(date_key: str) -> dict[str, Any]:
-    regime = FUNDING_REGIMES[0]
-    for candidate in FUNDING_REGIMES:
+def _funding_regime(date_key: str, regimes: tuple[dict[str, Any], ...]) -> dict[str, Any] | None:
+    if not regimes:
+        return None
+    regime = regimes[0]
+    for candidate in regimes:
         if date_key >= candidate["effective_from"]:
             regime = candidate
     return regime
@@ -207,18 +209,19 @@ def build_carry_study(
     *,
     near: str = "CNYRUBF",
     far: str = "CRZ6",
+    funding_regimes: tuple[dict[str, Any], ...] | None = None,
 ) -> dict[str, Any]:
     near_rows, near_provenance = _normalize_history(near_source, near)
     far_rows, far_provenance = _normalize_history(far_source, far)
     contracts, contracts_hash = load_contracts(contracts_path, near, far)
     near_contract = contracts[near]
     far_contract = contracts[far]
-    if near_contract["tick_size"] != far_contract["tick_size"] or near_contract["tick_value"] != far_contract["tick_value"]:
-        raise CarryError("carry study requires equal current tick conversion for the two legs")
     common_dates = sorted(set(near_rows) & set(far_rows))
     if len(common_dates) < 2:
         raise CarryError("fewer than two common EOD settlement dates")
-    multiplier = near_contract["tick_value"] / near_contract["tick_size"]
+    near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
+    far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
+    regimes = FUNDING_REGIMES if funding_regimes is None else funding_regimes
     rows = []
     cumulative_mark = 0.0
     cumulative_funding = 0.0
@@ -229,14 +232,21 @@ def build_carry_study(
         if previous_date is None:
             daily_basis_pnl = 0.0
         else:
-            daily_basis_pnl = ((far_row["settle"] - far_rows[previous_date]["settle"]) - (near_row["settle"] - near_rows[previous_date]["settle"])) * multiplier
+            daily_basis_pnl = (
+                (far_row["settle"] - far_rows[previous_date]["settle"]) * far_multiplier
+                - (near_row["settle"] - near_rows[previous_date]["settle"]) * near_multiplier
+            )
         swaprate = near_row["swaprate"]
         if swaprate is None:
-            raise CarryError(f"missing CNYRUBF SWAPRATE on {date_key}")
+            raise CarryError(f"missing {near} SWAPRATE on {date_key}")
         funding_received = 0.0 if previous_date is None else swaprate * near_contract["lot_size"]
-        regime = _funding_regime(date_key)
-        funding_cap_per_unit = None if previous_date is None else regime["k2"] * near_rows[previous_date]["settle"]
-        cap_status = "not_applicable_initial_observation"
+        regime = _funding_regime(date_key, regimes)
+        funding_cap_per_unit = (
+            None
+            if previous_date is None or regime is None or regime.get("k2") is None
+            else regime["k2"] * near_rows[previous_date]["settle"]
+        )
+        cap_status = "not_modelled" if regime is None else "not_applicable_initial_observation"
         if funding_cap_per_unit is not None:
             cap_status = "within_rounded_k2_cap" if abs(swaprate) <= funding_cap_per_unit + 0.00001 else "above_k2_cap_review_required"
         cumulative_mark += daily_basis_pnl
@@ -249,9 +259,9 @@ def build_carry_study(
             "daily_basis_pnl_short_near_long_far": _round(daily_basis_pnl),
             "daily_funding_received_short_near": _round(funding_received),
             "daily_gross_carry_pnl": _round(daily_basis_pnl + funding_received),
-            "funding_regime_id": regime["id"],
-            "funding_k1": regime["k1"],
-            "funding_k2": regime["k2"],
+            "funding_regime_id": regime["id"] if regime else "not_modelled",
+            "funding_k1": regime.get("k1") if regime else None,
+            "funding_k2": regime.get("k2") if regime else None,
             "funding_cap_per_unit": _round(funding_cap_per_unit) if funding_cap_per_unit is not None else None,
             "funding_cap_status": cap_status,
             "cumulative_basis_pnl": _round(cumulative_mark),
@@ -284,7 +294,7 @@ def build_carry_study(
             "zero_funding_rows": sum(value == 0 for value in funding_values),
             "funding_regime_counts": {
                 regime["id"]: sum(row["funding_regime_id"] == regime["id"] for row in rows)
-                for regime in FUNDING_REGIMES
+                for regime in regimes
             },
             "funding_cap_review_rows": sum(row["funding_cap_status"] == "above_k2_cap_review_required" for row in rows),
             "transaction_costs_included": False,
@@ -295,10 +305,16 @@ def build_carry_study(
             "far_lot_size": far_contract["lot_size"],
             "tick_size": near_contract["tick_size"],
             "tick_value_rub": near_contract["tick_value"],
-            "rub_per_price_unit": _round(multiplier),
+            "near_tick_size": near_contract["tick_size"],
+            "near_tick_value_rub": near_contract["tick_value"],
+            "far_tick_size": far_contract["tick_size"],
+            "far_tick_value_rub": far_contract["tick_value"],
+            "near_rub_per_price_unit": _round(near_multiplier),
+            "far_rub_per_price_unit": _round(far_multiplier),
+            "rub_per_price_unit": _round(near_multiplier),
             "historical_specification_status": "current_snapshot_fallback_assumed",
             "fixing_mismatch_risk": "CNYRUBF_TOM_vs_CRZ6_CNYFIXME",
-            "funding_regimes": list(FUNDING_REGIMES),
+            "funding_regimes": list(regimes),
         },
         "provenance": {
             "near_history": near_provenance,
@@ -351,6 +367,7 @@ def _transaction_cost_profile(
     far_price: float | None = None,
     near_lot_size: int = 1000,
     far_lot_size: int = 1000,
+    far_tick_value: float | None = None,
 ) -> dict[str, Any]:
     if name in {"moex_current_taker", "vtb_online_prime_current"}:
         if near_price is None or far_price is None:
@@ -389,14 +406,17 @@ def _transaction_cost_profile(
         values = profiles[name].copy()
     except KeyError as exc:
         raise CarryStrategyError(f"unknown transaction cost scenario: {name}") from exc
-    values["entry_cost"] = round(2 * (
-        values["exchange"] + values["clearing"] + values["broker"]
-        + values["slippage_ticks"] * tick_value
-    ), 8)
-    values["exit_cost"] = round(2 * (
-        values["exchange"] + values["clearing"] + values["broker"]
-        + values["slippage_ticks"] * tick_value + values["exit"]
-    ), 8)
+    far_tick_value = tick_value if far_tick_value is None else far_tick_value
+    leg_base = values["exchange"] + values["clearing"] + values["broker"]
+    values["entry_cost"] = round(
+        2 * leg_base + values["slippage_ticks"] * (tick_value + far_tick_value), 8
+    )
+    values["exit_cost"] = round(
+        2 * leg_base
+        + values["slippage_ticks"] * (tick_value + far_tick_value)
+        + 2 * values["exit"],
+        8,
+    )
     values["round_trip_cost"] = round(values["entry_cost"] + values["exit_cost"], 8)
     values["scenario"] = name
     values["funding_component"] = "actual_SWAPRATE_included;_illustrative_funding_cost_not_added"
@@ -457,6 +477,7 @@ def build_carry_strategy(
         far_price=far_reference_price,
         near_lot_size=contracts[near]["lot_size"],
         far_lot_size=contracts[far]["lot_size"],
+        far_tick_value=contracts[far]["tick_value"],
     )
     account_risk = assess_vtb_pair(
         contracts_path,

@@ -43,9 +43,9 @@ Therefore the result `X = −RUB 7,572.30` remains useful as a falsification res
 The pair remains conditionally admitted for offline research under two separate hypotheses:
 
 - **H1 — price-only mean reversion:** already tested as the draft baseline; no promotion result;
-- **H2 — funding-aware perpetual-versus-dated carry/basis:** not yet implemented or tested. It requires point-in-time funding rules, fixing-vs-TOM treatment, expiry handling, dated costs and a separate validation record.
+- **H2 — funding-aware perpetual-versus-dated carry/basis:** the CNY decomposition and frozen H2-S1 proxy are implemented; the separate H3-F1 funding-only rule has now also been screened on four non-CNY pairs. None is promoted. Point-in-time funding rules, fixing-vs-TOM treatment, expiry handling and dated costs remain incomplete for a historical economic claim.
 
-Failure of H1 does not reject H2 or the pair. H2 must not reuse H1's result as if it were a carry test.
+Failure of H1 does not reject H2 or the pair. H2/H3 results remain separate and must not reuse H1's result as if it were a carry test.
 
 ## Required evidence to close the audit
 

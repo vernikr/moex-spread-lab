@@ -1,6 +1,6 @@
 {
   "module_id": "moex-spread-lab.carry-study",
-  "release": "0.4.0",
+  "release": "0.5.0",
   "contract_version": "carry-study.v1",
   "kind": "analytics",
   "capabilities": [
@@ -10,6 +10,7 @@
     "frozen_carry_strategy_proxy_backtest",
     "funding_only_carry_hypothesis",
     "flagship_pair_screen",
+    "funding_aware_flagship_pair_screen",
     "perpetual_execution_window_policy",
     "user_confirmed_vtb_tariff_profile",
     "vtb_ebs_kpur_margin_stress_screen",
@@ -23,7 +24,8 @@
     "carry-study.v1",
     "carry-strategy.v1",
     "vtb-account-risk.v1",
-    "pair-screen.v1"
+    "pair-screen.v1",
+    "funding-screen.v1"
   ],
   "dependencies": [],
   "owner": "project-core",

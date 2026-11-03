@@ -82,6 +82,33 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total_gross_carry_pnl"], -45.0)
         self.assertFalse(result["summary"]["transaction_costs_included"])
 
+    def test_carry_study_normalizes_different_leg_price_units(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contracts = Path(directory) / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 100, "tick_size": 0.5, "tick_value": 5, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1, "tick_size": 0.05, "tick_value": 0.5, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            result = build_carry_study(
+                source("NEAR", [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.0, "SWAPRATE": 0.1},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.1, "SWAPRATE": 0.1},
+                ]),
+                source("FAR", [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 20.0, "SWAPRATE": 0.0},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 20.2, "SWAPRATE": 0.0},
+                ]),
+                contracts,
+                near="NEAR",
+                far="FAR",
+                funding_regimes=(),
+            )
+
+        self.assertEqual(result["summary"]["total_basis_pnl"], 1.0)
+        self.assertEqual(result["summary"]["total_funding_received"], 10.0)
+        self.assertEqual(result["summary"]["total_gross_carry_pnl"], 11.0)
+        self.assertEqual(result["rows"][1]["funding_cap_status"], "not_modelled")
+
     def test_strategy_uses_one_observation_execution_delay_and_lqdt_mark(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -74,6 +74,13 @@ def build_parser() -> argparse.ArgumentParser:
     pair_parser.add_argument("--near", type=Path, required=True)
     pair_parser.add_argument("--far", type=Path, required=True)
     pair_parser.add_argument("--output", type=Path, required=True)
+
+    benchmark_parser = subparsers.add_parser("benchmark-lineage", help="build observed and proxy LQDT benchmark lineage")
+    benchmark_parser.add_argument("--from-date", default="2010-01-01")
+    benchmark_parser.add_argument("--till-date", required=True)
+    benchmark_parser.add_argument("--output", type=Path, required=True)
+    benchmark_parser.add_argument("--cache-dir", type=Path, default=Path("data/benchmark-cache"))
+    benchmark_parser.add_argument("--delay-seconds", type=float, default=0.1)
     return parser
 
 
@@ -193,6 +200,107 @@ def main() -> int:
                 "near_only_count": result["synchronization"]["near_only_count"],
                 "far_only_count": result["synchronization"]["far_only_count"],
                 "status": result["synchronization"]["pair_analytical_status"],
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "benchmark-lineage":
+            from .benchmark import (
+                build_lineage,
+                fetch_cbr_ruonia_rates,
+                fetch_moex_history,
+                fetch_rusfar_rates,
+                rate_rows_to_price,
+                write_benchmark,
+            )
+
+            def cached_source(path: Path) -> dict | None:
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    return None
+                return value if isinstance(value, dict) else None
+
+            raw_sources = {}
+            source_reports = {}
+
+            def provenance(rows: list[dict]) -> dict:
+                boards = {}
+                for row in rows:
+                    board = row.get("board") or "not_applicable"
+                    boards[board] = boards.get(board, 0) + 1
+                return {
+                    "first_date": rows[0]["date"] if rows else None,
+                    "last_date": rows[-1]["date"] if rows else None,
+                    "board_row_counts": boards,
+                }
+
+            for ticker in ("FXMM", "VTBM", "LQDT"):
+                cache_path = args.cache_dir / f"{ticker}.json"
+                cached = cached_source(cache_path) if cache_path.exists() else None
+                if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
+                    source = cached
+                else:
+                    source = fetch_moex_history(ticker, args.from_date, args.till_date, delay_seconds=args.delay_seconds)
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    cache_path.write_text(json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                raw_sources[ticker] = source["rows"]
+                source_reports[ticker] = {
+                    "source": source["source"],
+                    "board": source.get("board"),
+                    "page_count": source["page_count"],
+                    "row_count": len(source["rows"]),
+                    "raw_response_hashes": source["raw_response_hashes"],
+                    **provenance(source["rows"]),
+                }
+
+            rusfar_cache = args.cache_dir / "RUSFAR.json"
+            cached = cached_source(rusfar_cache) if rusfar_cache.exists() else None
+            if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
+                rusfar_source = cached
+            else:
+                rusfar_source = fetch_rusfar_rates(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
+                rusfar_cache.parent.mkdir(parents=True, exist_ok=True)
+                rusfar_cache.write_text(json.dumps(rusfar_source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            raw_sources["RUSFAR"] = rate_rows_to_price(rusfar_source["rows"], "RUSFAR")
+            source_reports["RUSFAR"] = {
+                "source": rusfar_source["source"],
+                "page_count": rusfar_source["page_count"],
+                "row_count": len(rusfar_source["rows"]),
+                "raw_response_hashes": rusfar_source["raw_response_hashes"],
+                **provenance(rusfar_source["rows"]),
+            }
+
+            ruonia_cache = args.cache_dir / "CBR_RUONIA.json"
+            cached = cached_source(ruonia_cache) if ruonia_cache.exists() else None
+            if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
+                ruonia_source = cached
+            else:
+                ruonia_source = fetch_cbr_ruonia_rates(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
+                ruonia_cache.parent.mkdir(parents=True, exist_ok=True)
+                ruonia_cache.write_text(json.dumps(ruonia_source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            if ruonia_source["rows"]:
+                raw_sources["CBR_RUONIA"] = rate_rows_to_price(ruonia_source["rows"], "CBR_RUONIA")
+            source_reports["CBR_RUONIA"] = {
+                "source": ruonia_source["source"],
+                "request_count": ruonia_source["request_count"],
+                "row_count": len(ruonia_source["rows"]),
+                "status": ruonia_source["status"],
+                "raw_response_hashes": ruonia_source["raw_response_hashes"],
+                **provenance(ruonia_source["rows"]),
+            }
+            missing_sources = [ticker for ticker in ("CBR_RUONIA", "RUSFAR", "FXMM", "VTBM", "LQDT") if not raw_sources.get(ticker)]
+            result = build_lineage(raw_sources)
+            result["source_reports"] = source_reports
+            result["missing_sources"] = missing_sources
+            result["release_state"] = "observed_plus_labelled_proxy" if not missing_sources else "exploratory_proxy_only"
+            write_benchmark(result, args.output)
+            print(json.dumps({
+                "extended_start": result["extended_start"],
+                "extended_end": result["extended_end"],
+                "observed_start": result["observed_start"],
+                "row_count": len(result["rows"]),
+                "source_rows": result["source_rows"],
+                "missing_sources": result["missing_sources"],
+                "release_state": result["release_state"],
             }, ensure_ascii=False, sort_keys=True))
             return 0
     except W0Error as exc:

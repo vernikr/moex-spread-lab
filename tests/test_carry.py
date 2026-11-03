@@ -94,6 +94,47 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["parameters"]["assignment_policy"], "exit_before_perpetual_execution_window")
         self.assertEqual(result["parameters"]["assignment_window_status"], "not_observable_in_input_window")
 
+    def test_strategy_exits_when_assignment_window_is_observed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = root / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            dates = [f"2026-12-{day:02d}" for day in range(10, 17)]
+            carry = {
+                "schema_version": "carry-study.v1",
+                "near": "NEAR",
+                "far": "FAR",
+                "rows": [{
+                    "date": date,
+                    "basis_far_minus_near": basis,
+                    "daily_funding_received_short_near": 1.0,
+                    "daily_gross_carry_pnl": 1.0,
+                } for date, basis in zip(dates, (1.0, 1.0, 0.5, 0.4, 0.4, 0.4, 0.4))],
+            }
+            benchmark = root / "benchmark.json"
+            benchmark.write_text(json.dumps({
+                "schema_version": "lqdt-lineage.v1",
+                "rows": [{"date": date, "price": 1.0, "source_kind": "observed", "source_ticker": "LQDT"} for date in dates],
+            }), encoding="utf-8")
+            result = build_carry_strategy(
+                carry,
+                benchmark,
+                contracts,
+                transaction_cost_scenario="low",
+                initial_capital=30000,
+                warmup_observations=2,
+                expiry_buffer_days=0,
+                assignment_window_trading_days=2,
+            )
+
+        self.assertTrue(result["summary"]["perpetual_assignment_event_observed"])
+        self.assertEqual(result["parameters"]["assignment_window_start_date"], dates[5])
+        self.assertEqual(result["trades"][0]["exit_decision_date"], dates[5])
+        self.assertTrue(any(signal["reason"] == "perpetual_execution_window" for signal in result["signals"]))
+
 
 if __name__ == "__main__":
     unittest.main()

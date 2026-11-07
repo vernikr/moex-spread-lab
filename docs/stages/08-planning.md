@@ -4,7 +4,7 @@ Date: 2026-10-27
 
 ## Status and authority
 
-Stage 8 is delivered as the implementation plan for the first offline vertical slice. It sequences work and defines acceptance gates; it does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
+Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics and several exploratory runs already exist; the next work packages prioritize a visible local workbench, then guarded pair and basket parameter search. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
 
 The plan preserves the current business boundaries:
 
@@ -17,27 +17,19 @@ The plan preserves the current business boundaries:
 
 ## Target outcome
 
-The first implementation must answer one narrow question reproducibly:
+The next user-visible result must answer a configurable research question:
 
-> Given one admitted MOEX futures-spread candidate, dated specifications and costs, conservative delayed execution assumptions and a matched LQDT path, does the idea produce an economically meaningful and executable result, or should it be rejected as unknown, infeasible or unprofitable?
+> For a chosen futures pair, strategy and parameter set, what did one finite-capital virtual portfolio do relative to matched LQDT, how did risk and capital needs evolve, and which assumptions make that result uncertain?
 
-The result is a research report and replayable artifacts, not an order recommendation.
+The following slices must let the user search a bounded parameter space for a chosen pair and then a selected basket, showing honest later-period validation rather than only a best historical curve. The result is a private research workbench and replayable artifacts, not an order recommendation.
 
-## First-slice scope
+## First visible screener scope
 
-### Included
+The next slice is deliberately small: reuse an admitted, already ingested pair and existing deterministic strategy, allow manual parameter edits, and render a local dark-only view of aligned strategy/LQDT wealth, excess and risk. The user can save and compare runs. The chart labels candle-close or settlement proxies, costs, incomplete evidence and open positions. No new SBRF performance claim is required to show this first screen; the reference SBRF reproduction follows as a separate audited input.
 
-1. A no-trade `H0` LQDT control.
-2. One candidate calendar/carry family, with CNY/RUB as the default candidate from Stage 6, subject to contract and data gates.
-3. One simple deterministic spread baseline and one economic carry baseline where the required inputs exist.
-4. Daily data as the primary resolution; finer data only for a declared delayed-execution sensitivity.
-5. Versioned contract/specification snapshots, costs, source rights, corporate-action inputs and price roles.
-6. One event-sourced virtual portfolio with staged exposure events, partial legs and rejection reasons.
-7. Delayed manual revalidation scenarios covering the declared 3–90 minute response range.
-8. `V`, `B`, `X`, `H`, `D`, costs, margin/VM liquidity and lifetime funding usage.
-9. Reproducible reports, fixtures, hashes and contract/conformance checks.
+The following pair-search slice adds a bounded, declared parameter grid, a trial journal and chronological train/validation/untouched-confirmation views. The basket slice then adds a shared-capital ledger before attempting joint pair/parameter selection. All slices retain W0–W7 provenance, delayed proxy execution, cost/margin stress, `V/B/X/H/D` and no-trade outcomes. Missing facts never become favorable defaults.
 
-### Excluded from the first slice
+### Excluded from the first visible slice
 
 - live broker connection, order submission or account polling;
 - BCS adapter activation or VTB automation;
@@ -45,13 +37,14 @@ The result is a research report and replayable artifacts, not an order recommend
 - broad all-pairs discovery;
 - ML, RL, text, regime and neural overlays;
 - a public dashboard or new VPS service;
+- claiming an optimized winner or a basket result before later-period and shared-capital validation;
 - historical bid/ask reconstruction from OHLCV;
 - current ГО or tariff values silently backfilled into expired periods;
 - a claim that a free public endpoint permits unattended collection or redistribution.
 
-## Delivery sequence
+## Delivered W0–W7 foundation (retained)
 
-Each work package has a clear input/output contract and can be owned by an independent team. A package is not accepted through private implementation tests alone: it must pass the shared schema fixtures and produce provenance.
+These are the original offline work-package contracts; their mechanics and exploratory implementations already exist. The next user-visible sequence is S1–S4 below. Each work package has a clear input/output contract and can be owned by an independent team. A package is not accepted through private implementation tests alone: it must pass the shared schema fixtures and produce provenance.
 
 ### W0 — Run and evidence manifest
 
@@ -170,16 +163,31 @@ Each work package has a clear input/output contract and can be owned by an indep
 
 **Gate:** no PASS conclusion if the result depends on a later event, a current specification, fabricated execution, incomplete costs or an unresolved benchmark path.
 
+## Next Stage-9 delivery slices
+
+These are new work packages within Stage 9, not a reset of W0–W7 or a new stage. Each produces a working artifact and a separate review before the next slice.
+
+| Order | Deliverable | Acceptance evidence |
+|---|---|---|
+| S1 — Visible local screener | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
+| S2 — Pair parameter laboratory | A finite declared grid for one selected pair/strategy, search budget and per-trial log, chronological train/validation and untouched confirmation, LQDT-relative objective subject to risk/cost/turnover constraints, stability map and comparison with defaults/no-trade. | All attempted and rejected configurations are countable; the selected in-sample winner is not labelled validated; failure or no robust improvement is a valid outcome. Reusing confirmation to tune again requires a new future window. |
+| S3 — SBRF reference reproduction | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
+| S4 — Basket evaluation and search | Select a finite set of admitted pairs and compatible strategies, run concurrent proposals through one portfolio with frozen priority, shared RUB/margin/VM headroom and concentration checks; then search bounded per-pair and shared parameters on earlier periods only. | The basket `V/B/X/D` and risk path is not a sum of stand-alone curves; every blocked competing signal is logged. Selection across pairs/trials is included in the trial count and later-period checks. |
+| Later | Pair dossier, broader pool ranking, persistent experiment views, monitoring, Telegram, richer optimization methods and broker adapters. | Separate evidence, resource and live-authorization gates. |
+
+The first visible slice is prioritized over further unrelated pair screens and detailed noncritical source audits. It may display incomplete inputs as exploratory or blocked, but it must never manufacture performance or treat a chart as permission to trade. Automatic pair search is not a prerequisite for seeing S1; it is the next core capability, not an indefinitely deferred enhancement. SBRF reproduction is prioritized ahead of broad discovery because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
+
 ## Business priority order
 
 When resources or evidence are limited, use this order:
 
-1. correctness of the benchmark and risk ledger;
-2. correctness of contract identity, settlement and price roles;
-3. honest delayed execution and non-execution recording;
-4. cost and margin completeness;
-5. one understandable economic hypothesis;
-6. breadth of pairs and interface convenience.
+1. correctness of the benchmark, finite-capital and risk ledger;
+2. a usable local pair/strategy/parameter comparison view on existing evidence;
+3. bounded pair optimization with trial history and honest later-period validation;
+4. SBRF reference-strategy reproduction and shared-capital basket evaluation/search;
+5. broader pair coverage, richer interface and signal delivery only after these foundations.
+
+At every step, contract identity, price roles, delayed execution and cost/margin completeness are non-negotiable gates, not work to skip for a quicker chart.
 
 The plan deliberately accepts a narrower or zero-trade result in preference to a broad but weak conclusion.
 
@@ -199,7 +207,7 @@ The LLM layer must remain outside numeric truth, sizing, margin, order state and
 
 ## Acceptance gates for Stage 9 development
 
-Development may begin only after the following fixture-level gates are demonstrated:
+Existing fixture-level gates remain in force; each new slice must demonstrate its applicable gates before making the corresponding result claim:
 
 | Gate | Evidence required | Failure outcome |
 |---|---|---|
@@ -215,6 +223,9 @@ Development may begin only after the following fixture-level gates are demonstra
 | G10 Validation | Baselines, holdout, null checks and sensitivity are reported | Mark inconclusive/reject |
 | G11 Modularity | A provider, tariff and strategy can be replaced by manifest | Block module acceptance |
 | G12 Security | No credentials, account identifiers or private statements in artifacts | Block commit/release |
+| G13 Screener consistency | Selected pair/strategy/parameters reproduce the same dated wealth/risk series via CLI and local view; unsupported combinations explain why | Block visible result |
+| G14 Search integrity | Bounded trial registry, selection on earlier data, untouched later confirmation and parameter-neighborhood/cost sensitivity | No optimized-winner claim |
+| G15 Basket integrity | Concurrent signals share one finite-capital ledger, matched LQDT flows and trial history | No basket performance claim |
 
 ## Release states
 
@@ -231,15 +242,16 @@ No state in this list authorizes funding, orders or deployment.
 
 ## Required inputs and decisions
 
-No new business decision is required to start W0–W3. Later gates may require the user to provide or approve:
+The user has already prioritized the screener and pair/basket parameter search; no new business decision is required to start S1. Stronger claims or live use may later require:
 
 - a redacted LQDT price/statement fixture for account-level benchmark reconciliation;
 - applicable VTB tariff and account/collateral evidence;
-- a choice between a narrower research universe and a higher-quality executable-data source if analytical history or execution evidence remains insufficient; A-05 removes this choice as a blocker for the private local ISS pipeline;
+- source evidence for SBRF historical contracts, dividends and execution costs; the prior project's results are a hypothesis to reproduce, not accepted data;
+- a later choice about higher-quality executable data if the user wants claims beyond the accepted private candle-proxy research boundary; A-05/A-08 do not block the local screener;
 - operational response and availability observations for a future shadow workflow.
 
 These inputs are gates for stronger conclusions, not prerequisites for building the offline schemas and replay fixtures.
 
 ## Definition of done for Stage 8
 
-Stage 8 is complete when an independent team can read this plan, obtain the public schemas/fixtures, implement one work package without credentials, and know exactly which result is accepted, blocked or inconclusive. Stage 9 begins with W0 and does not include broker access or deployment.
+Stage 8 remains complete as a stage artifact. This revision defines S1–S4 as the next separate Stage-9 work packages with user-visible acceptance outcomes. They do not include broker access or deployment.

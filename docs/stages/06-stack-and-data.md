@@ -6,7 +6,7 @@ Date: 2026-10-26
 
 Stage-6 selection is delivered as a conditional, evidence-based baseline. It is a starting configuration for the offline vertical slice, not a broker authorization, legal conclusion, profitability claim or live-trading approval.
 
-The selection favors reproducibility, low operating cost, manual VTB feasibility and the ability to replace every provider through the Stage-5 contracts. The first implementation is deliberately narrow: one virtual portfolio, a small admitted universe and no broker write access.
+The selection favors reproducibility, low operating cost, manual VTB feasibility and replaceable Stage-5 contracts. Revised 2026-11-08: the first visible delivery is a private workstation screener backed by the offline research engine; no broker write access is added.
 
 ## Selected operating model
 
@@ -18,7 +18,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 | Future automation | BCS Trade API as a later read-only-first candidate | Publicly documented interface, but account permission, data rights and collateral perimeter are unverified |
 | Strategy scope | Economic spread families first; statistical mean reversion as a control | Selected research order, not strategy approval |
 | Notifications | Telegram behind a durable outbox | Optional after offline replay is correct; delivery never authorizes exposure |
-| User interface | Local/private reporting first; dark-only UI later if it earns its cost | No public dashboard or new VPS listener |
+| User interface | Local/private dark-only screener as the next visible Stage-9 slice | Reuse research outputs; no public dashboard or VPS listener |
 
 ## Technology baseline
 
@@ -28,7 +28,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 - Versioned source and configuration in Git; secrets and account material only through secure runtime configuration.
 - Parquet or equivalent partitioned files for immutable research datasets, with raw source captures retained only where rights permit.
 - DuckDB for local analytical queries and batch research; it is not part of the constrained VPS runtime.
-- Deterministic command-line runs first. A UI is not a prerequisite for the first vertical slice.
+- Existing deterministic command-line runs remain the calculation boundary. The next local UI reads the same run/report contracts; choose its lightweight toolkit after a measured prototype, without a second strategy or accounting implementation.
 
 ### VPS, if later activated
 
@@ -98,15 +98,16 @@ Do not build a broad news/dividend subsystem before a selected pair requires it.
 
 ## Initial universe and research order
 
-The project will not begin with an unrestricted all-pairs search. The first research registry contains:
+The project will not use an unrestricted all-pairs search. The existing research registry began with CNY/RUB; the revised screener priority adds a separately audited SBRF near/far calendar candidate from `calendar-spread` before broadening the universe. Its historical positive backtest is a reference hypothesis, not a validated result in this project. The initial registry contains:
 
 1. `H0` — no-trade matched LQDT control;
 2. same-underlying currency calendar/carry families, starting with CNY/RUB as the first feasibility candidate;
 3. perpetual-versus-dated funding/basis families where the funding series and contract specifications are observable;
-4. one liquid index/calendar family as a robustness comparison, conditional on dated dividend and specification inputs;
-5. a simple statistical mean-reversion control, labelled as a falsification benchmark rather than an economic claim.
+4. SBRF near/far calendar spreads as the first reference-strategy reproduction candidate, conditional on dated contract, dividend and cost evidence;
+5. a simple statistical mean-reversion control, labelled as a falsification benchmark rather than an economic claim;
+6. later liquid index/calendar families as robustness comparisons.
 
-Commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. They may be plugged in through the same contracts, but they do not enlarge the first implementation scope.
+Commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. Parameter search is now a core research capability, but it is bounded by a declared pair/basket, strategy schema, trial budget and chronological validation; basket search waits for shared-capital portfolio composition.
 
 The first data resolution is:
 

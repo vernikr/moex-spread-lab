@@ -7,11 +7,11 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 | 1 | Unpacking / Reframing | `stages/01-unpacking.md`, decisions, blockers | Artifact delivered; open questions recorded |
 | 2 | Deep Research | `stages/02-research.md`, 15 standalone prompts, external-agent handoff instructions and delegated risk-policy revision | Prompt pack delivered; focused architecture review complete; account-specific acceptance pending |
 | 3 | Environment Setup | Verified access/tool inventory, permissions and safe VPS preflight | Read-only preflight complete; no deployment |
-| 4 | Functional and business requirements | Requirements and acceptance criteria | Delivered; staged exposure clarified |
-| 5 | Architecture | Boundaries and decision records | Artifact delivered; modular boundaries and stack constraints recorded |
-| 6 | Stack and data sources | Evidence-based selections and limitations | Artifact delivered; conditional sources and gates recorded |
+| 4 | Functional and business requirements | Requirements and acceptance criteria | Delivered; revised for screener, parameter search and basket comparison |
+| 5 | Architecture | Boundaries and decision records | Artifact delivered; local view and search boundaries added to modular core |
+| 6 | Stack and data sources | Evidence-based selections and limitations | Artifact delivered; local screener and SBRF reference intake prioritized |
 | 7 | Reuse from previous projects | Reuse assessment, point-in-time checks, explicit updates to stages 4–6 | Artifact delivered; price/event/data-source revisions recorded |
-| 8 | Planning | Prioritized delivery and validation plan | Artifact delivered; offline vertical slice and Stage-9 gates defined |
-| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W1–W7 mechanics, CNYRUBF/CRZ6 carry study, H2-S1/H3-F1 proxies, EBS/KПУР stress screen, assignment-event policy, six-pair price screen and four-pair funding screen delivered; further hypotheses remain separate |
+| 8 | Planning | Prioritized delivery and validation plan | Artifact delivered; revised Stage-9 S1–S4 screener/search slices defined |
+| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W0–W7 and exploratory CNY/other-pair screens delivered. Next: local screener, pair search, SBRF reproduction, shared-capital basket search; none yet delivered |
 
 Research findings may change the initial concept. No stage assumes profitable or even feasible real trading with the test allocation.

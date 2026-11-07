@@ -4,7 +4,7 @@ Date: 2026-10-26
 
 ## Status and scope
 
-Stage-4 requirements are delivered. This document defines the first useful product boundary and acceptance criteria. It does not select the final technology stack, authorize trading or claim that a profitable strategy exists.
+Stage-4 requirements are delivered and revised 2026-11-08 for the user-confirmed screener-first direction. The first visible product is a private research workbench, not a signal service. This document does not authorize trading or claim that a profitable strategy exists.
 
 The first product must answer one question honestly:
 
@@ -14,24 +14,22 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 
 ## Product boundary
 
-### MVP includes
+### Screener MVP includes
 
-1. Versioned market and contract data intake.
-2. A narrow, explicitly configured universe of economically related futures.
-3. No-trade and deterministic strategy baselines.
-4. One finite-capital virtual portfolio.
-5. Delayed manual-execution simulation and signal revalidation.
-6. Matched LQDT accounting and risk-path reporting.
-7. Reproducible research runs, rejected-signal records and compact reports.
-8. A future-compatible notification boundary; Telegram delivery may be added after the offline workflow is reliable.
+1. A local, private, dark-only interface: select an admitted futures pair, compatible strategy, editable parameters, capital and labelled cost/delay scenario; run and compare saved configurations.
+2. A chart of the strategy-enabled wealth path and the matched no-trade LQDT path, plus their RUB difference over time; show return, benchmark excess, drawdown, risk/capital needs, trade counts and open-position status on the same valuation boundary.
+3. A small, explicit pair/strategy registry, beginning with the existing research candidates and a separately audited SBRF near/far calendar candidate from `calendar-spread`; no reference result is imported as accepted performance.
+4. A bounded automatic parameter search for a selected pair and, after shared-portfolio composition is working, for a selected basket. Show the search space, all trials, train/validation/sealed-confirmation periods, nearby-parameter stability and the reason for any inconclusive result; never label the best in-sample point a validated winner.
+5. Versioned market, contract, event and cost inputs; no-trade and deterministic baselines; one finite-capital virtual portfolio with delayed candle-price proxies, rejected steps and staged exposure where a strategy supports it.
+6. Reproducible exports and experiment history, including assumptions, data vintages, missing evidence and source status. Monitoring and notifications are later extensions.
 
 ### MVP excludes
 
 - real orders or broker API write access;
 - automatic funding, liquidation or rescue actions;
 - BCS execution;
-- a public web dashboard;
-- unrestricted all-pairs or unlimited parameter search;
+- a public or VPS-hosted dashboard;
+- unrestricted all-pairs discovery, an unlimited search or a purported universal optimal setting;
 - text, regime and neural models as required components;
 - a claim of profitability, safety or capacity at RUB 10–20 million.
 
@@ -47,6 +45,9 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 | BR-06 | Preserve the user's one realistic virtual portfolio | All eligible signals are attempted according to a frozen priority rule; omissions, rejections and partial fills remain outcomes |
 | BR-07 | Make a signal explainable | A report identifies the relationship, data vintage, costs, expected holding period, size basis, invalidation conditions and uncertainty |
 | BR-08 | Permit a safe conclusion when evidence is weak | Missing data, costs, margin or fills produce an explicit block/inconclusive result rather than a zero assumption; the user's A-05 private-research assumption is recorded rather than treated as an unresolved local-pipeline blocker |
+| BR-09 | Put pair/strategy/parameter exploration before signal delivery | A user can run and compare configurations locally, see the full LQDT-relative wealth/risk path and inspect why a configuration is blocked or exploratory |
+| BR-10 | Search parameters without selecting on the answer sheet | For a selected pair or basket, record every trial and a declared search budget; tune only on earlier data, rank on later validation, and display untouched confirmation separately |
+| BR-11 | Evaluate a basket as one portfolio | Joint capital, simultaneous exposure, priority, correlation/concentration and LQDT flows determine the basket curve; independent pair profits must never be simply added |
 
 ## Functional requirements
 
@@ -71,6 +72,8 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **FR-11 — Trial registry.** Record every tested pair, family, parameter set, cost scenario and decision rule, including discarded trials.
 - **FR-12 — Frozen evaluation.** Use chronological splits, overlap-aware purge/embargo, a sealed confirmation period and no post-result tuning of that period.
 - **FR-12a — Exposure ladder specification.** A strategy that permits staged exposure must declare, before evaluation, its entry/add/reduce/exit thresholds, quantity at each level, maximum aggregate exposure, cooldowns, invalidation rules and risk overrides. The same specification must drive research, signals and virtual execution.
+- **FR-12b — Search space and selection.** A strategy publishes parameter names, types, units, valid ranges/dependencies and a versioned default. A search declares pair(s), candidate grid/budget, objective and risk constraints before running. Every attempted, rejected and failed configuration is logged; a manual edit after viewing confirmation consumes a new experiment and cannot reuse that confirmation as untouched evidence.
+- **FR-12c — Basket selection.** A basket declares constituent pairs, per-pair strategy and parameters, joint constraints, selection rule and priority before evaluation. Any pair or basket selection using historical performance is part of the search and must be validated out of sample; overlapping contracts and correlated risk are explicit.
 
 ### Signals and delayed execution
 
@@ -99,6 +102,10 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **FR-28 — Notification boundary.** Notifications are idempotent, retryable and deduplicated. Loss of Telegram delivery never authorizes a trade.
 - **FR-29 — Operational outbox.** Future alerts are written durably before delivery and can be replayed without duplicate signals.
 - **FR-30 — Recovery.** After a restart or outage, reconcile stored events and current source state before generating new entries.
+- **FR-31 — Screener workspace.** A local dark-only view offers an admitted pair selector, compatible strategy selector, validated parameter controls, run/compare action and a visible result status. Unsupported pairs or missing inputs are disabled with a reason; a chart is not fabricated.
+- **FR-32 — Comparable performance view.** Plot strategy wealth `V`, matched LQDT wealth `B`, excess `X = V - B` and drawdown on dated axes. Show initial capital, external flows, open positions, observed/proxy price roles, costs and whether the curve is exploratory, held-out or account-reconciled. Report return, excess return in RUB and %, peak-to-trough drawdown, worst shortfall, trade frequency and capital/margin stress; undefined metrics remain undefined.
+- **FR-33 — Automatic pair/basket optimization.** Execute a bounded, reproducible search with shared strategy/risk/portfolio rules. Rank only eligible configurations by a declared LQDT-relative objective and risk constraints; show no-trade control, trial counts, validation versus untouched confirmation, parameter-neighborhood stability and stress sensitivity. A basket uses one chronological shared-capital ledger, not a sum of pair backtests.
+- **FR-34 — Experiment comparison.** Save the exact pair/basket, strategy, parameters, dates, data/artifact versions, cost/delay assumptions, eligibility/rejection reasons and output hash for every run. Comparisons align capital, time window and valuation basis or flag them as non-comparable.
 
 ## Non-functional requirements
 
@@ -109,15 +116,15 @@ The product must be allowed to answer **no opportunity**, **inconclusive** or **
 - **NFR-05 — Resource isolation.** Heavy research runs on the laptop. Any VPS process is bounded, has an explicit memory cap and does not bind a new public port.
 - **NFR-06 — Availability behavior.** Outage, stale-data and broker-unreachable states are visible and safe; the system does not pretend that monitoring equals execution.
 - **NFR-07 — Modular extension.** Data providers, tariff/cost profiles, strategy families, execution modes, brokers, reports and notification channels are replaceable boundaries, not duplicated business logic.
-- **NFR-08 — Dark-only interface.** Any future user interface is dark-only and private/local by default; a UI is not required for the first offline slice.
+- **NFR-08 — Dark-only interface.** The first screener view is dark-only and local/private; no public port or VPS deployment is required. It consumes the same run results as the CLI rather than implementing a second accounting engine.
 - **NFR-09 — Contract-first modules.** A replaceable module declares a stable contract version, capabilities, inputs, outputs, dependencies, resource needs, data rights and owner. Modules communicate through domain contracts and events, not private tables or undocumented imports.
 - **NFR-10 — Independent lifecycle.** A module can be enabled, disabled, upgraded or rolled back through a versioned run configuration. Historical runs retain the exact module and artifact versions used.
 - **NFR-11 — Team isolation.** An independent team can develop and test a module using public schemas, fixtures and contract tests without access to credentials, unrelated private data or another team's implementation.
 - **NFR-12 — Safe unknowns.** An absent, incompatible or revoked module capability blocks only the dependent operation and produces an explicit reason; it never silently falls back to zero cost, zero risk or a different artifact.
 
-## Acceptance gates for the first implementation slice
+## Acceptance gates for implementation slices
 
-The first implementation may begin only when it can pass these checks on a small fixture:
+The existing offline mechanics and the new screener/search slices must demonstrate the applicable checks on fixtures and real-data proxy runs before a stronger conclusion:
 
 1. Rebuild the same LQDT counterfactual and `X` curve twice with identical output.
 2. Reject an entry when one leg is stale, unavailable, unaffordable or outside its session.
@@ -132,6 +139,9 @@ The first implementation may begin only when it can pass these checks on a small
 11. Represent each staged reduction and final exit as a separate event, preserving remaining exposure and legging risk after partial execution.
 12. Stop all exposure-increasing steps at the drawdown/shortfall action gates while still permitting controlled risk reduction.
 13. Reproduce a historical decision without using a later corporate-action correction, adjusted series or current contract snapshot.
+14. In the local screener, change a pair, strategy or parameter and obtain a distinct, replayable `V/B/X/D` chart and metrics with explicit sample, costs and proxy labels.
+15. Run a small declared search, retain all candidates and show that later validation/confirmation differs from in-sample optimization; an invalid, capital-infeasible or data-incomplete candidate cannot be ranked as a winner.
+16. Evaluate two candidate pairs on overlapping dates with a shared finite-capital basket ledger; prove that resource competition changes the result relative to a naive sum, and preserve the no-trade baseline.
 
 ## Deferred decisions
 
@@ -143,7 +153,7 @@ The following remain intentionally open until later evidence or implementation m
 - Telegram deployment details;
 - final sizing formula and risk thresholds;
 - BCS order semantics and automation permission;
-- public or private UI technology;
+- the lightweight local UI technology; no public UI is in the current scope;
 - whether regime, text or neural components add measurable value.
 
-Stage 5 converted these requirements into architecture boundaries and decision records in [the architecture artifact](05-architecture.md). Stages 6–7 selected a conditional stack/data baseline and incorporated prior-project reuse findings. Stage 8 will plan delivery and validation. No live trading or broker write access is implied by this requirements artifact.
+Stage 5 defines the module boundaries in [the architecture artifact](05-architecture.md). Stages 6–7 select conditional sources and record reference-project limits. The revised [Stage-8 plan](08-planning.md) prioritizes a visible local workbench and then guarded optimization. No live trading or broker write access is implied.

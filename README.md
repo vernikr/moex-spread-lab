@@ -1,10 +1,10 @@
 # MOEX Spread Lab
 
-Private, research-first project for selective medium-term MOEX futures spread signals, evaluated against an LQDT counterfactual. Initial execution: manual through VTB. Later candidate: BCS automation. No trading software or validated strategy exists yet.
+Private, research-first MOEX futures-spread screener. Select a pair, strategy and parameters, compare the resulting finite-capital wealth/risk path with matched LQDT, and search parameters for a pair or basket with later-period validation. Manual VTB signals and BCS automation are later gated options; no validated profitable strategy or trading service exists yet.
 
 ## Current status
 
-Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe inventory, CNYRUBF/CRZ6 candle intake, LQDT lineage, the H1 price-only baseline, H2 funding-aware decomposition with dated regime controls, frozen H2-S1 proxy backtest, current-tariff sensitivity, delay and illustrative cost sensitivity, M1 diagnostics, W4/W5 analytical execution ledger, W7 chronological validation, VTB EBS/KПУР minimum-lot stress screen, explicit perpetual-execution event policy and the research gate decision are delivered** alongside the W0–W7 offline mechanics. Under A-08, historical order-book and actual-fill data are outside the project scope; candle closes remain the accepted medium-term analytical proxy. The current VTB `Мой Онлайн Прайм` tariff is recorded under A-09. The current baseline and H2-S1 configuration are not promoted to an executable/funded pilot; CNYRUBF/CRZ6 itself remains conditionally admitted for offline research. No project service was deployed and no orders were submitted.
+Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, LQDT benchmark, CNYRUBF/CRZ6 exploratory strategies, six-pair price screen, four-pair funding screen and working VTB EBS/КПУР risk scenarios are delivered. None of the frozen tested rules beat matched LQDT under its stated assumptions; none is promoted to an executable/funded pilot. The user-confirmed 2026-11-08 priority is a **visible local screener**, then bounded automatic parameter search for a selected pair and basket; the reference SBRF calendar-spread strategy will be reproduced separately. Historical candle/settlement prices remain labelled analytical proxies under A-08, not actual fills. No screener UI, broker service or project VPS deployment exists yet, and no orders were submitted.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -41,6 +41,6 @@ Stage 9 development is in progress: **W1 ISS catalog, all-instrument timeframe i
 
 ## How to continue
 
-Start with R01, R02, R04, R05, R06 and R09, using one standalone prompt per investigation. Attach the provided tariff PDF to R02. Return reports in any format with dated sources; incomplete/blocked reports are useful too. R10–R15 are standalone as well: the optional regime/text/neural investigations may run at any time and stay conditional designs until actual tests exist.
+Follow the revised [Stage-8 plan](docs/stages/08-planning.md): S1 local pair/strategy/parameter workbench and LQDT charts; S2 bounded pair optimizer; S3 independent SBRF reference-strategy reproduction; S4 shared-capital basket evaluation and optimizer. Each slice has its own acceptance gate. The detailed `СКРИНЕР_epub.md` is [preserved as a product hypothesis](docs/research/reuse/СКРИНЕР_epub.md), not verified market evidence. The received R01–R15 reports and [research pack](docs/research/README.md) remain source material for evidence gaps, not a prerequisite to showing the first local view.
 
-Installation/access verification, architecture, technology selection and implementation follow their own stages. Delegated numeric risk rules are provisional controls to test, not evidence of safe or profitable trading. Internal funding ceilings do not ring-fence the core brokerage portfolio.
+Delegated numeric risk rules are provisional controls, not evidence of safe or profitable trading. Internal funding ceilings do not ring-fence the core brokerage portfolio.

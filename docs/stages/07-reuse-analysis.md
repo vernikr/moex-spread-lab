@@ -6,7 +6,7 @@ Date: 2026-10-27
 
 Stage 7 is delivered. This document records a reuse assessment of three repositories and the supplied product-description compilation. It separates implemented code and stored data from research hypotheses, UI mock data and dated observations.
 
-The assessment changes the Stage-6 baseline in the areas of price roles, ISS ingestion, dividend/corporate-action provenance and historical LQDT extensions. It does not approve a broker connection, data-rights interpretation, live trading or a strategy.
+The assessment changed the Stage-6 baseline in price roles, ISS ingestion, dividend/corporate-action provenance and historical LQDT extensions. On 2026-11-08 the user separately prioritized a screener and automatic parameter search; this promotes the compilation's workflow as a product direction, not its market claims as evidence. The positive SBRF calendar backtest in `calendar-spread` is a reproduction candidate under the revised Stage-8 plan, not accepted performance here. This assessment does not approve broker access, live trading or a strategy.
 
 ## Materials inspected
 

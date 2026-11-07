@@ -4,7 +4,7 @@ Date: 2026-10-26
 
 ## Status and authority
 
-Stage-5 architecture is delivered. It turns the functional requirements into boundaries, state transitions and decision records. It does not select a final programming language, database, market-data vendor or broker integration. It does not authorize live trading.
+Stage-5 architecture is delivered and revised 2026-11-08 for a screener-first research workflow. It turns the functional requirements into boundaries, state transitions and decision records. A local interface and search coordinator are now early consumers of the existing research core; no broker integration or live trading is authorized.
 
 The architecture must support a deterministic strategy that can enter, add, reduce and exit in stages without turning a single persistent deviation into unbounded averaging down.
 
@@ -52,12 +52,14 @@ Non-executable artifacts are first-class versioned inputs: model parameters, tar
 | Data provider | Retrieval, raw capture, timestamps, normalization and quality status | Source credentials through secure runtime only | Strategy logic, sizing or orders |
 | Contract/specification provider | Contract, calendar, lot, tick, expiry and margin facts | Dated source evidence | Signal decisions or account state |
 | Tariff/cost provider | Effective-dated commissions, exchange/clearing charges, funding and scenario costs | Contract, broker and account profile inputs | Market observations, positions or fills |
-| Strategy module | Candidate relationships, indicators, ladder and target-exposure proposal | Normalized point-in-time data and declared specifications | Credentials, tariff lookup internals, order submission or portfolio mutation |
+| Strategy module | Candidate relationships, parameter schema/defaults, indicators, ladder and target-exposure proposal | Normalized point-in-time data and declared specifications | Credentials, tariff lookup internals, order submission or portfolio mutation |
 | Risk module | Feasibility and increase/reduction decision with reason codes | Portfolio snapshot, cost result, limits and stress inputs | Strategy discovery, broker calls or hidden funding |
 | Execution adapter | Translation of order intents and lifecycle observations | Public order schema and broker session | Strategy/risk decisions, portfolio policy or silent fills |
 | Portfolio/accounting core | Event log, projections, reservations, fills, benchmark and reconciliation | Validated domain events | Provider-specific parsing or team-owned strategy code |
 | Artifact registry | Immutable artifact references, schemas, hashes, dates and rights status | Producing modules and approved storage | Runtime decisions, silent replacement or private credentials |
-| Report module | Reproducible views and limitations | Versioned projections and run manifest | New trading decisions or event mutation |
+| Report module | Reproducible charts, metrics, comparisons and limitations | Versioned projections and run manifest | New trading decisions or event mutation |
+| Search coordinator | Bounded parameter trials, chronological selection and experiment history for a pair or basket | Strategy parameter schemas, portfolio evaluator, risk and validation contracts | Strategy-specific math, broker actions or rewritten trial results |
+| Local screener | Pair/strategy controls, run comparison and explicit evidence status | Report, registry and search read contracts | Independent P&L calculations, portfolio writes or broker access |
 | Notification adapter | Delivery and retry status | Durable outbox contract | Authorization, risk changes or event creation |
 
 The portfolio/accounting core remains a protected domain boundary rather than an interchangeable plugin. Its projections expose read contracts; external modules submit commands that become validated events.
@@ -149,6 +151,14 @@ Writes an idempotent durable notification record before delivery. Delivery failu
 ### 9. Module registry and contract validation
 
 Discovers manifests, checks contract compatibility, validates required capabilities and pins the module set for each run. It performs no trading decision. Registry failure blocks activation of dependent modules and leaves prior projections/events intact.
+
+## Screener and search boundary
+
+The local screener is a read-only presentation and run-request layer over the same pinned research engine used by CLI runs. A selection identifies one pair or a predeclared basket, compatible strategy module, parameter values, date window, initial capital, price role, tariff/cost and delay scenario. The result contract returns aligned `V/B/X/H/D` series, risk/capital and trade summaries, open/rejected/unknown outcomes, evidence/proxy status and artifact hashes. Changing a control creates a new immutable experiment; rendering never changes portfolio history.
+
+Strategy modules publish parameter schemas (type, unit, range, dependencies, default and search eligibility). The search coordinator enumerates a finite declared space and budget, uses the same evaluator and risk gate as manual runs, and records every trial including invalid/failed trials. The objective is a declared LQDT-relative measure subject to finite-capital, drawdown and evidence constraints; an objective score is not an execution or profit guarantee. Chronological training selects candidates; later validation ranks their stability and untouched confirmation is displayed separately. Nearby-parameter performance, cost/delay sensitivity and trial count are visible. Any re-selection after inspecting confirmation requires new future evidence.
+
+A pair result may use a one-pair projection. A basket result must replay concurrent signals in **one** shared-capital virtual portfolio with a frozen priority/selection rule, integer lots, correlated exposure and continuous matched LQDT flows. Summing independently optimized pair curves is never a basket backtest. A standalone pair run and a basket run are different experiment types and cannot be blended into one wealth curve. The private interface and report layer must not turn candle-close proxies, a reference SBRF result or a provisional account screen into live-trading approval.
 
 ## Strategy specification: exposure ladder
 
@@ -347,6 +357,12 @@ An event must not carry secret credentials, account identifiers or raw private s
 **Reason:** The previous projects show that a generic `close`, current catalog snapshot or inferred `registry_date - 2 days` can silently mix accounting, research and execution meanings or leak later information into history.
 
 **Consequence:** Each consumer declares its price role and adjustment mode. Missing role or unavailable event vintage blocks the dependent historical claim rather than selecting a convenient fallback.
+
+### ADR-05-11 — Research screener before signal delivery
+
+**Decision:** A local dark-only screener consumes versioned pair, strategy, search and report contracts. Automatic parameter selection remains a separate, bounded research operation; a chart or selected configuration never creates an order intent.
+
+**Consequence:** The first Stage-9 user-visible slice reuses the existing analytical runs and LQDT ledger. A later basket slice must add shared-capital portfolio evaluation before basket optimization; the event, risk and evidence boundaries remain intact.
 
 ## Stage-5 acceptance gates
 

@@ -1,6 +1,6 @@
 # Decision register
 
-Updated 2026-11-03 after the user's execution-data and VTB-tariff clarification. User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
+Updated 2026-11-08 after the user's screener-first product direction. User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
 
 | ID | Confirmed user decision | Boundary / unresolved part |
 |---|---|---|
@@ -14,6 +14,12 @@ Updated 2026-11-03 after the user's execution-data and VTB-tariff clarification.
 | A-08 | Historical order-book, bid/ask and actual-fill data will not become available in this project. Continue with candle closes as labelled analytical price proxies. For the user's medium-term manual reaction, the close-to-book difference is treated as secondary to reaction delay and covered by delay/cost sensitivity. | The project does not claim reconstructed fills, queue position, two-leg simultaneity or guaranteed prices. This is no longer an offline-research blocker; live execution evidence remains a separate gate. |
 | A-09 | The user's current VTB tariff is `Мой Онлайн Прайм`, evidenced by the supplied PDF. VTB broker commission for derivatives is zero through 2026-12-31 inclusive; exchange fees remain instrument-dependent. | The PDF does not establish margin, collateral eligibility, KPUR treatment, liquidation rules, post-2026 pricing or whether optional Advisory services are connected. |
 | A-10 | The user confirms that the VTB account uses EBS and that KPUR is assigned. Use these as account facts in the working risk profile. | The exact EBS perimeter, current LQDT treatment, individual coefficients and current client display remain unverified; the profile must use labelled approximations and must not treat core LQDT as pilot cash. |
+
+## Product direction confirmed 2026-11-08
+
+The user prioritizes a private research screener over a signal-first workflow. It must let the user select a futures pair, strategy and parameters, inspect the resulting strategy and matched LQDT wealth curves and return/risk measures, and automatically search parameters for a chosen pair or basket of pairs. The user wants a minimal visible screener soon. The saved `СКРИНЕР_epub.md` is a detailed product hypothesis, not evidence of an existing product or validated trading rules.
+
+This revises the order of Stage-9 delivery, not the research/live boundary: first a local dark-only analytical interface and transparent experiments, then guarded parameter search and portfolio-level basket evaluation; monitoring, Telegram, broker integration and trading remain separately gated. A good-looking backtest, including the reference SBRF calendar-spread result, is not approved performance. The original brief remains the source record; current priorities are in Stages 4–8.
 
 ## Delegated operational defaults (not empirical findings)
 

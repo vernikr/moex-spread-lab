@@ -242,7 +242,7 @@ class CarryTests(unittest.TestCase):
             )
 
         self.assertEqual(result["rule_id"], "H3-F1")
-        self.assertEqual(result["parameters"]["entry_condition"], "mean_previous_20_daily_funding_received > 0")
+        self.assertEqual(result["parameters"]["entry_condition"], "mean_previous_2_daily_funding_received > 0")
         self.assertEqual(result["hypothesis"], "funding_only_carry")
 
 

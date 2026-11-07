@@ -4,7 +4,7 @@ Date: 2026-10-27
 
 ## Status and authority
 
-Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics and several exploratory runs already exist; the next work packages prioritize a visible local workbench, then guarded pair and basket parameter search. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
+Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics, several exploratory runs and the S1 visible local workbench now exist; the next work packages prioritize guarded pair and basket parameter search, with a separate SBRF reference reproduction. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
 
 The plan preserves the current business boundaries:
 
@@ -17,7 +17,7 @@ The plan preserves the current business boundaries:
 
 ## Target outcome
 
-The next user-visible result must answer a configurable research question:
+The S1 user-visible result answers a configurable research question:
 
 > For a chosen futures pair, strategy and parameter set, what did one finite-capital virtual portfolio do relative to matched LQDT, how did risk and capital needs evolve, and which assumptions make that result uncertain?
 
@@ -25,7 +25,7 @@ The following slices must let the user search a bounded parameter space for a ch
 
 ## First visible screener scope
 
-The next slice is deliberately small: reuse an admitted, already ingested pair and existing deterministic strategy, allow manual parameter edits, and render a local dark-only view of aligned strategy/LQDT wealth, excess and risk. The user can save and compare runs. The chart labels candle-close or settlement proxies, costs, incomplete evidence and open positions. No new SBRF performance claim is required to show this first screen; the reference SBRF reproduction follows as a separate audited input.
+S1 deliberately stays small: it reuses admitted, already ingested pairs and existing deterministic strategies, allows manual parameter edits, and renders a local dark-only view of aligned strategy/LQDT wealth, excess and risk. The user can save and compare runs. The chart labels candle-close or settlement proxies, costs, incomplete evidence and open positions. No new SBRF performance claim is required to show this first screen; the reference SBRF reproduction follows as a separate audited input.
 
 The following pair-search slice adds a bounded, declared parameter grid, a trial journal and chronological train/validation/untouched-confirmation views. The basket slice then adds a shared-capital ledger before attempting joint pair/parameter selection. All slices retain W0–W7 provenance, delayed proxy execution, cost/margin stress, `V/B/X/H/D` and no-trade outcomes. Missing facts never become favorable defaults.
 
@@ -169,13 +169,13 @@ These are new work packages within Stage 9, not a reset of W0–W7 or a new stag
 
 | Order | Deliverable | Acceptance evidence |
 |---|---|---|
-| S1 — Visible local screener | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
+| S1 — Visible local screener (delivered 2026-11-08) | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
 | S2 — Pair parameter laboratory | A finite declared grid for one selected pair/strategy, search budget and per-trial log, chronological train/validation and untouched confirmation, LQDT-relative objective subject to risk/cost/turnover constraints, stability map and comparison with defaults/no-trade. | All attempted and rejected configurations are countable; the selected in-sample winner is not labelled validated; failure or no robust improvement is a valid outcome. Reusing confirmation to tune again requires a new future window. |
 | S3 — SBRF reference reproduction | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
 | S4 — Basket evaluation and search | Select a finite set of admitted pairs and compatible strategies, run concurrent proposals through one portfolio with frozen priority, shared RUB/margin/VM headroom and concentration checks; then search bounded per-pair and shared parameters on earlier periods only. | The basket `V/B/X/D` and risk path is not a sum of stand-alone curves; every blocked competing signal is logged. Selection across pairs/trials is included in the trial count and later-period checks. |
 | Later | Pair dossier, broader pool ranking, persistent experiment views, monitoring, Telegram, richer optimization methods and broker adapters. | Separate evidence, resource and live-authorization gates. |
 
-The first visible slice is prioritized over further unrelated pair screens and detailed noncritical source audits. It may display incomplete inputs as exploratory or blocked, but it must never manufacture performance or treat a chart as permission to trade. Automatic pair search is not a prerequisite for seeing S1; it is the next core capability, not an indefinitely deferred enhancement. SBRF reproduction is prioritized ahead of broad discovery because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
+S1 is documented in [the local screener guide](../development/screener-s1.md). It displays incomplete inputs as exploratory or blocked, never as fabricated performance or permission to trade. S2 automatic pair search is the next core capability, not an indefinitely deferred enhancement. SBRF reproduction is prioritized ahead of broad discovery because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
 
 ## Business priority order
 

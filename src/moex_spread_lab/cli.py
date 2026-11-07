@@ -159,6 +159,20 @@ def build_parser() -> argparse.ArgumentParser:
     funding_screen_parser.add_argument("--cost-scenario", choices=("low", "base", "stress"), default="stress")
     funding_screen_parser.add_argument("--delay-seconds", type=float, default=0.2)
     funding_screen_parser.add_argument("--timeout", type=float, default=60.0)
+
+    local_screener_parser = subparsers.add_parser("screener", help="serve the private offline research screener on loopback")
+    local_screener_parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository with local ignored research inputs")
+    local_screener_parser.add_argument("--port", type=int, default=8765)
+
+    screener_run_parser = subparsers.add_parser("screener-run", help="replay one local screener configuration as JSON")
+    screener_run_parser.add_argument("--root", type=Path, default=Path.cwd())
+    screener_run_parser.add_argument("--pair", required=True)
+    screener_run_parser.add_argument("--strategy", choices=("mean_reversion", "funding_only"), required=True)
+    screener_run_parser.add_argument("--cost", choices=("low", "base", "stress"), default="stress")
+    screener_run_parser.add_argument("--lookback", type=int, default=20)
+    screener_run_parser.add_argument("--entry-z", type=float, default=2.0)
+    screener_run_parser.add_argument("--exit-z", type=float, default=0.5)
+    screener_run_parser.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -589,6 +603,23 @@ def main() -> int:
                 "positive_h1_control_count": result["summary"]["positive_h1_control_count"],
                 "output": str(args.output),
             }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "screener":
+            from .screener_app import ScreenerInputs, serve
+
+            serve(ScreenerInputs(args.root.resolve()), args.port)
+            return 0
+        if args.command == "screener-run":
+            from .screener_app import ScreenerInputs, build_result
+
+            parameters = {"lookback": args.lookback}
+            if args.strategy == "mean_reversion":
+                parameters.update({"entry_z": args.entry_z, "exit_z": args.exit_z})
+            result = build_result(ScreenerInputs(args.root.resolve()), {
+                "pair": args.pair, "strategy": args.strategy, "cost": args.cost, "parameters": parameters,
+            })
+            write_json(args.output, result)
+            print(json.dumps({"run_id": result["run_id"], "status": result["status"], "output": str(args.output)}, sort_keys=True))
             return 0
         if args.command == "funding-screen":
             from .funding_screen import screen_funding_pairs, write_funding_screen

@@ -1,6 +1,6 @@
 [project]
 name = "moex-spread-lab"
-version = "0.1.0"
+version = "0.2.0"
 description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -13,6 +13,9 @@ moex-spread-lab = "moex_spread_lab.cli:main"
 
 [tool.uv]
 package = true
+
+[tool.setuptools.package-data]
+moex_spread_lab = ["*.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

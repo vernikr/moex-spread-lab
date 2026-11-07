@@ -18,7 +18,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 | Future automation | BCS Trade API as a later read-only-first candidate | Publicly documented interface, but account permission, data rights and collateral perimeter are unverified |
 | Strategy scope | Economic spread families first; statistical mean reversion as a control | Selected research order, not strategy approval |
 | Notifications | Telegram behind a durable outbox | Optional after offline replay is correct; delivery never authorizes exposure |
-| User interface | Local/private dark-only screener as the next visible Stage-9 slice | Reuse research outputs; no public dashboard or VPS listener |
+| User interface | S1 local/private dark-only screener delivered | Reuses research outputs; no public dashboard or VPS listener |
 
 ## Technology baseline
 
@@ -28,7 +28,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 - Versioned source and configuration in Git; secrets and account material only through secure runtime configuration.
 - Parquet or equivalent partitioned files for immutable research datasets, with raw source captures retained only where rights permit.
 - DuckDB for local analytical queries and batch research; it is not part of the constrained VPS runtime.
-- Existing deterministic command-line runs remain the calculation boundary. The next local UI reads the same run/report contracts; choose its lightweight toolkit after a measured prototype, without a second strategy or accounting implementation.
+- Existing deterministic command-line runs remain the calculation boundary. S1 serves local HTML/CSS/JavaScript through a Python standard-library loopback server and calls the same research engines. It adds no frontend framework or second strategy/accounting implementation.
 
 ### VPS, if later activated
 

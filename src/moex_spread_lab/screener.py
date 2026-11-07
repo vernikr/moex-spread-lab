@@ -114,6 +114,8 @@ def _normalized_series(
         "interval": 24,
         "timeframe": "1d",
         "direction": "near_minus_far_normalized_rub",
+        "price_unit": "rub_normalized_per_pair",
+        "spread_tick_value_rub": common_tick_rub,
         "rows": rows,
         "contracts": contracts,
         "provenance": {

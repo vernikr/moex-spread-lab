@@ -4,7 +4,7 @@ Private, research-first MOEX futures-spread screener. Select a pair, strategy an
 
 ## Current status
 
-Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, LQDT benchmark, CNYRUBF/CRZ6 exploratory strategies, six-pair price screen, four-pair funding screen and working VTB EBS/КПУР risk scenarios are delivered. None of the frozen tested rules beat matched LQDT under its stated assumptions; none is promoted to an executable/funded pilot. The user-confirmed 2026-11-08 priority is a **visible local screener**, then bounded automatic parameter search for a selected pair and basket; the reference SBRF calendar-spread strategy will be reproduced separately. Historical candle/settlement prices remain labelled analytical proxies under A-08, not actual fills. No screener UI, broker service or project VPS deployment exists yet, and no orders were submitted.
+Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, LQDT benchmark, CNYRUBF/CRZ6 exploratory strategies, six-pair price screen and four-pair funding screen are delivered. **S1 now provides a local dark-only research screener** with pair/strategy selection, editable parameters, LQDT-relative wealth/risk charts and saved comparisons. It uses ignored local data and labelled candle/settlement price proxies, not actual fills or a reconciled account. The tested frozen rules have not beaten matched LQDT under their stated assumptions. Automatic parameter search (S2), the independent SBRF near/far calendar reproduction (S3) and shared-capital basket search (S4) are not delivered. No broker connection, project VPS deployment or orders occurred.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -27,6 +27,7 @@ Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, L
 - [H3-F1 funding-only carry hypothesis](docs/development/funding-only-strategy.md)
 - [Flagship futures-pair screen](docs/development/pair-screen.md)
 - [Funding-aware flagship-pair screen](docs/development/funding-screen.md)
+- [S1 local screener: usage and limits](docs/development/screener-s1.md)
 - [CNYRUBF/CRZ6 point-in-time evidence audit](docs/development/point-in-time-evidence-audit.md)
 - [VTB account risk profile](docs/development/vtb-account-risk-profile.md)
 - [VTB EBS/KПУР account-risk screen](docs/development/vtb-account-risk-check.md)
@@ -41,6 +42,6 @@ Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, L
 
 ## How to continue
 
-Follow the revised [Stage-8 plan](docs/stages/08-planning.md): S1 local pair/strategy/parameter workbench and LQDT charts; S2 bounded pair optimizer; S3 independent SBRF reference-strategy reproduction; S4 shared-capital basket evaluation and optimizer. Each slice has its own acceptance gate. The detailed `СКРИНЕР_epub.md` is [preserved as a product hypothesis](docs/research/reuse/СКРИНЕР_epub.md), not verified market evidence. The received R01–R15 reports and [research pack](docs/research/README.md) remain source material for evidence gaps, not a prerequisite to showing the first local view.
+Run the [S1 local screener](docs/development/screener-s1.md) with `uv run python -m moex_spread_lab.cli screener --port 8765`, then open `http://127.0.0.1:8765/`. It needs ignored local research inputs; the guide explains how to prepare them. Follow the revised [Stage-8 plan](docs/stages/08-planning.md) for S2 bounded pair optimization, S3 independent SBRF reference-strategy reproduction and S4 shared-capital basket evaluation/search. Each slice has its own acceptance gate. The detailed `СКРИНЕР_epub.md` is [preserved as a product hypothesis](docs/research/reuse/СКРИНЕР_epub.md), not verified market evidence. The received R01–R15 reports and [research pack](docs/research/README.md) remain source material for evidence gaps, not a prerequisite to showing the first local view.
 
 Delegated numeric risk rules are provisional controls, not evidence of safe or profitable trading. Internal funding ceilings do not ring-fence the core brokerage portfolio.

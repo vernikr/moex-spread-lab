@@ -488,7 +488,7 @@ def run_mean_reversion_baseline(
         "release_state": "exploratory_inconclusive",
         "near": near,
         "far": far,
-        "direction": "near_minus_far",
+        "direction": series.get("direction", "near_minus_far"),
         "analysis_role": analysis_role,
         "timeframe": series.get("timeframe", "1d"),
         "price_interpretation": "ISS candle close analytical proxy under A-06",
@@ -504,7 +504,7 @@ def run_mean_reversion_baseline(
             "margin_gate": "passed",
         },
         "economics": {
-            "price_unit": "RUB_per_CNY",
+            "price_unit": series.get("price_unit", "RUB_per_CNY"),
             "near_lot_size": near_contract["lot_size"],
             "far_lot_size": far_contract["lot_size"],
             "near_tick_size": near_contract["tick_size"],
@@ -512,7 +512,7 @@ def run_mean_reversion_baseline(
             "near_tick_value_rub": near_contract["tick_value"],
             "far_tick_value_rub": far_contract["tick_value"],
             "pair_initial_margin_rub": _round(margin_per_pair * quantity),
-            "one_spread_tick_value_rub": _round(near_contract["tick_value"]),
+            "one_spread_tick_value_rub": _round(series.get("spread_tick_value_rub", near_contract["tick_value"])),
             "contract_terms_status": "current_snapshot_fallback_assumed",
         },
         "costs": {

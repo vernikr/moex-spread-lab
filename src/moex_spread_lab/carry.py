@@ -124,7 +124,7 @@ def fetch_history(
         if cache_path and cache_path.exists():
             try:
                 cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if cached.get("url") == url:
+                if isinstance(cached, dict) and cached.get("url") == url:
                     payload = cached.get("payload")
                     raw_hash = cached.get("raw_response_sha256")
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -279,7 +279,7 @@ def build_carry_study(
         "far": far,
         "direction": "short_near_long_far",
         "price_role": "EOD_SETTLEPRICE",
-        "funding_role": "CNYRUBF_SWAPRATE_received_by_short_near",
+        "funding_role": f"{near}_SWAPRATE_received_by_short_near",
         "rows": rows,
         "summary": {
             "common_row_count": len(rows),
@@ -642,14 +642,14 @@ def build_carry_strategy(
         "hypothesis": "funding_filtered_basis_reversion" if strategy_variant == "basis_median" else "funding_only_carry",
         "parameters": {
             "warmup_observations": warmup_observations,
-            "trailing_funding_condition": "mean_previous_20_daily_funding_received > 0",
+            "trailing_funding_condition": f"mean_previous_{warmup_observations}_daily_funding_received > 0",
             "entry_condition": (
-                "current_basis <= median_previous_20_basis"
+                f"current_basis <= median_previous_{warmup_observations}_basis"
                 if strategy_variant == "basis_median"
-                else "mean_previous_20_daily_funding_received > 0"
+                else f"mean_previous_{warmup_observations}_daily_funding_received > 0"
             ),
             "exit_conditions": [
-                *(["current_basis >= median_previous_20_basis"] if strategy_variant == "basis_median" else []),
+                *([f"current_basis >= median_previous_{warmup_observations}_basis"] if strategy_variant == "basis_median" else []),
                 "mean_previous_20_daily_funding_received <= 0",
                 "date >= far_expiry - 5 calendar days",
             ],

@@ -153,7 +153,7 @@ The following remain intentionally open until later evidence or implementation m
 - Telegram deployment details;
 - final sizing formula and risk thresholds;
 - BCS order semantics and automation permission;
-- the lightweight local UI technology; no public UI is in the current scope;
+- any later UI toolkit change beyond the delivered local standard-library S1 view; no public UI is in the current scope;
 - whether regime, text or neural components add measurable value.
 
 Stage 5 defines the module boundaries in [the architecture artifact](05-architecture.md). Stages 6–7 select conditional sources and record reference-project limits. The revised [Stage-8 plan](08-planning.md) prioritizes a visible local workbench and then guarded optimization. No live trading or broker write access is implied.

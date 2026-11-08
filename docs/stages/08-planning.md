@@ -4,7 +4,7 @@ Date: 2026-10-27
 
 ## Status and authority
 
-Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics, several exploratory runs and the S1 visible local workbench now exist; the next work packages prioritize guarded pair and basket parameter search, with a separate SBRF reference reproduction. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
+Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics and S1–S2 local screener/search slices now exist. The next separate packages are the SBRF reference reproduction and shared-capital basket evaluation/search. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
 
 The plan preserves the current business boundaries:
 
@@ -170,12 +170,12 @@ These are new work packages within Stage 9, not a reset of W0–W7 or a new stag
 | Order | Deliverable | Acceptance evidence |
 |---|---|---|
 | S1 — Visible local screener (delivered 2026-11-08) | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
-| S2 — Pair parameter laboratory | A finite declared grid for one selected pair/strategy, search budget and per-trial log, chronological train/validation and untouched confirmation, LQDT-relative objective subject to risk/cost/turnover constraints, stability map and comparison with defaults/no-trade. | All attempted and rejected configurations are countable; the selected in-sample winner is not labelled validated; failure or no robust improvement is a valid outcome. Reusing confirmation to tune again requires a new future window. |
+| S2 — Table-first common-parameter laboratory (delivered 2026-11-08) | One strategy/parameter set updates all compatible pair rows with percentage-only performance and risk. Checkboxes select independent pairs; a bounded grid around the current settings logs all trials, uses common dates and chronological training/validation, and searches a stable positive parameter neighborhood. | No isolated peak is promoted; an inconclusive/no-plateau result is valid. Later-period confirmation is shown only for a chosen region and is explicitly not a sealed prospective test on previously viewed history. Independent pair scores are not basket wealth. See [S2](../development/screener-s2.md). |
 | S3 — SBRF reference reproduction | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
 | S4 — Basket evaluation and search | Select a finite set of admitted pairs and compatible strategies, run concurrent proposals through one portfolio with frozen priority, shared RUB/margin/VM headroom and concentration checks; then search bounded per-pair and shared parameters on earlier periods only. | The basket `V/B/X/D` and risk path is not a sum of stand-alone curves; every blocked competing signal is logged. Selection across pairs/trials is included in the trial count and later-period checks. |
 | Later | Pair dossier, broader pool ranking, persistent experiment views, monitoring, Telegram, richer optimization methods and broker adapters. | Separate evidence, resource and live-authorization gates. |
 
-S1 is documented in [the local screener guide](../development/screener-s1.md). It displays incomplete inputs as exploratory or blocked, never as fabricated performance or permission to trade. S2 automatic pair search is the next core capability, not an indefinitely deferred enhancement. SBRF reproduction is prioritized ahead of broad discovery because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
+S1 and S2 are documented in the [local screener guide](../development/screener-s1.md) and [table/search record](../development/screener-s2.md). They display incomplete inputs as exploratory or blocked, never as fabricated performance or permission to trade. A checked set of independent pair studies is not the S4 shared-capital basket. SBRF reproduction remains a separate priority because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
 
 ## Business priority order
 
@@ -183,8 +183,8 @@ When resources or evidence are limited, use this order:
 
 1. correctness of the benchmark, finite-capital and risk ledger;
 2. a usable local pair/strategy/parameter comparison view on existing evidence;
-3. bounded pair optimization with trial history and honest later-period validation;
-4. SBRF reference-strategy reproduction and shared-capital basket evaluation/search;
+3. retain honest trial history and plateau validation in the delivered common-parameter search;
+4. SBRF reference-strategy reproduction and then shared-capital basket evaluation/search;
 5. broader pair coverage, richer interface and signal delivery only after these foundations.
 
 At every step, contract identity, price roles, delayed execution and cost/margin completeness are non-negotiable gates, not work to skip for a quicker chart.
@@ -224,7 +224,7 @@ Existing fixture-level gates remain in force; each new slice must demonstrate it
 | G11 Modularity | A provider, tariff and strategy can be replaced by manifest | Block module acceptance |
 | G12 Security | No credentials, account identifiers or private statements in artifacts | Block commit/release |
 | G13 Screener consistency | Selected pair/strategy/parameters reproduce the same dated wealth/risk series via CLI and local view; unsupported combinations explain why | Block visible result |
-| G14 Search integrity | Bounded trial registry, selection on earlier data, untouched later confirmation and parameter-neighborhood/cost sensitivity | No optimized-winner claim |
+| G14 Search integrity | Bounded trial registry, earlier-period selection, later-period diagnostic used only after selection, parameter-neighborhood and cost sensitivity; mark previously explored history as non-sealed | No optimized-winner or prospective-performance claim |
 | G15 Basket integrity | Concurrent signals share one finite-capital ledger, matched LQDT flows and trial history | No basket performance claim |
 
 ## Release states

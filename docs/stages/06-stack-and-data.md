@@ -18,7 +18,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 | Future automation | BCS Trade API as a later read-only-first candidate | Publicly documented interface, but account permission, data rights and collateral perimeter are unverified |
 | Strategy scope | Economic spread families first; statistical mean reversion as a control | Selected research order, not strategy approval |
 | Notifications | Telegram behind a durable outbox | Optional after offline replay is correct; delivery never authorizes exposure |
-| User interface | S1 local/private dark-only screener delivered | Reuses research outputs; no public dashboard or VPS listener |
+| User interface | S2 local/private dark-only pair table and bounded common-parameter search delivered | Percentage-only presentation over RUB internal accounting; no public dashboard or VPS listener |
 
 ## Technology baseline
 
@@ -28,7 +28,7 @@ The selection favors reproducibility, low operating cost, manual VTB feasibility
 - Versioned source and configuration in Git; secrets and account material only through secure runtime configuration.
 - Parquet or equivalent partitioned files for immutable research datasets, with raw source captures retained only where rights permit.
 - DuckDB for local analytical queries and batch research; it is not part of the constrained VPS runtime.
-- Existing deterministic command-line runs remain the calculation boundary. S1 serves local HTML/CSS/JavaScript through a Python standard-library loopback server and calls the same research engines. It adds no frontend framework or second strategy/accounting implementation.
+- Existing deterministic command-line runs remain the calculation boundary. The S2 table/search view uses local HTML/CSS/JavaScript and a Python standard-library loopback server over the same research engines. It adds no frontend framework or second strategy/accounting implementation.
 
 ### VPS, if later activated
 
@@ -107,7 +107,7 @@ The project will not use an unrestricted all-pairs search. The existing research
 5. a simple statistical mean-reversion control, labelled as a falsification benchmark rather than an economic claim;
 6. later liquid index/calendar families as robustness comparisons.
 
-Commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. Parameter search is now a core research capability, but it is bounded by a declared pair/basket, strategy schema, trial budget and chronological validation; basket search waits for shared-capital portfolio composition.
+The S2 table extends the named research registry with SLVRUBF/S2Z6, EURRUBF/EuZ6, BTCUSDF/BTZ6, GLZ6/GLH7 and CRZ6/CRH7. The BTC row has short history and the EUR row fails the working capital screen; neither becomes a candidate through display alone. The two dated calendars use the price-only control, not perpetual funding. See [the S2 record](../development/screener-s2.md). Other commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. Common-parameter search across independently evaluated pairs is now a core research capability; true basket search still waits for shared-capital portfolio composition.
 
 The first data resolution is:
 

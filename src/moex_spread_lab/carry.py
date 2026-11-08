@@ -221,7 +221,7 @@ def build_carry_study(
         raise CarryError("fewer than two common EOD settlement dates")
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
     far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
-    regimes = FUNDING_REGIMES if funding_regimes is None else funding_regimes
+    regimes = FUNDING_REGIMES if funding_regimes is None and near == "CNYRUBF" else (funding_regimes or ())
     rows = []
     cumulative_mark = 0.0
     cumulative_funding = 0.0

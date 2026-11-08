@@ -18,6 +18,7 @@ from moex_spread_lab.screener_app import (
     catalog,
     make_handler,
 )
+from moex_spread_lab.screener_search import screen_table
 
 
 class ScreenerAppTests(unittest.TestCase):
@@ -107,6 +108,26 @@ class ScreenerAppTests(unittest.TestCase):
             first["run_id"],
             build_result(self.inputs, {**base, "pair": "GLDRUBF/GLZ6"})["run_id"],
         )
+
+    def test_table_applies_one_rule_to_all_rows_and_withholds_short_history(self):
+        table = screen_table(
+            self.inputs,
+            {
+                "strategy": "mean_reversion",
+                "parameters": {"lookback": 15, "entry_z": 1.5, "exit_z": 0.4},
+                "cost": "stress",
+            },
+        )
+        rows = {row["id"]: row for row in table["pairs"]}
+        self.assertGreaterEqual(len(rows), 12)
+        self.assertEqual(rows["CNYRUBF/CRZ6"]["status"], "short_history")
+        self.assertEqual(rows["GLDRUBF/GLZ6"]["status"], "short_history")
+        self.assertIsNone(rows["CNYRUBF/CRZ6"]["metrics"]["annualized_excess_pp"])
+        self.assertEqual(rows["GLDRUBF/GLZ6"]["chart"][0]["strategy_index"], 100)
+        self.assertTrue(
+            all("rub" not in key.lower() for key in rows["GLDRUBF/GLZ6"]["metrics"])
+        )
+        self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
 
     def test_cli_and_view_share_the_same_result(self):
         selection = {
@@ -235,6 +256,26 @@ class ScreenerAppTests(unittest.TestCase):
         repeated = connection.getresponse()
         self.assertEqual(repeated.status, 200)
         repeated.read()
+        screen_payload = json.dumps(
+            {
+                "strategy": "mean_reversion",
+                "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
+            }
+        )
+        connection.request("POST", "/api/screen", screen_payload, headers)
+        screen_response = connection.getresponse()
+        self.assertEqual(screen_response.status, 200)
+        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 12)
+        self.assertEqual(
+            len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1
+        )
+        search_payload = json.dumps(
+            {"pairs": ["CNYRUBF/CRZ6"], "strategy": "mean_reversion"}
+        )
+        connection.request("POST", "/api/optimize", search_payload, headers)
+        short_history = connection.getresponse()
+        self.assertEqual(short_history.status, 400)
+        self.assertIn("common dates", json.loads(short_history.read())["error"])
         connection.close()
         self.assertEqual(len(ScreenerStore(self.inputs).list_runs()), 1)
         self.assertEqual(

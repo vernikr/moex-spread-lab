@@ -12,6 +12,6 @@ Source: `inputs/brief.md`, section 8. At least one separate turn and a repositor
 | 6 | Stack and data sources | Evidence-based selections and limitations | Artifact delivered; local screener and SBRF reference intake prioritized |
 | 7 | Reuse from previous projects | Reuse assessment, point-in-time checks, explicit updates to stages 4–6 | Artifact delivered; price/event/data-source revisions recorded |
 | 8 | Planning | Prioritized delivery and validation plan | Artifact delivered; revised Stage-9 S1–S4 screener/search slices defined |
-| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W0–W7, exploratory screens and S1 local screener delivered. Next separate slices: S2 pair search, S3 SBRF reproduction, S4 shared-capital basket search |
+| 9 | Development | Working software, tests and concise operating/interpretation guide | In progress; W0–W7 and S1–S2 table-first screener/common-parameter search delivered. Next separate slices: S3 SBRF reproduction and S4 shared-capital basket search |
 
 Research findings may change the initial concept. No stage assumes profitable or even feasible real trading with the test allocation.

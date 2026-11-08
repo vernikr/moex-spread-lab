@@ -101,7 +101,6 @@ class CarryTests(unittest.TestCase):
                 contracts,
                 near="NEAR",
                 far="FAR",
-                funding_regimes=(),
             )
 
         self.assertEqual(result["summary"]["total_basis_pnl"], 1.0)

@@ -1,0 +1,440 @@
+"""Percentage-only screener projections and bounded parameter search."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections.abc import Callable
+from datetime import date
+from itertools import product
+from typing import Any
+
+from .screener_app import (
+    PAIRS,
+    STRATEGIES,
+    ScreenerError,
+    ScreenerInputs,
+    _parameters,
+    build_result,
+    catalog,
+)
+from .w0 import W0Error
+
+INITIAL_CAPITAL = 30_000.0
+PLATEAU_RATIO = 0.7
+MIN_COMMON_OBSERVATIONS = 80
+MIN_TABLE_OBSERVATIONS = 60
+
+
+def _annualized(values: list[dict[str, Any]], start: str, end: str) -> float | None:
+    rows = {row["date"]: row for row in values}
+    if start not in rows or end not in rows:
+        return None
+    days = (date.fromisoformat(end) - date.fromisoformat(start)).days
+    first, last = rows[start], rows[end]
+    if days < 30 or min(first["V"], first["B"], last["V"], last["B"]) <= 0:
+        return None
+    strategy = (last["V"] / first["V"]) ** (365 / days) - 1
+    benchmark = (last["B"] / first["B"]) ** (365 / days) - 1
+    return round((strategy - benchmark) * 100, 4)
+
+
+def _projection(result: dict[str, Any]) -> dict[str, Any]:
+    rows = result["daily"]
+    first, last = rows[0], rows[-1]
+    days = (date.fromisoformat(last["date"]) - date.fromisoformat(first["date"])).days
+    annualized = (
+        _annualized(rows, first["date"], last["date"])
+        if len(rows) >= MIN_TABLE_OBSERVATIONS
+        else None
+    )
+    metrics = result["metrics"]
+    return {
+        "status": "exploratory" if annualized is not None else "short_history",
+        "reason": None
+        if annualized is not None
+        else "Annualized result withheld: insufficient observations, calendar span or valid wealth path.",
+        "period": result["period"],
+        "metrics": {
+            "closed_trades": metrics["closed_trades"],
+            "open_positions": metrics["open_positions"],
+            "annualized_excess_pp": annualized,
+            "max_excess_drawdown_pct": round(
+                metrics["max_excess_drawdown_rub"] / INITIAL_CAPITAL * 100, 2
+            ),
+            "worst_shortfall_pct": round(
+                metrics["worst_lqdt_shortfall_rub"] / INITIAL_CAPITAL * 100, 2
+            ),
+            "current_margin_pct": round(
+                metrics["current_pair_margin_rub"] / INITIAL_CAPITAL * 100, 2
+            ),
+            "stress_headroom_pct": round(
+                metrics["stress_remaining_capital_rub"] / INITIAL_CAPITAL * 100, 2
+            ),
+        },
+        "chart": [
+            {
+                "date": row["date"],
+                "strategy_index": round(row["V"] / first["V"] * 100, 3),
+                "lqdt_index": round(row["B"] / first["B"] * 100, 3),
+                "excess_pct": round(row["X"] / INITIAL_CAPITAL * 100, 3),
+            }
+            for row in rows
+        ],
+        "price_role": result["price_role"],
+        "run_id": result["run_id"],
+        "notes": result["notes"],
+        "calendar_days": days,
+    }
+
+
+def screen_table(
+    inputs: ScreenerInputs,
+    selection: dict[str, Any],
+    *,
+    evaluator: Callable = build_result,
+) -> dict[str, Any]:
+    if not isinstance(selection, dict):
+        raise ScreenerError("screen selection must be an object")
+    strategy = selection.get("strategy")
+    if not isinstance(strategy, str) or strategy not in STRATEGIES:
+        raise ScreenerError("unknown strategy")
+    parameters = _parameters(selection, strategy)
+    cost = selection.get("cost", "stress")
+    if not isinstance(cost, str) or cost not in {"low", "base", "stress"}:
+        raise ScreenerError("unknown illustrative cost scenario")
+    pairs = []
+    for pair in catalog(inputs)["pairs"]:
+        row = {
+            key: pair[key] for key in ("id", "family", "expiry", "current_margin_pct")
+        }
+        if not pair["strategies"][strategy]:
+            row.update(
+                {
+                    "status": "unavailable",
+                    "reason": "Incompatible strategy or missing local input.",
+                }
+            )
+        else:
+            try:
+                result = evaluator(
+                    inputs,
+                    {
+                        "pair": pair["id"],
+                        "strategy": strategy,
+                        "parameters": parameters,
+                        "cost": cost,
+                    },
+                )
+                row.update(_projection(result))
+            except (W0Error, OSError, ValueError) as exc:
+                row.update({"status": "blocked", "reason": str(exc)})
+        pairs.append(row)
+    identity = {
+        "strategy": strategy,
+        "parameters": parameters,
+        "cost": cost,
+        "pairs": [(row["id"], row.get("run_id"), row["status"]) for row in pairs],
+    }
+    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
+        :16
+    ]
+    return {
+        "schema_version": "screener-table.v1",
+        "run_id": run_id,
+        "selection": {"strategy": strategy, "parameters": parameters, "cost": cost},
+        "pairs": pairs,
+        "warning": "Independent pair projections, not a shared-capital basket. Annualized excess compares geometric strategy and LQDT returns over each row's own dates; periods may differ. Historical proxies are not fills.",
+    }
+
+
+def _grid(
+    strategy: str, seed: dict[str, Any]
+) -> tuple[list[str], list[tuple[Any, ...]]]:
+    lookbacks = sorted(
+        {
+            value
+            for delta in (-5, 0, 5)
+            if 5 <= (value := seed["lookback"] + delta) <= 80
+        }
+    )
+    if strategy == "funding_only":
+        lookbacks = sorted(
+            {
+                value
+                for delta in (-10, -5, 0, 5, 10)
+                if 5 <= (value := seed["lookback"] + delta) <= 80
+            }
+        )
+        return ["lookback"], [(value,) for value in lookbacks]
+    entries = sorted(
+        {
+            round(value, 3)
+            for delta in (-0.5, 0, 0.5)
+            if 0.5 <= (value := seed["entry_z"] + delta) <= 5
+        }
+    )
+    exits = sorted(
+        {
+            round(value, 3)
+            for delta in (-0.25, 0, 0.25)
+            if 0 <= (value := seed["exit_z"] + delta) < min(entries)
+        }
+    )
+    if len(lookbacks) < 3 or len(entries) < 3 or len(exits) < 3:
+        raise ScreenerError(
+            "choose seed parameters away from the boundaries to search a complete neighborhood"
+        )
+    return ["lookback", "entry_z", "exit_z"], list(product(lookbacks, entries, exits))
+
+
+def _neighbors(
+    point: tuple[Any, ...], points: list[tuple[Any, ...]]
+) -> list[tuple[Any, ...]]:
+    axes = [sorted({item[index] for item in points}) for index in range(len(point))]
+    result = []
+    for other in points:
+        changed = [index for index in range(len(point)) if point[index] != other[index]]
+        if len(changed) != 1:
+            continue
+        index = changed[0]
+        if abs(axes[index].index(point[index]) - axes[index].index(other[index])) == 1:
+            result.append(other)
+    return result
+
+
+def _segment(rows: list[dict[str, Any]], first: str, last: str) -> float | None:
+    return _annualized(rows, first, last)
+
+
+def optimize(
+    inputs: ScreenerInputs,
+    request: dict[str, Any],
+    *,
+    evaluator: Callable = build_result,
+    available: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise ScreenerError("search request must be an object")
+    selected = request.get("pairs")
+    if (
+        not isinstance(selected, list)
+        or not 1 <= len(selected) <= len(PAIRS)
+        or len(set(map(str, selected))) != len(selected)
+    ):
+        raise ScreenerError("select unique registered pairs")
+    ids = {pair["pair_id"] for pair in PAIRS}
+    if any(not isinstance(pair, str) or pair not in ids for pair in selected):
+        raise ScreenerError("search includes an unknown pair")
+    strategy = request.get("strategy")
+    if not isinstance(strategy, str) or strategy not in STRATEGIES:
+        raise ScreenerError("unknown strategy")
+    cost = request.get("cost", "stress")
+    if not isinstance(cost, str) or cost not in {"low", "base", "stress"}:
+        raise ScreenerError("unknown illustrative cost scenario")
+    seed = _parameters(request, strategy)
+    catalog_by_id = {
+        pair["id"]: pair for pair in (available or catalog(inputs))["pairs"]
+    }
+    invalid = [
+        pair for pair in selected if not catalog_by_id[pair]["strategies"][strategy]
+    ]
+    if invalid:
+        raise ScreenerError(
+            "selected pairs lack compatible local inputs: " + ", ".join(invalid)
+        )
+    axes, points = _grid(strategy, seed)
+    initial = {}
+    for pair in selected:
+        try:
+            initial[pair] = evaluator(
+                inputs,
+                {"pair": pair, "strategy": strategy, "parameters": seed, "cost": cost},
+            )
+        except (W0Error, OSError, ValueError) as exc:
+            raise ScreenerError(f"{pair} cannot be searched: {exc}") from exc
+    dates = sorted(
+        set.intersection(
+            *({row["date"] for row in result["daily"]} for result in initial.values())
+        )
+    )
+    if len(dates) < MIN_COMMON_OBSERVATIONS:
+        raise ScreenerError(
+            f"selected pairs have only {len(dates)} common dates; at least {MIN_COMMON_OBSERVATIONS} required"
+        )
+    train_end = int(len(dates) * 0.5)
+    validation_end = int(len(dates) * 0.75)
+    train_dates = (dates[0], dates[train_end - 1])
+    validation_dates = (dates[train_end - 1], dates[validation_end - 1])
+    confirmation_dates = (dates[validation_end - 1], dates[-1])
+    if any(
+        (date.fromisoformat(end) - date.fromisoformat(start)).days < 30
+        for start, end in (train_dates, validation_dates, confirmation_dates)
+    ):
+        raise ScreenerError(
+            "each chronological segment needs at least 30 calendar days"
+        )
+    trials = []
+    reports = {}
+    for point in points:
+        params = dict(zip(axes, point))
+        trial = {"parameters": params, "status": "evaluated", "reason": None}
+        pair_reports = {}
+        try:
+            for pair in selected:
+                pair_reports[pair] = evaluator(
+                    inputs,
+                    {
+                        "pair": pair,
+                        "strategy": strategy,
+                        "parameters": params,
+                        "cost": cost,
+                    },
+                )
+            train = [
+                _segment(pair_reports[pair]["daily"], *train_dates) for pair in selected
+            ]
+            validation = [
+                _segment(pair_reports[pair]["daily"], *validation_dates)
+                for pair in selected
+            ]
+            if any(
+                value is None or not math.isfinite(value)
+                for value in (*train, *validation)
+            ):
+                raise ScreenerError("non-annualizable common window")
+            visible_rows = [
+                row
+                for result in pair_reports.values()
+                for row in result["daily"]
+                if row["date"] <= validation_dates[1] and row["date"] >= dates[0]
+            ]
+            max_dd = max(row["D"] for row in visible_rows) / INITIAL_CAPITAL * 100
+            worst_shortfall = (
+                min(row["X"] for row in visible_rows) / INITIAL_CAPITAL * 100
+            )
+            trial.update(
+                {
+                    "train_min_excess_pp": round(min(train), 3),
+                    "validation_min_excess_pp": round(min(validation), 3),
+                    "validation_by_pair_pp": {
+                        pair: round(value, 3)
+                        for pair, value in zip(selected, validation)
+                    },
+                    "max_excess_drawdown_pct": round(max_dd, 2),
+                    "worst_shortfall_pct": round(worst_shortfall, 2),
+                }
+            )
+            if (
+                max_dd >= 10000 / INITIAL_CAPITAL * 100
+                or worst_shortfall <= -15000 / INITIAL_CAPITAL * 100
+            ):
+                trial.update(
+                    {
+                        "status": "risk_rejected",
+                        "reason": "Working benchmark-relative research limits breached.",
+                    }
+                )
+            else:
+                reports[point] = pair_reports
+        except (W0Error, OSError, ValueError) as exc:
+            trial.update({"status": "rejected", "reason": str(exc)})
+        trials.append(trial)
+    by_point = {
+        tuple(trial["parameters"][axis] for axis in axes): trial for trial in trials
+    }
+    plateaus = []
+    for point, trial in by_point.items():
+        if (
+            trial["status"] != "evaluated"
+            or trial["train_min_excess_pp"] <= 0
+            or trial["validation_min_excess_pp"] <= 0
+        ):
+            continue
+        neighbors = _neighbors(point, points)
+        stable = [
+            other
+            for other in neighbors
+            if by_point[other]["status"] == "evaluated"
+            and by_point[other]["validation_min_excess_pp"]
+            >= PLATEAU_RATIO * trial["validation_min_excess_pp"]
+            and by_point[other]["validation_min_excess_pp"] > 0
+        ]
+        trial["stable_neighbor_count"] = len(stable)
+        required = 2 if strategy == "funding_only" else 3
+        if len(stable) >= required:
+            trial["plateau"] = True
+            plateaus.append(
+                (
+                    min(
+                        by_point[other]["validation_min_excess_pp"]
+                        for other in (*stable, point)
+                    ),
+                    point,
+                    stable,
+                )
+            )
+    plateaus.sort(reverse=True)
+    chosen = plateaus[0] if plateaus else None
+    confirmation = None
+    if chosen:
+        _, point, stable = chosen
+        confirmation = {
+            pair: _segment(reports[point][pair]["daily"], *confirmation_dates)
+            for pair in selected
+        }
+    identity = {
+        "pairs": selected,
+        "strategy": strategy,
+        "cost": cost,
+        "seed": seed,
+        "dates": dates,
+        "trials": trials,
+        "confirmation": confirmation,
+        "input_run_ids": {pair: initial[pair].get("run_id") for pair in selected},
+    }
+    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
+        :16
+    ]
+    return {
+        "schema_version": "screener-search.v1",
+        "run_id": run_id,
+        "status": "exploratory_plateau_found"
+        if chosen
+        else "no_stable_positive_plateau",
+        "scope": "independent_pair_studies_not_a_shared_capital_basket",
+        "input_run_ids": identity["input_run_ids"],
+        "selection": {
+            "pairs": selected,
+            "strategy": strategy,
+            "cost": cost,
+            "seed_parameters": seed,
+        },
+        "method": {
+            "objective": "maximize the weakest selected pair's annualized excess over LQDT, in percentage points",
+            "search_axes": axes,
+            "candidate_count": len(points),
+            "plateau_ratio": PLATEAU_RATIO,
+            "minimum_stable_neighbors": 2 if strategy == "funding_only" else 3,
+            "risk_basis": "working 10k excess drawdown / 15k shortfall limits on 30k initial research allocation",
+            "selection_data": "chronological training and validation only",
+            "confirmation_note": "Confirmation was not used by this search, but the same history may have been viewed in other experiments; this is not a sealed prospective test.",
+        },
+        "periods": {
+            "training": train_dates,
+            "validation": validation_dates,
+            "confirmation": confirmation_dates,
+        },
+        "selected_parameters": dict(zip(axes, chosen[1])) if chosen else None,
+        "stable_neighbors": [dict(zip(axes, point)) for point in chosen[2]]
+        if chosen
+        else [],
+        "confirmation_by_pair_pp": {
+            pair: round(value, 3) if value is not None else None
+            for pair, value in confirmation.items()
+        }
+        if confirmation
+        else None,
+        "trials": trials,
+    }

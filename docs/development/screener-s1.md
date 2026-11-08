@@ -2,6 +2,8 @@
 
 Date: 2026-11-08
 
+This records the first visible slice. The current table-first interface and common-parameter search supersede its single-pair layout; see [S2](screener-s2.md). Input preparation and the local launch command below remain applicable.
+
 ## Delivered
 
 A dark-only, loopback-only research view over the existing offline engines. It lists the CNYRUBF/CRZ6 pair and the six previously screened perpetual/quarterly pairs when their ignored local inputs exist. Two compatible strategy choices are available where inputs permit: price-only mean reversion and short-perpetual/long-dated funding-only carry. The user can edit the lookback and, for mean reversion, entry/exit deviations; choose low/base/stress illustrative costs; run and save configurations; and compare aligned wealth curves. Missing local inputs disable the affected choice with an intake reason.

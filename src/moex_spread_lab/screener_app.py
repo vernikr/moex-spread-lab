@@ -7,6 +7,7 @@ import json
 import math
 import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -14,10 +15,51 @@ from typing import Any
 from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study, fetch_history
-from .screener import SCREEN_PAIRS, _basis_daily_pnl, _normalized_series
+from .screener import SCREEN_PAIRS, _normalized_series
 from .w0 import W0Error
 
-PAIRS = ({"pair_id": "CNYRUBF/CRZ6", "near": "CNYRUBF", "far": "CRZ6"}, *SCREEN_PAIRS)
+EXTRA_PAIRS = (
+    {
+        "pair_id": "SLVRUBF/S2Z6",
+        "near": "SLVRUBF",
+        "far": "S2Z6",
+        "family": "perpetual_quarterly_same_asset",
+    },
+    {
+        "pair_id": "EURRUBF/EuZ6",
+        "near": "EURRUBF",
+        "far": "EuZ6",
+        "family": "perpetual_quarterly_same_asset",
+    },
+    {
+        "pair_id": "BTCUSDF/BTZ6",
+        "near": "BTCUSDF",
+        "far": "BTZ6",
+        "family": "perpetual_quarterly_same_asset",
+    },
+    {
+        "pair_id": "GLZ6/GLH7",
+        "near": "GLZ6",
+        "far": "GLH7",
+        "family": "dated_calendar_same_asset",
+    },
+    {
+        "pair_id": "CRZ6/CRH7",
+        "near": "CRZ6",
+        "far": "CRH7",
+        "family": "dated_calendar_same_asset",
+    },
+)
+PAIRS = (
+    {
+        "pair_id": "CNYRUBF/CRZ6",
+        "near": "CNYRUBF",
+        "far": "CRZ6",
+        "family": "perpetual_quarterly_same_asset",
+    },
+    *SCREEN_PAIRS,
+    *EXTRA_PAIRS,
+)
 STRATEGIES = {
     "mean_reversion": {
         "label": "Spread mean reversion",
@@ -30,7 +72,10 @@ STRATEGIES = {
 }
 HISTORY_WINDOWS = {
     "CNYRUBF/CRZ6": ("2025-06-17", "2026-10-27"),
-    **{pair["pair_id"]: ("2026-03-23", "2026-10-27") for pair in SCREEN_PAIRS},
+    **{
+        pair["pair_id"]: ("2026-03-23", "2026-10-27")
+        for pair in (*SCREEN_PAIRS, *EXTRA_PAIRS)
+    },
 }
 
 
@@ -57,9 +102,20 @@ class ScreenerInputs:
     def history(self) -> Path:
         return self.root / "data/analytics/screener-runs.jsonl"
 
+    @property
+    def screen_history(self) -> Path:
+        return self.root / "data/analytics/screener-screens.jsonl"
+
+    @property
+    def search_history(self) -> Path:
+        return self.root / "data/analytics/screener-searches.jsonl"
+
     def candles(self, pair_id: str, secid: str) -> Path:
-        folder = "candles" if pair_id == "CNYRUBF/CRZ6" else "candles-screen"
-        return self.root / "data/w1" / folder / f"{secid}_1d.json"
+        primary = self.root / "data/w1/candles-screen" / f"{secid}_1d.json"
+        original = self.root / "data/w1/candles" / f"{secid}_1d.json"
+        if pair_id == "CNYRUBF/CRZ6" or not primary.is_file():
+            return original
+        return primary
 
     def history_cache(self, pair_id: str) -> Path:
         folder = (
@@ -84,6 +140,16 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
 
 
 def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
+    try:
+        instruments = {
+            row["secid"]: row
+            for row in json.loads(inputs.contracts.read_text(encoding="utf-8"))[
+                "instruments"
+            ]
+            if isinstance(row, dict) and row.get("secid")
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        instruments = {}
     pairs = []
     for pair in PAIRS:
         pair_id = pair["pair_id"]
@@ -103,11 +169,22 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         )
         available = {
             "mean_reversion": all(path.is_file() for path in price_files),
-            "funding_only": all(path.is_file() for path in funding_files),
+            "funding_only": pair["family"] == "perpetual_quarterly_same_asset"
+            and all(path.is_file() for path in funding_files),
         }
+        near_terms, far_terms = instruments.get(near, {}), instruments.get(far, {})
+        margins = (near_terms.get("initial_margin"), far_terms.get("initial_margin"))
+        margin_pct = (
+            round(sum(float(value) for value in margins) / 30_000 * 100, 2)
+            if all(isinstance(value, (int, float)) for value in margins)
+            else None
+        )
         pairs.append(
             {
                 "id": pair_id,
+                "family": pair["family"],
+                "expiry": far_terms.get("expiry"),
+                "current_margin_pct": margin_pct,
                 "strategies": available,
                 "status": "local_inputs_available"
                 if any(available.values())
@@ -193,9 +270,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             near=near,
             far=far,
         )
-        risk = assess_vtb_pair(
-            inputs.contracts, near, far, observed_daily_pnl=_basis_daily_pnl(series)
-        )
+        risk = assess_vtb_pair(inputs.contracts, near, far)
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("pair fails the working capital stress screen")
         report = run_mean_reversion_baseline(
@@ -245,7 +320,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             warmup_observations=params["lookback"],
             strategy_variant="funding_only",
         )
-        risk = report["account_risk"]
+        risk = assess_vtb_pair(inputs.contracts, near, far)
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("pair fails the working capital stress screen")
         daily = [
@@ -314,6 +389,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             "Matched LQDT price path is not an account-statement reconciliation.",
             "Current contract/margin snapshots are fallback assumptions, not dated broker terms.",
             "Costs are illustrative, not historical execution evidence.",
+            "Capital screening uses fixed working buffers and current margin snapshots, not future-known losses.",
             *notes,
         ],
         "provenance": provenance,
@@ -339,22 +415,46 @@ class ScreenerStore:
         self.inputs = inputs
         self.lock = threading.Lock()
 
-    def list_runs(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def _recent(path: Path) -> list[dict[str, Any]]:
         try:
-            lines = self.inputs.history.read_text(encoding="utf-8").splitlines()
+            lines = path.read_text(encoding="utf-8").splitlines()
         except FileNotFoundError:
             return []
         return [json.loads(line) for line in lines[-20:] if line]
 
-    def save(self, result: dict[str, Any]) -> None:
+    def list_runs(self) -> list[dict[str, Any]]:
+        return self._recent(self.inputs.history)
+
+    def list_searches(self) -> list[dict[str, Any]]:
+        return self._recent(self.inputs.search_history)
+
+    def _save(self, path: Path, result: dict[str, Any]) -> None:
         with self.lock:
-            self.inputs.history.parent.mkdir(parents=True, exist_ok=True)
-            if any(run["run_id"] == result["run_id"] for run in self.list_runs()):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if any(run["run_id"] == result["run_id"] for run in self._recent(path)):
                 return
-            with self.inputs.history.open("a", encoding="utf-8") as handle:
+            record = {**result, "recorded_at": datetime.now(UTC).isoformat()}
+            with path.open("a", encoding="utf-8") as handle:
                 handle.write(
-                    json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n"
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
                 )
+
+    def save(self, result: dict[str, Any]) -> None:
+        self._save(self.inputs.history, result)
+
+    def save_screen(self, result: dict[str, Any]) -> None:
+        compact = {
+            key: result[key] for key in ("run_id", "schema_version", "selection")
+        }
+        compact["pairs"] = [
+            {key: row[key] for key in ("id", "status", "metrics") if key in row}
+            for row in result["pairs"]
+        ]
+        self._save(self.inputs.screen_history, compact)
+
+    def save_search(self, result: dict[str, Any]) -> None:
+        self._save(self.inputs.search_history, result)
 
 
 def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
@@ -397,6 +497,8 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 self._json(200, catalog(store.inputs))
             elif self.path == "/api/runs":
                 self._json(200, store.list_runs())
+            elif self.path == "/api/searches":
+                self._json(200, store.list_searches())
             else:
                 self._json(404, {"error": "not found"})
 
@@ -408,7 +510,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self._json(403, {"error": "local origin only"})
                 return
-            if self.path != "/api/run":
+            if self.path not in {"/api/run", "/api/screen", "/api/optimize"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -422,8 +524,18 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if not 0 < size <= 8192:
                     raise ScreenerError("request size must be 1–8192 bytes")
                 selection = json.loads(self.rfile.read(size))
-                result = build_result(store.inputs, selection)
-                store.save(result)
+                if self.path == "/api/run":
+                    result = build_result(store.inputs, selection)
+                    store.save(result)
+                else:
+                    from .screener_search import optimize, screen_table
+
+                    if self.path == "/api/screen":
+                        result = screen_table(store.inputs, selection)
+                        store.save_screen(result)
+                    else:
+                        result = optimize(store.inputs, selection)
+                        store.save_search(result)
             except (ValueError, json.JSONDecodeError, W0Error, OSError) as exc:
                 self._json(400, {"error": str(exc)})
                 return

@@ -19,6 +19,8 @@ Updated 2026-11-08 after the user's screener-first product direction. User answe
 
 The user prioritizes a private research screener over a signal-first workflow. It must let the user select a futures pair, strategy and parameters, inspect the resulting strategy and matched LQDT wealth curves and return/risk measures, and automatically search parameters for a chosen pair or basket of pairs. The user wants a minimal visible screener soon. The saved `СКРИНЕР_epub.md` is a detailed product hypothesis, not evidence of an existing product or validated trading rules.
 
+The user subsequently specified a table-first interface (2026-11-08): each row is a pair with source context, trade count, annualized performance versus LQDT and percentage risk, never absolute RUB UI metrics. One strategy and its parameters apply to all pairs; row checkboxes select pairs for automatic search of a stable parameter plateau. S2 implements this across independent pair studies. It does not override A-03's single shared-capital virtual portfolio for future basket performance.
+
 This revises the order of Stage-9 delivery, not the research/live boundary: first a local dark-only analytical interface and transparent experiments, then guarded parameter search and portfolio-level basket evaluation; monitoring, Telegram, broker integration and trading remain separately gated. A good-looking backtest, including the reference SBRF calendar-spread result, is not approved performance. The original brief remains the source record; current priorities are in Stages 4–8.
 
 ## Delegated operational defaults (not empirical findings)

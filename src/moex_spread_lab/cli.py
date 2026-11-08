@@ -511,6 +511,7 @@ def main() -> int:
                 args.contracts,
                 near=args.near,
                 far=args.far,
+                funding_regimes=None if args.near == "CNYRUBF" else (),
             )
             write_carry_study(result, args.output)
             print(json.dumps({

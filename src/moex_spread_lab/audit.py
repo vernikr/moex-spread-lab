@@ -1,4 +1,4 @@
-"""Independent re-computation and data/benchmark audit of the price-only screener control."""
+"""Independent re-computation and data audit of the screener's price-only control."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .analytics import get_cost_scenario, run_mean_reversion_baseline
+from .analytics import run_mean_reversion_baseline
+from .costs import tariff_profile
 from .screener import _normalized_series
-from .screener_app import PAIRS, ScreenerInputs
+from .screener_app import MIN_DAILY_VOLUME, PAIRS, ScreenerInputs
 from .w0 import W0Error
 
-THIN_VOLUME = 100
-INITIAL_CAPITAL = 30_000.0
+SLIPPAGE_GRID = (0.0, 1.0, 2.0)
 
 
 def _candles(path: Path) -> dict[str, dict[str, Any]]:
@@ -22,12 +22,15 @@ def _candles(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def independent_gross(near: dict, far: dict, near_mult: float, far_mult: float, *, lookback: int = 20,
-                      entry_z: float = 2.0, exit_z: float = 0.5, delay: int = 1) -> tuple[float, int]:
-    """Re-implement the zero-cost mean-reversion control from raw candle closes."""
+                      entry_z: float = 2.0, exit_z: float = 0.5, delay: int = 1,
+                      fill: str = "close") -> tuple[float, int]:
+    """Re-implement the zero-cost mean-reversion control from raw candles (signal on closes)."""
     stamps = sorted(set(near) & set(far))
+    price = "open" if fill == "open" else "close"
     spread = [near[t]["close"] * near_mult - far[t]["close"] * far_mult for t in stamps]
+    filled = [near[t][price] * near_mult - far[t][price] * far_mult for t in stamps]
     position, entry, gross, trades = 0, 0.0, 0.0, 0
-    for index, value in enumerate(spread):
+    for index, value in enumerate(filled):
         signal = index - delay
         if signal < lookback:
             continue
@@ -55,30 +58,33 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
         if not (near_path.is_file() and far_path.is_file()):
             continue
         near, far = _candles(near_path), _candles(far_path)
+        common = set(near) & set(far)
         mult = {s: contracts[s]["tick_value"] / contracts[s]["tick_size"] for s in (near_id, far_id)}
+        min_volume = {s: min(r["volume"] for t, r in c.items() if t in common) for s, c in ((near_id, near), (far_id, far))}
         item: dict[str, Any] = {
             "pair": pair["pair_id"],
-            "rows": len(set(near) & set(far)),
-            "far_thin_day_share": round(sum(r["volume"] < THIN_VOLUME for r in far.values()) / len(far), 3),
-            "near_thin_day_share": round(sum(r["volume"] < THIN_VOLUME for r in near.values()) / len(near), 3),
-            "weekend_rows": sum(date.fromisoformat(t[:10]).weekday() >= 5 for t in set(near) & set(far)),
+            "rows": len(common),
+            "min_daily_volume": min_volume,
+            "tradable_every_day": min(min_volume.values()) >= MIN_DAILY_VOLUME,
+            "weekend_rows": sum(date.fromisoformat(t[:10]).weekday() >= 5 for t in common),
             "close_outside_range": sum(not r["low"] <= r["close"] <= r["high"] for r in (*near.values(), *far.values())),
+            "open_outside_range": sum(not r["low"] <= r["open"] <= r["high"] for r in (*near.values(), *far.values())),
         }
         try:
             series = _normalized_series(near_path, far_path, inputs.benchmark, inputs.contracts, near=near_id, far=far_id)
-            runs = {name: run_mean_reversion_baseline(series, analysis_role="diagnostic_only", cost_profile=get_cost_scenario(name))
-                    for name in ("stress", "low")}
+            runs = {
+                slippage: run_mean_reversion_baseline(
+                    series, analysis_role="diagnostic_only", cost_profile=tariff_profile(slippage),
+                    fill="open", cash_in_lqdt=True)
+                for slippage in SLIPPAGE_GRID
+            }
+            idle = run_mean_reversion_baseline(
+                series, analysis_role="diagnostic_only", cost_profile=tariff_profile(1.0), fill="open")
         except W0Error as exc:
             rows.append({**item, "status": "blocked", "reason": str(exc)})
             continue
-        stress = runs["stress"]
-        summary, daily = stress["summary"], stress["daily"]
-        gross, trades = independent_gross(near, far, mult[near_id], mult[far_id])
-        margin = stress["parameters"]["margin_per_pair"]
-        benchmark = [d["benchmark_value"] for d in daily]
-        lqdt_on_margin = sum(
-            (benchmark[i] / benchmark[i - 1] - 1) * margin for i in range(1, len(daily)) if daily[i - 1]["position"]
-        )
+        summary = runs[1.0]["summary"]
+        gross, trades = independent_gross(near, far, mult[near_id], mult[far_id], fill="open")
         rows.append({
             **item,
             "status": "ok",
@@ -87,26 +93,22 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
             "independent_gross_rub": round(gross, 2),
             "independent_trades": trades,
             "engine_matches_independent": abs(gross - summary["gross_pnl"]) < 1e-6 and trades == summary["trade_count"],
-            "costs_stress_rub": summary["modeled_costs"],
-            "costs_low_rub": runs["low"]["summary"]["modeled_costs"],
-            "lqdt_full_capital_hurdle_rub": round(summary["final_benchmark_value"] - INITIAL_CAPITAL, 2),
-            "final_X_rub": summary["final_X"],
-            "margin_rub": margin,
-            "days_in_position": sum(bool(d["position"]) for d in daily),
-            "lqdt_on_margin_while_open_rub": round(lqdt_on_margin, 2),
-            "overlay_excess_stress_rub": round(summary["gross_pnl"] - summary["modeled_costs"] - lqdt_on_margin, 2),
-            "overlay_excess_zero_cost_rub": round(summary["gross_pnl"] - lqdt_on_margin, 2),
+            "tariff_costs_rub": {str(s): runs[s]["summary"]["modeled_costs"] for s in SLIPPAGE_GRID},
+            "final_X_rub_by_slippage": {str(s): runs[s]["summary"]["final_X"] for s in SLIPPAGE_GRID},
+            "final_X_rub_idle_cash_slippage_1": idle["summary"]["final_X"],
+            "days_in_position": sum(bool(d["position"]) for d in runs[1.0]["daily"]),
+            "cash_shortfall_rows": summary["cash_shortfall_rows"],
         })
     ok = [r for r in rows if r["status"] == "ok"]
     return {
-        "schema_version": "pair-audit.v1",
-        "method": "mean_reversion_default_parameters; overlay = net P&L minus LQDT return on pair margin while a position is open",
+        "schema_version": "pair-audit.v2",
+        "method": "mean_reversion defaults, one contract per leg, next-open fill, published taker tariff; X = free-cash-in-LQDT wealth minus all-LQDT wealth",
         "pairs": rows,
         "summary": {
             "audited": len(ok),
+            "tradable_every_day": sum(r["tradable_every_day"] for r in ok),
             "engine_matches_independent": sum(r["engine_matches_independent"] for r in ok),
-            "positive_final_X": sum(r["final_X_rub"] > 0 for r in ok),
-            "positive_overlay_excess_stress": sum(r["overlay_excess_stress_rub"] > 0 for r in ok),
-            "positive_overlay_excess_zero_cost": sum(r["overlay_excess_zero_cost_rub"] > 0 for r in ok),
+            "positive_final_X_slippage_1": sum(r["final_X_rub_by_slippage"]["1.0"] > 0 for r in ok),
+            "positive_final_X_slippage_1_tradable": sum(r["final_X_rub_by_slippage"]["1.0"] > 0 for r in ok if r["tradable_every_day"]),
         },
     }

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
-from moex_spread_lab.carry import _transaction_cost_profile, build_carry_strategy, build_carry_study
+from moex_spread_lab.carry import CarryStrategyError, _transaction_cost_profile, build_carry_strategy, build_carry_study
 
 
 def source(secid, rows):
@@ -161,6 +161,43 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["parameters"]["assignment_window_status"], "not_observable_in_input_window")
         self.assertFalse(result["parameters"]["assignment_event"]["payment_modelled"])
         self.assertTrue(result["summary"]["account_risk_gate_current_snapshot"])
+
+    def test_funding_only_same_row_fill_forgoes_exit_day_funding_and_scales_quantity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = root / "contracts.json"
+            contracts.write_text(json.dumps({"instruments": [
+                {"secid": "NEAR", "stable_id": "n", "board": "RFUD", "expiry": "2100-01-01", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 900, "source_vintage": "current_snapshot"},
+                {"secid": "FAR", "stable_id": "f", "board": "RFUD", "expiry": "2026-12-17", "lot_size": 1000, "tick_size": 0.001, "tick_value": 1, "initial_margin": 1000, "source_vintage": "current_snapshot"},
+            ]}), encoding="utf-8")
+            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+            funding = (1.0, 1.0, 1.0, 1.0, -5.0, 3.0)
+            carry = {
+                "schema_version": "carry-study.v1",
+                "near": "NEAR",
+                "far": "FAR",
+                "rows": [
+                    {"date": d, "basis_far_minus_near": 1.0, "daily_funding_received_short_near": f, "daily_gross_carry_pnl": g}
+                    for d, f, g in zip(dates, funding, (0.0, 0.0, 0.0, 7.0, 8.0, 9.0))
+                ],
+            }
+            benchmark = root / "benchmark.json"
+            benchmark.write_text(json.dumps({
+                "schema_version": "lqdt-lineage.v1",
+                "rows": [{"date": d, "price": 1.0, "source_kind": "observed", "source_ticker": "LQDT"} for d in dates],
+            }), encoding="utf-8")
+            kwargs = dict(transaction_cost_scenario="low", initial_capital=30000, warmup_observations=2,
+                          strategy_variant="funding_only", execution_delay_rows=0, cash_in_lqdt=True)
+            one = build_carry_strategy(carry, benchmark, contracts, **kwargs)
+            two = build_carry_strategy(carry, benchmark, contracts, quantity=2, **kwargs)
+            with self.assertRaises(CarryStrategyError):
+                build_carry_strategy(carry, benchmark, contracts, **{**kwargs, "strategy_variant": "basis_median"})
+
+        trade = one["trades"][0]
+        self.assertEqual((trade["entry_execution_date"], trade["exit_execution_date"]), (dates[2], dates[5]))
+        self.assertEqual(trade["gross_pnl"], 7.0 + 8.0 + (9.0 - 3.0))
+        self.assertEqual(two["trades"][0]["gross_pnl"], 2 * trade["gross_pnl"])
+        self.assertEqual(one["summary"]["cash_shortfall_rows"], 0)
 
     def test_strategy_exits_when_assignment_window_is_observed(self):
         with tempfile.TemporaryDirectory() as directory:

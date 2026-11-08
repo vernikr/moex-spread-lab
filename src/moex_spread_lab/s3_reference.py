@@ -1,4 +1,4 @@
-"""S3: reproduce the reference SBRF calendar-spread backtest, then stress its fills and liquidity."""
+"""S3: reproduce the reference SBRF calendar-spread backtest, then re-run it with this project's fills and costs."""
 
 from __future__ import annotations
 
@@ -11,61 +11,76 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .costs import side_cost, tariff_profile
+from .screener_app import MIN_DAILY_VOLUME
 from .w0 import W0Error
 
-FEE_PER_CONTRACT = 5.5
-SLIPPAGE_POINTS = 2.0
-ROUND_TRIP_COST = 4 * FEE_PER_CONTRACT + 2 * SLIPPAGE_POINTS
-INITIAL_CAPITAL = 30_000.0
+REFERENCE_ROUND_TRIP_COST = 4 * 5.5 + 2 * 2.0
+SPREAD_MULTIPLIER = {"secid": "SR", "tariff_group": "stock", "tick_value": 1.0, "tick_size": 1.0}
+FILLS = (
+    ("reference_same_bar", 0, "close"),
+    ("next_close", 1, "close"),
+    ("next_open", 1, "open"),
+)
 
 
-def _volumes(path: Path) -> dict[str, int]:
+def _legs(path: Path) -> dict[str, dict[str, float]]:
     with path.open(encoding="utf-8") as handle:
-        return {row["begin"][:10]: int(float(row["volume"])) for row in csv.DictReader(handle)}
+        return {
+            row["begin"][:10]: {k: float(row[k]) for k in ("open", "close", "volume")}
+            for row in csv.DictReader(handle)
+        }
 
 
 def load_reference(reference_dir: Path) -> dict[str, list[dict[str, Any]]]:
-    """Group the reference's processed SBRF spread rows by near/far pair with leg volumes."""
+    """Group the reference's processed SBRF spread rows by near/far pair with leg prices and volumes."""
     processed = reference_dir / "data" / "processed"
     try:
         with (processed / "spreads_sbrf.csv").open(encoding="utf-8") as handle:
             source = list(csv.DictReader(handle))
-        volumes = {secid: _volumes(processed / f"futures_{secid}.csv") for secid in {r[k] for r in source for k in ("near", "far")}}
+        legs = {secid: _legs(processed / f"futures_{secid}.csv") for secid in {r[k] for r in source for k in ("near", "far")}}
     except (OSError, KeyError, ValueError) as exc:
         raise W0Error(f"cannot read reference SBRF inputs: {exc}") from exc
     pairs: dict[str, list[dict[str, Any]]] = {}
     for row in sorted(source, key=lambda r: r["date"]):
-        dev = float(row["dev_ruonia"]) if row["dev_ruonia"] not in ("", "nan") else math.nan
+        near, far = legs[row["near"]][row["date"]], legs[row["far"]][row["date"]]
         pairs.setdefault(f"{row['near']}/{row['far']}", []).append({
             "date": row["date"],
             "spread": float(row["spread"]),
-            "dev_pp": dev,
+            "open_spread": far["open"] - near["open"],
+            "near_close": near["close"],
+            "far_close": far["close"],
+            "dev_pp": float(row["dev_ruonia"]) if row["dev_ruonia"] not in ("", "nan") else math.nan,
             "days_to_near_expiry": int(row["days_to_near_exp"]),
             "dividend_in_window": float(row["div_window"]) > 0,
             "margin": float(row["go_sum"]),
-            "min_volume": min(volumes[row["near"]].get(row["date"], 0), volumes[row["far"]].get(row["date"], 0)),
+            "min_volume": min(near["volume"], far["volume"]),
         })
     return pairs
 
 
-def _convergence(rows, *, threshold: float, delay: int, min_volume: int, exit_days: int = 2):
+def _price(row: dict[str, Any], fill: str) -> float:
+    return row["open_spread"] if fill == "open" else row["spread"]
+
+
+def _convergence(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2):
     position, entry, trades = 0, None, []
     for index, row in enumerate(rows):
         if position and row["days_to_near_expiry"] <= exit_days:
-            trades.append((entry, row, position))
+            trades.append((entry, row, position, _price(entry, fill), _price(row, fill)))
             position = 0
         signal = rows[index - delay] if index >= delay else None
         if (not position and signal and row["days_to_near_expiry"] > exit_days and not math.isnan(signal["dev_pp"])
-                and not rows[0]["dividend_in_window"] and abs(signal["dev_pp"]) >= threshold
-                and min(signal["min_volume"], row["min_volume"]) >= min_volume):
+                and not rows[0]["dividend_in_window"] and abs(signal["dev_pp"]) >= threshold):
             position, entry = (-1 if signal["dev_pp"] > 0 else 1), row
     return trades
 
 
-def _zscore(rows, *, delay: int, min_volume: int, include_current: bool, entry_z: float = 1.5, exit_z: float = 0.5,
-            window: int = 20, max_hold_days: int = 30, close_before: int = 7):
+def _zscore(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float = 0.5, window: int = 20,
+            max_hold_days: int = 30, close_before: int = 7):
     if rows[0]["dividend_in_window"]:
         return []
+    include_current = delay == 0
     spreads = [r["spread"] for r in rows]
     z = [math.nan] * len(rows)
     for index in range(window - include_current, len(rows)):
@@ -78,74 +93,84 @@ def _zscore(rows, *, delay: int, min_volume: int, include_current: bool, entry_z
             held = (date.fromisoformat(row["date"]) - date.fromisoformat(entry["date"])).days
             exit_signal = z[index - delay] if index >= delay else math.nan
             if abs(exit_signal) <= exit_z or held >= max_hold_days or row["days_to_near_expiry"] <= close_before:
-                trades.append((entry, row, position))
+                trades.append((entry, row, position, _price(entry, fill), _price(row, fill)))
                 position = 0
         signal = index - delay
         if (not position and signal >= 0 and not math.isnan(z[signal]) and row["days_to_near_expiry"] > close_before
-                and abs(z[signal]) >= entry_z and min(rows[signal]["min_volume"], row["min_volume"]) >= min_volume):
+                and abs(z[signal]) >= entry_z):
             position, entry = (-1 if z[signal] > 0 else 1), row
     return trades
 
 
-def _account(label: str, per_pair: dict[str, list], benchmark: dict[str, float]) -> dict[str, Any]:
+def _account(label: str, per_pair: dict[str, list], benchmark: dict[str, float], profile: dict[str, Any] | None) -> dict[str, Any]:
     dates = sorted(benchmark)
 
     def price(day: str) -> float:
         return benchmark[dates[max(0, bisect_right(dates, day) - 1)]]
 
-    gross = lqdt_on_margin = 0.0
+    def side(row: dict[str, Any]) -> float:
+        legs = [({**SPREAD_MULTIPLIER, "secid": "near"}, row["near_close"]), ({**SPREAD_MULTIPLIER, "secid": "far"}, row["far_close"])]
+        return sum(side_cost(profile, legs, 1).values())
+
+    gross = costs = lqdt_on_margin = 0.0
     trades = []
     for pair, items in per_pair.items():
-        for entry, exit_row, direction in items:
-            pnl = direction * (exit_row["spread"] - entry["spread"])
-            hurdle = entry["margin"] * (price(exit_row["date"]) / price(entry["date"]) - 1)
+        for entry, exit_row, direction, entry_price, exit_price in items:
+            pnl = direction * (exit_price - entry_price)
+            cost = side(entry) + side(exit_row) if profile else REFERENCE_ROUND_TRIP_COST
             gross += pnl
-            lqdt_on_margin += hurdle
+            costs += cost
+            lqdt_on_margin += entry["margin"] * (price(exit_row["date"]) / price(entry["date"]) - 1)
             trades.append({"pair": pair, "entry": entry["date"], "exit": exit_row["date"], "direction": direction,
-                           "entry_spread": entry["spread"], "exit_spread": exit_row["spread"], "gross_rub": round(pnl, 2)})
-    net = gross - ROUND_TRIP_COST * len(trades)
+                           "entry_spread": entry_price, "exit_spread": exit_price, "gross_rub": round(pnl, 2),
+                           "costs_rub": round(cost, 2)})
+    net = gross - costs
     return {
         "variant": label,
         "trades": len(trades),
-        "winners": sum(t["gross_rub"] - ROUND_TRIP_COST > 0 for t in trades),
+        "winners": sum(t["gross_rub"] - t["costs_rub"] > 0 for t in trades),
         "gross_rub": round(gross, 2),
+        "costs_rub": round(costs, 2),
         "net_rub": round(net, 2),
         "lqdt_on_pair_margin_while_open_rub": round(lqdt_on_margin, 2),
-        "overlay_excess_rub": round(net - lqdt_on_margin, 2),
+        "excess_over_lqdt_on_margin_rub": round(net - lqdt_on_margin, 2),
         "trade_list": trades,
     }
 
 
-def run_s3(reference_dir: Path, benchmark_path: Path) -> dict[str, Any]:
+def run_s3(reference_dir: Path, benchmark_path: Path, *, slippage_ticks: float = 1.0) -> dict[str, Any]:
     pairs = load_reference(reference_dir)
     try:
         payload = json.loads(benchmark_path.read_text(encoding="utf-8"))
         benchmark = {row["date"]: float(row["price"]) for row in payload["rows"]}
     except (OSError, ValueError, KeyError) as exc:
         raise W0Error(f"cannot read benchmark: {exc}") from exc
+    profile = tariff_profile(slippage_ticks)
     variants = []
-    for label, options in (
-        ("reference_same_bar", {"delay": 0, "min_volume": 0}),
-        ("delay_1", {"delay": 1, "min_volume": 0}),
-        ("delay_1_min_volume_100", {"delay": 1, "min_volume": 100}),
-        ("delay_1_min_volume_500", {"delay": 1, "min_volume": 500}),
-        ("delay_1_min_volume_1000", {"delay": 1, "min_volume": 1000}),
-    ):
-        variants.append({"strategy": "convergence_to_ruonia", "threshold_pp": 1.0, **_account(
-            label, {p: _convergence(rows, threshold=1.0, **options) for p, rows in pairs.items()}, benchmark)})
-        zoptions = {**options, "include_current": options["delay"] == 0}
-        variants.append({"strategy": "zscore_mean_reversion", **_account(
-            label, {p: _zscore(rows, **zoptions) for p, rows in pairs.items()}, benchmark)})
+    for label, delay, fill in FILLS:
+        for strategy, run in (
+            ("convergence_to_ruonia", lambda rows: _convergence(rows, threshold=1.0, delay=delay, fill=fill)),
+            ("zscore_mean_reversion", lambda rows: _zscore(rows, delay=delay, fill=fill)),
+        ):
+            per_pair = {p: run(rows) for p, rows in pairs.items()}
+            variants.append({"strategy": strategy, "cost_model": "reference_flat_round_trip", **_account(label, per_pair, benchmark, None)})
+            variants.append({"strategy": strategy, "cost_model": "published_tariff", **_account(label, per_pair, benchmark, profile)})
     return {
-        "schema_version": "s3-sbrf-reference.v1",
+        "schema_version": "s3-sbrf-reference.v2",
         "release_state": "exploratory_inconclusive",
         "interpretation": (
             "reference_same_bar reproduces the reference rules (signal and fill on the same candle close, rolling window including "
-            "the current observation, no liquidity filter); the delayed variants are this project's accounting"
+            "the current observation) under its flat RUB 26 round-trip cost; next_close and next_open are this project's fills "
+            "(signal at the close, fill one close later or at the next open)"
         ),
-        "cost_model": {"round_trip_rub": ROUND_TRIP_COST, "basis": "reference exchange fee and 2-point slippage; broker fee zero"},
-        "benchmark": "LQDT lineage; overlay excess subtracts LQDT return on pair margin while a position is open",
-        "pairs": {pair: {"rows": len(rows), "median_min_leg_volume": statistics.median(r["min_volume"] for r in rows)}
-                  for pair, rows in pairs.items()},
+        "benchmark": "LQDT lineage; excess over LQDT subtracts LQDT return on pair margin while a position is open",
+        "pairs": {
+            pair: {
+                "rows": len(rows),
+                "min_leg_daily_volume": min(r["min_volume"] for r in rows),
+                "tradable_every_day": min(r["min_volume"] for r in rows) >= MIN_DAILY_VOLUME,
+            }
+            for pair, rows in pairs.items()
+        },
         "variants": variants,
     }

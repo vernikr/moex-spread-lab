@@ -17,6 +17,7 @@ from .screener_app import (
     ScreenerInputs,
     _parameters,
     build_result,
+    execution_settings,
     catalog,
 )
 from .w0 import W0Error
@@ -101,15 +102,21 @@ def screen_table(
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("unknown strategy")
     parameters = _parameters(selection, strategy)
-    cost = selection.get("cost", "stress")
-    if not isinstance(cost, str) or cost not in {"low", "base", "stress"}:
-        raise ScreenerError("unknown illustrative cost scenario")
+    execution = execution_settings(selection)
     pairs = []
     for pair in catalog(inputs)["pairs"]:
         row = {
             key: pair[key] for key in ("id", "family", "expiry", "current_margin_pct")
         }
-        if not pair["strategies"][strategy]:
+        row["min_leg_daily_volume"] = pair.get("min_leg_daily_volume")
+        if pair["status"] == "excluded_thin_leg":
+            row.update(
+                {
+                    "status": "excluded",
+                    "reason": f"Not tradable on every day: a leg traded as few as {pair['min_leg_daily_volume']} contracts in a day.",
+                }
+            )
+        elif not pair["strategies"][strategy]:
             row.update(
                 {
                     "status": "unavailable",
@@ -124,7 +131,7 @@ def screen_table(
                         "pair": pair["id"],
                         "strategy": strategy,
                         "parameters": parameters,
-                        "cost": cost,
+                        **execution,
                     },
                 )
                 row.update(_projection(result))
@@ -134,7 +141,7 @@ def screen_table(
     identity = {
         "strategy": strategy,
         "parameters": parameters,
-        "cost": cost,
+        "execution": execution,
         "pairs": [(row["id"], row.get("run_id"), row["status"]) for row in pairs],
     }
     run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
@@ -143,7 +150,7 @@ def screen_table(
     return {
         "schema_version": "screener-table.v1",
         "run_id": run_id,
-        "selection": {"strategy": strategy, "parameters": parameters, "cost": cost},
+        "selection": {"strategy": strategy, "parameters": parameters, "execution": execution},
         "pairs": pairs,
         "warning": "Independent pair projections, not a shared-capital basket. Annualized excess compares geometric strategy and LQDT returns over each row's own dates; periods may differ. Historical proxies are not fills.",
     }
@@ -230,9 +237,7 @@ def optimize(
     strategy = request.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("unknown strategy")
-    cost = request.get("cost", "stress")
-    if not isinstance(cost, str) or cost not in {"low", "base", "stress"}:
-        raise ScreenerError("unknown illustrative cost scenario")
+    execution = execution_settings(request)
     seed = _parameters(request, strategy)
     catalog_by_id = {
         pair["id"]: pair for pair in (available or catalog(inputs))["pairs"]
@@ -250,7 +255,7 @@ def optimize(
         try:
             initial[pair] = evaluator(
                 inputs,
-                {"pair": pair, "strategy": strategy, "parameters": seed, "cost": cost},
+                {"pair": pair, "strategy": strategy, "parameters": seed, **execution},
             )
         except (W0Error, OSError, ValueError) as exc:
             raise ScreenerError(f"{pair} cannot be searched: {exc}") from exc
@@ -289,7 +294,7 @@ def optimize(
                         "pair": pair,
                         "strategy": strategy,
                         "parameters": params,
-                        "cost": cost,
+                        **execution,
                     },
                 )
             train = [
@@ -387,7 +392,7 @@ def optimize(
     identity = {
         "pairs": selected,
         "strategy": strategy,
-        "cost": cost,
+        "execution": execution,
         "seed": seed,
         "dates": dates,
         "trials": trials,
@@ -408,7 +413,7 @@ def optimize(
         "selection": {
             "pairs": selected,
             "strategy": strategy,
-            "cost": cost,
+            "execution": execution,
             "seed_parameters": seed,
         },
         "method": {

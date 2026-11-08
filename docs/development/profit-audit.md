@@ -1,71 +1,77 @@
 # Profit audit and S3 reference reproduction
 
-Date: 2026-11-08. Research only: no broker, VPS, Telegram or trading. Prices are candle-close or settlement proxies (A-06/A-08).
+Date: 2026-11-08. Research only: no broker, VPS, Telegram or trading. Prices are candle or settlement proxies (A-06/A-08).
 
-## 1. Is the calculation and data path correct?
+## 1. Calculation and data check
 
-Reproduce: `audit-pairs --output data/analytics/pair-audit.json` (code: `audit.py`).
+Reproduce: `audit-pairs --output data/analytics/pair-audit.json` (`audit.py`).
 
 | Check | Result |
 |---|---|
-| Independent re-implementation of the mean-reversion control from raw candle JSON (no engine code) | Gross P&L and trade count identical for 12/12 local pairs. No look-ahead: signal bar `t`, fill bar `t+1`, window excludes the signal bar. |
-| Per-leg price units (`tick_value / tick_size`) | Consistent for all pairs; spread values are RUB per pair. |
-| Funding units (`SWAPRATE × lot`) | Ad-hoc check on cached EOD history: short-perpetual funding is 13–15 % p.a. of notional for SBERF, GAZPF, IMOEXF, GLDRUBF and about 12 % for CNYRUBF (RUB-rate differential) — economically plausible, so the unit and sign are right. |
-| Candle close vs EOD `SETTLEPRICE` | Spread noise is similar (daily spread σ within ~10 % on four of five pairs, 37 % apart on gold); mean-reversion gross P&L is of the same size and sign on both price sources. The candle proxy is not what makes the results negative. |
-| LQDT benchmark | Observed layer 2024 ≈ 18.5 %, 2025 ≈ 20.7 %, 2026 YTD ≈ 15 % p.a.; consistent with the rate cycle. |
-| Tests | 50 hermetic tests pass. |
+| Independent re-implementation of the mean-reversion control from raw candles (signal on closes, fill at the next open, no engine code) | Gross P&L and trade count identical for 12/12 local pairs. No look-ahead. |
+| Per-leg price units (`tick_value / tick_size`) | Consistent; spreads are RUB per pair. |
+| Funding units (`SWAPRATE × lot`) | Ad-hoc check of cached history: short-perpetual funding is 13–15 % p.a. of notional for stock, index and gold perpetuals and about 12 % for CNYRUBF — consistent with the RUB rate, so unit and sign are right. |
+| Candle close vs EOD `SETTLEPRICE` | Spread noise within ~10 % on four of five pairs (37 % apart on gold); mean-reversion gross P&L has the same sign and size on both sources. |
+| Daily `open` | Inside the day's range on all rows; median gap from the previous close 4–75 bp. |
+| LQDT benchmark | Observed layer about 18.5 % (2024), 20.7 % (2025), 15 % (2026 YTD) p.a. |
 
-No arithmetic or alignment defect was found. The negative table is a modelling-design effect plus weak data, not a bug.
+No arithmetic or alignment defect was found. Defects relative to the user's intent, now fixed:
 
-## 2. Why every row is negative
+1. **Execution delay.** Fills were one daily close after the signal close (about 24 hours). The documented reaction is 3 minutes to 1.5 hours, so the daily control now fills at the next open. Funding carry fills at the same-day settlement (its signal uses funding through the previous clearing); a same-day exit forgoes that day's funding.
+2. **Accounting (A-11).** Idle cash earned nothing while the benchmark compounded LQDT on all capital. Free cash now sits in LQDT; margin cash earns nothing (LQDT is not usable as collateral, A-12). Contracts per leg is a parameter.
+3. **Costs (A-12).** Flat illustrative RUB amounts and a per-leg-day "funding" charge are replaced by the published MOEX taker tariff (`costs.py`, by contract group), zero VTB broker fee to 2026-12-31, and slippage in ticks as the only free parameter. Group assignment for metals, RGBI and BTC contracts is an assumption.
+4. **Volume.** Volume thresholds inside strategies are removed. A pair is either tradable on every day of its window (each leg ≥ 100 contracts per day, an assistant-selected threshold, adjustable in `MIN_DAILY_VOLUME`) or excluded.
 
-1. **Hurdle design.** `V` earns nothing on idle cash while `B` compounds LQDT on the entire RUB 30,000. One contract pair needs 7–93 % of the allocation as margin, so the strategy must out-earn LQDT on 100 % of the money while using a fraction of it. Over the 155-day screen window the hurdle is about RUB 2,590; gross P&L of 1-contract pairs ranges from −RUB 1,500 to +RUB 2,700. All 12 rows have negative `X` (best −629).
-2. **Overlay view** (idle cash parked in LQDT; subtract only LQDT return on pair margin while a position is open): with stress costs 2/12 rows are positive (`SBERF/SRZ6` +585, `USDRUBF/SiZ6` +663), with zero costs 3/12. Both are single dated contracts, 4–7 trades, and the far leg of `SBERF/SRZ6` has no real volume on 27 % of days. Treat as unconfirmed.
-3. **Weak data.** Screened pairs have 155 daily rows of one dated contract. Far legs trade thinly for long stretches (`SRZ6` 27 % of days under 100 contracts, `S2Z6` 36 %, `CRZ6` 24 %, `EuZ6` 24 %). Weekend sessions exist in the CNY pair. Stale far-leg prints create fake spread excursions.
-4. **Cost scale.** Illustrative costs are flat RUB per leg-side, so the default `stress` profile is far above realistic exchange fees for cheap-notional pairs (CNY, gold, IMOEX) and adds a per-leg-day "funding" cost that double-counts the LQDT opportunity cost.
-5. **Non-stationary spread.** A perpetual/dated spread decays toward zero at expiry; a 20-day z-score on the raw spread mixes that drift with mean reversion.
+## 2. Result under the corrected rules
+
+One contract per leg, slippage 1 tick, 30,000 RUB allocation, default `20 / 2.0 / 0.5` control:
+
+- **Eight of 12 pairs are excluded**: a leg traded as few as 1–75 contracts on some day (`SRZ6` 6, `MMZ6` 15, `GZZ6` 21, `EuZ6` 1, `CRZ6` 1, `S2Z6` 3, `GLH7` 4, `RBZ6` 75).
+- `USDRUBF/SiZ6` passes volume but fails the working capital screen (pair margin about 83 % of the allocation plus buffers).
+- `BTCUSDF/BTZ6` has 26 observations: annualized result withheld.
+- Evaluated: `GLDRUBF/GLZ6` −6.5 pp/yr mean reversion (2 trades), −1.3 pp/yr funding carry (one open position); `CRZ6/CRH7` +0.3 pp/yr (4 trades, about +RUB 50 over 218 days). A 45-point parameter grid (lookback 10–40, entry 1.5–2.5σ, exit 0.25–1σ) gives gold positive in 1/45 settings (median −RUB 845) and `CRZ6/CRH7` positive in 22/45 (median ≈ 0, range −277…+128): no edge.
+- Unfiltered, five of 12 pairs are positive at one tick (`SBERF/SRZ6` +1,297, `USDRUBF/SiZ6` +1,724, `GLZ6/GLH7` +102, `CRZ6/CRH7` +48, BTC +3 RUB), but the two large ones are a leg with 6 contracts on its thinnest day and a pair the capital screen blocks. The apparent edge sits where prints are stale.
+
+Leverage multiplies P&L, costs and risk linearly: it cannot turn a negative per-contract excess positive. It is also capped by the working capital stress screen (3× margin shock plus variation-margin and uncertainty buffers, buffers scaled with size): the two evaluated pairs pass up to 2 contracts per leg and fail at 3, even though one contract uses only 7–8 % of the allocation as initial margin. Sizing is therefore limited by the stress buffers, not by the broker's margin.
 
 ## 3. S3 — SBRF reference reproduction
 
-Reproduce: `s3-reference --reference-dir <calendar-spread checkout> --output data/analytics/s3-sbrf-reference.json` (code: `s3_reference.py`; input is the reference project's MIT-licensed processed data, read in place, not copied).
+Reproduce: `s3-reference --reference-dir <calendar-spread checkout> --output data/analytics/s3-sbrf-reference.json` (`s3_reference.py`; reads the reference project's MIT-licensed processed data in place).
 
-The reference result is reproduced exactly: convergence strategy 4 trades, net +RUB 1,947; z-score 41 trades, net +RUB 5,367. Then:
+The reference is reproduced exactly (convergence 4 trades +RUB 1,947; z-score 41 trades +RUB 5,367, flat RUB 26 round trip). Net result with the published tariff and 1-tick slippage:
 
-| Variant | Convergence (n=4), net RUB | Z-score, trades / net RUB |
+| Fill | Convergence (n=4) net / excess over LQDT on margin | Z-score net / excess |
 |---|---:|---:|
-| Reference (same-bar fill, window includes the signal bar, no liquidity filter) | +1,947 | 41 / +5,367 |
-| Fill one bar after the signal, window excludes signal bar | −394 | 43 / −757 |
-| + both legs ≥100 contracts | +1,700 | 25 / −2,487 |
-| + both legs ≥500 contracts | +371 | 16 / −775 |
-| + both legs ≥1,000 contracts | +1,452 | 13 / −883 |
+| Reference (signal and fill on the same close) | +1,932 / −1,463 | 41 trades +5,288 / +3,991 |
+| Next close | −408 / −3,764 | 43 trades −842 / −2,289 |
+| Next open | −3,040 / −6,396 | 43 trades −2,163 / −3,610 |
 
-Findings:
+- The z-score gain exists only when the signal and fill share one close and the rolling window contains the signal bar.
+- The convergence gain is four hold-to-expiry trades; the first entry (`SRH5/SRM5`, spread 2,122) is a stale first-day print (the next day it is 600). Even as published it does not beat LQDT on the margin it ties up.
+- All nine reference pairs fail the volume rule (their far legs traded 1–2 contracts on some day), so none is tradable under A-12 as defined; the strict whole-window rule may be too harsh for calendars whose far leg is liquid only near expiry, and relaxing it to a late-life window is a user decision.
+- Ad-hoc (not versioned): holding liquid, no-dividend days to expiry, signed P&L grows with deviation (≥ 2 pp ≈ +440 RUB per pair), but that bucket is one episode (`SRH5/SRM5`, Dec 2024–Mar 2025, peak-rate regime). About five independent episodes exist in two years.
 
-- The z-score "profit" exists only when the signal and the fill share one candle close and the rolling window contains the signal bar; it disappears with a one-bar delay and turns negative once thin days are removed.
-- The convergence "profit" rests on four hold-to-expiry trades. The first entry (`SRH5/SRM5`, spread 2,122) is a stale first-day print: the next day's spread is 600. Entering one bar later gives −1,054 on that trade. Outcomes of the four trades range −394…+1,700 depending only on liquidity thresholds.
-- Even the reference result does not beat LQDT: its overlay excess is −RUB 1,448 (four long holds on about RUB 10,000 margin earn less than LQDT on that margin). This matches the reference's own README ("alpha ≈ 0" for convergence).
-- Ad-hoc check (not versioned): entering only liquid, no-dividend days and holding to expiry, the signed spread P&L rises with deviation (|dev| ≥ 2 pp: ≈ +440 per pair; 1–2 pp: ≈ +70; < 1 pp: ≈ +20), but the ≥ 2 pp bucket is one episode (`SRH5/SRM5`, Dec 2024–Mar 2025, peak-rate regime). About five independent episodes exist in two years; the statistics cannot support a rule.
-- Dividend windows are excluded as in the reference; dated historical margin, dividend tax and the native spread instrument's netting remain unverified.
-
-Decision on b02.6: the reference gain is **not accepted as evidence**. S3 is closed as a reproduction; a different, liquidity-aware calendar design would be a new hypothesis.
+b02.6: the reference gain is **not accepted as evidence**; S3 is closed as a reproduction.
 
 ## 4. Where profit could come from
 
-Structural carry is priced at the risk-free rate, so it only ties with LQDT:
+Structural carry is priced near the risk-free rate, so it ties with LQDT:
 
 | Source | Evidence here | Excess over LQDT |
 |---|---|---|
-| Short perpetual + long dated (existing funding-only) | Funding received ≈ basis loss; gross carry −215…+84 RUB over 155 days | ≈ 0 |
+| Short perpetual + long dated | Funding received ≈ basis loss; gross carry −215…+84 RUB over 155 days (old accounting) | ≈ 0 |
 | Long underlying + short perpetual | Funding 13–15 % p.a. of notional vs LQDT ≈ 14.5 % (ad-hoc) | ≈ +0.5…1 pp (stocks, gold), ≈ +3.5 pp (silver), before hedge costs and dividends |
-| Long stock + short dated future (cash-and-carry) | Implied rate ≈ RUONIA +0.7…1.3 pp on liquid contracts, 2024–2026 (ad-hoc, approximate ex-dates) | ≈ +1 pp on notional ≈ RUB 300/yr per RUB 30,000; dividend tax and collateral rules unverified |
-| Calendar convergence / z-score | Section 3 | None demonstrated |
-| Rate-path view (long far / short near in a cutting cycle) | The only profitable episodes above | A directional bet, not arbitrage |
+| Long stock + short dated future | Implied rate ≈ RUONIA +0.7…1.3 pp on liquid contracts 2024–2026 (ad-hoc, approximate ex-dates) | ≈ +1 pp on notional ≈ RUB 300/yr per RUB 30,000; dividend tax and collateral rules unverified |
+| Calendar convergence / z-score | Sections 2–3 | None demonstrated |
+| Rate-path view (long far / short near in a cutting cycle) | The only profitable episodes | A directional bet, not arbitrage |
 
-Plausible next steps, in order of evidence value:
+Next steps by evidence value:
 
-1. **Decide the hurdle** (new user decision): keep full-allocation `V − B`, or add the overlay metric (cash left in LQDT, only used margin charged). The current table can only show negative numbers for 1-contract pairs under the first rule.
-2. **Fix inputs before more search**: multi-year contract history with a liquidity mask (≥ 500–1,000 contracts on both legs), cost profiles scaled to notional (exchange rate × notional), and no per-leg-day funding cost.
-3. **S4 shared-capital basket only after** at least one pair shows a positive overlay result on a liquid sample; a basket of zero-edge pairs only adds cost and margin.
-4. Optional research branch: cash-and-carry versus LQDT with explicit dividend/tax and share-collateral facts (needs broker evidence, R-task).
+1. **Longer liquid history.** Six pairs have one dated contract and 155 days; multi-year histories of expired contracts (ISS, when reachable) would give many independent episodes for the pairs that pass the volume rule.
+2. **Decide the calendar volume window** (above) before reopening S3.
+3. **S4 shared-capital basket** only after a pair shows a positive result on a tradable sample; it adds cost and margin to zero-edge pairs otherwise.
+4. Optional branch: cash-and-carry versus LQDT with explicit dividend/tax and share-collateral facts (broker evidence needed).
+
+Earlier records (`analytical-baseline.md`, `pair-screen.md`, `funding-screen.md`, `carry-*.md`, S1/S2 numbers) used idle-cash accounting, close-to-close fills and illustrative costs; they stay as dated history and are superseded for new runs.
 
 This is exploratory evidence, not strategy approval or permission to fund or trade.

@@ -14,7 +14,7 @@ def _rows(secid: str, closes: list[float]) -> dict:
         "secid": secid,
         "interval": 24,
         "rows": [{
-            "begin": f"2026-03-{day:02d} 00:00:00", "close": close, "open": close, "high": close + 1, "low": close - 1,
+            "begin": f"2026-03-{day:02d} 00:00:00", "close": close, "open": close - 0.05 * (day % 3), "high": close + 1, "low": close - 1,
             "volume": 500, "price_proxy_kind": "candle_close",
         } for day, close in enumerate(closes, start=1)],
     }
@@ -47,11 +47,14 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["summary"]["engine_matches_independent"], 1)
         row = result["pairs"][0]
         self.assertEqual(row["weekend_rows"], 9)
-        self.assertLessEqual(row["overlay_excess_stress_rub"], row["overlay_excess_zero_cost_rub"])
+        self.assertTrue(row["tradable_every_day"])
+        by_slippage = row["final_X_rub_by_slippage"]
+        self.assertGreaterEqual(by_slippage["0.0"], by_slippage["1.0"])
+        self.assertGreaterEqual(by_slippage["1.0"], by_slippage["2.0"])
 
     def test_independent_gross_flat_spread_is_zero(self):
-        rows = {f"2026-03-{d:02d} 00:00:00": {"close": 10.0} for d in range(1, 30)}
-        self.assertEqual(independent_gross(rows, rows, 1.0, 1.0), (0.0, 0))
+        rows = {f"2026-03-{d:02d} 00:00:00": {"close": 10.0, "open": 10.0} for d in range(1, 30)}
+        self.assertEqual(independent_gross(rows, rows, 1.0, 1.0, fill="open"), (0.0, 0))
 
 
 if __name__ == "__main__":

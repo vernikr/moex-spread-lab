@@ -57,6 +57,7 @@ def assess_vtb_pair(
     uncertainty_buffer: float = DEFAULT_UNCERTAINTY_BUFFER,
     key_rate: float = DEFAULT_KEY_RATE,
     observed_daily_pnl: Iterable[float] | None = None,
+    quantity: int = 1,
 ) -> dict[str, Any]:
     """Assess minimum-lot capital under the project's working VTB profile.
 
@@ -71,12 +72,14 @@ def assess_vtb_pair(
     contracts, contracts_hash = load_contracts(contracts_path, near, far)
     near_contract = contracts[near]
     far_contract = contracts[far]
-    near_margin = float(near_contract["initial_margin"])
-    far_margin = float(far_contract["initial_margin"])
+    if quantity < 1:
+        raise AccountRiskError("quantity must be a positive integer")
+    near_margin = float(near_contract["initial_margin"]) * quantity
+    far_margin = float(far_contract["initial_margin"]) * quantity
     pair_margin = near_margin + far_margin
     one_leg_margin = max(near_margin, far_margin)
-    observed_worst_loss = _observed_loss(observed_daily_pnl)
-    effective_vm_buffer = max(stress_vm_buffer, observed_worst_loss)
+    observed_worst_loss = _observed_loss(observed_daily_pnl) * quantity
+    effective_vm_buffer = max(stress_vm_buffer * quantity, observed_worst_loss)
 
     scenario_specs = (
         ("current_snapshot_no_offset", pair_margin, "current ISS margin sum; no offset credit"),
@@ -122,7 +125,7 @@ def assess_vtb_pair(
         "pair": {
             "near": near,
             "far": far,
-            "quantity_per_leg": 1,
+            "quantity_per_leg": quantity,
             "near_initial_margin_rub": _round(near_margin),
             "far_initial_margin_rub": _round(far_margin),
             "pair_margin_no_offset_rub": _round(pair_margin),

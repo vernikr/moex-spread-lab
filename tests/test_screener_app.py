@@ -78,7 +78,9 @@ class ScreenerAppTests(unittest.TestCase):
                             "rows": [
                                 {
                                     "begin": f"{day.isoformat()} 00:00:00",
+                                    "open": 10 + offset + i * 0.01 + (i % 8) * 0.003 - 0.002,
                                     "close": 10 + offset + i * 0.01 + (i % 8) * 0.003,
+                                    "volume": 500,
                                     "price_proxy_kind": "candle_close",
                                 }
                                 for i, day in enumerate(days)
@@ -92,12 +94,12 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertTrue(
             catalog(self.inputs)["pairs"][0]["strategies"]["mean_reversion"]
         )
-        base = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion", "cost": "stress"}
+        base = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion", "slippage_ticks": 1.0}
         first = build_result(self.inputs, base)
         self.assertEqual(first, build_result(self.inputs, base))
         self.assertEqual(first["daily"][-1]["X"], first["metrics"]["excess_rub"])
         self.assertEqual(first["period"]["observations"], 50)
-        self.assertEqual(first["price_role"], "ISS daily candle close proxy")
+        self.assertEqual(first["price_role"], "ISS daily candle open fill, close marks")
         self.assertNotEqual(
             first["run_id"],
             build_result(self.inputs, {**base, "parameters": {"lookback": 15}})[
@@ -115,7 +117,7 @@ class ScreenerAppTests(unittest.TestCase):
             {
                 "strategy": "mean_reversion",
                 "parameters": {"lookback": 15, "entry_z": 1.5, "exit_z": 0.4},
-                "cost": "stress",
+                "slippage_ticks": 1.0,
             },
         )
         rows = {row["id"]: row for row in table["pairs"]}
@@ -129,11 +131,31 @@ class ScreenerAppTests(unittest.TestCase):
         )
         self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
 
+    def test_pair_with_a_thin_day_is_excluded_and_quantity_scales_margin(self):
+        path = self.inputs.candles("GLDRUBF/GLZ6", "GLZ6")
+        payload = json.loads(path.read_text())
+        payload["rows"][7]["volume"] = 10
+        path.write_text(json.dumps(payload))
+        entry = next(p for p in catalog(self.inputs)["pairs"] if p["id"] == "GLDRUBF/GLZ6")
+        self.assertEqual(entry["status"], "excluded_thin_leg")
+        self.assertEqual(entry["min_leg_daily_volume"], 10)
+        self.assertFalse(any(entry["strategies"].values()))
+        table = screen_table(self.inputs, {"strategy": "mean_reversion"})
+        self.assertEqual({r["id"]: r for r in table["pairs"]}["GLDRUBF/GLZ6"]["status"], "excluded")
+        base = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
+        one = build_result(self.inputs, base)
+        two = build_result(self.inputs, {**base, "quantity": 2})
+        self.assertEqual(
+            two["metrics"]["current_pair_margin_rub"], 2 * one["metrics"]["current_pair_margin_rub"]
+        )
+        with self.assertRaises(ScreenerError):
+            build_result(self.inputs, {**base, "quantity": 0})
+
     def test_cli_and_view_share_the_same_result(self):
         selection = {
             "pair": "GLDRUBF/GLZ6",
             "strategy": "mean_reversion",
-            "cost": "base",
+            "slippage_ticks": 0.5,
             "parameters": {"lookback": 15, "entry_z": 1.5, "exit_z": 0.4},
         }
         expected = build_result(self.inputs, selection)
@@ -150,8 +172,8 @@ class ScreenerAppTests(unittest.TestCase):
                 selection["pair"],
                 "--strategy",
                 selection["strategy"],
-                "--cost",
-                selection["cost"],
+                "--slippage-ticks",
+                str(selection["slippage_ticks"]),
                 "--lookback",
                 "15",
                 "--entry-z",

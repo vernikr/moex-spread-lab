@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     carry_strategy_parser.add_argument("--benchmark", type=Path, required=True)
     carry_strategy_parser.add_argument("--contracts", type=Path, required=True)
     carry_strategy_parser.add_argument("--output", type=Path, required=True)
-    carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress", "moex_current_taker", "vtb_online_prime_current"), default="base")
+    carry_strategy_parser.add_argument("--cost-scenario", choices=("low", "base", "stress", "moex_current_taker", "vtb_online_prime_current", "tariff"), default="base")
     carry_strategy_parser.add_argument("--initial-capital", type=float, default=30000.0)
     carry_strategy_parser.add_argument("--hypothesis", choices=("h2-s1", "h3-funding-only"), default="h2-s1")
     account_risk_parser = subparsers.add_parser("account-risk-check", help="run the working VTB EBS/KPUR margin stress screen")
@@ -156,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     funding_screen_parser.add_argument("--cache-dir", type=Path, default=Path("data/carry-screen-history-cache"))
     funding_screen_parser.add_argument("--output", type=Path, required=True)
     funding_screen_parser.add_argument("--initial-capital", type=float, default=30000.0)
-    funding_screen_parser.add_argument("--cost-scenario", choices=("low", "base", "stress"), default="stress")
+    funding_screen_parser.add_argument("--cost-scenario", choices=("low", "base", "stress", "tariff"), default="stress")
     funding_screen_parser.add_argument("--delay-seconds", type=float, default=0.2)
     funding_screen_parser.add_argument("--timeout", type=float, default=60.0)
 
@@ -177,7 +177,8 @@ def build_parser() -> argparse.ArgumentParser:
     screener_run_parser.add_argument("--root", type=Path, default=Path.cwd())
     screener_run_parser.add_argument("--pair", required=True)
     screener_run_parser.add_argument("--strategy", choices=("mean_reversion", "funding_only"), required=True)
-    screener_run_parser.add_argument("--cost", choices=("low", "base", "stress"), default="stress")
+    screener_run_parser.add_argument("--slippage-ticks", type=float, default=1.0)
+    screener_run_parser.add_argument("--quantity", type=int, default=1)
     screener_run_parser.add_argument("--lookback", type=int, default=20)
     screener_run_parser.add_argument("--entry-z", type=float, default=2.0)
     screener_run_parser.add_argument("--exit-z", type=float, default=0.5)
@@ -626,7 +627,8 @@ def main() -> int:
             if args.strategy == "mean_reversion":
                 parameters.update({"entry_z": args.entry_z, "exit_z": args.exit_z})
             result = build_result(ScreenerInputs(args.root.resolve()), {
-                "pair": args.pair, "strategy": args.strategy, "cost": args.cost, "parameters": parameters,
+                "pair": args.pair, "strategy": args.strategy, "slippage_ticks": args.slippage_ticks,
+                "quantity": args.quantity, "parameters": parameters,
             })
             write_json(args.output, result)
             print(json.dumps({"run_id": result["run_id"], "status": result["status"], "output": str(args.output)}, sort_keys=True))
@@ -645,7 +647,7 @@ def main() -> int:
             result = run_s3(args.reference_dir, args.benchmark)
             write_json(args.output, result)
             for variant in result["variants"]:
-                print(json.dumps({key: variant[key] for key in ("strategy", "variant", "trades", "gross_rub", "net_rub", "overlay_excess_rub")}, sort_keys=True))
+                print(json.dumps({key: variant[key] for key in ("strategy", "variant", "cost_model", "trades", "gross_rub", "net_rub", "excess_over_lqdt_on_margin_rub")}, sort_keys=True))
             return 0
         if args.command == "funding-screen":
             from .funding_screen import screen_funding_pairs, write_funding_screen

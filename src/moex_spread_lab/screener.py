@@ -96,6 +96,8 @@ def _normalized_series(
             "timestamp": timestamp,
             "near_close": near_close,
             "far_close": far_close,
+            "near_open": float(near_rows[timestamp].get("open") or near_close),
+            "far_open": float(far_rows[timestamp].get("open") or far_close),
             "spread_value": _round(normalized_spread),
             "spread_ticks": _round(normalized_spread / common_tick_rub),
             "benchmark_price": float(benchmark_row["price"]),

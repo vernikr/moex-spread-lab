@@ -52,7 +52,7 @@ class SearchTests(unittest.TestCase):
         request = {
             "pairs": self.pairs,
             "strategy": "mean_reversion",
-            "cost": "stress",
+            "slippage_ticks": 1.0,
             "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
         }
         result = optimize(

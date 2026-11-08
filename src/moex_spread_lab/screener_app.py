@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from .account_risk import assess_vtb_pair
-from .analytics import get_cost_scenario, run_mean_reversion_baseline
+from .analytics import run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study, fetch_history
+from .costs import tariff_profile
 from .screener import SCREEN_PAIRS, _normalized_series
 from .w0 import W0Error
 
@@ -70,6 +71,9 @@ STRATEGIES = {
         "parameters": {"lookback": 20},
     },
 }
+MIN_DAILY_VOLUME = 100
+MAX_QUANTITY = 50
+INITIAL_CAPITAL = 30_000.0
 HISTORY_WINDOWS = {
     "CNYRUBF/CRZ6": ("2025-06-17", "2026-10-27"),
     **{
@@ -139,6 +143,24 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
+def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str]) -> dict[str, int] | None:
+    """Smallest daily volume of each leg over the days both legs traded; None if candles are missing."""
+    try:
+        legs = {
+            secid: {
+                row["begin"][:10]: row["volume"]
+                for row in json.loads(
+                    inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8")
+                )["rows"]
+            }
+            for secid in (pair["near"], pair["far"])
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    days = set(legs[pair["near"]]) & set(legs[pair["far"]])
+    return {secid: min(volumes[day] for day in days) for secid, volumes in legs.items()} if days else None
+
+
 def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
     try:
         instruments = {
@@ -167,9 +189,12 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
             inputs.benchmark,
             inputs.contracts,
         )
+        volumes = _leg_volumes(inputs, pair)
+        tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
         available = {
-            "mean_reversion": all(path.is_file() for path in price_files),
-            "funding_only": pair["family"] == "perpetual_quarterly_same_asset"
+            "mean_reversion": tradable and all(path.is_file() for path in price_files),
+            "funding_only": tradable
+            and pair["family"] == "perpetual_quarterly_same_asset"
             and all(path.is_file() for path in funding_files),
         }
         near_terms, far_terms = instruments.get(near, {}), instruments.get(far, {})
@@ -185,8 +210,11 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
                 "family": pair["family"],
                 "expiry": far_terms.get("expiry"),
                 "current_margin_pct": margin_pct,
+                "min_leg_daily_volume": min(volumes.values()) if volumes else None,
                 "strategies": available,
-                "status": "local_inputs_available"
+                "status": "excluded_thin_leg"
+                if volumes is not None and not tradable
+                else "local_inputs_available"
                 if any(available.values())
                 else "intake_required",
             }
@@ -194,7 +222,8 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
     return {
         "pairs": pairs,
         "strategies": STRATEGIES,
-        "cost_scenarios": ("low", "base", "stress"),
+        "execution_defaults": {"slippage_ticks": 1.0, "quantity": 1},
+        "min_daily_volume": MIN_DAILY_VOLUME,
         "price_warning": "Historical candle/settlement values are analytical price proxies, not fills.",
     }
 
@@ -231,6 +260,15 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
     return values
 
 
+def execution_settings(selection: dict[str, Any]) -> dict[str, float | int]:
+    slippage, quantity = selection.get("slippage_ticks", 1.0), selection.get("quantity", 1)
+    if isinstance(slippage, bool) or not isinstance(slippage, (int, float)) or not 0 <= slippage <= 10:
+        raise ScreenerError("slippage must be 0–10 ticks per leg and side")
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= MAX_QUANTITY:
+        raise ScreenerError(f"contracts per leg must be an integer between 1 and {MAX_QUANTITY}")
+    return {"slippage_ticks": float(slippage), "quantity": quantity}
+
+
 def _history_source(inputs: ScreenerInputs, pair_id: str, secid: str) -> dict[str, Any]:
     start, end = HISTORY_WINDOWS[pair_id]
     return fetch_history(
@@ -251,9 +289,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
     strategy = selection.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("unknown strategy")
-    cost = selection.get("cost", "stress")
-    if not isinstance(cost, str) or cost not in {"low", "base", "stress"}:
-        raise ScreenerError("unknown illustrative cost scenario")
+    execution = execution_settings(selection)
     params = _parameters(selection, strategy)
     availability = next(
         item["strategies"] for item in catalog(inputs)["pairs"] if item["id"] == pair_id
@@ -270,7 +306,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             near=near,
             far=far,
         )
-        risk = assess_vtb_pair(inputs.contracts, near, far)
+        risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("pair fails the working capital stress screen")
         report = run_mean_reversion_baseline(
@@ -278,8 +314,11 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             lookback=params["lookback"],
             entry_z=params["entry_z"],
             exit_z=params["exit_z"],
+            quantity=execution["quantity"],
             analysis_role="diagnostic_only",
-            cost_profile=get_cost_scenario(cost),
+            cost_profile=tariff_profile(execution["slippage_ticks"]),
+            fill="open",
+            cash_in_lqdt=True,
         )
         daily = [
             {
@@ -296,9 +335,10 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         open_positions = 0
         costs = summary["modeled_costs"]
         provenance = report["input_provenance"]
-        price_role = "ISS daily candle close proxy"
+        price_role = "ISS daily candle open fill, close marks"
         notes = [
             "Price-only control: perpetual funding is not included; not a complete carry result.",
+            "Signal at a daily close, fill at the next daily open (minutes-to-hours reaction proxy).",
             "An open position at the sample end is marked as a forced proxy exit, not an executable trade.",
         ]
     else:
@@ -316,11 +356,15 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             study,
             inputs.benchmark,
             inputs.contracts,
-            transaction_cost_scenario=cost,
+            transaction_cost_scenario="tariff",
             warmup_observations=params["lookback"],
             strategy_variant="funding_only",
+            quantity=execution["quantity"],
+            execution_delay_rows=0,
+            cash_in_lqdt=True,
+            slippage_ticks=execution["slippage_ticks"],
         )
-        risk = assess_vtb_pair(inputs.contracts, near, far)
+        risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("pair fails the working capital stress screen")
         daily = [
@@ -348,19 +392,22 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             ).hexdigest(),
         }
         price_role = "ISS EOD settlement proxy"
-        notes = (
-            ["Non-CNY funding-rule caps are not reconstructed."]
-            if pair_id != "CNYRUBF/CRZ6"
-            else []
-        )
+        notes = [
+            "Funding signal uses funding through the previous clearing; fill proxy is the same-day settlement; a same-day exit forgoes that day's funding.",
+            *(
+                ["Non-CNY funding-rule caps are not reconstructed."]
+                if pair_id != "CNYRUBF/CRZ6"
+                else []
+            ),
+        ]
     first, last = daily[0], daily[-1]
-    initial = 30_000.0
+    initial = INITIAL_CAPITAL
     result = {
         "selection": {
             "pair": pair_id,
             "strategy": strategy,
             "parameters": params,
-            "cost": cost,
+            "execution": execution,
         },
         "status": "exploratory_proxy_not_live",
         "price_role": price_role,
@@ -378,7 +425,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             "worst_lqdt_shortfall_rub": round(min(row["X"] for row in daily), 2),
             "closed_trades": trades,
             "open_positions": open_positions,
-            "illustrative_costs_rub": costs,
+            "modeled_costs_rub": costs,
             "current_pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
             "stress_remaining_capital_rub": risk["summary"][
                 "most_severe_remaining_capital_rub"
@@ -388,7 +435,8 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         "notes": [
             "Matched LQDT price path is not an account-statement reconciliation.",
             "Current contract/margin snapshots are fallback assumptions, not dated broker terms.",
-            "Costs are illustrative, not historical execution evidence.",
+            "Costs: published MOEX taker tariff, zero VTB broker fee to 2026-12-31, slippage as a parameter.",
+            "Free cash is held in LQDT, margin cash earns nothing (A-11); the benchmark holds all capital in LQDT.",
             "Capital screening uses fixed working buffers and current margin snapshots, not future-known losses.",
             *notes,
         ],

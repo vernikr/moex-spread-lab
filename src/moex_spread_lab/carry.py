@@ -15,6 +15,8 @@ from urllib.request import urlopen
 
 from .account_risk import assess_vtb_pair
 from .analytics import load_contracts
+from .costs import side_cost, tariff_profile
+from .portfolio import lqdt_overlay_values
 from .w0 import W0Error
 
 
@@ -435,8 +437,18 @@ def build_carry_strategy(
     expiry_buffer_days: int = 5,
     assignment_window_trading_days: int = 10,
     strategy_variant: str = "basis_median",
+    quantity: int = 1,
+    execution_delay_rows: int = 1,
+    cash_in_lqdt: bool = False,
+    slippage_ticks: float = 1.0,
 ) -> dict[str, Any]:
-    """Evaluate a frozen carry hypothesis on settlement proxies with one-row delay."""
+    """Evaluate a frozen carry hypothesis on settlement proxies.
+
+    `execution_delay_rows=0` fills at the settlement of the decision row; it is allowed only for the
+    funding-only rule, whose signal uses funding through the previous row. A same-row exit earns that
+    row's price change but not its funding (exit before the clearing that pays it). `cash_in_lqdt`
+    values the account as free cash in LQDT plus margin cash (A-11).
+    """
     if carry_result.get("schema_version") != CARRY_SCHEMA:
         raise CarryStrategyError("unsupported carry decomposition schema")
     rows = carry_result.get("rows")
@@ -448,6 +460,9 @@ def build_carry_strategy(
         or expiry_buffer_days < 0
         or assignment_window_trading_days < 1
         or strategy_variant not in {"basis_median", "funding_only"}
+        or quantity < 1
+        or execution_delay_rows not in (0, 1)
+        or (execution_delay_rows == 0 and strategy_variant != "funding_only")
     ):
         raise CarryStrategyError("invalid carry strategy parameters")
     near = carry_result.get("near")
@@ -470,21 +485,36 @@ def build_carry_strategy(
     last_row = rows[-1]
     near_reference_price = float(last_row["near_settle"]) if "near_settle" in last_row else None
     far_reference_price = float(last_row["far_settle"]) if "far_settle" in last_row else None
-    cost_profile = _transaction_cost_profile(
-        transaction_cost_scenario,
-        contracts[near]["tick_value"],
-        near_price=near_reference_price,
-        far_price=far_reference_price,
-        near_lot_size=contracts[near]["lot_size"],
-        far_lot_size=contracts[far]["lot_size"],
-        far_tick_value=contracts[far]["tick_value"],
-    )
+    if transaction_cost_scenario == "tariff":
+        tariff = tariff_profile(slippage_ticks)
+        side = sum(side_cost(tariff, [(contracts[near], near_reference_price), (contracts[far], far_reference_price)], 1).values())
+        cost_profile = {
+            **tariff,
+            "entry_cost": round(side, 8),
+            "exit_cost": round(side, 8),
+            "round_trip_cost": round(2 * side, 8),
+            "near_reference_price": near_reference_price,
+            "far_reference_price": far_reference_price,
+        }
+    else:
+        cost_profile = _transaction_cost_profile(
+            transaction_cost_scenario,
+            contracts[near]["tick_value"],
+            near_price=near_reference_price,
+            far_price=far_reference_price,
+            near_lot_size=contracts[near]["lot_size"],
+            far_lot_size=contracts[far]["lot_size"],
+            far_tick_value=contracts[far]["tick_value"],
+        )
+    entry_cost = cost_profile["entry_cost"] * quantity
+    exit_cost = cost_profile["exit_cost"] * quantity
     account_risk = assess_vtb_pair(
         contracts_path,
         near,
         far,
         initial_capital=initial_capital,
         observed_daily_pnl=(float(row["daily_gross_carry_pnl"]) for row in rows[1:]),
+        quantity=quantity,
     )
     benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
     benchmark_dates = sorted(benchmark)
@@ -507,44 +537,45 @@ def build_carry_strategy(
     pending: dict[str, Any] | None = None
     cumulative_gross = 0.0
     cumulative_cost = 0.0
+    trade_gross = 0.0
     trades: list[dict[str, Any]] = []
     daily = []
     signals = []
+
+    def execute(order: dict[str, Any], index: int, date_key: str) -> None:
+        nonlocal position, entry_index, entry_decision_date, cumulative_cost, trade_gross
+        if order["action"] == "entry":
+            if position:
+                raise CarryStrategyError("entry attempted while a position is open")
+            position, entry_index, entry_decision_date, trade_gross = True, index, order["decision_date"], 0.0
+            cumulative_cost += entry_cost
+        else:
+            if not position or entry_index is None or entry_decision_date is None:
+                raise CarryStrategyError("exit attempted without an open position")
+            cumulative_cost += exit_cost
+            trades.append({
+                "entry_decision_date": entry_decision_date,
+                "entry_execution_date": rows[entry_index]["date"],
+                "exit_decision_date": order["decision_date"],
+                "exit_execution_date": date_key,
+                "status": "closed_proxy_round_trip",
+                "gross_pnl": round(trade_gross, 8),
+                "transaction_costs": (entry_cost + exit_cost),
+                "net_pnl": round(trade_gross - entry_cost - exit_cost, 8),
+            })
+            position, entry_index, entry_decision_date = False, None, None
 
     for index, row in enumerate(rows):
         date_key = row["date"]
         current_date = date.fromisoformat(date_key)
         increment = 0.0
         if position and entry_index is not None and index > entry_index:
-            increment = float(row["daily_gross_carry_pnl"])
+            increment = quantity * float(row["daily_gross_carry_pnl"])
             cumulative_gross += increment
+            trade_gross += increment
 
         if pending is not None and pending["execute_index"] == index:
-            action = pending["action"]
-            if action == "entry":
-                if position:
-                    raise CarryStrategyError("entry attempted while a position is open")
-                position = True
-                entry_index = index
-                entry_decision_date = pending["decision_date"]
-                cumulative_cost += cost_profile["entry_cost"]
-            elif action == "exit":
-                if not position or entry_index is None or entry_decision_date is None:
-                    raise CarryStrategyError("exit attempted without an open position")
-                cumulative_cost += cost_profile["exit_cost"]
-                trades.append({
-                    "entry_decision_date": entry_decision_date,
-                    "entry_execution_date": rows[entry_index]["date"],
-                    "exit_decision_date": pending["decision_date"],
-                    "exit_execution_date": date_key,
-                    "status": "closed_proxy_round_trip",
-                    "gross_pnl": round(sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:index + 1]), 8),
-                    "transaction_costs": cost_profile["round_trip_cost"],
-                    "net_pnl": round(sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:index + 1]) - cost_profile["round_trip_cost"], 8),
-                })
-                position = False
-                entry_index = None
-                entry_decision_date = None
+            execute(pending, index, date_key)
             pending = None
 
         if index >= warmup_observations:
@@ -564,9 +595,17 @@ def build_carry_strategy(
                 elif expiry_signal:
                     exit_reason = "expiry_buffer"
                 if exit_reason and pending is None:
-                    if index + 1 < len(rows):
-                        pending = {"action": "exit", "execute_index": index + 1, "decision_date": date_key, "reason": exit_reason}
-                    signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": index + 1 < len(rows)})
+                    available = index + execution_delay_rows < len(rows)
+                    if available:
+                        pending = {"action": "exit", "execute_index": index + execution_delay_rows, "decision_date": date_key, "reason": exit_reason}
+                    signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": available})
+                    if available and execution_delay_rows == 0:
+                        funding_today = quantity * float(row["daily_funding_received_short_near"])
+                        increment -= funding_today
+                        cumulative_gross -= funding_today
+                        trade_gross -= funding_today
+                        execute(pending, index, date_key)
+                        pending = None
             elif (
                 not expiry_signal
                 and not assignment_window_signal
@@ -574,12 +613,14 @@ def build_carry_strategy(
                 and (strategy_variant == "funding_only" or float(row["basis_far_minus_near"]) <= trailing_basis_median)
                 and pending is None
             ):
-                if index + 1 < len(rows):
-                    pending = {"action": "entry", "execute_index": index + 1, "decision_date": date_key, "reason": "positive_trailing_funding_and_low_basis"}
+                available = index + 1 < len(rows)
                 entry_reason = "positive_trailing_funding" if strategy_variant == "funding_only" else "positive_trailing_funding_and_low_basis"
-                if pending is not None:
-                    pending["reason"] = entry_reason
-                signals.append({"date": date_key, "action": "entry", "reason": entry_reason, "execution_available": index + 1 < len(rows)})
+                if available:
+                    pending = {"action": "entry", "execute_index": index + execution_delay_rows, "decision_date": date_key, "reason": entry_reason}
+                signals.append({"date": date_key, "action": "entry", "reason": entry_reason, "execution_available": available})
+                if available and execution_delay_rows == 0:
+                    execute(pending, index, date_key)
+                    pending = None
 
         benchmark_mark_row = benchmark_mark(date_key)
         strategy_value = initial_capital + cumulative_gross - cumulative_cost
@@ -600,7 +641,7 @@ def build_carry_strategy(
         })
 
     if position and entry_index is not None and entry_decision_date is not None:
-        gross_open = sum(float(item["daily_gross_carry_pnl"]) for item in rows[entry_index + 1:])
+        gross_open = trade_gross
         trades.append({
             "entry_decision_date": entry_decision_date,
             "entry_execution_date": rows[entry_index]["date"],
@@ -608,9 +649,23 @@ def build_carry_strategy(
             "exit_execution_date": None,
             "status": "open_at_data_end_no_executable_exit",
             "gross_pnl": round(gross_open, 8),
-            "transaction_costs": cost_profile["entry_cost"],
-            "net_pnl": round(gross_open - cost_profile["entry_cost"], 8),
+            "transaction_costs": entry_cost,
+            "net_pnl": round(gross_open - entry_cost, 8),
         })
+
+    if cash_in_lqdt:
+        margin = (contracts[near]["initial_margin"] + contracts[far]["initial_margin"]) * quantity
+        values, shortfalls = lqdt_overlay_values(
+            initial_capital,
+            [row["cumulative_gross_pnl"] - row["cumulative_transaction_costs"] for row in daily],
+            [margin if row["position"] else 0.0 for row in daily],
+            [benchmark_mark(row["date"])["price"] for row in daily],
+        )
+        for row, value in zip(daily, values):
+            row["strategy_value_proxy"] = round(value, 8)
+            row["X"] = round(value - row["benchmark_value"], 8)
+    else:
+        shortfalls = 0
 
     peak = 0.0
     for row in daily:
@@ -654,7 +709,9 @@ def build_carry_strategy(
                 "date >= far_expiry - 5 calendar days",
             ],
             "decision_delay_observations": 1,
-            "quantity_per_leg": 1,
+            "execution_delay_rows": execution_delay_rows,
+            "accounting": "free_cash_in_lqdt_margin_cash_idle" if cash_in_lqdt else "idle_cash_no_yield",
+            "quantity_per_leg": quantity,
             "expiry": far_expiry,
             "expiry_buffer_days": expiry_buffer_days,
             "assignment_window_trading_days": assignment_window_trading_days,
@@ -672,6 +729,7 @@ def build_carry_strategy(
             "signal_count": len(signals),
             "closed_trade_count": len(closed),
             "open_trade_count": sum(trade["status"] == "open_at_data_end_no_executable_exit" for trade in trades),
+            "cash_shortfall_rows": shortfalls,
             "final_strategy_value_proxy": daily[-1]["strategy_value_proxy"],
             "final_benchmark_value": daily[-1]["benchmark_value"],
             "final_X": daily[-1]["X"],

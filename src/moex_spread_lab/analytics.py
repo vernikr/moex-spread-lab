@@ -11,6 +11,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .costs import COST_COMPONENTS, COST_SCHEMA, side_cost
+from .portfolio import lqdt_overlay_values
 from .w0 import W0Error
 
 
@@ -78,6 +80,8 @@ def get_cost_scenario(name: str) -> dict[str, Any]:
 
 
 def _validate_cost_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    if profile.get("schema_version") == COST_SCHEMA:
+        return deepcopy(profile)
     if profile.get("schema_version") != "cost-profile.v1":
         raise AnalyticsError("unsupported cost profile schema")
     components = profile.get("components")
@@ -212,6 +216,7 @@ def _load_candles(path: Path, secid: str, interval: int) -> tuple[dict[str, dict
         result[timestamp] = {
             "date": date_key,
             "timestamp": timestamp,
+            "open": float(row["open"]) if isinstance(row.get("open"), (int, float)) and row["open"] > 0 else close,
             "close": close,
             "source": row.get("source"),
             "price_proxy_kind": row.get("price_proxy_kind"),
@@ -287,6 +292,8 @@ def build_series(
             "timestamp": timestamp,
             "near_close": near_close,
             "far_close": far_close,
+            "near_open": near_rows[timestamp]["open"],
+            "far_open": far_rows[timestamp]["open"],
             "spread_value": _round(spread_value),
             "spread_ticks": _round(spread_value / near_contract["tick_size"]),
             "benchmark_price": benchmark_row["price"],
@@ -349,7 +356,14 @@ def run_mean_reversion_baseline(
     decision_delay_bars: int = 1,
     analysis_role: str = "primary_baseline",
     cost_profile: dict[str, Any] | None = None,
+    fill: str = "close",
+    cash_in_lqdt: bool = False,
 ) -> dict[str, Any]:
+    """Run the delayed z-score control.
+
+    `fill="open"` executes at the open of the bar after the signal bar; `cash_in_lqdt` values the
+    account as free cash in LQDT plus margin cash (A-11) instead of idle cash.
+    """
     if (
         initial_capital <= 0
         or lookback < 2
@@ -358,6 +372,7 @@ def run_mean_reversion_baseline(
         or quantity <= 0
         or decision_delay_bars < 1
         or analysis_role not in {"primary_baseline", "diagnostic_only"}
+        or fill not in {"close", "open"}
     ):
         raise AnalyticsError("invalid baseline parameters")
     rows = series.get("rows", [])
@@ -372,7 +387,14 @@ def run_mean_reversion_baseline(
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
     far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
     normalized_cost_profile = _validate_cost_profile(cost_profile) if cost_profile is not None else None
-    cost_status = "illustrative_unverified" if normalized_cost_profile is not None else "unknown"
+    tariff_costs = normalized_cost_profile is not None and normalized_cost_profile["schema_version"] == COST_SCHEMA
+    cost_components = COST_COMPONENTS if tariff_costs else REQUIRED_COST_COMPONENTS
+    cost_status = (
+        "unknown" if normalized_cost_profile is None
+        else normalized_cost_profile["status"] if tariff_costs else "illustrative_unverified"
+    )
+    if fill == "open" and not all("near_open" in row and "far_open" in row for row in rows):
+        raise AnalyticsError("open fills require open prices in the series")
 
     benchmark_start = rows[0]["benchmark_price"]
     position = 0
@@ -382,7 +404,8 @@ def run_mean_reversion_baseline(
     realized_costs = 0.0
     trades: list[dict[str, Any]] = []
     daily = []
-    cost_totals = {component: 0.0 for component in REQUIRED_COST_COMPONENTS}
+    cost_totals = {component: 0.0 for component in cost_components}
+    entry_breakdown: dict[str, float] | None = None
 
     def pnl_at(current_near: float, current_far: float) -> float:
         if position == 0:
@@ -390,10 +413,17 @@ def run_mean_reversion_baseline(
         return quantity * position * ((current_near - entry_near) * near_multiplier - (current_far - entry_far) * far_multiplier)
 
     def close_trade(date_key: str, current_near: float, current_far: float, reason: str) -> None:
-        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs
+        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown
         gross = pnl_at(current_near, current_far)
+        exit_breakdown = (
+            side_cost(normalized_cost_profile, [(near_contract, current_near), (far_contract, current_far)], quantity)
+            if tariff_costs
+            else None
+        )
         breakdown = (
-            _trade_cost_breakdown(
+            {key: entry_breakdown[key] + exit_breakdown[key] for key in exit_breakdown}
+            if tariff_costs
+            else _trade_cost_breakdown(
                 normalized_cost_profile,
                 entry_timestamp=entry_date or date_key,
                 exit_timestamp=date_key,
@@ -406,9 +436,9 @@ def run_mean_reversion_baseline(
         )
         cost = sum(breakdown.values()) if breakdown is not None else 0.0
         realized_gross += gross
-        realized_costs += cost
+        realized_costs += sum(exit_breakdown.values()) if tariff_costs else cost
         if breakdown is not None:
-            for component, value in breakdown.items():
+            for component, value in (exit_breakdown if tariff_costs else breakdown).items():
                 cost_totals[component] += value
         trades.append({
             "entry_date": entry_date,
@@ -425,6 +455,7 @@ def run_mean_reversion_baseline(
         })
         position = 0
         entry_date = None
+        entry_breakdown = None
 
     for index, row in enumerate(rows):
         action = "hold_flat" if position == 0 else "hold_position"
@@ -436,14 +467,19 @@ def run_mean_reversion_baseline(
             mean, standard_deviation = _rolling_stats(window)
             deviation = float(rows[signal_index]["spread_ticks"]) - mean
             signal_z = deviation / standard_deviation if standard_deviation > 0 else 0.0
+            fill_near, fill_far = (row["near_open"], row["far_open"]) if fill == "open" else (row["near_close"], row["far_close"])
             if position != 0 and abs(signal_z) <= exit_z:
-                close_trade(row.get("timestamp", row["date"]), row["near_close"], row["far_close"], "mean_reversion_exit")
+                close_trade(row.get("timestamp", row["date"]), fill_near, fill_far, "mean_reversion_exit")
                 action = "exit"
             elif position == 0 and index < len(rows) - 1 and abs(signal_z) >= entry_z:
                 position = 1 if signal_z < 0 else -1
-                entry_near = row["near_close"]
-                entry_far = row["far_close"]
+                entry_near, entry_far = fill_near, fill_far
                 entry_date = row.get("timestamp", row["date"])
+                if tariff_costs:
+                    entry_breakdown = side_cost(normalized_cost_profile, [(near_contract, fill_near), (far_contract, fill_far)], quantity)
+                    realized_costs += sum(entry_breakdown.values())
+                    for component, value in entry_breakdown.items():
+                        cost_totals[component] += value
                 action = "enter_long_spread" if position > 0 else "enter_short_spread"
             else:
                 signal = "entry_candidate" if position == 0 and abs(signal_z) >= entry_z else "no_action"
@@ -476,13 +512,28 @@ def run_mean_reversion_baseline(
         daily[-1]["gross_realized_pnl"] = _round(realized_gross)
         daily[-1]["modeled_costs"] = _round(realized_costs) if normalized_cost_profile is not None else None
 
+    cash_shortfall_rows = 0
+    if cash_in_lqdt:
+        values, cash_shortfall_rows = lqdt_overlay_values(
+            initial_capital,
+            [row["strategy_value"] - initial_capital for row in daily],
+            [margin_per_pair * quantity if row["position"] else 0.0 for row in daily],
+            [row["benchmark_price"] for row in rows],
+        )
+        for row, value in zip(daily, values):
+            row["strategy_value"] = _round(value)
+            row["X"] = _round(value - row["benchmark_value"])
+
     peak = 0.0
     for row in daily:
         peak = max(peak, row["X"])
         row["H"] = _round(peak)
         row["D"] = _round(peak - row["X"])
     final = daily[-1]
-    net_status = "usable_for_gross_only" if normalized_cost_profile is None else "illustrative_net_sensitivity"
+    net_status = (
+        "usable_for_gross_only" if normalized_cost_profile is None
+        else "published_tariff_net" if tariff_costs else "illustrative_net_sensitivity"
+    )
     return {
         "schema_version": ANALYTICS_SCHEMA,
         "release_state": "exploratory_inconclusive",
@@ -500,6 +551,8 @@ def run_mean_reversion_baseline(
             "exit_z": exit_z,
             "quantity": quantity,
             "decision_delay_bars": decision_delay_bars,
+            "fill": fill,
+            "accounting": "free_cash_in_lqdt_margin_cash_idle" if cash_in_lqdt else "idle_cash_no_yield",
             "margin_per_pair": _round(margin_per_pair),
             "margin_gate": "passed",
         },
@@ -517,7 +570,7 @@ def run_mean_reversion_baseline(
         },
         "costs": {
             "status": cost_status,
-            "components": list(REQUIRED_COST_COMPONENTS),
+            "components": list(cost_components),
             "profile": normalized_cost_profile,
             "total_by_component": {
                 component: _round(value) for component, value in cost_totals.items()
@@ -539,6 +592,7 @@ def run_mean_reversion_baseline(
             "min_X": _round(min(row["X"] for row in daily)),
             "benchmark_source_kinds": sorted({row["benchmark_source_kind"] for row in daily}),
             "benchmark_mark_kinds": sorted({row.get("benchmark_mark_kind", "daily_close_same_date") for row in daily}),
+            "cash_shortfall_rows": cash_shortfall_rows,
         },
         "trades": trades,
         "daily": daily,

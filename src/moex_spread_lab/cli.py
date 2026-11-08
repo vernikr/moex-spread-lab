@@ -160,6 +160,15 @@ def build_parser() -> argparse.ArgumentParser:
     funding_screen_parser.add_argument("--delay-seconds", type=float, default=0.2)
     funding_screen_parser.add_argument("--timeout", type=float, default=60.0)
 
+    audit_parser = subparsers.add_parser("audit-pairs", help="independently recompute and audit the screener's price-only control for every local pair")
+    audit_parser.add_argument("--root", type=Path, default=Path.cwd())
+    audit_parser.add_argument("--output", type=Path, required=True)
+
+    s3_parser = subparsers.add_parser("s3-reference", help="reproduce the reference SBRF calendar backtest and stress its fills and liquidity")
+    s3_parser.add_argument("--reference-dir", type=Path, required=True, help="checkout of the reference calendar-spread project")
+    s3_parser.add_argument("--benchmark", type=Path, default=Path("data/benchmark/lqdt-lineage.json"))
+    s3_parser.add_argument("--output", type=Path, required=True)
+
     local_screener_parser = subparsers.add_parser("screener", help="serve the private offline research screener on loopback")
     local_screener_parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository with local ignored research inputs")
     local_screener_parser.add_argument("--port", type=int, default=8765)
@@ -621,6 +630,22 @@ def main() -> int:
             })
             write_json(args.output, result)
             print(json.dumps({"run_id": result["run_id"], "status": result["status"], "output": str(args.output)}, sort_keys=True))
+            return 0
+        if args.command == "audit-pairs":
+            from .audit import audit_pairs
+            from .screener_app import ScreenerInputs
+
+            result = audit_pairs(ScreenerInputs(args.root.resolve()))
+            write_json(args.output, result)
+            print(json.dumps({**result["summary"], "output": str(args.output)}, sort_keys=True))
+            return 0
+        if args.command == "s3-reference":
+            from .s3_reference import run_s3
+
+            result = run_s3(args.reference_dir, args.benchmark)
+            write_json(args.output, result)
+            for variant in result["variants"]:
+                print(json.dumps({key: variant[key] for key in ("strategy", "variant", "trades", "gross_rub", "net_rub", "overlay_excess_rub")}, sort_keys=True))
             return 0
         if args.command == "funding-screen":
             from .funding_screen import screen_funding_pairs, write_funding_screen

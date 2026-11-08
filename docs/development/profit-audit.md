@@ -48,10 +48,36 @@ The reference is reproduced exactly (convergence 4 trades +RUB 1,947; z-score 41
 
 - The z-score gain exists only when the signal and fill share one close and the rolling window contains the signal bar.
 - The convergence gain is four hold-to-expiry trades; the first entry (`SRH5/SRM5`, spread 2,122) is a stale first-day print (the next day it is 600). Even as published it does not beat LQDT on the margin it ties up.
-- All nine reference pairs fail the volume rule (their far legs traded 1–2 contracts on some day), so none is tradable under A-12 as defined; the strict whole-window rule may be too harsh for calendars whose far leg is liquid only near expiry, and relaxing it to a late-life window is a user decision.
+- The reference executed two separate legs, whose far legs traded 1–2 contracts on some days. The exchange's native calendar spread (section 3b) is the right instrument and is liquid in its front window.
 - Ad-hoc (not versioned): holding liquid, no-dividend days to expiry, signed P&L grows with deviation (≥ 2 pp ≈ +440 RUB per pair), but that bucket is one episode (`SRH5/SRM5`, Dec 2024–Mar 2025, peak-rate regime). About five independent episodes exist in two years.
 
-b02.6: the reference gain is **not accepted as evidence**; S3 is closed as a reproduction.
+b02.6: the reference gain is **not accepted as evidence**.
+
+## 3b. Native calendar spreads (user decision A-13)
+
+Reproduce: `calendar-study --till-date 2026-11-08 --output data/analytics/calendar-study.json` (`calendar_spreads.py`; the first run downloads ISS history into the ignored `data/spread-history-cache/`).
+
+Facts verified on ISS and the tariff page (2026-11-08):
+
+- A native spread is an exchange instrument whose id is the two leg ids joined (`SRZ6SRH7`); ISS serves its daily history, including expired spreads back to 2022. One order trades both legs through its own book.
+- Its settlement price equals far-leg settlement minus near-leg settlement exactly (zero difference on all 2023–2025 rows; ISS stops publishing it in 2026, so the spread is always derived from the official leg settlements). Daily spread candles and opens are not kept for expired spreads, so fills use the legs' opens (spread open = far open − near open).
+- Fee: the current tariff says the calendar-spread fee equals the sum of the two futures fees (no discount), and margin is reserved as for two legs, so margin is not reduced. The advantage is one book: slippage is paid once per side instead of twice, and legs cannot be filled at stale prints.
+- Liquidity: spreads are thin early in life (0–40 contracts a day) and liquid in the roughly three months before the near expiry. The study therefore trades only the *front window* (the days after the previous near expiry until two days before this one) and applies the volume rule to the spread's own daily volume over that window; the window rule is an assistant definition, not a relaxation of the pair-level principle.
+
+Results, 2022-09 to 2026-09, 13–15 front windows per asset, published tariff, next-open fills, 1-tick slippage, one spread; "excess" = net P&L minus LQDT return on pair margin while open (A-11), annualized on the 30,000 allocation:
+
+| Asset | Capital screen (windows passing) | Tradable windows | Convergence to RUONIA: trades, net, excess | Z-score: trades, net, excess |
+|---|---|---:|---|---|
+| SBRF (`SR`) | 1 of 15 (margin 10–12k) | 12 of 15 | 9, +RUB 2,952, −RUB 341 (−0.3 pp/yr) | 32, −1,082, −2,650 (−2.3 pp/yr) |
+| GAZR (`GZ`) | 12 of 15 | 13 of 15 | 13, +980, −1,434 (−1.3 pp/yr) | 30, −468, −1,414 (−1.3 pp/yr) |
+| Si | 0 of 15 (margin up to 34k) | 13 of 15 | not applicable (currency) | 35, −3,778, −8,521 (−7.1 pp/yr) |
+| CNY (`CR`) | 15 of 15 | 13 of 15 | not applicable (currency) | 32, −158, −551 (−0.5 pp/yr) |
+
+Slippage 0 or 2 ticks moves these by under RUB 150 for the stock convergence rule: the result is not a cost artefact. The fixed rules were not tuned.
+
+Interpretation: with native execution and clean prices the reference's z-score gain disappears completely (gross ≈ 0 or negative), and the fair-value convergence rule earns about what LQDT earns on the margin it ties up (gross +RUB 3,173 on `SR` against about RUB 3,500 of LQDT on that margin), slightly below it. This is the structural expectation: a calendar spread prices the same risk-free rate. Convergence on `SR` needs more margin than the working capital screen allows at RUB 30,000; `GZ` is feasible and negative.
+
+Dividends use a third-party SBER ex-date seed (unverified) and none for GAZP; margin uses the live contract's margin-to-notional ratio on historical settlements (fallback).
 
 ## 4. Where profit could come from
 
@@ -68,10 +94,10 @@ Structural carry is priced near the risk-free rate, so it ties with LQDT:
 Next steps by evidence value:
 
 1. **Longer liquid history.** Six pairs have one dated contract and 155 days; multi-year histories of expired contracts (ISS, when reachable) would give many independent episodes for the pairs that pass the volume rule.
-2. **Decide the calendar volume window** (above) before reopening S3.
+2. **Calendar spreads are settled** by section 3b: no edge on SBRF, GAZR, Si or CNY; further assets or rules would be new hypotheses.
 3. **S4 shared-capital basket** only after a pair shows a positive result on a tradable sample; it adds cost and margin to zero-edge pairs otherwise.
 4. Optional branch: cash-and-carry versus LQDT with explicit dividend/tax and share-collateral facts (broker evidence needed).
 
-Earlier records (`analytical-baseline.md`, `pair-screen.md`, `funding-screen.md`, `carry-*.md`, S1/S2 numbers) used idle-cash accounting, close-to-close fills and illustrative costs; they stay as dated history and are superseded for new runs.
+Native-spread results use the spread instrument's own history; legs of earlier sections used leg candles. Earlier records (`analytical-baseline.md`, `pair-screen.md`, `funding-screen.md`, `carry-*.md`, S1/S2 numbers) used idle-cash accounting, close-to-close fills and illustrative costs; they stay as dated history and are superseded for new runs.
 
 This is exploratory evidence, not strategy approval or permission to fund or trade.

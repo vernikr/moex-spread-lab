@@ -44,14 +44,21 @@ def tariff_profile(slippage_ticks: float = 1.0) -> dict[str, Any]:
     }
 
 
-def side_cost(profile: dict[str, Any], legs: list[tuple[dict[str, Any], float]], quantity: int) -> dict[str, float]:
-    """Cost of one entry or exit side across legs; each leg is (contract terms, fill price)."""
+def side_cost(
+    profile: dict[str, Any], legs: list[tuple[dict[str, Any], float]], quantity: int, *, native_spread: bool = False
+) -> dict[str, float]:
+    """Cost of one entry or exit side across legs; each leg is (contract terms, fill price).
+
+    A native calendar-spread order pays the tariff on both legs (the published rule) but crosses
+    one spread book, so slippage is charged once, on the first leg's tick value.
+    """
     exchange = slippage = 0.0
-    for contract, price in legs:
+    for position, (contract, price) in enumerate(legs):
         group = contract.get("tariff_group") or CONTRACT_GROUP.get(contract["secid"])
         if group is None:
             raise W0Error(f"no tariff group assigned for {contract['secid']}")
         value = price * contract["tick_value"] / contract["tick_size"]
         exchange += value * TAKER_RATE_PERCENT[group] / 100 * quantity
-        slippage += profile["slippage_ticks"] * contract["tick_value"] * quantity
+        if not native_spread or position == 0:
+            slippage += profile["slippage_ticks"] * contract["tick_value"] * quantity
     return {"exchange_clearing": exchange, "broker": 0.0, "slippage": slippage}

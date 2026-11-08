@@ -89,14 +89,14 @@ def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     return [dict(zip(block["columns"], values)) for values in block["data"] if isinstance(values, list)]
 
 
-def _history_url(secid: str, from_date: str, till_date: str, start: int) -> str:
+def _history_url(secid: str, from_date: str, till_date: str, start: int, fields: tuple[str, ...] = HISTORY_FIELDS) -> str:
     query = urlencode({
         "iss.meta": "off",
         "from": from_date,
         "till": till_date,
         "start": start,
         "limit": HISTORY_PAGE_SIZE,
-        "history.columns": ",".join(HISTORY_FIELDS),
+        "history.columns": ",".join(fields),
     })
     return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
 
@@ -110,6 +110,7 @@ def fetch_history(
     delay_seconds: float = 0.1,
     timeout: float = 30.0,
     opener: Callable[..., Any] = urlopen,
+    fields: tuple[str, ...] = HISTORY_FIELDS,
 ) -> dict[str, Any]:
     if not secid or delay_seconds < 0:
         raise CarryError("invalid history arguments")
@@ -119,7 +120,7 @@ def fetch_history(
     total: int | None = None
     while total is None or len(all_rows) < total:
         start = page * HISTORY_PAGE_SIZE
-        url = _history_url(secid, from_date, till_date, start)
+        url = _history_url(secid, from_date, till_date, start, fields)
         cache_path = cache_dir / f"{secid}-{from_date}-{till_date}-{start}.json" if cache_dir else None
         payload = None
         raw_hash = None

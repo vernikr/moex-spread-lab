@@ -169,6 +169,13 @@ def build_parser() -> argparse.ArgumentParser:
     s3_parser.add_argument("--benchmark", type=Path, default=Path("data/benchmark/lqdt-lineage.json"))
     s3_parser.add_argument("--output", type=Path, required=True)
 
+    calendar_parser = subparsers.add_parser("calendar-study", help="study native MOEX calendar spreads over front windows (fetches and caches ISS history)")
+    calendar_parser.add_argument("--root", type=Path, default=Path.cwd())
+    calendar_parser.add_argument("--till-date", required=True)
+    calendar_parser.add_argument("--slippage-ticks", type=float, default=1.0)
+    calendar_parser.add_argument("--assets", nargs="+", default=["SR", "GZ", "Si", "CR"])
+    calendar_parser.add_argument("--output", type=Path, required=True)
+
     local_screener_parser = subparsers.add_parser("screener", help="serve the private offline research screener on loopback")
     local_screener_parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository with local ignored research inputs")
     local_screener_parser.add_argument("--port", type=int, default=8765)
@@ -640,6 +647,21 @@ def main() -> int:
             result = audit_pairs(ScreenerInputs(args.root.resolve()))
             write_json(args.output, result)
             print(json.dumps({**result["summary"], "output": str(args.output)}, sort_keys=True))
+            return 0
+        if args.command == "calendar-study":
+            from .calendar_spreads import run_calendar_study
+
+            root = args.root.resolve()
+            result = run_calendar_study(
+                root / "data/spread-history-cache", root / "data/benchmark/lqdt-lineage.json", root / "data/benchmark-cache",
+                root / "data/w1/current-intake.json", assets=tuple(args.assets), slippage_ticks=args.slippage_ticks, till_date=args.till_date,
+            )
+            write_json(args.output, result)
+            for asset, item in result["assets"].items():
+                for variant in item.get("variants", []):
+                    print(json.dumps({"asset": asset, **{k: variant[k] for k in (
+                        "strategy", "variant", "trades", "windows_with_trades", "windows_net_positive", "gross_rub", "costs_rub",
+                        "net_rub", "excess_over_lqdt_on_margin_rub", "excess_pp_per_year_on_allocation")}}, sort_keys=True))
             return 0
         if args.command == "s3-reference":
             from .s3_reference import run_s3

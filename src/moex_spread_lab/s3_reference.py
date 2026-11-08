@@ -63,22 +63,26 @@ def _price(row: dict[str, Any], fill: str) -> float:
     return row["open_spread"] if fill == "open" else row["spread"]
 
 
-def _convergence(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2):
+def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2, close_at_end: bool = False):
     position, entry, trades = 0, None, []
+    if rows[0]["dividend_in_window"]:
+        return trades
     for index, row in enumerate(rows):
         if position and row["days_to_near_expiry"] <= exit_days:
             trades.append((entry, row, position, _price(entry, fill), _price(row, fill)))
             position = 0
         signal = rows[index - delay] if index >= delay else None
         if (not position and signal and row["days_to_near_expiry"] > exit_days and not math.isnan(signal["dev_pp"])
-                and not rows[0]["dividend_in_window"] and abs(signal["dev_pp"]) >= threshold):
+                and abs(signal["dev_pp"]) >= threshold):
             position, entry = (-1 if signal["dev_pp"] > 0 else 1), row
+    if position and close_at_end:
+        trades.append((entry, rows[-1], position, _price(entry, fill), _price(rows[-1], fill)))
     return trades
 
 
-def _zscore(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float = 0.5, window: int = 20,
-            max_hold_days: int = 30, close_before: int = 7):
-    if rows[0]["dividend_in_window"]:
+def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float = 0.5, window: int = 20,
+            max_hold_days: int = 30, close_before: int = 7, skip_dividend_windows: bool = True, close_at_end: bool = False):
+    if skip_dividend_windows and rows[0]["dividend_in_window"]:
         return []
     include_current = delay == 0
     spreads = [r["spread"] for r in rows]
@@ -99,10 +103,15 @@ def _zscore(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float 
         if (not position and signal >= 0 and not math.isnan(z[signal]) and row["days_to_near_expiry"] > close_before
                 and abs(z[signal]) >= entry_z):
             position, entry = (-1 if z[signal] > 0 else 1), row
+    if position and close_at_end:
+        trades.append((entry, rows[-1], position, _price(entry, fill), _price(rows[-1], fill)))
     return trades
 
 
-def _account(label: str, per_pair: dict[str, list], benchmark: dict[str, float], profile: dict[str, Any] | None) -> dict[str, Any]:
+def account_trades(
+    label: str, per_pair: dict[str, list], benchmark: dict[str, float], profile: dict[str, Any] | None,
+    *, native_spread: bool = False,
+) -> dict[str, Any]:
     dates = sorted(benchmark)
 
     def price(day: str) -> float:
@@ -110,7 +119,7 @@ def _account(label: str, per_pair: dict[str, list], benchmark: dict[str, float],
 
     def side(row: dict[str, Any]) -> float:
         legs = [({**SPREAD_MULTIPLIER, "secid": "near"}, row["near_close"]), ({**SPREAD_MULTIPLIER, "secid": "far"}, row["far_close"])]
-        return sum(side_cost(profile, legs, 1).values())
+        return sum(side_cost(profile, legs, 1, native_spread=native_spread).values())
 
     gross = costs = lqdt_on_margin = 0.0
     trades = []
@@ -138,23 +147,40 @@ def _account(label: str, per_pair: dict[str, list], benchmark: dict[str, float],
     }
 
 
-def run_s3(reference_dir: Path, benchmark_path: Path, *, slippage_ticks: float = 1.0) -> dict[str, Any]:
-    pairs = load_reference(reference_dir)
-    try:
-        payload = json.loads(benchmark_path.read_text(encoding="utf-8"))
-        benchmark = {row["date"]: float(row["price"]) for row in payload["rows"]}
-    except (OSError, ValueError, KeyError) as exc:
-        raise W0Error(f"cannot read benchmark: {exc}") from exc
-    profile = tariff_profile(slippage_ticks)
+def evaluate_variants(
+    pairs: dict[str, list[dict[str, Any]]], benchmark: dict[str, float], profile: dict[str, Any],
+    *, native_spread: bool = False, reference_cost: bool = True, skip_dividend_windows_in_zscore: bool = True,
+    close_at_end: bool = False,
+) -> list[dict[str, Any]]:
+    """Run both strategies under every fill rule on prepared pair rows."""
     variants = []
     for label, delay, fill in FILLS:
         for strategy, run in (
-            ("convergence_to_ruonia", lambda rows: _convergence(rows, threshold=1.0, delay=delay, fill=fill)),
-            ("zscore_mean_reversion", lambda rows: _zscore(rows, delay=delay, fill=fill)),
+            ("convergence_to_ruonia", lambda rows: convergence_trades(
+                rows, threshold=1.0, delay=delay, fill=fill, close_at_end=close_at_end)),
+            ("zscore_mean_reversion", lambda rows: zscore_trades(
+                rows, delay=delay, fill=fill, skip_dividend_windows=skip_dividend_windows_in_zscore, close_at_end=close_at_end)),
         ):
             per_pair = {p: run(rows) for p, rows in pairs.items()}
-            variants.append({"strategy": strategy, "cost_model": "reference_flat_round_trip", **_account(label, per_pair, benchmark, None)})
-            variants.append({"strategy": strategy, "cost_model": "published_tariff", **_account(label, per_pair, benchmark, profile)})
+            if reference_cost:
+                variants.append({"strategy": strategy, "cost_model": "reference_flat_round_trip", **account_trades(label, per_pair, benchmark, None)})
+            variants.append({"strategy": strategy, "cost_model": "published_tariff", **account_trades(
+                label, per_pair, benchmark, profile, native_spread=native_spread)})
+    return variants
+
+
+def read_benchmark(path: Path) -> dict[str, float]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return {row["date"]: float(row["price"]) for row in payload["rows"]}
+    except (OSError, ValueError, KeyError) as exc:
+        raise W0Error(f"cannot read benchmark: {exc}") from exc
+
+
+def run_s3(reference_dir: Path, benchmark_path: Path, *, slippage_ticks: float = 1.0) -> dict[str, Any]:
+    pairs = load_reference(reference_dir)
+    benchmark = read_benchmark(benchmark_path)
+    variants = evaluate_variants(pairs, benchmark, tariff_profile(slippage_ticks))
     return {
         "schema_version": "s3-sbrf-reference.v2",
         "release_state": "exploratory_inconclusive",

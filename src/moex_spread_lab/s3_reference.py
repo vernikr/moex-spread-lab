@@ -63,25 +63,33 @@ def _price(row: dict[str, Any], fill: str) -> float:
     return row["open_spread"] if fill == "open" else row["spread"]
 
 
+def _trade(entry, exit_row, direction, fill, reason, signal_kind, signal_row, signal_value):
+    return {
+        "entry": entry, "exit": exit_row, "direction": direction, "reason": reason,
+        "entry_price": _price(entry, fill), "exit_price": _price(exit_row, fill),
+        "signal": {"kind": signal_kind, "date": signal_row["date"], "value": signal_value},
+    }
+
+
 def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2, close_at_end: bool = False):
-    position, entry, trades = 0, None, []
+    position, entry, trades, signal_row = 0, None, [], None
     if rows[0]["dividend_in_window"]:
         return trades
     for index, row in enumerate(rows):
         if position and row["days_to_near_expiry"] <= exit_days:
-            trades.append((entry, row, position, _price(entry, fill), _price(row, fill)))
+            trades.append(_trade(entry, row, position, fill, "near_expiry_buffer", "dev_pp", signal_row, signal_row["dev_pp"]))
             position = 0
         signal = rows[index - delay] if index >= delay else None
         if (not position and signal and row["days_to_near_expiry"] > exit_days and not math.isnan(signal["dev_pp"])
                 and abs(signal["dev_pp"]) >= threshold):
-            position, entry = (-1 if signal["dev_pp"] > 0 else 1), row
+            position, entry, signal_row = (-1 if signal["dev_pp"] > 0 else 1), row, signal
     if position and close_at_end:
-        trades.append((entry, rows[-1], position, _price(entry, fill), _price(rows[-1], fill)))
+        trades.append(_trade(entry, rows[-1], position, fill, "end_of_window", "dev_pp", signal_row, signal_row["dev_pp"]))
     return trades
 
 
 def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float = 0.5, window: int = 20,
-            max_hold_days: int = 30, close_before: int = 7, skip_dividend_windows: bool = True, close_at_end: bool = False):
+                  max_hold_days: int = 30, close_before: int = 7, skip_dividend_windows: bool = True, close_at_end: bool = False):
     if skip_dividend_windows and rows[0]["dividend_in_window"]:
         return []
     include_current = delay == 0
@@ -91,48 +99,67 @@ def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: 
         sample = spreads[index - window + 1:index + 1] if include_current else spreads[index - window:index]
         deviation = statistics.stdev(sample)
         z[index] = (spreads[index] - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
-    position, entry, trades = 0, None, []
+    position, entry, trades, signal_index = 0, None, [], 0
     for index, row in enumerate(rows):
         if position:
             held = (date.fromisoformat(row["date"]) - date.fromisoformat(entry["date"])).days
             exit_signal = z[index - delay] if index >= delay else math.nan
-            if abs(exit_signal) <= exit_z or held >= max_hold_days or row["days_to_near_expiry"] <= close_before:
-                trades.append((entry, row, position, _price(entry, fill), _price(row, fill)))
+            reason = (
+                "z_reverted" if abs(exit_signal) <= exit_z
+                else "max_hold" if held >= max_hold_days
+                else "near_expiry_buffer" if row["days_to_near_expiry"] <= close_before
+                else None
+            )
+            if reason:
+                trades.append(_trade(entry, row, position, fill, reason, "z", rows[signal_index], z[signal_index]))
                 position = 0
         signal = index - delay
         if (not position and signal >= 0 and not math.isnan(z[signal]) and row["days_to_near_expiry"] > close_before
                 and abs(z[signal]) >= entry_z):
-            position, entry = (-1 if z[signal] > 0 else 1), row
+            position, entry, signal_index = (-1 if z[signal] > 0 else 1), row, signal
     if position and close_at_end:
-        trades.append((entry, rows[-1], position, _price(entry, fill), _price(rows[-1], fill)))
+        trades.append(_trade(entry, rows[-1], position, fill, "end_of_window", "z", rows[signal_index], z[signal_index]))
     return trades
+
+
+def trade_costs(profile: dict[str, Any] | None, row: dict[str, Any], quantity: int, native_spread: bool) -> dict[str, float]:
+    """Cost of one side at a row's leg values; the reference flat model splits its round trip evenly."""
+    if profile is None:
+        return {"reference_flat": REFERENCE_ROUND_TRIP_COST / 2 * quantity}
+    leg = {**SPREAD_MULTIPLIER, "tariff_group": profile.get("tariff_group", "stock")}
+    legs = [({**leg, "secid": "near"}, row["near_close"]), ({**leg, "secid": "far"}, row["far_close"])]
+    return side_cost(profile, legs, quantity, native_spread=native_spread)
 
 
 def account_trades(
     label: str, per_pair: dict[str, list], benchmark: dict[str, float], profile: dict[str, Any] | None,
-    *, native_spread: bool = False,
+    *, native_spread: bool = False, quantity: int = 1,
 ) -> dict[str, Any]:
     dates = sorted(benchmark)
 
     def price(day: str) -> float:
         return benchmark[dates[max(0, bisect_right(dates, day) - 1)]]
 
-    def side(row: dict[str, Any]) -> float:
-        legs = [({**SPREAD_MULTIPLIER, "secid": "near"}, row["near_close"]), ({**SPREAD_MULTIPLIER, "secid": "far"}, row["far_close"])]
-        return sum(side_cost(profile, legs, 1, native_spread=native_spread).values())
-
     gross = costs = lqdt_on_margin = 0.0
     trades = []
     for pair, items in per_pair.items():
-        for entry, exit_row, direction, entry_price, exit_price in items:
-            pnl = direction * (exit_price - entry_price)
-            cost = side(entry) + side(exit_row) if profile else REFERENCE_ROUND_TRIP_COST
+        for item in items:
+            entry, exit_row, direction = item["entry"], item["exit"], item["direction"]
+            pnl = direction * (item["exit_price"] - item["entry_price"]) * quantity
+            entry_cost, exit_cost = (trade_costs(profile, row, quantity, native_spread) for row in (entry, exit_row))
+            cost = sum(entry_cost.values()) + sum(exit_cost.values())
+            hurdle = entry["margin"] * quantity * (price(exit_row["date"]) / price(entry["date"]) - 1)
             gross += pnl
             costs += cost
-            lqdt_on_margin += entry["margin"] * (price(exit_row["date"]) / price(entry["date"]) - 1)
-            trades.append({"pair": pair, "entry": entry["date"], "exit": exit_row["date"], "direction": direction,
-                           "entry_spread": entry_price, "exit_spread": exit_price, "gross_rub": round(pnl, 2),
-                           "costs_rub": round(cost, 2)})
+            lqdt_on_margin += hurdle
+            trades.append({
+                "pair": pair, "entry": entry["date"], "exit": exit_row["date"], "direction": direction, "quantity": quantity,
+                "entry_spread": item["entry_price"], "exit_spread": item["exit_price"], "gross_rub": round(pnl, 2),
+                "costs_rub": round(cost, 2), "entry_costs": entry_cost, "exit_costs": exit_cost,
+                "reason": item["reason"], "signal": item["signal"], "margin_rub": round(entry["margin"] * quantity, 2),
+                "lqdt_on_margin_rub": round(hurdle, 2),
+                "entry_row": entry, "exit_row": exit_row,
+            })
     net = gross - costs
     return {
         "variant": label,
@@ -147,25 +174,33 @@ def account_trades(
     }
 
 
+def strategy_runner(strategy: str, *, delay: int, fill: str, close_at_end: bool, skip_dividend_windows_in_zscore: bool,
+                    threshold: float = 1.0, zscore_options: dict[str, Any] | None = None):
+    if strategy == "convergence_to_ruonia":
+        return lambda rows: convergence_trades(rows, threshold=threshold, delay=delay, fill=fill, close_at_end=close_at_end)
+    if strategy == "zscore_mean_reversion":
+        return lambda rows: zscore_trades(
+            rows, delay=delay, fill=fill, skip_dividend_windows=skip_dividend_windows_in_zscore,
+            close_at_end=close_at_end, **(zscore_options or {}))
+    raise W0Error(f"unknown strategy: {strategy}")
+
+
 def evaluate_variants(
     pairs: dict[str, list[dict[str, Any]]], benchmark: dict[str, float], profile: dict[str, Any],
     *, native_spread: bool = False, reference_cost: bool = True, skip_dividend_windows_in_zscore: bool = True,
-    close_at_end: bool = False,
+    close_at_end: bool = False, zscore_options: dict[str, Any] | None = None, quantity: int = 1,
 ) -> list[dict[str, Any]]:
     """Run both strategies under every fill rule on prepared pair rows."""
     variants = []
     for label, delay, fill in FILLS:
-        for strategy, run in (
-            ("convergence_to_ruonia", lambda rows: convergence_trades(
-                rows, threshold=1.0, delay=delay, fill=fill, close_at_end=close_at_end)),
-            ("zscore_mean_reversion", lambda rows: zscore_trades(
-                rows, delay=delay, fill=fill, skip_dividend_windows=skip_dividend_windows_in_zscore, close_at_end=close_at_end)),
-        ):
+        for strategy in ("convergence_to_ruonia", "zscore_mean_reversion"):
+            run = strategy_runner(strategy, delay=delay, fill=fill, close_at_end=close_at_end,
+                                  skip_dividend_windows_in_zscore=skip_dividend_windows_in_zscore, zscore_options=zscore_options)
             per_pair = {p: run(rows) for p, rows in pairs.items()}
             if reference_cost:
                 variants.append({"strategy": strategy, "cost_model": "reference_flat_round_trip", **account_trades(label, per_pair, benchmark, None)})
             variants.append({"strategy": strategy, "cost_model": "published_tariff", **account_trades(
-                label, per_pair, benchmark, profile, native_spread=native_spread)})
+                label, per_pair, benchmark, profile, native_spread=native_spread, quantity=quantity)})
     return variants
 
 

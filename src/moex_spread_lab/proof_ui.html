@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOEX Spread Lab · Execution proof</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#09111b;color:#e6edf4}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
+.app{max-width:1640px;margin:auto;padding:24px 28px 80px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:13px}.mark{width:35px;height:35px;border-radius:10px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900}.eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:2px 0;font-size:17px;letter-spacing:-.03em}h2{font-size:clamp(24px,2.6vw,34px);letter-spacing:-.05em;margin:4px 0 8px}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:8px 14px;font-size:12px;text-decoration:none}
+.panel{background:#111d2a;border:1px solid #293b4e;border-radius:14px}.toolbar{padding:16px 18px;margin-bottom:14px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.control{flex:1;min-width:130px}.control.wide{min-width:260px;flex:2}.control.z-only,.control.c-only{max-width:200px}.control label{display:block;color:#a7b8c8;font-size:11px;font-weight:650;margin-bottom:6px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;height:38px;padding:0 10px;width:100%;outline:none}.control input:focus,.control select:focus{border-color:#63d9b2}
+.action{border:0;border-radius:8px;background:#70e1b9;color:#072119;font-weight:750;min-height:38px;padding:0 18px}.status{font-size:11px;color:#e7bd82;min-height:16px;margin-top:9px}.status.ok{color:#75d9ad}.lead{color:#91a4b7;font-size:12px;line-height:1.6;margin:0 0 16px;max-width:900px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:12px;padding:11px 13px}.tile span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aa0b3;margin-bottom:5px}.tile b{font-size:17px;letter-spacing:-.02em}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
+.flags{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}.flag{font-size:11px;border-radius:50px;padding:5px 11px;border:1px solid #345469;color:#a9bccb}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}
+.charts{padding:14px 16px 8px;position:relative;margin-bottom:16px}.charts h3{margin:0 0 3px;font-size:15px}.panel-title{font-size:11px;color:#9bb0c2;margin:12px 0 3px;display:flex;justify-content:space-between;gap:10px}.panel-title b{color:#dbe7f1}.legend span{margin-left:12px;color:#9bb0c2}.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+svg{display:block;width:100%;overflow:visible}svg text{font-size:10px;fill:#8ea3b6;font-family:inherit}svg .badge{font-size:10px;font-weight:800;fill:#08141f}
+.tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.55;min-width:230px;max-width:430px;z-index:5;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
+.tablewrap{overflow:auto;max-height:620px}.tablebox{margin-bottom:16px}.tablebox .head{padding:15px 18px 5px}.tablebox .head h3{margin:0;font-size:15px}.tablebox .head p{margin:4px 0 8px;color:#8da1b4;font-size:11px}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px}th{position:sticky;top:0;background:#16293a;color:#a9bccb;text-align:left;font-weight:650;padding:9px 10px;border-bottom:1px solid #2f4659;white-space:nowrap;z-index:2}td{padding:8px 10px;border-bottom:1px solid #1f3142;white-space:nowrap;vertical-align:top}td small{display:block;color:#7e93a6;margin-top:2px}tr.sel td{background:#183246}tr.entry td{background:#142b3a}tr.exit td{background:#2a2a1f}tr:hover td{background:#192e40}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.notes{color:#8da1b4;font-size:11px;line-height:1.7;padding:6px 4px}.empty{color:#8da1b4;padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Research workspace</div><h1>MOEX Spread Lab</h1></div></div><a class="back" href="/">← Pair screener</a></header>
+  <div class="eyebrow">Execution proof / native calendar spreads</div>
+  <h2>See every trade behind the number.</h2>
+  <p class="lead">Pick one asset, one front window and one strategy. The charts show both legs, the spread with each entry and exit (fill price, contracts, result), the traded volume and the cumulative result. The tables repeat everything: every trade with prices, volumes and costs, and a daily ledger that reconciles to the trades. Prices are official settlements and legs' first-trade prices — analytical proxies, not reconstructed fills.</p>
+  <section class="panel toolbar">
+    <div class="row">
+      <div class="control"><label for="asset">Asset</label><select id="asset"></select></div>
+      <div class="control wide"><label for="window">Front window (flags: V volume rule, C capital screen)</label><select id="window"></select></div>
+      <div class="control"><label for="strategy">Strategy</label><select id="strategy"></select></div>
+      <div class="control"><label for="fill">Fill</label><select id="fill"></select></div>
+      <div class="control" style="min-width:90px"><label for="quantity">Contracts</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div>
+      <div class="control" style="min-width:110px"><label for="slippage">Slippage · ticks</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="control z-only"><label for="entry">Entry · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
+      <div class="control z-only"><label for="exit">Exit · z</label><input id="exit" type="number" min="0.1" max="4" step="0.1" value="0.5"></div>
+      <div class="control z-only"><label for="lookback">Lookback · days</label><input id="lookback" type="number" min="3" max="60" step="1" value="20"></div>
+      <div class="control c-only"><label for="threshold">Entry · pp from RUONIA</label><input id="threshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
+      <button class="action" id="run">Show proof →</button>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </section>
+  <div id="flags" class="flags"></div>
+  <div id="tiles" class="tiles"></div>
+  <section class="panel charts" id="charts"><div class="empty">Choose a window and press “Show proof”.</div><div class="tip" id="tip"></div></section>
+  <section class="panel tablebox"><div class="head"><div class="eyebrow">All trades in one table</div><h3>Trade ledger</h3><p>Fill prices are spread points (far − near); money is RUB. Costs are the published exchange tariff on both legs plus slippage once per side; the VTB broker fee is zero. “LQDT on margin” is what LQDT would have earned on the pair margin while the position was open.</p></div><div class="tablewrap" id="trades"></div></section>
+  <section class="panel tablebox"><div class="head"><div class="eyebrow">Day by day</div><h3>Daily ledger</h3><p>Every day of the window with both legs, the spread, volumes, the position held and the marked result. The sum of daily results and costs reconciles to the trade table.</p></div><div class="tablewrap" id="ledger"></div></section>
+  <div class="notes" id="notes"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n};
+const NS='http://www.w3.org/2000/svg';
+const fmt=(v,d=0)=>v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const rub=(v,d=0)=>v==null?'—':`${v>0?'+':''}${fmt(v,d)} ₽`;
+const px=v=>v==null?'—':fmt(v,Math.abs(v)<100?4:Math.abs(v)<10000?2:0);
+const cls=v=>v>0?'pos':v<0?'neg':'';
+let catalog=null,payload=null,selectedTrade=null;
+const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',win:'#78e0b4',loss:'#f0928a',entry:'#d7e6f3'};
+function status(text,ok=false){$('status').textContent=text;$('status').className='status'+(ok?' ok':'')}
+async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
+function fillAssets(){const s=$('asset');s.replaceChildren();for(const a of catalog.assets){const o=el('option','',`${a.asset} · ${a.name} · ${a.group}${a.monthly?' · monthly':''}`);o.value=a.asset;s.append(o)}fillWindows()}
+function currentAsset(){return catalog.assets.find(a=>a.asset===$('asset').value)}
+function fillWindows(){const a=currentAsset(),s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations}d · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · min vol ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});
+ const st=$('strategy');const prev=st.value;st.replaceChildren();for(const name of catalog.strategies){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Z-score mean reversion':'Convergence to RUONIA fair value');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;
+ $('lookback').value=a.monthly?7:20;syncParams()}
+function syncParams(){const z=$('strategy').value==='zscore_mean_reversion';document.querySelectorAll('.z-only').forEach(n=>n.hidden=!z);document.querySelectorAll('.c-only').forEach(n=>n.hidden=z)}
+function request(){const z=$('strategy').value==='zscore_mean_reversion';return {asset:$('asset').value,pair:$('window').value,strategy:$('strategy').value,fill:$('fill').value,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters:z?{entry_z:Number($('entry').value),exit_z:Number($('exit').value),window:Number($('lookback').value)}:{threshold_pp:Number($('threshold').value)}}}
+async function show(){$('run').disabled=true;status('Building the proof…');try{payload=await api('/api/proof/run',request());selectedTrade=null;render();status(`${payload.selection.spread_instrument} · ${payload.trades.length} trades · reconciliation ${rub(payload.summary.ledger_reconciliation_rub,2)}`,true)}catch(e){status(e.message)}finally{$('run').disabled=false}}
+function tile(label,value,klass=''){const t=el('div','tile');t.append(el('span','',label));const b=el('b',klass,value);t.append(b);return t}
+function renderSummary(){const s=payload.summary,w=payload.window,sel=payload.selection;const f=$('flags');f.replaceChildren();
+ const flag=(text,ok)=>f.append(el('span','flag '+(ok?'ok':'bad'),text));
+ flag(`${sel.spread_instrument} · ${w.from} → ${w.to} · near expiry ${w.near_expiry}`,true);
+ flag(w.tradable_every_day?`Volume rule passed: min ${fmt(w.min_spread_volume)} ≥ ${w.min_daily_volume_rule} contracts/day`:`Volume rule FAILED: min ${fmt(w.min_spread_volume)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
+ flag(w.passes_capital_screen?`Capital screen passed (margin ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Capital screen FAILED (margin up to ${fmt(w.max_pair_margin_rub)} ₽ with stress buffers)`,w.passes_capital_screen);
+ flag(`Fee ${payload.contract.taker_rate_percent}% of contract value per leg and side (${payload.contract.tariff_group}); broker fee 0`,true);
+ const t=$('tiles');t.replaceChildren();
+ t.append(tile('Trades',`${s.trades} (${s.winners} winners)`),tile('Gross P&L',rub(s.gross_rub),cls(s.gross_rub)),tile('Costs',`−${fmt(s.costs_rub,2)} ₽`),tile('Net P&L',rub(s.net_rub),cls(s.net_rub)),tile('LQDT on margin',`−${fmt(s.lqdt_on_margin_rub)} ₽`),tile('Excess over LQDT',rub(s.excess_over_lqdt_rub),cls(s.excess_over_lqdt_rub)),tile('Ledger vs trade table',rub(s.ledger_reconciliation_rub,2),Math.abs(s.ledger_reconciliation_rub)<0.5?'pos':'warn'));if(Math.abs(s.fx_point_value_drift_rub)>=0.005)t.append(tile('FX point-value drift',rub(s.fx_point_value_drift_rub,2),'warn'))}
+function svgEl(tag,attrs={},parent){const n=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));if(parent)parent.append(n);return n}
+function renderCharts(){const root=$('charts');const tip=$('tip');root.replaceChildren(tip);const S=payload.series,n=S.length,point=payload.contract.point_value_rub*payload.selection.quantity;
+ const W=Math.max(640,root.clientWidth-32),L=64,R=18,x=i=>L+(n===1?0:i*(W-L-R)/(n-1)),idx=new Map(S.map((r,i)=>[r.date,i]));
+ const panels=[];
+ const head=(title,legend)=>{const h=el('div','panel-title');h.append(el('b','',title));const lg=el('span','legend');for(const [label,color] of legend){const s=el('span');const i=el('i');i.style.background=color;s.append(i,label);lg.append(s)}h.append(lg);root.append(h)};
+ const make=(height,values,{bottom=false,bars=false,zero=false,label=px}={})=>{const svg=svgEl('svg',{viewBox:`0 0 ${W} ${height}`,height});root.append(svg);let lo=Math.min(...values),hi=Math.max(...values);if(zero){lo=Math.min(lo,0);hi=Math.max(hi,0)}if(bars)lo=0;if(lo===hi){lo-=1;hi+=1}const pad=(hi-lo)*(bars?0.06:0.12);if(!bars)lo-=pad;hi+=pad;const top=10,bot=bottom?height-22:height-8,y=v=>bot-(v-lo)*(bot-top)/(hi-lo);
+  for(let g=0;g<=3;g++){const v=lo+(hi-lo)*g/3,yy=y(v);svgEl('line',{x1:L,x2:W-R,y1:yy,y2:yy,stroke:'#223548','stroke-dasharray':'3 4'},svg);const t=svgEl('text',{x:L-8,y:yy+3,'text-anchor':'end'},svg);t.textContent=label(v)}
+  if(bottom){const step=Math.max(1,Math.ceil(n/9));S.forEach((r,i)=>{if(i%step===0||i===n-1){const t=svgEl('text',{x:x(i),y:height-6,'text-anchor':'middle'},svg);t.textContent=r.date.slice(5)}})}
+  const p={svg,y,top,bot,lo,hi};panels.push(p);return p};
+ const line=(p,key,color,w=1.6,dash)=>{let d='';S.forEach((r,i)=>{if(r[key]!=null)d+=`${d?'L':'M'}${x(i)},${p.y(r[key])}`});svgEl('path',{d,fill:'none',stroke:color,'stroke-width':w,'stroke-dasharray':dash||'none'},p.svg)};
+ const dots=(p,key,color)=>S.forEach((r,i)=>{if(r[key]!=null&&r[key]>0)svgEl('circle',{cx:x(i),cy:p.y(r[key]),r:1.8,fill:color,opacity:.7},p.svg)});
+ const bands=p=>{payload.trades.forEach(t=>{const a=idx.get(t.entry.date),b=idx.get(t.exit.date);if(a==null||b==null)return;svgEl('rect',{x:x(a),y:p.top,width:Math.max(2,x(b)-x(a)),height:p.bot-p.top,fill:t.net_rub>=0?'#2f8f6a':'#a24d47',opacity:.10},p.svg)})};
+ // legs
+ head('1 · Both legs (settlement; dots = first trade of the day)',[['near',COLORS.near],['far',COLORS.far]]);
+ const legs=make(170,S.flatMap(r=>[r.near,r.far]));bands(legs);line(legs,'near',COLORS.near);line(legs,'far',COLORS.far);dots(legs,'near_open',COLORS.near);dots(legs,'far_open',COLORS.far);
+ // spread
+ head('2 · Spread = far − near, with entries and exits',[['settlement',COLORS.spread],['last trade of the spread instrument','#88a1b5']]);
+ const sp=make(300,S.flatMap(r=>[r.spread,r.spread_last_trade,r.spread_open].filter(v=>v!=null&&(v!==0))));bands(sp);line(sp,'spread_last_trade','#88a1b5',1,'2 3');line(sp,'spread',COLORS.spread,2);
+ const markers=[];
+ payload.trades.forEach(t=>{const a=idx.get(t.entry.date),b=idx.get(t.exit.date);const win=t.net_rub>=0,col=win?COLORS.win:COLORS.loss;
+  const ya=sp.y(t.entry.spread_fill),yb=sp.y(t.exit.spread_fill);svgEl('line',{x1:x(a),y1:ya,x2:x(b),y2:yb,stroke:col,'stroke-width':1.5,'stroke-dasharray':'5 4',opacity:.9},sp.svg);
+  const up=t.side==='long_spread';const tri=svgEl('path',{d:up?`M${x(a)},${ya-9}L${x(a)-7},${ya+5}L${x(a)+7},${ya+5}Z`:`M${x(a)},${ya+9}L${x(a)-7},${ya-5}L${x(a)+7},${ya-5}Z`,fill:COLORS.entry,stroke:'#09111b','stroke-width':1.5,'data-trade':t.number},sp.svg);
+  const ex=svgEl('rect',{x:x(b)-6,y:yb-6,width:12,height:12,rx:2,fill:col,stroke:'#09111b','stroke-width':1.5,'data-trade':t.number},sp.svg);
+  const la=svgEl('text',{x:x(a),y:up?ya+19:ya-12,'text-anchor':'middle','font-weight':700,fill:'#dbe9f5'},sp.svg);la.textContent=`#${t.number} ${up?'BUY':'SELL'} ${t.quantity}@${px(t.entry.spread_fill)}`;
+  const lb=svgEl('text',{x:x(b),y:yb-11,'text-anchor':'middle','font-weight':700,fill:col},sp.svg);lb.textContent=`#${t.number} ${rub(t.net_rub)}`;
+  markers.push({trade:t,a,b})});
+ // volume
+ head('3 · Spread instrument volume per day (contracts) and the volume rule',[['volume',COLORS.vol],['rule',COLORS.loss]]);
+ const vol=make(120,S.map(r=>r.spread_volume),{bars:true,label:v=>fmt(v)});const bw=Math.max(1.5,(W-L-R)/n*0.7);
+ S.forEach((r,i)=>svgEl('rect',{x:x(i)-bw/2,y:vol.y(r.spread_volume),width:bw,height:Math.max(0,vol.bot-vol.y(r.spread_volume)),fill:COLORS.vol,opacity:.85},vol.svg));
+ const rule=payload.window.min_daily_volume_rule;if(rule<vol.hi)svgEl('line',{x1:L,x2:W-R,y1:vol.y(rule),y2:vol.y(rule),stroke:COLORS.loss,'stroke-dasharray':'4 3'},vol.svg);
+ markers.forEach(m=>{for(const [i,kind] of [[m.a,'in'],[m.b,'out']]){const r=S[i];svgEl('circle',{cx:x(i),cy:vol.y(r.spread_volume)-5,r:3.5,fill:kind==='in'?COLORS.entry:(m.trade.net_rub>=0?COLORS.win:COLORS.loss)},vol.svg)}});
+ // equity
+ head('4 · Cumulative net result of the position (RUB, after costs)',[['cumulative net',COLORS.win]]);
+ const L2=payload.ledger,eq=make(150,L2.map(r=>r.cumulative_net_rub),{bottom:true,zero:true,label:v=>fmt(v)});
+ svgEl('line',{x1:L,x2:W-R,y1:eq.y(0),y2:eq.y(0),stroke:'#3b5367'},eq.svg);let d='';L2.forEach((r,i)=>{d+=`${d?'L':'M'}${x(i)},${eq.y(r.cumulative_net_rub)}`});svgEl('path',{d,fill:'none',stroke:COLORS.win,'stroke-width':2,'stroke-linejoin':'round'},eq.svg);
+ // crosshair
+ const cross=panels.map(p=>svgEl('line',{y1:p.top,y2:p.bot,stroke:'#cfe3f2','stroke-width':1,opacity:0},p.svg));
+ function tipHtml(i){const r=S[i],l=L2[i];let h=`<b>${r.date}</b> <span class="k">· ${r.days_to_near_expiry} days to near expiry</span><hr>`;
+  h+=`<span class="k">near</span> ${px(r.near)} <span class="k">(open ${px(r.near_open)}, vol ${fmt(r.near_volume)})</span><br><span class="k">far</span> ${px(r.far)} <span class="k">(open ${px(r.far_open)}, vol ${fmt(r.far_volume)})</span><br>`;
+  h+=`<span class="k">spread settle</span> <b>${px(r.spread)}</b> <span class="k">open ${px(r.spread_open)} · last ${px(r.spread_last_trade)}</span><br><span class="k">spread volume</span> ${fmt(r.spread_volume)} <span class="k">in ${fmt(r.spread_trades)} trades</span>`;
+  if(r.dev_pp!=null)h+=`<br><span class="k">implied rate − RUONIA</span> ${fmt(r.dev_pp,2)} pp`;
+  h+=`<hr><span class="k">position</span> ${l.position>0?'long spread':l.position<0?'short spread':'flat'} · <span class="k">day result</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">costs</span> −${fmt(l.costs_rub,2)} · <span class="k">cumulative</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>`;
+  for(const t of payload.trades){for(const [side,leg] of [['ENTRY',t.entry],['EXIT',t.exit]]){if(leg.date!==r.date)continue;const fees=Object.entries(leg.costs).map(([k,v])=>`${k.replace('_',' ')} ${fmt(v,2)}`).join(', ');
+   h+=`<hr><b>#${t.number} ${side}</b> ${t.side==='long_spread'?'buy far / sell near':'sell far / buy near'} · ${t.quantity} contract(s)<br><span class="k">spread fill</span> <b>${px(leg.spread_fill)}</b> <span class="k">legs ${px(leg.near_price)} / ${px(leg.far_price)}</span><br><span class="k">day volume</span> spread ${fmt(leg.spread_volume)} · near ${fmt(leg.near_volume)} · far ${fmt(leg.far_volume)}<br><span class="k">costs</span> ${fees}`;
+   if(side==='EXIT')h+=`<br><span class="k">result</span> gross ${rub(t.gross_rub,2)} · net <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b> · ${t.reason.replace(/_/g,' ')}`}}
+  return h}
+ const wrap=root;function move(ev){const box=panels[0].svg.getBoundingClientRect();const px_=(ev.clientX-box.left)*(W/box.width);let i=Math.round((px_-L)*(n-1)/(W-L-R));i=Math.max(0,Math.min(n-1,i));cross.forEach(c=>{c.setAttribute('x1',x(i));c.setAttribute('x2',x(i));c.setAttribute('opacity',.8)});tip.innerHTML=tipHtml(i);tip.style.display='block';const wb=wrap.getBoundingClientRect();let left=ev.clientX-wb.left+16,top=ev.clientY-wb.top+14;if(left+tip.offsetWidth>wb.width-8)left=ev.clientX-wb.left-tip.offsetWidth-16;if(top+tip.offsetHeight>wb.height)top=Math.max(4,wb.height-tip.offsetHeight-4);tip.style.left=left+'px';tip.style.top=top+'px'}
+ function leave(){cross.forEach(c=>c.setAttribute('opacity',0));tip.style.display='none'}
+ panels.forEach(p=>{p.svg.addEventListener('mousemove',move);p.svg.addEventListener('mouseleave',leave)})}
+function th(labels){const tr=el('tr');for(const l of labels)tr.append(el('th','',l));const h=el('thead');h.append(tr);return h}
+function cell(tr,text,{num=false,klass='',sub=null}={}){const td=el('td',(num?'num ':'')+klass);td.append(document.createTextNode(text));if(sub){td.append(el('small','',sub))}tr.append(td);return td}
+function renderTrades(){const root=$('trades');root.replaceChildren();if(!payload.trades.length){root.append(el('div','empty','No trades under these rules in this window.'));return}
+ const t=el('table');t.append(th(['#','Side','Contracts','Signal','Entry date','Entry fill','Entry legs near / far','Entry volume','Entry costs, ₽','Exit date','Exit fill','Exit legs near / far','Exit volume','Exit costs, ₽','Days held','Exit reason','Gross, pts','Gross, ₽','Costs, ₽','Net, ₽','Margin, ₽','LQDT on margin, ₽','Excess over LQDT, ₽']));
+ const b=el('tbody');const point=payload.contract.point_value_rub;
+ for(const x of payload.trades){const tr=el('tr',x.number===selectedTrade?'sel':'');tr.dataset.trade=x.number;
+  cell(tr,'#'+x.number);cell(tr,x.side==='long_spread'?'LONG spread':'SHORT spread',{sub:x.legs});cell(tr,fmt(x.quantity),{num:true});
+  const sg=x.signal;cell(tr,sg.kind==='z'?`z ${fmt(sg.value,2)}`:`${fmt(sg.value,2)} pp`,{sub:sg.date});
+  cell(tr,x.entry.date);cell(tr,px(x.entry.spread_fill),{num:true,sub:x.side==='long_spread'?'buy':'sell'});cell(tr,`${px(x.entry.near_price)} / ${px(x.entry.far_price)}`,{num:true});cell(tr,fmt(x.entry.spread_volume),{num:true,sub:`near ${fmt(x.entry.near_volume)} · far ${fmt(x.entry.far_volume)}`});
+  cell(tr,fmt(Object.values(x.entry.costs).reduce((a,c)=>a+c,0),2),{num:true,sub:Object.entries(x.entry.costs).filter(([k,v])=>v).map(([k,v])=>`${k.replace('_',' ')} ${fmt(v,2)}`).join(' · ')});
+  cell(tr,x.exit.date);cell(tr,px(x.exit.spread_fill),{num:true,sub:x.side==='long_spread'?'sell':'buy'});cell(tr,`${px(x.exit.near_price)} / ${px(x.exit.far_price)}`,{num:true});cell(tr,fmt(x.exit.spread_volume),{num:true,sub:`near ${fmt(x.exit.near_volume)} · far ${fmt(x.exit.far_volume)}`});
+  cell(tr,fmt(Object.values(x.exit.costs).reduce((a,c)=>a+c,0),2),{num:true,sub:Object.entries(x.exit.costs).filter(([k,v])=>v).map(([k,v])=>`${k.replace('_',' ')} ${fmt(v,2)}`).join(' · ')});
+  cell(tr,String(x.days_held),{num:true});cell(tr,x.reason.replace(/_/g,' '));
+  const pts=(x.side==='long_spread'?1:-1)*(x.exit.spread_fill-x.entry.spread_fill);cell(tr,fmt(pts,Math.abs(pts)<100?3:1),{num:true,klass:cls(pts)});
+  cell(tr,rub(x.gross_rub,2),{num:true,klass:cls(x.gross_rub)});cell(tr,fmt(-x.costs_rub,2),{num:true});cell(tr,rub(x.net_rub,2),{num:true,klass:cls(x.net_rub)});cell(tr,fmt(x.margin_rub),{num:true});cell(tr,fmt(-x.lqdt_on_margin_rub,2),{num:true});cell(tr,rub(x.excess_rub,2),{num:true,klass:cls(x.excess_rub)});
+  tr.addEventListener('click',()=>{selectedTrade=x.number;renderTrades();renderLedger()});b.append(tr)}
+ const total=el('tr');const s=payload.summary;cell(total,'Total');for(let i=0;i<16;i++)cell(total,'');cell(total,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});cell(total,fmt(-s.costs_rub,2),{num:true});cell(total,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});cell(total,'');cell(total,fmt(-s.lqdt_on_margin_rub,2),{num:true});cell(total,rub(s.excess_over_lqdt_rub,2),{num:true,klass:cls(s.excess_over_lqdt_rub)});
+ for(const td of total.children)td.style.fontWeight=700;b.append(total);t.append(b);root.append(t)}
+function renderLedger(){const root=$('ledger');root.replaceChildren();const t=el('table');t.append(th(['Date','Days to expiry','Near','Far','Spread settle','Spread open','Spread last trade','Spread volume','Spread trades','Near volume','Far volume','Signal','Event','Position','Day result, ₽','Costs, ₽','Cumulative net, ₽']));const b=el('tbody');
+ const events=new Map();payload.trades.forEach(x=>{events.set(x.entry.date,{t:x,k:'entry'});events.set(x.exit.date,{t:x,k:'exit'})});
+ payload.series.forEach((r,i)=>{const l=payload.ledger[i],ev=events.get(r.date);const tr=el('tr',ev?(ev.t.number===selectedTrade?'sel ':'')+ev.k:'');
+  cell(tr,r.date);cell(tr,String(r.days_to_near_expiry),{num:true});cell(tr,px(r.near),{num:true});cell(tr,px(r.far),{num:true});cell(tr,px(r.spread),{num:true});cell(tr,px(r.spread_open),{num:true});cell(tr,px(r.spread_last_trade),{num:true});cell(tr,fmt(r.spread_volume),{num:true});cell(tr,fmt(r.spread_trades),{num:true});cell(tr,fmt(r.near_volume),{num:true});cell(tr,fmt(r.far_volume),{num:true});
+  cell(tr,r.dev_pp==null?'—':`${fmt(r.dev_pp,2)} pp`,{num:true});cell(tr,ev?`${ev.k.toUpperCase()} #${ev.t.number} @ ${px(ev.t[ev.k].spread_fill)}`:'');cell(tr,l.position>0?'long':l.position<0?'short':'—');cell(tr,rub(l.mark_pnl_rub,2),{num:true,klass:cls(l.mark_pnl_rub)});cell(tr,l.costs_rub?fmt(-l.costs_rub,2):'',{num:true});cell(tr,rub(l.cumulative_net_rub,2),{num:true,klass:cls(l.cumulative_net_rub)});b.append(tr)});
+ t.append(b);root.append(t)}
+function render(){renderSummary();renderCharts();renderTrades();renderLedger();$('notes').textContent=payload.notes.join(' · ')}
+(async()=>{try{catalog=await api('/api/proof/catalog');for(const f of catalog.fills){const o=el('option','',f==='next_open'?'Next open (primary)':f==='next_close'?'Next settlement':'Same-day settlement (reference, look-ahead)');o.value=f;$('fill').append(o)}$('fill').value='next_open';fillAssets();$('asset').addEventListener('change',fillWindows);$('strategy').addEventListener('change',syncParams);$('run').addEventListener('click',show);window.addEventListener('resize',()=>{if(payload)renderCharts()});status(`${catalog.assets.length} assets · cached history through ${catalog.till}`,true)}catch(e){status(e.message)}})();
+</script>
+</body>
+</html>

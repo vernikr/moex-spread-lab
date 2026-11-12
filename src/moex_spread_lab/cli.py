@@ -173,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     calendar_parser.add_argument("--root", type=Path, default=Path.cwd())
     calendar_parser.add_argument("--till-date", required=True)
     calendar_parser.add_argument("--slippage-ticks", type=float, default=1.0)
-    calendar_parser.add_argument("--assets", nargs="+", default=["SR", "GZ", "Si", "CR"])
+    calendar_parser.add_argument("--assets", nargs="+", default=None, help="asset prefixes; default is every registered asset")
     calendar_parser.add_argument("--output", type=Path, required=True)
 
     local_screener_parser = subparsers.add_parser("screener", help="serve the private offline research screener on loopback")
@@ -649,12 +649,12 @@ def main() -> int:
             print(json.dumps({**result["summary"], "output": str(args.output)}, sort_keys=True))
             return 0
         if args.command == "calendar-study":
-            from .calendar_spreads import run_calendar_study
+            from .calendar_spreads import ASSETS, run_calendar_study
 
             root = args.root.resolve()
             result = run_calendar_study(
                 root / "data/spread-history-cache", root / "data/benchmark/lqdt-lineage.json", root / "data/benchmark-cache",
-                root / "data/w1/current-intake.json", assets=tuple(args.assets), slippage_ticks=args.slippage_ticks, till_date=args.till_date,
+                root / "data/w1/current-intake.json", assets=tuple(args.assets or ASSETS), slippage_ticks=args.slippage_ticks, till_date=args.till_date,
             )
             write_json(args.output, result)
             for asset, item in result["assets"].items():

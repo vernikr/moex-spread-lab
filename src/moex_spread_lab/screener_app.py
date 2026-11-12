@@ -462,6 +462,15 @@ class ScreenerStore:
     def __init__(self, inputs: ScreenerInputs):
         self.inputs = inputs
         self.lock = threading.Lock()
+        self._calendar: Any = None
+
+    @property
+    def calendar(self) -> Any:
+        if self._calendar is None:
+            from .calendar_spreads import CalendarData
+
+            self._calendar = CalendarData(self.inputs.root)
+        return self._calendar
 
     @staticmethod
     def _recent(path: Path) -> list[dict[str, Any]]:
@@ -541,6 +550,17 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     Path(__file__).with_name("screener_ui.html").read_bytes(),
                     "text/html; charset=utf-8",
                 )
+            elif self.path == "/proof":
+                self._send(
+                    200,
+                    Path(__file__).with_name("proof_ui.html").read_bytes(),
+                    "text/html; charset=utf-8",
+                )
+            elif self.path == "/api/proof/catalog":
+                try:
+                    self._json(200, store.calendar.catalog())
+                except (W0Error, OSError) as exc:
+                    self._json(400, {"error": str(exc)})
             elif self.path == "/api/catalog":
                 self._json(200, catalog(store.inputs))
             elif self.path == "/api/runs":
@@ -558,7 +578,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self._json(403, {"error": "local origin only"})
                 return
-            if self.path not in {"/api/run", "/api/screen", "/api/optimize"}:
+            if self.path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -572,7 +592,11 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if not 0 < size <= 8192:
                     raise ScreenerError("request size must be 1–8192 bytes")
                 selection = json.loads(self.rfile.read(size))
-                if self.path == "/api/run":
+                if self.path == "/api/proof/run":
+                    if not isinstance(selection, dict):
+                        raise ScreenerError("selection must be an object")
+                    result = store.calendar.proof(selection)
+                elif self.path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)
                 else:

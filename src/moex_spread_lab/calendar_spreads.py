@@ -373,6 +373,18 @@ class CalendarData:
                               data["terms"][asset], profile)
 
 
+def _rel_pct(value: Any, base: Any) -> float | None:
+    """Spread as % of the far price. Pure same-row ratio — strictly causal."""
+    try:
+        numerator = float(value)
+        denominator = float(base)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numerator) or not math.isfinite(denominator) or denominator == 0.0:
+        return None
+    return round(numerator / denominator * 100, 6)
+
+
 def _clean(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
@@ -396,11 +408,13 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
             "quantity": quantity,
             "signal": trade["signal"],
             "entry": {"date": entry["date"], "spread_fill": entry["spread_open_price"] if fill_label == "next_open" else entry["spread_price"],
+                      "spread_fill_rel": _rel_pct(entry["spread_open_price"] if fill_label == "next_open" else entry["spread_price"], entry["far_open_price"] if fill_label == "next_open" else entry["far_price"]),
                       "near_price": entry["near_open_price"] if fill_label == "next_open" else entry["near_price"],
                       "far_price": entry["far_open_price"] if fill_label == "next_open" else entry["far_price"],
                       "spread_volume": entry["min_volume"], "near_volume": entry["near_volume"], "far_volume": entry["far_volume"],
                       "costs": entry_fee},
             "exit": {"date": exit_row["date"], "spread_fill": exit_row["spread_open_price"] if fill_label == "next_open" else exit_row["spread_price"],
+                     "spread_fill_rel": _rel_pct(exit_row["spread_open_price"] if fill_label == "next_open" else exit_row["spread_price"], exit_row["far_open_price"] if fill_label == "next_open" else exit_row["far_price"]),
                      "near_price": exit_row["near_open_price"] if fill_label == "next_open" else exit_row["near_price"],
                      "far_price": exit_row["far_open_price"] if fill_label == "next_open" else exit_row["far_price"],
                      "spread_volume": exit_row["min_volume"], "near_volume": exit_row["near_volume"], "far_volume": exit_row["far_volume"],
@@ -473,6 +487,9 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
         "series": [
             {"date": r["date"], "near": r["near_price"], "far": r["far_price"], "near_open": r["near_open_price"],
              "far_open": r["far_open_price"], "spread": r["spread_price"], "spread_open": r["spread_open_price"],
+             "spread_rel": _rel_pct(r["spread_price"], r["far_price"]),
+             "spread_open_rel": _rel_pct(r["spread_open_price"], r["far_open_price"]),
+             "spread_last_trade_rel": _rel_pct(r["spread_last_trade"], r["far_price"]),
              "spread_last_trade": r["spread_last_trade"], "spread_volume": r["min_volume"], "spread_trades": r["spread_trades"],
              "near_volume": r["near_volume"], "far_volume": r["far_volume"], "days_to_near_expiry": r["days_to_near_expiry"],
              "dev_pp": r["dev_pp"], "margin_rub": round(r["margin"] * quantity, 2)}
@@ -493,5 +510,6 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
             "Marks use settlement prices with each day's point value; costs are the published exchange tariff on both legs plus slippage once per side.",
             "For USD- and CNY-quoted contracts the point value moves with the currency, so the day-by-day result differs slightly from entry-to-exit arithmetic (shown as FX point-value drift).",
             "Margin is a fallback ratio from today's contract; LQDT cost is the benchmark return on that margin while the position is open.",
+            "Spread is shown relative to the far price, in %; absolute points remain in CSV and in the table's secondary line.",
         ],
     })

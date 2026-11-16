@@ -72,6 +72,19 @@ class CalendarProofTests(unittest.TestCase):
         self.assertTrue(window["tradable_every_day"])
         self.assertTrue(window["passes_capital_screen"])
 
+    def test_series_and_fills_spread_is_relative_to_far_price(self):
+        proof = self.data.proof({"asset": "SR", "pair": "SRH3/SRM3", "strategy": "zscore_mean_reversion", "fill": "next_open",
+                                 "quantity": 2, "slippage_ticks": 1.0, "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 20}})
+        for row in proof["series"]:
+            self.assertAlmostEqual(row["spread_rel"], row["spread"] / row["far"] * 100, delta=1e-4)
+            if row["far_open"]:
+                self.assertAlmostEqual(row["spread_open_rel"], row["spread_open"] / row["far_open"] * 100, delta=1e-4)
+        for trade in proof["trades"]:
+            for side in ("entry", "exit"):
+                fill = trade[side]
+                far = fill["far_price"]
+                self.assertAlmostEqual(fill["spread_fill_rel"], fill["spread_fill"] / far * 100, delta=1e-4)
+
     def test_proof_reconciles_ledger_to_trades_and_is_strict_json(self):
         proof = self.data.proof({"asset": "SR", "pair": "SRH3/SRM3", "strategy": "zscore_mean_reversion", "fill": "next_open",
                                  "quantity": 2, "slippage_ticks": 1.0, "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 20}})

@@ -116,6 +116,19 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertGreater(first["entry"]["costs"]["exchange_clearing"], 0)
         self.assertEqual(first["signal"]["kind"], "z")
 
+    def test_series_and_fills_spread_is_relative_to_far_contract_value(self):
+        result = self.proof.proof({"universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
+                                   "strategy": "mean_reversion", "quantity": 2, "slippage_ticks": 1.0,
+                                   "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20}})
+        far_mult = 1 / 0.001  # tick_value / tick_size from the fixture's current-intake.json
+        for row in result["series"]:
+            self.assertAlmostEqual(row["spread_rel"], row["spread"] / (row["far"] * far_mult) * 100, delta=1e-4)
+            self.assertAlmostEqual(row["spread_open_rel"], (row["near_open"] * far_mult - row["far_open"] * far_mult) / (row["far_open"] * far_mult) * 100, delta=1e-4)
+        for trade in result["trades"]:
+            for side in ("entry", "exit"):
+                block = trade[side]
+                self.assertAlmostEqual(block["spread_fill_rel"], block["spread_fill"] / (block["far_price"] * far_mult) * 100, delta=1e-4)
+
     def test_funding_only_proof_reconciles_and_flags_open_position(self):
         result = self.proof.proof({"universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
                                    "strategy": "funding_only", "quantity": 2, "slippage_ticks": 1.0})

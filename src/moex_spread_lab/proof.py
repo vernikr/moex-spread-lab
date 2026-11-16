@@ -92,6 +92,18 @@ def _run_id(identity: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+def _rel_pct(value: Any, base: Any) -> float | None:
+    """Spread as %% of the far leg. Pure same-row ratio — strictly causal, no look-ahead."""
+    try:
+        numerator = float(value)
+        denominator = float(base)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numerator) or not math.isfinite(denominator) or denominator == 0.0:
+        return None
+    return round(numerator / denominator * 100, 6)
+
+
 def _load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
     try:
         rows = json.loads(contracts_path.read_text(encoding="utf-8"))["instruments"]
@@ -344,8 +356,8 @@ class ProofService:
             entry_date, exit_date = row["entry_date"][:10], row["exit_date"][:10]
             entry_costs = row.get("entry_costs") or {}
             exit_costs = row.get("exit_costs") or {}
-            entry = self._fill_block(entry_date, row["entry_spread_fill"], row["entry_near_fill"], row["entry_far_fill"], volume_map, entry_costs)
-            exit_ = self._fill_block(exit_date, row["exit_spread_fill"], row["exit_near_fill"], row["exit_far_fill"], volume_map, exit_costs)
+            entry = self._fill_block(entry_date, row["entry_spread_fill"], row["entry_near_fill"], row["entry_far_fill"], volume_map, entry_costs, far_value=row["entry_far_fill"] * far_mult)
+            exit_ = self._fill_block(exit_date, row["exit_spread_fill"], row["exit_near_fill"], row["exit_far_fill"], volume_map, exit_costs, far_value=row["exit_far_fill"] * far_mult)
             trades.append(
                 self._trade_block(
                     number=number,
@@ -379,6 +391,9 @@ class ProofService:
                     "spread": row["spread_value"],
                     "spread_open": round(row["near_open"] * near_mult - row["far_open"] * far_mult, 8),
                     "spread_last_trade": None,
+                    "spread_rel": _rel_pct(row["spread_value"], row["far_close"] * far_mult),
+                    "spread_open_rel": _rel_pct(row["near_open"] * near_mult - row["far_open"] * far_mult, row["far_open"] * far_mult),
+                    "spread_last_trade_rel": None,
                     "near_volume": row.get("near_volume"),
                     "far_volume": row.get("far_volume"),
                     "spread_volume": None,
@@ -418,6 +433,7 @@ class ProofService:
                     else []
                 ),
                 "The pair spread is a RUB-normalized near-minus-far, not a native instrument; its volume is not observable.",
+                "Spread is shown relative to the far contract value, in %; absolute RUB marks remain in CSV and in the table's secondary line.",
             ],
             risk=risk,
         )
@@ -505,11 +521,11 @@ class ProofService:
             side = "short_spread"
             entry = self._fill_block(
                 entry_date, entry_fill["spread_fill"], entry_fill["near_price"], entry_fill["far_price"],
-                daily_by_date, entry_costs,
+                daily_by_date, entry_costs, far_value=entry_fill["far_price"] * far_mult,
             )
             exit_ = self._fill_block(
                 exit_date, exit_fill["spread_fill"], exit_fill["near_price"], exit_fill["far_price"],
-                daily_by_date, {} if open_at_end else exit_costs,
+                daily_by_date, {} if open_at_end else exit_costs, far_value=exit_fill["far_price"] * far_mult,
             )
             if open_at_end:
                 cost_rub = float(row["transaction_costs"])
@@ -556,6 +572,9 @@ class ProofService:
                     "spread": round(row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8),
                     "spread_open": None,
                     "spread_last_trade": None,
+                    "spread_rel": _rel_pct(row["near_settle"] * near_mult - row["far_settle"] * far_mult, row["far_settle"] * far_mult),
+                    "spread_open_rel": None,
+                    "spread_last_trade_rel": None,
                     "near_volume": row.get("near_volume"),
                     "far_volume": row.get("far_volume"),
                     "spread_volume": None,
@@ -596,6 +615,7 @@ class ProofService:
                 ),
                 "The pair spread is a RUB-normalized near-minus-far, not a native instrument; its volume is not observable.",
                 "Fees are the published MOEX taker tariff modelled on the current reference (last-row settlement), not on each execution print.",
+                "Spread is shown relative to the far contract value, in %; absolute RUB marks remain in CSV and in the table's secondary line.",
                 *(
                     ["An open position at the sample end is marked as a forced proxy exit, not an executable trade."]
                     if any(trade["open_at_end"] for trade in trades)
@@ -615,11 +635,13 @@ class ProofService:
         far_price: float,
         rows_by_date: dict[str, dict[str, Any]],
         costs: dict[str, float],
+        far_value: float | None = None,
     ) -> dict[str, Any]:
         row = rows_by_date.get(day, {})
         return {
             "date": day,
             "spread_fill": spread_fill,
+            "spread_fill_rel": _rel_pct(spread_fill, far_value if far_value is not None else far_price),
             "near_price": near_price,
             "far_price": far_price,
             "near_volume": row.get("near_volume") if "near_volume" in row else row.get("volume"),

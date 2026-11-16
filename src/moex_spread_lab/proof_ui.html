@@ -40,9 +40,9 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 .maintabs{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .tabbar{display:flex;gap:6px;align-items:center;padding:6px 9px;border-bottom:1px solid #223142;flex-wrap:wrap}.tab{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:8px 8px 0 0;border-bottom:0;padding:6px 18px;font-size:11px;font-weight:750;min-height:29px}.tab.active{background:#16293a;color:#e7eef5}.tab-spacer{flex:1}
 .tabpage{flex:1;min-height:0;position:relative}.tabpage.hidden{display:none}
-#charts{height:100%;overflow:auto;padding:2px 12px 8px;position:relative}
-.panel-title{font-size:9.5px;color:#9bb0c2;margin:5px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:9px}
-.chart{width:100%;position:relative}.h-near,.h-far{height:88px}.h-spread{height:176px}.h-vol{height:62px}.h-fund{height:56px}.h-cum{height:86px}
+#charts{height:100%;overflow:auto;padding:2px 12px 8px;position:relative;display:flex;flex-direction:column;min-height:0}
+.panel-title{font-size:9.5px;color:#9bb0c2;margin:5px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:9px}#charts>.panel-title{flex:0 0 auto}
+.chart{width:100%;position:relative;flex:1 1 0;min-height:64px;height:auto}.h-near,.h-far{min-height:74px}.h-spread{flex-grow:2;min-height:150px}.h-vol{min-height:72px}.h-fund{min-height:64px}.h-cum{flex-grow:1.25;min-height:96px}#charts-empty{flex:1;display:grid;place-items:center}
 .pane-toggle{display:inline-flex;align-items:center;gap:6px;appearance:none;border:0;background:transparent;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.pane-toggle:hover{color:#e7eef5}.pane-toggle:focus-visible{outline:1px solid #63d9b2;outline-offset:3px;border-radius:3px}.pane-chevron{display:inline-block;color:#70e1b9;transition:transform .15s}.pane-toggle[aria-expanded="true"] .pane-chevron{transform:rotate(90deg)}
 .legend{display:inline-flex;gap:10px;align-items:center;font-size:9.5px}
 .tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:10.5px;line-height:1.55;min-width:240px;max-width:460px;z-index:6;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
@@ -188,6 +188,7 @@ const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className
 const fmt=(v,d=0)=>v==null?'—':Number(v).toLocaleString('ru-RU',{minimumFractionDigits:d,maximumFractionDigits:d});
 const rub=(v,d=0)=>v==null?'—':`${v>0?'+':''}${fmt(v,d)} ₽`;
 const px=v=>v==null?'—':fmt(v,Math.abs(v)<100?4:Math.abs(v)<10000?2:0);
+const rubPx=v=>v==null?'—':`${px(v)} ₽`;
 const cls=v=>v>0?'pos':v<0?'neg':'';
 const signed=v=>v==null?'—':`${v>0?'+':''}${fmt(v,2)}`;
 const STRATEGY_RU={mean_reversion:'Возврат спреда к среднему',funding_only:'Фондирование перпетуального свопа (carry)',zscore_mean_reversion:'Возврат к среднему · z-скор',convergence_to_ruonia:'Сходимость к справедливой цене RUONIA'};
@@ -200,6 +201,8 @@ const humanReason=r=>r?(REASON_RU[r]||String(r).replaceAll('_',' ')):'';
 const COST_RU={exchange_clearing:'биржа и клиринг',broker:'брокер',slippage:'проскальзывание'};
 const humanCost=k=>COST_RU[k]||String(k).replaceAll('_',' ');
 let catalog=null,payload=null,selectedTrade=null,universe='pair_screen',dayClick={day:null,index:0},markersApiRef=null,drawdownByDate={},autoRunTimer=null,analysisRequestId=0;
+const legQuoteIsRuble=()=>{if(universe==='pair_screen')return true;const a=currentAsset();return a?.group==='stock'||(a?.group==='currency'&&String(a.name||'').endsWith('/RUB'))};
+const legPrice=v=>legQuoteIsRuble()?rubPx(v):px(v);
 const proofLabel=()=>payload?(payload.selection.spread_instrument||payload.selection.pair||universe):'';
 const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',volWin:'#2f8f6a',volLoss:'#a24d47',win:'#78e0b4',loss:'#f0928a',entry:'#d7e6f3',warn:'#e7bd82',fund:'#b39ddb'};
 function status(text,ok=false){$('status').textContent=text;$('status').className='status'+(ok?' ok':'')}
@@ -484,8 +487,8 @@ function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChi
  const cFund=fundingPane?LWC.createChart(fundingPane,fundsFrom()):null;
  const cCum=LWC.createChart(cumPane,cumFrom());
  charts.push(cNear,cFar,cSpread,cVol);if(cFund)charts.push(cFund);charts.push(cCum);
- const lineSeries=(chart,color,width=2,dashed=false)=>chart.addSeries(LWC.LineSeries,{color,lineWidth:width,lineStyle:dashed?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true});
- const nearSeries=lineSeries(cNear,COLORS.near),farSeries=lineSeries(cFar,COLORS.far);
+ const lineSeries=(chart,color,width=2,dashed=false,priceFormat=null)=>chart.addSeries(LWC.LineSeries,{color,lineWidth:width,lineStyle:dashed?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,...(priceFormat?{priceFormat}:{})});
+ const legPriceFormat=legQuoteIsRuble()?{type:'price',precision:0,minMove:1}:null;const nearSeries=lineSeries(cNear,COLORS.near,2,false,legPriceFormat),farSeries=lineSeries(cFar,COLORS.far,2,false,legPriceFormat);
  nearSeries.setData(S.map(r=>({time:r.date,value:r.near})));farSeries.setData(S.map(r=>({time:r.date,value:r.far})));
  const spreadSeries=lineSeries(cSpread,COLORS.spread,2);
  const sDisp=spreadDisplayValues(S);
@@ -584,8 +587,8 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
 
 // ---------- tooltip ----------
 function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}д до экспирации ближней</span>`:''}<hr>`;
- h+=`<span class="k">ближняя</span> ${px(s.near)} <span class="k">(откр. ${px(s.near_open)}, объём ${fmt(s.near_volume)})</span><br><span class="k">дальняя</span> ${px(s.far)} <span class="k">(откр. ${px(s.far_open)}, объём ${fmt(s.far_volume)})</span><br>`;
- h+=`<span class="k">спред</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(абс. ${px(s.spread)}${s.spread_open_rel!=null?` · откр. ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · посл. ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
+ h+=`<span class="k">ближняя</span> ${legPrice(s.near)} <span class="k">(откр. ${legPrice(s.near_open)}, объём ${fmt(s.near_volume)})</span><br><span class="k">дальняя</span> ${legPrice(s.far)} <span class="k">(откр. ${legPrice(s.far_open)}, объём ${fmt(s.far_volume)})</span><br>`;
+ h+=`<span class="k">спред</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(абс. ${legPrice(s.spread)}${s.spread_open_rel!=null?` · откр. ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · посл. ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
  const nmode=$('norm')?.value||'raw';if(nmode!=='raw'){const i=payload.series.indexOf(s);const v=spreadDisplayValues(payload.series)[i];
   const unit={stoch20:'%',rz20:'σ',ewma10:'σ',mad20:'σ',garch:'σ',kalman:'σ'}[nmode]||'pp';
   h+=`<span class="k">нормализован · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
@@ -593,10 +596,10 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
  if(s.funding_rub!=null)h+=`<br><span class="k">получено фондирование</span> ${signed(s.funding_rub,2)} ₽`;
  if(s.signal_z!=null)h+=`<br><span class="k">сигнал z</span> ${fmt(s.signal_z,2)}`;
  if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
- if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)}${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)}`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)}</b>`:''}`;
+ if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)} ₽${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)} ₽`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)} ₽</b>`:''}`;
  const dayEvents=payload.trades.flatMap(t=>[['ENTRY',t.entry],['EXIT',t.exit]].filter(([_,leg])=>leg.date===s.date).map(([kind])=>({kind,t})));
- for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${humanCost(k)} ${fmt(v,2)}`).join(', ');
-  h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${px(leg.spread_fill)}</b> · <span class="k">ноги</span> ${px(leg.near_price)} / ${px(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
+ for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${humanCost(k)} ${fmt(v,2)} ₽`).join(', ');
+  h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class="k">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
   if(kind==='EXIT')h+=`<br><span class="k">результат</span> гросс ${rub(t.gross_rub,2)} · нетто <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b>`}
  return h}
 

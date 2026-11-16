@@ -61,7 +61,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 <body>
 <div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
 <div class="app">
-  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><button class="ghost" id="toggle-summary" type="button" aria-expanded="true" aria-controls="summary-block">Скрыть сводку</button></div></header>
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
 
   <div class="layout" id="layout">
     <!-- левая колонка 1: выбор пары и параметры -->
@@ -107,7 +107,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <div class="side-sub">только график спреда · причинные окна</div>
       <select id="norm" class="listbox" size="14">
         <optgroup label="Уровень">
-          <option value="raw" selected>Сырой · % от дальней ноги</option>
+          <option value="raw">Сырой · % от дальней ноги</option>
           <option value="expanding">Остаток к нарастающему среднему</option>
         </optgroup>
         <optgroup label="Возврат к среднему · в единицах цены">
@@ -122,7 +122,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <option value="rz20">Скользящий z-скор · 20 набл.</option>
           <option value="ewma10">EWMA z · полураспад 10</option>
           <option value="mad20">Робастный z · медиана/MAD · 20 набл.</option>
-          <option value="garch">GARCH(1,1) z · трейлинг</option>
+          <option value="garch" selected>GARCH(1,1) z · трейлинг</option>
           <option value="kalman">z инновации Калмана · локальный уровень</option>
         </optgroup>
         <optgroup label="Ограниченные">
@@ -137,7 +137,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 
     <!-- основная область: сводка + табы графики/таблица -->
     <main class="main">
-      <section class="summary-block" id="summary-block" aria-label="Сводка расчёта">
+      <section class="summary-block hidden" id="summary-block" aria-label="Сводка расчёта">
       <div class="evidence" id="evidence">
         <span>run_id <code id="ev-runid">—</code></span>
         <button class="ghost" id="copy-runid">Копировать run_id</button>
@@ -367,7 +367,7 @@ function chartOpts(){return {layout:{background:{color:'transparent'},textColor:
 const charts=[];
 function fitChartsToVisibleArea(){const snapshot=charts.slice();return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{if(snapshot.length===charts.length&&snapshot.every((chart,index)=>charts[index]===chart)){for(const chart of snapshot){try{chart.timeScale().fitContent()}catch(e){}}}resolve()})))}
 function makePane(parent,heightClass,title,tagline,legend,collapsed=false){const head=el('div','panel-title');const left=el('span');const div=el('div','chart '+heightClass);
- if(collapsed){div.id='chart-'+heightClass;div.classList.add('hidden');const toggle=el('button','pane-toggle');toggle.type='button';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls',div.id);toggle.setAttribute('aria-label',`Развернуть ${title}`);const chevron=el('span','pane-chevron','▸');chevron.setAttribute('aria-hidden','true');toggle.append(chevron,el('b','',title));toggle.addEventListener('click',()=>{const expanded=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-label',`${expanded?'Свернуть':'Развернуть'} ${title}`);div.classList.toggle('hidden',!expanded);if(expanded)requestAnimationFrame(()=>{try{div._chart?.timeScale().fitContent()}catch(e){}})});left.append(toggle)}else{left.append(el('b','',title));if(tagline)left.append(el('span','tagline','  '+tagline))}head.append(left);
+ if(collapsed){div.id='chart-'+heightClass;div.classList.add('hidden');const toggle=el('button','pane-toggle');toggle.type='button';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls',div.id);toggle.setAttribute('aria-label',`Развернуть ${title}`);const chevron=el('span','pane-chevron','▸');chevron.setAttribute('aria-hidden','true');toggle.append(chevron,el('b','',title));toggle.addEventListener('click',()=>{const expanded=toggle.getAttribute('aria-expanded')!=='true';toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-label',`${expanded?'Свернуть':'Развернуть'} ${title}`);div.classList.toggle('hidden',!expanded);if(expanded)requestAnimationFrame(()=>{try{div._chart?.timeScale().fitContent()}catch(e){}})});left.append(toggle);if(tagline)left.append(el('span','tagline','  '+tagline))}else{left.append(el('b','',title));if(tagline)left.append(el('span','tagline','  '+tagline))}head.append(left);
  if(legend){const lg=el('span','legend');for(const [label,color] of legend){const s=el('span');const i=el('i');i.style.cssText=`display:inline-block;width:14px;height:3px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle`;s.append(i,label);lg.append(s)}head.append(lg)}
  parent.append(head,div);return div}
 function spreadDisplayValues(S,modeOverride){const raw=S.map(r=>r.spread_rel);const mode=modeOverride||$('norm')?.value||'raw';const n=raw.length,out=new Array(n);
@@ -464,14 +464,13 @@ function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM
 function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||'';
  const b=$('norm-score');if(!b)return;const q=NORM_QUALITY&&NORM_QUALITY[mode];
  b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · возврат '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
-function normTagline(){const mode=$('norm')?.value||'raw';return NORM_PANEL[mode]||'спред в % от дальней ноги'}
 function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChildren();charts.length=0;const S=payload.series,L=ledgerIndex();
  const nearName=payload.instrument?.near??payload.window?.near??'',farName=payload.instrument?.far??payload.window?.far??'';
  const nearPane=makePane(root,'h-near','1 · БЛИЖНЯЯ НОГА — '+nearName,null,[['ближняя нога',COLORS.near]],true);
  const farPane=makePane(root,'h-far','2 · ДАЛЬНЯЯ НОГА — '+farName,null,[['дальняя нога',COLORS.far]],true);
  const normMode=$('norm')?.value||'raw';const showLast=normMode==='raw'&&S.some(r=>r.spread_last_trade_rel!=null);
- const spreadPane=makePane(root,'h-spread','3 · СПРЕД — входы и выходы',normTagline(),[['расчётный',COLORS.spread]].concat(showLast?[['последняя сделка','#88a1b5']]:[]));
- const volPane=makePane(root,'h-vol','4 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]]);
+ const spreadPane=makePane(root,'h-spread','3 · СПРЕД — входы и выходы',null,[['расчётный',COLORS.spread]].concat(showLast?[['последняя сделка','#88a1b5']]:[]));
+ const volPane=makePane(root,'h-vol','4 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]],true);
  const showFunding=S.some(r=>r.funding_rub!=null)||payload.ledger.some(r=>r.funding_rub!=null);
  const totalFunding=showFunding?payload.ledger.reduce((acc,r)=>acc+(r.funding_rub??0),0):null;
  const fundingPane=showFunding?makePane(root,'h-fund','5 · ФОНДИРОВАНИЕ получено за день',`пока в позиции · итого ${rub(totalFunding,2)}`,[['фондирование',COLORS.fund]]):null;
@@ -481,7 +480,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChi
  const legFrom=c=>{const o=JSON.parse(JSON.stringify(opts));o.timeScale.visible=false;return o};
  const fundsFrom=c=>{const o=legFrom(c);return o};
  const cumFrom=c=>({...JSON.parse(JSON.stringify(opts)),leftPriceScale:{visible:true,borderColor:'#293b4e'}});
- const cNear=LWC.createChart(nearPane,legFrom()),cFar=LWC.createChart(farPane,legFrom()),cSpread=LWC.createChart(spreadPane,opts),cVol=LWC.createChart(volPane,opts);nearPane._chart=cNear;farPane._chart=cFar;
+ const cNear=LWC.createChart(nearPane,legFrom()),cFar=LWC.createChart(farPane,legFrom()),cSpread=LWC.createChart(spreadPane,opts),cVol=LWC.createChart(volPane,opts);nearPane._chart=cNear;farPane._chart=cFar;volPane._chart=cVol;
  const cFund=fundingPane?LWC.createChart(fundingPane,fundsFrom()):null;
  const cCum=LWC.createChart(cumPane,cumFrom());
  charts.push(cNear,cFar,cSpread,cVol);if(cFund)charts.push(cFund);charts.push(cCum);

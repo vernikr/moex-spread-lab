@@ -116,7 +116,7 @@ class CalendarProofTests(unittest.TestCase):
         connection.request("GET", "/proof")
         page = connection.getresponse()
         self.assertEqual(page.status, 200)
-        self.assertIn(b"Execution proof", page.read())
+        self.assertIn("Доказательство исполнения".encode(), page.read())
         connection.request("GET", "/api/proof/catalog")
         catalog = connection.getresponse()
         self.assertEqual(catalog.status, 200)

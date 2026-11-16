@@ -1,139 +1,174 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MOEX Spread Lab · Execution proof</title>
+<title>MOEX Spread Lab · Доказательство исполнения</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#09111b;color:#e6edf4}
-*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
-.app{max-width:1640px;margin:auto;padding:24px 28px 80px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:13px}.mark{width:35px;height:35px;border-radius:10px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900}.eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:2px 0;font-size:17px;letter-spacing:-.03em}h2{font-size:clamp(24px,2.6vw,34px);letter-spacing:-.05em;margin:4px 0 8px}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:8px 14px;font-size:12px;text-decoration:none;white-space:nowrap}
-.nav-links{display:flex;gap:10px;align-items:center}.tag{font-size:10px;color:#86d9bd;border:1px solid #2c6a58;border-radius:50px;padding:4px 10px}
-.panel{background:#111d2a;border:1px solid #293b4e;border-radius:14px}.toolbar{padding:16px 18px;margin-bottom:14px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.control{flex:1;min-width:130px}.control.wide{min-width:280px;flex:2}.control.small{min-width:96px;max-width:130px}.control label{display:block;color:#a7b8c8;font-size:11px;font-weight:650;margin-bottom:6px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;height:38px;padding:0 10px;width:100%;outline:none}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:10px;color:#7e93a6;margin-top:4px}
-.action{border:0;border-radius:8px;background:#70e1b9;color:#072119;font-weight:750;min-height:38px;padding:0 18px;white-space:nowrap}.ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:8px;min-height:34px;padding:0 12px;font-size:11px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
-.status{font-size:11px;color:#e7bd82;min-height:16px;margin-top:9px}.status.ok{color:#75d9ad}.lead{color:#91a4b7;font-size:12px;line-height:1.6;margin:0 0 16px;max-width:980px}.lead b{color:#cfe0ec}
-.evidence{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;border:1px solid #293b4e;border-radius:12px;background:#0d1723;font-size:11px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:6px;padding:3px 8px;color:#8be0bd;font-size:11px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
-.universe-switch{display:flex;gap:8px;margin-bottom:12px}.uopt{border:1px solid #345469;background:#16293a;color:#a9bccb;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:650}.uopt.active{border-color:#70e1b9;color:#072119;background:#70e1b9}.uopt small{display:block;font-weight:500;font-size:10px;color:inherit;opacity:.75}
-.flags{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}.flag{font-size:11px;border-radius:50px;padding:5px 11px;border:1px solid #345469;color:#a9bccb}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}.flag.warn{color:#e7bd82;border-color:#6a5a2c}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:12px;padding:11px 13px}.tile span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:#8aa0b3;margin-bottom:5px}.tile b{font-size:17px;letter-spacing:-.02em}.tile small{display:block;margin-top:3px;font-size:10px;color:#7e93a6}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
-.charts{padding:14px 16px 10px;position:relative;margin-bottom:16px}.charts h3{margin:0 0 3px;font-size:15px}.panel-title{font-size:11px;color:#9bb0c2;margin:12px 0 4px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:10px}
-.chart{width:100%;position:relative}.h-near,.h-far{height:150px}.h-spread{height:270px}.h-vol{height:130px}.h-fund{height:110px}.h-cum{height:150px}
-.legend{display:inline-flex;gap:12px;align-items:center}
-.spread-options{display:flex;gap:10px;align-items:center;margin:0 0 10px;font-size:11px;color:#a7b8c8;flex-wrap:wrap}.spread-options select{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;height:32px;padding:0 10px;outline:none}.spread-options select:focus{border-color:#63d9b2}.norm-hint{color:#9db1c2;font-size:10px;flex-basis:100%;line-height:1.5}.norm-score{color:#6f8296;font-size:10px;flex-basis:100%;margin-top:-6px;line-height:1.5}
-.tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.55;min-width:240px;max-width:460px;z-index:6;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
-.tablebox{margin-bottom:16px}.tablebox .head{padding:15px 18px 5px;display:flex;justify-content:space-between;gap:12px;align-items:end;flex-wrap:wrap}.tablebox .head h3{margin:0;font-size:15px}.tablebox .head p{margin:4px 0 8px;color:#8da1b4;font-size:11px;max-width:900px}
-table{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px}th{position:sticky;top:0;background:#16293a;color:#a9bccb;text-align:left;font-weight:650;padding:9px 10px;border-bottom:1px solid #2f4659;white-space:nowrap;z-index:2}td{padding:7px 10px;border-bottom:1px solid #1f3142;white-space:nowrap;vertical-align:top}td small{display:block;color:#7e93a6;margin-top:2px}td.num{text-align:right;font-variant-numeric:tabular-nums}
+*{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
+.app{height:100vh;max-width:1760px;margin:auto;padding:8px 14px;display:flex;flex-direction:column;gap:8px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:0 0 auto;padding:2px 0}.brand{display:flex;align-items:center;gap:10px}.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900;font-size:13px}
+.eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:6px 12px;font-size:11px;text-decoration:none;white-space:nowrap}
+.nav-links{display:flex;gap:10px;align-items:center}.tag{font-size:10px;color:#86d9bd;border:1px solid #2c6a58;border-radius:50px;padding:3px 10px}
+.layout{flex:1;min-height:0;display:grid;grid-template-columns:296px 262px minmax(0,1fr);gap:10px}
+.panel{background:#111d2a;border:1px solid #293b4e;border-radius:12px}
+.side{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:0}
+.side-title{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#8aa0b3;font-weight:750}
+.side-sub{font-size:9px;color:#62788c;margin-top:-4px}
+.universe-switch{display:flex;gap:6px}.uopt{flex:1;border:1px solid #345469;background:#16293a;color:#a9bccb;border-radius:9px;padding:6px 8px;font-size:11px;font-weight:700;text-align:left;line-height:1.35}.uopt.active{border-color:#70e1b9;color:#072119;background:#70e1b9}.uopt small{display:block;font-weight:500;font-size:9px;color:inherit;opacity:.8}
+.listbox{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
+#pair{min-height:150px}#norm{min-height:290px}
+.control{margin-bottom:2px;flex:1;min-width:0}.control label{display:block;color:#a7b8c8;font-size:10px;font-weight:650;margin-bottom:3px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:7px;color:#e7eef5;height:30px;padding:0 8px;width:100%;outline:none;font-size:11px}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:9px;color:#7e93a6;margin-top:2px;line-height:1.4}
+.sidegrid{display:flex;gap:6px}
+.action{border:0;border-radius:8px;background:#70e1b9;color:#072119;font-weight:800;min-height:34px;padding:0 14px;white-space:nowrap;font-size:12px}.action.full{width:100%}
+.ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:7px;min-height:26px;padding:0 9px;font-size:10px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
+.status{font-size:10px;color:#e7bd82;min-height:14px;line-height:1.4}.status.ok{color:#75d9ad}
+.norm-hint{color:#9db1c2;font-size:9.5px;line-height:1.45}.norm-score{color:#6f8296;font-size:9.5px;line-height:1.45;border-top:1px solid #223142;padding-top:6px}
+.main{display:flex;flex-direction:column;gap:6px;min-height:0}
+.evidence{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 10px;border:1px solid #293b4e;border-radius:9px;background:#0d1723;font-size:10px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:5px;padding:2px 6px;color:#8be0bd;font-size:10px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
+.flags{display:flex;gap:6px;flex-wrap:wrap}.flag{font-size:9.5px;border-radius:50px;padding:3px 9px;border:1px solid #345469;color:#a9bccb;white-space:nowrap}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}.flag.warn{color:#e7bd82;border-color:#6a5a2c}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:9px;padding:6px 9px;min-width:0}.tile span{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:#8aa0b3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tile b{font-size:14px;letter-spacing:-.02em;white-space:nowrap}.tile small{display:block;margin-top:1px;font-size:8.5px;color:#7e93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
+.maintabs{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.tabbar{display:flex;gap:6px;align-items:center;padding:6px 9px;border-bottom:1px solid #223142;flex-wrap:wrap}.tab{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:8px 8px 0 0;border-bottom:0;padding:6px 18px;font-size:11px;font-weight:750;min-height:29px}.tab.active{background:#16293a;color:#e7eef5}.tab-spacer{flex:1}.tab-note{font-size:9px;color:#62788c}
+.tabpage{flex:1;min-height:0;position:relative}.tabpage.hidden{display:none}
+#charts{height:100%;overflow:auto;padding:4px 12px 10px;position:relative}
+.panel-title{font-size:10px;color:#9bb0c2;margin:8px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:9px}
+.chart{width:100%;position:relative}.h-near,.h-far{height:116px}.h-spread{height:225px}.h-vol{height:90px}.h-fund{height:86px}.h-cum{height:116px}
+.legend{display:inline-flex;gap:10px;align-items:center;font-size:9.5px}
+.tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:10.5px;line-height:1.55;min-width:240px;max-width:460px;z-index:6;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
+.tablepage{height:100%;display:flex;flex-direction:column;min-height:0}
+.table-head{padding:7px 12px 2px}.table-head h3{margin:0 0 2px;font-size:13px}.table-head p{margin:0 0 6px;color:#8da1b4;font-size:9.5px;max-width:1100px;line-height:1.5}
+.tablewrap{flex:1;overflow:auto;min-height:0;padding:0 6px 6px}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:10.5px}th{position:sticky;top:0;background:#16293a;color:#a9bccb;text-align:left;font-weight:650;padding:6px 8px;border-bottom:1px solid #2f4659;white-space:nowrap;z-index:2}td{padding:5px 8px;border-bottom:1px solid #1f3142;white-space:nowrap;vertical-align:top}td small{display:block;color:#7e93a6;margin-top:1px;font-size:9px}td.num{text-align:right;font-variant-numeric:tabular-nums}
 tr.fill td{cursor:pointer}tr.entry td{background:#142b3a}tr.exit td{background:#241f16}tr.sel td{background:#183246!important}tr:hover td{background:#192e40}
-.badge{display:inline-block;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:750;letter-spacing:.04em}.badge.entry{background:#123a52;color:#8ec9f0;border:1px solid #2a5a7d}.badge.exit{background:#3a2a12;color:#f0c98e;border:1px solid #6a5a2c}.badge.open{background:#3a2312;color:#f0b2a9;border:1px solid #7a4540}
-tr.card td{background:#0d1723 !important;padding:0}.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:12px 16px}.cardgroup{background:#111d2a;border:1px solid #233648;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.65}.cardgroup h4{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#8aa0b3}.cardgroup .k{color:#8aa0b3}.cardgroup b{color:#e8f0f7}.win-chip{color:#78e0b4;font-weight:750}.loss-chip{color:#f0928a;font-weight:750}.flat-chip{color:#a9bccb;font-weight:750}
-tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.recon td{background:#111d2a;font-size:10.5px;color:#a9bccb}tr.recon.ok b{color:#78e0b4}tr.recon.warn b{color:#e7bd82}tr.note td{background:#2a1f12;color:#e7c98e;font-size:10.5px}
-.notes{color:#8da1b4;font-size:11px;line-height:1.7;padding:6px 4px}.empty{color:#8da1b4;padding:30px;text-align:center}.hidden{display:none !important}
+.badge{display:inline-block;border-radius:6px;padding:2px 7px;font-size:9.5px;font-weight:750;letter-spacing:.04em}.badge.entry{background:#123a52;color:#8ec9f0;border:1px solid #2a5a7d}.badge.exit{background:#3a2a12;color:#f0c98e;border:1px solid #6a5a2c}.badge.open{background:#3a2312;color:#f0b2a9;border:1px solid #7a4540}
+tr.card td{background:#0d1723 !important;padding:0}.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:10px 14px}.cardgroup{background:#111d2a;border:1px solid #233648;border-radius:10px;padding:9px 11px;font-size:10.5px;line-height:1.6}.cardgroup h4{margin:0 0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:#8aa0b3}.cardgroup .k{color:#8aa0b3}.cardgroup b{color:#e8f0f7}.win-chip{color:#78e0b4;font-weight:750}.loss-chip{color:#f0928a;font-weight:750}.flat-chip{color:#a9bccb;font-weight:750}
+tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.recon td{background:#111d2a;font-size:10px;color:#a9bccb}tr.recon.ok b{color:#78e0b4}tr.recon.warn b{color:#e7bd82}tr.note td{background:#2a1f12;color:#e7c98e;font-size:10px}
+.notes{color:#8da1b4;font-size:9.5px;line-height:1.5;padding:5px 12px;max-height:64px;overflow:auto;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
+@media (max-width:1220px){.layout{grid-template-columns:250px 226px minmax(0,1fr)}}
+@media (max-width:940px){body{overflow:auto;height:auto}.app{height:auto}.layout{display:flex;flex-direction:column;height:auto}#pair,#norm{min-height:130px}.maintabs{min-height:420px}#charts{max-height:520px}}
 </style>
 </head>
 <body>
 <div class="app">
-  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Research workspace</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← Pair screener</a><span class="tag">● Local · Offline</span></div></header>
-  <div class="eyebrow">Execution proof / pairs &amp; native calendars</div>
-  <h2>See every trade behind the number.</h2>
-  <p class="lead">Pick a universe — <b>pair screen</b> (mean reversion or perpetual funding carry) or a <b>native calendar spread</b> — then one instrument and strategy. The charts show both legs, the spread with each entry and exit (fill price, contracts, result), the traded volume and the cumulative result. <b>One unified table</b> repeats everything: every day with prices, volumes, fees itemized per side, and an inline fill card on every entry and exit. Prices are ISS candle/settlement proxies, not reconstructed fills.</p>
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><span class="tag">● Локально · Офлайн</span></div></header>
 
-  <section class="panel toolbar">
-    <div class="universe-switch" role="tablist">
-      <button class="uopt active" id="u-pair" role="tab">Pair screen<small>mean reversion · perpetual funding carry</small></button>
-      <button class="uopt" id="u-calendar" role="tab">Native calendar spread<small>MOEX exchange calendar instruments</small></button>
-    </div>
+  <div class="layout">
+    <!-- левая колонка 1: выбор пары и параметры -->
+    <aside class="panel side" id="col-selection">
+      <div class="universe-switch" role="tablist">
+        <button class="uopt active" id="u-pair" role="tab">Скринер пар<small>mean reversion · фондирование перпов</small></button>
+        <button class="uopt" id="u-calendar" role="tab">Календарные спреды<small>биржевые инструменты MOEX</small></button>
+      </div>
 
-    <div class="row" id="pair-controls">
-      <div class="control wide"><label for="pair">Pair</label><select id="pair"></select><div class="hint" id="pair-hint"></div></div>
-      <div class="control"><label for="strategy">Strategy</label><select id="strategy"></select></div>
-      <div class="control"><label for="fill">Fill</label><input id="fill" value="next_open" disabled></div>
-      <div class="control small"><label for="quantity">Contracts</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div>
-      <div class="control small"><label for="slippage">Slippage · ticks</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div>
-      <button class="action" id="run-pair">Show proof →</button>
-    </div>
-    <div class="row" id="pair-params" style="margin-top:10px">
-      <div class="control small mr-only"><label for="entry">Entry · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="2.0"></div>
-      <div class="control small mr-only"><label for="exit">Exit · z</label><input id="exit" type="number" min="0" max="4" step="0.1" value="0.5"></div>
-      <div class="control small"><label for="lookback">Lookback · obs</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
-    </div>
+      <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
+        <div class="side-title">Пара</div>
+        <select id="pair" class="listbox" size="10"></select>
+        <div class="hint" id="pair-hint"></div>
+        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
+        <div class="sidegrid" id="pair-params">
+          <div class="control mr-only"><label for="entry">Вход · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="2.0"></div>
+          <div class="control mr-only"><label for="exit">Выход · z</label><input id="exit" type="number" min="0" max="4" step="0.1" value="0.5"></div>
+          <div class="control"><label for="lookback">Окно · набл.</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
+        </div>
+        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+        <button class="action full" id="run-pair">Показать разбор →</button>
+      </div>
+      <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px">
+        <div class="side-title">Календарный спред</div>
+        <div class="control"><label for="asset">Актив</label><select id="asset" class="listbox" size="6"></select></div>
+        <div class="control"><label for="window">Ближнее окно · V — объём · C — капитал</label><select id="window"></select></div>
+        <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
+        <div class="sidegrid" id="calendar-params">
+          <div class="control z-only"><label for="centry">Вход · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
+          <div class="control z-only"><label for="cexit">Выход · z</label><input id="cexit" type="number" min="0.1" max="4" step="0.1" value="0.5"></div>
+          <div class="control z-only"><label for="clookback">Окно · дней</label><input id="clookback" type="number" min="3" max="60" step="1" value="20"></div>
+          <div class="control z-only c-keep"><label for="cthreshold">Порог · п.п. от RUONIA</label><input id="cthreshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
+        </div>
+        <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><input id="cquantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="cslippage">Слиппедж · тики</label><input id="cslippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+        <button class="action full" id="run-calendar">Показать разбор →</button>
+      </div>
+      <div class="status" id="status" role="status"></div>
+    </aside>
 
-    <div class="row hidden" id="calendar-controls">
-      <div class="control"><label for="asset">Asset</label><select id="asset"></select></div>
-      <div class="control wide"><label for="window">Front window (flags: V volume rule, C capital screen)</label><select id="window"></select></div>
-      <div class="control"><label for="cstrategy">Strategy</label><select id="cstrategy"></select></div>
-      <div class="control"><label for="cfill">Fill</label><select id="cfill"></select></div>
-      <div class="control small"><label for="cquantity">Contracts</label><input id="cquantity" type="number" min="1" max="50" step="1" value="1"></div>
-      <div class="control small"><label for="cslippage">Slippage · ticks</label><input id="cslippage" type="number" min="0" max="10" step="0.5" value="1"></div>
-      <button class="action" id="run-calendar">Show proof →</button>
-    </div>
-    <div class="row hidden" id="calendar-params" style="margin-top:10px">
-      <div class="control small z-only"><label for="centry">Entry · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
-      <div class="control small z-only"><label for="cexit">Exit · z</label><input id="cexit" type="number" min="0.1" max="4" step="0.1" value="0.5"></div>
-      <div class="control small z-only"><label for="clookback">Lookback · days</label><input id="clookback" type="number" min="3" max="60" step="1" value="20"></div>
-      <div class="control z-only c-keep" style="max-width:200px"><label for="cthreshold">Entry · pp from RUONIA</label><input id="cthreshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
-    </div>
+    <!-- левая колонка 2: метод нормализации -->
+    <aside class="panel side" id="col-norm">
+      <div class="side-title">Нормализация</div>
+      <div class="side-sub">только график спреда · причинные окна</div>
+      <select id="norm" class="listbox" size="14">
+        <optgroup label="Уровень">
+          <option value="raw" selected>Сырой · % от дальней ноги</option>
+          <option value="expanding">Остаток к нарастающему среднему</option>
+        </optgroup>
+        <optgroup label="Возврат к среднему · в единицах цены">
+          <option value="rm20">Остаток к скользящему среднему · 20 набл.</option>
+          <option value="rm60">Остаток к скользящему среднему · 60 набл.</option>
+          <option value="ema10">Остаток к EMA · полураспад 10</option>
+          <option value="ols20">Детренд по скользящему OLS · 20 набл.</option>
+          <option value="ols60">Детренд по скользящему OLS · 60 набл.</option>
+          <option value="ou60">Остаток ОУ · AR(1) · 60 набл.</option>
+        </optgroup>
+        <optgroup label="В единицах волатильности (σ)">
+          <option value="rz20">Скользящий z-скор · 20 набл.</option>
+          <option value="ewma10">EWMA z · полураспад 10</option>
+          <option value="mad20">Робастный z · медиана/MAD · 20 набл.</option>
+          <option value="garch">GARCH(1,1) z · трейлинг</option>
+          <option value="kalman">z инновации Калмана · local level</option>
+        </optgroup>
+        <optgroup label="Ограниченные">
+          <option value="stoch20">Stochastic · 20 набл. (0–100)</option>
+        </optgroup>
+      </select>
+      <div class="norm-hint" id="norm-hint"></div>
+      <div class="norm-score" id="norm-score"></div>
+    </aside>
 
-    <div class="status" id="status" role="status"></div>
-  </section>
+    <!-- основная область: сводка + табы графики/таблица -->
+    <main class="main">
+      <div class="evidence" id="evidence">
+        <span>run_id <code id="ev-runid">—</code></span>
+        <button class="ghost" id="copy-runid">Копировать run_id</button>
+        <button class="ghost" id="download-csv">Скачать CSV</button>
+        <span id="ev-period"></span>
+        <span id="ev-selection"></span>
+        <span id="ev-role" class="price-role"></span>
+        <span id="ev-provenance" title=""></span>
+        <span id="ev-recon"></span>
+      </div>
 
-  <div class="evidence" id="evidence">
-    <span>run_id <code id="ev-runid">—</code></span>
-    <button class="ghost" id="copy-runid">Copy run_id</button>
-    <button class="ghost" id="download-csv">Download CSV</button>
-    <span id="ev-period"></span>
-    <span id="ev-selection"></span>
-    <span id="ev-role" class="price-role"></span>
-    <span id="ev-provenance" title=""></span>
-    <span id="ev-recon"></span>
+      <div id="flags" class="flags"></div>
+      <div id="tiles" class="tiles"></div>
+
+      <div class="panel maintabs">
+        <div class="tabbar">
+          <button class="tab active" id="tab-charts" role="tab">Графики</button>
+          <button class="tab" id="tab-table" role="tab">Таблица</button>
+          <div class="tab-spacer"></div>
+          <span class="tab-note">наведение на график — подсказка по дню</span>
+        </div>
+        <div class="tabpage" id="tabpage-charts">
+          <div id="charts">
+            <div class="empty" id="charts-empty">Слева выберите пару и стратегию, затем нажмите «Показать разбор →».</div>
+            <div class="tip" id="tip"></div>
+          </div>
+        </div>
+        <div class="tabpage hidden" id="tabpage-table">
+          <div class="tablepage">
+            <div class="table-head">
+              <div class="eyebrow">Единый журнал · одна таблица</div>
+              <h3>Журнал исполнения</h3>
+              <p>Один ряд на день: цены, объёмы, позиция, отмеченный результат и кумулятивный нетто. Дни входа и выхода отмечены бейджем — клик по ряду разворачивает карточку исполнения: цены исполнения, контракты, объёмы дня и разбивка комиссий (биржа / брокер / слиппедж). В карточке выхода — результат сделки (гросс, нетто, плюс/минус, барьер LQDT на маржу, сверх). Итоги сверяются со сводкой ≤ 0.01–0.02 ₽.</p>
+            </div>
+            <div class="tablewrap" id="ledger-table"><div class="empty">Запуска ещё не было.</div></div>
+            <div class="notes" id="notes"></div>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
-
-  <div id="flags" class="flags"></div>
-  <div id="tiles" class="tiles"></div>
-
-  <div class="spread-options hidden" id="spread-options">
-    <label for="norm">Normalization · spread chart only</label>
-    <select id="norm">
-      <optgroup label="Level">
-        <option value="raw" selected>Raw · % of far leg</option>
-        <option value="expanding">Residual vs expanding mean</option>
-      </optgroup>
-      <optgroup label="Mean-reversion residuals · price units">
-        <option value="rm20">Residual vs rolling mean · 20 obs</option>
-        <option value="rm60">Residual vs rolling mean · 60 obs</option>
-        <option value="ema10">Residual vs EMA · halflife 10</option>
-        <option value="ols20">Detrend vs rolling OLS · 20 obs</option>
-        <option value="ols60">Detrend vs rolling OLS · 60 obs</option>
-        <option value="ou60">OU residual · AR(1) · 60 obs</option>
-      </optgroup>
-      <optgroup label="Volatility-scaled · σ units">
-        <option value="rz20">Rolling z-score · 20 obs</option>
-        <option value="ewma10">EWMA z · halflife 10</option>
-        <option value="mad20">Robust z · median/MAD · 20 obs</option>
-        <option value="garch">GARCH(1,1) z · trailing</option>
-        <option value="kalman">Kalman innovation z · local level</option>
-      </optgroup>
-      <optgroup label="Bounded">
-        <option value="stoch20">Stochastic position · 20 obs (0–100)</option>
-      </optgroup>
-    </select>
-    <span class="norm-hint" id="norm-hint"></span>
-    <span class="norm-score" id="norm-score"></span>
-  </div>
-
-  <section class="panel charts" id="charts">
-    <div class="empty" id="charts-empty">Choose a selection and press “Show proof”.</div>
-    <div class="tip" id="tip"></div>
-  </section>
-
-  <section class="panel tablebox">
-    <div class="head">
-      <div><div class="eyebrow">Single ledger / one table</div><h3>Unified execution ledger</h3><p>One row per day: prices, volumes, position, marked result and cumulative net. Entry/exit days carry a badge — click the row to expand the fill card: fill prices, contracts, day volumes and the fee split (exchange / broker / slippage). Exit cards add the trade result (gross, net, win/loss, LQDT-on-margin hurdle, excess). Totals reconcile to the summary to ≤ 0.01–0.02 ₽.</p></div>
-    </div>
-    <div class="tablewrap" id="ledger-table"><div class="empty">No run yet.</div></div>
-  </section>
-
-  <div class="notes" id="notes"></div>
 </div>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <script>
 const $=id=>document.getElementById(id);
@@ -150,19 +185,18 @@ function status(text,ok=false){$('status').textContent=text;$('status').classNam
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 
 // ---------- toolbar: universe & selection ----------
-function modeButtons(){for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']]){$(id).classList.toggle('active',mode===universe)}
- $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('pair-params').classList.toggle('hidden',universe!=='pair_screen');
- $('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');$('calendar-params').classList.toggle('hidden',universe!=='calendar_native')}
+function modeButtons(){for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);$('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')}
+function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts'){for(const c of charts){try{c.timeScale().fitContent()}catch(e){}}}}
 function pairAvailability(id){const row=(catalog.pair_screen?.pairs||[]).find(p=>p.id===id);return row||null}
-function fillPairs(){const s=$('pair');s.replaceChildren();for(const p of catalog.pair_screen.pairs){const ok=p.strategies.mean_reversion||p.strategies.funding_only;const o=el('option','',`${p.id} · ${p.family.replaceAll('_',' ')} · min leg vol ${p.min_leg_daily_volume!=null?fmt(p.min_leg_daily_volume):'—'}${ok?'':' · UNAVAILABLE ('+p.status.replaceAll('_',' ')+')'}`);o.value=p.id;if(!ok)o.disabled=true;s.append(o)}
+function fillPairs(){const s=$('pair');s.replaceChildren();for(const p of catalog.pair_screen.pairs){const ok=p.strategies.mean_reversion||p.strategies.funding_only;const o=el('option','',`${p.id} · ${p.family.replaceAll('_',' ')} · мин. объём ноги ${p.min_leg_daily_volume!=null?fmt(p.min_leg_daily_volume):'—'}${ok?'':' · НЕДОСТУПНА ('+p.status.replaceAll('_',' ')+')'}`);o.value=p.id;if(!ok)o.disabled=true;s.append(o)}
  if(![...s.options].some(o=>!o.disabled)&&s.options.length){for(const o of [...s.options])o.disabled=false}
  syncPairStrategy()}
 function currentPair(){return $('pair').value}
-function fillStrategy(){const p=pairAvailability(currentPair());const s=$('strategy');const prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?p.strategies[name]:false;const o=el('option','',`${m.label}${ok?'':' · no local data'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}
+function fillStrategy(){const p=pairAvailability(currentPair());const s=$('strategy');const prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?p.strategies[name]:false;const o=el('option','',`${m.label}${ok?'':' · нет локальных данных'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}
  const enabled=[...s.options].find(o=>!o.disabled);if(prev&&[...s.options].some(o=>o.value===prev&&!o.disabled))s.value=prev;else if(enabled)s.value=enabled.value;else if(s.options.length)s.value=s.options[0].value;
  const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=isMR?'next_open':'same_day_settlement';const metaSel=catalog.pair_screen.strategies[s.value];$('lookback').value=metaSel?metaSel.parameters.lookback:20;syncPairHint()}
 function syncPairStrategy(){fillStrategy()}
-function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.status.replaceAll('_',' ')} · margin ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% of capital':'—'}${p.expiry?' · far expiry '+p.expiry:''}`:''}
+function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · дальняя экспирация '+p.expiry:''}`:''}
 function pairRequest(){const strategy=$('strategy').value;const parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};
  return {universe:'pair_screen',pair:currentPair(),strategy,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters}}
 
@@ -170,45 +204,45 @@ function pairRequest(){const strategy=$('strategy').value;const parameters=strat
 function currentAsset(){return (catalog.assets||[]).find(a=>a.asset===$('asset').value)}
 function fillAssets(){const s=$('asset');s.replaceChildren();for(const a of catalog.assets||[]){const o=el('option','',`${a.asset} · ${a.name} · ${a.group}${a.monthly?' · monthly':''}`);o.value=a.asset;s.append(o)}fillWindows()}
 function fillWindows(){const a=currentAsset();if(!a){$('window').replaceChildren();return}const s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations}d · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · min vol ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});
- const st=$('cstrategy');const prev=st.value;st.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Z-score mean reversion':'Convergence to RUONIA fair value');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;
+ const st=$('cstrategy');const prev=st.value;st.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Возврат к среднему · z-скор':'Сходимость к справедливой цене RUONIA');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;
  $('clookback').value=a.monthly?7:20;syncCalendarParams()}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
 function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion';return {universe:'calendar_native',asset:$('asset').value,pair:$('window').value,strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
-function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Next open (fill proxy)',next_close:'Next close',reference_same_bar:'Reference close (same bar)'};for(const f of catalog.fills||['next_open']){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
-async function show(run){const btn=universe==='pair_screen'?$('run-pair'):$('run-calendar');btn.disabled=true;status('Building the proof…');try{payload=await api('/api/proof/run',universe==='pair_screen'?pairRequest():calendarRequest());selectedTrade=null;dayClick={day:null,index:0};$('spread-options').classList.remove('hidden');render();const r=payload.summary.ledger_reconciliation_rub;status(`${proofLabel()} · ${payload.trades.length} trade(s) · reconciliation ${rub(r,2)}`,true)}catch(e){status(e.message)}finally{btn.disabled=false}}
+function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of catalog.fills||['next_open']){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
+async function show(run){const btn=universe==='pair_screen'?$('run-pair'):$('run-calendar');btn.disabled=true;status('Строю разбор…');try{payload=await api('/api/proof/run',universe==='pair_screen'?pairRequest():calendarRequest());selectedTrade=null;dayClick={day:null,index:0};switchTab('charts');render();const r=payload.summary.ledger_reconciliation_rub;status(`${proofLabel()} · сделок: ${payload.trades.length} · сверка ${rub(r,2)}`,true)}catch(e){status(e.message)}finally{btn.disabled=false}}
 
 // ---------- tiles & flags ----------
 function tile(label,value,klass='',sub=null){const t=el('div','tile');t.append(el('span','',label));t.append(el('b',klass,value));if(sub)t.append(el('small','',sub));return t}
 function renderSummary(){const s=payload.summary,w=payload.window;const f=$('flags');f.replaceChildren();const flag=(text,ok)=>f.append(el('span','flag '+(ok?'ok':'bad'),text));
- const vol=universe==='pair_screen'?w.min_leg_volume:w.min_spread_volume;const volLabel=universe==='pair_screen'?'min leg volume':'min spread volume';
+ const vol=universe==='pair_screen'?w.min_leg_volume:w.min_spread_volume;const volLabel=universe==='pair_screen'?'мин. объём ноги':'мин. объём спреда';
  const obs=w.observations??payload.series.length;
- flag(`${w.from} → ${w.to} · ${obs} days`,true);
- flag(w.tradable_every_day?`Volume rule passed: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} contracts/day`:`Volume rule FAILED: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
- flag(w.passes_capital_screen?`Capital screen passed (pair margin ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Capital screen FAILED (margin up to ${fmt(w.max_pair_margin_rub)} ₽ with stress buffers)`,w.passes_capital_screen);
- flag(`Fee ${payload.contract.taker_rate_percent??'—'}% of contract value per leg and side (${payload.contract.tariff_group}); broker fee 0`,true);
- if(s.open_positions)flag(`${s.open_positions} open position(s) at data end — marked as forced exit, not an executable trade`,false);
+ flag(`${w.from} → ${w.to} · ${obs} дней`,true);
+ flag(w.tradable_every_day?`Правило объёма пройдено: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} контр./день`:`Правило объёма НЕ пройдено: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
+ flag(w.passes_capital_screen?`Скрининг капитала пройден (маржа ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Скрининг капитала НЕ пройден (маржа до ${fmt(w.max_pair_margin_rub)} ₽ со стрессовыми буферами)`,w.passes_capital_screen);
+ flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${payload.contract.tariff_group}); брокерская 0`,true);
+ if(s.open_positions)flag(`${s.open_positions} открытая позиция в конце данных — отмечена как принудительный выход, не исполняемая сделка`,false);
  const t=$('tiles');t.replaceChildren();
- t.append(tile('Trades',`${s.trades}`,'',`${s.closed_trades} closed · ${s.winners} winners`),
-   tile('Gross P&L',rub(s.gross_rub),cls(s.gross_rub)),
-   tile('Costs',`−${fmt(s.costs_rub,2)} ₽`,'',`exc ${fmt(s.cost_totals.exchange_clearing,2)} · brk ${fmt(s.cost_totals.broker,2)} · slp ${fmt(s.cost_totals.slippage,2)}`),
-   tile('Net P&L',rub(s.net_rub),cls(s.net_rub)),
-   tile('LQDT on margin',`−${fmt(s.lqdt_on_margin_rub)} ₽`),
-   tile('Excess over LQDT',rub(s.excess_over_lqdt_rub),cls(s.excess_over_lqdt_rub)));
- if(s.max_excess_drawdown_rub!=null)t.append(tile('Max excess drawdown',`−${fmt(s.max_excess_drawdown_rub,2)} ₽`,'warn'));
+ t.append(tile('Сделки',`${s.trades}`,'',`${s.closed_trades} закрыто · ${s.winners} в плюсе`),
+   tile('Гросс P&L',rub(s.gross_rub),cls(s.gross_rub)),
+   tile('Издержки',`−${fmt(s.costs_rub,2)} ₽`,'',`бирж ${fmt(s.cost_totals.exchange_clearing,2)} · брок ${fmt(s.cost_totals.broker,2)} · слип ${fmt(s.cost_totals.slippage,2)}`),
+   tile('Нетто P&L',rub(s.net_rub),cls(s.net_rub)),
+   tile('LQDT на маржу',`−${fmt(s.lqdt_on_margin_rub)} ₽`),
+   tile('Сверх LQDT',rub(s.excess_over_lqdt_rub),cls(s.excess_over_lqdt_rub)));
+ if(s.max_excess_drawdown_rub!=null)t.append(tile('Макс. изб. просадка',`−${fmt(s.max_excess_drawdown_rub,2)} ₽`,'warn'));
  const reconOk=Math.abs(s.ledger_reconciliation_rub)<0.5;
- t.append(tile('Ledger vs trade table',rub(s.ledger_reconciliation_rub,2),reconOk?'pos':'warn','net − cumulative'));
- if(s.fx_point_value_drift_rub!=null&&Math.abs(s.fx_point_value_drift_rub)>=0.005)t.append(tile('FX point-value drift',rub(s.fx_point_value_drift_rub,2),'warn'))}
+ t.append(tile('Сверка ledger',rub(s.ledger_reconciliation_rub,2),reconOk?'pos':'warn','нетто − кумулятив'));
+ if(s.fx_point_value_drift_rub!=null&&Math.abs(s.fx_point_value_drift_rub)>=0.005)t.append(tile('Дрейф стоимости пункта',rub(s.fx_point_value_drift_rub,2),'warn'))}
 
 // ---------- evidence bar ----------
 function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-runid').textContent=payload.run_id;
  $('ev-period').textContent=`${payload.window.from} → ${payload.window.to}`;
  const s=payload.selection;const inst=payload.instrument||{};const pairLabel=s.pair||(inst.spread_instrument||'');
- $('ev-selection').textContent=`${universe==='pair_screen'?'pair':'calendar'} ${pairLabel} · ${s.strategy} · ${s.fill??''} · ${s.quantity} contract(s) · slippage ${s.slippage_ticks}t`;
+ $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${s.strategy} · ${s.fill??''} · контрактов: ${s.quantity} · слиппедж ${s.slippage_ticks}т`;
  $('ev-role').textContent=payload.price_role||'';
  const prov=payload.provenance||{};const provKeys=Object.keys(prov);const provEl=$('ev-provenance');
- provEl.textContent=provKeys.length?`provenance: ${provKeys.length} input hash${provKeys.length===1?'':'es'}`:'provenance: not recorded';
+ provEl.textContent=provKeys.length?`происхождение: ${provKeys.length} хэшей входных данных`:'происхождение: не записано';
  provEl.title=provKeys.map(k=>`${k}: ${String(prov[k])}`).join('\n');
- const reconOk=Math.abs(payload.summary.ledger_reconciliation_rub)<0.5;$('ev-recon').innerHTML='';const chip=el('span',reconOk?'pos':'warn',reconOk?`✓ reconciles (${fmt(payload.summary.ledger_reconciliation_rub,2)} ₽)`:`⚠ reconciliation ${fmt(payload.summary.ledger_reconciliation_rub,2)} ₽`);$('ev-recon').append(chip)}
+ const reconOk=Math.abs(payload.summary.ledger_reconciliation_rub)<0.5;$('ev-recon').innerHTML='';const chip=el('span',reconOk?'pos':'warn',reconOk?`✓ сверяется (${fmt(payload.summary.ledger_reconciliation_rub,2)} ₽)`:`⚠ расхождение ${fmt(payload.summary.ledger_reconciliation_rub,2)} ₽`);$('ev-recon').append(chip)}
 
 // ---------- charts ----------
 const LWC=window.LightweightCharts;
@@ -268,21 +302,21 @@ function spreadDisplayValues(S,modeOverride){const raw=S.map(r=>r.spread_rel);co
   out[t]=cur}
  return out}
 const NORM_HINTS={
- raw:'Raw spread as % of far-leg notional. Chart shows the actual percentage distance — drift here means the relationship itself moved, not automatic mispricing.',
- expanding:'Spread minus its inception-to-date mean. Longest causal memory; good first filter with no regime model. Residual still trends if the economic relationship drifts.',
- rm20:'Spread minus trailing 20-obs mean (~1 trading month). Fast to re-center, sensitive to regime breaks — but a wide 20-obs swing can masquerade as the new “normal”.',
- rm60:'Spread minus trailing 60-obs mean (~1 quarter). Steadier center, slower to adapt. Prefer when short noise shouldn’t open trades.',
- ema10:'Spread minus exponentially weighted mean (halflife ≈ 10 obs). Rolling-mean idea without a hard window edge — recent rows dominate smoothly, causal.',
- ols20:'Spread minus trailing 20-obs linear regression at the last point. Short detrend — removes a fresh local slope, can overfit a two-week wiggle.',
- ols60:'Spread minus trailing 60-obs linear regression at the last point. Best-behaved level stabilizer on drifting series (GLD/GLZ6), but it absorbs a real structural move as “trend” — judge with the trade markers, not the fit.',
- ou60:'Spread minus OU equilibrium level fitted on trailing 60 obs (x[t] = a + φ·x[t-1]; residual vs a/(1−φ)). If the window shows no mean reversion (|φ| ≥ 1) it falls back to the plain residual vs window mean. φ and half-life are noisy at n=60 — trust the shape, not a precise half-life.',
- rz20:'(Spread − trailing 20-obs mean) / trailing 20-obs σ. Unit-free “σs from the recent norm” — great for eyeballing across pairs, but σ scaling lets a big clean drift hide if vol drifts with it.',
- ewma10:'(Spread − EWMA mean) / EWMA σ (halflife ≈ 10 obs). rz20 without the hard window edge — recent rows dominate; reacts faster when vol clusters.',
- mad20:'(Spread − trailing 20-obs median) / (1.4826 × MAD). Robust to bad ticks and gap opens — fewer phantom ±3σ prints; slightly desensitized to real vol expansions.',
- garch:'Standardized residual of a trailing GARCH(1,1) variance recursion (α=0.10, β=0.85, ω→0). Answers “unusual given vol clustering”, not “unusual vs mean”; crude fit, ignores covariates.',
- kalman:'Kalman innovation z from a local-level state model (level random-walks, fixed Q/R). No window at all — adapts continuously through regime changes; only as good as the fixed Q/R guess.',
- stoch20:'(Spread − window min)/(window max − window min) over trailing 20 obs, shown as %. Bounded 0–100 — “where in the recent range”, easiest to read; says nothing about σ or half-life.'};
-const NORM_PANEL={raw:'spread as % of far leg',expanding:'residual vs expanding mean · causal',rm20:'residual vs rolling mean · 20 obs · causal',rm60:'residual vs rolling mean · 60 obs · causal',ema10:'residual vs EMA halflife 10 · causal',ols20:'residual vs rolling OLS · 20 obs · causal',ols60:'residual vs rolling OLS · 60 obs · causal',ou60:'OU residual vs equilibrium · 60 obs · causal',rz20:'z-score · rolling 20 obs · causal',ewma10:'z-score · EWMA halflife 10 · causal',mad20:'robust z · median/MAD · 20 obs · causal',garch:'GARCH(1,1) z · trailing recursion · causal',kalman:'Kalman innovation z · local level · causal',stoch20:'stochastic position · 20 obs · 0–100 · causal'};
+ raw:'Сырой спред в % от ноционала дальней ноги. График показывает фактическое процентное расстояние — дрейф здесь означает смещение самого соотношения, а не автоматический неверный прайсинг.',
+ expanding:'Спред минус среднее с момента начала выборки. Самая длинная причинная память; хороший первый фильтр без модели режима. Остаток всё равно будет трендить, если «экономика пары» дрейфует.',
+ rm20:'Спред минус скользящее среднее за 20 наблюдений (~торговый месяц). Быстро центрируется, чувствителен к смене режима — но широкий 20-дневный ход может «притвориться нормой».',
+ rm60:'Спред минус скользящее среднее за 60 наблюдений (~квартал). Более устойчивый центр, медленнее адаптируется. Берите, если короткий шум не должен открывать сделки.',
+ ema10:'Спред минус экспоненциально взвешенное среднее (полураспад ≈ 10 набл.). Идея скользящего среднего без жёсткого края окна — свежие бары доминируют плавно, только прошлые данные.',
+ ols20:'Спред минус линейная регрессия по трейлинговым 20 точкам с оценкой в последней точке. Короткий детренд — убирает свежий локальный наклон, может переобучиться на двухнедельной «волне».',
+ ols60:'Спред минус линейная регрессия по трейлинговым 60 точкам с оценкой в последней точке. Самый дисциплинированный стабилизатор уровня на дрейфующих сериях (GLD/GLZ6), но съедает реальный структурный сдвиг как «тренд» — судите по маркерам сделок, не по качеству подгонки.',
+ ou60:'Спред минус равновесный уровень ОУ, подогнанный по трейлинговым 60 точкам (x[t] = a + φ·x[t−1]; остаток vs a/(1−φ)). Если окно не показывает возврата (|φ| ≥ 1) — откат на остаток vs среднее окна. φ и half-life шумные при n=60 — верьте форме, а не точной цифре half-life.',
+ rz20:'(Спред − скользящее среднее за 20) / скользящая σ за 20. Безразмерные «σ от недавней нормы» — удобно сравнивать пары, но масштабирование σ прячет большой чистый дрейф, если вола растёт вместе с ним.',
+ ewma10:'(Спред − EWMA-среднее) / EWMA-σ (полураспад ≈ 10 набл.). rz20 без жёсткого края окна — свежие бары доминируют; быстрее реагирует в кластерах волы.',
+ mad20:'(Спред − медиана за 20) / (1.4826 × MAD). Устойчив к плохим тикам и гэпам — меньше фантомных ±3σ; немного приглушён к реальным всплескам волы.',
+ garch:'Стандартизированный остаток трейлинговой рекурсии GARCH(1,1) (α=0.10, β=0.85, ω→0). Отвечает на «необычно ли это с учётом кластеризации волы», не «необычно ли vs среднего»; грубая подгонка, без ковариат.',
+ kalman:'Инновация Калмана в единицах своей σ — local-level модель (уровень — случайное блуждание, фиксированные Q/R). Без окна вообще — адаптируется непрерывно через смены режима; ровно настолько хороша, насколько верны фиксированные Q/R.',
+ stoch20:'(Спред − min окна)/(max окна − min окна) за 20 точек, в %. Ограничено 0–100 — «где внутри недавнего диапазона», читать проще всего; про σ и half-life не говорит ничего.'};
+const NORM_PANEL={raw:'спред в % от дальней ноги',expanding:'остаток к expanding-среднему · причинный',rm20:'остаток к среднему · 20 набл. · причинный',rm60:'остаток к среднему · 60 набл. · причинный',ema10:'остаток к EMA · полураспад 10 · причинный',ols20:'остаток к OLS · 20 набл. · причинный',ols60:'остаток к OLS · 60 набл. · причинный',ou60:'остаток ОУ от равновесия · 60 набл. · причинный',rz20:'z-скор · среднее и σ за 20 · причинный',ewma10:'z-скор · EWMA · полураспад 10 · причинный',mad20:'робастный z · медиана/MAD · 20 · причинный',garch:'GARCH(1,1) z · трейлинг-рекурсия · причинный',kalman:'z инновации Калмана · local level · причинный',stoch20:'stochastic · 20 набл. · 0–100 · причинный'};
 // Quality score for a normalized series (display-chart property, NOT a trading signal).
 // Horizontality 40%: 1 - R^2 of OLS of the series on time. Mean reversion 30%: AR(1) phi mapped 1-phi.
 // Vol uniformity 30%: 1 - CV of per-block vol of first differences (up to 6 blocks). See docs/research/normalization-methods.md
@@ -310,20 +344,20 @@ function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM
  for(const o of sel.options){const m=o.value;const q=seriesQuality(spreadDisplayValues(S,m));NORM_QUALITY[m]=q;o.textContent=NORM_BASE[m]+(q?'  ·  '+q.total.toFixed(1):'  ·  —')}}
 function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||'';
  const b=$('norm-score');if(!b)return;const q=NORM_QUALITY&&NORM_QUALITY[mode];
- b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · reversion '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
-function normTagline(){const mode=$('norm')?.value||'raw';return NORM_PANEL[mode]||'spread as % of far leg'}
+ b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · возврат '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
+function normTagline(){const mode=$('norm')?.value||'raw';return NORM_PANEL[mode]||'спред в % от дальней ноги'}
 function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChildren();charts.length=0;const S=payload.series,L=ledgerIndex();
  const nearName=payload.instrument?.near??payload.window?.near??'',farName=payload.instrument?.far??payload.window?.far??'';
- const nearPane=makePane(root,'h-near','1 · NEAR LEG — '+nearName,null,[['near leg',COLORS.near]]);
- const farPane=makePane(root,'h-far','2 · FAR LEG — '+farName,null,[['far leg',COLORS.far]]);
+ const nearPane=makePane(root,'h-near','1 · БЛИЖНЯЯ НОГА — '+nearName,null,[['ближняя нога',COLORS.near]]);
+ const farPane=makePane(root,'h-far','2 · ДАЛЬНЯЯ НОГА — '+farName,null,[['дальняя нога',COLORS.far]]);
  const normMode=$('norm')?.value||'raw';const showLast=normMode==='raw'&&S.some(r=>r.spread_last_trade_rel!=null);
- const spreadPane=makePane(root,'h-spread','3 · SPREAD — entries & exits',normTagline(),[['settlement',COLORS.spread]].concat(showLast?[['last trade','#88a1b5']]:[]));
- const volPane=makePane(root,'h-vol','4 · VOLUME per day',universe==='pair_screen'?'min(near, far) — pair-book proxy':'spread instrument',[['volume',COLORS.vol]]);
+ const spreadPane=makePane(root,'h-spread','3 · СПРЕД — входы и выходы',normTagline(),[['расчётный',COLORS.spread]].concat(showLast?[['последняя сделка','#88a1b5']]:[]));
+ const volPane=makePane(root,'h-vol','4 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]]);
  const showFunding=S.some(r=>r.funding_rub!=null)||payload.ledger.some(r=>r.funding_rub!=null);
  const totalFunding=showFunding?payload.ledger.reduce((acc,r)=>acc+(r.funding_rub??0),0):null;
- const fundingPane=showFunding?makePane(root,'h-fund','5 · FUNDING received per day',`while in position · total ${rub(totalFunding,2)}`,[['funding',COLORS.fund]]):null;
+ const fundingPane=showFunding?makePane(root,'h-fund','5 · ФОНДИРОВАНИЕ получено за день',`пока в позиции · итого ${rub(totalFunding,2)}`,[['фондирование',COLORS.fund]]):null;
  const cumNo=showFunding?6:5;
- const cumPane=makePane(root,'h-cum',`${cumNo} · CUMULATIVE NET — RUB after costs`,'drawdown from running peak on left axis',[['cumulative',COLORS.spread],['drawdown',COLORS.warn]]);
+ const cumPane=makePane(root,'h-cum',`${cumNo} · КУМУЛЯТИВНЫЙ НЕТТО — ₽ после издержек`,'просадка от текущего пика — по левой оси',[['кумулятив',COLORS.spread],['просадка',COLORS.warn]]);
  const opts=chartOpts();
  const legFrom=c=>{const o=JSON.parse(JSON.stringify(opts));o.timeScale.visible=false;return o};
  const fundsFrom=c=>{const o=legFrom(c);return o};
@@ -341,7 +375,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChi
  if(showLast){const lt=lineSeries(cSpread,'#88a1b5',1,true);lt.setData(S.filter(r=>r.spread_last_trade_rel!=null).map(r=>({time:r.date,value:r.spread_last_trade_rel})))}
  const volSeries=cVol.addSeries(LWC.HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false});
  volSeries.setData(S.map(r=>({time:r.date,value:(universe==='pair_screen'?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0,color:(L[r.date]?.mark_pnl_rub??0)>=0?'#2f8f6a':'#a24d47'})));
- const rule=payload.window.min_daily_volume_rule;if(rule!=null)volSeries.createPriceLine({price:rule,color:COLORS.loss,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'rule'});
+ const rule=payload.window.min_daily_volume_rule;if(rule!=null)volSeries.createPriceLine({price:rule,color:COLORS.loss,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'правило'});
  if(cFund){const fundSeries=cFund.addSeries(LWC.HistogramSeries,{priceLineVisible:false,lastValueVisible:false,base:0});
   fundSeries.setData(S.filter(r=>r.funding_rub!=null).map(r=>({time:r.date,value:r.funding_rub,color:r.funding_rub>=0?'#5b8f6a':'#a24d47'})));
   fundSeries.createPriceLine({price:0,color:'#3b5367',lineStyle:0,lineWidth:1,axisLabelVisible:false,title:''})}
@@ -372,8 +406,8 @@ function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChi
 function ledgerIndex(){const m={};for(const row of payload.ledger)m[row.date]=row;return m}
 function markerColor(t,sel){if(sel)return'#ffffff';if(t.open_at_end)return COLORS.warn;return t.net_rub>0?COLORS.win:t.net_rub<0?COLORS.loss:'#d7e6f3'}
 function buildMarkers(){const m=[];for(const t of payload.trades){const dir=t.side==='long_spread'?1:-1;const sel=t.number===selectedTrade;const size=sel?2:1;
- m.push({time:t.entry.date,position:dir>0?'belowBar':'aboveBar',color:sel?'#ffffff':COLORS.entry,shape:dir>0?'arrowUp':'arrowDown',text:`#${t.number} ${dir>0?'BUY':'SELL'} · ${t.quantity}@${t.entry.spread_fill_rel!=null?fmt(t.entry.spread_fill_rel,2)+'%':px(t.entry.spread_fill)}`,size});
- m.push({time:t.exit.date,position:dir>0?'aboveBar':'belowBar',color:markerColor(t,sel),shape:'circle',text:t.open_at_end?`#${t.number} OPEN · forced mark`:`#${t.number} ${rub(t.net_rub)}`,size})}
+ m.push({time:t.entry.date,position:dir>0?'belowBar':'aboveBar',color:sel?'#ffffff':COLORS.entry,shape:dir>0?'arrowUp':'arrowDown',text:`#${t.number} ${dir>0?'ПОК':'ПРОД'} · ${t.quantity}@${t.entry.spread_fill_rel!=null?fmt(t.entry.spread_fill_rel,2)+'%':px(t.entry.spread_fill)}`,size});
+ m.push({time:t.exit.date,position:dir>0?'aboveBar':'belowBar',color:markerColor(t,sel),shape:'circle',text:t.open_at_end?`#${t.number} ОТКР · форсировано`:`#${t.number} ${rub(t.net_rub)}`,size})}
  m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);return m}
 function refreshSelection(){if(markersApiRef)markersApiRef.setMarkers(buildMarkers());applySelectionToRows()}
 function applySelectionToRows(){const sel=selectedTrade==null?null:payload.trades.find(t=>t.number===selectedTrade);document.querySelectorAll('#ledger-table tbody tr').forEach(tr=>{const day=tr.children[0]?.textContent?.slice(0,10);tr.classList.toggle('sel',!!sel&&(sel.entry.date===day||sel.exit.date===day))})}
@@ -381,18 +415,18 @@ function applySelectionToRows(){const sel=selectedTrade==null?null:payload.trade
 // ---------- unified ledger table ----------
 function th(labels){const tr=el('tr');for(const l of labels){const h=el('th');h.innerHTML=l;tr.append(h)}const thead=el('thead');thead.append(tr);return thead}
 function td(tr,html,{num=false,klass=''}={}){const c=el('td',(num?'num ':'')+klass);c.innerHTML=html;tr.append(c);return c}
-function dayVolumeCell(r){const nv=r.near_volume!=null?fmt(r.near_volume):'—',fv=r.far_volume!=null?fmt(r.far_volume):'—';return`${px(r.near)}<small>px · vol ${nv}</small>`}
-function spreadCell(r){return`${r.spread_rel==null?'—':fmt(r.spread_rel,2)+'%'}<small>open ${r.spread_open_rel==null?'—':fmt(r.spread_open_rel,2)+'%'} · abs ${px(r.spread)}</small>`}
-function signalCell(r){if(r.signal_z!=null)return`z ${fmt(r.signal_z,2)}`;if(r.dev_pp!=null)return`${fmt(r.dev_pp,2)} pp`;if((r.funding_rub??0)!==0)return`fund ${signed(r.funding_rub)}`;return''}
+function dayVolumeCell(r){const nv=r.near_volume!=null?fmt(r.near_volume):'—',fv=r.far_volume!=null?fmt(r.far_volume):'—';return`${px(r.near)}<small>цена · объём ${nv}</small>`}
+function spreadCell(r){return`${r.spread_rel==null?'—':fmt(r.spread_rel,2)+'%'}<small>откр. ${r.spread_open_rel==null?'—':fmt(r.spread_open_rel,2)+'%'} · абс. ${px(r.spread)}</small>`}
+function signalCell(r){if(r.signal_z!=null)return`z ${fmt(r.signal_z,2)}`;if(r.dev_pp!=null)return`${fmt(r.dev_pp,2)} pp`;if((r.funding_rub??0)!==0)return`фонд ${signed(r.funding_rub)}`;return''}
 function renderTable(){const root=$('ledger-table');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
- const table=el('table');table.append(th(['Date','Signal','Near px · vol','Far px · vol','Spread % of far · open','Event','Day P&L ₽','Funding ₽','Costs ₽','Cumulative ₽']));const tbody=el('tbody');
+ const table=el('table');table.append(th(['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём','Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽']));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=['fill'];if(ev){clsRow.push(ev.some(e=>e.side==='entry')?'entry':'',ev.some(e=>e.side==='exit')?'exit':'');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
   const tr=el('tr',clsRow.join(' '));if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
-  td(tr,`${r.date}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'d to near expiry':''}</small>`);
+  td(tr,`${r.date}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
   td(tr,signalCell(r),{num:true});
-  td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>px · vol ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
+  td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>цена · объём ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
   td(tr,spreadCell(r),{num:true});
-  td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="click to highlight this trade on the chart">${e.side.toUpperCase()} #${e.t.number}</span>`).join(' '):'',{num:false});
+  td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side==='entry'?'ВХОД':'ВЫХОД'} #${e.t.number}</span>`).join(' '):'',{num:false});
   tr.querySelectorAll('.badge[data-trade]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();selectedTrade=Number(b.dataset.trade);if(markersApiRef)markersApiRef.setMarkers(buildMarkers());applySelectionToRows()}));
   td(tr,rub(l.mark_pnl_rub,2),{num:true,klass:cls(l.mark_pnl_rub)});
   td(tr,l.funding_rub!=null?signed(l.funding_rub,2):'—',{num:true,klass:cls(l.funding_rub)});
@@ -400,9 +434,9 @@ function renderTable(){const root=$('ledger-table');root.replaceChildren();const
   td(tr,rub(l.cumulative_net_rub,2),{num:true,klass:cls(l.cumulative_net_rub)});
   tbody.append(tr)}
  const s=payload.summary;
- const tot=el('tr','totals');td(tot,'Totals',{klass:''});for(let i=0;i<5;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,'');td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
- const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Reconciliation',{klass:''});const rctd=el('td','');rctd.colSpan=9;rctd.innerHTML=`net − cumulative = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; FX point-value drift ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; costs itemized per side: exchange + slippage; broker 0`;recon.append(rctd);tbody.append(recon);
- if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10;ntd.textContent='Contains a forced-exit mark at the data end — not an executable trade and not a realized result.';nt.append(ntd);tbody.append(nt)}
+ const tot=el('tr','totals');td(tot,'Итого',{klass:''});for(let i=0;i<5;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,'');td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
+ const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
+ if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
  table.append(tbody);root.append(table)}
 function toggleCard(day,tr,ev){const existing=tr.nextElementSibling;if(existing&&existing.classList.contains('card')){existing.remove();return}
  const trade=ev[0].t;const card=el('tr','card');const cell=el('td');cell.colSpan=10;card.append(cell);
@@ -411,43 +445,43 @@ function toggleCard(day,tr,ev){const existing=tr.nextElementSibling;if(existing&
  cell.append(wrap);tr.after(card)}
 function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t.exit;const g=el('div','cardgroup');
  const rows=isEntry
-  ?`<h4>${isEntry?'Entry':'Exit'} #${t.number} — ${t.side==='long_spread'?'long spread':'short spread'} · ${t.quantity} contract(s)</h4>
-     <div><span class="k">legs</span> ${t.legs}</div>
-     <div><span class="k">signal</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${String(t.signal.reason).replaceAll('_',' ')}`:''} · ${t.signal.date}</div>
-     <div><span class="k">date</span> <b>${b.date}</b> · <span class="k">days held</span> ${t.days_held!=null?t.days_held:'—'}</div>
-     <div><span class="k">spread fill</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">legs near / far</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
-     <div><span class="k">day volume</span> near ${fmt(b.near_volume)} · far ${fmt(b.far_volume)}${b.spread_volume!=null?` · spread ${fmt(b.spread_volume)}`:''}</div>`
-  :`<h4>Exit #${t.number} — ${t.side==='long_spread'?'long spread':'short spread'} · ${t.quantity} contract(s)</h4>
-     <div><span class="k">date</span> <b>${b.date}</b> · <span class="k">days held</span> ${t.days_held!=null?t.days_held:'—'}${t.open_at_end?' · <b class="warn">forced mark at data end</b>':''}</div>
-     <div><span class="k">spread fill</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">legs near / far</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
-     <div><span class="k">day volume</span> near ${fmt(b.near_volume)} · far ${fmt(b.far_volume)}${b.spread_volume!=null?` · spread ${fmt(b.spread_volume)}`:''}</div>
-     <div><span class="k">reason</span> ${String(t.exit_reason).replaceAll('_',' ')}</div>
+  ?`<h4>${isEntry?'Вход':'Выход'} #${t.number} — ${t.side==='long_spread'?'лонг спред':'шорт спред'} · контрактов: ${t.quantity}</h4>
+     <div><span class="k">ноги</span> ${t.legs}</div>
+     <div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${String(t.signal.reason).replaceAll('_',' ')}`:''} · ${t.signal.date}</div>
+     <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}</div>
+     <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
+     <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>`
+  :`<h4>Выход #${t.number} — ${t.side==='long_spread'?'лонг спред':'шорт спред'} · контрактов: ${t.quantity}</h4>
+     <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}${t.open_at_end?' · <b class="warn">принудительная отметка в конце данных</b>':''}</div>
+     <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
+     <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>
+     <div><span class="k">причина выхода</span> ${String(t.exit_reason).replaceAll('_',' ')}</div>
      <hr style="border:0;border-top:1px solid #233648;margin:6px 0">
-     <div><span class="k">gross</span> <b>${rub(t.gross_rub,2)}</b>${t.gross_pts!=null?` (${fmt(t.gross_pts,3)} pts)`:''}</div>
-     <div><span class="k">net</span> <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b> · <span class="${t.result==='win'?'win-chip':t.result==='loss'?'loss-chip':'flat-chip'}">${t.result.toUpperCase()}</span></div>
-     <div><span class="k">LQDT on margin</span> −${fmt(t.lqdt_on_margin_rub,2)} ₽ · <span class="k">excess</span> <b class="${cls(t.excess_rub)}">${rub(t.excess_rub,2)}</b></div>
-     <div><span class="k">margin</span> <b>${fmt(t.margin_rub)} ₽</b></div>`;
+     <div><span class="k">гросс</span> <b>${rub(t.gross_rub,2)}</b>${t.gross_pts!=null?` (${fmt(t.gross_pts,3)} п.)`:''}</div>
+     <div><span class="k">нетто</span> <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b> · <span class="${t.result==='win'?'win-chip':t.result==='loss'?'loss-chip':'flat-chip'}">${t.result==='win'?'ПРИБЫЛЬ':t.result==='loss'?'УБЫТОК':'В НОЛЬ'}</span></div>
+     <div><span class="k">LQDT на маржу</span> −${fmt(t.lqdt_on_margin_rub,2)} ₽ · <span class="k">сверх LQDT</span> <b class="${cls(t.excess_rub)}">${rub(t.excess_rub,2)}</b></div>
+     <div><span class="k">маржа</span> <b>${fmt(t.margin_rub)} ₽</b></div>`;
  const feeRows=Object.entries(b.costs||{}).map(([k,v])=>`<div><span class="k">${k.replaceAll('_',' ')}</span> ${fmt(v,2)} ₽</div>`).join('');
  const feeTotal=Object.values(b.costs||{}).reduce((a,c)=>a+c,0);
- g.innerHTML=rows+`<hr style="border:0;border-top:1px solid #233648;margin:6px 0"><h4 style="margin-top:0">Fees — this side</h4>${feeRows}<div><span class="k">total</span> <b>${fmt(feeTotal,2)} ₽</b></div>`;
+ g.innerHTML=rows+`<hr style="border:0;border-top:1px solid #233648;margin:6px 0"><h4 style="margin-top:0">Комиссии — эта сторона</h4>${feeRows}<div><span class="k">итого</span> <b>${fmt(feeTotal,2)} ₽</b></div>`;
  return g}
 
 // ---------- tooltip ----------
-function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}d to near expiry</span>`:''}<hr>`;
- h+=`<span class="k">near</span> ${px(s.near)} <span class="k">(open ${px(s.near_open)}, vol ${fmt(s.near_volume)})</span><br><span class="k">far</span> ${px(s.far)} <span class="k">(open ${px(s.far_open)}, vol ${fmt(s.far_volume)})</span><br>`;
- h+=`<span class="k">spread</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(abs ${px(s.spread)}${s.spread_open_rel!=null?` · open ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · last ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
+function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}д до экспирации ближней</span>`:''}<hr>`;
+ h+=`<span class="k">ближняя</span> ${px(s.near)} <span class="k">(откр. ${px(s.near_open)}, объём ${fmt(s.near_volume)})</span><br><span class="k">дальняя</span> ${px(s.far)} <span class="k">(откр. ${px(s.far_open)}, объём ${fmt(s.far_volume)})</span><br>`;
+ h+=`<span class="k">спред</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(абс. ${px(s.spread)}${s.spread_open_rel!=null?` · откр. ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · посл. ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
  const nmode=$('norm')?.value||'raw';if(nmode!=='raw'){const i=payload.series.indexOf(s);const v=spreadDisplayValues(payload.series)[i];
   const unit={stoch20:'%',rz20:'σ',ewma10:'σ',mad20:'σ',garch:'σ',kalman:'σ'}[nmode]||'pp';
-  h+=`<span class="k">normalized · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
- h+=`<span class="k">volume</span> near ${fmt(s.near_volume)} · far ${fmt(s.far_volume)}${s.spread_volume!=null?` · spread ${fmt(s.spread_volume)}${s.spread_trades!=null?' in '+fmt(s.spread_trades)+' trades':''}`:''}`;
- if(s.funding_rub!=null)h+=`<br><span class="k">funding received</span> ${signed(s.funding_rub,2)} ₽`;
- if(s.signal_z!=null)h+=`<br><span class="k">signal z</span> ${fmt(s.signal_z,2)}`;
- if(s.dev_pp!=null)h+=`<br><span class="k">implied rate − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
- if(l)h+=`<hr><span class="k">position</span> ${l.position>0?'long':l.position<0?'short':'flat'} · <span class="k">day result</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">costs</span> −${fmt(l.costs_rub,2)}${l.funding_rub!=null?` · <span class="k">funding</span> ${signed(l.funding_rub,2)}`:''} · <span class="k">cumulative</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">drawdown</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)}</b>`:''}`;
+  h+=`<span class="k">нормализован · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
+ h+=`<span class="k">объём</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume!=null?` · спред ${fmt(s.spread_volume)}${s.spread_trades!=null?' за '+fmt(s.spread_trades)+' сделок':''}`:''}`;
+ if(s.funding_rub!=null)h+=`<br><span class="k">получено фондирование</span> ${signed(s.funding_rub,2)} ₽`;
+ if(s.signal_z!=null)h+=`<br><span class="k">сигнал z</span> ${fmt(s.signal_z,2)}`;
+ if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
+ if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)}${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)}`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)}</b>`:''}`;
  const dayEvents=payload.trades.flatMap(t=>[['ENTRY',t.entry],['EXIT',t.exit]].filter(([_,leg])=>leg.date===s.date).map(([kind])=>({kind,t})));
  for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${k.replaceAll('_',' ')} ${fmt(v,2)}`).join(', ');
-  h+=`<hr><b>#${t.number} ${kind}</b> ${t.side==='long_spread'?'buy near / sell far':'sell near / buy far'} · ${t.quantity} contract(s)${t.open_at_end&&kind==='EXIT'?' · forced mark':''}<br><span class="k">spread fill</span> <b>${px(leg.spread_fill)}</b> · <span class="k">legs</span> ${px(leg.near_price)} / ${px(leg.far_price)}<br><span class="k">day volume</span> near ${fmt(leg.near_volume)} · far ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · spread ${fmt(leg.spread_volume)}`:''}<br><span class="k">fees</span> ${fees||'—'}`;
-  if(kind==='EXIT')h+=`<br><span class="k">result</span> gross ${rub(t.gross_rub,2)} · net <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b>`}
+  h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${px(leg.spread_fill)}</b> · <span class="k">ноги</span> ${px(leg.near_price)} / ${px(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
+  if(kind==='EXIT')h+=`<br><span class="k">результат</span> гросс ${rub(t.gross_rub,2)} · нетто <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b>`}
  return h}
 
 // ---------- csv & copy ----------
@@ -456,21 +490,21 @@ function downloadCsv(){if(!payload)return;const L=ledgerIndex();const head=['dat
  const lines=[`# moex-spread-lab execution-proof ${payload.schema_version}`,`# run_id: ${payload.run_id}`,`# universe: ${universe}`,`# selection: ${JSON.stringify(payload.selection)}`,`# price_role: ${payload.price_role}`,`# provenance: ${JSON.stringify(payload.provenance)}`,`# notes: ${payload.notes.join(' | ')}`,head.join(',')];
  for(const r of payload.series){const l=L[r.date];lines.push([r.date,r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,l?.position,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`proof-${universe}-${proofLabel().replaceAll('/','-')}-${payload.run_id}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id copied to clipboard',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
+function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id скопирован в буфер обмена',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
 
 // ---------- render ----------
 function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();buildCharts();renderTable();$('notes').textContent=payload.notes.join(' · ');updateNormScores();applyNormHint()}
 
 // ---------- boot ----------
 (async()=>{try{catalog=await api('/api/proof/catalog');
- if(catalog.error)status(`Calendar cache unavailable: ${catalog.error}. Pair universe is unaffected.`);else status(`${(catalog.assets||[]).length} calendar assets · ${(catalog.pair_screen?.pairs||[]).length} pair registry entries · cached through ${catalog.till||'—'}`,true);
+ if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillPairs();fillFills();fillAssets();
  $('u-pair').addEventListener('click',()=>{universe='pair_screen';modeButtons()});
  $('u-calendar').addEventListener('click',()=>{universe='calendar_native';modeButtons()});
  $('pair').addEventListener('change',syncPairStrategy);$('strategy').addEventListener('change',fillStrategy);
  $('asset').addEventListener('change',fillWindows);$('cstrategy').addEventListener('change',syncCalendarParams);
  $('run-pair').addEventListener('click',()=>show());$('run-calendar').addEventListener('click',()=>show());
- $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
+ $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('tab-charts').addEventListener('click',()=>switchTab('charts'));$('tab-table').addEventListener('click',()=>switchTab('table'));$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
  applyNormHint();
  // deep links: ?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion  |  ?universe=calendar_native&asset=SR&pair=SRZ6SRH7&strategy=zscore_mean_reversion
  const q=new URLSearchParams(location.search);const uq=q.get('universe');if(uq==='pair_screen'||uq==='calendar_native')universe=uq;modeButtons();

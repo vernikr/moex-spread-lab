@@ -211,7 +211,7 @@ class ExecutionProofTests(unittest.TestCase):
         connection.request("GET", "/proof?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion")
         page = connection.getresponse()
         self.assertEqual(page.status, 200)
-        self.assertIn(b"Execution proof", page.read())
+        self.assertIn("Доказательство исполнения".encode(), page.read())
         connection.request("GET", "/api/proof/catalog?universe=pair_screen")
         catalog = connection.getresponse()
         self.assertEqual(catalog.status, 200)

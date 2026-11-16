@@ -19,7 +19,7 @@
 .charts{padding:14px 16px 10px;position:relative;margin-bottom:16px}.charts h3{margin:0 0 3px;font-size:15px}.panel-title{font-size:11px;color:#9bb0c2;margin:12px 0 4px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:10px}
 .chart{width:100%;position:relative}.h-near,.h-far{height:150px}.h-spread{height:270px}.h-vol{height:130px}.h-fund{height:110px}.h-cum{height:150px}
 .legend{display:inline-flex;gap:12px;align-items:center}
-.spread-options{display:flex;gap:10px;align-items:center;margin:0 0 10px;font-size:11px;color:#a7b8c8;flex-wrap:wrap}.spread-options select{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;height:32px;padding:0 10px;outline:none}.spread-options select:focus{border-color:#63d9b2}.norm-hint{color:#7e93a6;font-size:10px}
+.spread-options{display:flex;gap:10px;align-items:center;margin:0 0 10px;font-size:11px;color:#a7b8c8;flex-wrap:wrap}.spread-options select{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;height:32px;padding:0 10px;outline:none}.spread-options select:focus{border-color:#63d9b2}.norm-hint{color:#9db1c2;font-size:10px;flex-basis:100%;line-height:1.5}
 .tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.55;min-width:240px;max-width:460px;z-index:6;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
 .tablebox{margin-bottom:16px}.tablebox .head{padding:15px 18px 5px;display:flex;justify-content:space-between;gap:12px;align-items:end;flex-wrap:wrap}.tablebox .head h3{margin:0;font-size:15px}.tablebox .head p{margin:4px 0 8px;color:#8da1b4;font-size:11px;max-width:900px}
 table{border-collapse:separate;border-spacing:0;width:100%;font-size:11.5px}th{position:sticky;top:0;background:#16293a;color:#a9bccb;text-align:left;font-weight:650;padding:9px 10px;border-bottom:1px solid #2f4659;white-space:nowrap;z-index:2}td{padding:7px 10px;border-bottom:1px solid #1f3142;white-space:nowrap;vertical-align:top}td small{display:block;color:#7e93a6;margin-top:2px}td.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -93,14 +93,30 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
   <div class="spread-options hidden" id="spread-options">
     <label for="norm">Normalization · spread chart only</label>
     <select id="norm">
-      <option value="raw" selected>Raw · % of far leg</option>
-      <option value="expanding">Residual vs expanding mean</option>
-      <option value="rm20">Residual vs rolling mean · 20 obs</option>
-      <option value="rm60">Residual vs rolling mean · 60 obs</option>
-      <option value="rz20">Rolling z-score · 20 obs</option>
-      <option value="ols60">Detrend vs rolling OLS · 60 obs</option>
+      <optgroup label="Level">
+        <option value="raw" selected>Raw · % of far leg</option>
+        <option value="expanding">Residual vs expanding mean</option>
+      </optgroup>
+      <optgroup label="Mean-reversion residuals · price units">
+        <option value="rm20">Residual vs rolling mean · 20 obs</option>
+        <option value="rm60">Residual vs rolling mean · 60 obs</option>
+        <option value="ema10">Residual vs EMA · halflife 10</option>
+        <option value="ols20">Detrend vs rolling OLS · 20 obs</option>
+        <option value="ols60">Detrend vs rolling OLS · 60 obs</option>
+        <option value="ou60">OU residual · AR(1) · 60 obs</option>
+      </optgroup>
+      <optgroup label="Volatility-scaled · σ units">
+        <option value="rz20">Rolling z-score · 20 obs</option>
+        <option value="ewma10">EWMA z · halflife 10</option>
+        <option value="mad20">Robust z · median/MAD · 20 obs</option>
+        <option value="garch">GARCH(1,1) z · trailing</option>
+        <option value="kalman">Kalman innovation z · local level</option>
+      </optgroup>
+      <optgroup label="Bounded">
+        <option value="stoch20">Stochastic position · 20 obs (0–100)</option>
+      </optgroup>
     </select>
-    <span class="norm-hint">Causal only — trailing windows, no future rows. Visual scale; never a trading signal.</span>
+    <span class="norm-hint" id="norm-hint"></span>
   </div>
 
   <section class="panel charts" id="charts">
@@ -201,18 +217,73 @@ function makePane(parent,heightClass,title,tagline,legend){const head=el('div','
  if(legend){const lg=el('span','legend');for(const [label,color] of legend){const s=el('span');const i=el('i');i.style.cssText=`display:inline-block;width:14px;height:3px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle`;s.append(i,label);lg.append(s)}head.append(lg)}
  parent.append(head);const div=el('div','chart '+heightClass);parent.append(div);return div}
 function spreadDisplayValues(S){const raw=S.map(r=>r.spread_rel);const mode=$('norm')?.value||'raw';const n=raw.length,out=new Array(n);
- const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;const std=a=>{const m=mean(a);return Math.sqrt(mean(a.map(v=>(v-m)*(v-m))))};
+ const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+ const std=a=>{const m=mean(a);return Math.sqrt(mean(a.map(v=>(v-m)*(v-m))))};
+ const median=a=>{if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2};
+ const mad=a=>{const m=median(a);return median(a.map(v=>Math.abs(v-m)))};
+ const olsFit=(pts)=>{const k=pts.length;if(k===1)return {a:pts[0][1],b:0};
+  let sx=0,sy=0,sxy=0,sxx=0;for(const [x,y] of pts){sx+=x;sy+=y;sxy+=x*y;sxx+=x*x}
+  const vx=k*sxx-sx*sx;const b=vx!==0?(k*sxy-sx*sy)/vx:0;return {a:(sy-b*sx)/k,b}};
+ const emaState=(series,hl)=>{const a=1-Math.pow(0.5,1/hl);let m=null,v=null;const ms=[],sds=[];
+  for(const v0 of series){if(v0==null){ms.push(m);sds.push(v==null?null:Math.sqrt(v));continue}
+   if(m==null){m=v0;v=0;ms.push(m);sds.push(0);continue}
+   const d=v0-m;m=m+a*d;v=(1-a)*(v+a*d*d);ms.push(m);sds.push(Math.sqrt(v))}
+  return {ms,sds}};
+ const winStats=(W,i)=>{const from=Math.max(0,i-W+1);const a=raw.slice(from,i+1).filter(v=>v!=null);return a};
+ const ema=emaState(raw,10),garchZ=(()=>{let sig2=null,z=new Array(n).fill(null);
+  const d0=(raw[0]!=null&&raw[1]!=null)?raw[1]-raw[0]:null;if(d0!=null&&isFinite(d0))sig2=d0*d0;
+  for(let t=1;t<n;t++){const d=(raw[t]!=null&&raw[t-1]!=null)?raw[t]-raw[t-1]:null;
+   if(d==null||!isFinite(d)){z[t]=null;continue}
+   if(sig2==null)sig2=d*d;const prev=sig2;z[t]=prev>0?d/Math.sqrt(prev):0;
+   sig2=1e-10+0.1*d*d+0.85*prev;}
+  return z})();
+ const kalmanZ=(()=>{let lvl=null,P=1;const Q=1e-4,R=1e-2;const zs=new Array(n).fill(null);
+  for(let i=0;i<n;i++){const v=raw[i];if(v==null)continue;
+   if(lvl==null){lvl=v;P=1;zs[i]=0;continue}
+   const Pp=P+Q,innov=v-lvl,S2=Pp+R,K=Pp/S2;
+   lvl=lvl+K*innov;P=(1-K)*Pp;zs[i]=Math.sqrt(S2)>0?innov/Math.sqrt(S2):0}
+  return zs})();
  for(let t=0;t<n;t++){const cur=raw[t];if(cur==null){out[t]=null;continue}
   if(mode==='raw'){out[t]=cur;continue}
   if(mode==='expanding'){let s=0,c=0;for(let i=0;i<=t;i++){const v=raw[i];if(v!=null){s+=v;c++}}out[t]=cur-s/c;continue}
-  if(mode==='rm20'||mode==='rm60'){const W=mode==='rm20'?20:60;const a=raw.slice(Math.max(0,t-W+1),t+1).filter(v=>v!=null);out[t]=cur-mean(a);continue}
-  if(mode==='rz20'){const from=Math.max(0,t-19);let a=raw.slice(from,t+1).filter(v=>v!=null);if(a.length<5)a=raw.slice(0,t+1).filter(v=>v!=null);const m=mean(a),sd=std(a);out[t]=sd>0?(cur-m)/sd:0;continue}
-  if(mode==='ols60'){const from=Math.max(0,t-59);const pts=[];for(let i=from;i<=t;i++){const v=raw[i];if(v!=null)pts.push([i-from,v])}const k=pts.length;if(k<3){out[t]=cur-mean(pts.map(q=>q[1]));continue}
-   let sx=0,sy=0,sxy=0,sxx=0;for(const [x,y] of pts){sx+=x;sy+=y;sxy+=x*y;sxx+=x*x}
-   const vx=k*sxx-sx*sx;const b=vx!==0?(k*sxy-sx*sy)/vx:0;const a=(sy-b*sx)/k;out[t]=cur-(a+b*(k-1));continue}
+  if(mode==='rm20'||mode==='rm60'){const W=mode==='rm20'?20:60;out[t]=cur-mean(winStats(W,t));continue}
+  if(mode==='ema10'){const m=ema.ms[t];out[t]=m==null?0:cur-m;continue}
+  if(mode==='ols20'||mode==='ols60'){const W=mode==='ols20'?20:60;const from=Math.max(0,t-W+1);const pts=[];for(let i=from;i<=t;i++){const v=raw[i];if(v!=null)pts.push([i-from,v])}const k=pts.length;if(k<3){out[t]=cur-mean(pts.map(q=>q[1]));continue}
+   const f=olsFit(pts);out[t]=cur-(f.a+f.b*(k-1));continue}
+  if(mode==='ou60'){const from=Math.max(0,t-59);const pts=[];for(let i=from;i<=t;i++){const v=raw[i];if(v!=null)pts.push(v)}const k=pts.length;if(k<10){out[t]=null;continue}
+   const m=mean(pts);let sx=0,sy=0,sxy=0,sxx=0;
+   for(let i=1;i<k;i++){sx+=pts[i-1];sy+=pts[i];sxy+=pts[i-1]*pts[i];sxx+=pts[i-1]*pts[i-1]}
+   const cnt=k-1,vx=cnt*sxx-sx*sx;const phi=vx!==0?(cnt*sxy-sx*sy)/vx:0;const a=(sy-phi*sx)/cnt;
+   if(!isFinite(phi)||Math.abs(phi)>=0.999||Math.abs(1-phi)<1e-6){out[t]=cur-m;continue}
+   if(phi<0){out[t]=cur-m;continue}
+   out[t]=cur-a/(1-phi);continue}
+  if(mode==='rz20'){const a=winStats(20,t);const m=mean(a),sd=std(a);out[t]=sd>0?(cur-m)/sd:0;continue}
+  if(mode==='ewma10'){const sd=ema.sds[t];out[t]=sd&&sd>0?(cur-ema.ms[t])/sd:0;continue}
+  if(mode==='mad20'){const a=winStats(20,t);const med=median(a);const sd=1.4826*mad(a);out[t]=sd>0?(cur-med)/sd:0;continue}
+  if(mode==='garch'){out[t]=garchZ[t];continue}
+  if(mode==='kalman'){out[t]=kalmanZ[t];continue}
+  if(mode==='stoch20'){const a=winStats(20,t);if(a.length<2){out[t]=50;continue}
+   const hi=Math.max(...a),lo=Math.min(...a);out[t]=hi>lo?100*(cur-lo)/(hi-lo):50;continue}
   out[t]=cur}
  return out}
-function normTagline(){const mode=$('norm')?.value||'raw';return {raw:'spread as % of far leg',expanding:'residual vs expanding mean · causal',rm20:'residual vs rolling mean · 20 obs · causal',rm60:'residual vs rolling mean · 60 obs · causal',rz20:'z-score · rolling 20 obs · causal',ols60:'residual vs rolling OLS · 60 obs · causal'}[mode]}
+const NORM_HINTS={
+ raw:'Raw spread as % of far-leg notional. Chart shows the actual percentage distance — drift here means the relationship itself moved, not automatic mispricing.',
+ expanding:'Spread minus its inception-to-date mean. Longest causal memory; good first filter with no regime model. Residual still trends if the economic relationship drifts.',
+ rm20:'Spread minus trailing 20-obs mean (~1 trading month). Fast to re-center, sensitive to regime breaks — but a wide 20-obs swing can masquerade as the new “normal”.',
+ rm60:'Spread minus trailing 60-obs mean (~1 quarter). Steadier center, slower to adapt. Prefer when short noise shouldn’t open trades.',
+ ema10:'Spread minus exponentially weighted mean (halflife ≈ 10 obs). Rolling-mean idea without a hard window edge — recent rows dominate smoothly, causal.',
+ ols20:'Spread minus trailing 20-obs linear regression at the last point. Short detrend — removes a fresh local slope, can overfit a two-week wiggle.',
+ ols60:'Spread minus trailing 60-obs linear regression at the last point. Best-behaved level stabilizer on drifting series (GLD/GLZ6), but it absorbs a real structural move as “trend” — judge with the trade markers, not the fit.',
+ ou60:'Spread minus OU equilibrium level fitted on trailing 60 obs (x[t] = a + φ·x[t-1]; residual vs a/(1−φ)). If the window shows no mean reversion (|φ| ≥ 1) it falls back to the plain residual vs window mean. φ and half-life are noisy at n=60 — trust the shape, not a precise half-life.',
+ rz20:'(Spread − trailing 20-obs mean) / trailing 20-obs σ. Unit-free “σs from the recent norm” — great for eyeballing across pairs, but σ scaling lets a big clean drift hide if vol drifts with it.',
+ ewma10:'(Spread − EWMA mean) / EWMA σ (halflife ≈ 10 obs). rz20 without the hard window edge — recent rows dominate; reacts faster when vol clusters.',
+ mad20:'(Spread − trailing 20-obs median) / (1.4826 × MAD). Robust to bad ticks and gap opens — fewer phantom ±3σ prints; slightly desensitized to real vol expansions.',
+ garch:'Standardized residual of a trailing GARCH(1,1) variance recursion (α=0.10, β=0.85, ω→0). Answers “unusual given vol clustering”, not “unusual vs mean”; crude fit, ignores covariates.',
+ kalman:'Kalman innovation z from a local-level state model (level random-walks, fixed Q/R). No window at all — adapts continuously through regime changes; only as good as the fixed Q/R guess.',
+ stoch20:'(Spread − window min)/(window max − window min) over trailing 20 obs, shown as %. Bounded 0–100 — “where in the recent range”, easiest to read; says nothing about σ or half-life.'};
+const NORM_PANEL={raw:'spread as % of far leg',expanding:'residual vs expanding mean · causal',rm20:'residual vs rolling mean · 20 obs · causal',rm60:'residual vs rolling mean · 60 obs · causal',ema10:'residual vs EMA halflife 10 · causal',ols20:'residual vs rolling OLS · 20 obs · causal',ols60:'residual vs rolling OLS · 60 obs · causal',ou60:'OU residual vs equilibrium · 60 obs · causal',rz20:'z-score · rolling 20 obs · causal',ewma10:'z-score · EWMA halflife 10 · causal',mad20:'robust z · median/MAD · 20 obs · causal',garch:'GARCH(1,1) z · trailing recursion · causal',kalman:'Kalman innovation z · local level · causal',stoch20:'stochastic position · 20 obs · 0–100 · causal'};
+function applyNormHint(){const h=$('norm-hint');if(h)h.textContent=NORM_HINTS[$('norm')?.value||'raw']||''}
+function normTagline(){const mode=$('norm')?.value||'raw';return NORM_PANEL[mode]||'spread as % of far leg'}
 function buildCharts(){const root=$('charts');const tip=$('tip');root.replaceChildren();charts.length=0;const S=payload.series,L=ledgerIndex();
  const nearName=payload.instrument?.near??payload.window?.near??'',farName=payload.instrument?.far??payload.window?.far??'';
  const nearPane=makePane(root,'h-near','1 · NEAR LEG — '+nearName,null,[['near leg',COLORS.near]]);
@@ -337,7 +408,9 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
 function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}d to near expiry</span>`:''}<hr>`;
  h+=`<span class="k">near</span> ${px(s.near)} <span class="k">(open ${px(s.near_open)}, vol ${fmt(s.near_volume)})</span><br><span class="k">far</span> ${px(s.far)} <span class="k">(open ${px(s.far_open)}, vol ${fmt(s.far_volume)})</span><br>`;
  h+=`<span class="k">spread</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(abs ${px(s.spread)}${s.spread_open_rel!=null?` · open ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · last ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
- const nmode=$('norm')?.value||'raw';if(nmode!=='raw'){const i=payload.series.indexOf(s);const v=spreadDisplayValues(payload.series)[i]; h+=`<span class="k">normalized · ${nmode}</span> ${v==null?'—':fmt(v,2)}<br>`}
+ const nmode=$('norm')?.value||'raw';if(nmode!=='raw'){const i=payload.series.indexOf(s);const v=spreadDisplayValues(payload.series)[i];
+  const unit={stoch20:'%',rz20:'σ',ewma10:'σ',mad20:'σ',garch:'σ',kalman:'σ'}[nmode]||'pp';
+  h+=`<span class="k">normalized · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
  h+=`<span class="k">volume</span> near ${fmt(s.near_volume)} · far ${fmt(s.far_volume)}${s.spread_volume!=null?` · spread ${fmt(s.spread_volume)}${s.spread_trades!=null?' in '+fmt(s.spread_trades)+' trades':''}`:''}`;
  if(s.funding_rub!=null)h+=`<br><span class="k">funding received</span> ${signed(s.funding_rub,2)} ₽`;
  if(s.signal_z!=null)h+=`<br><span class="k">signal z</span> ${fmt(s.signal_z,2)}`;
@@ -369,7 +442,8 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();b
  $('pair').addEventListener('change',syncPairStrategy);$('strategy').addEventListener('change',fillStrategy);
  $('asset').addEventListener('change',fillWindows);$('cstrategy').addEventListener('change',syncCalendarParams);
  $('run-pair').addEventListener('click',()=>show());$('run-calendar').addEventListener('click',()=>show());
- $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('norm').addEventListener('change',()=>{if(payload)buildCharts()});
+ $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
+ applyNormHint();
  // deep links: ?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion  |  ?universe=calendar_native&asset=SR&pair=SRZ6SRH7&strategy=zscore_mean_reversion
  const q=new URLSearchParams(location.search);const uq=q.get('universe');if(uq==='pair_screen'||uq==='calendar_native')universe=uq;modeButtons();
  if(universe==='pair_screen'&&q.get('pair')){const want=q.get('pair');if([...$('pair').options].some(o=>o.value===want)){$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}}

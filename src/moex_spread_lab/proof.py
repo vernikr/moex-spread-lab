@@ -194,7 +194,69 @@ class ProofService:
         summary["open_positions"] = sum(trade["open_at_end"] for trade in trades)
         summary.setdefault("max_excess_drawdown_rub", None)
         payload["provenance"] = payload.get("provenance") or {}
+        selection_out = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
+        payload["provenance"] = {**self._calendar_provenance(selection_out), **payload["provenance"]}
+        payload["instrument"] = self._calendar_instrument(selection_out, payload)
+        fill = (selection.get("fill") or "settlement").replace("_", " ")
+        payload["price_role"] = (
+            f"Native calendar spread; {fill} fills, official settlement marks"
+        )
+        payload["run_id"] = _run_id(
+            {
+                "selection": payload["selection"],
+                "daily": payload.get("series"),
+                "source_hashes": payload["provenance"],
+            }
+        )
         return payload
+
+    # ----------------------------------------------------------- internals
+
+    def _calendar_provenance(self, selection: dict[str, Any]) -> dict[str, str]:
+        provenance: dict[str, str] = {}
+        cache = self.root / "data/spread-history-cache"
+        legs = str(selection.get("pair") or "").split("/")
+        names = {
+            "near_history": legs[0] if legs and legs[0] else None,
+            "far_history": legs[1] if len(legs) > 1 and legs[1] else None,
+            "spread_history": selection.get("spread_instrument"),
+        }
+        for label, secid in names.items():
+            if not secid:
+                continue
+            matches = sorted(cache.glob(f"{secid}-*.json")) if cache.is_dir() else []
+            if matches:
+                digest = _sha256_bytes(matches[-1])
+                if digest:
+                    provenance[f"{label}_sha256"] = digest
+        for label, relative in (
+            ("contracts", "data/w1/current-intake.json"),
+            ("benchmark", "data/benchmark/lqdt-lineage.json"),
+            ("ruonia", "data/benchmark-cache/CBR_RUONIA.json"),
+        ):
+            digest = _sha256_bytes(self.root / relative)
+            if digest:
+                provenance[f"{label}_sha256"] = digest
+        return provenance
+
+    def _calendar_instrument(self, selection: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        window = payload.get("window") or {}
+        contract = payload.get("contract") or {}
+        legs = str(selection.get("pair") or "").split("/")
+        near = window.get("near") or (legs[0] if legs and legs[0] else None)
+        far = window.get("far") or (legs[1] if len(legs) > 1 and legs[1] else None)
+        instruments = _load_instruments(self.root / "data/w1/current-intake.json")
+        point_value = contract.get("point_value_rub")
+        return {
+            "near": near,
+            "far": far,
+            "family": "calendar_spread",
+            "near_expiry": (instruments.get(near or "") or {}).get("expiry") or window.get("near_expiry"),
+            "far_expiry": (instruments.get(far or "") or {}).get("expiry"),
+            "near_point_value_rub": point_value,
+            "far_point_value_rub": point_value,
+            "spread_instrument": selection.get("spread_instrument"),
+        }
 
     # ----------------------------------------------------------- pair adapter
 
@@ -783,6 +845,8 @@ class ProofService:
                 "from": series_rows[0]["date"] if series_rows else None,
                 "to": series_rows[-1]["date"] if series_rows else None,
                 "observations": len(series_rows),
+                "near": near,
+                "far": far,
                 "min_spread_volume": None,
                 "min_leg_volume": min_leg_volume,
                 "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),

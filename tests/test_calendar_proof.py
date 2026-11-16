@@ -119,6 +119,24 @@ class CalendarProofTests(unittest.TestCase):
         bad.read()
         connection.close()
 
+    def test_service_calendar_payload_adds_instrument_provenance_and_run_id(self):
+        from moex_spread_lab.proof import ProofService
+
+        proof = ProofService(self.root).proof({"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3",
+                                               "strategy": "zscore_mean_reversion", "fill": "next_open",
+                                               "quantity": 2, "slippage_ticks": 1.0,
+                                               "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 20}})
+        self.assertEqual(proof["instrument"]["near"], "SRH3")
+        self.assertEqual(proof["instrument"]["far"], "SRM3")
+        self.assertEqual(proof["instrument"]["spread_instrument"], "SRH3SRM3")
+        self.assertEqual(proof["instrument"]["near_expiry"], "2023-03-16")
+        provenance = proof["provenance"]
+        for key in ("near_history_sha256", "far_history_sha256", "spread_history_sha256",
+                    "contracts_sha256", "benchmark_sha256", "ruonia_sha256"):
+            self.assertTrue(provenance.get(key), key)
+        self.assertEqual(len(proof["run_id"]), 16)
+        self.assertIn("calendar", proof["price_role"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -189,6 +189,26 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertIn("pair_screen", body)
         connection.close()
 
+    def test_routes_tolerate_query_strings(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(self.root))))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+        connection.request("GET", "/proof?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion")
+        page = connection.getresponse()
+        self.assertEqual(page.status, 200)
+        self.assertIn(b"Execution proof", page.read())
+        connection.request("GET", "/api/proof/catalog?universe=pair_screen")
+        catalog = connection.getresponse()
+        self.assertEqual(catalog.status, 200)
+        self.assertIn("pair_screen", json.loads(catalog.read()))
+        connection.request("GET", "/vendor/lightweight-charts.standalone.production.js?v=1")
+        vendor = connection.getresponse()
+        self.assertEqual(vendor.status, 200)
+        vendor.read()
+        connection.close()
+
 
 if __name__ == "__main__":
     unittest.main()

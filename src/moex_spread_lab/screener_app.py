@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
@@ -552,34 +553,34 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             if not self._local_request():
                 self._json(403, {"error": "local host only"})
-            elif self.path == "/":
+            elif (path := urlsplit(self.path).path) == "/":
                 self._send(
                     200,
                     Path(__file__).with_name("screener_ui.html").read_bytes(),
                     "text/html; charset=utf-8",
                 )
-            elif self.path == "/vendor/lightweight-charts.standalone.production.js":
+            elif path == "/vendor/lightweight-charts.standalone.production.js":
                 vendor = Path(__file__).with_name("vendor") / "lightweight-charts.standalone.production.js"
                 try:
                     self._send(200, vendor.read_bytes(), "application/javascript; charset=utf-8")
                 except OSError:
                     self._json(404, {"error": "not found"})
-            elif self.path == "/proof":
+            elif path == "/proof":
                 self._send(
                     200,
                     Path(__file__).with_name("proof_ui.html").read_bytes(),
                     "text/html; charset=utf-8",
                 )
-            elif self.path == "/api/proof/catalog":
+            elif path == "/api/proof/catalog":
                 try:
                     self._json(200, store.proof.catalog())
                 except (W0Error, OSError) as exc:
                     self._json(400, {"error": str(exc)})
-            elif self.path == "/api/catalog":
+            elif path == "/api/catalog":
                 self._json(200, catalog(store.inputs))
-            elif self.path == "/api/runs":
+            elif path == "/api/runs":
                 self._json(200, store.list_runs())
-            elif self.path == "/api/searches":
+            elif path == "/api/searches":
                 self._json(200, store.list_searches())
             else:
                 self._json(404, {"error": "not found"})
@@ -592,7 +593,8 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self._json(403, {"error": "local origin only"})
                 return
-            if self.path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run"}:
+            path = urlsplit(self.path).path
+            if path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -606,17 +608,17 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if not 0 < size <= 8192:
                     raise ScreenerError("request size must be 1–8192 bytes")
                 selection = json.loads(self.rfile.read(size))
-                if self.path == "/api/proof/run":
+                if path == "/api/proof/run":
                     if not isinstance(selection, dict):
                         raise ScreenerError("selection must be an object")
                     result = store.proof.proof(selection)
-                elif self.path == "/api/run":
+                elif path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)
                 else:
                     from .screener_search import optimize, screen_table
 
-                    if self.path == "/api/screen":
+                    if path == "/api/screen":
                         result = screen_table(store.inputs, selection)
                         store.save_screen(result)
                     else:

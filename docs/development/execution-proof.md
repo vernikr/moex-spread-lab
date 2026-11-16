@@ -1,6 +1,6 @@
 # Unified execution proof (`/proof`)
 
-Status: **slices 1–2 delivered** (payload + adapters + tests 2026-11-16; LWC UI rewrite 2026-11-16). Slice 3 (screener deep links, decisions/README polish) is pending. Design: `execution-proof-screen-design.md` (workspace artifact, not committed).
+Status: **slices 1–3 delivered** (payload + adapters + tests 2026-11-16; LWC UI rewrite 2026-11-16; screener deep links + docs 2026-11-16). Design: `execution-proof-screen-design.md` (workspace artifact, not committed).
 
 ## What slice 1 adds
 
@@ -24,6 +24,13 @@ Status: **slices 1–2 delivered** (payload + adapters + tests 2026-11-16; LWC U
 - Routing fix: `/proof`, `/vendor/*`, `/api/proof/*` (and all other routes) now strip the query string before matching — deep links with `?universe=…` previously 404'd. Local-host and Origin allowlists are unchanged.
 - Verified end-to-end with headless Chromium (playwright) against synthetic offline fixtures: both universes render with zero console/page errors, inline cards and badge selection work, CSV downloads, no external requests. Payload keys cross-checked against the UI for both universes; `node --check` on the inline script.
 
+## What slice 3 adds
+
+- Screener table (`screener_ui.html`): every pair row carries a `Proof →` deep link to `/proof?universe=pair_screen&pair=…&strategy=…` (current strategy dropdown applied; `%2F`-encoded ids; click does not select the row). The header already linked to `/proof`.
+- `README.md` and `docs/decisions.md` (A-14) reference the unified screen and the vendored-LWC/`execution-proof.v1` schema superset; proof doc linked from the README index.
+- Final acceptance on **real local data was not possible in the build environment** (`data/` is gitignored and absent from the clone); verification used the same offline synthetic fixtures as the test suite. The user-side acceptance run on real cached inputs remains open (see below).
+- Deep-link parameters beyond `universe`/`pair`/`asset`/`strategy` are not encoded (z-scores, quantity, slippage keep UI defaults) — unchanged from slice 2.
+
 ## Reconciliation contract (asserted in tests)
 
 - `Σ ledger.costs == Σ trade entry+exit costs` (±0.02 ₽ rounding).
@@ -42,3 +49,4 @@ Status: **slices 1–2 delivered** (payload + adapters + tests 2026-11-16; LWC U
 
 - Pair proof applies the same admissions as `/api/run`: unknown pair, missing local inputs, or a failed working-capital stress screen are hard errors (400), not degraded output.
 - Prices remain ISS candle/settlement **proxies**; nothing here is executable fills or a broker/account reconciliation.
+- Real-data acceptance (CNYRUBF/CRZ6 on cached local inputs) is pending a run in an environment that has `data/`; everything else is fixture-verified.

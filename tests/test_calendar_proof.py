@@ -148,7 +148,7 @@ class CalendarProofTests(unittest.TestCase):
                     "contracts_sha256", "benchmark_sha256", "ruonia_sha256"):
             self.assertTrue(provenance.get(key), key)
         self.assertEqual(len(proof["run_id"]), 16)
-        self.assertIn("calendar", proof["price_role"].lower())
+        self.assertIn("календарн", proof["price_role"].lower())
 
 
 if __name__ == "__main__":

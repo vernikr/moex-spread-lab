@@ -55,7 +55,7 @@ def _projection(result: dict[str, Any]) -> dict[str, Any]:
         "status": "exploratory" if annualized is not None else "short_history",
         "reason": None
         if annualized is not None
-        else "Annualized result withheld: insufficient observations, calendar span or valid wealth path.",
+        else "Годовой результат скрыт: недостаточно наблюдений, календарного охвата или состоятельной траектории капитала.",
         "period": result["period"],
         "metrics": {
             "closed_trades": metrics["closed_trades"],
@@ -113,14 +113,14 @@ def screen_table(
             row.update(
                 {
                     "status": "excluded",
-                    "reason": f"Not tradable on every day: a leg traded as few as {pair['min_leg_daily_volume']} contracts in a day.",
+                    "reason": f"Торговать ежедневно нельзя: объём по одной из ног достигал всего {pair['min_leg_daily_volume']} контрактов в день.",
                 }
             )
         elif not pair["strategies"][strategy]:
             row.update(
                 {
                     "status": "unavailable",
-                    "reason": "Incompatible strategy or missing local input.",
+                    "reason": "Несовместимая стратегия или отсутствует локальный вход.",
                 }
             )
         else:
@@ -152,7 +152,7 @@ def screen_table(
         "run_id": run_id,
         "selection": {"strategy": strategy, "parameters": parameters, "execution": execution},
         "pairs": pairs,
-        "warning": "Independent pair projections, not a shared-capital basket. Annualized excess compares geometric strategy and LQDT returns over each row's own dates; periods may differ. Historical proxies are not fills.",
+        "warning": "Независимые проекции по парам, а не корзина с общим капиталом. Годовой излишек сравнивает геометрические доходности стратегии и LQDT на собственных датах каждой строки; периоды могут различаться. Исторические прокси — не исполнения.",
     }
 
 
@@ -338,7 +338,7 @@ def optimize(
                 trial.update(
                     {
                         "status": "risk_rejected",
-                        "reason": "Working benchmark-relative research limits breached.",
+                        "reason": "Пробой рабочих исследовательских лимитов относительно бенчмарка.",
                     }
                 )
             else:
@@ -424,7 +424,7 @@ def optimize(
             "minimum_stable_neighbors": 2 if strategy == "funding_only" else 3,
             "risk_basis": "working 10k excess drawdown / 15k shortfall limits on 30k initial research allocation",
             "selection_data": "chronological training and validation only",
-            "confirmation_note": "Confirmation was not used by this search, but the same history may have been viewed in other experiments; this is not a sealed prospective test.",
+            "confirmation_note": "Подтверждение в этом поиске не использовалось, но та же история могла просматриваться в других экспериментах; это не запечатанный проспективный тест.",
         },
         "periods": {
             "training": train_dates,

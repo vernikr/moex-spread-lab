@@ -65,11 +65,11 @@ PAIRS = (
 )
 STRATEGIES = {
     "mean_reversion": {
-        "label": "Spread mean reversion",
+        "label": "Возврат спреда к среднему",
         "parameters": {"lookback": 20, "entry_z": 2.0, "exit_z": 0.5},
     },
     "funding_only": {
-        "label": "Perpetual funding carry",
+        "label": "Фондирование перпетуального свопа (carry)",
         "parameters": {"lookback": 20},
     },
 }
@@ -136,7 +136,7 @@ def _pair(pair_id: Any) -> dict[str, str]:
     for pair in PAIRS:
         if pair["pair_id"] == pair_id:
             return pair
-    raise ScreenerError("pair is not in the admitted research registry")
+    raise ScreenerError("пара не входит в допущенный исследовательский реестр")
 
 
 def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
@@ -226,7 +226,7 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         "strategies": STRATEGIES,
         "execution_defaults": {"slippage_ticks": 1.0, "quantity": 1},
         "min_daily_volume": MIN_DAILY_VOLUME,
-        "price_warning": "Historical candle/settlement values are analytical price proxies, not fills.",
+        "price_warning": "Исторические candle/расчётные значения — аналитические ценовые прокси, не исполнения.",
     }
 
 
@@ -234,7 +234,7 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
     defaults = STRATEGIES[strategy]["parameters"]
     provided = selection.get("parameters", {})
     if not isinstance(provided, dict) or set(provided) - set(defaults):
-        raise ScreenerError("unknown strategy parameter")
+        raise ScreenerError("неизвестный параметр стратегии")
     values = {**defaults, **provided}
     lookback = values["lookback"]
     if (
@@ -242,7 +242,7 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
         or not isinstance(lookback, int)
         or not 5 <= lookback <= 80
     ):
-        raise ScreenerError("lookback must be an integer between 5 and 80 observations")
+        raise ScreenerError("lookback должен быть целым числом от 5 до 80 наблюдений")
     if strategy == "mean_reversion":
         for field in ("entry_z", "exit_z"):
             value = values[field]
@@ -251,13 +251,13 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
                 or not isinstance(value, (int, float))
                 or not math.isfinite(value)
             ):
-                raise ScreenerError(f"{field} must be a finite number")
+                raise ScreenerError(f"{field} должен быть конечным числом")
         if (
             not 0.5 <= values["entry_z"] <= 5
             or not 0 <= values["exit_z"] < values["entry_z"]
         ):
             raise ScreenerError(
-                "entry must be 0.5–5 and exit must be non-negative and below entry"
+                "entry должен быть в диапазоне 0.5–5, а exit — неотрицательным и ниже entry"
             )
     return values
 
@@ -265,9 +265,9 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
 def execution_settings(selection: dict[str, Any]) -> dict[str, float | int]:
     slippage, quantity = selection.get("slippage_ticks", 1.0), selection.get("quantity", 1)
     if isinstance(slippage, bool) or not isinstance(slippage, (int, float)) or not 0 <= slippage <= 10:
-        raise ScreenerError("slippage must be 0–10 ticks per leg and side")
+        raise ScreenerError("slippage должен быть 0–10 тиков на ногу и сторону")
     if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= MAX_QUANTITY:
-        raise ScreenerError(f"contracts per leg must be an integer between 1 and {MAX_QUANTITY}")
+        raise ScreenerError(f"контрактов на ногу должно быть целым числом от 1 до {MAX_QUANTITY}")
     return {"slippage_ticks": float(slippage), "quantity": quantity}
 
 
@@ -285,19 +285,19 @@ def _history_source(inputs: ScreenerInputs, pair_id: str, secid: str) -> dict[st
 
 def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(selection, dict):
-        raise ScreenerError("selection must be an object")
+        raise ScreenerError("выбор должен быть объектом")
     pair = _pair(selection.get("pair"))
     pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
     strategy = selection.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
-        raise ScreenerError("unknown strategy")
+        raise ScreenerError("неизвестная стратегия")
     execution = execution_settings(selection)
     params = _parameters(selection, strategy)
     availability = next(
         item["strategies"] for item in catalog(inputs)["pairs"] if item["id"] == pair_id
     )
     if not availability[strategy]:
-        raise ScreenerError("local inputs are missing for this pair and strategy")
+        raise ScreenerError("локальные входы отсутствуют для этой пары и стратегии")
 
     if strategy == "mean_reversion":
         series = _normalized_series(
@@ -310,7 +310,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         )
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
-            raise ScreenerError("pair fails the working capital stress screen")
+            raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
         report = run_mean_reversion_baseline(
             series,
             lookback=params["lookback"],
@@ -337,11 +337,11 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         open_positions = 0
         costs = summary["modeled_costs"]
         provenance = report["input_provenance"]
-        price_role = "ISS daily candle open fill, close marks"
+        price_role = "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
         notes = [
-            "Price-only control: perpetual funding is not included; not a complete carry result.",
-            "Signal at a daily close, fill at the next daily open (minutes-to-hours reaction proxy).",
-            "An open position at the sample end is marked as a forced proxy exit, not an executable trade.",
+            "Только ценовой контроль: фондирование перпетуала не включено; это не полный результат carry.",
+            "Сигнал по закрытию дня, исполнение по следующему открытию дня (прокси реакции в пределах минут–часов).",
+            "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.",
         ]
     else:
         near_source = _history_source(inputs, pair_id, near)
@@ -368,7 +368,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         )
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
-            raise ScreenerError("pair fails the working capital stress screen")
+            raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
         daily = [
             {
                 "date": row["date"],
@@ -393,9 +393,9 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
                 inputs.contracts.read_bytes()
             ).hexdigest(),
         }
-        price_role = "ISS EOD settlement proxy"
+        price_role = "ISS: расчётная цена на конец дня (прокси)"
         notes = [
-            "Funding signal uses funding through the previous clearing; fill proxy is the same-day settlement; a same-day exit forgoes that day's funding.",
+            "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
             *(
                 ["Non-CNY funding-rule caps are not reconstructed."]
                 if pair_id != "CNYRUBF/CRZ6"
@@ -435,11 +435,11 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         },
         "daily": daily,
         "notes": [
-            "Matched LQDT price path is not an account-statement reconciliation.",
-            "Current contract/margin snapshots are fallback assumptions, not dated broker terms.",
-            "Costs: published MOEX taker tariff, zero VTB broker fee to 2026-12-31, slippage as a parameter.",
-            "Free cash is held in LQDT, margin cash earns nothing (A-11); the benchmark holds all capital in LQDT.",
-            "Capital screening uses fixed working buffers and current margin snapshots, not future-known losses.",
+            "Сопоставимый ценовой путь LQDT — не сверка с выпиской по счёту.",
+            "Текущие снапшоты контрактов/маржи — запасные допущения, а не датированные условия брокера.",
+            "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, slippage как параметр.",
+            "Свободные средства держатся в LQDT, маржинальные средства ничего не зарабатывают (A-11); бенчмарк держит весь капитал в LQDT.",
+            "Отбор по капиталу использует фиксированные рабочие буферы и текущие снапшоты маржи, а не потери, известные заранее.",
             *notes,
         ],
         "provenance": provenance,
@@ -606,11 +606,11 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             try:
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= 8192:
-                    raise ScreenerError("request size must be 1–8192 bytes")
+                    raise ScreenerError("размер запроса должен быть 1–8192 байт")
                 selection = json.loads(self.rfile.read(size))
                 if path == "/api/proof/run":
                     if not isinstance(selection, dict):
-                        raise ScreenerError("selection must be an object")
+                        raise ScreenerError("выбор должен быть объектом")
                     result = store.proof.proof(selection)
                 elif path == "/api/run":
                     result = build_result(store.inputs, selection)
@@ -637,7 +637,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
 
 def serve(inputs: ScreenerInputs, port: int = 8765) -> None:
     if not 0 <= port <= 65535:
-        raise ScreenerError("port must be 0–65535")
+        raise ScreenerError("порт должен быть в диапазоне 0–65535")
     server = ThreadingHTTPServer(
         ("127.0.0.1", port), make_handler(ScreenerStore(inputs))
     )

@@ -505,11 +505,11 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
             "fx_point_value_drift_rub": round(fx_drift, 2),
         },
         "notes": [
-            "Spread price = far settlement minus near settlement (the exchange spread settlement where published).",
-            "next_open fills use the legs' first-trade prices of the day; settlement fills use the official settlement.",
-            "Marks use settlement prices with each day's point value; costs are the published exchange tariff on both legs plus slippage once per side.",
-            "For USD- and CNY-quoted contracts the point value moves with the currency, so the day-by-day result differs slightly from entry-to-exit arithmetic (shown as FX point-value drift).",
-            "Margin is a fallback ratio from today's contract; LQDT cost is the benchmark return on that margin while the position is open.",
-            "Spread is shown relative to the far price, in %; absolute points remain in CSV and in the table's secondary line.",
+            "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
+            "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
+            "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс slippage один раз на сторону.",
+            "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
+            "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
+            "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",
         ],
     })

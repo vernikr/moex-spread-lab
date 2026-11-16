@@ -167,13 +167,13 @@ class ProofService:
 
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(selection, dict):
-            raise W0Error("selection must be an object")
+            raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == CALENDAR_UNIVERSE:
             return self._calendar_proof(selection)
         if universe == PAIR_UNIVERSE:
             return self._pair_proof(selection)
-        raise W0Error("unknown universe")
+        raise W0Error("неизвестная вселенная")
 
     # ------------------------------------------------------- calendar adapter
 
@@ -211,7 +211,7 @@ class ProofService:
         payload["instrument"] = self._calendar_instrument(selection_out, payload)
         fill = (selection.get("fill") or "settlement").replace("_", " ")
         payload["price_role"] = (
-            f"Native calendar spread; {fill} fills, official settlement marks"
+            f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
         )
         payload["run_id"] = _run_id(
             {
@@ -279,7 +279,7 @@ class ProofService:
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         strategy = selection.get("strategy")
         if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
-            raise W0Error("unknown strategy")
+            raise W0Error("неизвестная стратегия")
         execution = screener_app.execution_settings(selection)
         quantity = int(execution["quantity"])
         slippage = float(execution["slippage_ticks"])
@@ -290,10 +290,10 @@ class ProofService:
             item["strategies"] for item in screener_app.catalog(inputs)["pairs"] if item["id"] == pair_id
         )
         if not availability.get(strategy):
-            raise W0Error("local inputs are missing for this pair and strategy")
+            raise W0Error("локальные входы отсутствуют для этой пары и стратегии")
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity)
         if not risk["summary"]["all_scenarios_passed"]:
-            raise W0Error("pair fails the working capital stress screen")
+            raise W0Error("пара не проходит стресс-экран рабочего капитала")
 
         instruments = _load_instruments(inputs.contracts)
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
@@ -425,15 +425,15 @@ class ProofService:
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
             },
             notes=[
-                "Price-only control: perpetual funding is not included; not a complete carry result.",
-                "Signal at a daily close; fills at the next daily open (candle-open proxy); marks at candle close.",
+                "Только ценовой контроль: фондирование перпетуала не включено; это не полный результат carry.",
+                "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию.",
                 *(
-                    ["An open position at the sample end is marked as a forced proxy exit, not an executable trade."]
+                    ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
                     if any(trade["open_at_end"] for trade in trades)
                     else []
                 ),
-                "The pair spread is a RUB-normalized near-minus-far, not a native instrument; its volume is not observable.",
-                "Spread is shown relative to the far contract value, in %; absolute RUB marks remain in CSV and in the table's secondary line.",
+                "Спред пары — близкая минус дальняя, нормированный в рублях, а не собственный инструмент; его объём не наблюдаем.",
+                "Спред показан в % от стоимости дальней ноги; абсолютные отметки в рублях — в CSV и во второй строке таблицы.",
             ],
             risk=risk,
         )
@@ -607,17 +607,17 @@ class ProofService:
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
             },
             notes=[
-                "Funding signal uses funding through the previous clearing; the fill proxy is the same-day settlement; a same-day exit forgoes that day's funding.",
+                "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
                 *(
-                    ["Non-CNY funding-rule caps are not reconstructed."]
+                    ["Потолки правил фондирования для не-CNY инструментов не восстанавливаются."]
                     if pair_id != "CNYRUBF/CRZ6"
                     else []
                 ),
-                "The pair spread is a RUB-normalized near-minus-far, not a native instrument; its volume is not observable.",
-                "Fees are the published MOEX taker tariff modelled on the current reference (last-row settlement), not on each execution print.",
-                "Spread is shown relative to the far contract value, in %; absolute RUB marks remain in CSV and in the table's secondary line.",
+                "Спред пары — близкая минус дальняя, нормированный в рублях, а не собственный инструмент; его объём не наблюдаем.",
+                "Комиссии — опубликованный тариф MOEX taker, смоделированный на текущем референсе (расчёт по последней строке), а не на каждом ценовом значении исполнения.",
+                "Спред показан в % от стоимости дальней ноги; абсолютные отметки в рублях — в CSV и во второй строке таблицы.",
                 *(
-                    ["An open position at the sample end is marked as a forced proxy exit, not an executable trade."]
+                    ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
                     if any(trade["open_at_end"] for trade in trades)
                     else []
                 ),
@@ -848,9 +848,9 @@ class ProofService:
             "universe": PAIR_UNIVERSE,
             "status": "exploratory_proxy_not_live",
             "price_role": (
-                "ISS daily candle open fill, close marks"
+                "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
                 if strategy == "mean_reversion"
-                else "ISS EOD settlement proxy"
+                else "ISS: расчётная цена на конец дня (прокси)"
             ),
             "selection": selection_out,
             "instrument": {
@@ -902,14 +902,14 @@ class ProofService:
                 "fx_point_value_drift_rub": None,
             },
             "notes": [
-                "Matched LQDT price path is not an account-statement reconciliation.",
-                "Current contract/margin snapshots are fallback assumptions, not dated broker terms.",
-                "Free cash is held in LQDT, margin cash earns nothing (A-11); the benchmark holds all capital in LQDT.",
-                "Prices are candle/settlement proxies, not executable fills.",
-                "Costs: published MOEX taker tariff, zero VTB broker fee to 2026-12-31, slippage as a parameter.",
-                "Capital screening uses fixed working buffers and current margin snapshots, not future-known losses.",
+                "Сопоставимый ценовой путь LQDT — не сверка с выпиской по счёту.",
+                "Текущие снапшоты контрактов/маржи — запасные допущения, а не датированные условия брокера.",
+                "Свободные средства держатся в LQDT, маржинальные средства ничего не зарабатывают (A-11); бенчмарк держит весь капитал в LQDT.",
+                "Цены — candle/расчётные прокси, не исполнимые заполнения.",
+                "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, slippage как параметр.",
+                "Отбор по капиталу использует фиксированные рабочие буферы и текущие снапшоты маржи, а не потери, известные заранее.",
                 *notes,
-                *([f"Trade-day volume rule check: {'ok' if trade_volume_rule else 'violated'}."] if trades else []),
+                *([f"Проверка правила объёма в дни сделок: {'пройдена' if trade_volume_rule else 'нарушена'}."] if trades else []),
             ],
             "provenance": provenance,
         }

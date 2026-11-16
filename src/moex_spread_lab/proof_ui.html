@@ -7,7 +7,7 @@
 <style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#09111b;color:#e6edf4}
 *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
-.app{height:100vh;max-width:1760px;margin:auto;padding:8px 14px;display:flex;flex-direction:column;gap:8px}
+.app{height:100vh;max-width:1760px;margin:auto;padding:6px 12px;display:flex;flex-direction:column;gap:6px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:0 0 auto;padding:2px 0}.brand{display:flex;align-items:center;gap:10px}.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900;font-size:13px}
 .eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:6px 12px;font-size:11px;text-decoration:none;white-space:nowrap}
 .nav-links{display:flex;gap:10px;align-items:center}.tag{font-size:10px;color:#86d9bd;border:1px solid #2c6a58;border-radius:50px;padding:3px 10px}
@@ -25,16 +25,16 @@
 .ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:7px;min-height:26px;padding:0 9px;font-size:10px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
 .status{font-size:10px;color:#e7bd82;min-height:14px;line-height:1.4}.status.ok{color:#75d9ad}
 .norm-hint{color:#9db1c2;font-size:9.5px;line-height:1.45}.norm-score{color:#6f8296;font-size:9.5px;line-height:1.45;border-top:1px solid #223142;padding-top:6px}
-.main{display:flex;flex-direction:column;gap:6px;min-height:0}
-.evidence{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 10px;border:1px solid #293b4e;border-radius:9px;background:#0d1723;font-size:10px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:5px;padding:2px 6px;color:#8be0bd;font-size:10px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
+.main{display:flex;flex-direction:column;gap:5px;min-height:0}
+.evidence{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 10px;border:1px solid #293b4e;border-radius:9px;background:#0d1723;font-size:10px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:5px;padding:2px 6px;color:#8be0bd;font-size:10px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
 .flags{display:flex;gap:6px;flex-wrap:wrap}.flag{font-size:9.5px;border-radius:50px;padding:3px 9px;border:1px solid #345469;color:#a9bccb;white-space:nowrap}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}.flag.warn{color:#e7bd82;border-color:#6a5a2c}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:9px;padding:6px 9px;min-width:0}.tile span{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:#8aa0b3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tile b{font-size:14px;letter-spacing:-.02em;white-space:nowrap}.tile small{display:block;margin-top:1px;font-size:8.5px;color:#7e93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:5px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:9px;padding:5px 8px;min-width:0}.tile span{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:#8aa0b3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tile b{font-size:14px;letter-spacing:-.02em;white-space:nowrap}.tile small{display:block;margin-top:1px;font-size:8.5px;color:#7e93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
 .maintabs{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .tabbar{display:flex;gap:6px;align-items:center;padding:6px 9px;border-bottom:1px solid #223142;flex-wrap:wrap}.tab{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:8px 8px 0 0;border-bottom:0;padding:6px 18px;font-size:11px;font-weight:750;min-height:29px}.tab.active{background:#16293a;color:#e7eef5}.tab-spacer{flex:1}.tab-note{font-size:9px;color:#62788c}
 .tabpage{flex:1;min-height:0;position:relative}.tabpage.hidden{display:none}
-#charts{height:100%;overflow:auto;padding:4px 12px 10px;position:relative}
-.panel-title{font-size:10px;color:#9bb0c2;margin:8px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:9px}
-.chart{width:100%;position:relative}.h-near,.h-far{height:116px}.h-spread{height:225px}.h-vol{height:90px}.h-fund{height:86px}.h-cum{height:116px}
+#charts{height:100%;overflow:auto;padding:2px 12px 8px;position:relative}
+.panel-title{font-size:9.5px;color:#9bb0c2;margin:5px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:center}.panel-title b{color:#dbe7f1}.panel-title .tagline{color:#5f7688;font-size:9px}
+.chart{width:100%;position:relative}.h-near,.h-far{height:88px}.h-spread{height:176px}.h-vol{height:62px}.h-fund{height:56px}.h-cum{height:86px}
 .legend{display:inline-flex;gap:10px;align-items:center;font-size:9.5px}
 .tip{position:absolute;pointer-events:none;background:#0b1623ee;border:1px solid #3a566d;border-radius:10px;padding:10px 12px;font-size:10.5px;line-height:1.55;min-width:240px;max-width:460px;z-index:6;box-shadow:0 10px 30px #0008;display:none}.tip b{color:#fff}.tip .k{color:#8aa0b3}.tip hr{border:0;border-top:1px solid #29404f;margin:6px 0}
 .tablepage{height:100%;display:flex;flex-direction:column;min-height:0}
@@ -58,7 +58,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
     <!-- левая колонка 1: выбор пары и параметры -->
     <aside class="panel side" id="col-selection">
       <div class="universe-switch" role="tablist">
-        <button class="uopt active" id="u-pair" role="tab">Скринер пар<small>mean reversion · фондирование перпов</small></button>
+        <button class="uopt active" id="u-pair" role="tab">Скринер пар<small>возврат к среднему · фондирование перпов</small></button>
         <button class="uopt" id="u-calendar" role="tab">Календарные спреды<small>биржевые инструменты MOEX</small></button>
       </div>
 
@@ -114,10 +114,10 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <option value="ewma10">EWMA z · полураспад 10</option>
           <option value="mad20">Робастный z · медиана/MAD · 20 набл.</option>
           <option value="garch">GARCH(1,1) z · трейлинг</option>
-          <option value="kalman">z инновации Калмана · local level</option>
+          <option value="kalman">z инновации Калмана · локальный уровень</option>
         </optgroup>
         <optgroup label="Ограниченные">
-          <option value="stoch20">Stochastic · 20 набл. (0–100)</option>
+          <option value="stoch20">Стохастик · 20 набл. (0–100)</option>
         </optgroup>
       </select>
       <div class="norm-hint" id="norm-hint"></div>
@@ -173,11 +173,20 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 <script>
 const $=id=>document.getElementById(id);
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n};
-const fmt=(v,d=0)=>v==null?'—':Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmt=(v,d=0)=>v==null?'—':Number(v).toLocaleString('ru-RU',{minimumFractionDigits:d,maximumFractionDigits:d});
 const rub=(v,d=0)=>v==null?'—':`${v>0?'+':''}${fmt(v,d)} ₽`;
 const px=v=>v==null?'—':fmt(v,Math.abs(v)<100?4:Math.abs(v)<10000?2:0);
 const cls=v=>v>0?'pos':v<0?'neg':'';
 const signed=v=>v==null?'—':`${v>0?'+':''}${fmt(v,2)}`;
+const STRATEGY_RU={mean_reversion:'Возврат спреда к среднему',funding_only:'Фондирование перпетуального свопа (carry)',zscore_mean_reversion:'Возврат к среднему · z-скор',convergence_to_ruonia:'Сходимость к справедливой цене RUONIA'};
+const FILL_RU={next_open:'следующее открытие',settlement:'расчётная цена',same_day_settlement:'расчёт в тот же день',next_close:'следующее закрытие',reference_same_bar:'справочное закрытие'};
+const FAMILY_RU={perpetual_quarterly_same_asset:'перпетуал-квартальный · один актив',dated_calendar_same_asset:'датированный календарь · один актив'};
+const CATSTATUS_RU={local_inputs_available:'локальные входы доступны',intake_required:'нужна загрузка данных',excluded_thin_leg:'исключена: тонкая нога'};
+const GROUP_RU={stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'};
+const REASON_RU={mean_reversion_exit:'возврат к среднему',end_of_sample:'конец выборки',end_of_window:'конец окна',open_at_data_end_no_executable_exit:'принудительная отметка в конце данных',perpetual_execution_window:'окно исполнения перпетуала',basis_reached_trailing_median:'базис достиг скользящей медианы',trailing_funding_non_positive:'фондирование стало неположительным',expiry_buffer:'буфер до экспирации',positive_trailing_funding:'положительное фондирование',positive_trailing_funding_and_low_basis:'фондирование положительно и базис низкий'};
+const humanReason=r=>r?(REASON_RU[r]||String(r).replaceAll('_',' ')):'';
+const COST_RU={exchange_clearing:'биржа и клиринг',broker:'брокер',slippage:'проскальзывание'};
+const humanCost=k=>COST_RU[k]||String(k).replaceAll('_',' ');
 let catalog=null,payload=null,selectedTrade=null,universe='pair_screen',dayClick={day:null,index:0},markersApiRef=null,drawdownByDate={};
 const proofLabel=()=>payload?(payload.selection.spread_instrument||payload.selection.pair||universe):'';
 const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',volWin:'#2f8f6a',volLoss:'#a24d47',win:'#78e0b4',loss:'#f0928a',entry:'#d7e6f3',warn:'#e7bd82',fund:'#b39ddb'};
@@ -188,22 +197,22 @@ async function api(path,body){const r=await fetch(path,body?{method:'POST',heade
 function modeButtons(){for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);$('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')}
 function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts'){for(const c of charts){try{c.timeScale().fitContent()}catch(e){}}}}
 function pairAvailability(id){const row=(catalog.pair_screen?.pairs||[]).find(p=>p.id===id);return row||null}
-function fillPairs(){const s=$('pair');s.replaceChildren();for(const p of catalog.pair_screen.pairs){const ok=p.strategies.mean_reversion||p.strategies.funding_only;const o=el('option','',`${p.id} · ${p.family.replaceAll('_',' ')} · мин. объём ноги ${p.min_leg_daily_volume!=null?fmt(p.min_leg_daily_volume):'—'}${ok?'':' · НЕДОСТУПНА ('+p.status.replaceAll('_',' ')+')'}`);o.value=p.id;if(!ok)o.disabled=true;s.append(o)}
+function fillPairs(){const s=$('pair');s.replaceChildren();for(const p of catalog.pair_screen.pairs){const ok=p.strategies.mean_reversion||p.strategies.funding_only;const o=el('option','',`${p.id} · ${FAMILY_RU[p.family]||p.family.replaceAll('_',' ')} · мин. объём ноги ${p.min_leg_daily_volume!=null?fmt(p.min_leg_daily_volume):'—'}${ok?'':' · НЕДОСТУПНА ('+(CATSTATUS_RU[p.status]||p.status.replaceAll('_',' '))+')'}`);o.value=p.id;if(!ok)o.disabled=true;s.append(o)}
  if(![...s.options].some(o=>!o.disabled)&&s.options.length){for(const o of [...s.options])o.disabled=false}
  syncPairStrategy()}
 function currentPair(){return $('pair').value}
 function fillStrategy(){const p=pairAvailability(currentPair());const s=$('strategy');const prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?p.strategies[name]:false;const o=el('option','',`${m.label}${ok?'':' · нет локальных данных'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}
  const enabled=[...s.options].find(o=>!o.disabled);if(prev&&[...s.options].some(o=>o.value===prev&&!o.disabled))s.value=prev;else if(enabled)s.value=enabled.value;else if(s.options.length)s.value=s.options[0].value;
- const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=isMR?'next_open':'same_day_settlement';const metaSel=catalog.pair_screen.strategies[s.value];$('lookback').value=metaSel?metaSel.parameters.lookback:20;syncPairHint()}
+ const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=FILL_RU[isMR?'next_open':'same_day_settlement']||(isMR?'next_open':'same_day_settlement');const metaSel=catalog.pair_screen.strategies[s.value];$('lookback').value=metaSel?metaSel.parameters.lookback:20;syncPairHint()}
 function syncPairStrategy(){fillStrategy()}
-function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · дальняя экспирация '+p.expiry:''}`:''}
+function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · дальняя экспирация '+p.expiry:''}`:''}
 function pairRequest(){const strategy=$('strategy').value;const parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};
  return {universe:'pair_screen',pair:currentPair(),strategy,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters}}
 
 // ---------- calendar controls ----------
 function currentAsset(){return (catalog.assets||[]).find(a=>a.asset===$('asset').value)}
-function fillAssets(){const s=$('asset');s.replaceChildren();for(const a of catalog.assets||[]){const o=el('option','',`${a.asset} · ${a.name} · ${a.group}${a.monthly?' · monthly':''}`);o.value=a.asset;s.append(o)}fillWindows()}
-function fillWindows(){const a=currentAsset();if(!a){$('window').replaceChildren();return}const s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations}d · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · min vol ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});
+function fillAssets(){const s=$('asset');s.replaceChildren();for(const a of catalog.assets||[]){const o=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);o.value=a.asset;s.append(o)}fillWindows()}
+function fillWindows(){const a=currentAsset();if(!a){$('window').replaceChildren();return}const s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations} дн. · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · мин. объём ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});
  const st=$('cstrategy');const prev=st.value;st.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Возврат к среднему · z-скор':'Сходимость к справедливой цене RUONIA');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;
  $('clookback').value=a.monthly?7:20;syncCalendarParams()}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
@@ -219,7 +228,7 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
  flag(`${w.from} → ${w.to} · ${obs} дней`,true);
  flag(w.tradable_every_day?`Правило объёма пройдено: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} контр./день`:`Правило объёма НЕ пройдено: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
  flag(w.passes_capital_screen?`Скрининг капитала пройден (маржа ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Скрининг капитала НЕ пройден (маржа до ${fmt(w.max_pair_margin_rub)} ₽ со стрессовыми буферами)`,w.passes_capital_screen);
- flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${payload.contract.tariff_group}); брокерская 0`,true);
+ flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${({stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'}[payload.contract.tariff_group])||payload.contract.tariff_group}); брокерская 0`,true);
  if(s.open_positions)flag(`${s.open_positions} открытая позиция в конце данных — отмечена как принудительный выход, не исполняемая сделка`,false);
  const t=$('tiles');t.replaceChildren();
  t.append(tile('Сделки',`${s.trades}`,'',`${s.closed_trades} закрыто · ${s.winners} в плюсе`),
@@ -230,14 +239,14 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
    tile('Сверх LQDT',rub(s.excess_over_lqdt_rub),cls(s.excess_over_lqdt_rub)));
  if(s.max_excess_drawdown_rub!=null)t.append(tile('Макс. изб. просадка',`−${fmt(s.max_excess_drawdown_rub,2)} ₽`,'warn'));
  const reconOk=Math.abs(s.ledger_reconciliation_rub)<0.5;
- t.append(tile('Сверка ledger',rub(s.ledger_reconciliation_rub,2),reconOk?'pos':'warn','нетто − кумулятив'));
+ t.append(tile('Сверка журнала',rub(s.ledger_reconciliation_rub,2),reconOk?'pos':'warn','нетто − кумулятив'));
  if(s.fx_point_value_drift_rub!=null&&Math.abs(s.fx_point_value_drift_rub)>=0.005)t.append(tile('Дрейф стоимости пункта',rub(s.fx_point_value_drift_rub,2),'warn'))}
 
 // ---------- evidence bar ----------
 function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-runid').textContent=payload.run_id;
  $('ev-period').textContent=`${payload.window.from} → ${payload.window.to}`;
  const s=payload.selection;const inst=payload.instrument||{};const pairLabel=s.pair||(inst.spread_instrument||'');
- $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${s.strategy} · ${s.fill??''} · контрактов: ${s.quantity} · слиппедж ${s.slippage_ticks}т`;
+ $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · контрактов: ${s.quantity} · слиппедж ${s.slippage_ticks}т`;
  $('ev-role').textContent=payload.price_role||'';
  const prov=payload.provenance||{};const provKeys=Object.keys(prov);const provEl=$('ev-provenance');
  provEl.textContent=provKeys.length?`происхождение: ${provKeys.length} хэшей входных данных`:'происхождение: не записано';
@@ -246,7 +255,7 @@ function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-
 
 // ---------- charts ----------
 const LWC=window.LightweightCharts;
-function chartOpts(){return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2',width:1,style:1,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#2a4a63'}},timeScale:{borderColor:'#293b4e',rightOffset:3},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'en-US'}}}
+function chartOpts(){return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2',width:1,style:1,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#2a4a63'}},timeScale:{borderColor:'#293b4e',rightOffset:3},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'ru-RU'}}}
 const charts=[];
 function makePane(parent,heightClass,title,tagline,legend){const head=el('div','panel-title');const left=el('span');left.append(el('b','',title));if(tagline)left.append(el('span','tagline','  '+tagline));head.append(left);
  if(legend){const lg=el('span','legend');for(const [label,color] of legend){const s=el('span');const i=el('i');i.style.cssText=`display:inline-block;width:14px;height:3px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle`;s.append(i,label);lg.append(s)}head.append(lg)}
@@ -316,7 +325,7 @@ const NORM_HINTS={
  garch:'Стандартизированный остаток трейлинговой рекурсии GARCH(1,1) (α=0.10, β=0.85, ω→0). Отвечает на «необычно ли это с учётом кластеризации волы», не «необычно ли vs среднего»; грубая подгонка, без ковариат.',
  kalman:'Инновация Калмана в единицах своей σ — local-level модель (уровень — случайное блуждание, фиксированные Q/R). Без окна вообще — адаптируется непрерывно через смены режима; ровно настолько хороша, насколько верны фиксированные Q/R.',
  stoch20:'(Спред − min окна)/(max окна − min окна) за 20 точек, в %. Ограничено 0–100 — «где внутри недавнего диапазона», читать проще всего; про σ и half-life не говорит ничего.'};
-const NORM_PANEL={raw:'спред в % от дальней ноги',expanding:'остаток к expanding-среднему · причинный',rm20:'остаток к среднему · 20 набл. · причинный',rm60:'остаток к среднему · 60 набл. · причинный',ema10:'остаток к EMA · полураспад 10 · причинный',ols20:'остаток к OLS · 20 набл. · причинный',ols60:'остаток к OLS · 60 набл. · причинный',ou60:'остаток ОУ от равновесия · 60 набл. · причинный',rz20:'z-скор · среднее и σ за 20 · причинный',ewma10:'z-скор · EWMA · полураспад 10 · причинный',mad20:'робастный z · медиана/MAD · 20 · причинный',garch:'GARCH(1,1) z · трейлинг-рекурсия · причинный',kalman:'z инновации Калмана · local level · причинный',stoch20:'stochastic · 20 набл. · 0–100 · причинный'};
+const NORM_PANEL={raw:'спред в % от дальней ноги',expanding:'остаток к expanding-среднему · причинный',rm20:'остаток к среднему · 20 набл. · причинный',rm60:'остаток к среднему · 60 набл. · причинный',ema10:'остаток к EMA · полураспад 10 · причинный',ols20:'остаток к OLS · 20 набл. · причинный',ols60:'остаток к OLS · 60 набл. · причинный',ou60:'остаток ОУ от равновесия · 60 набл. · причинный',rz20:'z-скор · среднее и σ за 20 · причинный',ewma10:'z-скор · EWMA · полураспад 10 · причинный',mad20:'робастный z · медиана/MAD · 20 · причинный',garch:'GARCH(1,1) z · трейлинг-рекурсия · причинный',kalman:'z инновации Калмана · локальный уровень · причинный',stoch20:'stochastic · 20 набл. · 0–100 · причинный'};
 // Quality score for a normalized series (display-chart property, NOT a trading signal).
 // Horizontality 40%: 1 - R^2 of OLS of the series on time. Mean reversion 30%: AR(1) phi mapped 1-phi.
 // Vol uniformity 30%: 1 - CV of per-block vol of first differences (up to 6 blocks). See docs/research/normalization-methods.md
@@ -447,7 +456,7 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
  const rows=isEntry
   ?`<h4>${isEntry?'Вход':'Выход'} #${t.number} — ${t.side==='long_spread'?'лонг спред':'шорт спред'} · контрактов: ${t.quantity}</h4>
      <div><span class="k">ноги</span> ${t.legs}</div>
-     <div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${String(t.signal.reason).replaceAll('_',' ')}`:''} · ${t.signal.date}</div>
+     <div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${humanReason(t.signal.reason)}`:''} · ${t.signal.date}</div>
      <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}</div>
      <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
      <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>`
@@ -455,13 +464,13 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
      <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}${t.open_at_end?' · <b class="warn">принудительная отметка в конце данных</b>':''}</div>
      <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
      <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>
-     <div><span class="k">причина выхода</span> ${String(t.exit_reason).replaceAll('_',' ')}</div>
+     <div><span class="k">причина выхода</span> ${humanReason(t.exit_reason)}</div>
      <hr style="border:0;border-top:1px solid #233648;margin:6px 0">
      <div><span class="k">гросс</span> <b>${rub(t.gross_rub,2)}</b>${t.gross_pts!=null?` (${fmt(t.gross_pts,3)} п.)`:''}</div>
      <div><span class="k">нетто</span> <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b> · <span class="${t.result==='win'?'win-chip':t.result==='loss'?'loss-chip':'flat-chip'}">${t.result==='win'?'ПРИБЫЛЬ':t.result==='loss'?'УБЫТОК':'В НОЛЬ'}</span></div>
      <div><span class="k">LQDT на маржу</span> −${fmt(t.lqdt_on_margin_rub,2)} ₽ · <span class="k">сверх LQDT</span> <b class="${cls(t.excess_rub)}">${rub(t.excess_rub,2)}</b></div>
      <div><span class="k">маржа</span> <b>${fmt(t.margin_rub)} ₽</b></div>`;
- const feeRows=Object.entries(b.costs||{}).map(([k,v])=>`<div><span class="k">${k.replaceAll('_',' ')}</span> ${fmt(v,2)} ₽</div>`).join('');
+ const feeRows=Object.entries(b.costs||{}).map(([k,v])=>`<div><span class="k">${humanCost(k)}</span> ${fmt(v,2)} ₽</div>`).join('');
  const feeTotal=Object.values(b.costs||{}).reduce((a,c)=>a+c,0);
  g.innerHTML=rows+`<hr style="border:0;border-top:1px solid #233648;margin:6px 0"><h4 style="margin-top:0">Комиссии — эта сторона</h4>${feeRows}<div><span class="k">итого</span> <b>${fmt(feeTotal,2)} ₽</b></div>`;
  return g}
@@ -479,7 +488,7 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
  if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
  if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)}${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)}`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)}</b>`:''}`;
  const dayEvents=payload.trades.flatMap(t=>[['ENTRY',t.entry],['EXIT',t.exit]].filter(([_,leg])=>leg.date===s.date).map(([kind])=>({kind,t})));
- for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${k.replaceAll('_',' ')} ${fmt(v,2)}`).join(', ');
+ for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${humanCost(k)} ${fmt(v,2)}`).join(', ');
   h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${px(leg.spread_fill)}</b> · <span class="k">ноги</span> ${px(leg.near_price)} / ${px(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
   if(kind==='EXIT')h+=`<br><span class="k">результат</span> гросс ${rub(t.gross_rub,2)} · нетто <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b>`}
  return h}

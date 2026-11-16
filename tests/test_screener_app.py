@@ -99,7 +99,7 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(first, build_result(self.inputs, base))
         self.assertEqual(first["daily"][-1]["X"], first["metrics"]["excess_rub"])
         self.assertEqual(first["period"]["observations"], 50)
-        self.assertEqual(first["price_role"], "ISS daily candle open fill, close marks")
+        self.assertEqual(first["price_role"], "ISS: дневной candle, заполнение по открытию, отметки по закрытию")
         self.assertNotEqual(
             first["run_id"],
             build_result(self.inputs, {**base, "parameters": {"lookback": 15}})[

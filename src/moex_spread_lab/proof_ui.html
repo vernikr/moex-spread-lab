@@ -7,25 +7,30 @@
 <style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#09111b;color:#e6edf4}
 *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
-.app{height:100vh;max-width:1760px;margin:auto;padding:6px 12px;display:flex;flex-direction:column;gap:6px}
+.app{width:100%;min-width:0;height:100vh;max-width:none;margin:0;padding:6px 12px;display:flex;flex-direction:column;gap:6px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:0 0 auto;padding:2px 0}.brand{display:flex;align-items:center;gap:10px}.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900;font-size:13px}
 .eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:6px 12px;font-size:11px;text-decoration:none;white-space:nowrap}
 .nav-links{display:flex;gap:10px;align-items:center}.tag{font-size:10px;color:#86d9bd;border:1px solid #2c6a58;border-radius:50px;padding:3px 10px}
-.layout{flex:1;min-height:0;display:grid;grid-template-columns:296px 262px minmax(0,1fr);gap:10px}
-.panel{background:#111d2a;border:1px solid #293b4e;border-radius:12px}
-.side{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:0}
+.layout{--selection-width:296px;--norm-width:262px;flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:minmax(220px,var(--selection-width)) 8px minmax(190px,var(--norm-width)) 8px minmax(320px,1fr)}
+.panel{background:#111d2a;border:1px solid #293b4e;border-radius:12px;min-width:0}
+.column-resizer{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;cursor:col-resize;touch-action:none;user-select:none;outline:none}
+.column-resizer::before{content:"";width:2px;height:42px;border-radius:99px;background:#294154;transition:height .15s,background .15s,box-shadow .15s}
+.column-resizer::after{content:"";position:absolute;width:4px;height:10px;border-left:1px dotted #8aa0b3;border-right:1px dotted #8aa0b3;opacity:.7}
+.column-resizer:hover::before,.column-resizer:focus-visible::before,.column-resizer.active::before{height:64px;background:#70e1b9;box-shadow:0 0 9px #70e1b977}
+body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none!important}
+.side{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0}
 .side-title{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#8aa0b3;font-weight:750}
 .side-sub{font-size:9px;color:#62788c;margin-top:-4px}
 .universe-switch{display:flex;gap:6px}.uopt{flex:1;border:1px solid #345469;background:#16293a;color:#a9bccb;border-radius:9px;padding:6px 8px;font-size:11px;font-weight:700;text-align:left;line-height:1.35}.uopt.active{border-color:#70e1b9;color:#072119;background:#70e1b9}.uopt small{display:block;font-weight:500;font-size:9px;color:inherit;opacity:.8}
 .listbox{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
-#pair{min-height:150px}#norm{min-height:290px}
+#pair{min-height:150px}#norm{min-height:290px}#asset{height:120px;min-height:120px;flex:0 0 120px}
+.calendar-asset-control{flex:0 0 auto}.calendar-window-control{display:flex;flex:1 1 0;flex-direction:column;min-height:140px}#window{height:100%;min-height:130px;flex:1 1 0}
 .control{margin-bottom:2px;flex:1;min-width:0}.control label{display:block;color:#a7b8c8;font-size:10px;font-weight:650;margin-bottom:3px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:7px;color:#e7eef5;height:30px;padding:0 8px;width:100%;outline:none;font-size:11px}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:9px;color:#7e93a6;margin-top:2px;line-height:1.4}
 .sidegrid{display:flex;gap:6px}
-.action{border:0;border-radius:8px;background:#70e1b9;color:#072119;font-weight:800;min-height:34px;padding:0 14px;white-space:nowrap;font-size:12px}.action.full{width:100%}
 .ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:7px;min-height:26px;padding:0 9px;font-size:10px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
 .status{font-size:10px;color:#e7bd82;min-height:14px;line-height:1.4}.status.ok{color:#75d9ad}
 .norm-hint{color:#9db1c2;font-size:9.5px;line-height:1.45}.norm-score{color:#6f8296;font-size:9.5px;line-height:1.45;border-top:1px solid #223142;padding-top:6px}
-.main{display:flex;flex-direction:column;gap:5px;min-height:0}
+.main{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:0}
 .evidence{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 10px;border:1px solid #293b4e;border-radius:9px;background:#0d1723;font-size:10px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:5px;padding:2px 6px;color:#8be0bd;font-size:10px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
 .flags{display:flex;gap:6px;flex-wrap:wrap}.flag{font-size:9.5px;border-radius:50px;padding:3px 9px;border:1px solid #345469;color:#a9bccb;white-space:nowrap}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}.flag.warn{color:#e7bd82;border-color:#6a5a2c}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:5px}.tile{background:#111d2a;border:1px solid #293b4e;border-radius:9px;padding:5px 8px;min-width:0}.tile span{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:#8aa0b3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tile b{font-size:14px;letter-spacing:-.02em;white-space:nowrap}.tile small{display:block;margin-top:1px;font-size:8.5px;color:#7e93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pos{color:#78e0b4}.neg{color:#f0928a}.warn{color:#e7bd82}
@@ -46,15 +51,14 @@ tr.fill td{cursor:pointer}tr.entry td{background:#142b3a}tr.exit td{background:#
 tr.card td{background:#0d1723 !important;padding:0}.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:10px 14px}.cardgroup{background:#111d2a;border:1px solid #233648;border-radius:10px;padding:9px 11px;font-size:10.5px;line-height:1.6}.cardgroup h4{margin:0 0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:#8aa0b3}.cardgroup .k{color:#8aa0b3}.cardgroup b{color:#e8f0f7}.win-chip{color:#78e0b4;font-weight:750}.loss-chip{color:#f0928a;font-weight:750}.flat-chip{color:#a9bccb;font-weight:750}
 tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.recon td{background:#111d2a;font-size:10px;color:#a9bccb}tr.recon.ok b{color:#78e0b4}tr.recon.warn b{color:#e7bd82}tr.note td{background:#2a1f12;color:#e7c98e;font-size:10px}
 .notes{color:#8da1b4;font-size:9.5px;line-height:1.5;padding:5px 12px;max-height:64px;overflow:auto;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
-@media (max-width:1220px){.layout{grid-template-columns:250px 226px minmax(0,1fr)}}
-@media (max-width:940px){body{overflow:auto;height:auto}.app{height:auto}.layout{display:flex;flex-direction:column;height:auto}#pair,#norm{min-height:130px}.maintabs{min-height:420px}#charts{max-height:520px}}
+@media (max-width:940px){body{overflow:auto;height:auto;min-height:100vh}.app{height:auto;min-height:100vh}.layout{display:flex;flex-direction:column;height:auto;gap:10px}.column-resizer{display:none}#pair,#norm{min-height:130px}#calendar-controls{flex:none}.calendar-window-control{flex:0 1 auto;min-height:180px}#window{height:180px;min-height:180px;flex:none}.maintabs{min-height:420px}#charts{max-height:520px}}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><span class="tag">● Локально · Офлайн</span></div></header>
 
-  <div class="layout">
+  <div class="layout" id="layout">
     <!-- левая колонка 1: выбор пары и параметры -->
     <aside class="panel side" id="col-selection">
       <div class="universe-switch" role="tablist">
@@ -73,12 +77,11 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="control"><label for="lookback">Окно · набл.</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
         </div>
         <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
-        <button class="action full" id="run-pair">Показать разбор →</button>
       </div>
-      <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px">
+      <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
         <div class="side-title">Календарный спред</div>
-        <div class="control"><label for="asset">Актив</label><select id="asset" class="listbox" size="6"></select></div>
-        <div class="control"><label for="window">Ближнее окно · V — объём · C — капитал</label><select id="window"></select></div>
+        <div class="control calendar-asset-control"><label for="asset">Актив</label><select id="asset" class="listbox" size="6"></select></div>
+        <div class="control calendar-window-control"><label for="window">Ближнее окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
         <div class="sidegrid" id="calendar-params">
           <div class="control z-only"><label for="centry">Вход · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
@@ -87,10 +90,11 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="control z-only c-keep"><label for="cthreshold">Порог · п.п. от RUONIA</label><input id="cthreshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
         </div>
         <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><input id="cquantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="cslippage">Слиппедж · тики</label><input id="cslippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
-        <button class="action full" id="run-calendar">Показать разбор →</button>
       </div>
       <div class="status" id="status" role="status"></div>
     </aside>
+
+    <div class="column-resizer" id="resize-selection" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки выбора пары" aria-valuemin="220" aria-valuemax="560" aria-valuenow="296" tabindex="0"></div>
 
     <!-- левая колонка 2: метод нормализации -->
     <aside class="panel side" id="col-norm">
@@ -124,6 +128,8 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <div class="norm-score" id="norm-score"></div>
     </aside>
 
+    <div class="column-resizer" id="resize-norm" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки нормализации" aria-valuemin="190" aria-valuemax="480" aria-valuenow="262" tabindex="0"></div>
+
     <!-- основная область: сводка + табы графики/таблица -->
     <main class="main">
       <div class="evidence" id="evidence">
@@ -149,7 +155,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         </div>
         <div class="tabpage" id="tabpage-charts">
           <div id="charts">
-            <div class="empty" id="charts-empty">Слева выберите пару и стратегию, затем нажмите «Показать разбор →».</div>
+            <div class="empty" id="charts-empty">Выберите пару или календарное окно: разбор запустится автоматически. Параметры пересчитываются по Enter или при потере фокуса.</div>
             <div class="tip" id="tip"></div>
           </div>
         </div>
@@ -187,19 +193,90 @@ const REASON_RU={mean_reversion_exit:'возврат к среднему',end_of
 const humanReason=r=>r?(REASON_RU[r]||String(r).replaceAll('_',' ')):'';
 const COST_RU={exchange_clearing:'биржа и клиринг',broker:'брокер',slippage:'проскальзывание'};
 const humanCost=k=>COST_RU[k]||String(k).replaceAll('_',' ');
-let catalog=null,payload=null,selectedTrade=null,universe='pair_screen',dayClick={day:null,index:0},markersApiRef=null,drawdownByDate={};
+let catalog=null,payload=null,selectedTrade=null,universe='pair_screen',dayClick={day:null,index:0},markersApiRef=null,drawdownByDate={},autoRunTimer=null,analysisRequestId=0;
 const proofLabel=()=>payload?(payload.selection.spread_instrument||payload.selection.pair||universe):'';
 const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',volWin:'#2f8f6a',volLoss:'#a24d47',win:'#78e0b4',loss:'#f0928a',entry:'#d7e6f3',warn:'#e7bd82',fund:'#b39ddb'};
 function status(text,ok=false){$('status').textContent=text;$('status').className='status'+(ok?' ok':'')}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 
+const COLUMN_LAYOUT_KEY='moex-proof-layout-v1';
+const RESIZABLE_COLUMNS=[
+ {key:'selection',cssVar:'--selection-width',handleId:'resize-selection',min:220,max:560,initial:296},
+ {key:'norm',cssVar:'--norm-width',handleId:'resize-norm',min:190,max:480,initial:262},
+];
+const desiredColumnWidths={selection:296,norm:262},columnWidths={selection:296,norm:262};
+const MAIN_MIN_WIDTH=320,RESIZER_GUTTERS=16;
+function maxColumnWidth(column){
+ if(window.innerWidth<=940)return column.max;
+ const otherName=column.key==='selection'?'norm':'selection';
+ return Math.max(column.min,Math.min(column.max,$('layout').clientWidth-RESIZER_GUTTERS-MAIN_MIN_WIDTH-columnWidths[otherName]));
+}
+function applyColumnWidth(name,value,remember=true){
+ const column=RESIZABLE_COLUMNS.find(x=>x.key===name);if(!column)return;
+ const requested=Math.max(column.min,Math.min(column.max,Math.round(value)));
+ if(remember)desiredColumnWidths[name]=requested;
+ const maximum=maxColumnWidth(column),width=Math.max(column.min,Math.min(maximum,requested));columnWidths[name]=width;
+ $('layout').style.setProperty(column.cssVar,`${width}px`);
+ const handle=$(column.handleId);if(handle){handle.setAttribute('aria-valuemin',String(column.min));handle.setAttribute('aria-valuemax',String(maximum));handle.setAttribute('aria-valuenow',String(width));handle.setAttribute('aria-valuetext',`${width} пикселей`)}
+}
+function applyResponsiveWidths(){applyColumnWidth('norm',desiredColumnWidths.norm,false);applyColumnWidth('selection',desiredColumnWidths.selection,false)}
+function persistColumnWidths(){try{localStorage.setItem(COLUMN_LAYOUT_KEY,JSON.stringify(desiredColumnWidths))}catch(e){}}
+function initColumnResizers(){
+ let saved={};try{saved=JSON.parse(localStorage.getItem(COLUMN_LAYOUT_KEY)||'{}')||{}}catch(e){}
+ for(const column of RESIZABLE_COLUMNS){
+  const savedWidth=Number(saved[column.key]);const requested=Number.isFinite(savedWidth)&&saved[column.key]!=null?savedWidth:column.initial;
+  desiredColumnWidths[column.key]=Math.max(column.min,Math.min(column.max,Math.round(requested)));columnWidths[column.key]=desiredColumnWidths[column.key]
+ }
+ applyResponsiveWidths();
+ for(const column of RESIZABLE_COLUMNS){
+  const handle=$(column.handleId);if(!handle)continue;
+  handle.addEventListener('pointerdown',event=>{
+   if(event.button!==0)return;event.preventDefault();const pointerId=event.pointerId,startX=event.clientX,startWidth=columnWidths[column.key];
+   handle.classList.add('active');document.body.classList.add('is-resizing');try{handle.setPointerCapture(pointerId)}catch(e){}
+   const move=moveEvent=>{if(moveEvent.pointerId===pointerId)applyColumnWidth(column.key,startWidth+moveEvent.clientX-startX)};
+   const finish=endEvent=>{
+    if(endEvent.pointerId!==pointerId)return;if(endEvent.type==='pointerup')move(endEvent);
+    handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);
+    handle.classList.remove('active');document.body.classList.remove('is-resizing');persistColumnWidths();
+    try{if(handle.hasPointerCapture(pointerId))handle.releasePointerCapture(pointerId)}catch(e){}
+   };
+   handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);
+  });
+  handle.addEventListener('keydown',event=>{
+   let next;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();next=columnWidths[column.key]+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?40:10)}
+   else if(event.key==='Home'){event.preventDefault();next=column.min}else if(event.key==='End'){event.preventDefault();next=column.max}else return;
+   applyColumnWidth(column.key,next);persistColumnWidths();
+  });
+ }
+ window.addEventListener('resize',applyResponsiveWidths)
+}
+initColumnResizers();
+
 // ---------- toolbar: universe & selection ----------
-function modeButtons(){for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);$('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')}
+function modeButtons(){
+ if(autoRunTimer!==null){clearTimeout(autoRunTimer);autoRunTimer=null}analysisRequestId++;
+ for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);
+ $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')
+}
 function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts'){for(const c of charts){try{c.timeScale().fitContent()}catch(e){}}}}
 function pairAvailability(id){const row=(catalog.pair_screen?.pairs||[]).find(p=>p.id===id);return row||null}
-function fillPairs(){const s=$('pair');s.replaceChildren();for(const p of catalog.pair_screen.pairs){const ok=p.strategies.mean_reversion||p.strategies.funding_only;const o=el('option','',`${p.id} · ${FAMILY_RU[p.family]||p.family.replaceAll('_',' ')} · мин. объём ноги ${p.min_leg_daily_volume!=null?fmt(p.min_leg_daily_volume):'—'}${ok?'':' · НЕДОСТУПНА ('+(CATSTATUS_RU[p.status]||p.status.replaceAll('_',' '))+')'}`);o.value=p.id;if(!ok)o.disabled=true;s.append(o)}
- if(![...s.options].some(o=>!o.disabled)&&s.options.length){for(const o of [...s.options])o.disabled=false}
- syncPairStrategy()}
+function pairIsAvailable(p){return !!(p?.strategies?.mean_reversion||p?.strategies?.funding_only)}
+function fillPairs(){
+ const s=$('pair');s.replaceChildren();const groups=new Map();
+ for(const p of catalog.pair_screen?.pairs||[]){const family=p.family||'other';if(!groups.has(family))groups.set(family,[]);groups.get(family).push(p)}
+ for(const [family,pairs] of groups){
+  const group=document.createElement('optgroup');group.label=FAMILY_RU[family]||String(family).replaceAll('_',' ');
+  const ordered=pairs.filter(pairIsAvailable).concat(pairs.filter(p=>!pairIsAvailable(p)));
+  for(const p of ordered){
+   const ok=pairIsAvailable(p),volume=p.min_leg_daily_volume!=null?` · мин. объём ноги ${fmt(p.min_leg_daily_volume)}`:'';
+   const reason=CATSTATUS_RU[p.status]||String(p.status||'нет локальных данных').replaceAll('_',' ');
+   const option=el('option','',`${p.id}${volume}${ok?'':` · НЕДОСТУПНА (${reason})`}`);option.value=p.id;option.disabled=!ok;group.append(option)
+  }
+  s.append(group)
+ }
+ const firstAvailable=[...s.options].find(option=>!option.disabled);if(firstAvailable)s.value=firstAvailable.value;
+ syncPairStrategy()
+}
 function currentPair(){return $('pair').value}
 function fillStrategy(){const p=pairAvailability(currentPair());const s=$('strategy');const prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?p.strategies[name]:false;const o=el('option','',`${m.label}${ok?'':' · нет локальных данных'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}
  const enabled=[...s.options].find(o=>!o.disabled);if(prev&&[...s.options].some(o=>o.value===prev&&!o.disabled))s.value=prev;else if(enabled)s.value=enabled.value;else if(s.options.length)s.value=s.options[0].value;
@@ -218,7 +295,27 @@ function fillWindows(){const a=currentAsset();if(!a){$('window').replaceChildren
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
 function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion';return {universe:'calendar_native',asset:$('asset').value,pair:$('window').value,strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
 function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of catalog.fills||['next_open']){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
-async function show(run){const btn=universe==='pair_screen'?$('run-pair'):$('run-calendar');btn.disabled=true;status('Строю разбор…');try{payload=await api('/api/proof/run',universe==='pair_screen'?pairRequest():calendarRequest());selectedTrade=null;dayClick={day:null,index:0};switchTab('charts');render();const r=payload.summary.ledger_reconciliation_rub;status(`${proofLabel()} · сделок: ${payload.trades.length} · сверка ${rub(r,2)}`,true)}catch(e){status(e.message)}finally{btn.disabled=false}}
+function scheduleShow(delay=90){if(autoRunTimer!==null)clearTimeout(autoRunTimer);autoRunTimer=setTimeout(()=>{autoRunTimer=null;void show()},delay)}
+async function show(){
+ const requestId=++analysisRequestId,requestUniverse=universe;
+ if(requestUniverse==='pair_screen'){
+  const selected=$('pair').selectedOptions[0];if(!selected||selected.disabled){status('Для выбранной пары нет доступных локальных данных.');return}
+ }else if(!$('window').value){status('Нет доступного календарного окна для разбора.');return}
+ status('Строю разбор…');
+ try{
+  const next=await api('/api/proof/run',requestUniverse==='pair_screen'?pairRequest():calendarRequest());
+  if(requestId!==analysisRequestId||requestUniverse!==universe)return;
+  payload=next;selectedTrade=null;dayClick={day:null,index:0};switchTab('charts');render();const r=payload.summary.ledger_reconciliation_rub;
+  status(`${proofLabel()} · сделок: ${payload.trades.length} · сверка ${rub(r,2)}`,true)
+ }catch(e){if(requestId===analysisRequestId&&requestUniverse===universe)status(e.message)}
+}
+function bindParameterAutoRun(){
+ let lastEnterInput=null,lastEnterAt=0;
+ for(const input of document.querySelectorAll('#pair-controls input[type="number"], #calendar-controls input[type="number"]')){
+  input.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();lastEnterInput=input;lastEnterAt=Date.now();scheduleShow(0)});
+  input.addEventListener('blur',()=>{if(lastEnterInput===input&&Date.now()-lastEnterAt<500){lastEnterInput=null;return}scheduleShow(140)})
+ }
+}
 
 // ---------- tiles & flags ----------
 function tile(label,value,klass='',sub=null){const t=el('div','tile');t.append(el('span','',label));t.append(el('b',klass,value));if(sub)t.append(el('small','',sub));return t}
@@ -510,9 +607,12 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();b
  fillPairs();fillFills();fillAssets();
  $('u-pair').addEventListener('click',()=>{universe='pair_screen';modeButtons()});
  $('u-calendar').addEventListener('click',()=>{universe='calendar_native';modeButtons()});
- $('pair').addEventListener('change',syncPairStrategy);$('strategy').addEventListener('change',fillStrategy);
- $('asset').addEventListener('change',fillWindows);$('cstrategy').addEventListener('change',syncCalendarParams);
- $('run-pair').addEventListener('click',()=>show());$('run-calendar').addEventListener('click',()=>show());
+ $('pair').addEventListener('change',()=>{syncPairStrategy();scheduleShow(80)});
+ $('pair').addEventListener('click',()=>{const selected=$('pair').selectedOptions[0];if(selected&&!selected.disabled)scheduleShow(80)});
+ $('strategy').addEventListener('change',()=>{fillStrategy();scheduleShow(100)});
+ $('asset').addEventListener('change',()=>{fillWindows();scheduleShow(100)});$('window').addEventListener('change',()=>scheduleShow(80));$('window').addEventListener('click',()=>{if($('window').value)scheduleShow(80)});
+ $('cstrategy').addEventListener('change',()=>{syncCalendarParams();scheduleShow(100)});$('cfill').addEventListener('change',()=>scheduleShow(100));
+ bindParameterAutoRun();
  $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('tab-charts').addEventListener('click',()=>switchTab('charts'));$('tab-table').addEventListener('click',()=>switchTab('table'));$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
  applyNormHint();
  // deep links: ?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion  |  ?universe=calendar_native&asset=SR&pair=SRZ6SRH7&strategy=zscore_mean_reversion

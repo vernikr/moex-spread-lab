@@ -39,6 +39,13 @@ Status: **slices 1–3 delivered** (payload + adapters + tests 2026-11-16; LWC U
 - `run_id` values change versus slice-3 payloads for identical selections (series content is hashed and the payload gained additive fields); pre-change `run_id`s are not reproducible after this change. `execution-proof.v1` remains a strict superset — additive optional fields only.
 - Real-data acceptance (GLDRUBF/GLZ6 mean reversion, USDRUBF/SiZ6 stress-screen 400 path, BTCUSDF/BTZ6 funding carry, calendar SRU6/SRZ6; screener `Proof →` click-through; CDP console capture: zero errors/exceptions) was executed on the user's machine on 2026-11-16 via a remote desktop bridge. The ledger-table CSS change (page scroll, sticky header) shipped separately as commit `1c71cbf`.
 
+## Proof UI layout and interaction (2026-11-16)
+
+- The proof screen uses the full viewport width. The pair/parameter and normalization columns can be resized by dragging their separators; widths are keyboard-adjustable and saved in the browser.
+- Pair options are grouped by family. Each group's unavailable pairs stay disabled and appear after its available pairs; family labels are not repeated in each pair name.
+- Calendar windows are shown as a vertically expanding list. Selecting a pair/window or changing a strategy/asset starts a new analysis automatically. Numeric parameter inputs run on Enter or blur; the explicit “Показать разбор” buttons are removed.
+- These are presentation/interaction changes only: API payload, evidence, price-proxy labels and execution semantics are unchanged.
+
 ## Reconciliation contract (asserted in tests)
 
 - `Σ ledger.costs == Σ trade entry+exit costs` (±0.02 ₽ rounding).

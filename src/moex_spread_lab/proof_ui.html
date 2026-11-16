@@ -59,7 +59,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 </style>
 </head>
 <body>
-<div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется разбор пары" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
+<div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
 <div class="app">
   <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><button class="ghost" id="toggle-summary" type="button" aria-expanded="true" aria-controls="summary-block">Скрыть сводку</button></div></header>
 
@@ -266,6 +266,7 @@ function modeButtons(){
  for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);
  $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')
 }
+function switchUniverse(next){if(universe===next)return;universe=next;modeButtons();scheduleShow(0)}
 function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts')void fitChartsToVisibleArea()}
 function pairAvailability(id){const row=(catalog.pair_screen?.pairs||[]).find(p=>p.id===id);return row||null}
 function pairIsAvailable(p){return !!(p?.strategies?.mean_reversion||p?.strategies?.funding_only)}
@@ -309,7 +310,7 @@ async function show(){
  if(requestUniverse==='pair_screen'){
   const selected=$('pair').selectedOptions[0];if(!selected||selected.disabled){setRenderProgress(false);status('Для выбранной пары нет доступных локальных данных.');return}
  }else if(!$('window').value){setRenderProgress(false);status('Нет доступного календарного окна для разбора.');return}
- setRenderProgress(requestUniverse==='pair_screen');status('Строю разбор…');
+ setRenderProgress(true);status('');
  try{
   const next=await api('/api/proof/run',requestUniverse==='pair_screen'?pairRequest():calendarRequest());
   if(requestId!==analysisRequestId||requestUniverse!==universe)return;
@@ -615,8 +616,8 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
 (async()=>{try{catalog=await api('/api/proof/catalog');
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillPairs();fillFills();fillAssets();
- $('u-pair').addEventListener('click',()=>{universe='pair_screen';modeButtons()});
- $('u-calendar').addEventListener('click',()=>{universe='calendar_native';modeButtons()});
+ $('u-pair').addEventListener('click',()=>switchUniverse('pair_screen'));
+ $('u-calendar').addEventListener('click',()=>switchUniverse('calendar_native'));
  $('pair').addEventListener('change',()=>{syncPairStrategy();scheduleShow(80)});
  $('pair').addEventListener('click',()=>{const selected=$('pair').selectedOptions[0];if(selected&&!selected.disabled)scheduleShow(80)});
  $('strategy').addEventListener('change',()=>{fillStrategy();scheduleShow(100)});

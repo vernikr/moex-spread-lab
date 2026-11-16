@@ -271,6 +271,8 @@ def build_carry_study(
             "cumulative_funding_received": _round(cumulative_funding),
             "cumulative_gross_carry_pnl": _round(cumulative_mark + cumulative_funding),
             "swaprate_source_unit": "RUB_per_contract_day_assumed_from_R06_and_ISS_history",
+            "near_volume": near_row.get("volume"),
+            "far_volume": far_row.get("volume"),
         })
         previous_date = date_key
     funding_values = [row["daily_funding_received_short_near"] for row in rows]
@@ -570,8 +572,10 @@ def build_carry_strategy(
         date_key = row["date"]
         current_date = date.fromisoformat(date_key)
         increment = 0.0
+        funding_included = 0.0
         if position and entry_index is not None and index > entry_index:
             increment = quantity * float(row["daily_gross_carry_pnl"])
+            funding_included = quantity * float(row["daily_funding_received_short_near"])
             cumulative_gross += increment
             trade_gross += increment
 
@@ -603,6 +607,7 @@ def build_carry_strategy(
                     if available and execution_delay_rows == 0:
                         funding_today = quantity * float(row["daily_funding_received_short_near"])
                         increment -= funding_today
+                        funding_included = 0.0
                         cumulative_gross -= funding_today
                         trade_gross -= funding_today
                         execute(pending, index, date_key)
@@ -639,6 +644,13 @@ def build_carry_strategy(
             "benchmark_source_ticker": benchmark_mark_row["source_ticker"],
             "benchmark_mark_kind": benchmark_mark_row["mark_kind"],
             "valuation_status": "EOD_settlement_proxy_not_executable_fill",
+            "near_settle": row.get("near_settle"),
+            "far_settle": row.get("far_settle"),
+            "near_volume": row.get("near_volume"),
+            "far_volume": row.get("far_volume"),
+            "daily_basis_pnl_contract": float(row.get("daily_basis_pnl_short_near_long_far") or 0.0),
+            "daily_funding_contract": float(row.get("daily_funding_received_short_near") or 0.0),
+            "daily_funding_included_rub": round(funding_included, 8),
         })
 
     if position and entry_index is not None and entry_decision_date is not None:

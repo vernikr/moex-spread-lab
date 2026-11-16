@@ -106,6 +106,8 @@ def _normalized_series(
             "benchmark_mark_kind": "daily_close_same_date",
             "near_price_proxy_kind": near_rows[timestamp].get("price_proxy_kind", "candle_close"),
             "far_price_proxy_kind": far_rows[timestamp].get("price_proxy_kind", "candle_close"),
+            "near_volume": near_rows[timestamp].get("volume"),
+            "far_volume": far_rows[timestamp].get("volume"),
         })
     if len(rows) < 2:
         raise ScreenError(f"fewer than two normalized common rows for {near}/{far}")

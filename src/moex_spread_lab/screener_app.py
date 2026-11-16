@@ -16,6 +16,7 @@ from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study, fetch_history
 from .costs import tariff_profile
+from .proof import ProofService
 from .screener import SCREEN_PAIRS, _normalized_series
 from .w0 import W0Error
 
@@ -463,6 +464,13 @@ class ScreenerStore:
         self.inputs = inputs
         self.lock = threading.Lock()
         self._calendar: Any = None
+        self._proof: ProofService | None = None
+
+    @property
+    def proof(self) -> ProofService:
+        if self._proof is None:
+            self._proof = ProofService(self.inputs.root)
+        return self._proof
 
     @property
     def calendar(self) -> Any:
@@ -550,6 +558,12 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     Path(__file__).with_name("screener_ui.html").read_bytes(),
                     "text/html; charset=utf-8",
                 )
+            elif self.path == "/vendor/lightweight-charts.standalone.production.js":
+                vendor = Path(__file__).with_name("vendor") / "lightweight-charts.standalone.production.js"
+                try:
+                    self._send(200, vendor.read_bytes(), "application/javascript; charset=utf-8")
+                except OSError:
+                    self._json(404, {"error": "not found"})
             elif self.path == "/proof":
                 self._send(
                     200,
@@ -558,7 +572,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 )
             elif self.path == "/api/proof/catalog":
                 try:
-                    self._json(200, store.calendar.catalog())
+                    self._json(200, store.proof.catalog())
                 except (W0Error, OSError) as exc:
                     self._json(400, {"error": str(exc)})
             elif self.path == "/api/catalog":
@@ -595,7 +609,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if self.path == "/api/proof/run":
                     if not isinstance(selection, dict):
                         raise ScreenerError("selection must be an object")
-                    result = store.calendar.proof(selection)
+                    result = store.proof.proof(selection)
                 elif self.path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)

@@ -406,6 +406,7 @@ def run_mean_reversion_baseline(
     daily = []
     cost_totals = {component: 0.0 for component in cost_components}
     entry_breakdown: dict[str, float] | None = None
+    entry_signal_z: float | None = None
 
     def pnl_at(current_near: float, current_far: float) -> float:
         if position == 0:
@@ -413,7 +414,7 @@ def run_mean_reversion_baseline(
         return quantity * position * ((current_near - entry_near) * near_multiplier - (current_far - entry_far) * far_multiplier)
 
     def close_trade(date_key: str, current_near: float, current_far: float, reason: str) -> None:
-        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown
+        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown, entry_signal_z
         gross = pnl_at(current_near, current_far)
         exit_breakdown = (
             side_cost(normalized_cost_profile, [(near_contract, current_near), (far_contract, current_far)], quantity)
@@ -447,15 +448,25 @@ def run_mean_reversion_baseline(
             "quantity": quantity,
             "entry_spread_ticks": _round((entry_near - entry_far) / near_contract["tick_size"]),
             "exit_spread_ticks": _round((current_near - current_far) / near_contract["tick_size"]),
+            "entry_near_fill": entry_near,
+            "entry_far_fill": entry_far,
+            "exit_near_fill": current_near,
+            "exit_far_fill": current_far,
+            "entry_spread_fill": _round(entry_near * near_multiplier - entry_far * far_multiplier),
+            "exit_spread_fill": _round(current_near * near_multiplier - current_far * far_multiplier),
+            "entry_signal_z": _round(entry_signal_z) if entry_signal_z is not None else None,
             "gross_pnl": _round(gross),
             "modeled_costs": _round(cost) if breakdown is not None else None,
             "cost_breakdown": breakdown,
+            "entry_costs": {key: _round(value) for key, value in entry_breakdown.items()} if entry_breakdown is not None else None,
+            "exit_costs": {key: _round(value) for key, value in exit_breakdown.items()} if exit_breakdown is not None else None,
             "net_pnl": _round(gross - cost) if breakdown is not None else None,
             "exit_reason": reason,
         })
         position = 0
         entry_date = None
         entry_breakdown = None
+        entry_signal_z = None
 
     for index, row in enumerate(rows):
         action = "hold_flat" if position == 0 else "hold_position"
@@ -475,6 +486,7 @@ def run_mean_reversion_baseline(
                 position = 1 if signal_z < 0 else -1
                 entry_near, entry_far = fill_near, fill_far
                 entry_date = row.get("timestamp", row["date"])
+                entry_signal_z = signal_z
                 if tariff_costs:
                     entry_breakdown = side_cost(normalized_cost_profile, [(near_contract, fill_near), (far_contract, fill_far)], quantity)
                     realized_costs += sum(entry_breakdown.values())

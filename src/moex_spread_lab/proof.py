@@ -433,7 +433,7 @@ class ProofService:
                     "spread_volume": None,
                     "spread_trades": None,
                     "days_to_near_expiry": None,
-                    "funding_rub": round(daily.get("funding_rub", 0.0), 2) if day in funding_swaprates else None,
+                    "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in funding_swaprates else None,
                     "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
                     "funding_lot_size": float(near_contract.get("lot_size") or 1.0) if day in funding_swaprates else None,
                     "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,

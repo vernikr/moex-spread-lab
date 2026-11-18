@@ -190,7 +190,26 @@ def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str]) -> dict[str, int]
     except (OSError, ValueError, KeyError, TypeError):
         return None
     days = set(legs[pair["near"]]) & set(legs[pair["far"]])
-    return {secid: min(volumes[day] for day in days) for secid, volumes in legs.items()} if days else None
+    eligible = [day for day in days if all(legs[secid][day] is not None and float(legs[secid][day]) > 0 for secid in (pair["near"], pair["far"]))]
+    return {secid: min(legs[secid][day] for day in eligible) for secid in legs} if eligible else None
+
+
+def _positive_leg_volume_dates(inputs: ScreenerInputs, pair: dict[str, str]) -> set[str]:
+    try:
+        legs = {
+            secid: {
+                row["begin"][:10]: row.get("volume")
+                for row in json.loads(inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8")).get("rows", [])
+                if row.get("begin")
+            }
+            for secid in (pair["near"], pair["far"])
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()
+    return {
+        day for day in set(legs[pair["near"]]) & set(legs[pair["far"]])
+        if all(legs[secid][day] is not None and float(legs[secid][day]) > 0 for secid in (pair["near"], pair["far"]))
+    }
 
 
 def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[str | None, str | None, int, set[str]]:
@@ -273,7 +292,8 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
             if coverage_key not in funding_dates_cache:
                 funding_dates_cache[coverage_key] = _cached_swaprate_dates(inputs, pair_id, near, start, end)
             funding_dates = funding_dates_cache[coverage_key]
-            funding_covered = bool(common_dates) and funding_dates is not None and common_dates.issubset(funding_dates)
+            eligible_dates = _positive_leg_volume_dates(inputs, pair)
+            funding_covered = bool(eligible_dates) and funding_dates is not None and eligible_dates.issubset(funding_dates)
         proof_available = {
             "mean_reversion": all(path.is_file() for path in price_files)
             and (pair["family"] != "perpetual_quarterly_same_asset" or (funding_files[0].is_file() and funding_covered)),

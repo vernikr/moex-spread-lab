@@ -344,6 +344,14 @@ class ProofService:
         funding_provenance: dict[str, Any] = {}
         funding_swaprates: dict[str, float] = {}
         is_perpetual_pair = pair.get("family") == "perpetual_quarterly_same_asset"
+        analysis_rows = [
+            row for row in series["rows"]
+            if row.get("near_volume") is not None and row.get("far_volume") is not None
+            and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0
+        ]
+        if len(analysis_rows) < 2:
+            raise W0Error("fewer than two positive-volume common observations")
+        analysis_series = {**series, "rows": analysis_rows}
         if is_perpetual_pair:
             from .screener_app import HISTORY_WINDOWS, _offline_only
 
@@ -362,7 +370,7 @@ class ProofService:
                         continue
                     if math.isfinite(swaprate):
                         source_rates[source_row["TRADEDATE"]] = swaprate
-                requested_dates = [row["date"] for row in series["rows"]]
+                requested_dates = [row["date"] for row in analysis_rows]
                 if requested_dates and all(day in source_rates for day in requested_dates):
                     funding_swaprates = {day: source_rates[day] for day in requested_dates}
                     funding_provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
@@ -372,7 +380,7 @@ class ProofService:
             except W0Error:
                 funding_note.append("Фандинг не включён: локальная EOD-история ISS с SWAPRATE отсутствует или неполна; ценовой результат не является полным P&L.")
         report = run_mean_reversion_baseline(
-            series,
+            analysis_series,
             lookback=int(params["lookback"]),
             entry_z=float(params["entry_z"]),
             exit_z=float(params["exit_z"]),
@@ -414,10 +422,13 @@ class ProofService:
             )
 
         series_rows = []
+        position_on_last_analyzed_day = 0
         for row in series["rows"]:
             day = row["date"]
             daily = daily_map.get(day, {})
-            position = daily.get("position") or 0
+            if day in daily_map:
+                position_on_last_analyzed_day = daily.get("position") or 0
+            position = daily.get("position", position_on_last_analyzed_day) or 0
             held_for_clearing = bool(position) or daily.get("action") == "forced_exit_end_of_sample"
             series_rows.append(
                 {
@@ -436,6 +447,8 @@ class ProofService:
                     "far_volume": row.get("far_volume"),
                     "spread_volume": None,
                     "spread_trades": None,
+                    "volume_eligible": row.get("near_volume") is not None and row.get("far_volume") is not None
+                    and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0,
                     "days_to_near_expiry": None,
                     "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in funding_swaprates else None,
                     "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
@@ -471,6 +484,7 @@ class ProofService:
             notes=[
                 *(funding_note or (["Для пары без вечного фьючерса фандинг неприменим."] if not is_perpetual_pair else [])),
                 *(["MOEX ISS EOD SWAPRATE используется как итог клиринга; это не пересчёт минутных D/K1/K2 и не брокерская выписка. Фандинг начисляется только если позиция сохраняется к соответствующему клирингу; вход/выход по open — прокси времени исполнения. Лот берётся из текущего intake снапшота, а не из эффективной исторической спецификации."] if funding_swaprates else []),
+                "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
                 "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию.",
                 *(
                     ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
@@ -770,7 +784,8 @@ class ProofService:
             day = row["date"]
             mark = 0.0
             cost = 0.0
-            if position is not None:
+            volume_eligible = row.get("volume_eligible", True)
+            if volume_eligible and position is not None:
                 exiting = by_exit.get(day)
                 if exiting is not None:
                     end_near, end_far = exiting["exit"]["near_price"], exiting["exit"]["far_price"]
@@ -786,7 +801,7 @@ class ProofService:
                     )
                     position["near"], position["far"] = end_near, end_far
                 mark += move
-            entering = by_entry.get(day)
+            entering = by_entry.get(day) if volume_eligible else None
             if entering is not None:
                 sign = 1 if entering["side"] == "long_spread" else -1
                 entry = entering["entry"]
@@ -880,12 +895,13 @@ class ProofService:
             min(row["near_volume"], row["far_volume"])
             for row in series_rows
             if row.get("near_volume") is not None and row.get("far_volume") is not None
+            and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0
         ]
         min_leg_volume = min(volumes) if volumes else None
         trade_volume_rule = (
             all(
-                min(trade["entry"].get("near_volume") or 0, trade["entry"].get("far_volume") or 0) > 0
-                for trade in trades
+                min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
+                for trade in trades for side in ("entry", "exit")
             )
             if trades
             else True
@@ -934,6 +950,7 @@ class ProofService:
                 "min_leg_volume": min_leg_volume,
                 "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
                 "min_daily_volume_rule": MIN_DAILY_VOLUME,
+                "excluded_volume_observations": sum(not row.get("volume_eligible", True) for row in series_rows),
                 "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
                 "max_pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
             },

@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, timedelta
 
-from moex_spread_lab.calendar_spreads import build_windows, contract_chain, _stress_ok
+from moex_spread_lab.calendar_spreads import build_windows, contract_chain, _positive_spread_volume_rows, _stress_ok
 from moex_spread_lab.costs import side_cost, tariff_profile
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
@@ -54,6 +54,18 @@ class CalendarSpreadTests(unittest.TestCase):
         thin = _days(date(2022, 12, 12), date(2023, 3, 16))[10]
         window = build_windows(_histories(thin_day=thin), "SR", TERMS, RUONIA)[0]
         self.assertEqual(window["min_spread_volume"], 5)
+
+    def test_zero_volume_is_retained_for_journal_but_excluded_from_analysis_and_gate(self):
+        day = _days(date(2022, 12, 12), date(2023, 3, 16))[10]
+        histories = _histories()
+        histories["SRH3SRM3"][day]["VOLUME"] = 0
+        window = build_windows(histories, "SR", TERMS, RUONIA)[0]
+        self.assertEqual(window["min_spread_volume"], 500)
+        row = next(r for r in window["rows"] if r["date"] == day)
+        self.assertEqual(row["min_volume"], 0)
+        eligible = _positive_spread_volume_rows(window["rows"])
+        self.assertNotIn(day, {r["date"] for r in eligible})
+        self.assertEqual(len(window["rows"]), len(eligible) + 1)
 
     def test_native_spread_slippage_is_charged_once(self):
         leg = {"secid": "SR", "tariff_group": "stock", "tick_value": 1.0, "tick_size": 1.0}

@@ -85,6 +85,27 @@ class CalendarProofTests(unittest.TestCase):
                 far = fill["far_price"]
                 self.assertAlmostEqual(fill["spread_fill_rel"], fill["spread_fill"] / far * 100, delta=1e-4)
 
+    def test_zero_volume_spread_date_stays_in_journal_but_is_not_an_analysis_or_fill_day(self):
+        path = self.root / "data/spread-history-cache/SRH3SRM3-2022-06-01-2023-06-15-0.json"
+        payload = json.loads(path.read_text())
+        block = payload["payload"]["history"]
+        volume_index = block["columns"].index("VOLUME")
+        date_index = block["columns"].index("TRADEDATE")
+        zero_day = block["data"][30][date_index]
+        block["data"][30][volume_index] = 0
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        self.data._loaded = None
+        proof = self.data.proof({"asset": "SR", "pair": "SRH3/SRM3", "strategy": "zscore_mean_reversion",
+                                 "fill": "next_open", "quantity": 1, "slippage_ticks": 1.0,
+                                 "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 20}})
+        row = next(item for item in proof["series"] if item["date"] == zero_day)
+        ledger = next(item for item in proof["ledger"] if item["date"] == zero_day)
+        self.assertEqual(row["spread_volume"], 0)
+        self.assertFalse(row["volume_eligible"])
+        self.assertEqual(ledger["mark_pnl_rub"], 0)
+        self.assertTrue(all(trade[side]["date"] != zero_day for trade in proof["trades"] for side in ("entry", "exit")))
+        self.assertEqual(proof["window"]["min_spread_volume"], 400)
+
     def test_proof_reconciles_ledger_to_trades_and_is_strict_json(self):
         proof = self.data.proof({"asset": "SR", "pair": "SRH3/SRM3", "strategy": "zscore_mean_reversion", "fill": "next_open",
                                  "quantity": 2, "slippage_ticks": 1.0, "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 20}})

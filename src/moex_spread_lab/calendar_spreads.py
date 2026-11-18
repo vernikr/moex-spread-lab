@@ -151,6 +151,11 @@ def _fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, di
     return factors
 
 
+def _positive_spread_volume_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows with observed native spread executions; zero/missing volume is journal-only."""
+    return [row for row in rows if row.get("min_volume") is not None and float(row["min_volume"]) > 0]
+
+
 def _stress_ok(margin: float, quantity: int = 1) -> bool:
     buffers = (DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER) * quantity
     return 3 * margin * quantity + buffers <= INITIAL_CAPITAL
@@ -215,10 +220,11 @@ def build_windows(
                 "spread_trades": native[d].get("NUMTRADES"),
                 "near_volume": legs[d].get("VOLUME"), "far_volume": far_rows[d].get("VOLUME"),
             })
+        eligible_volumes = [r["min_volume"] for r in _positive_spread_volume_rows(rows)]
         windows.append({
             "pair": f"{near}/{far}", "spread_instrument": spread_id(near, far), "near": near, "far": far,
             "first_date": days[0], "last_date": days[-1], "near_expiry": expiry, "rows": rows,
-            "min_spread_volume": min(r["min_volume"] for r in rows),
+            "min_spread_volume": min(eligible_volumes) if eligible_volumes else 0.0,
             "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2),
         })
     return windows
@@ -367,7 +373,11 @@ class CalendarData:
         profile = {**tariff_profile(float(slippage)), "tariff_group": ASSETS[asset]["group"]}
         runner = strategy_runner(strategy, delay=delay, fill=fill, close_at_end=True, skip_dividend_windows_in_zscore=False,
                                  threshold=threshold, zscore_options=options)
-        per_pair = {pair: runner(window["rows"])}
+        # Zero-volume native spread rows are journal-only: never feed them to the signal or fill simulator.
+        analysis_rows = _positive_spread_volume_rows(window["rows"])
+        if len(analysis_rows) < 2:
+            raise W0Error("fewer than two positive-volume calendar-spread observations")
+        per_pair = {pair: runner(analysis_rows)}
         account = account_trades("proof", per_pair, data["benchmark"], profile, native_spread=True, quantity=quantity)
         return _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity, float(slippage),
                               data["terms"][asset], profile)
@@ -435,7 +445,8 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
     for row in rows:
         day, daily, cost = row["date"], 0.0, 0.0
         point = row["mult"] * quantity
-        if position is not None:
+        volume_eligible = row.get("min_volume") is not None and row["min_volume"] > 0
+        if volume_eligible and position is not None:
             exiting = by_exit.get(day)
             end = exiting["exit"]["spread_fill"] if exiting else row["spread_price"]
             move = position["sign"] * (end - position["mark"]) * point
@@ -446,7 +457,7 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
                 position = None
             else:
                 position["mark"] = row["spread_price"]
-        entering = by_entry.get(day)
+        entering = by_entry.get(day) if volume_eligible else None
         if entering:
             sign = 1 if entering["side"] == "long_spread" else -1
             cost += sum(entering["entry"]["costs"].values())
@@ -479,6 +490,7 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
                    "near": window["near"], "far": window["far"], "min_spread_volume": window["min_spread_volume"],
                    "tradable_every_day": window["min_spread_volume"] >= MIN_DAILY_VOLUME,
                    "min_daily_volume_rule": MIN_DAILY_VOLUME,
+                   "excluded_volume_observations": sum(r.get("min_volume") is None or r["min_volume"] <= 0 for r in rows),
                    "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity),
                    "max_pair_margin_rub": window["max_pair_margin_rub"]},
         "contract": {"point_value_rub": terms["mult"], "tick_size": terms["tick_size"], "reference_contract": terms["reference_contract"],
@@ -490,7 +502,8 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
              "spread_rel": _rel_pct(r["spread_price"], r["far_price"]),
              "spread_open_rel": _rel_pct(r["spread_open_price"], r["far_open_price"]),
              "spread_last_trade_rel": _rel_pct(r["spread_last_trade"], r["far_price"]),
-             "spread_last_trade": r["spread_last_trade"], "spread_volume": r["min_volume"], "spread_trades": r["spread_trades"],
+             "spread_last_trade": r["spread_last_trade"], "spread_volume": r["min_volume"], "volume_eligible": r["min_volume"] > 0,
+             "spread_trades": r["spread_trades"],
              "near_volume": r["near_volume"], "far_volume": r["far_volume"], "days_to_near_expiry": r["days_to_near_expiry"],
              "dev_pp": r["dev_pp"], "margin_rub": round(r["margin"] * quantity, 2)}
             for r in rows
@@ -506,6 +519,7 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
         },
         "notes": [
             "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
+            "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцениваются.",
             "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
             "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс slippage один раз на сторону.",
             "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",

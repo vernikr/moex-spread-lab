@@ -127,6 +127,23 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertGreater(first["entry"]["costs"]["exchange_clearing"], 0)
         self.assertEqual(first["signal"]["kind"], "z")
 
+    def test_zero_volume_leg_is_journal_only_and_cannot_be_an_execution_date(self):
+        far_path = self.root / "data/w1/candles/CRZ6_1d.json"
+        payload = json.loads(far_path.read_text())
+        zero_day = payload["rows"][30]["begin"][:10]
+        payload["rows"][30]["volume"] = 0
+        far_path.write_text(json.dumps(payload))
+        result = self.proof.proof({"universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
+                                   "strategy": "mean_reversion", "quantity": 1, "slippage_ticks": 1.0,
+                                   "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20}})
+        journal_row = next(row for row in result["series"] if row["date"] == zero_day)
+        journal_ledger = next(row for row in result["ledger"] if row["date"] == zero_day)
+        self.assertEqual(journal_row["far_volume"], 0)
+        self.assertFalse(journal_row["volume_eligible"])
+        self.assertIsNone(journal_row["signal_z"])
+        self.assertEqual(journal_ledger["mark_pnl_rub"], 0)
+        self.assertTrue(all(trade[side]["date"] != zero_day for trade in result["trades"] for side in ("entry", "exit")))
+
     def test_series_and_fills_spread_is_relative_to_far_contract_value(self):
         result = self.proof.proof({"universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
                                    "strategy": "mean_reversion", "quantity": 2, "slippage_ticks": 1.0,

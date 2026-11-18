@@ -18,6 +18,8 @@ from moex_spread_lab.screener_app import (
     ScreenerError,
     ScreenerInputs,
     ScreenerStore,
+    _leg_volumes,
+    _positive_leg_volume_dates,
     build_result,
     catalog,
     make_handler,
@@ -113,6 +115,16 @@ class ScreenerAppTests(unittest.TestCase):
             cache_path.write_text(json.dumps({"url": request_url, "payload": cached_payload,
                                               "raw_response_sha256": "cd" * 32}))
         self.days = days
+
+    def test_zero_volume_on_either_leg_is_excluded_from_gate_dates(self):
+        pair = {"pair_id": "GLDRUBF/GLZ6", "near": "GLDRUBF", "far": "GLZ6"}
+        near_path = self.inputs.candles(pair["pair_id"], pair["near"])
+        payload = json.loads(near_path.read_text())
+        zero_day = payload["rows"][5]["begin"][:10]
+        payload["rows"][5]["volume"] = 0
+        near_path.write_text(json.dumps(payload))
+        self.assertEqual(_leg_volumes(self.inputs, pair), {"GLDRUBF": 500, "GLZ6": 500})
+        self.assertNotIn(zero_day, _positive_leg_volume_dates(self.inputs, pair))
 
     def test_proof_ui_function_declarations_are_unique(self):
         ui = Path(__file__).parents[1] / "src/moex_spread_lab/proof_ui.html"

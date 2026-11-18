@@ -381,7 +381,8 @@ def run_mean_reversion_baseline(
         or entry_z <= 0
         or exit_z < 0
         or quantity <= 0
-        or decision_delay_bars < 1
+        or decision_delay_bars < 0
+        or (decision_delay_bars == 0 and (analysis_role != "diagnostic_only" or fill != "close"))
         or analysis_role not in {"primary_baseline", "diagnostic_only"}
         or fill not in {"close", "open"}
         or (sizing_intents and (analysis_role != "diagnostic_only" or quantity != 1))

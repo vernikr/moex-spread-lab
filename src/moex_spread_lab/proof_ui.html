@@ -71,6 +71,8 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 @media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px;flex-wrap:wrap}.top{flex-wrap:wrap}.top,.brand{gap:5px}.flag{max-width:100%;white-space:normal;overflow-wrap:anywhere}.app{padding:6px 8px}}
 .pick-panel{min-height:0;display:flex;flex-direction:column;gap:0}.pick-panel h2{margin:0 0 4px;color:#a7b8c8;font-size:10px}.pick-all,.picker-row{display:flex;align-items:center;gap:6px;min-height:25px;padding:2px 7px}.pick-all{background:#233649;border:1px solid #365066;border-radius:7px 7px 0 0;color:#d9e9ef;font-size:11px;font-weight:650;cursor:pointer}.pick-list{flex:1;min-height:0;overflow:auto;background:#162636;border:1px solid #365066;border-top:0;border-radius:0 0 7px 7px;scrollbar-width:thin}.picker-row{border-bottom:1px solid #203142}.pick-check{margin:0;width:14px;height:14px;accent-color:#6edcb5;cursor:pointer;flex:none}.pick-check:disabled{opacity:.4;cursor:not-allowed}.pick-name{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px;color:#c2d1df;font:inherit;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.picker-row.family{background:#1c2e40}.family .pick-name{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8ea6ba;font-weight:700}.picker-row.branch{padding-left:15px}.picker-row.unavailable .pick-name{color:#91a1b0}.picker-row.current{background:#21423e;box-shadow:inset 2px 0 #77e0b9}.current .pick-name{color:#a5f1d4;font-weight:600}.pick-name:focus-visible,.pick-check:focus-visible{outline:2px solid #70e1b9;outline-offset:1px}.selection-count,.group-note{font-size:10px;color:#9db2c2}.review{width:min(520px,94vw)}.review ul{padding-left:19px;max-height:36vh;overflow:auto;font-size:12px;color:#c5d4e1}.review li{margin:5px 0}.batch-result{background:#172c30;border:1px solid #3f6560;border-radius:8px;padding:6px 10px;font-size:11px;max-height:28vh;overflow:auto}.batch-result summary{cursor:pointer;color:#a7ead1;font-weight:650}.batch-result .group-note{margin:6px 0}.batch-result[hidden]{display:none}.batch-result td small{white-space:normal}.group-note{line-height:1.4}@media(max-width:940px){.pick-panel{height:260px}}
 #focus-editor{display:contents}#cohort-editor{display:flex;flex-direction:column;gap:6px}#focus-editor[hidden],#cohort-editor[hidden]{display:none}.group-cap{display:grid;gap:2px;padding:6px 8px;border-left:2px solid #70d7b2;background:#162c30;color:#b3ead6;font-size:11px}.group-cap small{font-size:10px;color:#a5bbca}#group-profile-state[data-state=unavailable],#group-profile-state[data-state=invalid]{color:#efc38a}#chart-selection-scope{margin:0 2px}
+
+.window-table{table-layout:fixed;width:100%;font-size:10px}.window-table .picker-row{display:table-row;padding:0;min-height:0;cursor:pointer}.window-table th,.window-table td{padding:4px 2px;vertical-align:middle;border-bottom:1px solid #233748}.window-table th{top:0;font-size:9px;z-index:2}.window-table th:first-child{width:20px}.window-table th:nth-child(3),.window-table th:nth-child(4){width:20px;text-align:center}.window-table th:nth-child(5){width:27px;text-align:right}.window-table th:nth-child(6){width:54px;text-align:right}.window-table .window-period{position:relative;white-space:normal}.window-period .pick-name{display:block;width:100%;padding:0;font-size:9.5px;line-height:1.35;white-space:nowrap}.window-period small{font-size:9px;margin:0;color:#8399ab}.window-table .current td{background:#21423e}.window-table .window-number{text-align:right;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-size:9.5px}.window-table .window-check{text-align:center}.window-table .window-gate{display:inline-grid;place-items:center;width:15px;height:17px;font-size:12px;cursor:help}.window-gate.pass{color:#78e0b4}.window-gate.fail{color:#f0928a}.window-gate.unknown{color:#71879a}.window-download{position:absolute;right:1px;top:8px;font-size:15px;color:#83b9ef;cursor:help}.unavailable .window-period .pick-name{padding-right:12px}.window-table tr:not(.current):hover td{background:#1b3442}
 </style>
 </head>
 <body>
@@ -148,7 +150,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <div id="focus-editor">
         <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="hint" id="pair-hint"></div>
-        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
+        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><select id="fill"></select></div></div>
         <div class="sidegrid" id="pair-params">
           <div class="control mr-only"><label for="entry">Вход · z</label><span class="number-shell"><input id="entry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="2.0"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control mr-only"><label for="exit">Выход · z</label><span class="number-shell"><input id="exit" data-axis="exit_z" type="number" min="0" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
@@ -172,8 +174,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <div id="group-profile-state" class="tune-help" role="status" aria-live="polite"></div>
       </section>
       <div class="tune-tool">
-        <button class="tune-button" id="auto-tune" type="button" disabled aria-describedby="tune-help"><span id="tune-label">Подобрать параметры</span><small>Optuna</small></button>
-        <div class="tune-help" id="tune-help">Нажмите название для просмотра, отметьте окна для совместного подбора. Цель — максимум средней годовой доходности сверх LQDT. Светофор оценивает отмеченные окна вместе; без отметок — открытое окно. Цвет не ограничивает подбор.</div>
+        <button class="tune-button" id="auto-tune" type="button" disabled><span id="tune-label">Подобрать параметры</span><small>Optuna</small></button>
         <div class="tune-state" id="tune-state" role="status"></div>
       </div>
     </aside>
@@ -248,7 +249,7 @@ const humanReason=r=>r?(REASON_RU[r]||String(r).replaceAll('_',' ')):'';
 const COST_RU={exchange_clearing:'биржа и клиринг',broker:'брокер',slippage:'проскальзывание'};
 const humanCost=k=>COST_RU[k]||String(k).replaceAll('_',' ');
 let catalog=null,payload=null,selectedTrade=null,universe='pair_screen',dayClick={day:null,index:0},markersApis=[],primarySpreadChart=null,drawdownByDate={},autoRunTimer=null,analysisRequestId=0;
-const expandedPanes=new Set(['h-spread','h-fund','h-cum']);
+const expandedPanes=new Set(['h-spread-raw','h-spread','h-fund','h-cum']);
 const legQuoteIsRuble=()=>{if(universe==='pair_screen')return true;const a=currentAsset();return a?.group==='stock'||(a?.group==='currency'&&String(a.name||'').endsWith('/RUB'))};
 const legPrice=v=>legQuoteIsRuble()?rubPx(v):px(v);
 const proofLabel=()=>payload?(payload.selection.spread_instrument||payload.selection.pair||universe):'';
@@ -268,7 +269,7 @@ const settingsEventKey='moex-proof-settings-updated';
 const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
 function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks};
  $('settings-badge').textContent=`Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
- if(changed){cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
+ if(changed){windowReadings.clear();stopWindowReadings();cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
   if(catalog&&leafId&&universe==='pair_screen'){const values=currentRequest();fillStrategy();if(activeStrategyName()===values.strategy)applyToForm(values);else restoreForm()}}
  return changed}
 function previewSplit(){const n=$('validation-percent'),v=n.valueAsNumber;
@@ -361,18 +362,57 @@ let branchId='',leafId='',tuning=false,resolveCompatibility=null;
 function selectedRoot(){const b=branches.get(branchId);return {kind:b?.kind,id:b?.id}}
 function currentAsset(){return branches.get(branchId)?.asset||null}
 function currentPair(){return leaves.get(leafId)?.target.pair||''}
-function addLeaf(b,target,text,enabled=true){const key=targetKey(target);const leaf={key,branch:b.key,target,text,enabled};leaves.set(key,leaf);b.children.push(leaf)}
+function addLeaf(b,target,meta,enabled=true){const key=targetKey(target),period=meta.from&&meta.to?`${meta.from} — ${meta.to}`:'Нет локальной истории';const leaf={key,branch:b.key,target,meta,period,from:meta.from,to:meta.to,observations:meta.observations,enabled};leaves.set(key,leaf);b.children.push(leaf)}
 function buildPicker(){
  const create=(kind,id,family,title,asset=null)=>{const b={key:kind+'|'+id,kind,id,family,title,asset,children:[]};branches.set(b.key,b);return b};
  for(const p of catalog.pair_screen?.pairs||[]){const key='pair_screen|'+p.near,b=branches.get(key)||create('pair_screen',p.near,FAMILY_RU[p.family]||p.family,p.near);
-  const ok=pairHasLocalData(p),span=p.from&&p.to?`${p.from.slice(0,7)} → ${p.to.slice(0,7)} · ${p.observations} дн.`:'',vol=p.min_leg_daily_volume!=null?` · мин. объём ${fmt(p.min_leg_daily_volume)}`:'';
-  addLeaf(b,{universe:'pair_screen',pair:p.id},`${p.id} · ${span}${vol}${pairIsAvailable(p)?'':' · '+(CATSTATUS_RU[p.status]||'нет данных')}`,ok)}
+  addLeaf(b,{universe:'pair_screen',pair:p.id},p,pairHasLocalData(p))}
  for(const a of catalog.assets||[]){const b=create('calendar_native',a.asset,'Календарные спреды',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`,a);
-  for(const w of [...a.windows].reverse())addLeaf(b,{universe:'calendar_native',asset:a.asset,pair:w.pair},`${w.pair} · ${w.from.slice(0,7)} → ${w.to.slice(0,7)} · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · мин. объём ${fmt(w.min_spread_volume)}`)}
+  for(const w of [...a.windows].reverse())addLeaf(b,{universe:'calendar_native',asset:a.asset,pair:w.pair},w)}
  const top=$('main-asset');top.replaceChildren();const groups=new Map();for(const b of branches.values()){if(!groups.has(b.family))groups.set(b.family,[]);groups.get(b.family).push(b)}
  for(const [family,bs] of groups){top.append(pickerRow(family,bs.flatMap(b=>b.children),'family',()=>openBranch((bs.find(b=>b.children.some(l=>l.enabled))||bs[0]).key)));for(const b of bs){const row=pickerRow(b.title,b.children,'branch',()=>openBranch(b.key));row.dataset.branch=b.key;top.append(row)}}
  initAll('all-assets',()=>[...leaves.values()]);initAll('all-windows',()=>branches.get(branchId)?.children||[]);
 }
+// Compact window table: exact chart requests, independent of the checked cohort's mean.
+const windowReadings=new Map();let windowReadVersion=0,windowReadTimer=null,windowReadController=null;
+function proofPlanKey(req){const fill=req.fill||(req.strategy==='funding_only'?'same_day_settlement':'next_open');return JSON.stringify([targetKey(req),req.strategy,fill,req.sizing,Object.entries(req.parameters||{}).sort(),settingsKey()])}
+function defaultLeafRequest(l){const cal=l.target.universe==='calendar_native',name=activeStrategyName(),saved=formStates.get(formKey(l.key,name));if(saved)return {...l.target,strategy:saved.strategy,parameters:saved.parameters,sizing:'max_affordable',fill:saved.fill||'next_open'};
+ const parameters=cal?(name==='zscore_mean_reversion'?{entry_z:Number($('centry').defaultValue),exit_z:Number($('cexit').defaultValue),window:branches.get(l.branch)?.asset?.monthly?7:20}:{threshold_pp:Number($('cthreshold').defaultValue)}):
+  {lookback:Number($('lookback').defaultValue),...(name==='mean_reversion'?{entry_z:Number($('entry').defaultValue),exit_z:Number($('exit').defaultValue)}:{})};
+ return {...l.target,strategy:name,parameters,sizing:'max_affordable',fill:name==='funding_only'?'same_day_settlement':'next_open'}}
+function leafPlan(l){return commonPlan(l.key===leafId?currentRequest():defaultLeafRequest(l),l.target,l.key)}
+function gateIndicator(ok,text){const n=el('span','window-gate '+(ok==null?'unknown':ok?'pass':'fail'),ok==null?'—':ok?'✓':'×');n.dataset.state=ok==null?'unknown':ok?'pass':'fail';n.title=text;n.setAttribute('role','img');n.setAttribute('aria-label',text);n.tabIndex=0;return n}
+function windowGates(row,l){const c=l.meta||{},cal=l.target.universe==='calendar_native',volume=cal?c.min_spread_volume:c.min_leg_daily_volume,rule=c.min_daily_volume_rule??catalog.min_daily_volume??100;
+ const volumeOk=c.tradable_every_day??(volume!=null?volume>=rule:null),margin=c.max_pair_margin_rub,capitalOk=c.passes_capital_screen;
+ row.querySelector('[data-gate=volume]').replaceChildren(gateIndicator(volumeOk,volume==null?'V: нет данных для проверки объёма.':`V: ${volumeOk?'пройдена':'не пройдена'}. Минимальный дневной объём ${cal?'биржевого спреда':'ноги'}: ${fmt(volume)}; порог: ${fmt(rule)}. Нулевые наблюдения — только журнал.`));
+ row.querySelector('[data-gate=capital]').replaceChildren(gateIndicator(capitalOk,capitalOk==null?'C: нет параметров для стресс-проверки капитала.':`C: ${capitalOk?'пройдена':'не пройдена'}. ГО одного спреда ${margin==null?'неизвестно':fmt(margin,2)+' ₽'}; стресс 3×ГО и рабочие буферы против 30 000 ₽. Это исходная проверка, допуск в настройках её не меняет.`))}
+function windowRow(l){const row=el('tr','picker-row window-row'+(!l.enabled?' unavailable':''));row.dataset.leaf=l.key;
+ const cb=document.createElement('input');cb.type='checkbox';cb.className='pick-check';cb._leaves=()=>[l];cb.setAttribute('aria-label','Включить в подбор: '+l.period);cb.addEventListener('change',()=>setChecks([l],cb.checked));const check=el('td');check.append(cb);
+ const cell=el('td','window-period'),button=el('button','pick-name');button.type='button';button.append(el('span','',l.from?l.from.split('-').reverse().join('.'):'Нет истории'));if(l.to)button.append(el('small','','— '+l.to.split('-').reverse().join('.')));button.title=l.observations?`${l.period} · ${l.observations} наблюдений`:l.period;button.addEventListener('click',()=>openLeaf(l.key));cell.append(button);
+ if(!l.enabled){const missing=el('span','window-download','⇩');missing.dataset.icon='download';missing.title='Нужна загрузка локальных данных. '+Object.values(l.meta?.data_reasons||{}).filter(Boolean).join(' ');missing.setAttribute('role','img');missing.setAttribute('aria-label',missing.title);cell.append(missing)}
+ row.append(check,cell);for(const name of ['volume','capital']){const td=el('td','window-check');td.dataset.gate=name;row.append(td)}for(const name of ['trades','rate']){const td=el('td','window-number','—');td.dataset.metric=name;row.append(td)}
+ row.addEventListener('click',e=>{if(e.target.closest('button,input')||e.target.closest('[data-gate]'))return;openLeaf(l.key)});windowGates(row,l);return row}
+function renderWindowTable(b){const table=el('table','window-table');table.setAttribute('aria-label','Исторические окна и текущая симуляция');
+ const head=el('thead'),tr=el('tr');for(const [label,title] of [['','Отметить для совместного подбора'],['Период','Период локальной истории, без тикеров'],['V','Исходная проверка объёма'],['C','Исходная стресс-проверка капитала'],['Сд.','Число принятых входов во всей текущей симуляции; открытые позиции учитываются'],['п.п./г','Годовая доходность сверх LQDT в процентных пунктах: проверка, если включена, иначе обучение']]){const n=el('th','',label);n.scope='col';n.title=title;tr.append(n)}head.append(tr);const body=el('tbody');for(const l of [...b.children].sort((a,b)=>Number(b.enabled)-Number(a.enabled)))body.append(windowRow(l));table.append(head,body);$('window-list').replaceChildren(table)}
+function windowReadingFromProof(p){return {status:'measured',selection:p.selection,run_id:p.run_id,trades:p.summary.trades,closed_trades:p.summary.closed_trades,open_positions:p.summary.open_positions,annualized_excess_pp:p.evaluation.result.annualized_excess_pp,evaluation:p.evaluation,window:p.window,execution_reference:p.execution_reference}}
+function cacheWindowProof(req,p){windowReadings.set(proofPlanKey(req),windowReadingFromProof(p));paintWindowReadings()}
+function paintWindowReadings(){for(const row of $('window-list').querySelectorAll('tr[data-leaf]')){const l=leaves.get(row.dataset.leaf);if(!l)continue;const plan=leafPlan(l),reading=windowReadings.get(proofPlanKey(plan.req)),count=row.querySelector('[data-metric=trades]'),rate=row.querySelector('[data-metric=rate]');
+ row.dataset.reading=reading?.status||(!l.enabled?'missing':'pending');count.textContent=reading?.trades==null?'—':String(reading.trades);rate.textContent=reading?.annualized_excess_pp==null?'—':signed(reading.annualized_excess_pp);
+ rate.className='window-number '+(reading?.execution_reference?'warn':cls(reading?.annualized_excess_pp));const e=reading?.evaluation,period=e?.periods?.[e.result_basis],reason=reading?.reason||e?.result?.reason||(!l.enabled?'Нужна загрузка локальных данных.':'Выполняется расчёт для этих параметров.');
+ const settings=`${STRATEGY_RU[plan.req.strategy]||plan.req.strategy} · ${FILL_RU[plan.req.fill]||plan.req.fill||'следующее открытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'}`;
+ count.title=reading?.trades==null?reason:`Вся симуляция: ${reading.trades} входов; ${reading.closed_trades} закрыто, ${reading.open_positions} открыто на конце. ${settings}`;
+ rate.title=[reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter(Boolean).join(' ');
+ row.dataset.runId=reading?.run_id||'';row.dataset.reference=String(!!reading?.execution_reference);}}
+function stopWindowReadings(){clearTimeout(windowReadTimer);windowReadTimer=null;windowReadVersion++;windowReadController?.abort();windowReadController=null}
+function refreshWindowReadings(delay=220){stopWindowReadings();paintWindowReadings();const version=windowReadVersion,branch=branchId;
+ windowReadTimer=setTimeout(async()=>{const pending=(branches.get(branch)?.children||[]).filter(l=>l.enabled).map(l=>({leaf:l,...leafPlan(l)})).filter(p=>!windowReadings.has(proofPlanKey(p.req)));if(!pending.length)return;
+  const controller=new AbortController();windowReadController=controller;const wanted=new Map(pending.map(p=>[p.leaf.key,p]));
+  try{const r=await api('/api/proof/windows',{requests:pending.map(p=>p.req)},controller.signal);if(version!==windowReadVersion||branch!==branchId)return;if(settingsKey(r)!==settingsKey()){void refreshGlobalSettings(true);return}
+   for(const reading of r.rows){const p=wanted.get(targetKey(reading.target));if(p)windowReadings.set(proofPlanKey(p.req),reading)}paintWindowReadings();
+  }catch(e){if(version===windowReadVersion){for(const p of pending)windowReadings.set(proofPlanKey(p.req),{status:'unavailable',reason:e.message});paintWindowReadings()}}
+  finally{if(version===windowReadVersion)windowReadController=null}
+ },delay)}
+
 function checkboxChanged(){cancelSearch();clearGroup();tuneState('');syncEditorScope();refreshChecks();refreshGroupProfile();syncChartScope()}
 function setChecks(entries,on){for(const l of entries){if(on)checked.add(l.key);else checked.delete(l.key)}checkboxChanged()}
 function initAll(id,entries){const cb=$(id);cb._leaves=entries;cb.addEventListener('change',()=>setChecks(entries(),cb.checked))}
@@ -385,8 +425,8 @@ function refreshChecks(){for(const cb of document.querySelectorAll('.pick-check'
 function markOpened(){for(const row of document.querySelectorAll('.picker-row[data-branch],.picker-row[data-leaf]')){const on=row.dataset.branch===branchId||row.dataset.leaf===leafId;row.classList.toggle('current',on);row.querySelector('button').setAttribute('aria-current',String(on))}}
 function openBranch(key,wanted='',strategy='',run=true){const b=branches.get(key);if(!b)return;const prior=universe==='pair_screen'?$('strategy').value:$('cstrategy').value;branchId=key;universe=b.kind;
  $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
- $('window-label').textContent=universe==='pair_screen'?'Исторические пары':'Календарные окна · V — объём · C — капитал';
- const list=$('window-list');list.replaceChildren();for(const l of [...b.children].sort((a,b)=>Number(b.enabled)-Number(a.enabled))){const row=pickerRow(l.text,[l],'leaf',()=>openLeaf(l.key));row.dataset.leaf=l.key;list.append(row)}
+ $('window-label').textContent=universe==='pair_screen'?'Исторические окна':'Календарные окна';
+ const list=$('window-list');renderWindowTable(b);
  const selected=b.children.find(l=>l.target.pair===(wanted||b.lastPair))||b.children.find(l=>l.enabled)||b.children[0];
  openLeaf(selected?.key||'',strategy||prior,run);list.scrollTop=0;
 }
@@ -396,19 +436,21 @@ const formKey=(key,name)=>key+'|'+name;
 function rememberForm(){if(leafId&&!invalidForm())formStates.set(formKey(leafId,activeStrategyName()),currentRequest())}
 function restoreForm(){const saved=formStates.get(formKey(leafId,activeStrategyName()));if(saved){applyToForm(saved);return}
  for(const n of activeInputs())n.value=n.defaultValue;
- if(universe==='calendar_native'){$('clookback').value=currentAsset()?.monthly?7:20;$('cfill').value='next_open'}}
+ if(universe==='calendar_native'){$('clookback').value=currentAsset()?.monthly?7:20;$('cfill').value='next_open'}else $('fill').value=activeStrategyName()==='funding_only'?'same_day_settlement':'next_open'}
 function openLeaf(key,preferred='',run=true){leafId=key;const want=mappedStrategy(preferred||activeStrategyName());
  if(universe==='pair_screen')fillStrategy(want);else fillCalendarStrategies(want);
  const branch=branches.get(branchId);if(branch)branch.lastPair=currentPair();restoreForm();
  markOpened();refreshChecks();if(run)scheduleShow(0)}
-function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis];if(universe==='calendar_native'&&selection.fill)$('cfill').value=selection.fill}
-function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=FILL_RU[isMR?'next_open':'same_day_settlement'];$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
+function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis];if(selection.fill)$(universe==='calendar_native'?'cfill':'fill').value=selection.fill}
+function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));fillPairFills(isMR);$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
 function fillCalendarStrategies(preferred){const a=currentAsset(),s=$('cstrategy');s.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a?.convergence)continue;const o=el('option','',STRATEGY_RU[name]||name);o.value=name;s.append(o)}if([...s.options].some(o=>o.value===preferred))s.value=preferred;$('clookback').value=a?.monthly?7:20;syncCalendarParams()}
 function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.data_reasons?.[$('strategy').value]||CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
-function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,sizing:'max_affordable',parameters}}
+function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,fill:$('fill').value,sizing:'max_affordable',parameters}}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
 function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:$('cfill').value,sizing:'max_affordable',parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
-function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of (catalog.fills?.length?catalog.fills:['next_open'])){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
+function priceFillOptions(sel){const prev=sel.value;sel.replaceChildren();for(const [value,label] of [['next_open','Следующее открытие (прокси исполнения)'],['next_close','Следующее закрытие'],['reference_same_bar','Справочное закрытие (тот же бар)']]){const o=el('option','',label);o.value=value;sel.append(o)}sel.value=[...sel.options].some(o=>o.value===prev)?prev:'next_open'}
+function fillPairFills(mr){const sel=$('fill');if(mr){priceFillOptions(sel);sel.disabled=false}else{const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';sel.replaceChildren(o);sel.disabled=true}}
+function fillFills(){priceFillOptions($('cfill'))}
 // ---------- proof search & per-field plateau diagnostics ----------
 const numericInputs=[...$('focus-editor').querySelectorAll('.number-shell input')];
 const activeInputs=()=>numericInputs.filter(n=>!n.closest('.hidden'));
@@ -433,7 +475,7 @@ function drawLamps(inputs,plateau,empty,group){
   const score=field?.score,level=score==null?'unknown':score>=plateau.green?'green':score>=plateau.amber?'amber':'red';
   const name=input.labels[0].textContent,verdict={green:'устойчиво',amber:'на краю плато',red:'неустойчиво',unknown:'нет оценки'}[level];
   lamp.dataset.level=level;lamp.dataset.score=score??'';lamp.dataset.heading=`${name} · ${score==null?'нет оценки':fmt(score,2)+' / 100 · '+verdict}`;
-  const lines=group?[`Отмеченные окна: ${group.count} · равные веса. Обучение: свой период для каждого окна.`,group.percent?`Проверка ${pct(group.percent)} не входит в светофор.`:'Проверка отключена (0%).']:[];if(field){
+  const lines=group?[`Отмеченные окна: ${group.count} · равные веса. Обучение: свой период для каждого окна.`,group.percent?`Проверка ${pct(group.percent)} не входит в светофор.`:'Проверка отключена (0%).']:[];if(group?group.reference:payload?.execution_reference)lines.push('Справочный same-bar расчёт, не проверка исполнимой доходности.');if(field){
    lines.push(`Текущее значение: ${fmt(field.value,Number.isInteger(field.value)?0:1)}`);
    const e=!group&&payload?.evaluation,reportReason=e?.result?.reason;
    if(e){lines.push(`Обучение: ${e.periods.training.join(' — ')}`,e.periods.validation?`Проверка: ${e.periods.validation.join(' — ')}`:'Проверка отключена (0%).');if(reportReason)lines.push(reportReason)}
@@ -467,7 +509,7 @@ function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedI
  const chosen=$('group-strategy').value,name=chosen==='mr'?sharedMR:chosen;
  const next=sharedDrafts.get(name)||{strategy:name,parameters:{},fill:old.fill};renderSharedEditor(next);sharedEdited(0)}
 function paintGroup(plateau,message,state){if(!sharedStrategy||!checked.size)return;const n=$('group-profile-state');n.dataset.state=state;n.textContent=message;n.title=message;n.setAttribute('aria-busy',String(state==='loading'));
- drawLamps(sharedInputs(),plateau,message,{count:checked.size,percent:preferences.validation_percent})}
+ drawLamps(sharedInputs(),plateau,message,{count:checked.size,percent:preferences.validation_percent,reference:sharedRequest().fill==='reference_same_bar'})}
 function stopProfile(){clearTimeout(profileTimer);profileTimer=null;profileVersion++;profileController?.abort();profileController=null;profileKey=''}
 function groupSpec(){const body={...sharedRequest(),targets:checkedTargets()};return {body,key:JSON.stringify([settingsKey(),body])}}
 function showGroupReading(plateau){const fields=Object.values(plateau.fields);const any=fields.some(f=>f.score!=null),reason=fields.find(f=>f.reason)?.reason;
@@ -485,20 +527,19 @@ function syncEditorScope(){const on=checked.size>0;$('focus-editor').hidden=on;$
  if(on){if(!sharedStrategy){const req=currentRequest();sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}$('group-count').textContent=`Отмечено окон: ${checked.size} · равные веса`}
  else{stopProfile();sharedStrategy=null;sharedDrafts.clear();hidePlateauTip()}}
 function sharedEdited(delay){cancelSearch();clearGroup();tuneState('');refreshGroupProfile(delay);syncChartScope(delay)}
-function chartPlan(){const own=currentRequest(),target=leaves.get(leafId)?.target;let req=own,common=false;
- if(target&&sharedStrategy&&checked.has(leafId)&&!pointError(sharedInputs())){const g=sharedRequest(),cal=target.universe==='calendar_native',name=isMR(g.strategy)?(cal?'zscore_mean_reversion':'mean_reversion'):g.strategy,p=translateParams(g.parameters,name);
-  const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&currentAsset()?.convergence)):
-    !!researchStrategies(pairAvailability(target.pair))?.[name];
-  if(supported&&!(name==='mean_reversion'&&(g.fill!=='next_open'||p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){
-   req={...target,strategy:name,parameters:p,sizing:'max_affordable',...(cal?{fill:g.fill}:{})};common=true}}
- const key=JSON.stringify([targetKey(req),req.strategy,req.fill||'',req.sizing,Object.entries(req.parameters).sort(),settingsKey()]);
- const note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${common?'общие параметры':'параметры окна'}`;return {req,key,common}}
-function syncChartScope(delay=0){const plan=chartPlan();if(chartKey!==plan.key||(!checked.size&&!chartWithLamps))scheduleShow(delay);else if(!checked.size&&payload?.plateau)paintPlateaus(payload.plateau)}
+function commonPlan(own,target,key){let req=own,common=false;
+ if(target&&sharedStrategy&&checked.has(key)&&!pointError(sharedInputs())){const g=sharedRequest(),cal=target.universe==='calendar_native',name=isMR(g.strategy)?(cal?'zscore_mean_reversion':'mean_reversion'):g.strategy,p=translateParams(g.parameters,name);
+  const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&branches.get('calendar_native|'+target.asset)?.asset?.convergence)):!!researchStrategies(pairAvailability(target.pair))?.[name];
+  if(supported&&!(name==='mean_reversion'&&(p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){req={...target,strategy:name,parameters:p,sizing:'max_affordable',fill:g.fill};common=true}}
+ return {req,common,key:proofPlanKey(req)}}
+function chartPlan(){const target=leaves.get(leafId)?.target,plan=commonPlan(currentRequest(),target,leafId),note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${plan.common?'общие параметры':'параметры окна'}`;return plan}
+function syncChartScope(delay=0){const plan=chartPlan();if(chartKey!==plan.key||(!checked.size&&!chartWithLamps))scheduleShow(delay);else if(!checked.size&&payload?.plateau)paintPlateaus(payload.plateau);refreshWindowReadings()}
 function adoptSearchProfile(result){if(!sharedStrategy||!result.selected_parameters)return;for(const n of sharedInputs())if(n.dataset.axis in result.selected_parameters)n.value=result.selected_parameters[n.dataset.axis];
  stopProfile();if(result.plateau&&settingsKey(result.group)===settingsKey()){profileKey=groupSpec().key;showGroupReading(result.plateau)}else refreshGroupProfile(0)}
 
 function invalidateProof(fromSearch=false){
  if(!fromSearch&&!searchUsesChecks)cancelSearch();
+ stopWindowReadings();if(catalog&&leafId)paintWindowReadings();
  clearTimeout(autoRunTimer);autoRunTimer=null;analysisRequestId++;proofController?.abort();proofController=null;
  setRenderProgress(false);tuneButton();if(!tuning)tuneState('');paintPlateaus();
 }
@@ -513,7 +554,8 @@ function clearGroup(){$('batch-result').hidden=true;$('batch-result').replaceChi
 function pp(v){return v==null?'нет оценки':`${signed(v)} п.п./год`}
 function screenWarning(e){const failed=(e?.failed_screens||[]).filter(k=>e['allow_failed_'+k]);return failed.length?'Не пройдена проверка ('+failed.map(k=>k==='volume'?'объём':'капитал').join(', ')+') по всей истории; допуск разрешён в настройках.':''}
 function displayGroup(result){const g=result.group;if(!g)return;const root=$('batch-result');root.hidden=false;root.replaceChildren();const label=g.result_basis==='validation'?'проверка':'обучение';
- const heading=el('summary','',`Последний подбор · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
+ const heading=el('summary','',`Последний подбор${g.execution_reference?' · справочно':''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
+ if(g.execution_reference)root.append(el('div','result-warning','Справочный same-bar подбор: закрытие сигнального бара уже известно. Все оценки группы — ориентир, не проверка исполнимой доходности.'));
  root.append(el('div','group-note',`Среднее на обучении: ${pp(g.training_mean_pp)}. Вес каждого окна одинаков. Это независимые расчёты, не доходность портфеля. График относится к открытому окну; при отметках светофор относится ко всей группе. Годовые ставки пересчитаны по фактическим датам, в том числе для неполного года.`));
  if(result.selected_parameters)root.append(el('div','group-note','Общие параметры · '+Object.entries(result.selected_parameters).map(([k,v])=>`${PARAM_RU[k]}: ${fmt(v,Number.isInteger(v)?0:1)}`).join(' · ')));
  const table=el('table');table.append(th(['Окно','Обучение, п.п./год','Результат, п.п./год','Расчётный период']));for(const r of g.members){const tr=el('tr'),e=r.evaluation,range=e?.periods?.[e.result_basis],why=[r.reason||e?.result?.reason,screenWarning(e)].filter(Boolean).join(' ');
@@ -526,7 +568,7 @@ function reviewExclusions(result){const d=$('compatibility'),rows=$('compatibili
 function finishReview(yes){if(!$('compatibility').open)return;$('compatibility').close();const resolve=resolveCompatibility;resolveCompatibility=null;resolve?.(yes)}
 function invalidForm(){const n=activeInputs().find(n=>n.value===''||!n.validity.valid);return n?`Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`:''}
 async function startTuning(){const request=checked.size?sharedRequest():currentRequest(),validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
- const explicit=checked.size>0;if(tuning)return;if(!explicit)invalidateProof();
+ const explicit=checked.size>0;if(tuning)return;stopWindowReadings();if(!explicit)invalidateProof();
  const id=++searchVersion,fresh=()=>id===searchVersion,controller=new AbortController();searchController=controller;searchUsesChecks=explicit;tuning=true;tuneButton();setSearchProgress(true);status('');clearGroup();
  try{let result;
   while(fresh()){
@@ -548,10 +590,10 @@ async function startTuning(){const request=checked.size?sharedRequest():currentR
  }catch(e){if(fresh())tuneState(`Подбор недоступен: ${e.message}`)}finally{if(fresh()){tuning=false;searchController=null;setSearchProgress(false);tuneButton();if(payload)paintPlateaus(payload.plateau)}}
 }
 async function show(fromSearch=false){invalidateProof(fromSearch);const id=analysisRequestId,plan=chartPlan(),request=plan.req,fresh=()=>id===analysisRequestId;chartKey=plan.key;chartWithLamps=!checked.size;
- const message=plan.common?'':!hasSelection()?`Для выбранного инструмента: ${pairUnavailable(pairAvailability(currentPair()),activeStrategyName())}.`:invalidForm();if(message){status(message);paintPlateaus(null,message);emptyProof(message);return}
+ const message=plan.common?'':!hasSelection()?`Для выбранного инструмента: ${pairUnavailable(pairAvailability(currentPair()),activeStrategyName())}.`:invalidForm();if(message){status(message);paintPlateaus(null,message);emptyProof(message);refreshWindowReadings();return}
  const controller=new AbortController();proofController=controller;$('period-result').hidden=true;setRenderProgress(true);status('');paintPlateaus(null,'Выполняется расчёт…');
- try{const next=await api('/api/proof/run',{...request,include_plateau:chartWithLamps},controller.signal);if(!fresh())return;if(settingsKey(next.evaluation)!==settingsKey()){void refreshGlobalSettings(true);return}payload=next;selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();if(fresh())status('')}
- catch(e){if(fresh()){status(e.message);paintPlateaus(null,e.message);emptyProof('Нет результата для текущих параметров.')}}finally{if(fresh()){proofController=null;setRenderProgress(false);tuneButton()}}
+ try{const next=await api('/api/proof/run',{...request,include_plateau:chartWithLamps},controller.signal);if(!fresh())return;if(settingsKey(next.evaluation)!==settingsKey()){void refreshGlobalSettings(true);return}payload=next;cacheWindowProof(request,next);selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();if(fresh())status('')}
+ catch(e){if(fresh()){status(e.message);paintPlateaus(null,e.message);emptyProof('Нет результата для текущих параметров.')}}finally{if(fresh()){proofController=null;setRenderProgress(false);tuneButton();refreshWindowReadings()}}
 }
 function bindLamp(input){
  const shell=input.parentElement,lamp=input.nextElementSibling;
@@ -579,7 +621,7 @@ function renderPeriodResult(){const e=payload.evaluation,r=e.result,p=e.periods,
  const rate=el('span','',`Годовых сверх LQDT: ${pp(r.annualized_excess_pp)}`);rate.title='База — весь расчётный счёт: на старте 30 000 ₽ на окно, на проверке — стоимость счёта на конец обучения. Вычитается годовая доходность LQDT за те же даты.';head.append(rate);
  const period=(label,dates,count)=>`${label}: ${dates.join(' — ')} (${count} набл.)`;
  elRoot.replaceChildren(head,el('div','result-meta',period('Обучение',p.training,n.training)+' · '+(check?period(`Проверка ${pct(e.validation_percent)}`,p.validation,n.validation):'Проверка отключена (0%)')));
- for(const text of [screenWarning(e),r.reason].filter(Boolean))elRoot.append(el('div','result-warning',text));
+ for(const text of [payload.execution_reference?'Справочный режим: цена закрытия сигнального бара уже известна. Это ориентир, не проверка исполнимой доходности.':'',screenWarning(e),r.reason].filter(Boolean))elRoot.append(el('div','result-warning',text));
  $('chart-scope').textContent=check?'Вся история · пунктир — начало проверки':'Вся история · обучение';
 }
 function rowPeriod(r){const v=payload.evaluation.periods.validation;return r.volume_eligible===false?'journal_only':v&&r.date>=v[0]?'validation':'training'}
@@ -732,7 +774,8 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  const farPane=makePane(root,'h-far','2 · ДАЛЬНЯЯ НОГА — '+farName,null,[['дальняя нога',COLORS.far]],true);
  const hasLast=S.some(r=>r.spread_last_trade_rel!=null);
  const normMode=$('norm')?.value||'raw';const showLast=normMode==='raw'&&hasLast;
- const rawSpreadPane=makePane(root,'h-spread-raw','3 · СПРЕД (ненормализованный)','% от дальней ноги',[['расчётный',COLORS.spread]].concat(hasLast?[['последняя сделка','#88a1b5']]:[]),true);
+ const rawSpreadPane=makePane(root,'h-spread-raw','3 · СПРЕД (ненормализованный)','% от дальней ноги',[['расчётный',COLORS.spread]].concat(hasLast?[['последняя сделка','#88a1b5']]:[]).concat(payload.signal_levels?.kind==='entry_bands'&&S.some(r=>r.buy_level_rel!=null)?[['порог покупки','#65adf1'],['порог продажи','#f0a36d']]:[]),true);
+ rawSpreadPane.previousElementSibling.title=payload.signal_levels?.note||'';
  const spreadPane=makePane(root,'h-spread','4 · СПРЕД — входы и выходы',null,[['расчётный',COLORS.spread]].concat(showLast?[['последняя сделка','#88a1b5']]:[]));
  const volPane=makePane(root,'h-vol','5 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]],true);
  const showFunding=S.some(r=>r.funding_rub!=null)||payload.ledger.some(r=>r.funding_rub!=null);
@@ -756,6 +799,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  const rawSpreadSeries=lineSeries(cSpreadRaw,COLORS.spread,2,false,rawSpreadFormat);
  const sRaw=spreadDisplayValues(S,'raw');
  rawSpreadSeries.setData(S.map((r,i)=>sRaw[i]!=null?{time:r.date,value:sRaw[i]}:{time:r.date}));
+ rawSpreadPane._signalLevels={};for(const [name,key,color] of [['buy','buy_level_rel','#65adf1'],['sell','sell_level_rel','#f0a36d']])if(S.some(r=>r[key]!=null)){const line=lineSeries(cSpreadRaw,color,1,false,rawSpreadFormat);line.setData(S.map(r=>r[key]!=null?{time:r.date,value:r[key]}:{time:r.date}));rawSpreadPane._signalLevels[name]=line}rawSpreadPane.dataset.signalLines=String(Object.keys(rawSpreadPane._signalLevels).length);
  if(hasLast){const rawLt=lineSeries(cSpreadRaw,'#88a1b5',1,true,rawSpreadFormat);rawLt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:r.date,value:r.spread_last_trade_rel}:{time:r.date}))}
  const spreadSeries=lineSeries(cSpread,COLORS.spread,2);
  const sDisp=spreadDisplayValues(S);
@@ -908,6 +952,7 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
   const unit={stoch20:'%',rz20:'σ',ewma10:'σ',mad20:'σ',garch:'σ',kalman:'σ'}[nmode]||'pp';
   h+=`<span class="k">нормализован · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
  h+=`<span class="k">объём</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume!=null?` · спред ${fmt(s.spread_volume)}${s.spread_trades!=null?' за '+fmt(s.spread_trades)+' сделок':''}`:''}`;
+ if(s.buy_level_rel!=null)h+=`<br><span class="k">Порог покупки / продажи</span> ${fmt(s.buy_level_rel,3)}% / ${fmt(s.sell_level_rel,3)}% · на закрытии сигнального бара`;
  if(s.funding_rub!=null)h+=`<br><span class="k">фандинг: ${s.funding_rub>=0?'начислено':'списано'}</span> ${signed(s.funding_rub,2)} ₽`;
  if(s.signal_z!=null)h+=`<br><span class="k">сигнал z</span> ${fmt(s.signal_z,2)}`;
  if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
@@ -920,9 +965,9 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
 
 // ---------- csv & copy ----------
 function csvCell(v){const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function downloadCsv(){if(!payload)return;const L=ledgerIndex(),entryQty=Object.fromEntries(payload.trades.map(t=>[t.entry.date,t.quantity])),exitQty=Object.fromEntries(payload.trades.map(t=>[t.exit.date,t.quantity]));const head=['date','period','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','funding_rate_kind','funding_left_date','funding_left_rate','funding_right_date','funding_right_rate','position','contracts_held','entry_contracts','exit_contracts','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
+function downloadCsv(){if(!payload)return;const L=ledgerIndex(),entryQty=Object.fromEntries(payload.trades.map(t=>[t.entry.date,t.quantity])),exitQty=Object.fromEntries(payload.trades.map(t=>[t.exit.date,t.quantity]));const head=['date','period','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','buy_level','sell_level','buy_level_rel','sell_level_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','funding_rate_kind','funding_left_date','funding_left_rate','funding_right_date','funding_right_rate','position','contracts_held','entry_contracts','exit_contracts','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
  const lines=[`# moex-spread-lab execution-proof ${payload.schema_version}`,`# run_id: ${payload.run_id}`,`# universe: ${universe}`,`# scope: full_history`,`# evaluation: ${JSON.stringify(payload.evaluation)}`,`# selection: ${JSON.stringify(payload.selection)}`,`# price_role: ${payload.price_role}`,`# provenance: ${JSON.stringify(payload.provenance)}`,`# notes: ${payload.notes.join(' | ')}`,head.join(',')];
- for(const r of payload.series){const l=L[r.date];lines.push([r.date,rowPeriod(r),r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,r.funding_rate_kind??(r.funding_swaprate_rub_per_unit!=null?'published':''),r.funding_left_date,r.funding_left_rate,r.funding_right_date,r.funding_right_rate,l?.position,l?.quantity,entryQty[r.date]??0,exitQty[r.date]??0,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
+ for(const r of payload.series){const l=L[r.date];lines.push([r.date,rowPeriod(r),r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.buy_level,r.sell_level,r.buy_level_rel,r.sell_level_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,r.funding_rate_kind??(r.funding_swaprate_rub_per_unit!=null?'published':''),r.funding_left_date,r.funding_left_rate,r.funding_right_date,r.funding_right_rate,l?.position,l?.quantity,entryQty[r.date]??0,exitQty[r.date]??0,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`proof-${universe}-${proofLabel().replaceAll('/','-')}-${payload.run_id}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id скопирован в буфер обмена',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
 
@@ -935,7 +980,7 @@ bindSettings();
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillFills();buildPicker();$('group-strategy').addEventListener('change',changeSharedStrategy);$('group-fill').addEventListener('change',()=>sharedEdited(0));
  $('strategy').addEventListener('change',()=>{fillStrategy();restoreForm();clearGroup();scheduleShow(100)});
- $('cstrategy').addEventListener('change',()=>{syncCalendarParams();restoreForm();clearGroup();scheduleShow(100)});$('cfill').addEventListener('change',()=>{rememberForm();clearGroup();scheduleShow(100)});
+ $('cstrategy').addEventListener('change',()=>{syncCalendarParams();restoreForm();clearGroup();scheduleShow(100)});$('cfill').addEventListener('change',()=>{rememberForm();clearGroup();scheduleShow(100)});$('fill').addEventListener('change',()=>{rememberForm();clearGroup();scheduleShow(100)});
  $('compatibility-no').addEventListener('click',()=>finishReview(false));$('compatibility-yes').addEventListener('click',()=>finishReview(true));$('compatibility').addEventListener('cancel',e=>{e.preventDefault();finishReview(false)});
  bindParameterAutoRun();
  $('auto-tune').addEventListener('click',()=>void startTuning());

@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from .account_risk import assess_vtb_pair
+from .account_risk import (
+    DEFAULT_STRESS_VM_BUFFER,
+    DEFAULT_UNCERTAINTY_BUFFER,
+    assess_vtb_pair,
+)
 from .analytics import run_mean_reversion_baseline
 from .carry import (
     build_carry_strategy,
@@ -285,6 +289,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str
             if all(isinstance(value, (int, float)) for value in margins)
             else None
         )
+        margin = sum(margins) if all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in margins) else None
         pairs.append(
             {
                 "id": pair_id,
@@ -296,6 +301,10 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str
                 "observations": history_observations,
                 "expiry": far_terms.get("expiry"),
                 "current_margin_pct": margin_pct,
+                "max_pair_margin_rub": margin,
+                "passes_capital_screen": (3 * margin + DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER <= INITIAL_CAPITAL) if margin is not None else None,
+                "tradable_every_day": tradable if volumes is not None else None,
+                "min_daily_volume_rule": MIN_DAILY_VOLUME,
                 "min_leg_daily_volume": min(volumes.values()) if volumes else None,
                 "strategies": available,
                 "proof_strategies": proof_available,
@@ -595,6 +604,7 @@ class ScreenerStore:
         self.lock = threading.Lock()
         self.proof_search_lock = threading.Lock()
         self.proof_profile_lock = threading.Lock()
+        self.proof_windows_lock = threading.Lock()
         self._calendar: Any = None
         self._proof: ProofService | None = None
 
@@ -735,7 +745,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 self._json(403, {"error": "local origin only"})
                 return
             path = urlsplit(self.path).path
-            if path not in {"/api/settings", "/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize", "/api/proof/plateau"}:
+            if path not in {"/api/settings", "/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize", "/api/proof/plateau", "/api/proof/windows"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -746,21 +756,30 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = 192 * 1024 if path in {"/api/proof/optimize", "/api/proof/plateau"} else 8192
+                limit = 192 * 1024 if path in {"/api/proof/optimize", "/api/proof/plateau", "/api/proof/windows"} else 8192
                 if not 0 < size <= limit:
                     raise ScreenerError(f"размер запроса должен быть 1–{limit} байт")
                 selection = json.loads(self.rfile.read(size))
                 if path == "/api/settings":
                     with store.lock:
                         result = save_settings(store.inputs.root, selection)
-                elif path in {"/api/proof/run", "/api/proof/optimize", "/api/proof/plateau"}:
+                elif path in {"/api/proof/run", "/api/proof/optimize", "/api/proof/plateau", "/api/proof/windows"}:
                     if not isinstance(selection, dict):
                         raise ScreenerError("выбор должен быть объектом")
                     search = path == "/api/proof/optimize"
                     from .proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
-                    if path == "/api/proof/plateau":
+                    if path == "/api/proof/windows":
+                        from .proof_windows import window_summaries
+
+                        while not store.proof_windows_lock.acquire(timeout=0.15):
+                            self._check_connected()
+                        try:
+                            result = window_summaries(store.proof, selection, check_cancelled=self._check_connected)
+                        finally:
+                            store.proof_windows_lock.release()
+                    elif path == "/api/proof/plateau":
                         from .proof_batch import checked_plateau
 
                         # A burst of edits can supersede outstanding requests. Serialize probes,

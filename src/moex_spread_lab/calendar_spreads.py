@@ -549,7 +549,8 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
              "spread_last_trade": r["spread_last_trade"], "spread_volume": r["min_volume"], "volume_eligible": r["min_volume"] > 0,
              "spread_trades": r["spread_trades"],
              "near_volume": r["near_volume"], "far_volume": r["far_volume"], "days_to_near_expiry": r["days_to_near_expiry"],
-             "dev_pp": r["dev_pp"], "margin_rub": round(r["margin"] * quantity, 2),
+             "dev_pp": r["dev_pp"], "rate_price_per_pp": r["near_price"] * QUARTER_DAYS / 365 / 100,
+             "margin_rub": round(r["margin"] * quantity, 2),
              "point_value_rub": r["mult"]}
             for r in rows
         ],

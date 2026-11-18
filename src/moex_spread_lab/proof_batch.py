@@ -61,14 +61,10 @@ def _native_request(active, target):
     ):
         raise W0Error("Для этого актива не предусмотрена стратегия RUONIA.")
     fill = active.get("fill", "next_open")
-    if strategy == "mean_reversion" and fill != "next_open":
-        raise W0Error(
-            "У этой пары возврат к среднему исполняется только на следующем открытии."
-        )
     return {
         **target,
         "strategy": strategy,
-        **({"fill": fill} if calendar else {}),
+        **({"fill": fill} if strategy != "funding_only" else {}),
         **{k: active[k] for k in ("sizing", *execution_axes(active)) if k in active},
         "parameters": _translate(active.get("parameters", {}), strategy),
     }
@@ -296,6 +292,7 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
         "scope": "checked",
         "member_count": len(targets),
         **settings.metadata(),
+        "execution_reference": request.get("fill") == "reference_same_bar",
         "basis": "training",
     }
     if isinstance(group, dict):
@@ -360,6 +357,7 @@ def batch_search(service, request, settings, benchmark, check_cancelled):
                     "evaluation": {
                         **settings.metadata(),
                         **case.split.metadata(),
+                        "execution_reference": case.full.get("execution_reference", False),
                         "result": {"reason": str(exc)},
                     },
                 }
@@ -370,6 +368,9 @@ def batch_search(service, request, settings, benchmark, check_cancelled):
     ]
     summary = {
         "member_count": len(rows),
+        "execution_reference": any(
+            case.full.get("execution_reference", False) for _, case in members
+        ),
         "unit": "annualized_excess_pp",
         "members": rows,
         **settings.metadata(),

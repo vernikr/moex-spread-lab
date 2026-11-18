@@ -474,6 +474,7 @@ class StudyWindow:
         evaluation = {
             **self.settings.metadata(),
             **self.split.metadata(),
+            "execution_reference": p.get("execution_reference", False),
             "failed_screens": [
                 name
                 for name, key in (

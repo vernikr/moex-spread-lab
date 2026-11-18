@@ -24,6 +24,12 @@ from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
 from .position_sizing import AUTO_SIZING, automatic, size_proof
 from .proof_funding import FundingWindow, ProofFunding
+from .proof_signals import (
+    PRICE_FILLS,
+    REFERENCE_WARNING,
+    attach_entry_levels,
+    pair_fill,
+)
 from .screener import _normalized_series
 from .w0 import W0Error
 
@@ -259,7 +265,10 @@ class ProofService:
         selection_out = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
         payload["provenance"] = {**self._calendar_provenance(selection_out), **payload["provenance"]}
         payload["instrument"] = self._calendar_instrument(selection_out, payload)
-        fill = (selection.get("fill") or "settlement").replace("_", " ")
+        attach_entry_levels(payload)
+        if payload["execution_reference"]:
+            payload["notes"].append(REFERENCE_WARNING)
+        fill = (selection.get("fill") or "next_open").replace("_", " ")
         payload["price_role"] = (
             f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
         )
@@ -364,7 +373,8 @@ class ProofService:
         prepared = (*prepared, source_hashes)
 
         def replay(request, through=None):
-            execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents}
+            execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
+                         "fill": pair_fill(request, strategy)}
             params = screener_app._parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
                           risk_for(execution["quantity"]), prepared, through)
@@ -403,6 +413,8 @@ class ProofService:
     ) -> dict[str, Any]:
         near, far = pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
+        fill_label = execution["fill"]
+        delay, fill_quote = PRICE_FILLS[fill_label]
         series, analysis_rows, window, funding_provenance, source_hashes = prepared
         evidence = window.resolve(through) if window else None
         marks = evidence.marks if evidence else {}
@@ -424,7 +436,8 @@ class ProofService:
             quantity=quantity,
             analysis_role="diagnostic_only",
             cost_profile=tariff_profile(slippage),
-            fill="open",
+            fill=fill_quote,
+            decision_delay_bars=delay,
             cash_in_lqdt=True,
             funding_swaprates=funding_swaprates,
             sizing_intents=execution.get("sizing_intents", False),
@@ -433,6 +446,7 @@ class ProofService:
         volume_map = {row["date"]: row for row in series["rows"]}
 
         trades: list[dict[str, Any]] = []
+        signal_dates = {r["date"]: analysis_rows[max(0, i - delay)]["date"] for i, r in enumerate(analysis_rows)}
         for number, row in enumerate(report["trades"], start=1):
             side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
             entry_date, exit_date = row["entry_date"][:10], row["exit_date"][:10]
@@ -445,7 +459,7 @@ class ProofService:
                     number=number,
                     side=side,
                     quantity=quantity,
-                    signal={"kind": "z", "value": row.get("entry_signal_z"), "date": entry_date},
+                    signal={"kind": "z", "value": row.get("entry_signal_z"), "date": signal_dates[entry_date]},
                     entry=entry,
                     exit=exit_,
                     exit_reason=row["exit_reason"],
@@ -504,7 +518,7 @@ class ProofService:
         return self._pair_payload(
             pair=pair,
             strategy="mean_reversion",
-            fill_label="next_open",
+            fill_label=fill_label,
             quantity=quantity,
             slippage=slippage,
             params=params,
@@ -524,7 +538,10 @@ class ProofService:
                 *(evidence.notes() if evidence else ["Для пары без вечного фьючерса фандинг неприменим."]),
                 *(["Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."] if evidence else []),
                 "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
-                "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию.",
+                (REFERENCE_WARNING if fill_label == "reference_same_bar" else
+                 "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию."
+                 if fill_label == "next_open" else
+                 "Сигнал по закрытию дня; исполнение по закрытию следующего дня (ценовой прокси); отметки по закрытию."),
                 *(
                     ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
                     if any(trade["open_at_end"] for trade in trades)
@@ -956,7 +973,10 @@ class ProofService:
             "universe": PAIR_UNIVERSE,
             "status": "exploratory_proxy_not_live",
             "price_role": (
-                "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
+                ("ISS: справочное закрытие сигнального бара, не исполнимая доходность"
+                 if fill_label == "reference_same_bar" else
+                 "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
+                 if fill_label == "next_open" else "ISS: дневной candle, следующее закрытие (прокси)")
                 if strategy == "mean_reversion"
                 else "ISS: расчётная цена на конец дня (прокси)"
             ),
@@ -1025,6 +1045,7 @@ class ProofService:
             ],
             "provenance": provenance,
         }
+        attach_entry_levels(payload)
         payload = _clean(payload)
         payload["run_id"] = _run_id(
             {

@@ -268,11 +268,6 @@ class CohortTests(unittest.TestCase):
                 ({**P, "strategy": "funding_only"}, [C], [C]),
                 ({**C, "strategy": "convergence_to_ruonia"}, [P, C], [P]),
                 (
-                    {**C, "strategy": "zscore_mean_reversion", "fill": "next_close"},
-                    [C, P],
-                    [P],
-                ),
-                (
                     {**C, "strategy": "convergence_to_ruonia"},
                     [{**C, "asset": "RI"}],
                     [{**C, "asset": "RI"}],

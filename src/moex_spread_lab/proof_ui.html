@@ -584,6 +584,7 @@ function td(tr,html,{num=false,klass=''}={}){const c=el('td',(num?'num ':'')+kla
 function dayVolumeCell(r){const nv=r.near_volume!=null?fmt(r.near_volume):'—',fv=r.far_volume!=null?fmt(r.far_volume):'—';return`${px(r.near)}<small>цена · объём ${nv}</small>`}
 function spreadCell(r){return`${r.spread_rel==null?'—':fmt(r.spread_rel,2)+'%'}<small>откр. ${r.spread_open_rel==null?'—':fmt(r.spread_open_rel,2)+'%'} · абс. ${px(r.spread)}</small>`}
 function signalCell(r){if(r.signal_z!=null)return`z ${fmt(r.signal_z,2)}`;if(r.dev_pp!=null)return`${fmt(r.dev_pp,2)} pp`;if((r.funding_rub??0)!==0)return`фонд ${signed(r.funding_rub)}`;return''}
+function fundingCell(r,l){if(l.funding_rub==null)return'—';const amount=Number(l.funding_rub)||0;if(!amount)return'0,00';const action=amount>0?'начислено':'списано';const rate=r.funding_swaprate_rub_per_unit;const lot=r.funding_lot_size;const qty=r.funding_contracts;const detail=rate!=null?`SWAPRATE ${signed(rate,4)} ₽ × лот ${fmt(lot)} × ${fmt(qty)} контр.`:'значение ISS, см. оговорку';return`${action} ${signed(amount,2)}<small>${detail}</small>`}
 function renderTable(){const root=$('ledger-table');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
  const table=el('table');table.append(th(['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём','Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽']));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=[];if(ev){clsRow.push('fill');if(ev.some(e=>e.side==='entry'))clsRow.push('entry');if(ev.some(e=>e.side==='exit'))clsRow.push('exit');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
@@ -595,7 +596,7 @@ function renderTable(){const root=$('ledger-table');root.replaceChildren();const
   td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side==='entry'?'ВХОД':'ВЫХОД'} #${e.t.number}</span>`).join(' '):'',{num:false});
   tr.querySelectorAll('.badge[data-trade]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();selectedTrade=Number(b.dataset.trade);refreshSelection()}));
   td(tr,rub(l.mark_pnl_rub,2),{num:true,klass:cls(l.mark_pnl_rub)});
-  td(tr,l.funding_rub!=null?signed(l.funding_rub,2):'—',{num:true,klass:cls(l.funding_rub)});
+  td(tr,fundingCell(r,l),{num:true,klass:cls(l.funding_rub)});
   td(tr,l.costs_rub?`−${fmt(l.costs_rub,2)}`:'',{num:true});
   td(tr,rub(l.cumulative_net_rub,2),{num:true,klass:cls(l.cumulative_net_rub)});
   tbody.append(tr)}

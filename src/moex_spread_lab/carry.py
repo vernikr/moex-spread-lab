@@ -257,6 +257,8 @@ def build_carry_study(
         rows.append({
             "date": date_key,
             "near_settle": near_row["settle"],
+            "near_swaprate": swaprate,
+            "near_lot_size": near_contract["lot_size"],
             "far_settle": far_row["settle"],
             "basis_far_minus_near": _round(far_row["settle"] - near_row["settle"]),
             "daily_basis_pnl_short_near_long_far": _round(daily_basis_pnl),

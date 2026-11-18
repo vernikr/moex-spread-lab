@@ -144,6 +144,8 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertEqual(trade["exit"]["costs"], {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0})
         funding_rows = [row for row in result["series"] if (row["funding_rub"] or 0) != 0]
         self.assertTrue(funding_rows)
+        self.assertTrue(all(row["funding_swaprate_rub_per_unit"] is not None for row in funding_rows))
+        self.assertTrue(all(row["funding_lot_size"] > 0 and row["funding_contracts"] > 0 for row in funding_rows))
         funding_ledger = sum(row["funding_rub"] or 0.0 for row in result["ledger"])
         self.assertGreater(funding_ledger, 0.0)
         self.assertAlmostEqual(result["ledger"][-1]["cumulative_net_rub"], summary["net_rub"], delta=0.02)

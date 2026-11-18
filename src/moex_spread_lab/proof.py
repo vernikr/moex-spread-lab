@@ -559,9 +559,12 @@ class ProofService:
                 )
             )
 
+        study_by_date = {row["date"]: row for row in study_rows}
+        near_lot = float(terms[near].get("lot_size") or 1.0)
         series_rows = []
         for row in daily_rows:
             position = 1 if row["position"] else 0
+            study_row = study_by_date.get(row["date"], {})
             series_rows.append(
                 {
                     "date": row["date"],
@@ -581,6 +584,10 @@ class ProofService:
                     "spread_trades": None,
                     "days_to_near_expiry": None,
                     "funding_rub": round(row["daily_funding_included_rub"], 2),
+                    "funding_swaprate_rub_per_unit": study_row.get("near_swaprate"),
+                    "funding_lot_size": near_lot,
+                    "funding_contracts": quantity if position else 0,
+                    "funding_source": "MOEX ISS SWAPRATE; EOD settlement history",
                     "signal_z": None,
                     "margin_rub": round(margin_pair, 2) if position else 0.0,
                 }
@@ -608,6 +615,8 @@ class ProofService:
             },
             notes=[
                 "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
+                "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего перпетуала. ISS SWAPRATE — опубликованный итог клиринга, не реконструкция минутного расчёта и не брокерская выписка.",
+                *(["Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; дневной SWAPRATE берётся как опубликованное значение ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."] if near == "GLDRUBF" else []),
                 *(
                     ["Потолки правил фондирования для не-CNY инструментов не восстанавливаются."]
                     if pair_id != "CNYRUBF/CRZ6"

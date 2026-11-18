@@ -67,7 +67,7 @@ class PlateauTests(unittest.TestCase):
         negative = Landscape({"window": Axis(3, 60, 1)}, lambda _: {"utility": -2})
         self.assertEqual(negative.profile({"window": 20}, "window")["score"], 0)
 
-    def test_tpe_prefers_a_positive_neighborhood_to_a_sharp_profit_peak(self):
+    def test_tpe_selects_the_highest_score_even_at_an_unstable_peak(self):
         axes = STRATEGY_AXES["funding_only"]
         seed = {"lookback": 28, "quantity": 1, "slippage_ticks": 1.5}
 
@@ -79,10 +79,14 @@ class PlateauTests(unittest.TestCase):
         land = Landscape(axes | EXECUTION_AXES, objective)
         chosen, tries, _ = _tune(land, seed, axes, 100)
         self.assertEqual(tries, TRIALS)
-        self.assertIn(chosen["lookback"], range(10, 22))
-        self.assertGreaterEqual(land.profile(chosen, "lookback")["score"], GREEN)
+        self.assertEqual(chosen["lookback"], 28)
+        self.assertLess(land.profile(chosen, "lookback")["score"], GREEN)
         flat = Landscape(axes | EXECUTION_AXES, lambda _: {"utility": 0})
-        self.assertIsNone(_tune(flat, seed, axes, 100)[0])
+        self.assertEqual(_tune(flat, seed, axes, 100)[0], seed)
+        losing = Landscape(
+            axes | EXECUTION_AXES, lambda p: {"utility": -1 - abs(28 - p["lookback"])}
+        )
+        self.assertEqual(_tune(losing, seed, axes, 100)[0], seed)
 
     def test_missing_exposure_names_each_period_and_counts_a_carried_spread(self):
         dates = [f"2026-11-{day:02}" for day in range(1, 9)]
@@ -132,7 +136,7 @@ class PlateauTests(unittest.TestCase):
                     )
 
     def test_mark_change_including_first_validation_session_not_exit_trade_sum(self):
-        days = list("abcd")
+        days = [f"2026-01-0{i}" for i in range(1, 5)]
         proof = {
             "selection": {"strategy": "funding_only"},
             "window": {"passes_capital_screen": True, "tradable_every_day": True},
@@ -142,8 +146,8 @@ class PlateauTests(unittest.TestCase):
             ],
             "trades": [
                 {
-                    "entry": {"date": "a"},
-                    "exit": {"date": "d"},
+                    "entry": {"date": days[0]},
+                    "exit": {"date": days[-1]},
                     "margin_rub": 100,
                     "lqdt_on_margin_rub": 4,
                 }
@@ -158,7 +162,7 @@ class PlateauTests(unittest.TestCase):
             with self.subTest(percent=percent):
                 m = _measure(proof, marks, EvaluationSplit.from_dates(days, percent))
                 self.assertEqual(
-                    (m["net_rub"], m["excess_rub"], m["utility"]), expected
+                    (m["net_rub"], m["excess_rub"], m["rub_per_session"]), expected
                 )
         proof["trades"] = []
         no_check = _measure(proof, marks, EvaluationSplit.from_dates(days, 0))
@@ -202,7 +206,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         self.assertEqual(a["method"], "Optuna TPESampler")
         self.assertEqual(a["trial_count"], TRIALS)
         self.assertEqual([c["trial"] for c in a["candidates"]], list(range(TRIALS)))
-        self.assertEqual(a["status"], "plateau_found")
+        self.assertEqual(a["status"], "maximum_found")
         self.assertEqual(
             set(a["selected_parameters"]), {"lookback", "entry_z", "exit_z"}
         )
@@ -338,8 +342,15 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         data["rows"] = data["rows"][:18]
         path.write_text(json.dumps(data))
         result = research_run(proof, PAIR, optimize=True)
-        self.assertIn("18", result["reason"])
-        self.assertEqual(result["status"], "unavailable")
+        self.assertIsNotNone(result["selected_parameters"])
+        for lamp in result["plateau"]["fields"].values():
+            self.assertIsNone(lamp["score"])
+            self.assertIn("18", lamp["reason"])
+        data["rows"] = data["rows"][:5]
+        path.write_text(json.dumps(data))
+        too_short = research_run(proof, PAIR, optimize=True)
+        self.assertEqual(too_short["status"], "unavailable")
+        self.assertIsNone(too_short["selected_parameters"])
         for params in (
             {"lookback": 6.5},
             {"lookback": True},

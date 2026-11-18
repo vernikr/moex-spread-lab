@@ -148,8 +148,8 @@ class ProofService:
     # ------------------------------------------------------------------ catalog
 
     def catalog(self) -> dict[str, Any]:
-        from .calendar_spreads import CalendarData
         from . import screener_app
+        from .calendar_spreads import CalendarData
 
         try:
             calendar = CalendarData(self.root).catalog()
@@ -174,7 +174,7 @@ class ProofService:
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
         return self.prepare(selection)(selection)
 
-    def prepare(self, selection: dict[str, Any]) -> Callable[..., dict[str, Any]]:
+    def prepare(self, selection: dict[str, Any], *, calendar=None, split_liquidity=False) -> Callable[..., dict[str, Any]]:
         """Request-scoped replay of one instrument/strategy with different numeric settings.
 
         Load the selected inputs once, not the entire registry per trial. Outside this
@@ -185,12 +185,12 @@ class ProofService:
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == PAIR_UNIVERSE:
-            return self._prepare_pair(selection)
+            return self._prepare_pair(selection, split_liquidity=split_liquidity)
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
         from .calendar_spreads import CalendarData
 
-        calendar = CalendarData(self.root)
+        calendar = calendar if calendar is not None else CalendarData(self.root)
 
         def replay(request, through=None):
             payload = calendar.proof(request, through=through)
@@ -293,7 +293,7 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _prepare_pair(self, selection: dict[str, Any]) -> Callable[..., dict[str, Any]]:
+    def _prepare_pair(self, selection: dict[str, Any], *, split_liquidity=False) -> Callable[..., dict[str, Any]]:
         from . import screener_app
 
         pair = screener_app._pair(selection.get("pair"))
@@ -302,9 +302,12 @@ class ProofService:
         if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
             raise W0Error("неизвестная стратегия")
         inputs = screener_app.ScreenerInputs(self.root)
-        availability = screener_app.catalog(inputs, registry=(pair,))["pairs"][0]["strategies"]
-        if not availability.get(strategy):
-            raise W0Error("локальные входы отсутствуют для этой пары и стратегии")
+        entry = screener_app.catalog(inputs, registry=(pair,))["pairs"][0]
+        if not entry["proof_strategies"].get(strategy):
+            raise W0Error("Нет полного набора локальных данных для этой пары и стратегии.")
+        # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
+        if not split_liquidity and not entry["strategies"].get(strategy):
+            raise W0Error("Не пройдено правило ликвидности пары.")
 
         @cache
         def risk_for(quantity):
@@ -321,6 +324,14 @@ class ProofService:
             prepared, engine = self._price_inputs(inputs, pair), self._mean_reversion_proof
         else:
             prepared, engine = self._funding_inputs(inputs, pair), self._funding_proof
+
+        # Reuse immutable input hashes throughout this request's Optuna trials.
+        source_hashes = {
+            "benchmark_sha256": _sha256_bytes(inputs.benchmark),
+            "contracts_sha256": _sha256_bytes(inputs.contracts),
+            "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
+        }
+        prepared = (*prepared, source_hashes)
 
         def replay(request, through=None):
             execution = screener_app.execution_settings(request)
@@ -387,7 +398,7 @@ class ProofService:
     ) -> dict[str, Any]:
         near, far = pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
-        series, analysis_rows, funding_note, funding_provenance, funding_swaprates = prepared
+        series, analysis_rows, funding_note, funding_provenance, funding_swaprates, source_hashes = prepared
         if through is not None:
             series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
             analysis_rows = [r for r in analysis_rows if r["date"] <= through]
@@ -495,9 +506,7 @@ class ProofService:
             margin_pair=margin_pair,
             provenance={
                 **series["provenance"],
-                "benchmark_sha256": _sha256_bytes(inputs.benchmark),
-                "contracts_sha256": _sha256_bytes(inputs.contracts),
-                "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
+                **source_hashes,
                 **funding_provenance,
             },
             notes=[
@@ -544,7 +553,7 @@ class ProofService:
     ) -> dict[str, Any]:
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
-        study, near_source, far_source = prepared
+        study, near_source, far_source, source_hashes = prepared
         if through is not None:
             study = {**study, "rows": [row for row in study["rows"] if row["date"] <= through]}
         report = build_carry_strategy(
@@ -686,9 +695,7 @@ class ProofService:
             provenance={
                 "near_history_sha256": near_source["raw_response_sha256"],
                 "far_history_sha256": far_source["raw_response_sha256"],
-                "benchmark_sha256": _sha256_bytes(inputs.benchmark),
-                "contracts_sha256": _sha256_bytes(inputs.contracts),
-                "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
+                **source_hashes,
             },
             notes=[
                 "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
@@ -734,7 +741,7 @@ class ProofService:
             "far_volume": row.get("far_volume"),
             "spread_volume": row.get("spread_volume"),
             "margin_rub": None,
-            "costs": {**{"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0}, **(costs or {})},
+            "costs": {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0, **(costs or {})},
         }
 
     def _trade_block(

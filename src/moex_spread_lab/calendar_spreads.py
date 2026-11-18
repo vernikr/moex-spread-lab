@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import re
@@ -14,7 +15,13 @@ from typing import Any
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
 from .carry import CarryError, fetch_history
 from .costs import TAKER_RATE_PERCENT, tariff_profile
-from .s3_reference import FILLS, account_trades, evaluate_variants, read_benchmark, strategy_runner
+from .s3_reference import (
+    FILLS,
+    account_trades,
+    evaluate_variants,
+    read_benchmark,
+    strategy_runner,
+)
 from .screener_app import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 from .w0 import W0Error
 
@@ -78,7 +85,7 @@ def fetch_inputs(
     secids = []
     for asset in sorted(needed):
         chain = contract_chain(asset)
-        secids += [*chain, *(spread_id(n, f) for n, f in zip(chain, chain[1:]))]
+        secids += [*chain, *(spread_id(n, f) for n, f in itertools.pairwise(chain))]
 
     def load(secid: str) -> tuple[str, dict[str, dict[str, Any]] | None]:
         try:
@@ -173,7 +180,7 @@ def build_windows(
     fx = (factors or {}).get(config.get("fx", ""), {})
     min_rows = 12 if config.get("monthly") else 25
     windows, previous_expiry = [], None
-    for near, far in zip(chain, chain[1:]):
+    for near, far in itertools.pairwise(chain):
         legs, native, far_rows = histories.get(near), histories.get(spread_id(near, far)), histories.get(far)
         if not legs or not native or not far_rows:
             continue
@@ -346,6 +353,36 @@ class CalendarData:
             ],
         }
 
+    def window(self, asset, pair):
+        w = next((w for w in self._load()["windows"].get(asset, []) if w["pair"] == pair), None)
+        if w is None:
+            raise W0Error("Нет полного календарного окна для этой пары.")
+        return w
+
+    @staticmethod
+    def _through(window, day):
+        rows = [r for r in window["rows"] if r["date"] <= day]
+        eligible = _positive_spread_volume_rows(rows)
+        if len(eligible) < 2:
+            raise W0Error("Недостаточно наблюдений для проверки параметров")
+        return {**window, "rows": rows, "last_date": rows[-1]["date"],
+                "min_spread_volume": min(r["min_volume"] for r in eligible),
+                "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2)}
+
+    def check_training_window(self, asset, pair, quantity, validation_percent):
+        """Cheap preflight for large checkbox selections; use precisely the replay's prefix gates."""
+        from .evaluation_periods import EvaluationSplit
+
+        window = self.window(asset, pair)
+        if validation_percent:
+            days = (r["date"] for r in _positive_spread_volume_rows(window["rows"]))
+            cutoff = EvaluationSplit.from_dates(days, validation_percent).training[-1]
+            window = self._through(window, cutoff)
+        if window["min_spread_volume"] < MIN_DAILY_VOLUME:
+            raise W0Error("Не пройдено правило ликвидности на обучении.")
+        if not _stress_ok(window["max_pair_margin_rub"], quantity):
+            raise W0Error("Не пройден стресс-тест капитала на обучении.")
+
     def proof(self, selection: dict[str, Any], *, through: str | None = None) -> dict[str, Any]:
         data = self._load()
         asset, pair = selection.get("asset"), selection.get("pair")
@@ -355,18 +392,9 @@ class CalendarData:
             raise W0Error("unknown asset, strategy or fill rule")
         if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 50:
             raise W0Error("contracts must be an integer between 1 and 50")
-        window = next((w for w in data["windows"].get(asset, []) if w["pair"] == pair), None)
-        if window is None:
-            raise W0Error("no complete front window for this pair")
+        window = self.window(asset, pair)
         if through is not None:
-            # Optimizer replays only training; never mutate the cached full-history window.
-            rows = [r for r in window["rows"] if r["date"] <= through]
-            eligible = _positive_spread_volume_rows(rows)
-            if len(eligible) < 2:
-                raise W0Error("Недостаточно наблюдений для проверки параметров")
-            window = {**window, "rows": rows, "last_date": rows[-1]["date"],
-                      "min_spread_volume": min(r["min_volume"] for r in eligible),
-                      "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2)}
+            window = self._through(window, through)
         delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
         options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
         params = selection.get("parameters", {})

@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import select
+import socket
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -625,6 +627,7 @@ class ScreenerStore:
     def __init__(self, inputs: ScreenerInputs):
         self.inputs = inputs
         self.lock = threading.Lock()
+        self.proof_search_lock = threading.Lock()
         self._calendar: Any = None
         self._proof: ProofService | None = None
 
@@ -751,6 +754,11 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             else:
                 self._json(404, {"error": "not found"})
 
+        def _check_connected(self) -> None:
+            # Abort expensive group replay after its browser fetch has been cancelled.
+            if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                raise ConnectionAbortedError("Клиент отменил подбор.")
+
         def do_POST(self) -> None:
             if not self._local_request() or self.headers.get("Origin") not in (
                 None,
@@ -771,8 +779,9 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                if not 0 < size <= 8192:
-                    raise ScreenerError("размер запроса должен быть 1–8192 байт")
+                limit = 192 * 1024 if path == "/api/proof/optimize" else 8192
+                if not 0 < size <= limit:
+                    raise ScreenerError(f"размер запроса должен быть 1–{limit} байт")
                 selection = json.loads(self.rfile.read(size))
                 if path == "/api/settings":
                     with store.lock:
@@ -784,9 +793,18 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     from .proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
-                    result = research_run(store.proof, selection, optimize=search, include_plateau=diagnostics)
                     if search:
-                        store.save_proof_search(result)
+                        if not store.proof_search_lock.acquire(blocking=False):
+                            self._json(409, {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."})
+                            return
+                        try:
+                            result = research_run(store.proof, selection, optimize=True, check_cancelled=self._check_connected)
+                            if result.get("run_id"):
+                                store.save_proof_search(result)
+                        finally:
+                            store.proof_search_lock.release()
+                    else:
+                        result = research_run(store.proof, selection, optimize=False, include_plateau=diagnostics)
                 elif path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)
@@ -799,6 +817,8 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     else:
                         result = optimize(store.inputs, selection)
                         store.save_search(result)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                return
             except (ValueError, json.JSONDecodeError, W0Error, OSError) as exc:
                 self._json(400, {"error": str(exc)})
                 return

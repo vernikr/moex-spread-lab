@@ -3,7 +3,6 @@
 After installing Chromium for Playwright: uv run --with playwright python tests/browser/period_settings_smoke.py
 """
 
-import json
 import re
 import sys
 import tempfile
@@ -16,26 +15,7 @@ from playwright.sync_api import expect, sync_playwright
 from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from test_calendar_proof import _build_root as calendar_root
-from test_execution_proof import _build_root as pair_root
-
-
-def fixture(root):
-    pair_root(root)
-    paths = [
-        (root / "data/w1/current-intake.json", "instruments"),
-        (root / "data/benchmark/lqdt-lineage.json", "rows"),
-    ]
-    previous = [json.loads(p.read_text()) for p, _ in paths]
-    calendar_root(root)
-    for (path, key), data in zip(paths, previous):
-        if key == "instruments":
-            for contract in data[key]:
-                contract["settlement"] = (
-                    13.0  # synthetic CNY reference for the combined calendar catalog
-                )
-        data[key] = json.loads(path.read_text())[key] + data[key]
-        path.write_text(json.dumps(data))
+from proof_fixtures import fixture
 
 
 def ready(page, basis):

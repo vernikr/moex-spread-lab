@@ -27,6 +27,7 @@ Stage 9 development is in progress. The offline W0–W7 mechanics, ISS inputs, L
 - [H3-F1 funding-only carry hypothesis](docs/development/funding-only-strategy.md)
 - [Flagship futures-pair screen](docs/development/pair-screen.md)
 - [Funding-aware flagship-pair screen](docs/development/funding-screen.md)
+- [Perpetual funding coverage: exchange recheck, short-gap estimates and session evidence](docs/development/historical-pair-intake.md#funding-reconciliation-2026-11-18)
 - [S1 local screener: input preparation](docs/development/screener-s1.md)
 - [S2 pair table and plateau search](docs/development/screener-s2.md)
 - [Execution proof and single-strategy parameter search (`/`, also `/proof`)](docs/development/execution-proof.md)

@@ -35,6 +35,8 @@ This revises the order of Stage-9 delivery, not the research/live boundary: firs
 
 **2026-11-18 — Optional proof screens.** For offline parameter research, allow spreads that failed the volume screen and/or working-capital stress screen via two independent, initially checked preferences. Preserve the original V/C verdicts, data requirements, funded-account arithmetic and loss controls. This is an exception to screening in the proof research UI, not a change to the pilot policy, archived studies, or broker authority.
 
+**2026-11-18 — Missing perpetual funding.** Check the exchange first. For an internal gap of 1–3 funding sessions, the user approves using the same mean of the two adjacent known rates on each missing date. Longer or one-sided gaps stay unresolved. This is a labelled historical estimate, not a published payment or information available to an earlier signal. Documented no-clearing sessions have no separate payment. No price interpolation, automatic removal of checks or relaxation of account controls. See [proof policy](development/execution-proof.md#exchange-check-and-short-gaps-2026-11-18).
+
 ## Delegated operational defaults (not empirical findings)
 
 The user asked the assistant to choose reasonable interim-drawdown and maximum-top-up values and to proceed to stage 2. The assistant selected the following research/pilot defaults; full definitions and consequences are in [the versioned policy](risk/pilot-policy.md).

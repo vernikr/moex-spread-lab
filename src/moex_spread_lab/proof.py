@@ -19,9 +19,10 @@ from typing import Any
 
 from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
-from .carry import build_carry_strategy, build_carry_study, fetch_history
+from .carry import build_carry_strategy, build_carry_study
 from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
+from .proof_funding import FundingWindow, ProofFunding
 from .screener import _normalized_series
 from .w0 import W0Error
 
@@ -303,9 +304,10 @@ class ProofService:
         if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
             raise W0Error("неизвестная стратегия")
         inputs = screener_app.ScreenerInputs(self.root)
-        entry = screener_app.catalog(inputs, registry=(pair,))["pairs"][0]
+        funding = ProofFunding(inputs)
+        entry = screener_app.catalog(inputs, registry=(pair,), funding=funding)["pairs"][0]
         if not entry["proof_strategies"].get(strategy):
-            raise W0Error("Нет полного набора локальных данных для этой пары и стратегии.")
+            raise W0Error(entry["data_reasons"][strategy])
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
         if not (settings.validation_percent or settings.allow_failed_volume) and not entry["strategies"].get(strategy):
             raise W0Error("Не пройдено правило ликвидности пары.")
@@ -322,9 +324,9 @@ class ProofService:
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
         dates, prices = _benchmark_marks(inputs.benchmark)
         if strategy == "mean_reversion":
-            prepared, engine = self._price_inputs(inputs, pair), self._mean_reversion_proof
+            prepared, engine = self._price_inputs(inputs, pair, funding, settings.validation_percent), self._mean_reversion_proof
         else:
-            prepared, engine = self._funding_inputs(inputs, pair), self._funding_proof
+            prepared, engine = self._funding_inputs(inputs, pair, funding, settings.validation_percent), self._funding_proof
 
         # Reuse immutable input hashes throughout this request's Optuna trials.
         source_hashes = {
@@ -344,8 +346,9 @@ class ProofService:
 
     # ------------------------------------------------------ mean reversion
 
-    def _price_inputs(self, inputs, pair):
+    def _price_inputs(self, inputs, pair, funding, validation_percent):
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
+        book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
         series = _normalized_series(
             inputs.candles(pair_id, near),
             inputs.candles(pair_id, far),
@@ -353,11 +356,8 @@ class ProofService:
             inputs.contracts,
             near=near,
             far=far,
+            prior_benchmark_dates=book.no_clearing_dates if book else (),
         )
-        funding_note: list[str] = []
-        funding_provenance: dict[str, Any] = {}
-        funding_swaprates: dict[str, float] = {}
-        is_perpetual_pair = pair.get("family") == "perpetual_quarterly_same_asset"
         analysis_rows = [
             row for row in series["rows"]
             if row.get("near_volume") is not None and row.get("far_volume") is not None
@@ -365,46 +365,25 @@ class ProofService:
         ]
         if len(analysis_rows) < 2:
             raise W0Error("fewer than two positive-volume common observations")
-        if is_perpetual_pair:
-            from .screener_app import HISTORY_WINDOWS, _offline_only
-
-            start, end = HISTORY_WINDOWS[pair_id]
-            try:
-                funding_source = fetch_history(
-                    near, start, end, cache_dir=inputs.history_cache(pair_id), delay_seconds=0, opener=_offline_only
-                )
-                source_rates: dict[str, float] = {}
-                for source_row in funding_source["rows"]:
-                    if not source_row.get("TRADEDATE") or source_row.get("SWAPRATE") is None:
-                        continue
-                    try:
-                        swaprate = float(source_row["SWAPRATE"])
-                    except (TypeError, ValueError):
-                        continue
-                    if math.isfinite(swaprate):
-                        source_rates[source_row["TRADEDATE"]] = swaprate
-                requested_dates = [row["date"] for row in analysis_rows]
-                if requested_dates and all(day in source_rates for day in requested_dates):
-                    funding_swaprates = {day: source_rates[day] for day in requested_dates}
-                    funding_provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
-                    funding_note.append("Фандинг включён по опубликованному MOEX ISS SWAPRATE: для каждой строки выборки есть значение EOD; к удерживаемой позиции применяется −position × SWAPRATE × lot × quantity.")
-                else:
-                    funding_note.append("Фандинг не включён: локальная EOD-история ISS не содержит SWAPRATE для всех дат выборки; ценовой результат не является полным P&L.")
-            except W0Error:
-                funding_note.append("Фандинг не включён: локальная EOD-история ISS с SWAPRATE отсутствует или неполна; ценовой результат не является полным P&L.")
-        return series, analysis_rows, funding_note, funding_provenance, funding_swaprates
+        if book is None:
+            return series, analysis_rows, None, {}
+        window = FundingWindow(book, (r["date"] for r in analysis_rows), validation_percent)
+        hashes = funding.source(pair_id, near)["source"]["raw_response_sha256"]
+        return series, analysis_rows, window, {"near_funding_history_sha256": hashes}
 
     def _mean_reversion_proof(
         self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
     ) -> dict[str, Any]:
         near, far = pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
-        series, analysis_rows, funding_note, funding_provenance, funding_swaprates, source_hashes = prepared
+        series, analysis_rows, window, funding_provenance, source_hashes = prepared
+        evidence = window.resolve(through) if window else None
+        marks = evidence.marks if evidence else {}
+        funding_swaprates = evidence.rates if evidence else {}
         if through is not None:
             series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
             analysis_rows = [r for r in analysis_rows if r["date"] <= through]
         analysis_series = {**series, "rows": analysis_rows}
-        is_perpetual_pair = pair.get("family") == "perpetual_quarterly_same_asset"
         near_contract = series["contracts"][near]
         far_contract = series["contracts"][far]
         near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
@@ -464,6 +443,7 @@ class ProofService:
             series_rows.append(
                 {
                     "date": day,
+                    **({"benchmark_mark_kind": "prior_daily_close", "benchmark_mark_date": row["benchmark_mark_date"]} if row.get("benchmark_mark_date") else {}),
                     "near": row["near_close"],
                     "far": row["far_close"],
                     "near_open": row["near_open"],
@@ -481,11 +461,12 @@ class ProofService:
                     "volume_eligible": row.get("near_volume") is not None and row.get("far_volume") is not None
                     and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0,
                     "days_to_near_expiry": None,
-                    "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in funding_swaprates else None,
+                    "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in marks else None,
                     "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
                     "funding_lot_size": float(near_contract.get("lot_size") or 1.0) if day in funding_swaprates else None,
                     "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,
                     "funding_source": "MOEX ISS SWAPRATE; EOD settlement history" if day in funding_swaprates else None,
+                    **(marks[day].series_fields(window.book.marks) if day in marks else {}),
                     "signal_z": daily.get("signal_z"),
                     "margin_rub": round(margin_pair, 2) if position else 0.0,
                 }
@@ -509,10 +490,11 @@ class ProofService:
                 **series["provenance"],
                 **source_hashes,
                 **funding_provenance,
+                **(evidence.provenance if evidence else {}),
             },
             notes=[
-                *(funding_note or (["Для пары без вечного фьючерса фандинг неприменим."] if not is_perpetual_pair else [])),
-                *(["MOEX ISS EOD SWAPRATE используется как итог клиринга; это не пересчёт минутных D/K1/K2 и не брокерская выписка. Фандинг начисляется только если позиция сохраняется к соответствующему клирингу; вход/выход по open — прокси времени исполнения. Лот берётся из текущего intake снапшота, а не из эффективной исторической спецификации."] if funding_swaprates else []),
+                *(evidence.notes() if evidence else ["Для пары без вечного фьючерса фандинг неприменим."]),
+                *(["Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."] if evidence else []),
                 "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
                 "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию.",
                 *(
@@ -528,33 +510,26 @@ class ProofService:
 
     # ------------------------------------------------------------ funding carry
 
-    def _funding_inputs(self, inputs, pair):
-        from .screener_app import HISTORY_WINDOWS, _offline_only
-
+    def _funding_inputs(self, inputs, pair, funding, validation_percent):
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-        start, end = HISTORY_WINDOWS[pair_id]
-        near_source = fetch_history(
-            near, start, end, cache_dir=inputs.history_cache(pair_id), delay_seconds=0, opener=_offline_only
-        )
-        far_source = fetch_history(
-            far, start, end, cache_dir=inputs.history_cache(pair_id), delay_seconds=0, opener=_offline_only
-        )
+        window = funding.carry_window(pair, validation_percent)
+        near_source = funding.source(pair_id, near)
+        far_source = funding.source(pair_id, far)
+        # Resolve the full research period (including its split) before the study reads any estimate.
         study = build_carry_study(
-            near_source,
-            far_source,
-            inputs.contracts,
-            near=near,
-            far=far,
+            near_source, far_source, inputs.contracts, near=near, far=far,
             funding_regimes=None if pair_id == "CNYRUBF/CRZ6" else (),
+            funding_marks=window.resolve().marks, no_clearing_dates=window.book.no_clearing_dates,
         )
-        return study, near_source["source"], far_source["source"]
+        return study, near_source["source"], far_source["source"], window
 
     def _funding_proof(
         self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
     ) -> dict[str, Any]:
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
-        study, near_source, far_source, source_hashes = prepared
+        study, near_source, far_source, window, source_hashes = prepared
+        evidence = window.resolve(through)
         if through is not None:
             study = {**study, "rows": [row for row in study["rows"] if row["date"] <= through]}
         report = build_carry_strategy(
@@ -674,6 +649,7 @@ class ProofService:
                     "funding_lot_size": near_lot,
                     "funding_contracts": quantity if position else 0,
                     "funding_source": "MOEX ISS SWAPRATE; EOD settlement history",
+                    **evidence.marks[row["date"]].series_fields(window.book.marks),
                     "signal_z": None,
                     "margin_rub": round(margin_pair, 2) if position else 0.0,
                 }
@@ -697,11 +673,13 @@ class ProofService:
                 "near_history_sha256": near_source["raw_response_sha256"],
                 "far_history_sha256": far_source["raw_response_sha256"],
                 **source_hashes,
+                **evidence.provenance,
             },
             notes=[
+                *evidence.notes(),
                 "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
-                "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего перпетуала. ISS SWAPRATE — опубликованный итог клиринга, не реконструкция минутного расчёта и не брокерская выписка.",
-                *(["Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; дневной SWAPRATE берётся как опубликованное значение ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."] if near == "GLDRUBF" else []),
+                "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего перпетуала. Базовый источник — итог клиринга ISS; оценки помечены отдельно. Это не брокерская выписка.",
+                *(["Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; источник исходных ставок — ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."] if near == "GLDRUBF" else []),
                 *(
                     ["Потолки правил фондирования для не-CNY инструментов не восстанавливаются."]
                     if pair_id != "CNYRUBF/CRZ6"
@@ -1022,6 +1000,7 @@ class ProofService:
             {
                 "selection": payload["selection"],
                 "daily": payload["series"],
+                **({"funding_evidence": {k:v for k,v in provenance.items() if k.startswith("funding_")}} if "funding_policy" in provenance else {}),
                 "source_hashes": {
                     key: value
                     for key, value in provenance.items()

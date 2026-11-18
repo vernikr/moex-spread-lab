@@ -18,7 +18,6 @@ from urllib.parse import urlsplit
 from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
 from .carry import (
-    HISTORY_PAGE_SIZE,
     build_carry_strategy,
     build_carry_study,
     fetch_history,
@@ -26,6 +25,7 @@ from .carry import (
 from .costs import tariff_profile
 from .evaluation_periods import EvaluationSplit, read_settings, save_settings
 from .proof import ProofService
+from .proof_funding import FundingWindow, ProofFunding
 from .screener import SCREEN_PAIRS, _normalized_series
 from .w0 import W0Error
 
@@ -233,29 +233,8 @@ def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[st
         return None, None, 0, set()
 
 
-def _cached_swaprate_dates(inputs: ScreenerInputs, pair_id: str, secid: str, start: str, end: str) -> set[str] | None:
-    dates: set[str] = set()
-    cache_dir = inputs.history_cache(pair_id)
-    for offset in range(0, 10_000, HISTORY_PAGE_SIZE):
-        path = cache_dir / f"{secid}-{start}-{end}-{offset}.json"
-        try:
-            cached = json.loads(path.read_text(encoding="utf-8"))
-            payload = cached["payload"]
-            block = payload["history"]
-            columns, rows = block["columns"], block["data"]
-            trade_idx, swap_idx = columns.index("TRADEDATE"), columns.index("SWAPRATE")
-            cursor = payload.get("history.cursor", {})
-            cursor_rows = cursor.get("data", [])
-            total = int(cursor_rows[0][cursor["columns"].index("TOTAL")]) if cursor_rows and cursor_rows[0][cursor["columns"].index("TOTAL")] is not None else None
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-        dates.update(str(row[trade_idx]) for row in rows if len(row) > swap_idx and row[swap_idx] is not None)
-        if (total is not None and offset + len(rows) >= total) or len(rows) < HISTORY_PAGE_SIZE:
-            break
-    return dates
-
-
-def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
+def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str, Any]:
+    funding = funding or ProofFunding(inputs)
     try:
         instruments = {
             row["secid"]: row
@@ -274,7 +253,6 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
         except (OSError, ValueError, TypeError):
             pass
     pairs = []
-    funding_dates_cache: dict[tuple[str, str, str, str], set[str] | None] = {}
     for pair in registry:
         pair_id = pair["pair_id"]
         history_from, history_to, history_observations, _ = _pair_history_span(inputs, pair)
@@ -294,21 +272,8 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
         )
         volumes = _leg_volumes(inputs, pair)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
-        funding_covered = True
-        if pair["family"] == "perpetual_quarterly_same_asset":
-            coverage_key = (pair_id, near, start, end)
-            if coverage_key not in funding_dates_cache:
-                funding_dates_cache[coverage_key] = _cached_swaprate_dates(inputs, pair_id, near, start, end)
-            funding_dates = funding_dates_cache[coverage_key]
-            eligible_dates = _positive_leg_volume_dates(inputs, pair)
-            funding_covered = bool(eligible_dates) and funding_dates is not None and eligible_dates.issubset(funding_dates)
-        proof_available = {
-            "mean_reversion": all(path.is_file() for path in price_files)
-            and (pair["family"] != "perpetual_quarterly_same_asset" or (funding_files[0].is_file() and funding_covered)),
-            "funding_only": pair["family"] == "perpetual_quarterly_same_asset"
-            and all(path.is_file() for path in funding_files)
-            and funding_covered,
-        }
+        days = _positive_leg_volume_dates(inputs, pair) if pair["family"] == "perpetual_quarterly_same_asset" else set()
+        proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
         available = {
             "mean_reversion": tradable and proof_available["mean_reversion"],
             "funding_only": tradable and proof_available["funding_only"],
@@ -334,6 +299,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
                 "min_leg_daily_volume": min(volumes.values()) if volumes else None,
                 "strategies": available,
                 "proof_strategies": proof_available,
+                "data_reasons": reasons,
                 "status": "excluded_thin_leg"
                 if volumes is not None and not tradable
                 else "local_inputs_available"
@@ -421,11 +387,15 @@ def build_result(
         raise ScreenerError("неизвестная стратегия")
     execution = execution_settings(selection)
     params = _parameters(selection, strategy)
-    availability = catalog(inputs, registry=(pair,))["pairs"][0]["strategies"]
-    if not availability[strategy]:
-        raise ScreenerError("локальные входы отсутствуют для этой пары и стратегии")
+    funding = ProofFunding(inputs)
+    entry = catalog(inputs, registry=(pair,), funding=funding)["pairs"][0]
+    if not entry["strategies"][strategy]:
+        raise ScreenerError(entry["data_reasons"].get(strategy, "Не пройдено правило ликвидности пары."))
+    share = (read_settings(inputs.root)["validation_percent"] if validation_share is None else validation_share) if through is None else 0
+    evidence = None
 
     if strategy == "mean_reversion":
+        book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
         series = _normalized_series(
             inputs.candles(pair_id, near),
             inputs.candles(pair_id, far),
@@ -433,6 +403,7 @@ def build_result(
             inputs.contracts,
             near=near,
             far=far,
+            prior_benchmark_dates=book.no_clearing_dates if book else (),
         )
         if through is not None:
             series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
@@ -442,16 +413,10 @@ def build_result(
         funding_swaprates: dict[str, float] = {}
         funding_source = None
         if pair["family"] == "perpetual_quarterly_same_asset":
-            funding_source = _history_source(inputs, pair_id, near)
-            source_rates = {
-                row["TRADEDATE"]: float(row["SWAPRATE"])
-                for row in funding_source["rows"]
-                if row.get("TRADEDATE") and row.get("SWAPRATE") is not None
-            }
+            funding_source = funding.source(pair_id, near)
             requested_dates = [row["date"] for row in series["rows"]]
-            if not requested_dates or not all(day in source_rates for day in requested_dates):
-                raise ScreenerError("для mean_reversion отсутствуют значения SWAPRATE на каждую дату")
-            funding_swaprates = {day: source_rates[day] for day in requested_dates}
+            evidence = FundingWindow(book, requested_dates, share).resolve(through)
+            funding_swaprates = evidence.rates
         report = run_mean_reversion_baseline(
             series,
             lookback=params["lookback"],
@@ -483,24 +448,21 @@ def build_result(
             provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
         price_role = "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
         notes = [
-            *( ["Фандинг включён по опубликованному MOEX ISS EOD SWAPRATE; сумма = −position × SWAPRATE × лот × quantity."] if funding_source is not None else ["Для пары без вечного фьючерса фандинг неприменим."]),
+            *( ["Фандинг включён: биржевой SWAPRATE или явно отмеченная расчётная ставка; сумма = −position × SWAPRATE × лот × quantity."] if funding_source is not None else ["Для пары без вечного фьючерса фандинг неприменим."]),
             *( ["Итоговый EOD SWAPRATE отражает клиринговый расчёт MOEX, включая действовавшие лимиты; минутный D/K1/K2 не пересчитывается. Лот берётся из текущего intake снапшота, не из эффективной исторической спецификации. Это не брокерская выписка."] if funding_source is not None else []),
             "Сигнал по закрытию дня, исполнение по следующему открытию дня (прокси реакции в пределах минут–часов).",
             "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.",
         ]
     else:
-        near_source = _history_source(inputs, pair_id, near)
-        far_source = _history_source(inputs, pair_id, far)
+        window = funding.carry_window(pair, share)
+        evidence = window.resolve(through)
+        near_source = funding.source(pair_id, near)
+        far_source = funding.source(pair_id, far)
         study = build_carry_study(
-            near_source,
-            far_source,
-            inputs.contracts,
-            near=near,
-            far=far,
+            near_source, far_source, inputs.contracts, near=near, far=far,
             funding_regimes=None if pair_id == "CNYRUBF/CRZ6" else (),
+            funding_marks=evidence.marks, no_clearing_dates=window.book.no_clearing_dates, through=through,
         )
-        if through is not None:
-            study = {**study, "rows": [r for r in study["rows"] if r["date"] <= through]}
         report = build_carry_strategy(
             study,
             inputs.benchmark,
@@ -549,6 +511,9 @@ def build_result(
                 else []
             ),
         ]
+    if evidence:
+        provenance.update(evidence.provenance)
+        notes.extend(evidence.notes())
     first, last = daily[0], daily[-1]
     initial = INITIAL_CAPITAL
     result = {
@@ -600,8 +565,9 @@ def build_result(
             if "sha256" in key or "hashes" in key
         },
     }
+    if evidence and evidence.provenance:
+        identity["funding_evidence"] = evidence.provenance
     if through is None:
-        share = read_settings(inputs.root)["validation_percent"] if validation_share is None else validation_share
         split = EvaluationSplit.from_dates((r["date"] for r in daily), share)
         opening = daily[len(split.training) - 1] if split.validation else {"V": initial, "B": initial}
         strategy_change = last["V"] - opening["V"]

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import statistics
 import time
 from bisect import bisect_left
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -18,7 +20,6 @@ from .analytics import load_contracts
 from .costs import side_cost, tariff_profile
 from .portfolio import lqdt_overlay_values
 from .w0 import W0Error
-
 
 CARRY_SCHEMA = "carry-study.v1"
 HISTORY_SCHEMA = "iss-history.v1"
@@ -111,6 +112,7 @@ def fetch_history(
     timeout: float = 30.0,
     opener: Callable[..., Any] = urlopen,
     fields: tuple[str, ...] = HISTORY_FIELDS,
+    allow_empty: bool = False,
 ) -> dict[str, Any]:
     if not secid or delay_seconds < 0:
         raise CarryError("invalid history arguments")
@@ -148,15 +150,19 @@ def fetch_history(
         if cursor_rows and cursor_rows[0].get("TOTAL") is not None:
             total = int(cursor_rows[0]["TOTAL"])
         if not block_rows:
+            if allow_empty and page == 0:
+                hashes.append(raw_hash or "")
             break
         all_rows.extend(block_rows)
         hashes.append(raw_hash or "")
         page += 1
         if len(block_rows) < HISTORY_PAGE_SIZE:
             break
+    if total is not None and len(all_rows) < total:
+        raise CarryError(f"Неполная история ISS {secid}: получено строк {len(all_rows)} из {total}.")
     deduped = {row.get("TRADEDATE"): row for row in all_rows if row.get("TRADEDATE")}
     rows = [deduped[key] for key in sorted(deduped)]
-    if not rows:
+    if not rows and (not allow_empty or all_rows):
         raise CarryError(f"empty EOD history for {secid}")
     return {
         "schema_version": HISTORY_SCHEMA,
@@ -186,6 +192,8 @@ def _normalize_history(source: dict[str, Any], secid: str) -> tuple[dict[str, di
             swaprate = float(row["SWAPRATE"]) if row.get("SWAPRATE") is not None else None
         except (TypeError, ValueError) as exc:
             raise CarryError(f"non-numeric history field for {secid} {row.get('TRADEDATE')}") from exc
+        if not math.isfinite(settle) or isinstance(row["SETTLEPRICE"], bool):
+            raise CarryError(f"Некорректная расчётная цена {secid} за {row['TRADEDATE']}.")
         normalized[row["TRADEDATE"]] = {
             "date": row["TRADEDATE"],
             "settle": settle,
@@ -213,13 +221,18 @@ def build_carry_study(
     near: str = "CNYRUBF",
     far: str = "CRZ6",
     funding_regimes: tuple[dict[str, Any], ...] | None = None,
+    funding_marks=None,
+    no_clearing_dates=(),
+    through: str | None = None,
 ) -> dict[str, Any]:
     near_rows, near_provenance = _normalize_history(near_source, near)
     far_rows, far_provenance = _normalize_history(far_source, far)
     contracts, contracts_hash = load_contracts(contracts_path, near, far)
     near_contract = contracts[near]
     far_contract = contracts[far]
-    common_dates = sorted(set(near_rows) & set(far_rows))
+    common_dates = sorted((set(near_rows) & set(far_rows)) - set(no_clearing_dates))
+    if through is not None:
+        common_dates = [d for d in common_dates if d <= through]
     if len(common_dates) < 2:
         raise CarryError("fewer than two common EOD settlement dates")
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
@@ -239,7 +252,8 @@ def build_carry_study(
                 (far_row["settle"] - far_rows[previous_date]["settle"]) * far_multiplier
                 - (near_row["settle"] - near_rows[previous_date]["settle"]) * near_multiplier
             )
-        swaprate = near_row["swaprate"]
+        mark = funding_marks[date_key] if funding_marks is not None else None
+        swaprate = mark.value if mark else near_row["swaprate"]
         if swaprate is None:
             raise CarryError(f"missing {near} SWAPRATE on {date_key}")
         funding_received = 0.0 if previous_date is None else swaprate * near_contract["lot_size"]
@@ -258,6 +272,7 @@ def build_carry_study(
             "date": date_key,
             "near_settle": near_row["settle"],
             "near_swaprate": swaprate,
+            **({"funding_known_on": mark.right} if mark and mark.kind == "midpoint" else {}),
             "near_lot_size": near_contract["lot_size"],
             "far_settle": far_row["settle"],
             "basis_far_minus_near": _round(far_row["settle"] - near_row["settle"]),
@@ -587,7 +602,13 @@ def build_carry_strategy(
 
         if index >= warmup_observations:
             trailing = rows[index - warmup_observations:index]
-            trailing_funding = statistics.fmean(float(item["daily_funding_received_short_near"]) for item in trailing)
+            # A midpoint backfills cash-flow accounting, not knowledge at decision time.
+            # Today's clearing is not yet known at the same-settlement decision. Never
+            # shorten the lookback or turn an unknown rate into a zero/exit signal.
+            trailing_funding = (
+                statistics.fmean(float(item["daily_funding_received_short_near"]) for item in trailing)
+                if all(item.get("funding_known_on", "") < date_key for item in trailing) else None
+            )
             trailing_basis_median = statistics.median(float(item["basis_far_minus_near"]) for item in trailing)
             expiry_signal = current_date >= expiry_cutoff
             assignment_window_signal = assignment_window_start is not None and current_date >= assignment_window_start
@@ -597,7 +618,7 @@ def build_carry_strategy(
                     exit_reason = "perpetual_execution_window"
                 elif strategy_variant == "basis_median" and float(row["basis_far_minus_near"]) >= trailing_basis_median:
                     exit_reason = "basis_reached_trailing_median"
-                elif trailing_funding <= 0:
+                elif trailing_funding is not None and trailing_funding <= 0:
                     exit_reason = "trailing_funding_non_positive"
                 elif expiry_signal:
                     exit_reason = "expiry_buffer"
@@ -617,7 +638,7 @@ def build_carry_strategy(
             elif (
                 not expiry_signal
                 and not assignment_window_signal
-                and trailing_funding > 0
+                and trailing_funding is not None and trailing_funding > 0
                 and (strategy_variant == "funding_only" or float(row["basis_far_minus_near"]) <= trailing_basis_median)
                 and pending is None
             ):

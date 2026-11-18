@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
 from .w0 import W0Error
-
 
 SCREEN_SCHEMA = "pair-screen.v1"
 SCREEN_PAIRS = (
@@ -49,7 +49,7 @@ def _basis_daily_pnl(series: dict[str, Any]) -> list[float]:
     near_multiplier = float(near["tick_value"]) / float(near["tick_size"])
     far_multiplier = float(far["tick_value"]) / float(far["tick_size"])
     result = []
-    for previous, current in zip(rows, rows[1:]):
+    for previous, current in pairwise(rows):
         result.append(
             (float(current["far_close"]) - float(previous["far_close"])) * far_multiplier
             - (float(current["near_close"]) - float(previous["near_close"])) * near_multiplier
@@ -65,6 +65,7 @@ def _normalized_series(
     *,
     near: str,
     far: str,
+    prior_benchmark_dates=(),
 ) -> dict[str, Any]:
     near_payload, near_hash = _read_json(near_path)
     far_payload, far_hash = _read_json(far_path)
@@ -82,6 +83,15 @@ def _normalized_series(
     near_rows = {row["begin"]: row for row in near_payload.get("rows", []) if row.get("begin") and row.get("close") is not None}
     far_rows = {row["begin"]: row for row in far_payload.get("rows", []) if row.get("begin") and row.get("close") is not None}
     benchmark = {row["date"]: row for row in benchmark_payload.get("rows", []) if row.get("date")}
+    # Only documented non-clearing sessions may reuse the last *already observed*
+    # LQDT mark. Never forward a futures candle or fabricate a settlement.
+    observed = sorted(benchmark)
+    for day in sorted(prior_benchmark_dates):
+        if day not in benchmark:
+            earlier = [d for d in observed if d < day]
+            if earlier:
+                prior = earlier[-1]
+                benchmark[day] = benchmark[prior]
     rows = []
     for timestamp in sorted(set(near_rows) & set(far_rows)):
         date_key = timestamp[:10]
@@ -103,7 +113,8 @@ def _normalized_series(
             "benchmark_price": float(benchmark_row["price"]),
             "benchmark_source_ticker": benchmark_row.get("source_ticker"),
             "benchmark_source_kind": benchmark_row.get("source_kind"),
-            "benchmark_mark_kind": "daily_close_same_date",
+            "benchmark_mark_kind": "prior_daily_close" if benchmark_row["date"] != date_key else "daily_close_same_date",
+            **({"benchmark_mark_date": benchmark_row["date"]} if benchmark_row["date"] != date_key else {}),
             "near_price_proxy_kind": near_rows[timestamp].get("price_proxy_kind", "candle_close"),
             "far_price_proxy_kind": far_rows[timestamp].get("price_proxy_kind", "candle_close"),
             "near_volume": near_rows[timestamp].get("volume"),

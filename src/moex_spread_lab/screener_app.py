@@ -628,6 +628,7 @@ class ScreenerStore:
         self.inputs = inputs
         self.lock = threading.Lock()
         self.proof_search_lock = threading.Lock()
+        self.proof_profile_lock = threading.Lock()
         self._calendar: Any = None
         self._proof: ProofService | None = None
 
@@ -768,7 +769,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 self._json(403, {"error": "local origin only"})
                 return
             path = urlsplit(self.path).path
-            if path not in {"/api/settings", "/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize"}:
+            if path not in {"/api/settings", "/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize", "/api/proof/plateau"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -779,21 +780,33 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 return
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                limit = 192 * 1024 if path == "/api/proof/optimize" else 8192
+                limit = 192 * 1024 if path in {"/api/proof/optimize", "/api/proof/plateau"} else 8192
                 if not 0 < size <= limit:
                     raise ScreenerError(f"размер запроса должен быть 1–{limit} байт")
                 selection = json.loads(self.rfile.read(size))
                 if path == "/api/settings":
                     with store.lock:
                         result = save_settings(store.inputs.root, selection)
-                elif path in {"/api/proof/run", "/api/proof/optimize"}:
+                elif path in {"/api/proof/run", "/api/proof/optimize", "/api/proof/plateau"}:
                     if not isinstance(selection, dict):
                         raise ScreenerError("выбор должен быть объектом")
                     search = path == "/api/proof/optimize"
                     from .proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
-                    if search:
+                    if path == "/api/proof/plateau":
+                        from .proof_batch import checked_plateau
+
+                        # A burst of edits can supersede outstanding requests. Serialize probes,
+                        # check for disconnection, and never lock out an explicit optimization.
+                        while not store.proof_profile_lock.acquire(timeout=0.15):
+                            self._check_connected()
+                        try:
+                            self._check_connected()
+                            result = checked_plateau(store.proof, selection, check_cancelled=self._check_connected)
+                        finally:
+                            store.proof_profile_lock.release()
+                    elif search:
                         if not store.proof_search_lock.acquire(blocking=False):
                             self._json(409, {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."})
                             return

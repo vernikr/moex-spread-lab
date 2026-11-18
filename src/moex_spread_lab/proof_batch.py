@@ -1,11 +1,13 @@
 """One Optuna objective on a fixed, equally weighted cohort of independent proof windows."""
 
+from dataclasses import dataclass
 from statistics import fmean
 
 import optuna
 
 from .carry import CarryStrategyError
-from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _run_id
+from .evaluation_periods import read_settings
+from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _benchmark_marks, _run_id
 from .proof_search import (
     EXECUTION_AXES,
     SEED,
@@ -15,6 +17,7 @@ from .proof_search import (
     StudyWindow,
     _lamps,
     _tune,
+    _validate,
 )
 from .w0 import W0Error
 
@@ -116,7 +119,41 @@ def _active_seed(request, active):
     }
 
 
-def batch_search(service, request, percent, benchmark, check_cancelled):
+@dataclass
+class _Cohort:
+    active: str
+    axes: dict
+    seed: dict
+    members: list
+    land: Landscape
+
+    def plateau(self, point):
+        # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
+        reason = next(
+            (
+                f"{k}: общий допустимый диапазон {a.low}–{a.high}."
+                for k, a in self.axes.items()
+                if not a.contains(point[k])
+            ),
+            None,
+        )
+        if not reason:
+            reason = next(
+                (
+                    f"{t['pair']}: {msg}" if len(self.members) > 1 else msg
+                    for t, c in self.members
+                    if (msg := c.lamp_warning())
+                ),
+                None,
+            )
+        first = self.members[0][1]
+        native_single = (
+            len(self.members) == 1 and first.request["strategy"] == self.active
+        )
+        return _lamps(first.fit if native_single else self.land, point, reason)
+
+
+def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
     from .calendar_spreads import CalendarData
 
     targets = _targets(request)
@@ -201,8 +238,6 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
             "selected_parameters": None,
         }
 
-    first = members[0][1]
-
     def average(point):
         scores, exposed = [], False
         for target, case in members:
@@ -225,6 +260,58 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
         }
 
     land = Landscape(axes | EXECUTION_AXES, average)
+    return _Cohort(active, axes, seed, members, land)
+
+
+def checked_plateau(service, request, *, check_cancelled=lambda: None):
+    """Read-only probes at one shared point. No focus, Optuna trials, logs or implicit exclusions."""
+    request = {
+        k: request[k]
+        for k in (
+            "targets",
+            "strategy",
+            "quantity",
+            "slippage_ticks",
+            "parameters",
+            "fill",
+        )
+        if k in request
+    }
+    _validate(request)
+    if not request.get("targets"):
+        raise W0Error("Для группового светофора нужны отмеченные окна.")
+    targets = _targets(request)
+    # All live editor values are explicit; never infer the point from a highlighted asset/default.
+    active = request.get("strategy")
+    if active not in STRATEGY_AXES or set(request.get("parameters", {})) != set(
+        STRATEGY_AXES[active]
+    ):
+        raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
+    percent = read_settings(service.root)["validation_percent"]
+    benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
+    group = _prepare_cohort(service, request, percent, benchmark, check_cancelled)
+    base = {
+        "scope": "checked",
+        "member_count": len(targets),
+        "validation_percent": percent,
+        "basis": "training",
+    }
+    if isinstance(group, dict):
+        return {
+            **base,
+            "status": "unavailable",
+            "excluded": group["excluded"],
+            "plateau": None,
+        }
+    return {**base, "status": "measured", "plateau": group.plateau(group.seed)}
+
+
+def batch_search(service, request, percent, benchmark, check_cancelled):
+    group = _prepare_cohort(service, request, percent, benchmark, check_cancelled)
+    if isinstance(group, dict):
+        return group
+    axes, seed, members, land = group.axes, group.seed, group.members, group.land
+    first = members[0][1]
     best, trials, attempts = _tune(
         land, seed, axes, min(len(case.split.training) for _, case in members)
     )
@@ -278,7 +365,7 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
         r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp")
         for r in rows
     ]
-    group = {
+    summary = {
         "member_count": len(rows),
         "unit": "annualized_excess_pp",
         "members": rows,
@@ -289,16 +376,9 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
         if best and all(v is not None for v in rates)
         else None,
     }
-    # Descriptive probes AFTER selection. For one item expose the exact same lamps as its normal run.
-    lamp_warning = next(
-        (msg for _, case in members if (msg := case.lamp_warning())), None
-    )
-    native_single = len(members) == 1 and first.request["strategy"] == active
-    plateau = (
-        _lamps(first.fit if native_single else land, point, lamp_warning)
-        if best or native_single
-        else None
-    )
+    # Same fixed-cohort diagnostic used by the live form, only after the final choice.
+    native_single = len(members) == 1 and first.request["strategy"] == group.active
+    plateau = group.plateau(point) if best or native_single else None
     result = {
         "schema_version": "proof-search.v3",
         "method": "Optuna TPESampler",
@@ -311,7 +391,7 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
         "status": "maximum_found" if best else "no_admissible_candidate",
         "selected_parameters": {k: best[k] for k in axes} if best else None,
         "selection": {k: v for k, v in request.items() if k != "targets"},
-        "group": group,
+        "group": summary,
         "plateau": plateau,
         "reason": None
         if best

@@ -116,7 +116,7 @@ def run(browser, url):
     )
     # Funding on the pair is incompatible with the offscreen calendar. Cancel preserves both.
     open_branch(PAIR_B)
-    change_strategy("#strategy", "funding_only")
+    change_strategy("#group-strategy", "funding_only")
     review()
     expect(page.locator("#compatibility-list")).to_contain_text("SRH3/SRM3")
     expect(page.locator("#compatibility-message")).to_contain_text("останется 1")

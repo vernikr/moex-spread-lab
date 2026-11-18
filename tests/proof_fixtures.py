@@ -22,3 +22,31 @@ def fixture(root):
                 )
         data[key] = json.loads(path.read_text())[key] + data[key]
         path.write_text(json.dumps(data))
+
+
+def two_calendar_windows(root):
+    """A second, deliberately flat spread in the *same* asset's lower picker list."""
+    from test_calendar_proof import _write_history
+
+    fixture(root)
+    path = next((root / "data/spread-history-cache").glob("SRM3-*.json"))
+    data = json.loads(path.read_text())["payload"]["history"]
+    cols = data["columns"]
+    rows = data["data"]
+    # The next near must expire before the last cached observation to form a complete window.
+    _write_history(root, "SRM3", rows[:-1])
+    far = []
+    spread = []
+    for r in rows:
+        f = r.copy()
+        s = r.copy()
+        f[cols.index("SECID")] = "SRU3"
+        s[cols.index("SECID")] = "SRM3SRU3"
+        for key in ("OPEN", "HIGH", "LOW", "CLOSE", "SETTLEPRICE"):
+            i = cols.index(key)
+            f[i] += 50
+            s[i] = 50
+        far.append(f)
+        spread.append(s)
+    _write_history(root, "SRU3", far)
+    _write_history(root, "SRM3SRU3", spread)

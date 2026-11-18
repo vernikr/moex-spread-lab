@@ -130,6 +130,10 @@ def _terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str,
         if not live:
             continue
         row = live[0]
+        # A failed stress screen is not the same thing as missing margin/point values.
+        required = (row.get(k) for k in ("tick_value", "tick_size", "initial_margin", "settlement"))
+        if not all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in required):
+            continue
         mult = row["tick_value"] / row["tick_size"]
         terms[asset] = {
             "mult": mult, "tick_value": row["tick_value"], "tick_size": row["tick_size"],
@@ -369,18 +373,20 @@ class CalendarData:
                 "min_spread_volume": min(r["min_volume"] for r in eligible),
                 "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2)}
 
-    def check_training_window(self, asset, pair, quantity, validation_percent):
+    def check_training_window(self, asset, pair, quantity, settings):
         """Cheap preflight for large checkbox selections; use precisely the replay's prefix gates."""
         from .evaluation_periods import EvaluationSplit
 
+        if settings.allow_failed_volume and settings.allow_failed_capital:
+            return  # StudyWindow still loads and validates data for this exact instrument.
         window = self.window(asset, pair)
-        if validation_percent:
+        if settings.validation_percent:
             days = (r["date"] for r in _positive_spread_volume_rows(window["rows"]))
-            cutoff = EvaluationSplit.from_dates(days, validation_percent).training[-1]
+            cutoff = EvaluationSplit.from_dates(days, settings.validation_percent).training[-1]
             window = self._through(window, cutoff)
-        if window["min_spread_volume"] < MIN_DAILY_VOLUME:
+        if not settings.allow_failed_volume and window["min_spread_volume"] < MIN_DAILY_VOLUME:
             raise W0Error("Не пройдено правило ликвидности на обучении.")
-        if not _stress_ok(window["max_pair_margin_rub"], quantity):
+        if not settings.allow_failed_capital and not _stress_ok(window["max_pair_margin_rub"], quantity):
             raise W0Error("Не пройден стресс-тест капитала на обучении.")
 
     def proof(self, selection: dict[str, Any], *, through: str | None = None) -> dict[str, Any]:

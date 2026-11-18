@@ -13,7 +13,7 @@ from typing import Any
 
 import optuna
 
-from .evaluation_periods import EvaluationSplit, read_settings
+from .evaluation_periods import EvaluationSplit, ResearchSettings
 from .portfolio import lqdt_overlay_values
 from .proof import ProofService, _benchmark_marks, _mark, _run_id
 from .w0 import W0Error
@@ -89,10 +89,18 @@ def _validate(request):
         raise W0Error("Порог выхода должен быть ниже порога входа")
 
 
-def _admission(proof):
-    if not proof["window"]["passes_capital_screen"]:
+def _admission(proof, settings):
+    if (
+        "min_leg_volume" in proof["window"]
+        and proof["window"]["min_leg_volume"] is None
+    ):
+        return "Нет наблюдений с положительным объёмом обеих ног."
+    if (
+        not settings.allow_failed_capital
+        and not proof["window"]["passes_capital_screen"]
+    ):
         return "Не пройден стресс-тест капитала."
-    if not proof["window"]["tradable_every_day"]:
+    if not settings.allow_failed_volume and not proof["window"]["tradable_every_day"]:
         return "Не пройдено правило ликвидности."
     if (
         proof["selection"]["strategy"] == "mean_reversion"
@@ -182,9 +190,9 @@ def _annualized_returns(proof, marks, split):
     }
 
 
-def _measure(proof, marks, split: EvaluationSplit):
+def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
     """Measure a continuous ledger; the last training mark is validation's opening balance."""
-    if reason := _admission(proof):
+    if reason := _admission(proof, settings):
         return {"utility": None, "reason": reason}
     curve = _excess_curve(proof, marks)
     train_x = curve[split.training[-1]]
@@ -370,11 +378,12 @@ def _tune(land, seed, strategy_axes, train_size):
 class StudyWindow:
     """One independent account, its own dated split, inputs shared by all parameter trials."""
 
-    def __init__(self, service, request, percent, benchmark, calendar=None):
+    def __init__(
+        self, service, request, settings: ResearchSettings, benchmark, calendar=None
+    ):
         self.request = request
-        self.replay = service.prepare(
-            request, calendar=calendar, split_liquidity=bool(percent)
-        )
+        self.settings = settings
+        self.replay = service.prepare(request, calendar=calendar, settings=settings)
         self.full = self.replay(request)
         selection = self.full["selection"]
         self.strategy_axes = STRATEGY_AXES[selection["strategy"]]
@@ -388,7 +397,7 @@ class StudyWindow:
         days = [
             r["date"] for r in self.full["series"] if r.get("volume_eligible", True)
         ]
-        self.split = EvaluationSplit.from_dates(days, percent)
+        self.split = EvaluationSplit.from_dates(days, settings.validation_percent)
         self.train = EvaluationSplit.from_dates(self.split.training, 0)
         dates, prices = benchmark
         if not dates or dates[0] > self.train.training[0]:
@@ -399,7 +408,7 @@ class StudyWindow:
         self.fit = Landscape(
             self.axes,
             lambda point: _measure(
-                self.proof(point, training=True), self.marks, self.train
+                self.proof(point, training=True), self.marks, self.train, self.settings
             ),
         )
 
@@ -437,13 +446,22 @@ class StudyWindow:
         probe = dict(self.seed)
         if "lookback" in probe:
             probe["lookback"] = min(probe["lookback"], len(self.split.training) - 2)
-        return _admission(self.proof(probe, training=True))
+        return _admission(self.proof(probe, training=True), self.settings)
 
     def report(self, point):
         p = self.proof(point, training=False)
-        measured = _measure(p, self.marks, self.split)
+        measured = _measure(p, self.marks, self.split, self.settings)
         evaluation = {
+            **self.settings.metadata(),
             **self.split.metadata(),
+            "failed_screens": [
+                name
+                for name, key in (
+                    ("volume", "tradable_every_day"),
+                    ("capital", "passes_capital_screen"),
+                )
+                if not p["window"][key]
+            ],
             "result": {
                 k: v for k, v in measured.items() if k not in ("utility", "rank_score")
             },
@@ -485,15 +503,15 @@ def research_run(
     check_cancelled=lambda: None,
 ):
     _validate(request)
-    percent = read_settings(service.root)["validation_percent"]
+    settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     if optimize:
         from .proof_batch import batch_search
 
-        return batch_search(service, request, percent, benchmark, check_cancelled)
+        return batch_search(service, request, settings, benchmark, check_cancelled)
     if "targets" in request:
         raise W0Error("Журнал исполнения относится к одному открытому окну.")
-    case = StudyWindow(service, request, percent, benchmark)
+    case = StudyWindow(service, request, settings, benchmark)
     report = case.report(case.seed)
     if include_plateau:
         report["plateau"] = _lamps(

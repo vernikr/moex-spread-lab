@@ -50,3 +50,26 @@ def two_calendar_windows(root):
         spread.append(s)
     _write_history(root, "SRU3", far)
     _write_history(root, "SRM3SRU3", spread)
+
+
+def screen_failures(root, *, thin_calendar=False):
+    """Independent gates: one liquid but stress-failing window, one thin but funded."""
+    fixture(root)
+    if thin_calendar:
+        path = next((root / "data/spread-history-cache").glob("SRH3SRM3-*.json"))
+        doc = json.loads(path.read_text())
+        block = doc["payload"]["history"]
+        block["data"][4][block["columns"].index("VOLUME")] = 1
+    else:
+        path = root / "data/w1/candles/CRZ6_1d.json"
+        doc = json.loads(path.read_text())
+        doc["rows"][4]["volume"] = 1
+    path.write_text(json.dumps(doc))
+    path = root / "data/w1/current-intake.json"
+    doc = json.loads(path.read_text())
+    for row in doc["instruments"]:
+        if row["secid"] in (("CNYRUBF", "CRZ6") if thin_calendar else ("SRZ6",)):
+            row["initial_margin"] = (
+                6000  # ~12k actual margin fits; 3× margin plus buffers fails.
+            )
+    path.write_text(json.dumps(doc))

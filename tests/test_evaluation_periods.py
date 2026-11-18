@@ -4,6 +4,7 @@ from pathlib import Path
 
 from moex_spread_lab.evaluation_periods import (
     EvaluationSplit,
+    ResearchSettings,
     read_settings,
     save_settings,
     settings_path,
@@ -31,7 +32,14 @@ class GlobalPeriodTests(unittest.TestCase):
     def test_project_settings_persist_without_touching_input_caches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.assertEqual(read_settings(root), {"validation_percent": 0})
+            self.assertEqual(
+                read_settings(root),
+                {
+                    "validation_percent": 0,
+                    "allow_failed_volume": True,
+                    "allow_failed_capital": True,
+                },
+            )
             self.assertFalse(settings_path(root).exists())
             saved = save_settings(root, {"validation_percent": 12.5})
             for value in (
@@ -54,5 +62,5 @@ class GlobalPeriodTests(unittest.TestCase):
             settings_path(root).write_text("corrupt")
             with self.assertRaises(W0Error):
                 read_settings(root)
-            save_settings(root, {"validation_percent": 0})
+            save_settings(root, ResearchSettings().metadata())
             self.assertEqual(read_settings(root)["validation_percent"], 0)

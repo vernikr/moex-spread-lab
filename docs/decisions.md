@@ -33,6 +33,8 @@ This revises the order of Stage-9 delivery, not the research/live boundary: firs
 
 **2026-11-18 — Proof tuning cohort.** The user separates chart focus from checkbox selection. Search one active strategy and one vector across compatible checked windows (the open window only when empty); ask in a modal before removing incompatible checks. Apply the best admissible tested arithmetic mean of independent annualized percentage-point returns above LQDT on each window's own training interval. A fragile peak may win: stability warns, never vetoes. The form lamps must use the entire checked cohort’s mean at the common center and each probe, independent of chart focus (including an unchecked row). Validation, risk limits and the S4 shared-capital boundary remain separate. This supersedes the stable-positive-plateau rule for the proof button, not for the legacy S2 grid.
 
+**2026-11-18 — Optional proof screens.** For offline parameter research, allow spreads that failed the volume screen and/or working-capital stress screen via two independent, initially checked preferences. Preserve the original V/C verdicts, data requirements, funded-account arithmetic and loss controls. This is an exception to screening in the proof research UI, not a change to the pilot policy, archived studies, or broker authority.
+
 ## Delegated operational defaults (not empirical findings)
 
 The user asked the assistant to choose reasonable interim-drawdown and maximum-top-up values and to proceed to stage 2. The assistant selected the following research/pilot defaults; full definitions and consequences are in [the versioned policy](risk/pilot-policy.md).

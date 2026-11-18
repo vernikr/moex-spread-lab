@@ -6,7 +6,7 @@ from statistics import fmean
 import optuna
 
 from .carry import CarryStrategyError
-from .evaluation_periods import read_settings
+from .evaluation_periods import ResearchSettings
 from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _benchmark_marks, _run_id
 from .proof_search import (
     EXECUTION_AXES,
@@ -153,7 +153,7 @@ class _Cohort:
         return _lamps(first.fit if native_single else self.land, point, reason)
 
 
-def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
+def _prepare_cohort(service, request, settings, benchmark, check_cancelled):
     from .calendar_spreads import CalendarData
 
     targets = _targets(request)
@@ -170,7 +170,7 @@ def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
             native = _native_request(proposed, target)
             if checked and target["universe"] == CALENDAR_UNIVERSE:
                 calendar.check_training_window(
-                    target["asset"], target["pair"], native.get("quantity", 1), percent
+                    target["asset"], target["pair"], native.get("quantity", 1), settings
                 )
             # Initialization is not a trial. A seed outside another engine's domain or
             # a long carry warm-up must not make an otherwise compatible window disappear.
@@ -182,7 +182,7 @@ def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
                 case = StudyWindow(
                     service,
                     {**native, "parameters": initial},
-                    percent,
+                    settings,
                     benchmark,
                     calendar,
                 )
@@ -192,7 +192,7 @@ def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
                 case = StudyWindow(
                     service,
                     {**native, "parameters": {"lookback": 5}},
-                    percent,
+                    settings,
                     benchmark,
                     calendar,
                 )
@@ -232,6 +232,7 @@ def _prepare_cohort(service, request, percent, benchmark, check_cancelled):
         # Never run against a subset, or change its denominator, without explicit confirmation.
         return {
             "status": "selection_requires_confirmation",
+            **settings.metadata(),
             "excluded": rejected,
             "remaining_count": len(members),
             "trial_count": 0,
@@ -287,13 +288,13 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
         STRATEGY_AXES[active]
     ):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
-    percent = read_settings(service.root)["validation_percent"]
+    settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    group = _prepare_cohort(service, request, percent, benchmark, check_cancelled)
+    group = _prepare_cohort(service, request, settings, benchmark, check_cancelled)
     base = {
         "scope": "checked",
         "member_count": len(targets),
-        "validation_percent": percent,
+        **settings.metadata(),
         "basis": "training",
     }
     if isinstance(group, dict):
@@ -306,8 +307,8 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
     return {**base, "status": "measured", "plateau": group.plateau(group.seed)}
 
 
-def batch_search(service, request, percent, benchmark, check_cancelled):
-    group = _prepare_cohort(service, request, percent, benchmark, check_cancelled)
+def batch_search(service, request, settings, benchmark, check_cancelled):
+    group = _prepare_cohort(service, request, settings, benchmark, check_cancelled)
     if isinstance(group, dict):
         return group
     axes, seed, members, land = group.axes, group.seed, group.members, group.land
@@ -356,6 +357,7 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
                 {
                     **row,
                     "evaluation": {
+                        **settings.metadata(),
                         **case.split.metadata(),
                         "result": {"reason": str(exc)},
                     },
@@ -369,8 +371,8 @@ def batch_search(service, request, percent, benchmark, check_cancelled):
         "member_count": len(rows),
         "unit": "annualized_excess_pp",
         "members": rows,
-        "validation_percent": percent,
-        "result_basis": "validation" if percent else "training",
+        **settings.metadata(),
+        "result_basis": "validation" if settings.validation_percent else "training",
         "training_mean_pp": land.measure(best)["rank_score"] if best else None,
         "result_mean_pp": fmean(rates)
         if best and all(v is not None for v in rates)

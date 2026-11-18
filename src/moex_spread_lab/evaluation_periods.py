@@ -1,10 +1,10 @@
-"""One project-wide split policy for interactive strategy research (revised BR-10)."""
+"""Persistent research preferences and per-window evaluation periods."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,29 +20,72 @@ def validation_percent(value: object) -> float:
     return int(value) if int(value) == value else value
 
 
-def _settings(value: object) -> dict[str, float]:
-    if not isinstance(value, dict) or value.keys() != {"validation_percent"}:
-        raise W0Error("Ожидается настройка validation_percent (0–50%).")
-    return {"validation_percent": validation_percent(value["validation_percent"])}
+@dataclass(frozen=True)
+class ResearchSettings:
+    """One immutable snapshot for all search members, probes and result-period replays."""
+
+    validation_percent: float = DEFAULT_VALIDATION_PERCENT
+    allow_failed_volume: bool = True
+    allow_failed_capital: bool = True
+
+    def metadata(self) -> dict[str, float | bool]:
+        return asdict(self)
+
+    @classmethod
+    def load(cls, root: Path) -> ResearchSettings:
+        return cls(**read_settings(root))
+
+
+# Direct, non-tuning proof consumers do not implicitly opt into the research exceptions.
+STRICT_SCREENS = ResearchSettings(allow_failed_volume=False, allow_failed_capital=False)
+
+
+def _validated_patch(value: object) -> dict:
+    if (
+        not isinstance(value, dict)
+        or not value
+        or value.keys() - ResearchSettings().metadata().keys()
+    ):
+        raise W0Error("Неизвестные или пустые настройки расчёта.")
+    patch = dict(value)
+    if "validation_percent" in patch:
+        patch["validation_percent"] = validation_percent(patch["validation_percent"])
+    for k in ("allow_failed_volume", "allow_failed_capital"):
+        if k in patch and type(patch[k]) is not bool:
+            raise W0Error(f"{k}: укажите true или false.")
+    return patch
 
 
 def settings_path(root: Path) -> Path:
     return root / "data/analytics/research-settings.json"
 
 
-def read_settings(root: Path) -> dict[str, float]:
+def read_settings(root: Path) -> dict[str, float | bool]:
     try:
-        return _settings(json.loads(settings_path(root).read_text(encoding="utf-8")))
+        stored = _validated_patch(
+            json.loads(settings_path(root).read_text(encoding="utf-8"))
+        )
+        if "validation_percent" not in stored:
+            raise W0Error("В настройках отсутствует доля проверки.")
+        # Older projects stored only the split. GET never rewrites their preference.
+        return ResearchSettings(**stored).metadata()
     except FileNotFoundError:
-        return {"validation_percent": DEFAULT_VALIDATION_PERCENT}
+        return ResearchSettings().metadata()
     except (ValueError, UnicodeError) as exc:
         raise W0Error(
             "Не удалось прочитать настройки расчёта. Сохраните их заново."
         ) from exc
 
 
-def save_settings(root: Path, body: object) -> dict[str, float]:
-    settings = _settings(body)
+def save_settings(root: Path, body: object) -> dict[str, float | bool]:
+    patch = _validated_patch(body)
+    # A full valid submission can also repair corrupt settings. Legacy split-only
+    # clients and partial updates must preserve every other saved preference.
+    settings = (
+        patch
+        if patch.keys() == ResearchSettings().metadata().keys()
+        else read_settings(root) | patch
+    )
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Readers (including a second local process) see either complete version.

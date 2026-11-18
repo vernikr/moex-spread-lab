@@ -21,6 +21,7 @@ from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study, fetch_history
 from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
+from .evaluation_periods import STRICT_SCREENS, ResearchSettings
 from .screener import _normalized_series
 from .w0 import W0Error
 
@@ -174,7 +175,7 @@ class ProofService:
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
         return self.prepare(selection)(selection)
 
-    def prepare(self, selection: dict[str, Any], *, calendar=None, split_liquidity=False) -> Callable[..., dict[str, Any]]:
+    def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
         """Request-scoped replay of one instrument/strategy with different numeric settings.
 
         Load the selected inputs once, not the entire registry per trial. Outside this
@@ -185,7 +186,7 @@ class ProofService:
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == PAIR_UNIVERSE:
-            return self._prepare_pair(selection, split_liquidity=split_liquidity)
+            return self._prepare_pair(selection, settings)
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
         from .calendar_spreads import CalendarData
@@ -293,7 +294,7 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _prepare_pair(self, selection: dict[str, Any], *, split_liquidity=False) -> Callable[..., dict[str, Any]]:
+    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings) -> Callable[..., dict[str, Any]]:
         from . import screener_app
 
         pair = screener_app._pair(selection.get("pair"))
@@ -306,13 +307,13 @@ class ProofService:
         if not entry["proof_strategies"].get(strategy):
             raise W0Error("Нет полного набора локальных данных для этой пары и стратегии.")
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
-        if not split_liquidity and not entry["strategies"].get(strategy):
+        if not (settings.validation_percent or settings.allow_failed_volume) and not entry["strategies"].get(strategy):
             raise W0Error("Не пройдено правило ликвидности пары.")
 
         @cache
         def risk_for(quantity):
             risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity)
-            if not risk["summary"]["all_scenarios_passed"]:
+            if not settings.allow_failed_capital and not risk["summary"]["all_scenarios_passed"]:
                 raise W0Error("пара не проходит стресс-экран рабочего капитала")
             return risk
 

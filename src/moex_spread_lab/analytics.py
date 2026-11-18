@@ -15,7 +15,6 @@ from .costs import COST_COMPONENTS, COST_SCHEMA, side_cost
 from .portfolio import lqdt_overlay_values
 from .w0 import W0Error
 
-
 ANALYTICS_SCHEMA = "analytical-baseline.v1"
 REQUIRED_COST_COMPONENTS = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
 COST_SCENARIOS = {
@@ -392,7 +391,10 @@ def run_mean_reversion_baseline(
     far_contract = contracts[far]
     margin_per_pair = near_contract["initial_margin"] + far_contract["initial_margin"]
     if margin_per_pair * quantity > initial_capital:
-        raise AnalyticsError("minimum baseline quantity exceeds initial capital margin envelope")
+        raise AnalyticsError(
+            f"ГО для выбранного размера ({margin_per_pair * quantity:.2f} ₽) превышает "
+            f"стартовый капитал ({initial_capital:.2f} ₽). Допуск по стресс-тесту не пополняет счёт."
+        )
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
     far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
     normalized_cost_profile = _validate_cost_profile(cost_profile) if cost_profile is not None else None
@@ -486,7 +488,6 @@ def run_mean_reversion_baseline(
 
     for index, row in enumerate(rows):
         action = "hold_flat" if position == 0 else "hold_position"
-        signal = None
         signal_z = None
         signal_index = index - decision_delay_bars
         if signal_index >= lookback:
@@ -509,8 +510,6 @@ def run_mean_reversion_baseline(
                     for component, value in entry_breakdown.items():
                         cost_totals[component] += value
                 action = "enter_long_spread" if position > 0 else "enter_short_spread"
-            else:
-                signal = "entry_candidate" if position == 0 and abs(signal_z) >= entry_z else "no_action"
 
         funding_today = 0.0
         swaprate = funding_swaprates.get(row["date"])

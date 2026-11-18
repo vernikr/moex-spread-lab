@@ -107,6 +107,7 @@ class CheckedPlateauTests(unittest.TestCase):
         self.assertFalse((self.root / "data/analytics/proof-searches.jsonl").exists())
 
     def test_no_focus_order_or_holdout_leak_and_exact_winner_profile(self):
+        save_settings(self.root, {"allow_failed_volume": False})
         before = self.profile()
         self.assertEqual(before, self.profile(**P))
         self.assertEqual(before, self.profile(**C, targets=[P, C]))

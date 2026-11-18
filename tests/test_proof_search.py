@@ -11,6 +11,7 @@ from test_execution_proof import _build_root as pair_fixture
 
 from moex_spread_lab.evaluation_periods import (
     EvaluationSplit,
+    ResearchSettings,
     read_settings,
     save_settings,
 )
@@ -123,7 +124,7 @@ class PlateauTests(unittest.TestCase):
                     "ledger": [{"date": day, "cumulative_net_rub": 0} for day in marks],
                     "trades": trades,
                 }
-                measured = _measure(proof, marks, split)
+                measured = _measure(proof, marks, split, ResearchSettings())
                 if missing is None:
                     self.assertEqual(
                         measured["utility"], 0
@@ -160,12 +161,19 @@ class PlateauTests(unittest.TestCase):
             (1, (2, 0, 0)),
         ]:
             with self.subTest(percent=percent):
-                m = _measure(proof, marks, EvaluationSplit.from_dates(days, percent))
+                m = _measure(
+                    proof,
+                    marks,
+                    EvaluationSplit.from_dates(days, percent),
+                    ResearchSettings(),
+                )
                 self.assertEqual(
                     (m["net_rub"], m["excess_rub"], m["rub_per_session"]), expected
                 )
         proof["trades"] = []
-        no_check = _measure(proof, marks, EvaluationSplit.from_dates(days, 0))
+        no_check = _measure(
+            proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings()
+        )
         self.assertEqual(no_check["reason"], "Открытого спреда не было на обучении.")
         self.assertIsNone(no_check["validation"])
 
@@ -288,7 +296,9 @@ class ProofSearchIntegrationTests(unittest.TestCase):
 
     def test_validation_liquidity_failure_does_not_veto_calendar_training_plateau(self):
         service = self.fixture(calendar_fixture)
-        save_settings(service.root, {"validation_percent": 25})
+        save_settings(
+            service.root, {"validation_percent": 25, "allow_failed_volume": False}
+        )
         req = {**CALENDAR, "strategy": "zscore_mean_reversion"}
         before = research_run(service, req, optimize=True)
         self.assertIsNotNone(before["selected_parameters"])
@@ -327,6 +337,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
                 self.assertTrue(
                     all(set(t["parameters"]) == active for t in result["candidates"])
                 )
+        save_settings(cal.root, {"allow_failed_capital": False})
         no_capital = research_run(cal, {**CALENDAR, "quantity": 3}, optimize=True)
         self.assertEqual(no_capital["status"], "unavailable")
         self.assertEqual(no_capital["trial_count"], 0)
@@ -383,7 +394,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         self.assertNotIn("К скринеру пар".encode(), pages[0])
         headers = {"Content-Type": "application/json"}
         conn.request("GET", "/api/settings")
-        self.assertEqual(json.load(conn.getresponse()), {"validation_percent": 0})
+        self.assertEqual(json.load(conn.getresponse()), ResearchSettings().metadata())
         for value, status, origin in [
             (51, 400, None),
             (-1, 400, None),

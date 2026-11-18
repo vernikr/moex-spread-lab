@@ -185,7 +185,9 @@ class CohortTests(unittest.TestCase):
         self.assertEqual(reverse["group"], g)
 
     def test_only_holdout_liquidity_changes_neither_trials_nor_winner_or_lamps(self):
-        save_settings(self.root, {"validation_percent": 25})
+        save_settings(
+            self.root, {"validation_percent": 25, "allow_failed_volume": False}
+        )
         before = self.search(targets=[P, C])
         path = self.root / "data/w1/candles/CRZ6_1d.json"
         data = json.loads(path.read_text())
@@ -227,13 +229,13 @@ class CohortTests(unittest.TestCase):
 
         original = proof_search._measure
 
-        def fail_some(proof, marks, split):
+        def fail_some(proof, marks, split, settings):
             if (
                 proof["selection"]["strategy"] == "mean_reversion"
                 and proof["selection"]["parameters"]["lookback"] > 10
             ):
                 return {"utility": None, "reason": "unmeasurable member"}
-            return original(proof, marks, split)
+            return original(proof, marks, split, settings)
 
         with patch.object(proof_search, "_measure", side_effect=fail_some):
             r = self.search(targets=[C, P])

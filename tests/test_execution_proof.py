@@ -108,6 +108,17 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertAlmostEqual(ledger_costs, round(summary["costs_rub"], 2), delta=0.02)
         self.assertAlmostEqual(result["ledger"][-1]["cumulative_net_rub"], summary["net_rub"], delta=0.02)
         self.assertEqual(summary["closed_trades"] + summary["open_positions"], summary["trades"])
+        funding_rows = [row for row in result["series"] if row["funding_rub"] is not None]
+        self.assertTrue(funding_rows)
+        self.assertTrue(any(row["funding_rub"] != 0 for row in funding_rows))
+        self.assertTrue(all(row["funding_swaprate_rub_per_unit"] is not None for row in funding_rows))
+        self.assertTrue(any(trade["funding_rub"] is not None and trade["funding_rub"] != 0 for trade in result["trades"]))
+        for trade in result["trades"]:
+            if trade["funding_rub"]:
+                expected_sign = -1 if trade["direction_detail"] == "long_near_short_far" else 1
+                self.assertEqual(1 if trade["funding_rub"] > 0 else -1, expected_sign)
+        self.assertAlmostEqual(sum(row["funding_rub"] or 0 for row in result["ledger"]),
+                               sum(trade["funding_rub"] or 0 for trade in result["trades"]), delta=0.02)
         components = sum(sum((trade["entry"]["costs"] or {}).values()) + sum((trade["exit"]["costs"] or {}).values())
                          for trade in result["trades"])
         self.assertAlmostEqual(components, summary["costs_rub"], delta=0.02)

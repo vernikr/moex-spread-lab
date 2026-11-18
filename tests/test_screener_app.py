@@ -10,7 +10,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+from moex_spread_lab.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.screener_app import (
+    HISTORY_WINDOWS,
     ScreenerError,
     ScreenerInputs,
     ScreenerStore,
@@ -47,7 +49,12 @@ class ScreenerAppTests(unittest.TestCase):
             json.dumps({"schema_version": "iss-intake.v1", "instruments": instruments})
         )
         self.inputs.benchmark.parent.mkdir(parents=True)
-        days = [date(2026, 3, 23) + timedelta(days=i) for i in range(50)]
+        days = []
+        day = date(2026, 3, 23)
+        while len(days) < 50:
+            if day.weekday() < 5:
+                days.append(day)
+            day += timedelta(days=1)
         self.inputs.benchmark.write_text(
             json.dumps(
                 {
@@ -88,6 +95,21 @@ class ScreenerAppTests(unittest.TestCase):
                         }
                     )
                 )
+            start, end = HISTORY_WINDOWS[pair]
+            cache_path = self.inputs.history_cache(pair) / f"{near}-{start}-{end}-0.json"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            history_rows = [
+                ["RFUD", d.isoformat(), near, 10 + i * 0.01, 10 + i * 0.01, 0.015, 1000, 10000.0, 500,
+                 10 + i * 0.01, 1, None]
+                for i, d in enumerate(days)
+            ]
+            request_url = _history_url(near, start, end, 0, HISTORY_FIELDS)
+            cached_payload = {
+                "history": {"columns": list(HISTORY_FIELDS), "data": history_rows},
+                "history.cursor": {"columns": ["INDEX", "TOTAL", "PAGESIZE"], "data": [[0, len(history_rows), 100]]},
+            }
+            cache_path.write_text(json.dumps({"url": request_url, "payload": cached_payload,
+                                              "raw_response_sha256": "cd" * 32}))
         self.days = days
 
     def test_pair_choice_parameter_change_and_replay(self):
@@ -99,6 +121,8 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(first, build_result(self.inputs, base))
         self.assertEqual(first["daily"][-1]["X"], first["metrics"]["excess_rub"])
         self.assertEqual(first["period"]["observations"], 50)
+        self.assertIn("near_funding_history_sha256", first["provenance"])
+        self.assertTrue(any("SWAPRATE" in note for note in first["notes"]))
         self.assertEqual(first["price_role"], "ISS: дневной candle, заполнение по открытию, отметки по закрытию")
         self.assertNotEqual(
             first["run_id"],
@@ -214,7 +238,7 @@ class ScreenerAppTests(unittest.TestCase):
             }
 
         cache = self.inputs.history_cache("CNYRUBF/CRZ6")
-        cache.mkdir(parents=True)
+        cache.mkdir(parents=True, exist_ok=True)
         for secid in ("CNYRUBF", "CRZ6"):
             (cache / f"{secid}-2025-06-17-2026-10-27-0.json").write_text("{}")
         with patch("moex_spread_lab.screener_app.fetch_history", side_effect=history):

@@ -194,7 +194,8 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         volumes = _leg_volumes(inputs, pair)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
         available = {
-            "mean_reversion": tradable and all(path.is_file() for path in price_files),
+            "mean_reversion": tradable and all(path.is_file() for path in price_files)
+            and (pair["family"] != "perpetual_quarterly_same_asset" or funding_files[0].is_file()),
             "funding_only": tradable
             and pair["family"] == "perpetual_quarterly_same_asset"
             and all(path.is_file() for path in funding_files),
@@ -311,6 +312,19 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
+        funding_swaprates: dict[str, float] = {}
+        funding_source = None
+        if pair["family"] == "perpetual_quarterly_same_asset":
+            funding_source = _history_source(inputs, pair_id, near)
+            source_rates = {
+                row["TRADEDATE"]: float(row["SWAPRATE"])
+                for row in funding_source["rows"]
+                if row.get("TRADEDATE") and row.get("SWAPRATE") is not None
+            }
+            requested_dates = [row["date"] for row in series["rows"]]
+            if not requested_dates or not all(day in source_rates for day in requested_dates):
+                raise ScreenerError("для mean_reversion отсутствуют значения SWAPRATE на каждую дату")
+            funding_swaprates = {day: source_rates[day] for day in requested_dates}
         report = run_mean_reversion_baseline(
             series,
             lookback=params["lookback"],
@@ -321,6 +335,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             cost_profile=tariff_profile(execution["slippage_ticks"]),
             fill="open",
             cash_in_lqdt=True,
+            funding_swaprates=funding_swaprates,
         )
         daily = [
             {
@@ -336,10 +351,13 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         trades = summary["trade_count"]
         open_positions = 0
         costs = summary["modeled_costs"]
-        provenance = report["input_provenance"]
+        provenance = dict(report["input_provenance"])
+        if funding_source is not None:
+            provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
         price_role = "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
         notes = [
-            "Только ценовой контроль: фондирование перпетуала не включено; это не полный результат carry.",
+            *( ["Фандинг включён по опубликованному MOEX ISS EOD SWAPRATE; сумма = −position × SWAPRATE × лот × quantity."] if funding_source is not None else ["Для пары без вечного фьючерса фандинг неприменим."]),
+            *( ["Итоговый EOD SWAPRATE отражает клиринговый расчёт MOEX, включая действовавшие лимиты; минутный D/K1/K2 не пересчитывается. Лот берётся из текущего intake снапшота, не из эффективной исторической спецификации. Это не брокерская выписка."] if funding_source is not None else []),
             "Сигнал по закрытию дня, исполнение по следующему открытию дня (прокси реакции в пределах минут–часов).",
             "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.",
         ]

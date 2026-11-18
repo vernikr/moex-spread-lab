@@ -358,11 +358,14 @@ def run_mean_reversion_baseline(
     cost_profile: dict[str, Any] | None = None,
     fill: str = "close",
     cash_in_lqdt: bool = False,
+    funding_swaprates: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run the delayed z-score control.
 
     `fill="open"` executes at the open of the bar after the signal bar; `cash_in_lqdt` values the
-    account as free cash in LQDT plus margin cash (A-11) instead of idle cash.
+    account as free cash in LQDT plus margin cash (A-11) instead of idle cash. When supplied,
+    `funding_swaprates` maps dates to the near perpetual's MOEX EOD SWAPRATE per underlying unit;
+    signed RUB funding is charged to the modeled near-leg position at the day's proxy clearing.
     """
     if (
         initial_capital <= 0
@@ -402,6 +405,9 @@ def run_mean_reversion_baseline(
     entry_date: str | None = None
     realized_gross = 0.0
     realized_costs = 0.0
+    cumulative_funding = 0.0
+    trade_funding = 0.0
+    funding_swaprates = funding_swaprates or {}
     trades: list[dict[str, Any]] = []
     daily = []
     cost_totals = {component: 0.0 for component in cost_components}
@@ -414,8 +420,9 @@ def run_mean_reversion_baseline(
         return quantity * position * ((current_near - entry_near) * near_multiplier - (current_far - entry_far) * far_multiplier)
 
     def close_trade(date_key: str, current_near: float, current_far: float, reason: str) -> None:
-        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown, entry_signal_z
-        gross = pnl_at(current_near, current_far)
+        nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown, entry_signal_z, trade_funding
+        price_gross = pnl_at(current_near, current_far)
+        gross = price_gross + trade_funding
         exit_breakdown = (
             side_cost(normalized_cost_profile, [(near_contract, current_near), (far_contract, current_far)], quantity)
             if tariff_costs
@@ -436,7 +443,7 @@ def run_mean_reversion_baseline(
             else None
         )
         cost = sum(breakdown.values()) if breakdown is not None else 0.0
-        realized_gross += gross
+        realized_gross += price_gross
         realized_costs += sum(exit_breakdown.values()) if tariff_costs else cost
         if breakdown is not None:
             for component, value in (exit_breakdown if tariff_costs else breakdown).items():
@@ -456,6 +463,8 @@ def run_mean_reversion_baseline(
             "exit_spread_fill": _round(current_near * near_multiplier - current_far * far_multiplier),
             "entry_signal_z": _round(entry_signal_z) if entry_signal_z is not None else None,
             "gross_pnl": _round(gross),
+            "price_gross_pnl": _round(price_gross),
+            "funding_rub": _round(trade_funding),
             "modeled_costs": _round(cost) if breakdown is not None else None,
             "cost_breakdown": breakdown,
             "entry_costs": {key: _round(value) for key, value in entry_breakdown.items()} if entry_breakdown is not None else None,
@@ -465,6 +474,7 @@ def run_mean_reversion_baseline(
         })
         position = 0
         entry_date = None
+        trade_funding = 0.0
         entry_breakdown = None
         entry_signal_z = None
 
@@ -496,8 +506,14 @@ def run_mean_reversion_baseline(
             else:
                 signal = "entry_candidate" if position == 0 and abs(signal_z) >= entry_z else "no_action"
 
+        funding_today = 0.0
+        swaprate = funding_swaprates.get(row["date"])
+        if position and swaprate is not None:
+            funding_today = -position * float(swaprate) * float(near_contract["lot_size"]) * quantity
+            trade_funding += funding_today
+            cumulative_funding += funding_today
         benchmark_value = initial_capital * row["benchmark_price"] / benchmark_start
-        strategy_value = initial_capital + realized_gross - realized_costs + pnl_at(row["near_close"], row["far_close"])
+        strategy_value = initial_capital + realized_gross - realized_costs + cumulative_funding + pnl_at(row["near_close"], row["far_close"])
         daily.append({
             "date": row["date"],
             "timestamp": row.get("timestamp", row["date"]),
@@ -508,7 +524,9 @@ def run_mean_reversion_baseline(
             "strategy_value": _round(strategy_value),
             "benchmark_value": _round(benchmark_value),
             "X": _round(strategy_value - benchmark_value),
-            "gross_realized_pnl": _round(realized_gross),
+            "gross_realized_pnl": _round(realized_gross + cumulative_funding),
+            "funding_rub": _round(funding_today),
+            "cumulative_funding_rub": _round(cumulative_funding),
             "modeled_costs": _round(realized_costs) if normalized_cost_profile is not None else None,
             "benchmark_source_kind": row["benchmark_source_kind"],
             "benchmark_mark_kind": row.get("benchmark_mark_kind", "daily_close_same_date"),
@@ -519,9 +537,9 @@ def run_mean_reversion_baseline(
         close_trade(last.get("timestamp", last["date"]), last["near_close"], last["far_close"], "end_of_sample")
         daily[-1]["action"] = "forced_exit_end_of_sample"
         daily[-1]["position"] = 0
-        daily[-1]["strategy_value"] = _round(initial_capital + realized_gross - realized_costs)
+        daily[-1]["strategy_value"] = _round(initial_capital + realized_gross + cumulative_funding - realized_costs)
         daily[-1]["X"] = _round(daily[-1]["strategy_value"] - daily[-1]["benchmark_value"])
-        daily[-1]["gross_realized_pnl"] = _round(realized_gross)
+        daily[-1]["gross_realized_pnl"] = _round(realized_gross + cumulative_funding)
         daily[-1]["modeled_costs"] = _round(realized_costs) if normalized_cost_profile is not None else None
 
     cash_shortfall_rows = 0
@@ -594,7 +612,9 @@ def run_mean_reversion_baseline(
             "first_date": rows[0]["date"],
             "last_date": rows[-1]["date"],
             "trade_count": len(trades),
-            "gross_pnl": _round(realized_gross),
+            "gross_pnl": _round(realized_gross + cumulative_funding),
+            "price_gross_pnl": _round(realized_gross),
+            "funding_rub": _round(cumulative_funding),
             "modeled_costs": _round(realized_costs) if normalized_cost_profile is not None else None,
             "costs_applied": normalized_cost_profile is not None,
             "final_strategy_value": final["strategy_value"],

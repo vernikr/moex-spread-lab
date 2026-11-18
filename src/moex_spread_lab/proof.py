@@ -336,6 +336,37 @@ class ProofService:
         near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
         far_mult = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
         margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
+        funding_note: list[str] = []
+        funding_provenance: dict[str, Any] = {}
+        funding_swaprates: dict[str, float] = {}
+        is_perpetual_pair = pair.get("family") == "perpetual_quarterly_same_asset"
+        if is_perpetual_pair:
+            from .screener_app import HISTORY_WINDOWS, _offline_only
+
+            start, end = HISTORY_WINDOWS[pair_id]
+            try:
+                funding_source = fetch_history(
+                    near, start, end, cache_dir=inputs.history_cache(pair_id), delay_seconds=0, opener=_offline_only
+                )
+                source_rates: dict[str, float] = {}
+                for source_row in funding_source["rows"]:
+                    if not source_row.get("TRADEDATE") or source_row.get("SWAPRATE") is None:
+                        continue
+                    try:
+                        swaprate = float(source_row["SWAPRATE"])
+                    except (TypeError, ValueError):
+                        continue
+                    if math.isfinite(swaprate):
+                        source_rates[source_row["TRADEDATE"]] = swaprate
+                requested_dates = [row["date"] for row in series["rows"]]
+                if requested_dates and all(day in source_rates for day in requested_dates):
+                    funding_swaprates = {day: source_rates[day] for day in requested_dates}
+                    funding_provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
+                    funding_note.append("Фандинг включён по опубликованному MOEX ISS SWAPRATE: для каждой строки выборки есть значение EOD; к удерживаемой позиции применяется −position × SWAPRATE × lot × quantity.")
+                else:
+                    funding_note.append("Фандинг не включён: локальная EOD-история ISS не содержит SWAPRATE для всех дат выборки; ценовой результат не является полным P&L.")
+            except W0Error:
+                funding_note.append("Фандинг не включён: локальная EOD-история ISS с SWAPRATE отсутствует или неполна; ценовой результат не является полным P&L.")
         report = run_mean_reversion_baseline(
             series,
             lookback=int(params["lookback"]),
@@ -346,6 +377,7 @@ class ProofService:
             cost_profile=tariff_profile(slippage),
             fill="open",
             cash_in_lqdt=True,
+            funding_swaprates=funding_swaprates,
         )
         daily_map = {row["date"]: row for row in report["daily"]}
         volume_map = {row["date"]: row for row in series["rows"]}
@@ -372,6 +404,7 @@ class ProofService:
                     costs_rub=float(row["modeled_costs"] or 0.0),
                     net_rub=float(row["net_pnl"] or 0.0),
                     benchmark_dates=benchmark_dates,
+                    funding_rub=float(row.get("funding_rub") or 0.0) if funding_swaprates else None,
                     benchmark_prices=benchmark_prices,
                 )
             )
@@ -381,6 +414,7 @@ class ProofService:
             day = row["date"]
             daily = daily_map.get(day, {})
             position = daily.get("position") or 0
+            held_for_clearing = bool(position) or daily.get("action") == "forced_exit_end_of_sample"
             series_rows.append(
                 {
                     "date": day,
@@ -399,7 +433,11 @@ class ProofService:
                     "spread_volume": None,
                     "spread_trades": None,
                     "days_to_near_expiry": None,
-                    "funding_rub": None,
+                    "funding_rub": round(daily.get("funding_rub", 0.0), 2) if day in funding_swaprates else None,
+                    "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
+                    "funding_lot_size": float(near_contract.get("lot_size") or 1.0) if day in funding_swaprates else None,
+                    "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,
+                    "funding_source": "MOEX ISS SWAPRATE; EOD settlement history" if day in funding_swaprates else None,
                     "signal_z": daily.get("signal_z"),
                     "margin_rub": round(margin_pair, 2) if position else 0.0,
                 }
@@ -423,9 +461,11 @@ class ProofService:
                 **series["provenance"],
                 "benchmark_sha256": _sha256_bytes(inputs.benchmark),
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
+                **funding_provenance,
             },
             notes=[
-                "Только ценовой контроль: фондирование перпетуала не включено; это не полный результат carry.",
+                *(funding_note or (["Для пары без вечного фьючерса фандинг неприменим."] if not is_perpetual_pair else [])),
+                *(["MOEX ISS EOD SWAPRATE используется как итог клиринга; это не пересчёт минутных D/K1/K2 и не брокерская выписка. Фандинг начисляется только если позиция сохраняется к соответствующему клирингу; вход/выход по open — прокси времени исполнения. Лот берётся из текущего intake снапшота, а не из эффективной исторической спецификации."] if funding_swaprates else []),
                 "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию.",
                 *(
                     ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
@@ -677,6 +717,7 @@ class ProofService:
         benchmark_dates: list[str],
         benchmark_prices: dict[str, float],
         open_at_end: bool | None = None,
+        funding_rub: float | None = None,
     ) -> dict[str, Any]:
         open_at_end = open_at_end if open_at_end is not None else exit_reason in FORCED_EXIT_REASONS
         entry_mark = _mark(benchmark_dates, benchmark_prices, entry["date"])
@@ -696,6 +737,7 @@ class ProofService:
             "open_at_end": open_at_end,
             "gross_pts": None,
             "gross_rub": round(gross_rub, 2),
+            "funding_rub": round(funding_rub, 2) if funding_rub is not None else None,
             "costs_rub": round(costs_rub, 2),
             "net_rub": round(net_rub, 2),
             "margin_rub": round(margin_pair, 2),
@@ -747,13 +789,15 @@ class ProofService:
                     (row["near"] - entry["near_price"]) * near_mult - (row["far"] - entry["far_price"]) * far_mult
                 )
                 position = {"sign": sign, "near": row["near"], "far": row["far"], "number": entering["number"]}
+            funding = float(row.get("funding_rub") or 0.0)
+            mark += funding
             cumulative += mark - cost
             ledger.append(
                 {
                     "date": day,
                     "position": position["sign"] if position else 0,
                     "mark_pnl_rub": round(mark, 2),
-                    "funding_rub": None,
+                    "funding_rub": row.get("funding_rub"),
                     "costs_rub": round(cost, 2),
                     "lqdt_on_margin_rub": None,
                     "cumulative_net_rub": round(cumulative, 2),

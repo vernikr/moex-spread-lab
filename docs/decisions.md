@@ -27,6 +27,8 @@ The user subsequently specified a table-first interface (2026-11-08): each row i
 
 This revises the order of Stage-9 delivery, not the research/live boundary: first a local dark-only analytical interface and transparent experiments, then guarded parameter search and portfolio-level basket evaluation; monitoring, Telegram, broker integration and trading remain separately gated. A good-looking backtest, including the reference SBRF calendar-spread result, is not approved performance. The original brief remains the source record; current priorities are in Stages 4–8.
 
+**2026-11-18 UI direction:** The execution proof replaces the pair table at `/`. The second column provides library-based auto-tuning for the selected strategy, per-field plateau lamps with detailed scores, and a fresh proof on every search. [Implementation and score definition](development/execution-proof.md). No risk/admission or trading authority changed.
+
 ## Delegated operational defaults (not empirical findings)
 
 The user asked the assistant to choose reasonable interim-drawdown and maximum-top-up values and to proceed to stage 2. The assistant selected the following research/pilot defaults; full definitions and consequences are in [the versioned policy](risk/pilot-policy.md).

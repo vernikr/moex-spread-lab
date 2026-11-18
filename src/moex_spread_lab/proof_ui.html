@@ -11,7 +11,7 @@
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:0 0 auto;padding:2px 0}.brand{display:flex;align-items:center;gap:10px}.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900;font-size:13px}
 .render-progress{position:fixed;z-index:1000;top:0;left:0;right:0;height:3px;overflow:hidden;background:#172738;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease}.render-progress.active{opacity:1;visibility:visible}.render-progress>span{position:absolute;top:0;bottom:0;left:-32%;width:32%;background:linear-gradient(90deg,transparent,#469e88,#a2ffda,#469e88,transparent)}.render-progress.active>span{animation:render-progress-run 1.25s linear infinite}@keyframes render-progress-run{from{left:-32%}to{left:100%}}
 @media (prefers-reduced-motion:reduce){.render-progress.active>span{left:0;width:100%;animation:none;background:#70e1b9}}
-.eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}a.back{color:#86d9bd;border:1px solid #345469;border-radius:50px;padding:6px 12px;font-size:11px;text-decoration:none;white-space:nowrap}
+.eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}
 .nav-links{display:flex;gap:10px;align-items:center}
 .layout{--selection-width:296px;--norm-width:262px;flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:minmax(220px,var(--selection-width)) 8px minmax(190px,var(--norm-width)) 8px minmax(320px,1fr)}
 .panel{background:#111d2a;border:1px solid #293b4e;border-radius:12px;min-width:0}
@@ -27,6 +27,10 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 .listbox{font-variant-numeric:tabular-nums;background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
 #pair{min-height:150px}#norm{min-height:180px;flex:1 1 0}
 .control{margin-bottom:2px;flex:1;min-width:0}.control label{display:block;color:#a7b8c8;font-size:10px;font-weight:650;margin-bottom:3px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:7px;color:#e7eef5;height:30px;padding:0 8px;width:100%;outline:none;font-size:11px}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:9px;color:#7e93a6;margin-top:2px;line-height:1.4}
+.number-shell{display:block;position:relative;min-width:0}.number-shell input{padding-inline:6px 23px;font-variant-numeric:tabular-nums;appearance:textfield}.number-shell input::-webkit-inner-spin-button,.number-shell input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.plateau-dot{--lamp:#75879a;position:absolute;inset-inline-end:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:20px;height:23px;border:0;padding:0;background:transparent;cursor:help}.plateau-dot::before{content:"–";display:grid;place-items:center;width:12px;height:12px;border-radius:50%;background:var(--lamp);color:#0b1820;font:bold 9px/1 system-ui}.plateau-dot[data-level=green]{--lamp:#78e0b4}.plateau-dot[data-level=green]::before{content:"✓"}.plateau-dot[data-level=amber]{--lamp:#efbe72}.plateau-dot[data-level=amber]::before{content:"~"}.plateau-dot[data-level=red]{--lamp:#f0928a}.plateau-dot[data-level=red]::before{content:"!"}.plateau-dot:focus-visible{outline:1px solid #70e1b9;border-radius:5px}
+.plateau-tip{position:fixed;z-index:90;pointer-events:none;white-space:pre-line;width:max-content;max-width:min(340px,calc(100vw - 16px));padding:10px 12px;border:1px solid #496379;border-radius:9px;background:#101d2b;color:#c6d4e0;box-shadow:0 6px 24px #0008;font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums}.plateau-tip strong{display:block;color:#f0f5f9;margin-bottom:3px}.plateau-tip[hidden]{display:none}
+.tune-tool{flex:none;display:grid;gap:4px;padding-top:6px;border-top:1px solid #293b4e}.tune-button{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:4px 7px;border:1px solid #539f8b;border-radius:7px;background:#173a36;color:#acedd4;font-size:11px;font-weight:700}.tune-button:not(:disabled):hover,.tune-button:focus-visible{background:#214c44;border-color:#78e0b4}.tune-button small{font-size:9px;font-weight:650;color:#8bb9ad}.tune-help,.tune-state{font-size:9.5px;line-height:1.4;color:#93a9ba}.tune-state{color:#e7bd82}.tune-state.ok{color:#78e0b4}.tune-state:empty{display:none}
 .control select.listbox{padding:0;border-radius:8px}
 .selection-lists{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));gap:6px;flex:1 1 0;min-height:0}
 .selection-list-control{display:flex;flex-direction:column;min-height:0;margin:0;flex:initial}
@@ -66,10 +70,10 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 <body>
 <div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
 <div class="app">
-  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><a class="back" href="/">← К скринеру пар</a><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
 
   <div class="layout" id="layout">
-    <!-- левая колонка 1: выбор пары и параметры -->
+    <!-- Колонка 1: инструмент и период -->
     <aside class="panel side" id="col-selection">
       <div id="selection-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
         <div id="selection-lists" class="selection-lists">
@@ -83,7 +87,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 
     <div class="column-resizer" id="resize-selection" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки выбора пары" aria-valuemin="220" aria-valuemax="560" aria-valuenow="296" tabindex="0"></div>
 
-    <!-- левая колонка 2: метод нормализации -->
+    <!-- Колонка 2: нормализация, параметры стратегии и подбор -->
     <aside class="panel side" id="col-norm">
       <div class="side-title">Нормализация</div>
       <div class="side-sub">только график спреда · причинные окна</div>
@@ -117,21 +121,26 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <div class="hint" id="pair-hint"></div>
         <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
         <div class="sidegrid" id="pair-params">
-          <div class="control mr-only"><label for="entry">Вход · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="2.0"></div>
-          <div class="control mr-only"><label for="exit">Выход · z</label><input id="exit" type="number" min="0" max="4" step="0.1" value="0.5"></div>
-          <div class="control"><label for="lookback">Окно · набл.</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
+          <div class="control mr-only"><label for="entry">Вход · z</label><span class="number-shell"><input id="entry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="2.0"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control mr-only"><label for="exit">Выход · z</label><span class="number-shell"><input id="exit" data-axis="exit_z" type="number" min="0" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control"><label for="lookback">Окно · набл.</label><span class="number-shell"><input id="lookback" data-axis="lookback" type="number" min="5" max="80" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
         </div>
-        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><span class="number-shell"><input id="quantity" data-axis="quantity" type="number" min="1" max="50" step="1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div><div class="control"><label for="slippage">Слиппедж · тики</label><span class="number-shell"><input id="slippage" data-axis="slippage_ticks" type="number" min="0" max="10" step="0.5" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div></div>
       </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
         <div class="sidegrid" id="calendar-params">
-          <div class="control z-only"><label for="centry">Вход · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
-          <div class="control z-only"><label for="cexit">Выход · z</label><input id="cexit" type="number" min="0.1" max="4" step="0.1" value="0.5"></div>
-          <div class="control z-only"><label for="clookback">Окно · дней</label><input id="clookback" type="number" min="3" max="60" step="1" value="20"></div>
-          <div class="control z-only c-keep"><label for="cthreshold">Порог · п.п. от RUONIA</label><input id="cthreshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
+          <div class="control z-only"><label for="centry">Вход · z</label><span class="number-shell"><input id="centry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="1.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control z-only"><label for="cexit">Выход · z</label><span class="number-shell"><input id="cexit" data-axis="exit_z" type="number" min="0.1" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control z-only"><label for="clookback">Окно · дней</label><span class="number-shell"><input id="clookback" data-axis="window" type="number" min="3" max="60" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control c-only"><label for="cthreshold">Порог · п.п. от RUONIA</label><span class="number-shell"><input id="cthreshold" data-axis="threshold_pp" type="number" min="0.1" max="10" step="0.1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
         </div>
-        <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><input id="cquantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="cslippage">Слиппедж · тики</label><input id="cslippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+        <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><span class="number-shell"><input id="cquantity" data-axis="quantity" type="number" min="1" max="50" step="1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div><div class="control"><label for="cslippage">Слиппедж · тики</label><span class="number-shell"><input id="cslippage" data-axis="slippage_ticks" type="number" min="0" max="10" step="0.5" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div></div>
+      </div>
+      <div class="tune-tool">
+        <button class="tune-button" id="auto-tune" type="button" disabled aria-describedby="tune-help"><span id="tune-label">Подобрать параметры</span><small>Optuna</small></button>
+        <div class="tune-help" id="tune-help">Точка справа — устойчивость к соседним значениям. Наведите для оценки.</div>
+        <div class="tune-state" id="tune-state" role="status"></div>
       </div>
     </aside>
 
@@ -180,6 +189,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
     </main>
   </div>
 </div>
+<div id="plateau-tip" class="plateau-tip" role="tooltip" hidden></div>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <script>
 const $=id=>document.getElementById(id);
@@ -208,7 +218,7 @@ const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',volWin
 function status(text,ok=false){$('status').textContent=text;$('status').className='status'+(ok?' ok':'')}
 function setRenderProgress(active){const n=$('render-progress');n.classList.toggle('active',active);n.setAttribute('aria-hidden',String(!active))}
 function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
-async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
+async function api(path,body,signal){const r=await fetch(path,body?{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 
 const COLUMN_LAYOUT_KEY='moex-proof-layout-v1';
 const RESIZABLE_COLUMNS=[
@@ -298,28 +308,87 @@ function fillWindows(preferred){const a=currentAsset();if(!a){$('window').replac
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
 function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',asset:root.id,pair:$('window').value,strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
 function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of catalog.fills||['next_open']){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
-function scheduleShow(delay=90){if(autoRunTimer!==null)clearTimeout(autoRunTimer);analysisRequestId++;autoRunTimer=setTimeout(()=>{autoRunTimer=null;void show()},delay)}
-async function show(){
- const requestId=++analysisRequestId,requestUniverse=universe;
- if(requestUniverse==='pair_screen'){
-  const selected=$('pair').selectedOptions[0];if(!selected||selected.disabled){setRenderProgress(false);status('Для выбранной пары нет доступных локальных данных.');return}
- }else if(!$('window').value){setRenderProgress(false);status('Нет доступного календарного окна для разбора.');return}
- setRenderProgress(true);status('');
+// ---------- proof search & per-field plateau diagnostics ----------
+const numericInputs=[...document.querySelectorAll('.number-shell input')];
+const activeInputs=()=>numericInputs.filter(n=>!n.closest('.hidden'));
+const currentRequest=()=>universe==='pair_screen'?pairRequest():calendarRequest();
+const hasSelection=()=>!!catalog&&(universe==='pair_screen'?!!$('pair').value&&!$('pair').selectedOptions[0]?.disabled:!!$('window').value);
+let proofController=null,openLamp=null;
+function tuneState(message,ok=false){const n=$('tune-state');n.textContent=message;n.classList.toggle('ok',ok)}
+function tuneButton(busy=false){$('auto-tune').disabled=busy||!hasSelection();$('auto-tune').setAttribute('aria-busy',String(busy));$('tune-label').textContent=busy?'Идёт подбор…':'Подобрать параметры'}
+function hidePlateauTip(){if(openLamp){openLamp.removeAttribute('aria-describedby');openLamp=null}$('plateau-tip').hidden=true}
+function showPlateauTip(lamp){
+ hidePlateauTip();openLamp=lamp;const tip=$('plateau-tip');tip.replaceChildren(el('strong','',lamp.dataset.heading),document.createTextNode(lamp.dataset.detail||'Нет оценки.'));
+ tip.hidden=false;lamp.setAttribute('aria-describedby','plateau-tip');const r=lamp.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
+ tip.style.left=`${Math.max(8,Math.min(innerWidth-w-8,r.right-w/2))}px`;tip.style.top=`${Math.max(8,r.bottom+h+12>innerHeight?r.top-h-5:r.bottom+5)}px`;
+}
+function paintPlateaus(plateau=null,empty='Нет оценки для текущего значения.'){
+ for(const input of numericInputs){
+  const k=input.dataset.axis,field=!input.closest('.hidden')?plateau?.fields?.[k]:null,lamp=input.nextElementSibling;
+  const score=field?.score,level=score==null?'unknown':score>=plateau.green?'green':score>=plateau.amber?'amber':'red';
+  const name=input.labels[0].textContent,verdict={green:'устойчиво',amber:'на краю плато',red:'неустойчиво',unknown:'нет оценки'}[level];
+  lamp.dataset.level=level;lamp.dataset.heading=`${name} · ${score==null?'нет оценки':fmt(score,2)+' / 100 · '+verdict}`;
+  const lines=[];if(field){
+   lines.push(`Текущее значение: ${fmt(field.value,Number.isInteger(field.value)?0:1)}`);
+   if(field.center?.utility!=null)lines.push(`Сверх LQDT, ₽/сес.: обучение ${signed(field.center.train)}, проверка ${signed(field.center.validation)}. Центр: ${signed(field.center.utility)} (худший отрезок).`);
+   if(field.neighbors.length){lines.push('Соседи при остальных неизменных параметрах:');for(const n of field.neighbors)lines.push(`${fmt(n.value,Number.isInteger(n.value)?0:1)} → ${n.utility==null?'нет оценки: '+n.reason:signed(n.utility)+' ₽/сес.'}`)}
+   if(field.reason)lines.push(field.reason);else if(score!=null)lines.push('Балл — доля результата центра, сохранённая худшим соседом (0–100).');
+   if(k==='quantity'||k==='slippage_ticks')lines.push('Условие исполнения: проверяется, но не меняется автоподбором.');
+  }else lines.push(empty);
+  lamp.dataset.detail=lines.join('\n');lamp.setAttribute('aria-label',lamp.dataset.heading);if(lamp===openLamp)showPlateauTip(lamp);
+ }
+}
+function invalidateProof(){
+ clearTimeout(autoRunTimer);autoRunTimer=null;analysisRequestId++;proofController?.abort();proofController=null;
+ setRenderProgress(false);tuneButton();tuneState('');paintPlateaus();
+}
+function scheduleShow(delay=90){invalidateProof();autoRunTimer=setTimeout(()=>{autoRunTimer=null;void show()},delay)}
+function emptyProof(message){
+ payload=null;selectedTrade=null;for(const c of charts.splice(0)){try{c.remove()}catch(e){}}markersApis.length=0;primarySpreadChart=null;
+ const empty=el('div','empty',message);empty.id='charts-empty';const chartTip=$('tip');chartTip.style.display='none';$('charts').replaceChildren(empty,chartTip);
+ const notes=$('notes');notes.textContent='';$('ledger-table').replaceChildren(el('div','empty',message),notes);
+ $('evidence').classList.remove('show');$('flags').replaceChildren();$('tiles').replaceChildren();updateNormScores();applyNormHint();
+}
+async function show(search=false){
+ invalidateProof();const id=analysisRequestId,request=currentRequest(),fresh=()=>id===analysisRequestId;
+ const unavailable=!hasSelection()?'Для выбранного инструмента нет доступных локальных данных.':null;
+ const invalid=activeInputs().find(n=>n.value===''||!n.validity.valid);
+ const message=unavailable||(invalid?`Проверьте поле «${invalid.labels[0].textContent}»: диапазон ${invalid.min}–${invalid.max}, шаг ${invalid.step}.`:null);
+ if(message){status(message);paintPlateaus(null,message);emptyProof(message);return}
+ const controller=new AbortController();proofController=controller;const signal=controller.signal;let appliedMessage='';
+ setRenderProgress(true);status('');tuneButton(search);paintPlateaus(null,'Выполняется расчёт…');
  try{
-  const next=await api('/api/proof/run',requestUniverse==='pair_screen'?pairRequest():calendarRequest());
-  if(requestId!==analysisRequestId||requestUniverse!==universe)return;
-  payload=next;selectedTrade=null;dayClick={day:null,index:0};switchTab('charts');await render();
-  if(requestId!==analysisRequestId||requestUniverse!==universe)return;
-  status('')
- }catch(e){if(requestId===analysisRequestId&&requestUniverse===universe)status(e.message)}
- finally{if(requestId===analysisRequestId&&requestUniverse===universe)setRenderProgress(false)}
+  if(search){
+   tuneState('Optuna TPE проверяет параметры выбранной стратегии…');
+   try{
+    const result=await api('/api/proof/optimize',request,signal);if(!fresh())return;
+    const chosen=result.selected_parameters;
+    if(chosen){for(const n of activeInputs()){if(Object.hasOwn(chosen,n.dataset.axis))n.value=chosen[n.dataset.axis]}request.parameters=chosen;
+     tuneState('Плато найдено. Пересчёт результата…',true);
+     appliedMessage=`Параметры применены · испытаний: ${result.trial_count}.`+(result.confirmation_rub_per_session==null?'':` Последняя четверть, вне подбора: ${signed(result.confirmation_rub_per_session)} ₽/сес.`)
+    }else tuneState(result.reason||`За ${result.trial_count} испытаний положительное плато не найдено. Параметры сохранены.`);
+   }catch(e){if(!fresh())return;tuneState(`Подбор недоступен: ${e.message}. Параметры сохранены.`)}
+  }
+  // Always run the normal proof again, including unchanged/no-plateau results.
+  const next=await api('/api/proof/run',{...request,include_plateau:true},signal);if(!fresh())return;
+  payload=next;selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();
+  if(fresh()){status('');if(appliedMessage)tuneState(appliedMessage,true)}
+ }catch(e){if(fresh()){status(e.message);paintPlateaus(null,e.message);emptyProof('Нет результата для текущих параметров.')}}
+ finally{if(fresh()){proofController=null;setRenderProgress(false);tuneButton()}}
 }
 function bindParameterAutoRun(){
- let lastEnterInput=null,lastEnterAt=0;
- for(const input of document.querySelectorAll('#pair-controls input[type="number"], #calendar-controls input[type="number"]')){
-  input.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();lastEnterInput=input;lastEnterAt=Date.now();scheduleShow(0)});
-  input.addEventListener('blur',()=>{if(lastEnterInput===input&&Date.now()-lastEnterAt<500){lastEnterInput=null;return}scheduleShow(140)})
+ const dirty=new Set();
+ for(const input of numericInputs){
+  const shell=input.parentElement,lamp=input.nextElementSibling;
+  shell.addEventListener('pointerenter',()=>showPlateauTip(lamp));shell.addEventListener('pointerleave',hidePlateauTip);
+  shell.addEventListener('focusin',()=>showPlateauTip(lamp));shell.addEventListener('focusout',hidePlateauTip);
+  lamp.addEventListener('click',()=>showPlateauTip(lamp));
+  input.addEventListener('input',()=>{dirty.add(input);invalidateProof();paintPlateaus(null,'Значение изменено. Нажмите Enter или покиньте поле для пересчёта.')});
+  input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();dirty.delete(input);scheduleShow(0)}});
+  input.addEventListener('blur',()=>{if(dirty.delete(input))scheduleShow(140)});
  }
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')hidePlateauTip()});
+ window.addEventListener('resize',hidePlateauTip);$('col-norm').addEventListener('scroll',hidePlateauTip);
 }
 
 // ---------- tiles & flags ----------
@@ -452,7 +521,7 @@ function seriesQuality(v){const n0=v.length,pts=[],idx=[];
  return {level,mr,phi,r2,uniform,total:total/10}}
 const NORM_BASE={};(function(){const sel=$('norm');if(sel)for(const o of sel.options)NORM_BASE[o.value]=o.textContent})();
 let NORM_QUALITY=null;
-function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM_QUALITY=null;return}
+function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM_QUALITY=null;for(const o of sel.options)o.textContent=NORM_BASE[o.value];return}
  const S=payload.series;NORM_QUALITY={};
  for(const o of sel.options){const m=o.value;const q=seriesQuality(spreadDisplayValues(S,m));NORM_QUALITY[m]=q;o.textContent=NORM_BASE[m]+(q?'  ·  '+q.total.toFixed(1):'  ·  —')}}
 function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||'';
@@ -663,6 +732,7 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
  $('window').addEventListener('change',()=>scheduleShow(80));$('window').addEventListener('click',()=>{if($('window').value)scheduleShow(80)});
  $('cstrategy').addEventListener('change',()=>{syncCalendarParams();scheduleShow(100)});$('cfill').addEventListener('change',()=>scheduleShow(100));
  bindParameterAutoRun();
+ $('auto-tune').addEventListener('click',()=>void show(true));
  $('toggle-summary').addEventListener('click',toggleSummaryBlock);
  $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('tab-charts').addEventListener('click',()=>switchTab('charts'));$('tab-table').addEventListener('click',()=>switchTab('table'));$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
  applyNormHint();

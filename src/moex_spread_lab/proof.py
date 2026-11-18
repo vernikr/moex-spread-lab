@@ -11,7 +11,9 @@ import hashlib
 import json
 import math
 from bisect import bisect_right
+from collections.abc import Callable
 from datetime import date
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -170,21 +172,36 @@ class ProofService:
     # ------------------------------------------------------------------- proof
 
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
+        return self.prepare(selection)(selection)
+
+    def prepare(self, selection: dict[str, Any]) -> Callable[..., dict[str, Any]]:
+        """Request-scoped replay of one instrument/strategy with different numeric settings.
+
+        Load the selected inputs once, not the entire registry per trial. Outside this
+        request a new session sees refreshed local files. `through` cuts the actual
+        simulator input (including carry's tariff reference), not just its output.
+        """
         if not isinstance(selection, dict):
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
-        if universe == CALENDAR_UNIVERSE:
-            return self._calendar_proof(selection)
         if universe == PAIR_UNIVERSE:
-            return self._pair_proof(selection)
-        raise W0Error("неизвестная вселенная")
+            return self._prepare_pair(selection)
+        if universe != CALENDAR_UNIVERSE:
+            raise W0Error("неизвестная вселенная")
+        from .calendar_spreads import CalendarData
+
+        calendar = CalendarData(self.root)
+
+        def replay(request, through=None):
+            payload = calendar.proof(request, through=through)
+            # The search only needs trades, daily marks and admissions from partial replays.
+            return payload if through is not None else self._calendar_proof(request, payload)
+
+        return replay
 
     # ------------------------------------------------------- calendar adapter
 
-    def _calendar_proof(self, selection: dict[str, Any]) -> dict[str, Any]:
-        from .calendar_spreads import CalendarData
-
-        payload = CalendarData(self.root).proof(selection)
+    def _calendar_proof(self, selection: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         payload = dict(payload)
         payload["universe"] = CALENDAR_UNIVERSE
         payload["schema_version"] = PROOF_SCHEMA
@@ -276,57 +293,47 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _pair_proof(self, selection: dict[str, Any]) -> dict[str, Any]:
+    def _prepare_pair(self, selection: dict[str, Any]) -> Callable[..., dict[str, Any]]:
         from . import screener_app
 
         pair = screener_app._pair(selection.get("pair"))
-        pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
+        near, far = pair["near"], pair["far"]
         strategy = selection.get("strategy")
         if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
             raise W0Error("неизвестная стратегия")
-        execution = screener_app.execution_settings(selection)
-        quantity = int(execution["quantity"])
-        slippage = float(execution["slippage_ticks"])
-        params = screener_app._parameters(selection, strategy)
-
         inputs = screener_app.ScreenerInputs(self.root)
-        availability = next(
-            item["strategies"] for item in screener_app.catalog(inputs)["pairs"] if item["id"] == pair_id
-        )
+        availability = screener_app.catalog(inputs, registry=(pair,))["pairs"][0]["strategies"]
         if not availability.get(strategy):
             raise W0Error("локальные входы отсутствуют для этой пары и стратегии")
-        risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity)
-        if not risk["summary"]["all_scenarios_passed"]:
-            raise W0Error("пара не проходит стресс-экран рабочего капитала")
 
+        @cache
+        def risk_for(quantity):
+            risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity)
+            if not risk["summary"]["all_scenarios_passed"]:
+                raise W0Error("пара не проходит стресс-экран рабочего капитала")
+            return risk
+
+        risk_for(screener_app.execution_settings(selection)["quantity"])
         instruments = _load_instruments(inputs.contracts)
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
-        benchmark_dates, benchmark_prices = _benchmark_marks(inputs.benchmark)
-
+        dates, prices = _benchmark_marks(inputs.benchmark)
         if strategy == "mean_reversion":
-            return self._mean_reversion_proof(
-                inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk
-            )
-        return self._funding_proof(
-            inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk
-        )
+            prepared, engine = self._price_inputs(inputs, pair), self._mean_reversion_proof
+        else:
+            prepared, engine = self._funding_inputs(inputs, pair), self._funding_proof
+
+        def replay(request, through=None):
+            execution = screener_app.execution_settings(request)
+            params = screener_app._parameters(request, strategy)
+            return engine(inputs, pair, execution, params, terms, dates, prices,
+                          risk_for(execution["quantity"]), prepared, through)
+
+        return replay
 
     # ------------------------------------------------------ mean reversion
 
-    def _mean_reversion_proof(
-        self,
-        inputs: Any,
-        pair: dict[str, str],
-        execution: dict[str, float | int],
-        params: dict[str, float | int],
-        terms: dict[str, dict[str, Any]],
-        benchmark_dates: list[str],
-        benchmark_prices: dict[str, float],
-        risk: dict[str, Any],
-    ) -> dict[str, Any]:
+    def _price_inputs(self, inputs, pair):
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-        quantity = int(execution["quantity"])
-        slippage = float(execution["slippage_ticks"])
         series = _normalized_series(
             inputs.candles(pair_id, near),
             inputs.candles(pair_id, far),
@@ -335,11 +342,6 @@ class ProofService:
             near=near,
             far=far,
         )
-        near_contract = series["contracts"][near]
-        far_contract = series["contracts"][far]
-        near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
-        far_mult = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
-        margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
         funding_note: list[str] = []
         funding_provenance: dict[str, Any] = {}
         funding_swaprates: dict[str, float] = {}
@@ -351,7 +353,6 @@ class ProofService:
         ]
         if len(analysis_rows) < 2:
             raise W0Error("fewer than two positive-volume common observations")
-        analysis_series = {**series, "rows": analysis_rows}
         if is_perpetual_pair:
             from .screener_app import HISTORY_WINDOWS, _offline_only
 
@@ -379,6 +380,24 @@ class ProofService:
                     funding_note.append("Фандинг не включён: локальная EOD-история ISS не содержит SWAPRATE для всех дат выборки; ценовой результат не является полным P&L.")
             except W0Error:
                 funding_note.append("Фандинг не включён: локальная EOD-история ISS с SWAPRATE отсутствует или неполна; ценовой результат не является полным P&L.")
+        return series, analysis_rows, funding_note, funding_provenance, funding_swaprates
+
+    def _mean_reversion_proof(
+        self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
+    ) -> dict[str, Any]:
+        near, far = pair["near"], pair["far"]
+        quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
+        series, analysis_rows, funding_note, funding_provenance, funding_swaprates = prepared
+        if through is not None:
+            series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
+            analysis_rows = [r for r in analysis_rows if r["date"] <= through]
+        analysis_series = {**series, "rows": analysis_rows}
+        is_perpetual_pair = pair.get("family") == "perpetual_quarterly_same_asset"
+        near_contract = series["contracts"][near]
+        far_contract = series["contracts"][far]
+        near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
+        far_mult = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
+        margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
         report = run_mean_reversion_baseline(
             analysis_series,
             lookback=int(params["lookback"]),
@@ -499,22 +518,10 @@ class ProofService:
 
     # ------------------------------------------------------------ funding carry
 
-    def _funding_proof(
-        self,
-        inputs: Any,
-        pair: dict[str, str],
-        execution: dict[str, float | int],
-        params: dict[str, float | int],
-        terms: dict[str, dict[str, Any]],
-        benchmark_dates: list[str],
-        benchmark_prices: dict[str, float],
-        risk: dict[str, Any],
-    ) -> dict[str, Any]:
+    def _funding_inputs(self, inputs, pair):
         from .screener_app import HISTORY_WINDOWS, _offline_only
 
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-        quantity = int(execution["quantity"])
-        slippage = float(execution["slippage_ticks"])
         start, end = HISTORY_WINDOWS[pair_id]
         near_source = fetch_history(
             near, start, end, cache_dir=inputs.history_cache(pair_id), delay_seconds=0, opener=_offline_only
@@ -530,6 +537,16 @@ class ProofService:
             far=far,
             funding_regimes=None if pair_id == "CNYRUBF/CRZ6" else (),
         )
+        return study, near_source["source"], far_source["source"]
+
+    def _funding_proof(
+        self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
+    ) -> dict[str, Any]:
+        pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
+        quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
+        study, near_source, far_source = prepared
+        if through is not None:
+            study = {**study, "rows": [row for row in study["rows"] if row["date"] <= through]}
         report = build_carry_strategy(
             study,
             inputs.benchmark,
@@ -667,8 +684,8 @@ class ProofService:
             daily_rows=report["daily"],
             margin_pair=margin_pair,
             provenance={
-                "near_history_sha256": near_source["source"]["raw_response_sha256"],
-                "far_history_sha256": far_source["source"]["raw_response_sha256"],
+                "near_history_sha256": near_source["raw_response_sha256"],
+                "far_history_sha256": far_source["raw_response_sha256"],
                 "benchmark_sha256": _sha256_bytes(inputs.benchmark),
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
                 "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),

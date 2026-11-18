@@ -247,7 +247,7 @@ def _cached_swaprate_dates(inputs: ScreenerInputs, pair_id: str, secid: str, sta
     return dates
 
 
-def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
+def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
     try:
         instruments = {
             row["secid"]: row
@@ -267,7 +267,7 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
             pass
     pairs = []
     funding_dates_cache: dict[tuple[str, str, str, str], set[str] | None] = {}
-    for pair in PAIRS:
+    for pair in registry:
         pair_id = pair["pair_id"]
         history_from, history_to, history_observations, common_dates = _pair_history_span(inputs, pair)
         near, far = pair["near"], pair["far"]
@@ -653,6 +653,9 @@ class ScreenerStore:
     def save_search(self, result: dict[str, Any]) -> None:
         self._save(self.inputs.search_history, result)
 
+    def save_proof_search(self, result: dict[str, Any]) -> None:
+        self._save(self.inputs.history.parent / "proof-searches.jsonl", result)
+
 
 def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -667,7 +670,10 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'",
             )
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # The browser superseded this run with a newer selection.
 
         def _json(self, status: int, value: Any) -> None:
             self._send(
@@ -684,10 +690,10 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             if not self._local_request():
                 self._json(403, {"error": "local host only"})
-            elif (path := urlsplit(self.path).path) == "/":
+            elif (path := urlsplit(self.path).path) in {"/", "/proof"}:
                 self._send(
                     200,
-                    Path(__file__).with_name("screener_ui.html").read_bytes(),
+                    Path(__file__).with_name("proof_ui.html").read_bytes(),
                     "text/html; charset=utf-8",
                 )
             elif path == "/vendor/lightweight-charts.standalone.production.js":
@@ -696,12 +702,6 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     self._send(200, vendor.read_bytes(), "application/javascript; charset=utf-8")
                 except OSError:
                     self._json(404, {"error": "not found"})
-            elif path == "/proof":
-                self._send(
-                    200,
-                    Path(__file__).with_name("proof_ui.html").read_bytes(),
-                    "text/html; charset=utf-8",
-                )
             elif path == "/api/proof/catalog":
                 try:
                     self._json(200, store.proof.catalog())
@@ -725,7 +725,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 self._json(403, {"error": "local origin only"})
                 return
             path = urlsplit(self.path).path
-            if path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run"}:
+            if path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -739,10 +739,18 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if not 0 < size <= 8192:
                     raise ScreenerError("размер запроса должен быть 1–8192 байт")
                 selection = json.loads(self.rfile.read(size))
-                if path == "/api/proof/run":
+                if path in {"/api/proof/run", "/api/proof/optimize"}:
                     if not isinstance(selection, dict):
                         raise ScreenerError("выбор должен быть объектом")
-                    result = store.proof.proof(selection)
+                    search = path == "/api/proof/optimize"
+                    if search or selection.pop("include_plateau", False) is True:
+                        from .proof_search import research_run
+
+                        result = research_run(store.proof, selection, optimize=search)
+                        if search:
+                            store.save_proof_search(result)
+                    else:
+                        result = store.proof.proof(selection)
                 elif path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)

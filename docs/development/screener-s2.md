@@ -2,6 +2,8 @@
 
 Date: 2026-11-08
 
+**UI superseded 2026-11-18.** `/` now opens the [execution proof with Optuna TPE](execution-proof.md); its `/proof` alias is retained. The table and grid descriptions below record the earlier S2 delivery. The legacy API remains available, not connected to the new button.
+
 ## Delivered
 
 The local dark-only view is now table-first. One strategy, its parameters, slippage and contracts per leg are applied to every compatible pair when changed. Each row shows the economic relationship, dated-contract expiry, sample length, current-margin share, closed proxy trades, the difference between annualized strategy and matched LQDT returns (percentage points per year), maximum benchmark-relative drawdown and worst shortfall as percentages of the fixed initial research allocation. A row opens indexed strategy/LQDT and percentage-excess charts. **The interface displays no absolute currency amounts.** Internal cash and margin accounting still uses RUB under the pilot policy.

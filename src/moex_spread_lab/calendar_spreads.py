@@ -346,18 +346,27 @@ class CalendarData:
             ],
         }
 
-    def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
+    def proof(self, selection: dict[str, Any], *, through: str | None = None) -> dict[str, Any]:
         data = self._load()
         asset, pair = selection.get("asset"), selection.get("pair")
         strategy, fill_label = selection.get("strategy", "zscore_mean_reversion"), selection.get("fill", "next_open")
         quantity, slippage = selection.get("quantity", 1), selection.get("slippage_ticks", 1.0)
-        if asset not in ASSETS or strategy not in STRATEGIES or fill_label not in FILL_LABELS:
+        if not isinstance(asset, str) or asset not in ASSETS or strategy not in STRATEGIES or fill_label not in FILL_LABELS:
             raise W0Error("unknown asset, strategy or fill rule")
         if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 50:
             raise W0Error("contracts must be an integer between 1 and 50")
         window = next((w for w in data["windows"].get(asset, []) if w["pair"] == pair), None)
         if window is None:
             raise W0Error("no complete front window for this pair")
+        if through is not None:
+            # Optimizer replay ends before the confirmation period; never mutate cached windows.
+            rows = [r for r in window["rows"] if r["date"] <= through]
+            eligible = _positive_spread_volume_rows(rows)
+            if len(eligible) < 2:
+                raise W0Error("Недостаточно наблюдений для проверки параметров")
+            window = {**window, "rows": rows, "last_date": rows[-1]["date"],
+                      "min_spread_volume": min(r["min_volume"] for r in eligible),
+                      "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2)}
         delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
         options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
         params = selection.get("parameters", {})

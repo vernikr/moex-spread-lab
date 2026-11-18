@@ -194,6 +194,7 @@ def load_contracts(path: Path, near: str, far: str) -> tuple[dict[str, Any], str
             "tick_value": _number(instrument["tick_value"], f"{secid}.tick_value", positive=True),
             "initial_margin": _number(instrument["initial_margin"], f"{secid}.initial_margin", positive=True),
             "source_vintage": instrument["source_vintage"],
+            "tariff_group": instrument.get("tariff_group"),
             "historical_evidence": instrument.get("historical_evidence", False),
             "historical_specification_basis": instrument.get("historical_specification_basis"),
         }

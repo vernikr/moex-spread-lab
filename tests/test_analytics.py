@@ -3,8 +3,29 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.analytics import build_daily_series, build_series, get_cost_scenario, run_mean_reversion_baseline
+from moex_spread_lab.analytics import build_daily_series, build_series, get_cost_scenario, load_contracts, run_mean_reversion_baseline
+from moex_spread_lab.costs import side_cost, tariff_profile
 from moex_spread_lab.ledger import build_ledger
+
+
+class HistoricalTariffGroupTests(unittest.TestCase):
+    def test_historical_contract_tariff_group_reaches_cost_calculation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            current = {"instruments": [
+                {"secid": "PERP", "lot_size": 1, "tick_size": 1, "tick_value": 1,
+                 "initial_margin": 100, "source_vintage": "current", "tariff_group": "interest"},
+            ]}
+            historical = {"instruments": [
+                {"secid": "OLDQ", "lot_size": 1, "tick_size": 1, "tick_value": 1,
+                 "initial_margin": 100, "source_vintage": "assumed", "tariff_group": "interest"},
+            ]}
+            (root / "contracts.json").write_text(json.dumps(current))
+            (root / "historical-contracts.json").write_text(json.dumps(historical))
+            terms, _ = load_contracts(root / "contracts.json", "PERP", "OLDQ")
+            self.assertEqual(terms["OLDQ"]["tariff_group"], "interest")
+            result = side_cost(tariff_profile(), [(terms["OLDQ"], 100)], 1)
+            self.assertGreater(result["exchange_clearing"], 0)
 
 
 def candle_payload(secid, closes, interval=24):

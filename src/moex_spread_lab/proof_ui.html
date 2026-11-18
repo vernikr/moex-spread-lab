@@ -330,9 +330,11 @@ function paintPlateaus(plateau=null,empty='Нет оценки для текущ
   lamp.dataset.level=level;lamp.dataset.heading=`${name} · ${score==null?'нет оценки':fmt(score,2)+' / 100 · '+verdict}`;
   const lines=[];if(field){
    lines.push(`Текущее значение: ${fmt(field.value,Number.isInteger(field.value)?0:1)}`);
+   if(field.reason)lines.push(field.reason);
+   if(plateau.periods)lines.push(`Обучение: ${plateau.periods.training.join(' — ')}`,`Проверка: ${plateau.periods.validation.join(' — ')}`);
    if(field.center?.utility!=null)lines.push(`Сверх LQDT, ₽/сес.: обучение ${signed(field.center.train)}, проверка ${signed(field.center.validation)}. Центр: ${signed(field.center.utility)} (худший отрезок).`);
    if(field.neighbors.length){lines.push('Соседи при остальных неизменных параметрах:');for(const n of field.neighbors)lines.push(`${fmt(n.value,Number.isInteger(n.value)?0:1)} → ${n.utility==null?'нет оценки: '+n.reason:signed(n.utility)+' ₽/сес.'}`)}
-   if(field.reason)lines.push(field.reason);else if(score!=null)lines.push('Балл — доля результата центра, сохранённая худшим соседом (0–100).');
+   if(!field.reason&&score!=null)lines.push('Балл — доля результата центра, сохранённая худшим соседом (0–100).');
    if(k==='quantity'||k==='slippage_ticks')lines.push('Условие исполнения: проверяется, но не меняется автоподбором.');
   }else lines.push(empty);
   lamp.dataset.detail=lines.join('\n');lamp.setAttribute('aria-label',lamp.dataset.heading);if(lamp===openLamp)showPlateauTip(lamp);

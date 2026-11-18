@@ -144,15 +144,25 @@ def _measure(proof, marks, dates, train, end):
     a, b = train_x / train, (valid_x - train_x) / (end - train)
     if not all(math.isfinite(v) for v in (a, b)):
         return {"utility": None, "reason": "Нет конечной оценки результата."}
-    for start, stop in ((dates[0], dates[train - 1]), (dates[train], dates[end - 1])):
+    periods = (
+        ("на обучении", dates[0], dates[train - 1]),
+        ("на проверке", dates[train], dates[end - 1]),
+    )
+    missing = [
+        label
+        for label, start, stop in periods
         if not any(
             t["entry"]["date"] <= stop and t["exit"]["date"] >= start
             for t in proof["trades"]
-        ):
-            return {
-                "utility": None,
-                "reason": "На одном из двух отрезков не было позиции.",
-            }
+        )
+    ]
+    if missing:
+        where = (
+            f"только {missing[0]}"
+            if len(missing) == 1
+            else "ни на обучении, ни на проверке"
+        )
+        return {"utility": None, "reason": f"Открытого спреда не было {where}."}
     return {
         "utility": round(min(a, b), 6),
         "train": round(a, 6),

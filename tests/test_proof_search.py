@@ -18,6 +18,7 @@ from moex_spread_lab.proof_search import (
     Axis,
     Landscape,
     _excess_curve,
+    _measure,
     _tune,
     research_run,
 )
@@ -77,6 +78,56 @@ class PlateauTests(unittest.TestCase):
         self.assertGreaterEqual(land.profile(chosen, "lookback")["score"], GREEN)
         flat = Landscape(axes | EXECUTION_AXES, lambda _: {"utility": 0})
         self.assertIsNone(_tune(flat, seed, axes, 100)[0])
+
+    def test_missing_exposure_names_each_period_and_counts_a_carried_spread(self):
+        dates = [f"2026-11-{day:02}" for day in range(1, 9)]
+        train, end = (
+            4,
+            6,
+        )  # training 1–4; validation 5–6; confirmation 7–8 is not replayed
+        marks = dict.fromkeys(dates[:end], 1.0)
+        for span, missing in (
+            ((5, 6), "только на обучении"),
+            ((1, 4), "только на проверке"),
+            (None, "ни на обучении, ни на проверке"),
+            (
+                (4, 5),
+                None,
+            ),  # Enter on the last training date, exit on the first validation date.
+        ):
+            with self.subTest(span=span):
+                trades = (
+                    []
+                    if span is None
+                    else [
+                        {
+                            "entry": {"date": dates[span[0] - 1]},
+                            "exit": {"date": dates[span[1] - 1]},
+                            "margin_rub": 100,
+                            "lqdt_on_margin_rub": 0,
+                        }
+                    ]
+                )
+                proof = {
+                    "selection": {"strategy": "funding_only"},
+                    "window": {
+                        "passes_capital_screen": True,
+                        "tradable_every_day": True,
+                    },
+                    "ledger": [{"date": day, "cumulative_net_rub": 0} for day in marks],
+                    "trades": trades,
+                }
+                measured = _measure(proof, marks, dates, train, end)
+                if missing is None:
+                    self.assertEqual(
+                        measured["utility"], 0
+                    )  # Measured flat result, not missing evidence.
+                    self.assertNotIn("reason", measured)
+                else:
+                    self.assertIsNone(measured["utility"])
+                    self.assertEqual(
+                        measured["reason"], f"Открытого спреда не было {missing}."
+                    )
 
     def test_daily_hurdle_marks_positions_across_a_split_and_reconciles_at_exit(self):
         proof = {

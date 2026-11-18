@@ -24,8 +24,8 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 .side-title{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#8aa0b3;font-weight:750}
 .side-sub{font-size:9px;color:#62788c;margin-top:-4px}
 .universe-switch{display:flex;gap:6px;flex:0 0 auto}.uopt{flex:1;border:1px solid #345469;background:#16293a;color:#a9bccb;border-radius:9px;padding:6px 8px;font-size:11px;font-weight:700;text-align:left;line-height:1.35}.uopt.active{border-color:#70e1b9;color:#072119;background:#70e1b9}.uopt small{display:block;font-weight:500;font-size:9px;color:inherit;opacity:.8}
-.listbox{background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
-#pair{min-height:150px}#norm{min-height:290px}
+.listbox{font-variant-numeric:tabular-nums;background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
+#pair{min-height:150px}#norm{min-height:180px;flex:1 1 0}
 .control{margin-bottom:2px;flex:1;min-width:0}.control label{display:block;color:#a7b8c8;font-size:10px;font-weight:650;margin-bottom:3px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:7px;color:#e7eef5;height:30px;padding:0 8px;width:100%;outline:none;font-size:11px}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:9px;color:#7e93a6;margin-top:2px;line-height:1.4}
 .control select.listbox{padding:0;border-radius:8px}
 .selection-lists{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));gap:6px;flex:1 1 0;min-height:0}
@@ -77,16 +77,6 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div id="pair-list-control" class="control selection-list-control"><label for="pair">Историческая пара</label><select id="pair" class="listbox" size="7"></select></div>
           <div id="calendar-list-control" class="control selection-list-control hidden"><label for="window">Календарное окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
         </div>
-        <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
-        <div class="hint" id="pair-hint"></div>
-        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
-        <div class="sidegrid" id="pair-params">
-          <div class="control mr-only"><label for="entry">Вход · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="2.0"></div>
-          <div class="control mr-only"><label for="exit">Выход · z</label><input id="exit" type="number" min="0" max="4" step="0.1" value="0.5"></div>
-          <div class="control"><label for="lookback">Окно · набл.</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
-        </div>
-        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
-      </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
         <div class="sidegrid" id="calendar-params">
@@ -131,6 +121,16 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <option value="stoch20">Стохастик · 20 набл. (0–100)</option>
         </optgroup>
       </select>
+        <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+        <div class="hint" id="pair-hint"></div>
+        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
+        <div class="sidegrid" id="pair-params">
+          <div class="control mr-only"><label for="entry">Вход · z</label><input id="entry" type="number" min="0.5" max="5" step="0.1" value="2.0"></div>
+          <div class="control mr-only"><label for="exit">Выход · z</label><input id="exit" type="number" min="0" max="4" step="0.1" value="0.5"></div>
+          <div class="control"><label for="lookback">Окно · набл.</label><input id="lookback" type="number" min="5" max="80" step="1" value="20"></div>
+        </div>
+        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+      </div>
       <div class="norm-hint" id="norm-hint"></div>
       <div class="norm-score" id="norm-score"></div>
     </aside>
@@ -288,7 +288,7 @@ function refreshSelectionControls(run=true){
 function fillPairs(preferred){
  const s=$('pair');s.replaceChildren();const {id:near}=selectedRoot();const pairs=(catalog.pair_screen?.pairs||[]).filter(p=>p.near===near);
  const ordered=pairs.filter(pairIsAvailable).concat(pairs.filter(p=>!pairIsAvailable(p)));
- for(const p of ordered){const ok=pairIsAvailable(p),vol=p.min_leg_daily_volume!=null?` · мин. объём ноги ${fmt(p.min_leg_daily_volume)}`:'',span=p.from&&p.to?` · ${p.from} → ${p.to} · ${p.observations} дн.`:'';const reason=CATSTATUS_RU[p.status]||String(p.status||'нет локальных данных').replaceAll('_',' ');const option=el('option','',`${p.id}${span}${vol}${ok?'':` · НЕДОСТУПНА (${reason})`}`);option.value=p.id;option.disabled=!ok;s.append(option)}
+ for(const p of ordered){const ok=pairIsAvailable(p),vol=p.min_leg_daily_volume!=null?` · мин. объём ноги ${fmt(p.min_leg_daily_volume)}`:'',from=p.from?.slice(0,7),to=p.to?.slice(0,7),span=from&&to?`${from} → ${to} · ${p.observations} дн.`:'';const reason=CATSTATUS_RU[p.status]||String(p.status||'нет локальных данных').replaceAll('_',' ');const option=el('option','',`${span}${vol}${ok?'':` · НЕДОСТУПНА (${reason})`}`);option.value=p.id;option.disabled=!ok;s.append(option)}
  const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const first=[...s.options].find(o=>!o.disabled);if(desired)s.value=desired;else if(first)s.value=first.value;syncPairHint()
 }
 function currentPair(){return $('pair').value}

@@ -577,12 +577,13 @@ function spreadCell(r){return`${r.spread_rel==null?'—':fmt(r.spread_rel,2)+'%'
 function signalCell(r){if(r.signal_z!=null)return`z ${fmt(r.signal_z,2)}`;if(r.dev_pp!=null)return`${fmt(r.dev_pp,2)} pp`;if((r.funding_rub??0)!==0)return`фонд ${signed(r.funding_rub)}`;return''}
 function fundingCell(r,l){if(l.funding_rub==null)return'—';const amount=Number(l.funding_rub)||0;if(!amount)return'0,00';const action=amount>0?'начислено':amount<0?'списано':'нет платежа';const rate=r.funding_swaprate_rub_per_unit;const lot=r.funding_lot_size;const qty=r.funding_contracts;const detail=rate!=null?`−pos ${signed(l.position??0,0)} × SWAPRATE ${signed(rate,4)} ₽/ед. × лот ${fmt(lot)} × ${fmt(qty)} контр.`:'значение ISS, см. оговорку';return`${action} ${signed(amount,2)}<small>${detail}</small>`}
 function renderTable(){const root=$('ledger-table');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
- const table=el('table');table.append(th(['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём','Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽']));const tbody=el('tbody');
+ const showSpreadVolume=universe==='calendar_native',extra=showSpreadVolume?1:0;const headers=['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём',...(showSpreadVolume?['Объём спреда']:[]),'Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽'];const table=el('table');table.append(th(headers));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=[];if(ev){clsRow.push('fill');if(ev.some(e=>e.side==='entry'))clsRow.push('entry');if(ev.some(e=>e.side==='exit'))clsRow.push('exit');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
   const tr=el('tr',clsRow.join(' '));if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
   td(tr,`${r.date}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
   td(tr,signalCell(r),{num:true});
   td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>цена · объём ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
+  if(showSpreadVolume)td(tr,r.spread_volume!=null?fmt(r.spread_volume):'—',{num:true});
   td(tr,spreadCell(r),{num:true});
   td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side==='entry'?'ВХОД':'ВЫХОД'} #${e.t.number}</span>`).join(' '):'',{num:false});
   tr.querySelectorAll('.badge[data-trade]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();selectedTrade=Number(b.dataset.trade);refreshSelection()}));
@@ -592,12 +593,12 @@ function renderTable(){const root=$('ledger-table');root.replaceChildren();const
   td(tr,rub(l.cumulative_net_rub,2),{num:true,klass:cls(l.cumulative_net_rub)});
   tbody.append(tr)}
  const s=payload.summary;
- const tot=el('tr','totals');td(tot,'Итого',{klass:''});for(let i=0;i<5;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
- const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
- if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
+ const tot=el('tr','totals');td(tot,'Итого',{klass:''});for(let i=0;i<5+extra;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
+ const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9+extra;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
+ if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10+extra;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
  table.append(tbody);root.append(table)}
 function toggleCard(day,tr,ev){const existing=tr.nextElementSibling;if(existing&&existing.classList.contains('card')){existing.remove();return}
- const trade=ev[0].t;const card=el('tr','card');const cell=el('td');cell.colSpan=10;card.append(cell);
+ const trade=ev[0].t;const card=el('tr','card');const cell=el('td');cell.colSpan=10+(universe==='calendar_native'?1:0);card.append(cell);
  const wrap=el('div','cardgrid');
  for(const {t,side} of ev){wrap.append(fillCard(t,side))}
  cell.append(wrap);tr.after(card)}

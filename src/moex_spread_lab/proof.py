@@ -107,6 +107,10 @@ def _rel_pct(value: Any, base: Any) -> float | None:
 def _load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
     try:
         rows = json.loads(contracts_path.read_text(encoding="utf-8"))["instruments"]
+        historical_path = contracts_path.parent / "historical-contracts.json"
+        if historical_path.is_file():
+            historical_rows = json.loads(historical_path.read_text(encoding="utf-8")).get("instruments", [])
+            rows.extend(historical_rows)
     except (OSError, ValueError, KeyError, TypeError):
         return {}
     return {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
@@ -461,6 +465,7 @@ class ProofService:
                 **series["provenance"],
                 "benchmark_sha256": _sha256_bytes(inputs.benchmark),
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
+                "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
                 **funding_provenance,
             },
             notes=[
@@ -652,6 +657,7 @@ class ProofService:
                 "far_history_sha256": far_source["source"]["raw_response_sha256"],
                 "benchmark_sha256": _sha256_bytes(inputs.benchmark),
                 "contracts_sha256": _sha256_bytes(inputs.contracts),
+                "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
             },
             notes=[
                 "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
@@ -914,6 +920,8 @@ class ProofService:
                 "far_expiry": terms[far].get("expiry"),
                 "near_point_value_rub": _point_value(terms[near]) if terms[near] else None,
                 "far_point_value_rub": _point_value(terms[far]) if terms[far] else None,
+                "far_contract_historical_evidence": terms[far].get("historical_evidence"),
+                "far_contract_specification_basis": terms[far].get("historical_specification_basis"),
                 "spread_instrument": None,
             },
             "window": {
@@ -957,6 +965,7 @@ class ProofService:
             "notes": [
                 "Сопоставимый ценовой путь LQDT — не сверка с выпиской по счёту.",
                 "Текущие снапшоты контрактов/маржи — запасные допущения, а не датированные условия брокера.",
+                *([f"Исторические параметры дальней ноги используют fallback: {terms[far].get('historical_specification_basis')}."] if terms[far].get("historical_specification_basis") else []),
                 "Свободные средства держатся в LQDT, маржинальные средства ничего не зарабатывают (A-11); бенчмарк держит весь капитал в LQDT.",
                 "Цены — candle/расчётные прокси, не исполнимые заполнения.",
                 "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, slippage как параметр.",

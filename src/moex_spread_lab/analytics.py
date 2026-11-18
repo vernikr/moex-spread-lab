@@ -171,6 +171,11 @@ def _date_key(value: Any, field: str) -> str:
 def load_contracts(path: Path, near: str, far: str) -> tuple[dict[str, Any], str]:
     payload, digest = _read_json(path)
     instruments = {row.get("secid"): row for row in payload.get("instruments", []) if isinstance(row, dict)}
+    historical_path = Path(path).parent / "historical-contracts.json"
+    if historical_path.is_file():
+        historical, historical_digest = _read_json(historical_path)
+        instruments.update({row.get("secid"): row for row in historical.get("instruments", []) if isinstance(row, dict)})
+        digest = hashlib.sha256(f"{digest}:{historical_digest}".encode("ascii")).hexdigest()
     selected = {}
     for secid in (near, far):
         instrument = instruments.get(secid)

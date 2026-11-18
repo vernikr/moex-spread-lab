@@ -112,6 +112,13 @@ class ScreenerAppTests(unittest.TestCase):
                                               "raw_response_sha256": "cd" * 32}))
         self.days = days
 
+    def test_pair_registry_has_two_level_base_and_historical_gold_options(self):
+        pairs = {row["id"]: row for row in catalog(self.inputs)["pairs"]}
+        self.assertEqual(pairs["GLDRUBF/GLZ6"]["near"], "GLDRUBF")
+        self.assertEqual(pairs["GLDRUBF/GLU3"]["far"], "GLU3")
+        self.assertIn("from", pairs["GLDRUBF/GLU3"])
+        self.assertIn("to", pairs["GLDRUBF/GLU3"])
+
     def test_pair_choice_parameter_change_and_replay(self):
         self.assertTrue(
             catalog(self.inputs)["pairs"][0]["strategies"]["mean_reversion"]
@@ -311,7 +318,7 @@ class ScreenerAppTests(unittest.TestCase):
         connection.request("POST", "/api/screen", screen_payload, headers)
         screen_response = connection.getresponse()
         self.assertEqual(screen_response.status, 200)
-        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 12)
+        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 25)
         self.assertEqual(
             len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1
         )

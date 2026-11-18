@@ -53,6 +53,13 @@ EXTRA_PAIRS = (
         "family": "dated_calendar_same_asset",
     },
 )
+GLD_HISTORICAL_FAR = (
+    "GLU6", "GLM6", "GLH6", "GLZ5", "GLU5", "GLM5", "GLH5", "GLZ4", "GLU4", "GLM4", "GLH4", "GLZ3", "GLU3",
+)
+GLD_HISTORICAL_PAIRS = tuple(
+    {"pair_id": f"GLDRUBF/{far}", "near": "GLDRUBF", "far": far, "family": "perpetual_quarterly_same_asset"}
+    for far in GLD_HISTORICAL_FAR
+)
 PAIRS = (
     {
         "pair_id": "CNYRUBF/CRZ6",
@@ -62,6 +69,7 @@ PAIRS = (
     },
     *SCREEN_PAIRS,
     *EXTRA_PAIRS,
+    *GLD_HISTORICAL_PAIRS,
 )
 STRATEGIES = {
     "mean_reversion": {
@@ -79,9 +87,10 @@ INITIAL_CAPITAL = 30_000.0
 HISTORY_WINDOWS = {
     "CNYRUBF/CRZ6": ("2025-06-17", "2026-10-27"),
     **{
-        pair["pair_id"]: ("2026-03-23", "2026-10-27")
+        pair["pair_id"]: (("2023-07-11", "2026-10-27") if pair["pair_id"] == "GLDRUBF/GLZ6" else ("2026-03-23", "2026-10-27"))
         for pair in (*SCREEN_PAIRS, *EXTRA_PAIRS)
     },
+    **{pair["pair_id"]: ("2023-07-11", "2026-10-27") for pair in GLD_HISTORICAL_PAIRS},
 }
 
 
@@ -163,6 +172,18 @@ def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str]) -> dict[str, int]
     return {secid: min(volumes[day] for day in days) for secid, volumes in legs.items()} if days else None
 
 
+def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[str | None, str | None, int]:
+    try:
+        legs = []
+        for secid in (pair["near"], pair["far"]):
+            payload = json.loads(inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8"))
+            legs.append({str(row.get("begin", ""))[:10] for row in payload.get("rows", []) if row.get("begin")})
+        common = sorted(legs[0] & legs[1])
+        return (common[0], common[-1], len(common)) if common else (None, None, 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None, 0
+
+
 def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
     try:
         instruments = {
@@ -174,9 +195,17 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         }
     except (OSError, ValueError, KeyError, TypeError):
         instruments = {}
+    historical_terms = inputs.root / "data/w1/historical-contracts.json"
+    if historical_terms.is_file():
+        try:
+            rows = json.loads(historical_terms.read_text(encoding="utf-8")).get("instruments", [])
+            instruments.update({row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")})
+        except (OSError, ValueError, TypeError):
+            pass
     pairs = []
     for pair in PAIRS:
         pair_id = pair["pair_id"]
+        history_from, history_to, history_observations = _pair_history_span(inputs, pair)
         near, far = pair["near"], pair["far"]
         price_files = (
             inputs.candles(pair_id, near),
@@ -193,12 +222,15 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         )
         volumes = _leg_volumes(inputs, pair)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
-        available = {
-            "mean_reversion": tradable and all(path.is_file() for path in price_files)
+        proof_available = {
+            "mean_reversion": all(path.is_file() for path in price_files)
             and (pair["family"] != "perpetual_quarterly_same_asset" or funding_files[0].is_file()),
-            "funding_only": tradable
-            and pair["family"] == "perpetual_quarterly_same_asset"
+            "funding_only": pair["family"] == "perpetual_quarterly_same_asset"
             and all(path.is_file() for path in funding_files),
+        }
+        available = {
+            "mean_reversion": tradable and proof_available["mean_reversion"],
+            "funding_only": tradable and proof_available["funding_only"],
         }
         near_terms, far_terms = instruments.get(near, {}), instruments.get(far, {})
         margins = (near_terms.get("initial_margin"), far_terms.get("initial_margin"))
@@ -210,15 +242,23 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         pairs.append(
             {
                 "id": pair_id,
+                "near": near,
+                "far": far,
                 "family": pair["family"],
+                "from": history_from,
+                "to": history_to,
+                "observations": history_observations,
                 "expiry": far_terms.get("expiry"),
                 "current_margin_pct": margin_pct,
                 "min_leg_daily_volume": min(volumes.values()) if volumes else None,
                 "strategies": available,
+                "proof_strategies": proof_available,
                 "status": "excluded_thin_leg"
                 if volumes is not None and not tradable
                 else "local_inputs_available"
                 if any(available.values())
+                else "proof_ready_thin_leg"
+                if any(proof_available.values())
                 else "intake_required",
             }
         )

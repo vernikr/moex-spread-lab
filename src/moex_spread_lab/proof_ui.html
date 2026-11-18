@@ -68,14 +68,11 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
   <div class="layout" id="layout">
     <!-- левая колонка 1: выбор пары и параметры -->
     <aside class="panel side" id="col-selection">
-      <div class="universe-switch" role="tablist">
-        <button class="uopt active" id="u-pair" role="tab">Скринер пар<small>возврат к среднему · фондирование перпов</small></button>
-        <button class="uopt" id="u-calendar" role="tab">Календарные спреды<small>биржевые инструменты MOEX</small></button>
-      </div>
-
-      <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
-        <div class="side-title">Пара</div>
-        <select id="pair" class="listbox" size="10"></select>
+      <div id="selection-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
+        <div class="control"><label for="main-asset">Тип пары / основной актив</label><select id="main-asset" class="listbox" size="6"></select></div>
+        <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
+        <div class="side-title">Историческая пара</div>
+        <select id="pair" class="listbox" size="7"></select>
         <div class="hint" id="pair-hint"></div>
         <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
         <div class="sidegrid" id="pair-params">
@@ -87,8 +84,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
         <div class="side-title">Календарный спред</div>
-        <div class="control calendar-asset-control"><label for="asset">Актив</label><select id="asset" class="listbox" size="6"></select></div>
-        <div class="control calendar-window-control"><label for="window">Ближнее окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
+        <div class="control calendar-window-control"><label for="window">Историческое окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
         <div class="sidegrid" id="calendar-params">
           <div class="control z-only"><label for="centry">Вход · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
@@ -97,6 +93,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="control z-only c-keep"><label for="cthreshold">Порог · п.п. от RUONIA</label><input id="cthreshold" type="number" min="0.1" max="10" step="0.1" value="1"></div>
         </div>
         <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><input id="cquantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="cslippage">Слиппедж · тики</label><input id="cslippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
+      </div>
       </div>
       <div class="status" id="status" role="status"></div>
     </aside>
@@ -265,49 +262,39 @@ function initColumnResizers(){
 }
 initColumnResizers();
 
-// ---------- toolbar: universe & selection ----------
-function modeButtons(){
- if(autoRunTimer!==null){clearTimeout(autoRunTimer);autoRunTimer=null}analysisRequestId++;setRenderProgress(false);
- for(const [id,mode] of [['u-pair','pair_screen'],['u-calendar','calendar_native']])$(id).classList.toggle('active',mode===universe);
- $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native')
-}
-function switchUniverse(next){if(universe===next)return;universe=next;modeButtons();scheduleShow(0)}
+// ---------- unified two-step pair/calendar selection ----------
 function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts')void fitChartsToVisibleArea()}
-function pairAvailability(id){const row=(catalog.pair_screen?.pairs||[]).find(p=>p.id===id);return row||null}
-function pairIsAvailable(p){return !!(p?.strategies?.mean_reversion||p?.strategies?.funding_only)}
-function fillPairs(){
- const s=$('pair');s.replaceChildren();const groups=new Map();
- for(const p of catalog.pair_screen?.pairs||[]){const family=p.family||'other';if(!groups.has(family))groups.set(family,[]);groups.get(family).push(p)}
- for(const [family,pairs] of groups){
-  const group=document.createElement('optgroup');group.label=FAMILY_RU[family]||String(family).replaceAll('_',' ');
-  const ordered=pairs.filter(pairIsAvailable).concat(pairs.filter(p=>!pairIsAvailable(p)));
-  for(const p of ordered){
-   const ok=pairIsAvailable(p),volume=p.min_leg_daily_volume!=null?` · мин. объём ноги ${fmt(p.min_leg_daily_volume)}`:'';
-   const reason=CATSTATUS_RU[p.status]||String(p.status||'нет локальных данных').replaceAll('_',' ');
-   const option=el('option','',`${p.id}${volume}${ok?'':` · НЕДОСТУПНА (${reason})`}`);option.value=p.id;option.disabled=!ok;group.append(option)
-  }
-  s.append(group)
- }
- const firstAvailable=[...s.options].find(option=>!option.disabled);if(firstAvailable)s.value=firstAvailable.value;
- syncPairStrategy()
+function pairAvailability(id){return (catalog.pair_screen?.pairs||[]).find(p=>p.id===id)||null}
+function pairIsAvailable(p){return !!(p?.proof_strategies?.mean_reversion||p?.proof_strategies?.funding_only||p?.strategies?.mean_reversion||p?.strategies?.funding_only)}
+function selectedRoot(){const [kind,id]=String($('main-asset').value||'').split('|',2);return{kind,id}}
+function currentAsset(){const root=selectedRoot();return root.kind==='calendar_native'?(catalog.assets||[]).find(a=>a.asset===root.id):null}
+function fillMainAssets(preferred){
+ const s=$('main-asset');s.replaceChildren();const pairGroups=new Map();
+ for(const p of catalog.pair_screen?.pairs||[]){const family=p.family||'other';if(!pairGroups.has(family))pairGroups.set(family,new Map());const byNear=pairGroups.get(family);if(!byNear.has(p.near))byNear.set(p.near,[]);byNear.get(p.near).push(p)}
+ for(const [family,byNear] of pairGroups){const group=document.createElement('optgroup');group.label=FAMILY_RU[family]||String(family).replaceAll('_',' ');for(const [near,pairs] of byNear){const available=pairs.some(pairIsAvailable);const option=el('option','',`${near}${available?'':' · нет локальных данных'}`);option.value=`pair_screen|${near}`;option.disabled=!available;group.append(option)}s.append(group)}
+ if((catalog.assets||[]).length){const group=document.createElement('optgroup');group.label='Календарные спреды · активы';for(const a of catalog.assets){const option=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);option.value=`calendar_native|${a.asset}`;option.disabled=!a.windows?.length;group.append(option)}s.append(group)}
+ const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const firstPair=[...s.options].find(o=>o.value.startsWith('pair_screen|')&&!o.disabled);const first=[...s.options].find(o=>!o.disabled);s.value=desired||(firstPair?.value||first?.value||'');refreshSelection(false)
+}
+function refreshSelection(run=true){
+ const root=selectedRoot();universe=root.kind==='calendar_native'?'calendar_native':'pair_screen';
+ $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
+ if(universe==='pair_screen'){fillPairs();syncPairStrategy()}else{fillWindows()}
+ if(run)scheduleShow(80)
+}
+function fillPairs(preferred){
+ const s=$('pair');s.replaceChildren();const {id:near}=selectedRoot();const pairs=(catalog.pair_screen?.pairs||[]).filter(p=>p.near===near);
+ const ordered=pairs.filter(pairIsAvailable).concat(pairs.filter(p=>!pairIsAvailable(p)));
+ for(const p of ordered){const ok=pairIsAvailable(p),vol=p.min_leg_daily_volume!=null?` · мин. объём ноги ${fmt(p.min_leg_daily_volume)}`:'',span=p.from&&p.to?` · ${p.from} → ${p.to} · ${p.observations} дн.`:'';const reason=CATSTATUS_RU[p.status]||String(p.status||'нет локальных данных').replaceAll('_',' ');const option=el('option','',`${p.id}${span}${vol}${ok?'':` · НЕДОСТУПНА (${reason})`}`);option.value=p.id;option.disabled=!ok;s.append(option)}
+ const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const first=[...s.options].find(o=>!o.disabled);if(desired)s.value=desired;else if(first)s.value=first.value;syncPairHint()
 }
 function currentPair(){return $('pair').value}
-function fillStrategy(){const p=pairAvailability(currentPair());const s=$('strategy');const prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?p.strategies[name]:false;const o=el('option','',`${m.label}${ok?'':' · нет локальных данных'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}
- const enabled=[...s.options].find(o=>!o.disabled);if(prev&&[...s.options].some(o=>o.value===prev&&!o.disabled))s.value=prev;else if(enabled)s.value=enabled.value;else if(s.options.length)s.value=s.options[0].value;
- const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=FILL_RU[isMR?'next_open':'same_day_settlement']||(isMR?'next_open':'same_day_settlement');const metaSel=catalog.pair_screen.strategies[s.value];$('lookback').value=metaSel?metaSel.parameters.lookback:20;syncPairHint()}
+function fillStrategy(){const p=pairAvailability(currentPair()),s=$('strategy'),prev=s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=p?(p.proof_strategies?.[name]??p.strategies[name]):false,o=el('option','',`${m.label}${ok?'':' · нет локальных данных'}`);o.value=name;if(!ok)o.disabled=true;s.append(o)}const enabled=[...s.options].find(o=>!o.disabled);if(prev&&[...s.options].some(o=>o.value===prev&&!o.disabled))s.value=prev;else if(enabled)s.value=enabled.value;else if(s.options.length)s.value=s.options[0].value;const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=FILL_RU[isMR?'next_open':'same_day_settlement']||(isMR?'next_open':'same_day_settlement');const metaSel=catalog.pair_screen.strategies[s.value];$('lookback').value=metaSel?metaSel.parameters.lookback:20;syncPairHint()}
 function syncPairStrategy(){fillStrategy()}
-function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · дальняя экспирация '+p.expiry:''}`:''}
-function pairRequest(){const strategy=$('strategy').value;const parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};
- return {universe:'pair_screen',pair:currentPair(),strategy,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters}}
-
-// ---------- calendar controls ----------
-function currentAsset(){return (catalog.assets||[]).find(a=>a.asset===$('asset').value)}
-function fillAssets(){const s=$('asset');s.replaceChildren();for(const a of catalog.assets||[]){const o=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);o.value=a.asset;s.append(o)}const firstWithWindows=(catalog.assets||[]).find(a=>a.windows?.length);if(firstWithWindows)s.value=firstWithWindows.asset;else if(s.options.length)s.selectedIndex=0;fillWindows()}
-function fillWindows(){const a=currentAsset();if(!a){$('window').replaceChildren();return}const s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations} дн. · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · мин. объём ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});if(s.options.length)s.selectedIndex=0;
- const st=$('cstrategy');const prev=st.value;st.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Возврат к среднему · z-скор':'Сходимость к справедливой цене RUONIA');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;
- $('clookback').value=a.monthly?7:20;syncCalendarParams()}
+function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
+function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters}}
+function fillWindows(preferred){const a=currentAsset();if(!a){$('window').replaceChildren();return}const s=$('window');s.replaceChildren();[...a.windows].reverse().forEach(w=>{const o=el('option','',`${w.pair} · ${w.from} → ${w.to} · ${w.observations} дн. · ${w.tradable_every_day?'V✓':'V✗'} ${w.passes_capital_screen?'C✓':'C✗'} · мин. объём ${fmt(w.min_spread_volume)}`);o.value=w.pair;s.append(o)});if(preferred&&[...s.options].some(o=>o.value===preferred))s.value=preferred;else if(s.options.length)s.selectedIndex=0;const st=$('cstrategy'),prev=st.value;st.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a.convergence)continue;const o=el('option','',name==='zscore_mean_reversion'?'Возврат к среднему · z-скор':'Сходимость к справедливой цене RUONIA');o.value=name;st.append(o)}if([...st.options].some(o=>o.value===prev))st.value=prev;$('clookback').value=a.monthly?7:20;syncCalendarParams()}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
-function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion';return {universe:'calendar_native',asset:$('asset').value,pair:$('window').value,strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
+function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',asset:root.id,pair:$('window').value,strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
 function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of catalog.fills||['next_open']){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
 function scheduleShow(delay=90){if(autoRunTimer!==null)clearTimeout(autoRunTimer);analysisRequestId++;autoRunTimer=setTimeout(()=>{autoRunTimer=null;void show()},delay)}
 async function show(){
@@ -665,22 +652,22 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
 // ---------- boot ----------
 (async()=>{try{catalog=await api('/api/proof/catalog');
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
- fillPairs();fillFills();fillAssets();
- $('u-pair').addEventListener('click',()=>switchUniverse('pair_screen'));
- $('u-calendar').addEventListener('click',()=>switchUniverse('calendar_native'));
+ fillFills();fillMainAssets();
+ $('main-asset').addEventListener('change',()=>refreshSelection(true));
  $('pair').addEventListener('change',()=>{syncPairStrategy();scheduleShow(80)});
  $('pair').addEventListener('click',()=>{const selected=$('pair').selectedOptions[0];if(selected&&!selected.disabled)scheduleShow(80)});
  $('strategy').addEventListener('change',()=>{fillStrategy();scheduleShow(100)});
- $('asset').addEventListener('change',()=>{fillWindows();scheduleShow(100)});$('window').addEventListener('change',()=>scheduleShow(80));$('window').addEventListener('click',()=>{if($('window').value)scheduleShow(80)});
+ $('window').addEventListener('change',()=>scheduleShow(80));$('window').addEventListener('click',()=>{if($('window').value)scheduleShow(80)});
  $('cstrategy').addEventListener('change',()=>{syncCalendarParams();scheduleShow(100)});$('cfill').addEventListener('change',()=>scheduleShow(100));
  bindParameterAutoRun();
  $('toggle-summary').addEventListener('click',toggleSummaryBlock);
  $('copy-runid').addEventListener('click',copyRunId);$('download-csv').addEventListener('click',downloadCsv);$('tab-charts').addEventListener('click',()=>switchTab('charts'));$('tab-table').addEventListener('click',()=>switchTab('table'));$('norm').addEventListener('change',()=>{applyNormHint();if(payload)buildCharts()});
  applyNormHint();
- // deep links: ?universe=pair_screen&pair=CNYRUBF/CRZ6&strategy=mean_reversion  |  ?universe=calendar_native&asset=SR&pair=SRZ6SRH7&strategy=zscore_mean_reversion
- const q=new URLSearchParams(location.search);const uq=q.get('universe');if(uq==='pair_screen'||uq==='calendar_native')universe=uq;modeButtons();
- if(universe==='pair_screen'&&q.get('pair')){const want=q.get('pair');if([...$('pair').options].some(o=>o.value===want)){$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}}
- else if(universe==='calendar_native'&&q.get('asset')){const want=q.get('asset');if([...$('asset').options].some(o=>o.value===want)){$('asset').value=want;fillWindows();if(q.get('pair')&&[...$('window').options].some(o=>o.value===q.get('pair')))$('window').value=q.get('pair');if(q.get('strategy')&&[...$('cstrategy').options].some(o=>o.value===q.get('strategy'))){$('cstrategy').value=q.get('strategy');syncCalendarParams()}show()}}
+ // Deep links keep their old shape while both universes share the same two-step selector.
+ const q=new URLSearchParams(location.search);const uq=q.get('universe'),want=q.get('pair');
+ if(uq==='pair_screen'&&want){const p=pairAvailability(want);if(p){$('main-asset').value=`pair_screen|${p.near}`;refreshSelection(false);$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}else show()}
+ else if(uq==='calendar_native'&&q.get('asset')){$('main-asset').value=`calendar_native|${q.get('asset')}`;refreshSelection(false);if(want&&[...$('window').options].some(o=>o.value===want))$('window').value=want;if(q.get('strategy')&&[...$('cstrategy').options].some(o=>o.value===q.get('strategy'))){$('cstrategy').value=q.get('strategy');syncCalendarParams()}show()}
+ else show()
 }catch(e){status(e.message)}})();
 </script>
 </body>

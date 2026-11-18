@@ -28,7 +28,10 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 #pair{min-height:150px}#norm{min-height:290px}
 .control{margin-bottom:2px;flex:1;min-width:0}.control label{display:block;color:#a7b8c8;font-size:10px;font-weight:650;margin-bottom:3px}.control input,.control select{background:#1a2a3b;border:1px solid #365066;border-radius:7px;color:#e7eef5;height:30px;padding:0 8px;width:100%;outline:none;font-size:11px}.control input:focus,.control select:focus{border-color:#63d9b2}.control input:disabled,.control select:disabled{opacity:.5}.control .hint{font-size:9px;color:#7e93a6;margin-top:2px;line-height:1.4}
 .control select.listbox{padding:0;border-radius:8px}
-.control.calendar-asset-control{flex:0 0 auto;margin-bottom:0}.control.calendar-window-control{display:flex;flex:1 1 0;flex-direction:column;min-height:140px;margin-bottom:0}#asset{height:120px;min-height:120px;flex:0 0 120px}#window{height:auto;min-height:130px;flex:1 1 0}
+.selection-lists{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));gap:6px;flex:1 1 0;min-height:0}
+.selection-list-control{display:flex;flex-direction:column;min-height:0;margin:0;flex:initial}
+.selection-list-control>.listbox{height:auto;min-height:0;flex:1 1 0}
+#pair{min-height:0}#window{min-height:0}
 #calendar-params:not(:has(.control:not(.hidden))){display:none}
 .sidegrid{display:flex;gap:6px;flex:0 0 auto}
 .ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:7px;min-height:26px;padding:0 9px;font-size:10px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
@@ -69,10 +72,12 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
     <!-- левая колонка 1: выбор пары и параметры -->
     <aside class="panel side" id="col-selection">
       <div id="selection-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
-        <div class="control"><label for="main-asset">Тип пары / основной актив</label><select id="main-asset" class="listbox" size="6"></select></div>
-        <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
-        <div class="side-title">Историческая пара</div>
-        <select id="pair" class="listbox" size="7"></select>
+        <div id="selection-lists" class="selection-lists">
+          <div class="control selection-list-control"><label for="main-asset">Тип пары / основной актив</label><select id="main-asset" class="listbox" size="6"></select></div>
+          <div id="pair-list-control" class="control selection-list-control"><label for="pair">Историческая пара</label><select id="pair" class="listbox" size="7"></select></div>
+          <div id="calendar-list-control" class="control selection-list-control hidden"><label for="window">Календарное окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
+        </div>
+        <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="hint" id="pair-hint"></div>
         <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><input id="fill" value="next_open" disabled></div></div>
         <div class="sidegrid" id="pair-params">
@@ -82,9 +87,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         </div>
         <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><input id="quantity" type="number" min="1" max="50" step="1" value="1"></div><div class="control"><label for="slippage">Слиппедж · тики</label><input id="slippage" type="number" min="0" max="10" step="0.5" value="1"></div></div>
       </div>
-      <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
-        <div class="side-title">Календарный спред</div>
-        <div class="control calendar-window-control"><label for="window">Историческое окно · V — объём · C — капитал</label><select id="window" class="listbox" size="10"></select></div>
+      <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
         <div class="sidegrid" id="calendar-params">
           <div class="control z-only"><label for="centry">Вход · z</label><input id="centry" type="number" min="0.5" max="5" step="0.1" value="1.5"></div>
@@ -277,7 +280,7 @@ function fillMainAssets(preferred){
 }
 function refreshSelectionControls(run=true){
  const root=selectedRoot();universe=root.kind==='calendar_native'?'calendar_native':'pair_screen';
- $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
+ $('pair-list-control').classList.toggle('hidden',universe!=='pair_screen');$('calendar-list-control').classList.toggle('hidden',universe!=='calendar_native');$('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
  if(universe==='pair_screen'){fillPairs();syncPairStrategy()}else{fillWindows()}
  if(run)scheduleShow(80)
 }

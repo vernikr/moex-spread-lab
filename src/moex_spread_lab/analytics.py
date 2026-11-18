@@ -364,6 +364,7 @@ def run_mean_reversion_baseline(
     fill: str = "close",
     cash_in_lqdt: bool = False,
     funding_swaprates: dict[str, float] | None = None,
+    sizing_intents: bool = False,
 ) -> dict[str, Any]:
     """Run the delayed z-score control.
 
@@ -371,6 +372,8 @@ def run_mean_reversion_baseline(
     account as free cash in LQDT plus margin cash (A-11) instead of idle cash. When supplied,
     `funding_swaprates` maps dates to the near perpetual's MOEX EOD SWAPRATE per underlying unit;
     signed RUB funding is charged to the modeled near-leg position at the day's proxy clearing.
+    Internal diagnostic `sizing_intents` emits unit signal intents only; the proof adapter
+    must replay them through its funded account before publishing a portfolio result.
     """
     if (
         initial_capital <= 0
@@ -381,6 +384,7 @@ def run_mean_reversion_baseline(
         or decision_delay_bars < 1
         or analysis_role not in {"primary_baseline", "diagnostic_only"}
         or fill not in {"close", "open"}
+        or (sizing_intents and (analysis_role != "diagnostic_only" or quantity != 1))
     ):
         raise AnalyticsError("invalid baseline parameters")
     rows = series.get("rows", [])
@@ -390,7 +394,7 @@ def run_mean_reversion_baseline(
     near_contract = contracts[near]
     far_contract = contracts[far]
     margin_per_pair = near_contract["initial_margin"] + far_contract["initial_margin"]
-    if margin_per_pair * quantity > initial_capital:
+    if not sizing_intents and margin_per_pair * quantity > initial_capital:
         raise AnalyticsError(
             f"ГО для выбранного размера ({margin_per_pair * quantity:.2f} ₽) превышает "
             f"стартовый капитал ({initial_capital:.2f} ₽). Допуск по стресс-тесту не пополняет счёт."
@@ -571,7 +575,7 @@ def run_mean_reversion_baseline(
     )
     return {
         "schema_version": ANALYTICS_SCHEMA,
-        "release_state": "exploratory_inconclusive",
+        "release_state": "unit_signal_intents_not_portfolio" if sizing_intents else "exploratory_inconclusive",
         "near": near,
         "far": far,
         "direction": series.get("direction", "near_minus_far"),
@@ -589,7 +593,7 @@ def run_mean_reversion_baseline(
             "fill": fill,
             "accounting": "free_cash_in_lqdt_margin_cash_idle" if cash_in_lqdt else "idle_cash_no_yield",
             "margin_per_pair": _round(margin_per_pair),
-            "margin_gate": "passed",
+            "margin_gate": "deferred_to_funded_sizing" if sizing_intents else "passed",
         },
         "economics": {
             "price_unit": series.get("price_unit", "RUB_per_CNY"),

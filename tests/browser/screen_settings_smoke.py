@@ -43,6 +43,7 @@ def run(browser, url):
             "allow_failed_capital": capital,
             "allow_failed_volume": volume,
             "validation_percent": share,
+            "slippage_ticks": 1.0,
         }
         return live.value.json()
 

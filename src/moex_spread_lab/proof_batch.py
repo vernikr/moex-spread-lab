@@ -9,7 +9,6 @@ from .carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
 from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _benchmark_marks, _run_id
 from .proof_search import (
-    EXECUTION_AXES,
     SEED,
     STRATEGY_AXES,
     Axis,
@@ -18,6 +17,7 @@ from .proof_search import (
     _lamps,
     _tune,
     _validate,
+    execution_axes,
 )
 from .w0 import W0Error
 
@@ -69,7 +69,7 @@ def _native_request(active, target):
         **target,
         "strategy": strategy,
         **({"fill": fill} if calendar else {}),
-        **{k: active[k] for k in EXECUTION_AXES if k in active},
+        **{k: active[k] for k in ("sizing", *execution_axes(active)) if k in active},
         "parameters": _translate(active.get("parameters", {}), strategy),
     }
 
@@ -114,8 +114,8 @@ def _active_seed(request, active):
     return {
         **defaults,
         **request.get("parameters", {}),
-        "quantity": request.get("quantity", 1),
-        "slippage_ticks": request.get("slippage_ticks", 1.0),
+        **({"quantity": request.get("quantity", 1), "slippage_ticks": request.get("slippage_ticks", 1.0)}
+           if execution_axes(request) else {}),
     }
 
 
@@ -260,7 +260,7 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled):
             **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
         }
 
-    land = Landscape(axes | EXECUTION_AXES, average)
+    land = Landscape(axes | execution_axes(request), average)
     return _Cohort(active, axes, seed, members, land)
 
 
@@ -271,6 +271,7 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
         for k in (
             "targets",
             "strategy",
+            "sizing",
             "quantity",
             "slippage_ticks",
             "parameters",
@@ -328,7 +329,7 @@ def batch_search(service, request, settings, benchmark, check_cancelled):
         local = _translate(point, case.request["strategy"])
         selection = {
             **case.full["selection"],
-            **{k: local[k] for k in EXECUTION_AXES},
+            **{k: local[k] for k in case.execution_axes},
             "parameters": {k: local[k] for k in case.strategy_axes},
         }
         # No valid winner: keep the actual requested settings, never apply the preflight seed.

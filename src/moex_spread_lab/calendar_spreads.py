@@ -537,6 +537,7 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
                    "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity),
                    "max_pair_margin_rub": window["max_pair_margin_rub"]},
         "contract": {"point_value_rub": terms["mult"], "tick_size": terms["tick_size"], "reference_contract": terms["reference_contract"],
+                     "margin_rate": terms["margin_rate"],
                      "tariff_group": ASSETS[asset]["group"],
                      "taker_rate_percent": TAKER_RATE_PERCENT[ASSETS[asset]["group"]], "broker_fee_rub": 0.0},
         "series": [
@@ -548,7 +549,8 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
              "spread_last_trade": r["spread_last_trade"], "spread_volume": r["min_volume"], "volume_eligible": r["min_volume"] > 0,
              "spread_trades": r["spread_trades"],
              "near_volume": r["near_volume"], "far_volume": r["far_volume"], "days_to_near_expiry": r["days_to_near_expiry"],
-             "dev_pp": r["dev_pp"], "margin_rub": round(r["margin"] * quantity, 2)}
+             "dev_pp": r["dev_pp"], "margin_rub": round(r["margin"] * quantity, 2),
+             "point_value_rub": r["mult"]}
             for r in rows
         ],
         "trades": trades,
@@ -564,7 +566,7 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
             "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
             "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцениваются.",
             "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
-            "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс slippage один раз на сторону.",
+            "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс проскальзывание один раз на сторону.",
             "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
             "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
             "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",

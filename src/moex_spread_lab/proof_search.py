@@ -15,6 +15,7 @@ import optuna
 
 from .evaluation_periods import EvaluationSplit, ResearchSettings
 from .portfolio import lqdt_overlay_values
+from .position_sizing import AUTO_SIZING, automatic
 from .proof import ProofService, _benchmark_marks, _mark, _run_id
 from .w0 import W0Error
 
@@ -60,7 +61,13 @@ STRATEGY_AXES = {
     },
     "convergence_to_ruonia": {"threshold_pp": Axis(0.1, 10, 0.1)},
 }
+# Fixed-size API/CLI compatibility only. The workbench uses automatic sizing and
+# one immutable global slippage preference, so neither is an optimization axis.
 EXECUTION_AXES = {"quantity": Axis(1, 50, 1), "slippage_ticks": Axis(0, 10, 0.5)}
+
+
+def execution_axes(request):
+    return {} if automatic(request) else EXECUTION_AXES
 
 
 def _ordered(values):
@@ -72,6 +79,10 @@ def _ordered(values):
 
 
 def _validate(request):
+    if request.get("sizing") not in (None, AUTO_SIZING):
+        raise W0Error("Неизвестный режим расчёта размера позиции.")
+    if automatic(request) and request.get("quantity") is not None:
+        raise W0Error("При автоматическом размере количество не задаётся вручную.")
     strategy = request.get("strategy", "zscore_mean_reversion")
     if not isinstance(strategy, str) or strategy not in STRATEGY_AXES:
         raise W0Error("Неизвестная стратегия подбора")
@@ -80,7 +91,7 @@ def _validate(request):
     if not isinstance(params, dict) or params.keys() - axes.keys():
         raise W0Error("Переданы параметры другой стратегии")
     domains = axes | EXECUTION_AXES
-    values = {**params, **{k: request[k] for k in EXECUTION_AXES if k in request}}
+    values = {**params, **{k: request[k] for k in EXECUTION_AXES if k in request and (not automatic(request) or k != "quantity")}}
     for name, value in values.items():
         axis = domains[name]
         if not axis.contains(value):
@@ -118,6 +129,10 @@ def _excess_curve(proof, marks):
     realized trades alone this marks positions crossing a split and intra-trade losses.
     """
     ledger = proof["ledger"]
+    if automatic(proof.get("selection", {})):
+        initial = proof["sizing"]["initial_capital_rub"]
+        start = marks[ledger[0]["date"]]
+        return {r["date"]: r["account_value_rub"] - initial * marks[r["date"]] / start for r in ledger}
     index = {row["date"]: i for i, row in enumerate(ledger)}
     hurdle_changes = [0.0] * len(ledger)
     for trade in proof["trades"]:
@@ -162,9 +177,13 @@ def _annualized_returns(proof, marks, split):
     prices = [marks[r["date"]] for r in rows]
     if not all(math.isfinite(v) and v > 0 for v in prices):
         raise W0Error("Непригодная отметка LQDT в расчётном периоде.")
-    values, shortfalls = lqdt_overlay_values(
-        INITIAL_CAPITAL, [r["cumulative_net_rub"] for r in rows], margins, prices
-    )
+    if automatic(proof.get("selection", {})):
+        values = [r["account_value_rub"] for r in rows]
+        shortfalls = any(r["cash_shortfall"] for r in rows)
+    else:
+        values, shortfalls = lqdt_overlay_values(
+            INITIAL_CAPITAL, [r["cumulative_net_rub"] for r in rows], margins, prices
+        )
     anchor = train_end if split.validation else start
     elapsed = (date.fromisoformat(end) - date.fromisoformat(anchor)).days
     opening = values[idx[anchor]] if split.validation else INITIAL_CAPITAL
@@ -387,10 +406,11 @@ class StudyWindow:
         self.full = self.replay(request)
         selection = self.full["selection"]
         self.strategy_axes = STRATEGY_AXES[selection["strategy"]]
-        self.axes = self.strategy_axes | EXECUTION_AXES
+        self.execution_axes = execution_axes(selection)
+        self.axes = self.strategy_axes | self.execution_axes
         self.seed = {
             **{k: selection["parameters"][k] for k in self.strategy_axes},
-            **{k: selection[k] for k in EXECUTION_AXES},
+            **{k: selection[k] for k in self.execution_axes},
         }
         if not _ordered(self.seed):
             raise W0Error("Порог выхода должен быть ниже порога входа")
@@ -418,7 +438,7 @@ class StudyWindow:
             return self.full
         req = {
             **self.request,
-            **{k: point[k] for k in EXECUTION_AXES},
+            **{k: point[k] for k in self.execution_axes},
             "parameters": {k: point[k] for k in self.strategy_axes},
         }
         through = (

@@ -38,6 +38,7 @@ class GlobalPeriodTests(unittest.TestCase):
                     "validation_percent": 0,
                     "allow_failed_volume": True,
                     "allow_failed_capital": True,
+                    "slippage_ticks": 1.0,
                 },
             )
             self.assertFalse(settings_path(root).exists())

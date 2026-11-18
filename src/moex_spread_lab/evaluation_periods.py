@@ -27,6 +27,7 @@ class ResearchSettings:
     validation_percent: float = DEFAULT_VALIDATION_PERCENT
     allow_failed_volume: bool = True
     allow_failed_capital: bool = True
+    slippage_ticks: float = 1.0
 
     def metadata(self) -> dict[str, float | bool]:
         return asdict(self)
@@ -50,6 +51,11 @@ def _validated_patch(value: object) -> dict:
     patch = dict(value)
     if "validation_percent" in patch:
         patch["validation_percent"] = validation_percent(patch["validation_percent"])
+    if "slippage_ticks" in patch:
+        value = patch["slippage_ticks"]
+        if type(value) not in (int, float) or not 0 <= value <= 10:
+            raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
+        patch["slippage_ticks"] = float(value)
     for k in ("allow_failed_volume", "allow_failed_capital"):
         if k in patch and type(patch[k]) is not bool:
             raise W0Error(f"{k}: укажите true или false.")

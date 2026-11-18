@@ -68,7 +68,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 .settings-trigger{display:inline-flex;align-items:center;gap:7px}.settings-trigger small{border-left:1px solid #345469;padding-left:7px;color:#87c4b3;font-size:9px}
 .settings-dialog{width:min(400px,calc(100vw - 28px));padding:20px;border:1px solid #3c576b;border-radius:13px;background:#111e2b;color:#e6edf4;box-shadow:0 18px 65px #0008}.settings-dialog::backdrop{background:#050d17b8}.settings-dialog h2{font-size:18px;margin:4px 0 8px}.settings-dialog p{color:#a8bdcc;font-size:12px;line-height:1.5;margin:6px 0 14px}.settings-dialog label{font-size:12px;font-weight:650}.settings-value{display:flex;align-items:center;gap:10px;margin:8px 0}.settings-value input[type=number]{width:74px;height:34px;padding:4px 6px;color:inherit;background:#1a2a3b;border:1px solid #456277;border-radius:6px;font:inherit}.settings-value input[type=range]{flex:1;min-width:0;accent-color:#70e1b9}.settings-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:16px}.settings-actions button{font-size:11px;min-height:30px}.settings-actions .apply{background:#174137;color:#aeebd1;border-color:#529b86}.screen-options{display:grid;gap:6px;margin:15px 0 6px;padding:10px 12px;border:1px solid #344d60;border-radius:8px;min-width:0}.screen-options legend{max-width:100%;padding:0 4px;color:#dcE7EF;font-size:12px;line-height:1.45}.screen-options label{display:flex;align-items:center;gap:9px;cursor:pointer;padding:3px}.screen-options input{width:16px;height:16px;accent-color:#70e1b9;margin:0}.settings-error{color:#f0b2a9;font-size:11px}
 .result-strip{padding:6px 10px;border:1px solid #30465a;border-left:3px solid #63b99e;border-radius:8px;background:#101d29;line-height:1.4}.result-strip[hidden]{display:none}.result-head{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;font-size:11px}.result-head strong{font-size:12px}.result-head b{font-variant-numeric:tabular-nums}.result-meta,.history-label{color:#9db2c2;font-size:9.5px}.history-label{font-weight:650}.result-warning{font-size:10px;color:#e7bd82}.result-strip[data-basis=validation]{border-left-color:#d5a562}.validation-line{position:absolute;z-index:3;pointer-events:none;border-left:2px dashed #e9b569;top:0}.validation-line[hidden]{display:none}.validation-start td{border-top:2px dashed #d5a562}.validation-tag{color:#f1c98f;font-size:9px;font-weight:650}
-@media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px}.top,.brand{gap:5px}.app{padding:6px 8px}}
+@media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px;flex-wrap:wrap}.top{flex-wrap:wrap}.top,.brand{gap:5px}.flag{max-width:100%;white-space:normal;overflow-wrap:anywhere}.app{padding:6px 8px}}
 .pick-panel{min-height:0;display:flex;flex-direction:column;gap:0}.pick-panel h2{margin:0 0 4px;color:#a7b8c8;font-size:10px}.pick-all,.picker-row{display:flex;align-items:center;gap:6px;min-height:25px;padding:2px 7px}.pick-all{background:#233649;border:1px solid #365066;border-radius:7px 7px 0 0;color:#d9e9ef;font-size:11px;font-weight:650;cursor:pointer}.pick-list{flex:1;min-height:0;overflow:auto;background:#162636;border:1px solid #365066;border-top:0;border-radius:0 0 7px 7px;scrollbar-width:thin}.picker-row{border-bottom:1px solid #203142}.pick-check{margin:0;width:14px;height:14px;accent-color:#6edcb5;cursor:pointer;flex:none}.pick-check:disabled{opacity:.4;cursor:not-allowed}.pick-name{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px;color:#c2d1df;font:inherit;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.picker-row.family{background:#1c2e40}.family .pick-name{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8ea6ba;font-weight:700}.picker-row.branch{padding-left:15px}.picker-row.unavailable .pick-name{color:#91a1b0}.picker-row.current{background:#21423e;box-shadow:inset 2px 0 #77e0b9}.current .pick-name{color:#a5f1d4;font-weight:600}.pick-name:focus-visible,.pick-check:focus-visible{outline:2px solid #70e1b9;outline-offset:1px}.selection-count,.group-note{font-size:10px;color:#9db2c2}.review{width:min(520px,94vw)}.review ul{padding-left:19px;max-height:36vh;overflow:auto;font-size:12px;color:#c5d4e1}.review li{margin:5px 0}.batch-result{background:#172c30;border:1px solid #3f6560;border-radius:8px;padding:6px 10px;font-size:11px;max-height:28vh;overflow:auto}.batch-result summary{cursor:pointer;color:#a7ead1;font-weight:650}.batch-result .group-note{margin:6px 0}.batch-result[hidden]{display:none}.batch-result td small{white-space:normal}.group-note{line-height:1.4}@media(max-width:940px){.pick-panel{height:260px}}
 #focus-editor{display:contents}#cohort-editor{display:flex;flex-direction:column;gap:6px}#focus-editor[hidden],#cohort-editor[hidden]{display:none}.group-cap{display:grid;gap:2px;padding:6px 8px;border-left:2px solid #70d7b2;background:#162c30;color:#b3ead6;font-size:11px}.group-cap small{font-size:10px;color:#a5bbca}#group-profile-state[data-state=unavailable],#group-profile-state[data-state=invalid]{color:#efc38a}#chart-selection-scope{margin:0 2px}
 </style>
@@ -85,6 +85,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <label for="validation-percent">Доля истории для проверки</label>
       <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview" autofocus><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
       <p id="split-preview" aria-live="polite"></p>
+      <label for="global-slippage">Проскальзывание · тики</label>
+      <div class="settings-value"><input id="global-slippage" type="number" min="0" max="10" step="0.5" required aria-describedby="slippage-help"><span>на исполнение</span></div>
+      <p id="slippage-help">Общее для всех стратегий и окон. Для биржевого календарного спреда — по одному разу на входе и на выходе, для обычной пары — по каждой ноге. Добавляется к комиссии.</p>
       <fieldset class="screen-options" aria-describedby="screen-help">
         <legend>При подборе параметров позволять учитывать спреды, не прошедшие проверку:</legend>
         <label><input id="allow-failed-volume" type="checkbox" checked> на объём</label>
@@ -141,6 +144,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </select>
       <div class="norm-hint" id="norm-hint"></div>
       <div class="norm-score" id="norm-score"></div>
+      <div class="norm-hint" id="sizing-hint">Размер каждой сделки — максимум по доступному капиталу в пределах исходных 30 000 ₽. Издержки и действующие ограничения учитываются автоматически.</div>
       <div id="focus-editor">
         <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="hint" id="pair-hint"></div>
@@ -150,7 +154,6 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="control mr-only"><label for="exit">Выход · z</label><span class="number-shell"><input id="exit" data-axis="exit_z" type="number" min="0" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control"><label for="lookback">Окно · набл.</label><span class="number-shell"><input id="lookback" data-axis="lookback" type="number" min="5" max="80" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
         </div>
-        <div class="sidegrid"><div class="control"><label for="quantity">Контракты</label><span class="number-shell"><input id="quantity" data-axis="quantity" type="number" min="1" max="50" step="1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div><div class="control"><label for="slippage">Слиппедж · тики</label><span class="number-shell"><input id="slippage" data-axis="slippage_ticks" type="number" min="0" max="10" step="0.5" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div></div>
       </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
@@ -160,13 +163,12 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="control z-only"><label for="clookback">Окно · дней</label><span class="number-shell"><input id="clookback" data-axis="window" type="number" min="3" max="60" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control c-only"><label for="cthreshold">Порог · п.п. от RUONIA</label><span class="number-shell"><input id="cthreshold" data-axis="threshold_pp" type="number" min="0.1" max="10" step="0.1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
         </div>
-        <div class="sidegrid"><div class="control"><label for="cquantity">Контракты</label><span class="number-shell"><input id="cquantity" data-axis="quantity" type="number" min="1" max="50" step="1" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div><div class="control"><label for="cslippage">Слиппедж · тики</label><span class="number-shell"><input id="cslippage" data-axis="slippage_ticks" type="number" min="0" max="10" step="0.5" value="1"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div></div>
       </div>
       </div>
       <section id="cohort-editor" aria-labelledby="group-heading" hidden>
         <div class="group-cap"><b id="group-heading">Параметры и светофор группы</b><small id="group-count"></small></div>
         <div class="sidegrid"><div class="control" style="flex:1.4"><label for="group-strategy">Общая стратегия</label><select id="group-strategy"><option value="mr">Возврат к среднему</option><option value="funding_only">Фондирование</option><option value="convergence_to_ruonia">Сходимость к RUONIA</option></select></div><div class="control"><label for="group-fill">Исполнение</label><select id="group-fill"></select></div></div>
-        <div class="sidegrid" id="group-params"></div><div class="sidegrid" id="group-execution"></div>
+        <div class="sidegrid" id="group-params"></div>
         <div id="group-profile-state" class="tune-help" role="status" aria-live="polite"></div>
       </section>
       <div class="tune-tool">
@@ -260,12 +262,12 @@ function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-
 async function api(path,body,signal){const r=await fetch(path,body?{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 
 // The server owns the setting; localStorage only notifies other open tabs.
-let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true},settingRevision=0,savingSettings=false;
-const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital]);
+let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1},settingRevision=0,savingSettings=false;
+const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks]);
 const settingsEventKey='moex-proof-settings-updated';
 const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
-function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital};
- $('settings-badge').textContent=`Проверка: ${pct(x.validation_percent)}`;
+function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks};
+ $('settings-badge').textContent=`Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
  if(changed){cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
   if(catalog&&leafId&&universe==='pair_screen'){const values=currentRequest();fillStrategy();if(activeStrategyName()===values.strategy)applyToForm(values);else restoreForm()}}
  return changed}
@@ -277,14 +279,14 @@ async function refreshGlobalSettings(force=false){if(savingSettings)return;const
  if(rev!==settingRevision||savingSettings)return;const changed=setPreferences(x);
  if(force&&!changed&&sharedStrategy){stopProfile();refreshGroupProfile(0)}if(catalog&&(changed||force))scheduleShow(0)
  }catch(e){status(e.message)}}
-function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),submit=$('apply-settings');
- $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
+function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),submit=$('apply-settings');
+ $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
  $('cancel-settings').addEventListener('click',()=>dlg.close());
  dlg.addEventListener('cancel',e=>{if(savingSettings)e.preventDefault()});
  $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
- $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity())return;
+ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity())return;
   ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';cancelSearch();invalidateProof();
-  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked});setPreferences(x);dlg.close();
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber});setPreferences(x);dlg.close();
    try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog)void show();
   }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
  });
@@ -399,13 +401,13 @@ function openLeaf(key,preferred='',run=true){leafId=key;const want=mappedStrateg
  if(universe==='pair_screen')fillStrategy(want);else fillCalendarStrategies(want);
  const branch=branches.get(branchId);if(branch)branch.lastPair=currentPair();restoreForm();
  markOpened();refreshChecks();if(run)scheduleShow(0)}
-function applyToForm(selection){const settings={...selection.parameters,quantity:selection.quantity,slippage_ticks:selection.slippage_ticks};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis];if(universe==='calendar_native'&&selection.fill)$('cfill').value=selection.fill}
+function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis];if(universe==='calendar_native'&&selection.fill)$('cfill').value=selection.fill}
 function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('fill').value=FILL_RU[isMR?'next_open':'same_day_settlement'];$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
 function fillCalendarStrategies(preferred){const a=currentAsset(),s=$('cstrategy');s.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a?.convergence)continue;const o=el('option','',STRATEGY_RU[name]||name);o.value=name;s.append(o)}if([...s.options].some(o=>o.value===preferred))s.value=preferred;$('clookback').value=a?.monthly?7:20;syncCalendarParams()}
 function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.data_reasons?.[$('strategy').value]||CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.current_margin_pct!=null?p.current_margin_pct+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
-function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,quantity:Number($('quantity').value),slippage_ticks:Number($('slippage').value),parameters}}
+function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,sizing:'max_affordable',parameters}}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z))}
-function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:$('cfill').value,quantity:Number($('cquantity').value),slippage_ticks:Number($('cslippage').value),parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
+function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:$('cfill').value,sizing:'max_affordable',parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
 function fillFills(){const sel=$('cfill');if(!sel)return;const prev=sel.value;sel.replaceChildren();const labels={next_open:'Следующее открытие (прокси исполнения)',next_close:'Следующее закрытие',reference_same_bar:'Справочное закрытие (тот же бар)'};for(const f of (catalog.fills?.length?catalog.fills:['next_open'])){const o=el('option','',labels[f]||f);o.value=f;sel.append(o)}if([...sel.options].some(o=>o.value===prev))sel.value=prev;else sel.value='next_open'}
 // ---------- proof search & per-field plateau diagnostics ----------
 const numericInputs=[...$('focus-editor').querySelectorAll('.number-shell input')];
@@ -439,7 +441,6 @@ function drawLamps(inputs,plateau,empty,group){
    if(field.center?.utility!=null)lines.push(`${group?'Среднее в центре':'Центр на обучении'}: ${signed(field.center.utility)} п.п./год сверх LQDT.`);
    if(field.neighbors.length){lines.push(group?'Средние у соседей на обучении:':'Соседи на обучении, остальные параметры неизменны:');for(const n of field.neighbors)lines.push(`${fmt(n.value,Number.isInteger(n.value)?0:1)} → ${n.utility==null?'нет оценки: '+n.reason:signed(n.utility)+' п.п./год'}`)}
    if(!field.reason&&score!=null)lines.push('Балл — доля результата центра, сохранённая худшим соседом (0–100).');
-   if(k==='quantity'||k==='slippage_ticks')lines.push('Условие исполнения: проверяется, но не меняется автоподбором.');
   }else lines.push(empty);
   lamp.dataset.detail=lines.join('\n');lamp.setAttribute('aria-label',lamp.dataset.heading);if(lamp===openLamp)showPlateauTip(lamp);
  }
@@ -452,19 +453,19 @@ const isMR=s=>s==='mean_reversion'||s==='zscore_mean_reversion';
 let sharedStrategy=null,sharedMR='mean_reversion',sharedDrafts=new Map();
 let profileKey='',profileVersion=0,profileTimer=null,profileController=null,chartKey='',chartWithLamps=false;
 function translateParams(params,strategy){const p={...params};if(strategy==='mean_reversion'&&'window' in p){p.lookback=p.window;delete p.window}if(strategy==='zscore_mean_reversion'&&'lookback' in p){p.window=p.lookback;delete p.lookback}return p}
-function sharedRequest(){const fields=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));const {quantity,slippage_ticks,...parameters}=fields;return {strategy:sharedStrategy,parameters,quantity,slippage_ticks,fill:$('group-fill').value}}
+function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:$('group-fill').value}}
 function pointError(inputs){const n=inputs.find(n=>n.value===''||!n.validity.valid);if(n)return `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`;
  const entry=inputs.find(n=>n.dataset.axis==='entry_z'),exit=inputs.find(n=>n.dataset.axis==='exit_z');return entry&&exit&&exit.valueAsNumber>=entry.valueAsNumber?'Порог выхода должен быть ниже порога входа.':''}
 function groupField(id,point){const copy=$(id).closest('.control').cloneNode(true),input=copy.querySelector('input'),k=input.dataset.axis;copy.className='control';input.id='group-'+k;copy.querySelector('label').htmlFor=input.id;
  input.value=point[k]??input.defaultValue;copy.querySelector('button').removeAttribute('aria-describedby');bindLamp(input);input.addEventListener('input',()=>sharedEdited(220));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sharedEdited(0)}});return copy}
 function renderSharedEditor(req){hidePlateauTip();sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
  const ids={mean_reversion:['entry','exit','lookback'],zscore_mean_reversion:['centry','cexit','clookback'],funding_only:['lookback'],convergence_to_ruonia:['cthreshold']}[req.strategy];
- const point={...req.parameters,quantity:req.quantity,slippage_ticks:req.slippage_ticks};$('group-params').replaceChildren(...ids.map(id=>groupField(id,point)));$('group-execution').replaceChildren(...['quantity','slippage'].map(id=>groupField(id,point)));
+ const point={...req.parameters};$('group-params').replaceChildren(...ids.map(id=>groupField(id,point)));
  const fill=$('group-fill');if(req.strategy==='funding_only'){const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';fill.replaceChildren(o);fill.disabled=true}else{fill.replaceChildren(...[...$('cfill').options].map(o=>o.cloneNode(true)));fill.disabled=false;fill.value=[...fill.options].some(o=>o.value===req.fill)?req.fill:'next_open'}
 }
 function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedInputs()))sharedDrafts.set(sharedStrategy,old);
  const chosen=$('group-strategy').value,name=chosen==='mr'?sharedMR:chosen;
- const next=sharedDrafts.get(name)||{strategy:name,parameters:{},fill:old.fill};renderSharedEditor({...next,quantity:old.quantity,slippage_ticks:old.slippage_ticks});sharedEdited(0)}
+ const next=sharedDrafts.get(name)||{strategy:name,parameters:{},fill:old.fill};renderSharedEditor(next);sharedEdited(0)}
 function paintGroup(plateau,message,state){if(!sharedStrategy||!checked.size)return;const n=$('group-profile-state');n.dataset.state=state;n.textContent=message;n.title=message;n.setAttribute('aria-busy',String(state==='loading'));
  drawLamps(sharedInputs(),plateau,message,{count:checked.size,percent:preferences.validation_percent})}
 function stopProfile(){clearTimeout(profileTimer);profileTimer=null;profileVersion++;profileController?.abort();profileController=null;profileKey=''}
@@ -489,8 +490,8 @@ function chartPlan(){const own=currentRequest(),target=leaves.get(leafId)?.targe
   const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&currentAsset()?.convergence)):
     !!researchStrategies(pairAvailability(target.pair))?.[name];
   if(supported&&!(name==='mean_reversion'&&(g.fill!=='next_open'||p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){
-   req={...target,strategy:name,parameters:p,quantity:g.quantity,slippage_ticks:g.slippage_ticks,...(cal?{fill:g.fill}:{})};common=true}}
- const key=JSON.stringify([targetKey(req),req.strategy,req.fill||'',req.quantity,req.slippage_ticks,Object.entries(req.parameters).sort(),settingsKey()]);
+   req={...target,strategy:name,parameters:p,sizing:'max_affordable',...(cal?{fill:g.fill}:{})};common=true}}
+ const key=JSON.stringify([targetKey(req),req.strategy,req.fill||'',req.sizing,Object.entries(req.parameters).sort(),settingsKey()]);
  const note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${common?'общие параметры':'параметры окна'}`;return {req,key,common}}
 function syncChartScope(delay=0){const plan=chartPlan();if(chartKey!==plan.key||(!checked.size&&!chartWithLamps))scheduleShow(delay);else if(!checked.size&&payload?.plateau)paintPlateaus(payload.plateau)}
 function adoptSearchProfile(result){if(!sharedStrategy||!result.selected_parameters)return;for(const n of sharedInputs())if(n.dataset.axis in result.selected_parameters)n.value=result.selected_parameters[n.dataset.axis];
@@ -518,7 +519,7 @@ function displayGroup(result){const g=result.group;if(!g)return;const root=$('ba
  const table=el('table');table.append(th(['Окно','Обучение, п.п./год','Результат, п.п./год','Расчётный период']));for(const r of g.members){const tr=el('tr'),e=r.evaluation,range=e?.periods?.[e.result_basis],why=[r.reason||e?.result?.reason,screenWarning(e)].filter(Boolean).join(' ');
   for(const text of [(r.target.universe==='calendar_native'?'Календарь · ':'Пара · ')+r.target.pair,r.training_annualized_excess_pp==null?'—':signed(r.training_annualized_excess_pp),e?.result.annualized_excess_pp==null?'—':signed(e.result.annualized_excess_pp),range?range.join(' — ')+(e.result.calendar_days?' · '+e.result.calendar_days+' кал. дн.':''):'—'])tr.append(el('td','',text));if(why)tr.firstChild.append(el('small','',why));table.append(tr)}root.append(table);
  if(result.plateau){root.append(el('div','group-note','Устойчивость на обучении: '+Object.entries(result.plateau.fields).map(([k,v])=>`${PARAM_RU[k]}: ${v.score==null?'нет оценки':fmt(v.score,0)+'/100'}`).join(' · ')+'. Не влияет на выбор максимума.'))}}
-const PARAM_RU={lookback:'Окно',window:'Окно',entry_z:'Вход z',exit_z:'Выход z',threshold_pp:'Порог RUONIA',quantity:'Контракты',slippage_ticks:'Слиппедж'};
+const PARAM_RU={lookback:'Окно',window:'Окно',entry_z:'Вход z',exit_z:'Выход z',threshold_pp:'Порог RUONIA'};
 function reviewExclusions(result){const d=$('compatibility'),rows=$('compatibility-list');rows.replaceChildren();for(const x of result.excluded)rows.append(el('li','',`${x.target.pair} — ${x.reason}`));
  $('compatibility-message').textContent=`Для стратегии «${STRATEGY_RU[sharedStrategy||activeStrategyName()]}» при этих условиях исполнения не подходят ${result.excluded.length} из ${checked.size} отмеченных окон. `+(result.remaining_count?`После снятия отметок в подборе останется ${result.remaining_count}.`:'Совместимых окон не останется. Подбор не запустится.');
  $('compatibility-yes').textContent=result.remaining_count?'Снять отметки и продолжить':'Снять отметки';d.showModal();return new Promise(resolve=>{resolveCompatibility=resolve})}
@@ -592,11 +593,12 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
  flag(w.tradable_every_day?`Правило объёма пройдено: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} контр./день`:`Правило объёма НЕ пройдено: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
  flag(w.passes_capital_screen?`Скрининг капитала пройден (маржа ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Скрининг капитала НЕ пройден (маржа до ${fmt(w.max_pair_margin_rub)} ₽ со стрессовыми буферами)`,w.passes_capital_screen);
  flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${({stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'}[payload.contract.tariff_group])||payload.contract.tariff_group}); брокерская 0`,true);
+ if(s.skipped_entries)flag(`Пропущено входов по ограничениям счёта: ${s.skipped_entries}`,false);
  if(s.open_positions)flag(`${s.open_positions} открытая позиция в конце данных — отмечена как принудительный выход, не исполняемая сделка`,false);
  const t=$('tiles');t.replaceChildren();
  t.append(tile('Сделки',`${s.trades}`,'',`${s.closed_trades} закрыто · ${s.winners} в плюсе`),
    tile('Гросс P&L',rub(s.gross_rub),cls(s.gross_rub)),
-   tile('Издержки',`−${fmt(s.costs_rub,2)} ₽`,'',`бирж ${fmt(s.cost_totals.exchange_clearing,2)} · брок ${fmt(s.cost_totals.broker,2)} · слип ${fmt(s.cost_totals.slippage,2)}`),
+   tile('Издержки',`−${fmt(s.costs_rub,2)} ₽`,'',`бирж ${fmt(s.cost_totals.exchange_clearing,2)} · брок ${fmt(s.cost_totals.broker,2)} · проск ${fmt(s.cost_totals.slippage,2)}`),
    tile('Нетто P&L',rub(s.net_rub),cls(s.net_rub)),
    tile('LQDT на маржу',`−${fmt(s.lqdt_on_margin_rub)} ₽`),
    tile('Сверх LQDT',rub(s.excess_over_lqdt_rub),cls(s.excess_over_lqdt_rub)));
@@ -609,7 +611,7 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
 function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-runid').textContent=payload.run_id;
  $('ev-period').textContent=`Вся история: ${payload.window.from} → ${payload.window.to}`;
  const s=payload.selection;const inst=payload.instrument||{};const pairLabel=s.pair||(inst.spread_instrument||'');
- $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · контрактов: ${s.quantity} · слиппедж ${s.slippage_ticks}т`;
+ $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · ${s.sizing==='max_affordable'?`размер: авто (${payload.summary.min_quantity}–${payload.summary.max_quantity} контр.)`:`контрактов: ${s.quantity}`} · проскальзывание ${s.slippage_ticks} т.`;
  $('ev-role').textContent=payload.price_role||'';
  const prov=payload.provenance||{};const provKeys=Object.keys(prov);const provEl=$('ev-provenance');
  provEl.textContent=provKeys.length?`происхождение: ${provKeys.length} хэшей входных данных`:'происхождение: не записано';
@@ -858,7 +860,7 @@ function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replac
   td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>цена · объём ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
   if(showSpreadVolume)td(tr,r.spread_volume!=null?fmt(r.spread_volume):'—',{num:true});
   td(tr,spreadCell(r),{num:true});
-  td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side==='entry'?'ВХОД':'ВЫХОД'} #${e.t.number}</span>`).join(' '):'',{num:false});
+  td(tr,ev?ev.map(e=>`<span class="badge ${e.side}${e.side==='exit'&&e.t.open_at_end?' open':''}" data-trade="${e.t.number}" title="клик — подсветка сделки на графике">${e.side==='entry'?'ВХОД':'ВЫХОД'} #${e.t.number} · ${e.t.quantity} контр.</span>`).join(' '):(payload.skipped_entries||[]).filter(x=>x.date===r.date).map(x=>`<span class="warn">Пропуск: ${x.reason}</span>`).join(' '),{num:false});
   tr.querySelectorAll('.badge[data-trade]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();selectedTrade=Number(b.dataset.trade);refreshSelection()}));
   td(tr,rub(l.mark_pnl_rub,2),{num:true,klass:cls(l.mark_pnl_rub)});
   td(tr,fundingCell(r,l),{num:true,klass:cls(l.funding_rub)});
@@ -867,7 +869,7 @@ function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replac
   tbody.append(tr)}
  const s=payload.summary;
  const tot=el('tr','totals');td(tot,'Итого · вся история',{klass:''});for(let i=0;i<5+extra;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
- const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9+extra;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
+ const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9+extra;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + проскальзывание; брокер 0`;recon.append(rctd);tbody.append(recon);
  if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10+extra;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
  table.append(tbody);root.append(table);root.append(notes)}
 function toggleCard(day,tr,ev){const existing=tr.nextElementSibling;if(existing&&existing.classList.contains('card')){existing.remove();return}
@@ -909,7 +911,7 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
  if(s.funding_rub!=null)h+=`<br><span class="k">фандинг: ${s.funding_rub>=0?'начислено':'списано'}</span> ${signed(s.funding_rub,2)} ₽`;
  if(s.signal_z!=null)h+=`<br><span class="k">сигнал z</span> ${fmt(s.signal_z,2)}`;
  if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
- if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)} ₽${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)} ₽`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)} ₽</b>`:''}`;
+ if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'}${l.quantity?` · ${l.quantity} контр.`:''} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)} ₽${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)} ₽`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)} ₽</b>`:''}`;
  const dayEvents=payload.trades.flatMap(t=>[['ENTRY',t.entry],['EXIT',t.exit]].filter(([_,leg])=>leg.date===s.date).map(([kind])=>({kind,t})));
  for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${humanCost(k)} ${fmt(v,2)} ₽`).join(', ');
   h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class="k">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
@@ -918,9 +920,9 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
 
 // ---------- csv & copy ----------
 function csvCell(v){const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function downloadCsv(){if(!payload)return;const L=ledgerIndex();const head=['date','period','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','funding_rate_kind','funding_left_date','funding_left_rate','funding_right_date','funding_right_rate','position','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
+function downloadCsv(){if(!payload)return;const L=ledgerIndex(),entryQty=Object.fromEntries(payload.trades.map(t=>[t.entry.date,t.quantity])),exitQty=Object.fromEntries(payload.trades.map(t=>[t.exit.date,t.quantity]));const head=['date','period','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','funding_rate_kind','funding_left_date','funding_left_rate','funding_right_date','funding_right_rate','position','contracts_held','entry_contracts','exit_contracts','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
  const lines=[`# moex-spread-lab execution-proof ${payload.schema_version}`,`# run_id: ${payload.run_id}`,`# universe: ${universe}`,`# scope: full_history`,`# evaluation: ${JSON.stringify(payload.evaluation)}`,`# selection: ${JSON.stringify(payload.selection)}`,`# price_role: ${payload.price_role}`,`# provenance: ${JSON.stringify(payload.provenance)}`,`# notes: ${payload.notes.join(' | ')}`,head.join(',')];
- for(const r of payload.series){const l=L[r.date];lines.push([r.date,rowPeriod(r),r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,r.funding_rate_kind??(r.funding_swaprate_rub_per_unit!=null?'published':''),r.funding_left_date,r.funding_left_rate,r.funding_right_date,r.funding_right_rate,l?.position,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
+ for(const r of payload.series){const l=L[r.date];lines.push([r.date,rowPeriod(r),r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,r.funding_rate_kind??(r.funding_swaprate_rub_per_unit!=null?'published':''),r.funding_left_date,r.funding_left_rate,r.funding_right_date,r.funding_right_rate,l?.position,l?.quantity,entryQty[r.date]??0,exitQty[r.date]??0,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`proof-${universe}-${proofLabel().replaceAll('/','-')}-${payload.run_id}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id скопирован в буфер обмена',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
 

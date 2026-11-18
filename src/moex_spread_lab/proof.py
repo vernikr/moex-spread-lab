@@ -22,6 +22,7 @@ from .analytics import run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study
 from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
+from .position_sizing import AUTO_SIZING, automatic, size_proof
 from .proof_funding import FundingWindow, ProofFunding
 from .screener import _normalized_series
 from .w0 import W0Error
@@ -177,6 +178,32 @@ class ProofService:
         return self.prepare(selection)(selection)
 
     def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
+        if not isinstance(selection, dict):
+            raise W0Error("выбор должен быть объектом")
+        if selection.get("sizing") not in (None, AUTO_SIZING):
+            raise W0Error("Неизвестный режим расчёта размера позиции.")
+        if not automatic(selection):
+            return self._prepare_fixed(selection, calendar=calendar, settings=settings)
+
+        def intent_request(request):
+            return {**request, "quantity": 1, "slippage_ticks": settings.slippage_ticks}
+
+        replay = self._prepare_fixed(intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True)
+        dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
+        contracts = _load_instruments(self.root / "data/w1/current-intake.json")
+
+        def sized_replay(request, through=None):
+            unit = replay(intent_request(request), through=through)
+            if unit.get("schema_version") == "calendar-proof.v1":
+                unit = self._calendar_proof(request, unit)
+            if not dates or dates[0] > unit["series"][0]["date"]:
+                raise W0Error("Нет отметки LQDT на начало истории.")
+            marks = {r["date"]: _mark(dates, prices, r["date"]) for r in unit["series"]}
+            return size_proof(unit, marks, settings, contracts)
+
+        return sized_replay
+
+    def _prepare_fixed(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS, sizing_intents=False) -> Callable[..., dict[str, Any]]:
         """Request-scoped replay of one instrument/strategy with different numeric settings.
 
         Load the selected inputs once, not the entire registry per trial. Outside this
@@ -187,7 +214,7 @@ class ProofService:
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == PAIR_UNIVERSE:
-            return self._prepare_pair(selection, settings)
+            return self._prepare_pair(selection, settings, sizing_intents=sizing_intents)
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
         from .calendar_spreads import CalendarData
@@ -295,7 +322,7 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings) -> Callable[..., dict[str, Any]]:
+    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings, *, sizing_intents=False) -> Callable[..., dict[str, Any]]:
         from . import screener_app
 
         pair = screener_app._pair(selection.get("pair"))
@@ -337,7 +364,7 @@ class ProofService:
         prepared = (*prepared, source_hashes)
 
         def replay(request, through=None):
-            execution = screener_app.execution_settings(request)
+            execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents}
             params = screener_app._parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
                           risk_for(execution["quantity"]), prepared, through)
@@ -400,6 +427,7 @@ class ProofService:
             fill="open",
             cash_in_lqdt=True,
             funding_swaprates=funding_swaprates,
+            sizing_intents=execution.get("sizing_intents", False),
         )
         daily_map = {row["date"]: row for row in report["daily"]}
         volume_map = {row["date"]: row for row in series["rows"]}
@@ -686,7 +714,9 @@ class ProofService:
                     else []
                 ),
                 "Спред пары — близкая минус дальняя, нормированный в рублях, а не собственный инструмент; его объём не наблюдаем.",
-                "Комиссии — опубликованный тариф MOEX taker, смоделированный на текущем референсе (расчёт по последней строке), а не на каждом ценовом значении исполнения.",
+                ("Комиссии и проскальзывание пересчитываются по прокси-ценам каждого входа и выхода; проскальзывание — из общих настроек."
+                 if execution.get("sizing_intents") else
+                 "Комиссии — опубликованный тариф MOEX taker, смоделированный на текущем референсе (расчёт по последней строке), а не на каждом ценовом значении исполнения."),
                 "Спред показан в % от стоимости дальней ноги; абсолютные отметки в рублях — в CSV и во второй строке таблицы.",
                 *(
                     ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
@@ -988,7 +1018,7 @@ class ProofService:
                 *([f"Исторические параметры дальней ноги используют fallback: {terms[far].get('historical_specification_basis')}."] if terms[far].get("historical_specification_basis") else []),
                 "Свободные средства держатся в LQDT, маржинальные средства ничего не зарабатывают (A-11); бенчмарк держит весь капитал в LQDT.",
                 "Цены — candle/расчётные прокси, не исполнимые заполнения.",
-                "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, slippage как параметр.",
+                "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, проскальзывание как параметр.",
                 "Отбор по капиталу использует фиксированные рабочие буферы и текущие снапшоты маржи, а не потери, известные заранее.",
                 *notes,
                 *([f"Проверка правила объёма в дни сделок: {'пройдена' if trade_volume_rule else 'нарушена'}."] if trades else []),

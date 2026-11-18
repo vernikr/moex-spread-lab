@@ -171,7 +171,7 @@ def run(browser, url):
     expect(pg.locator("#compatibility")).not_to_be_visible()
     assert (
         pg.evaluate("checked.size") == 2
-        and pg.locator("#cohort-editor .plateau-dot[data-level=unknown]").count() == 3
+        and pg.locator("#cohort-editor .plateau-dot[data-level=unknown]").count() == 1
     )
     with post("run"):
         pg.locator("#all-windows").uncheck()

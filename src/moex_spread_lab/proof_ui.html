@@ -273,9 +273,9 @@ function fillMainAssets(preferred){
  for(const p of catalog.pair_screen?.pairs||[]){const family=p.family||'other';if(!pairGroups.has(family))pairGroups.set(family,new Map());const byNear=pairGroups.get(family);if(!byNear.has(p.near))byNear.set(p.near,[]);byNear.get(p.near).push(p)}
  for(const [family,byNear] of pairGroups){const group=document.createElement('optgroup');group.label=FAMILY_RU[family]||String(family).replaceAll('_',' ');for(const [near,pairs] of byNear){const available=pairs.some(pairIsAvailable);const option=el('option','',`${near}${available?'':' · нет локальных данных'}`);option.value=`pair_screen|${near}`;option.disabled=!available;group.append(option)}s.append(group)}
  if((catalog.assets||[]).length){const group=document.createElement('optgroup');group.label='Календарные спреды · активы';for(const a of catalog.assets){const option=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);option.value=`calendar_native|${a.asset}`;option.disabled=!a.windows?.length;group.append(option)}s.append(group)}
- const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const firstPair=[...s.options].find(o=>o.value.startsWith('pair_screen|')&&!o.disabled);const first=[...s.options].find(o=>!o.disabled);s.value=desired||(firstPair?.value||first?.value||'');refreshSelection(false)
+ const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const firstPair=[...s.options].find(o=>o.value.startsWith('pair_screen|')&&!o.disabled);const first=[...s.options].find(o=>!o.disabled);s.value=desired||(firstPair?.value||first?.value||'');refreshSelectionControls(false)
 }
-function refreshSelection(run=true){
+function refreshSelectionControls(run=true){
  const root=selectedRoot();universe=root.kind==='calendar_native'?'calendar_native':'pair_screen';
  $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
  if(universe==='pair_screen'){fillPairs();syncPairStrategy()}else{fillWindows()}
@@ -653,7 +653,7 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
 (async()=>{try{catalog=await api('/api/proof/catalog');
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillFills();fillMainAssets();
- $('main-asset').addEventListener('change',()=>refreshSelection(true));
+ $('main-asset').addEventListener('change',()=>refreshSelectionControls(true));
  $('pair').addEventListener('change',()=>{syncPairStrategy();scheduleShow(80)});
  $('pair').addEventListener('click',()=>{const selected=$('pair').selectedOptions[0];if(selected&&!selected.disabled)scheduleShow(80)});
  $('strategy').addEventListener('change',()=>{fillStrategy();scheduleShow(100)});
@@ -665,8 +665,8 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
  applyNormHint();
  // Deep links keep their old shape while both universes share the same two-step selector.
  const q=new URLSearchParams(location.search);const uq=q.get('universe'),want=q.get('pair');
- if(uq==='pair_screen'&&want){const p=pairAvailability(want);if(p){$('main-asset').value=`pair_screen|${p.near}`;refreshSelection(false);$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}else show()}
- else if(uq==='calendar_native'&&q.get('asset')){$('main-asset').value=`calendar_native|${q.get('asset')}`;refreshSelection(false);if(want&&[...$('window').options].some(o=>o.value===want))$('window').value=want;if(q.get('strategy')&&[...$('cstrategy').options].some(o=>o.value===q.get('strategy'))){$('cstrategy').value=q.get('strategy');syncCalendarParams()}show()}
+ if(uq==='pair_screen'&&want){const p=pairAvailability(want);if(p){$('main-asset').value=`pair_screen|${p.near}`;refreshSelectionControls(false);$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}else show()}
+ else if(uq==='calendar_native'&&q.get('asset')){$('main-asset').value=`calendar_native|${q.get('asset')}`;refreshSelectionControls(false);if(want&&[...$('window').options].some(o=>o.value===want))$('window').value=want;if(q.get('strategy')&&[...$('cstrategy').options].some(o=>o.value===q.get('strategy'))){$('cstrategy').value=q.get('strategy');syncCalendarParams()}show()}
  else show()
 }catch(e){status(e.message)}})();
 </script>

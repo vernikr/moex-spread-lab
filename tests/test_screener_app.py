@@ -1,5 +1,6 @@
 import http.client
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -111,6 +112,11 @@ class ScreenerAppTests(unittest.TestCase):
             cache_path.write_text(json.dumps({"url": request_url, "payload": cached_payload,
                                               "raw_response_sha256": "cd" * 32}))
         self.days = days
+
+    def test_proof_ui_function_declarations_are_unique(self):
+        ui = Path(__file__).parents[1] / "src/moex_spread_lab/proof_ui.html"
+        declarations = re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", ui.read_text())
+        self.assertEqual(len(declarations), len(set(declarations)))
 
     def test_pair_registry_has_two_level_base_and_historical_gold_options(self):
         pairs = {row["id"]: row for row in catalog(self.inputs)["pairs"]}

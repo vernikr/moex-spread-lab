@@ -14,6 +14,7 @@ from unittest.mock import patch
 from moex_spread_lab.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.screener_app import (
     HISTORY_WINDOWS,
+    HISTORICAL_PERPETUAL_PAIRS,
     ScreenerError,
     ScreenerInputs,
     ScreenerStore,
@@ -119,6 +120,7 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(len(declarations), len(set(declarations)))
 
     def test_pair_registry_has_two_level_base_and_historical_gold_options(self):
+        self.assertEqual(len(HISTORICAL_PERPETUAL_PAIRS), 85)
         pairs = {row["id"]: row for row in catalog(self.inputs)["pairs"]}
         self.assertEqual(pairs["GLDRUBF/GLZ6"]["near"], "GLDRUBF")
         self.assertEqual(pairs["GLDRUBF/GLU3"]["far"], "GLU3")
@@ -324,7 +326,7 @@ class ScreenerAppTests(unittest.TestCase):
         connection.request("POST", "/api/screen", screen_payload, headers)
         screen_response = connection.getresponse()
         self.assertEqual(screen_response.status, 200)
-        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 25)
+        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 110)
         self.assertEqual(
             len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1
         )

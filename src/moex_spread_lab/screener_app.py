@@ -53,6 +53,28 @@ EXTRA_PAIRS = (
         "family": "dated_calendar_same_asset",
     },
 )
+PERPETUAL_HISTORY_STARTS = {
+    "CNYRUBF": "2022-04-26", "GLDRUBF": "2023-07-11", "IMOEXF": "2023-11-14",
+    "GAZPF": "2024-10-01", "SBERF": "2024-10-01", "RGBIF": "2025-12-23",
+    "USDRUBF": "2022-04-26", "SLVRUBF": "2026-03-31", "EURRUBF": "2022-04-26",
+    "BTCUSDF": "2026-09-22",
+}
+PERPETUAL_HISTORY_TILL = "2026-10-27"
+HISTORICAL_FAR_BY_NEAR = {
+    "CNYRUBF": ("CRH3", "CRH4", "CRH6", "CRM2", "CRM3", "CRM4", "CRM5", "CRM6", "CRU2", "CRU4", "CRU5", "CRU6", "CRZ2", "CRZ3", "CRZ4", "CRZ5"),
+    "IMOEXF": ("MMH4", "MMH5", "MMH6", "MMM4", "MMM5", "MMM6", "MMU4", "MMU5", "MMU6", "MMZ3", "MMZ4", "MMZ5"),
+    "GAZPF": ("GZH5", "GZH6", "GZM5", "GZM6", "GZU5", "GZU6", "GZZ4", "GZZ5"),
+    "SBERF": ("SRH5", "SRH6", "SRM5", "SRM6", "SRU5", "SRU6", "SRZ4", "SRZ5"),
+    "RGBIF": ("RBH6", "RBM6", "RBU6"),
+    "USDRUBF": ("SiH3", "SiH4", "SiH5", "SiH6", "SiM2", "SiM3", "SiM4", "SiM5", "SiM6", "SiU2", "SiU3", "SiU4", "SiU5", "SiU6", "SiZ2", "SiZ3", "SiZ4", "SiZ5"),
+    "SLVRUBF": ("S2M6", "S2U6"),
+    "EURRUBF": ("EuH3", "EuH4", "EuH5", "EuH6", "EuM2", "EuM3", "EuM4", "EuM5", "EuM6", "EuU2", "EuU3", "EuU4", "EuU5", "EuU6", "EuZ2", "EuZ3", "EuZ4", "EuZ5"),
+}
+HISTORICAL_PERPETUAL_PAIRS = tuple(
+    {"pair_id": f"{near}/{far}", "near": near, "far": far, "family": "perpetual_quarterly_same_asset"}
+    for near, far_values in HISTORICAL_FAR_BY_NEAR.items()
+    for far in far_values
+)
 GLD_HISTORICAL_FAR = (
     "GLU6", "GLM6", "GLH6", "GLZ5", "GLU5", "GLM5", "GLH5", "GLZ4", "GLU4", "GLM4", "GLH4", "GLZ3", "GLU3",
 )
@@ -69,6 +91,7 @@ PAIRS = (
     },
     *SCREEN_PAIRS,
     *EXTRA_PAIRS,
+    *HISTORICAL_PERPETUAL_PAIRS,
     *GLD_HISTORICAL_PAIRS,
 )
 STRATEGIES = {
@@ -85,12 +108,12 @@ MIN_DAILY_VOLUME = 100
 MAX_QUANTITY = 50
 INITIAL_CAPITAL = 30_000.0
 HISTORY_WINDOWS = {
-    "CNYRUBF/CRZ6": ("2025-06-17", "2026-10-27"),
     **{
-        pair["pair_id"]: (("2023-07-11", "2026-10-27") if pair["pair_id"] == "GLDRUBF/GLZ6" else ("2026-03-23", "2026-10-27"))
-        for pair in (*SCREEN_PAIRS, *EXTRA_PAIRS)
+        pair["pair_id"]: (PERPETUAL_HISTORY_STARTS.get(pair["near"], "2026-03-23"), PERPETUAL_HISTORY_TILL)
+        for pair in PAIRS
     },
-    **{pair["pair_id"]: ("2023-07-11", "2026-10-27") for pair in GLD_HISTORICAL_PAIRS},
+    "CNYRUBF/CRZ6": ("2025-06-17", PERPETUAL_HISTORY_TILL),
+    **{pair["pair_id"]: ("2023-07-11", PERPETUAL_HISTORY_TILL) for pair in GLD_HISTORICAL_PAIRS},
 }
 
 
@@ -128,9 +151,7 @@ class ScreenerInputs:
     def candles(self, pair_id: str, secid: str) -> Path:
         primary = self.root / "data/w1/candles-screen" / f"{secid}_1d.json"
         original = self.root / "data/w1/candles" / f"{secid}_1d.json"
-        if pair_id == "CNYRUBF/CRZ6" or not primary.is_file():
-            return original
-        return primary
+        return primary if primary.is_file() else original
 
     def history_cache(self, pair_id: str) -> Path:
         folder = (

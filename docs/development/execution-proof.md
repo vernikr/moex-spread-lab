@@ -34,8 +34,8 @@ Status: **slices 1–3 delivered** (payload + adapters + tests 2026-11-16; LWC U
 ## Historical pair registry (2026-11-17)
 
 - The pair selector is now asset-first, then maturity-pair: e.g. `GLDRUBF` → `GLDRUBF/GLZ6`, `GLDRUBF/GLU6`, … through `GLDRUBF/GLU3`. Calendar assets occupy their own group in the same first-step selector and expose windows in the second step.
-- On the workstation, official ISS daily candles and FORTS EOD histories for `GLDRUBF` and quarterly gold futures from `GLU3` through `GLU6` were extended back to the perpetual's launch period (from 2023-07-11; latest cached date 2026-10-27). These ignored local datasets are not committed. The pair catalog reports each overlap's actual dates and observation count.
-- `data/w1/historical-contracts.json` supplies expired-quarter terms. Price tick/lot and margin use the current `GLZ6` snapshot as an explicit fallback; expiry is proxied by each future's last daily candle. The historical pair payload records this fallback and hashes the metadata. It is not a point-in-time margin/specification reconstruction; volume/capital gates still apply.
+- The registry has 85 additional historical pairs (beyond GLDRUBF) for CNYRUBF, IMOEXF, GAZPF, SBERF, RGBIF, USDRUBF, SLVRUBF and EURRUBF; BTCUSDF has no extra maturity with at least 20 common candle observations yet. Daily ISS candles and FORTS EOD histories extend back to each perpetual's first available candle (per-asset dates and counts are documented in `historical-pair-intake.md`); local datasets are ignored and not committed. The pair catalog reports each overlap's actual dates and observation count.
+- `data/w1/historical-contracts.json` supplies expired-quarter terms. Tick/lot and margin use the current quarterly snapshot for the same underlying as an explicit fallback; expiry is proxied by the final daily candle. Proof payloads identify and hash these assumptions. They are not point-in-time contract terms; thin pairs remain visible but disabled under the existing volume rule, and capital gates remain unchanged.
 
 ## What slice 3 adds
 

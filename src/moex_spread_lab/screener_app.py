@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
-from .carry import build_carry_strategy, build_carry_study, fetch_history
+from .carry import HISTORY_PAGE_SIZE, build_carry_strategy, build_carry_study, fetch_history
 from .costs import tariff_profile
 from .proof import ProofService
 from .screener import SCREEN_PAIRS, _normalized_series
@@ -193,16 +193,39 @@ def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str]) -> dict[str, int]
     return {secid: min(volumes[day] for day in days) for secid, volumes in legs.items()} if days else None
 
 
-def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[str | None, str | None, int]:
+def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[str | None, str | None, int, set[str]]:
     try:
         legs = []
         for secid in (pair["near"], pair["far"]):
             payload = json.loads(inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8"))
             legs.append({str(row.get("begin", ""))[:10] for row in payload.get("rows", []) if row.get("begin")})
-        common = sorted(legs[0] & legs[1])
-        return (common[0], common[-1], len(common)) if common else (None, None, 0)
+        common = legs[0] & legs[1]
+        ordered = sorted(common)
+        return (ordered[0], ordered[-1], len(ordered), common) if ordered else (None, None, 0, set())
     except (OSError, ValueError, KeyError, TypeError):
-        return None, None, 0
+        return None, None, 0, set()
+
+
+def _cached_swaprate_dates(inputs: ScreenerInputs, pair_id: str, secid: str, start: str, end: str) -> set[str] | None:
+    dates: set[str] = set()
+    cache_dir = inputs.history_cache(pair_id)
+    for offset in range(0, 10_000, HISTORY_PAGE_SIZE):
+        path = cache_dir / f"{secid}-{start}-{end}-{offset}.json"
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            payload = cached["payload"]
+            block = payload["history"]
+            columns, rows = block["columns"], block["data"]
+            trade_idx, swap_idx = columns.index("TRADEDATE"), columns.index("SWAPRATE")
+            cursor = payload.get("history.cursor", {})
+            cursor_rows = cursor.get("data", [])
+            total = int(cursor_rows[0][cursor["columns"].index("TOTAL")]) if cursor_rows and cursor_rows[0][cursor["columns"].index("TOTAL")] is not None else None
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        dates.update(str(row[trade_idx]) for row in rows if len(row) > swap_idx and row[swap_idx] is not None)
+        if (total is not None and offset + len(rows) >= total) or len(rows) < HISTORY_PAGE_SIZE:
+            break
+    return dates
 
 
 def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
@@ -224,9 +247,10 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         except (OSError, ValueError, TypeError):
             pass
     pairs = []
+    funding_dates_cache: dict[tuple[str, str, str, str], set[str] | None] = {}
     for pair in PAIRS:
         pair_id = pair["pair_id"]
-        history_from, history_to, history_observations = _pair_history_span(inputs, pair)
+        history_from, history_to, history_observations, common_dates = _pair_history_span(inputs, pair)
         near, far = pair["near"], pair["far"]
         price_files = (
             inputs.candles(pair_id, near),
@@ -243,11 +267,19 @@ def catalog(inputs: ScreenerInputs) -> dict[str, Any]:
         )
         volumes = _leg_volumes(inputs, pair)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
+        funding_covered = True
+        if pair["family"] == "perpetual_quarterly_same_asset":
+            coverage_key = (pair_id, near, start, end)
+            if coverage_key not in funding_dates_cache:
+                funding_dates_cache[coverage_key] = _cached_swaprate_dates(inputs, pair_id, near, start, end)
+            funding_dates = funding_dates_cache[coverage_key]
+            funding_covered = bool(common_dates) and funding_dates is not None and common_dates.issubset(funding_dates)
         proof_available = {
             "mean_reversion": all(path.is_file() for path in price_files)
-            and (pair["family"] != "perpetual_quarterly_same_asset" or funding_files[0].is_file()),
+            and (pair["family"] != "perpetual_quarterly_same_asset" or (funding_files[0].is_file() and funding_covered)),
             "funding_only": pair["family"] == "perpetual_quarterly_same_asset"
-            and all(path.is_file() for path in funding_files),
+            and all(path.is_file() for path in funding_files)
+            and funding_covered,
         }
         available = {
             "mean_reversion": tradable and proof_available["mean_reversion"],

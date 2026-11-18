@@ -256,7 +256,10 @@ class ScreenerAppTests(unittest.TestCase):
         cache.mkdir(parents=True, exist_ok=True)
         for secid in ("CNYRUBF", "CRZ6"):
             (cache / f"{secid}-2025-06-17-2026-10-27-0.json").write_text("{}")
-        with patch("moex_spread_lab.screener_app.fetch_history", side_effect=history):
+        with patch("moex_spread_lab.screener_app.fetch_history", side_effect=history), patch(
+            "moex_spread_lab.screener_app._cached_swaprate_dates",
+            return_value={day.isoformat() for day in self.days},
+        ):
             result = build_result(
                 self.inputs,
                 {

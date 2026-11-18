@@ -992,8 +992,13 @@ class ProofService:
 
 def _load_contracts_for_side_cost(contracts_path: Path, near: str, far: str) -> dict[str, dict[str, Any]]:
     payload = json.loads(contracts_path.read_text(encoding="utf-8"))
+    rows = list(payload.get("instruments", []))
+    historical_path = contracts_path.parent / "historical-contracts.json"
+    if historical_path.is_file():
+        historical = json.loads(historical_path.read_text(encoding="utf-8"))
+        rows.extend(historical.get("instruments", []))
     contracts: dict[str, dict[str, Any]] = {}
-    for row in payload.get("instruments", []):
+    for row in rows:
         if isinstance(row, dict) and row.get("secid") in (near, far):
             contracts[row["secid"]] = row
     return contracts

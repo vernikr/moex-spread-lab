@@ -2,6 +2,8 @@
 
 Date: 2026-11-03
 
+**Historical reproduction only.** This fixed experiment and its `validate-analytics` CLI retain their original protocol. The current interactive screener uses [revised BR-10](../stages/04-requirements.md); it does not inherit this split.
+
 ## Method
 
 The fixed daily CNYRUBF/CRZ6 baseline was evaluated without parameter selection. The 344-row overlap was split chronologically into:

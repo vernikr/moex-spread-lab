@@ -182,6 +182,22 @@ class ScreenerAppTests(unittest.TestCase):
         )
         self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
 
+    def test_legacy_manual_run_and_table_use_the_same_global_share(self):
+        from moex_spread_lab.evaluation_periods import save_settings
+
+        save_settings(self.root, {"validation_percent": 20})
+        selection = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
+        result = build_result(self.inputs, selection)
+        e = result["evaluation"]
+        self.assertEqual(e["result_basis"], "validation")
+        self.assertEqual(e["observations"], {"training": 40, "validation": 10})
+        ledger = result["daily"]
+        self.assertAlmostEqual(e["result"]["excess_rub"], ledger[-1]["X"] - ledger[39]["X"], delta=0.02)
+        table = screen_table(self.inputs, {"strategy": "mean_reversion"})
+        row = next(r for r in table["pairs"] if r["id"] == selection["pair"])
+        self.assertEqual(row["evaluation"]["periods"], e["periods"])
+        self.assertIsNone(row["evaluation"]["result"]["annualized_excess_pp"])
+
     def test_pair_with_a_thin_day_is_excluded_and_quantity_scales_margin(self):
         path = self.inputs.candles("GLDRUBF/GLZ6", "GLZ6")
         payload = json.loads(path.read_text())

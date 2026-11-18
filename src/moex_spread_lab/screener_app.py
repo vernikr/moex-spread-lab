@@ -15,8 +15,14 @@ from urllib.parse import urlsplit
 
 from .account_risk import assess_vtb_pair
 from .analytics import run_mean_reversion_baseline
-from .carry import HISTORY_PAGE_SIZE, build_carry_strategy, build_carry_study, fetch_history
+from .carry import (
+    HISTORY_PAGE_SIZE,
+    build_carry_strategy,
+    build_carry_study,
+    fetch_history,
+)
 from .costs import tariff_profile
+from .evaluation_periods import EvaluationSplit, read_settings, save_settings
 from .proof import ProofService
 from .screener import SCREEN_PAIRS, _normalized_series
 from .w0 import W0Error
@@ -269,7 +275,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS) -> dict[str, Any]:
     funding_dates_cache: dict[tuple[str, str, str, str], set[str] | None] = {}
     for pair in registry:
         pair_id = pair["pair_id"]
-        history_from, history_to, history_observations, common_dates = _pair_history_span(inputs, pair)
+        history_from, history_to, history_observations, _ = _pair_history_span(inputs, pair)
         near, far = pair["near"], pair["far"]
         price_files = (
             inputs.candles(pair_id, near),
@@ -397,7 +403,13 @@ def _history_source(inputs: ScreenerInputs, pair_id: str, secid: str) -> dict[st
     )
 
 
-def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str, Any]:
+def build_result(
+    inputs: ScreenerInputs,
+    selection: dict[str, Any],
+    *,
+    through: str | None = None,
+    validation_share: float | None = None,
+) -> dict[str, Any]:
     if not isinstance(selection, dict):
         raise ScreenerError("выбор должен быть объектом")
     pair = _pair(selection.get("pair"))
@@ -407,9 +419,7 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
         raise ScreenerError("неизвестная стратегия")
     execution = execution_settings(selection)
     params = _parameters(selection, strategy)
-    availability = next(
-        item["strategies"] for item in catalog(inputs)["pairs"] if item["id"] == pair_id
-    )
+    availability = catalog(inputs, registry=(pair,))["pairs"][0]["strategies"]
     if not availability[strategy]:
         raise ScreenerError("локальные входы отсутствуют для этой пары и стратегии")
 
@@ -422,6 +432,8 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             near=near,
             far=far,
         )
+        if through is not None:
+            series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
@@ -485,6 +497,8 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             far=far,
             funding_regimes=None if pair_id == "CNYRUBF/CRZ6" else (),
         )
+        if through is not None:
+            study = {**study, "rows": [r for r in study["rows"] if r["date"] <= through]}
         report = build_carry_strategy(
             study,
             inputs.benchmark,
@@ -584,6 +598,22 @@ def build_result(inputs: ScreenerInputs, selection: dict[str, Any]) -> dict[str,
             if "sha256" in key or "hashes" in key
         },
     }
+    if through is None:
+        share = read_settings(inputs.root)["validation_percent"] if validation_share is None else validation_share
+        split = EvaluationSplit.from_dates((r["date"] for r in daily), share)
+        opening = daily[len(split.training) - 1] if split.validation else {"V": initial, "B": initial}
+        strategy_change = last["V"] - opening["V"]
+        benchmark_change = last["B"] - opening["B"]
+        result["metrics_scope"] = "full_history"
+        result["evaluation"] = {
+            **split.metadata(),
+            "result": {
+                "strategy_change_rub": round(strategy_change, 2),
+                "lqdt_change_rub": round(benchmark_change, 2),
+                "excess_rub": round(strategy_change - benchmark_change, 2),
+            },
+        }
+        identity["evaluation"] = result["evaluation"]
     canonical = json.dumps(
         identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
@@ -645,7 +675,7 @@ class ScreenerStore:
             key: result[key] for key in ("run_id", "schema_version", "selection")
         }
         compact["pairs"] = [
-            {key: row[key] for key in ("id", "status", "metrics") if key in row}
+            {key: row[key] for key in ("id", "status", "metrics", "evaluation") if key in row}
             for row in result["pairs"]
         ]
         self._save(self.inputs.screen_history, compact)
@@ -702,6 +732,11 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     self._send(200, vendor.read_bytes(), "application/javascript; charset=utf-8")
                 except OSError:
                     self._json(404, {"error": "not found"})
+            elif path == "/api/settings":
+                try:
+                    self._json(200, read_settings(store.inputs.root))
+                except (ValueError, OSError) as exc:
+                    self._json(400, {"error": str(exc)})
             elif path == "/api/proof/catalog":
                 try:
                     self._json(200, store.proof.catalog())
@@ -725,7 +760,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 self._json(403, {"error": "local origin only"})
                 return
             path = urlsplit(self.path).path
-            if path not in {"/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize"}:
+            if path not in {"/api/settings", "/api/run", "/api/screen", "/api/optimize", "/api/proof/run", "/api/proof/optimize"}:
                 self._json(404, {"error": "not found"})
                 return
             if (
@@ -739,18 +774,19 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 if not 0 < size <= 8192:
                     raise ScreenerError("размер запроса должен быть 1–8192 байт")
                 selection = json.loads(self.rfile.read(size))
-                if path in {"/api/proof/run", "/api/proof/optimize"}:
+                if path == "/api/settings":
+                    with store.lock:
+                        result = save_settings(store.inputs.root, selection)
+                elif path in {"/api/proof/run", "/api/proof/optimize"}:
                     if not isinstance(selection, dict):
                         raise ScreenerError("выбор должен быть объектом")
                     search = path == "/api/proof/optimize"
-                    if search or selection.pop("include_plateau", False) is True:
-                        from .proof_search import research_run
+                    from .proof_search import research_run
 
-                        result = research_run(store.proof, selection, optimize=search)
-                        if search:
-                            store.save_proof_search(result)
-                    else:
-                        result = store.proof.proof(selection)
+                    diagnostics = selection.pop("include_plateau", False) is True
+                    result = research_run(store.proof, selection, optimize=search, include_plateau=diagnostics)
+                    if search:
+                        store.save_proof_search(result)
                 elif path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)

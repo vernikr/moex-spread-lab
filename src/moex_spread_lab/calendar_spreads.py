@@ -359,7 +359,7 @@ class CalendarData:
         if window is None:
             raise W0Error("no complete front window for this pair")
         if through is not None:
-            # Optimizer replay ends before the confirmation period; never mutate cached windows.
+            # Optimizer replays only training; never mutate the cached full-history window.
             rows = [r for r in window["rows"] if r["date"] <= through]
             eligible = _positive_spread_volume_rows(rows)
             if len(eligible) < 2:

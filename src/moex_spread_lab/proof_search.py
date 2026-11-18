@@ -12,6 +12,7 @@ from typing import Any
 
 import optuna
 
+from .evaluation_periods import EvaluationSplit, read_settings
 from .proof import ProofService, _benchmark_marks, _mark, _run_id
 from .w0 import W0Error
 
@@ -20,7 +21,7 @@ SEED = 41
 FINALISTS = 6
 GREEN = 70
 AMBER = 40
-MIN_SESSIONS = 24  # RUB/session, not annualized: at least 12/6/6 observations.
+MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
 
 
 @dataclass(frozen=True)
@@ -128,46 +129,65 @@ def _excess_curve(proof, marks):
     return curve
 
 
-def _measure(proof, marks, dates, train, end):
+def _measure(proof, marks, split: EvaluationSplit):
+    """Measure a continuous ledger; the last training mark is validation's opening balance."""
     if reason := _admission(proof):
         return {"utility": None, "reason": reason}
     curve = _excess_curve(proof, marks)
+    train_x = curve[split.training[-1]]
+    train_rate = train_x / len(split.training)
+    result_x, rate, validation_rate = train_x, train_rate, None
+    segments = [("на обучении", split.training)]
+    if split.validation:
+        result_x = curve[split.validation[-1]] - train_x
+        rate = validation_rate = result_x / len(split.validation)
+        segments.append(("на проверке", split.validation))
+    if not all(math.isfinite(v) for v in (train_rate, rate, result_x)):
+        return {"utility": None, "reason": "Нет конечной оценки результата."}
+    # Descriptive P&L is separate from eligibility: a flat, unexposed book is not a plateau.
+    net = {r["date"]: r["cumulative_net_rub"] for r in proof["ledger"]}
+    net_change = (
+        net[split.validation[-1]] - net[split.training[-1]]
+        if split.validation
+        else net[split.training[-1]]
+    )
+    metrics = {
+        "net_rub": round(net_change, 2),
+        "lqdt_on_margin_rub": round(net_change - result_x, 2),
+        "train": round(train_rate, 6),
+        "validation": round(validation_rate, 6)
+        if validation_rate is not None
+        else None,
+        "excess_rub": round(result_x, 2),
+        "rub_per_session": round(rate, 6),
+    }
+    missing = [
+        label
+        for label, days in segments
+        if not any(
+            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0]
+            for t in proof["trades"]
+        )
+    ]
+    reasons = []
+    if missing:
+        where = (
+            "ни на обучении, ни на проверке"
+            if len(missing) == 2
+            else f"только {missing[0]}"
+            if split.validation
+            else missing[0]
+        )
+        reasons.append(f"Открытого спреда не было {where}.")
     peak = 0.0
     for value in curve.values():
         peak = max(peak, value)
         if peak - value >= 10_000 or value <= -15_000:
-            return {
-                "utility": None,
-                "reason": "Нарушен лимит просадки или отставания от LQDT.",
-            }
-    train_x, valid_x = curve[dates[train - 1]], curve[dates[end - 1]]
-    a, b = train_x / train, (valid_x - train_x) / (end - train)
-    if not all(math.isfinite(v) for v in (a, b)):
-        return {"utility": None, "reason": "Нет конечной оценки результата."}
-    periods = (
-        ("на обучении", dates[0], dates[train - 1]),
-        ("на проверке", dates[train], dates[end - 1]),
-    )
-    missing = [
-        label
-        for label, start, stop in periods
-        if not any(
-            t["entry"]["date"] <= stop and t["exit"]["date"] >= start
-            for t in proof["trades"]
-        )
-    ]
-    if missing:
-        where = (
-            f"только {missing[0]}"
-            if len(missing) == 1
-            else "ни на обучении, ни на проверке"
-        )
-        return {"utility": None, "reason": f"Открытого спреда не было {where}."}
-    return {
-        "utility": round(min(a, b), 6),
-        "train": round(a, 6),
-        "validation": round(b, 6),
-    }
+            reasons.append("Нарушен лимит просадки или отставания от LQDT.")
+            break
+    if reasons:
+        return {**metrics, "utility": None, "reason": " ".join(reasons)}
+    return {**metrics, "utility": metrics["rub_per_session"]}
 
 
 class Landscape:
@@ -204,7 +224,10 @@ class Landscape:
         if base["utility"] is not None and valid:
             worst = min(valid)
             if base["utility"] <= 0:
-                score, reason = 0.0, "Центр неположителен на обучении или проверке."
+                score, reason = (
+                    0.0,
+                    "Результат текущего значения на обучении неположителен.",
+                )
             elif len(valid) != len(readings):
                 score, reason = 0.0, "Есть сосед без допустимого результата."
             else:
@@ -241,6 +264,7 @@ def _tune(land, seed, strategy_axes, train_size):
     ):
         study.enqueue_trial({k: seed[k] for k in strategy_axes})
     proposals = {tuple(seed[k] for k in strategy_axes): seed}
+    attempts = []
     for _ in range(TRIALS):
         trial = study.ask()
         point = dict(seed)
@@ -256,6 +280,7 @@ def _tune(land, seed, strategy_axes, train_size):
             study.tell(trial, state=optuna.trial.TrialState.PRUNED)
         else:
             study.tell(trial, score)
+        attempts.append(point)
         proposals[tuple(point[k] for k in strategy_axes)] = point
 
     candidates = [
@@ -278,11 +303,19 @@ def _tune(land, seed, strategy_axes, train_size):
             )
             if floor > best_floor or (floor == best_floor and center == seed):
                 best, best_floor = center, floor
-    return best, len(study.trials), list(proposals.values())
+    return best, len(study.trials), attempts
 
 
-def research_run(service: ProofService, request: dict[str, Any], *, optimize: bool):
+def research_run(
+    service: ProofService,
+    request: dict[str, Any],
+    *,
+    optimize: bool,
+    include_plateau: bool = True,
+):
     _validate(request)
+    # Snapshot the project setting once, including for programmatic callers and trial logs.
+    percent = read_settings(service.root)["validation_percent"]
     replay = service.prepare(request)
     full = replay(request)
     selection = full["selection"]
@@ -294,18 +327,12 @@ def research_run(service: ProofService, request: dict[str, Any], *, optimize: bo
     }
     if not _ordered(seed):
         raise W0Error("Порог выхода должен быть ниже порога входа")
-    dates = [r["date"] for r in full["series"] if r.get("volume_eligible", True)]
-    reason = _admission(full)
-    if not reason and len(dates) < MIN_SESSIONS:
-        reason = f"Недостаточно истории: {len(dates)} наблюдений из необходимых {MIN_SESSIONS}."
-    trials, best, proposals, records, periods, confirmation = (
-        0,
-        None,
-        [],
-        [],
-        None,
-        None,
+    days = [r["date"] for r in full["series"] if r.get("volume_eligible", True)]
+    split = EvaluationSplit.from_dates(days, percent)
+    b_dates, b_prices = _benchmark_marks(
+        service.root / "data/benchmark/lqdt-lineage.json"
     )
+    marks = {r["date"]: _mark(b_dates, b_prices, r["date"]) for r in full["ledger"]}
 
     def at(point):
         return {
@@ -314,53 +341,87 @@ def research_run(service: ProofService, request: dict[str, Any], *, optimize: bo
             "parameters": {k: point[k] for k in strategy_axes},
         }
 
-    if reason:
-        fields = {
-            k: {"value": v, "score": None, "reason": reason, "neighbors": []}
-            for k, v in seed.items()
+    def report(p):
+        measured = _measure(p, marks, split)
+        evaluation = {
+            **split.metadata(),
+            "result": {k: v for k, v in measured.items() if k != "utility"},
         }
+        return {
+            **p,
+            "proof_run_id": p["run_id"],
+            "evaluation": evaluation,
+            "run_id": _run_id(
+                {"policy": "two-period.v1", "proof": p["run_id"], **evaluation}
+            ),
+        }
+
+    if not optimize and not include_plateau:
+        return report(full)  # No sensitivity replays for a plain API run.
+
+    train = EvaluationSplit.from_dates(split.training, 0)
+    cutoff = train.training[-1] if split.validation else full["series"][-1]["date"]
+
+    def training_proof(point):
+        if not split.validation and point == seed:
+            return full
+        return replay(at(point), through=cutoff)
+
+    fit = Landscape(axes, lambda point: _measure(training_proof(point), marks, train))
+    best, trials, records = None, 0, []
+    reason = None
+    if len(days) < MIN_SESSIONS:
+        reason = f"Недостаточно истории: {len(days)} наблюдений из необходимых {MIN_SESSIONS}."
+    elif not split.validation:
+        reason = _admission(full)
     else:
-        train, end = len(dates) // 2, len(dates) * 3 // 4
-        cutoff = dates[end - 1]
-        periods = {
-            "training": [dates[0], dates[train - 1]],
-            "validation": [dates[train], cutoff],
-            "confirmation": [dates[end], dates[-1]],
+        # Gate on the prefix, not the final window's margin/liquidity or realized outcome.
+        # A too-long seed warm-up must not block other feasible Optuna proposals.
+        probe = {
+            **seed,
+            **(
+                {"lookback": min(seed["lookback"], len(split.training) - 2)}
+                if "lookback" in seed
+                else {}
+            ),
         }
-        b_dates, b_prices = _benchmark_marks(
-            service.root / "data/benchmark/lqdt-lineage.json"
-        )
-        marks = {r["date"]: _mark(b_dates, b_prices, r["date"]) for r in full["ledger"]}
-
-        def evaluate(point):
-            return _measure(replay(at(point), through=cutoff), marks, dates, train, end)
-
-        land = Landscape(axes, evaluate)
-        if optimize:
-            best, trials, proposals = _tune(land, seed, strategy_axes, train)
-        fields = {k: land.profile(best or seed, k) for k in axes}
-        if optimize:
-            records = [
-                {"parameters": {k: p[k] for k in strategy_axes}, **land.measure(p)}
-                for p in proposals
-            ]
-            if best is not None:
-                # Descriptive only: never use the final quarter to select or veto the candidate.
-                curve = _excess_curve(full if best == seed else replay(at(best)), marks)
-                confirmation = round(
-                    (curve[dates[-1]] - curve[cutoff]) / (len(dates) - end), 6
-                )
-    plateau = {"fields": fields, "periods": periods, "green": GREEN, "amber": AMBER}
+        prefix = training_proof(probe)
+        reason = _admission(prefix)
+    if optimize and not reason:
+        best, trials, attempts = _tune(fit, seed, strategy_axes, len(split.training))
+        records = [
+            {
+                "trial": i,
+                "parameters": {k: p[k] for k in strategy_axes},
+                **fit.measure(p),
+            }
+            for i, p in enumerate(attempts)
+        ]
+    point = best or seed
+    fields = (
+        {
+            k: {"value": v, "score": None, "reason": reason, "neighbors": []}
+            for k, v in point.items()
+        }
+        if reason
+        else {k: fit.profile(point, k) for k in axes}
+    )
+    # Only after ranking is final, evaluate the current/chosen point on the continuous ledger.
+    # Validation never enters TPE, a neighbor check, a fallback choice or an admission to ranking.
+    displayed = report(full if point == seed else replay(at(point)))
+    plateau = {"basis": "training", "fields": fields, "green": GREEN, "amber": AMBER}
     if not optimize:
-        return {**full, "plateau": plateau}
+        return {**displayed, "plateau": plateau}
     result = {
-        "schema_version": "proof-search.v1",
+        "schema_version": "proof-search.v2",
         "method": "Optuna TPESampler",
         "library_version": optuna.__version__,
         "seed": SEED,
         "trial_count": trials,
         "candidates": records,
         "input_run_id": full["run_id"],
+        "result_run_id": displayed["run_id"],
+        "evaluation": displayed["evaluation"],
         "selection": selection,
         "selected_parameters": {k: best[k] for k in strategy_axes} if best else None,
         "status": "unavailable"
@@ -369,7 +430,7 @@ def research_run(service: ProofService, request: dict[str, Any], *, optimize: bo
         if best
         else "no_stable_positive_plateau",
         "reason": reason,
+        "selection_basis": "training",
         "plateau": plateau,
-        "confirmation_rub_per_session": confirmation,
     }
     return {**result, "run_id": _run_id(result)}

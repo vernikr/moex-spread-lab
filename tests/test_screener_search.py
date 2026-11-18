@@ -3,6 +3,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
+from moex_spread_lab.evaluation_periods import save_settings
 from moex_spread_lab.screener_app import ScreenerError, ScreenerInputs
 from moex_spread_lab.screener_search import optimize
 
@@ -23,7 +24,7 @@ class SearchTests(unittest.TestCase):
             ]
         }
 
-    def evaluator(self, _inputs, selection, *, positive=True):
+    def evaluator(self, _inputs, selection, *, through=None, positive=True):
         parameters = selection["parameters"]
         spike = parameters == {"lookback": 20, "entry_z": 2, "exit_z": 0.5}
         advantage = 0.0015 if spike else (0.0004 if positive else -0.0002)
@@ -33,6 +34,8 @@ class SearchTests(unittest.TestCase):
         rows = []
         for index in range(150):
             day = (date(2026, 1, 1) + timedelta(days=index)).isoformat()
+            if through is not None and day > through:
+                break
             benchmark = 30000 * (1 + index * 0.0001)
             strategy = 30000 * (1 + index * (0.0001 + advantage))
             excess = strategy - benchmark
@@ -60,9 +63,11 @@ class SearchTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "exploratory_plateau_found")
         self.assertEqual(len(result["trials"]), 27)
+        self.assertEqual(result["result_basis"], "training")
+        self.assertIsNone(result["periods"]["validation"])
         self.assertNotEqual(result["selected_parameters"], request["parameters"])
         self.assertGreaterEqual(len(result["stable_neighbors"]), 3)
-        self.assertEqual(set(result["confirmation_by_pair_pp"]), set(self.pairs))
+        self.assertEqual(set(result["result_by_pair_pp"]), set(self.pairs))
         self.assertEqual(
             result,
             optimize(
@@ -73,7 +78,8 @@ class SearchTests(unittest.TestCase):
             result["scope"], "independent_pair_studies_not_a_shared_capital_basket"
         )
 
-    def test_confirmation_change_does_not_select_parameters(self):
+    def test_validation_change_does_not_select_parameters(self):
+        save_settings(self.inputs.root, {"validation_percent": 50})
         request = {
             "pairs": self.pairs,
             "strategy": "mean_reversion",
@@ -83,23 +89,36 @@ class SearchTests(unittest.TestCase):
             self.inputs, request, evaluator=self.evaluator, available=self.available
         )
 
-        def changed_confirmation(inputs, selection):
-            result = self.evaluator(inputs, selection)
-            for row in result["daily"][120:]:
+        def changed_validation(inputs, selection, *, through=None):
+            result = self.evaluator(inputs, selection, through=through)
+            for row in result["daily"][75:]:
                 row["V"] += 2000 if selection["parameters"]["lookback"] == 20 else -2000
             return result
 
         second = optimize(
             self.inputs,
             request,
-            evaluator=changed_confirmation,
+            evaluator=changed_validation,
             available=self.available,
         )
+        self.assertEqual(first["result_basis"], "validation")
+        self.assertEqual(first["trials"], second["trials"])
         self.assertEqual(first["selected_parameters"], second["selected_parameters"])
-        self.assertNotEqual(
-            first["confirmation_by_pair_pp"], second["confirmation_by_pair_pp"]
-        )
+        self.assertNotEqual(first["result_by_pair_pp"], second["result_by_pair_pp"])
         self.assertNotEqual(first["run_id"], second["run_id"])
+
+    def test_one_validation_session_does_not_veto_or_fake_annualized_score(self):
+        save_settings(self.inputs.root, {"validation_percent": 1})
+        r = optimize(
+            self.inputs,
+            {"pairs": self.pairs, "strategy": "funding_only"},
+            evaluator=self.evaluator,
+            available=self.available,
+        )
+        self.assertEqual(r["observations"], {"training": 149, "validation": 1})
+        self.assertIsNotNone(r["selected_parameters"])
+        self.assertTrue(all(v is None for v in r["result_by_pair_pp"].values()))
+        self.assertIn("30", r["result_note"])
 
     def test_no_positive_region_and_incompatible_pair(self):
         request = {
@@ -110,14 +129,14 @@ class SearchTests(unittest.TestCase):
         result = optimize(
             self.inputs,
             request,
-            evaluator=lambda inputs, selection: self.evaluator(
-                inputs, selection, positive=False
+            evaluator=lambda inputs, selection, **kw: self.evaluator(
+                inputs, selection, positive=False, **kw
             ),
             available=self.available,
         )
         self.assertEqual(result["status"], "no_stable_positive_plateau")
         self.assertIsNone(result["selected_parameters"])
-        self.assertIsNone(result["confirmation_by_pair_pp"])
+        self.assertIsNone(result["result_by_pair_pp"])
         self.assertEqual(len(result["trials"]), 5)
         unavailable = {
             "pairs": [

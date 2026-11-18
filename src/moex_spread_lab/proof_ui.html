@@ -65,13 +65,27 @@ tr.card td{background:#0d1723 !important;padding:0}.cardgrid{display:grid;grid-t
 tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.recon td{background:#111d2a;font-size:10px;color:#a9bccb}tr.recon.ok b{color:#78e0b4}tr.recon.warn b{color:#e7bd82}tr.note td{background:#2a1f12;color:#e7c98e;font-size:10px}
 .notes{flex:0 0 auto;color:#8da1b4;font-size:9.5px;line-height:1.5;padding:8px 12px;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
 @media (max-width:940px){body{overflow:auto;height:auto;min-height:100vh}.app{height:auto;min-height:100vh}.layout{display:flex;flex-direction:column;height:auto;gap:10px}.column-resizer{display:none}#col-selection{min-height:700px}.selection-lists{flex:1 1 auto;min-height:360px}#pair,#norm{min-height:130px}#calendar-controls{flex:none}#window{min-height:130px}.maintabs{min-height:420px}#charts{max-height:520px}}
+.settings-trigger{display:inline-flex;align-items:center;gap:7px}.settings-trigger small{border-left:1px solid #345469;padding-left:7px;color:#87c4b3;font-size:9px}
+.settings-dialog{width:min(400px,calc(100vw - 28px));padding:20px;border:1px solid #3c576b;border-radius:13px;background:#111e2b;color:#e6edf4;box-shadow:0 18px 65px #0008}.settings-dialog::backdrop{background:#050d17b8}.settings-dialog h2{font-size:18px;margin:4px 0 8px}.settings-dialog p{color:#a8bdcc;font-size:12px;line-height:1.5;margin:6px 0 14px}.settings-dialog label{font-size:12px;font-weight:650}.settings-value{display:flex;align-items:center;gap:10px;margin:8px 0}.settings-value input[type=number]{width:74px;height:34px;padding:4px 6px;color:inherit;background:#1a2a3b;border:1px solid #456277;border-radius:6px;font:inherit}.settings-value input[type=range]{flex:1;min-width:0;accent-color:#70e1b9}.settings-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:16px}.settings-actions button{font-size:11px;min-height:30px}.settings-actions .apply{background:#174137;color:#aeebd1;border-color:#529b86}.settings-error{color:#f0b2a9;font-size:11px}
+.result-strip{padding:6px 10px;border:1px solid #30465a;border-left:3px solid #63b99e;border-radius:8px;background:#101d29;line-height:1.4}.result-strip[hidden]{display:none}.result-head{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;font-size:11px}.result-head strong{font-size:12px}.result-head b{font-variant-numeric:tabular-nums}.result-meta,.history-label{color:#9db2c2;font-size:9.5px}.history-label{font-weight:650}.result-warning{font-size:10px;color:#e7bd82}.result-strip[data-basis=validation]{border-left-color:#d5a562}.validation-line{position:absolute;z-index:3;pointer-events:none;border-left:2px dashed #e9b569;top:0}.validation-line[hidden]{display:none}.validation-start td{border-top:2px dashed #d5a562}.validation-tag{color:#f1c98f;font-size:9px;font-weight:650}
+@media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px}.top,.brand{gap:5px}.app{padding:6px 8px}}
 </style>
 </head>
 <body>
 <div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
 <div class="app">
-  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><button class="ghost settings-trigger" id="open-settings" type="button" disabled aria-haspopup="dialog" aria-controls="global-settings">Настройки <small id="settings-badge">Проверка: —</small></button><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
 
+  <dialog class="settings-dialog" id="global-settings" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <div class="eyebrow">Глобальные настройки</div><h2 id="settings-title">Периоды расчёта</h2>
+      <p>Одна настройка для всех пар и стратегий. Для проверки резервируется последняя часть истории. Optuna подбирает параметры только на обучении.</p>
+      <label for="validation-percent">Доля истории для проверки</label>
+      <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview" autofocus><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
+      <p id="split-preview" aria-live="polite"></p><span class="settings-error" role="alert" id="settings-error"></span>
+      <div class="settings-actions"><button type="button" class="ghost" id="cancel-settings">Отмена</button><button type="submit" class="ghost apply" id="apply-settings">Применить</button></div>
+    </form>
+  </dialog>
   <div class="layout" id="layout">
     <!-- Колонка 1: инструмент и период -->
     <aside class="panel side" id="col-selection">
@@ -139,7 +153,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </div>
       <div class="tune-tool">
         <button class="tune-button" id="auto-tune" type="button" disabled aria-describedby="tune-help"><span id="tune-label">Подобрать параметры</span><small>Optuna</small></button>
-        <div class="tune-help" id="tune-help">Точка справа — устойчивость к соседним значениям. Наведите для оценки.</div>
+        <div class="tune-help" id="tune-help">Точка справа — устойчивость на обучении. Наведите, чтобы сравнить соседние значения.</div>
         <div class="tune-state" id="tune-state" role="status"></div>
       </div>
     </aside>
@@ -148,6 +162,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 
     <!-- основная область: сводка + табы графики/таблица -->
     <main class="main">
+      <section id="period-result" class="result-strip" hidden aria-label="Результат расчётного периода" aria-live="polite"></section>
       <section class="summary-block hidden" id="summary-block" aria-label="Сводка расчёта">
       <div class="evidence" id="evidence">
         <span>run_id <code id="ev-runid">—</code></span>
@@ -161,6 +176,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </div>
 
       <div id="flags" class="flags"></div>
+      <div class="history-label">Сводка исполнения за всю историю</div>
       <div id="tiles" class="tiles"></div>
       </section>
 
@@ -168,7 +184,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <div class="tabbar">
           <button class="tab active" id="tab-charts" role="tab">Графики</button>
           <button class="tab" id="tab-table" role="tab">Таблица</button>
-          <div class="tab-spacer"></div>
+          <div class="tab-spacer"></div><span class="history-label" id="chart-scope">Вся история</span>
         </div>
         <div class="tabpage" id="tabpage-charts">
           <div id="charts">
@@ -180,7 +196,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
           <div class="tablepage">
             <div class="table-head">
               <div class="eyebrow">Единый журнал · одна таблица</div>
-              <h3>Журнал исполнения</h3>
+              <h3>Журнал исполнения · вся история</h3>
             </div>
             <div class="tablewrap" id="ledger-table"><div class="empty">Запуска ещё не было.</div><div class="notes" id="notes"></div></div>
           </div>
@@ -219,6 +235,33 @@ function status(text,ok=false){$('status').textContent=text;$('status').classNam
 function setRenderProgress(active){const n=$('render-progress');n.classList.toggle('active',active);n.setAttribute('aria-hidden',String(!active))}
 function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
 async function api(path,body,signal){const r=await fetch(path,body?{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
+
+// The server owns the setting; localStorage only notifies other open tabs.
+let globalPercent=0,settingRevision=0,savingSettings=false;
+const settingsEventKey='moex-proof-settings-updated';
+const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
+function setGlobalPercent(v){globalPercent=v;$('settings-badge').textContent=`Проверка: ${pct(v)}`}
+function previewSplit(){const n=$('validation-percent'),v=n.valueAsNumber;
+ $('split-preview').textContent=!n.validity.valid?'Введите число от 0 до 50%.':v===0?'Обучение — 100%. Проверка отключена. Результат считается по всей истории обучения.':`Обучение — ${pct(100-v)}, проверка — ${pct(v)}. Результат считается только по проверке.`;
+ if(n.validity.valid)$('validation-range').value=v;
+}
+async function refreshGlobalSettings(){const rev=settingRevision;if(savingSettings)return;try{const x=await api('/api/settings');
+ if(rev===settingRevision&&!savingSettings&&globalPercent!==x.validation_percent){setGlobalPercent(x.validation_percent);if(catalog)scheduleShow(0)}
+ }catch(e){status(e.message)}}
+function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),submit=$('apply-settings');
+ $('open-settings').addEventListener('click',()=>{n.value=globalPercent;$('settings-error').textContent='';previewSplit();dlg.showModal()});
+ $('cancel-settings').addEventListener('click',()=>dlg.close());
+ dlg.addEventListener('cancel',e=>{if(savingSettings)e.preventDefault()});
+ $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
+ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity())return;
+  ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';invalidateProof();
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber});setGlobalPercent(x.validation_percent);dlg.close();
+   try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),globalPercent]))}catch(_){}if(catalog)void show();
+  }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
+ });
+ window.addEventListener('storage',e=>{if(e.key===settingsEventKey)void refreshGlobalSettings()});
+ document.addEventListener('visibilitychange',()=>{if(catalog&&!document.hidden)void refreshGlobalSettings()});
+}
 
 const COLUMN_LAYOUT_KEY='moex-proof-layout-v1';
 const RESIZABLE_COLUMNS=[
@@ -330,10 +373,12 @@ function paintPlateaus(plateau=null,empty='Нет оценки для текущ
   lamp.dataset.level=level;lamp.dataset.heading=`${name} · ${score==null?'нет оценки':fmt(score,2)+' / 100 · '+verdict}`;
   const lines=[];if(field){
    lines.push(`Текущее значение: ${fmt(field.value,Number.isInteger(field.value)?0:1)}`);
-   if(field.reason)lines.push(field.reason);
-   if(plateau.periods)lines.push(`Обучение: ${plateau.periods.training.join(' — ')}`,`Проверка: ${plateau.periods.validation.join(' — ')}`);
-   if(field.center?.utility!=null)lines.push(`Сверх LQDT, ₽/сес.: обучение ${signed(field.center.train)}, проверка ${signed(field.center.validation)}. Центр: ${signed(field.center.utility)} (худший отрезок).`);
-   if(field.neighbors.length){lines.push('Соседи при остальных неизменных параметрах:');for(const n of field.neighbors)lines.push(`${fmt(n.value,Number.isInteger(n.value)?0:1)} → ${n.utility==null?'нет оценки: '+n.reason:signed(n.utility)+' ₽/сес.'}`)}
+   const e=payload.evaluation,periods=e.periods,report=e.result;
+   lines.push(`Обучение: ${periods.training.join(' — ')}`,periods.validation?`Проверка: ${periods.validation.join(' — ')}`:'Проверка отключена (0%).');
+   if(report.reason)lines.push(report.reason);
+   if(field.reason&&field.reason!==report.reason)lines.push(`На обучении: ${field.reason}`);
+   if(field.center?.utility!=null)lines.push(`Центр на обучении: ${signed(field.center.utility)} ₽/сес. сверх LQDT.`);
+   if(field.neighbors.length){lines.push('Соседи на обучении, остальные параметры неизменны:');for(const n of field.neighbors)lines.push(`${fmt(n.value,Number.isInteger(n.value)?0:1)} → ${n.utility==null?'нет оценки: '+n.reason:signed(n.utility)+' ₽/сес.'}`)}
    if(!field.reason&&score!=null)lines.push('Балл — доля результата центра, сохранённая худшим соседом (0–100).');
    if(k==='quantity'||k==='slippage_ticks')lines.push('Условие исполнения: проверяется, но не меняется автоподбором.');
   }else lines.push(empty);
@@ -346,7 +391,7 @@ function invalidateProof(){
 }
 function scheduleShow(delay=90){invalidateProof();autoRunTimer=setTimeout(()=>{autoRunTimer=null;void show()},delay)}
 function emptyProof(message){
- payload=null;selectedTrade=null;for(const c of charts.splice(0)){try{c.remove()}catch(e){}}markersApis.length=0;primarySpreadChart=null;
+ $('period-result').hidden=true;$('chart-scope').textContent='Вся история';payload=null;selectedTrade=null;for(const c of charts.splice(0)){try{c.remove()}catch(e){}}markersApis.length=0;primarySpreadChart=null;
  const empty=el('div','empty',message);empty.id='charts-empty';const chartTip=$('tip');chartTip.style.display='none';$('charts').replaceChildren(empty,chartTip);
  const notes=$('notes');notes.textContent='';$('ledger-table').replaceChildren(el('div','empty',message),notes);
  $('evidence').classList.remove('show');$('flags').replaceChildren();$('tiles').replaceChildren();updateNormScores();applyNormHint();
@@ -358,22 +403,22 @@ async function show(search=false){
  const message=unavailable||(invalid?`Проверьте поле «${invalid.labels[0].textContent}»: диапазон ${invalid.min}–${invalid.max}, шаг ${invalid.step}.`:null);
  if(message){status(message);paintPlateaus(null,message);emptyProof(message);return}
  const controller=new AbortController();proofController=controller;const signal=controller.signal;let appliedMessage='';
- setRenderProgress(true);status('');tuneButton(search);paintPlateaus(null,'Выполняется расчёт…');
+ $('period-result').hidden=true;setRenderProgress(true);status('');tuneButton(search);paintPlateaus(null,'Выполняется расчёт…');
  try{
   if(search){
-   tuneState('Optuna TPE проверяет параметры выбранной стратегии…');
+   tuneState('Optuna TPE подбирает параметры на обучении…');
    try{
     const result=await api('/api/proof/optimize',request,signal);if(!fresh())return;
     const chosen=result.selected_parameters;
     if(chosen){for(const n of activeInputs()){if(Object.hasOwn(chosen,n.dataset.axis))n.value=chosen[n.dataset.axis]}request.parameters=chosen;
      tuneState('Плато найдено. Пересчёт результата…',true);
-     appliedMessage=`Параметры применены · испытаний: ${result.trial_count}.`+(result.confirmation_rub_per_session==null?'':` Последняя четверть, вне подбора: ${signed(result.confirmation_rub_per_session)} ₽/сес.`)
-    }else tuneState(result.reason||`За ${result.trial_count} испытаний положительное плато не найдено. Параметры сохранены.`);
+     appliedMessage=`Параметры подобраны на обучении · испытаний: ${result.trial_count}.`
+    }else tuneState(result.reason||`За ${result.trial_count} испытаний положительное плато на обучении не найдено. Параметры сохранены.`);
    }catch(e){if(!fresh())return;tuneState(`Подбор недоступен: ${e.message}. Параметры сохранены.`)}
   }
   // Always run the normal proof again, including unchanged/no-plateau results.
   const next=await api('/api/proof/run',{...request,include_plateau:true},signal);if(!fresh())return;
-  payload=next;selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();
+  setGlobalPercent(next.evaluation.validation_percent);payload=next;selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();
   if(fresh()){status('');if(appliedMessage)tuneState(appliedMessage,true)}
  }catch(e){if(fresh()){status(e.message);paintPlateaus(null,e.message);emptyProof('Нет результата для текущих параметров.')}}
  finally{if(fresh()){proofController=null;setRenderProgress(false);tuneButton()}}
@@ -393,12 +438,24 @@ function bindParameterAutoRun(){
  window.addEventListener('resize',hidePlateauTip);$('col-norm').addEventListener('scroll',hidePlateauTip);
 }
 
+// The result is a period change on the continuous book, not the full window's closing total.
+function renderPeriodResult(){const e=payload.evaluation,r=e.result,p=e.periods,n=e.observations,elRoot=$('period-result');
+ const check=e.result_basis==='validation';elRoot.dataset.basis=e.result_basis;elRoot.hidden=false;
+ const head=el('div','result-head');head.append(el('strong','',check?'Результат на проверке':'Результат на обучении'));
+ for(const [label,value] of [['Нетто',r.net_rub],['Сверх LQDT',r.excess_rub]]){const item=el('span','',label+' ');item.append(el('b',cls(value),rub(value,2)));head.append(item)}
+ const period=(label,dates,count)=>`${label}: ${dates.join(' — ')} (${count} набл.)`;
+ elRoot.replaceChildren(head,el('div','result-meta',period('Обучение',p.training,n.training)+' · '+(check?period(`Проверка ${pct(e.validation_percent)}`,p.validation,n.validation):'Проверка отключена (0%)')));
+ if(r.reason)elRoot.append(el('div','result-warning',r.reason));
+ $('chart-scope').textContent=check?'Вся история · пунктир — начало проверки':'Вся история · обучение';
+}
+function rowPeriod(r){const v=payload.evaluation.periods.validation;return r.volume_eligible===false?'journal_only':v&&r.date>=v[0]?'validation':'training'}
+
 // ---------- tiles & flags ----------
 function tile(label,value,klass='',sub=null){const t=el('div','tile');t.append(el('span','',label));t.append(el('b',klass,value));if(sub)t.append(el('small','',sub));return t}
 function renderSummary(){const s=payload.summary,w=payload.window;const f=$('flags');f.replaceChildren();const flag=(text,ok)=>f.append(el('span','flag '+(ok?'ok':'bad'),text));
  const vol=universe==='pair_screen'?w.min_leg_volume:w.min_spread_volume;const volLabel=universe==='pair_screen'?'мин. объём ноги':'мин. объём спреда';
  const obs=w.observations??payload.series.length;
- flag(`${w.from} → ${w.to} · ${obs} дней`,true);
+ flag(`Вся история: ${w.from} → ${w.to} · ${obs} дней`,true);
  flag(w.tradable_every_day?`Правило объёма пройдено: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} контр./день`:`Правило объёма НЕ пройдено: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
  flag(w.passes_capital_screen?`Скрининг капитала пройден (маржа ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Скрининг капитала НЕ пройден (маржа до ${fmt(w.max_pair_margin_rub)} ₽ со стрессовыми буферами)`,w.passes_capital_screen);
  flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${({stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'}[payload.contract.tariff_group])||payload.contract.tariff_group}); брокерская 0`,true);
@@ -417,7 +474,7 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
 
 // ---------- evidence bar ----------
 function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-runid').textContent=payload.run_id;
- $('ev-period').textContent=`${payload.window.from} → ${payload.window.to}`;
+ $('ev-period').textContent=`Вся история: ${payload.window.from} → ${payload.window.to}`;
  const s=payload.selection;const inst=payload.instrument||{};const pairLabel=s.pair||(inst.spread_instrument||'');
  $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · контрактов: ${s.quantity} · слиппедж ${s.slippage_ticks}т`;
  $('ev-role').textContent=payload.price_role||'';
@@ -529,6 +586,11 @@ function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM
 function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||'';
  const b=$('norm-score');if(!b)return;const q=NORM_QUALITY&&NORM_QUALITY[mode];
  b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · возврат '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
+function markValidationStart(chart,pane,day){
+ if(!day)return;const line=el('div','validation-line'),scale=chart.timeScale();line.hidden=true;line.setAttribute('aria-hidden','true');pane.append(line);
+ const place=()=>{if(!pane.isConnected)return;const x=scale.timeToCoordinate(day);line.hidden=x==null||x<0||x>=scale.width();if(!line.hidden){line.style.left=`${chart.priceScale('left').width()+x}px`;line.style.bottom=scale.height()+'px'}};
+ scale.subscribeVisibleLogicalRangeChange(place);scale.subscribeSizeChange(place);requestAnimationFrame(place);
+}
 function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart of charts){try{chart.remove()}catch(e){}}root.replaceChildren();charts.length=0;markersApis.length=0;primarySpreadChart=null;const S=payload.series,L=ledgerIndex();
  const nearName=payload.instrument?.near??payload.window?.near??'',farName=payload.instrument?.far??payload.window?.far??'';
  const nearPane=makePane(root,'h-near','1 · БЛИЖНЯЯ НОГА — '+nearName,null,[['ближняя нога',COLORS.near]],true);
@@ -593,7 +655,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  ]);
  if(cFund&&fundSeries)chartMeta.set(cFund,{pane:fundingPane,series:fundSeries,value:d=>seriesByDate.get(d)?.r.funding_rub});
  chartMeta.set(cCum,{pane:cumPane,series:cumSeries,value:d=>L[d]?.cumulative_net_rub});
- chartMeta.forEach(({pane},chart)=>{chart._pane=pane});
+ chartMeta.forEach(({pane},chart)=>{chart._pane=pane;markValidationStart(chart,pane,payload.evaluation.periods.validation?.[0])});
  // time-scale sync across visible panes; the fit runs after the new layout has painted
  let syncing=false;charts.forEach(chart=>{chart.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(syncing||!range||chart._pane?.classList.contains('hidden')||chart._pane?._revealing)return;syncing=true;for(const other of charts){if(other!==chart&&!other._pane?.classList.contains('hidden')&&!other._pane?._revealing)try{other.timeScale().setVisibleLogicalRange(range)}catch(e){}}syncing=false})});
  let syncingCrosshair=false,activeHoverChart=null;
@@ -648,8 +710,8 @@ function fundingCell(r,l){if(l.funding_rub==null)return'—';const amount=Number
 function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
  const showSpreadVolume=universe==='calendar_native',extra=showSpreadVolume?1:0;const headers=['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём',...(showSpreadVolume?['Объём спреда']:[]),'Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽'];const table=el('table');table.append(th(headers));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=[];if(ev){clsRow.push('fill');if(ev.some(e=>e.side==='entry'))clsRow.push('entry');if(ev.some(e=>e.side==='exit'))clsRow.push('exit');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
-  const tr=el('tr',clsRow.join(' '));if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
-  td(tr,`${r.date}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
+  const boundary=r.date===payload.evaluation.periods.validation?.[0];if(boundary)clsRow.push('validation-start');const tr=el('tr',clsRow.join(' '));tr.dataset.period=rowPeriod(r);if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
+  td(tr,`${r.date}${boundary?'<small class="validation-tag">Начало проверки</small>':''}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
   td(tr,signalCell(r),{num:true});
   td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>цена · объём ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
   if(showSpreadVolume)td(tr,r.spread_volume!=null?fmt(r.spread_volume):'—',{num:true});
@@ -662,7 +724,7 @@ function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replac
   td(tr,rub(l.cumulative_net_rub,2),{num:true,klass:cls(l.cumulative_net_rub)});
   tbody.append(tr)}
  const s=payload.summary;
- const tot=el('tr','totals');td(tot,'Итого',{klass:''});for(let i=0;i<5+extra;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
+ const tot=el('tr','totals');td(tot,'Итого · вся история',{klass:''});for(let i=0;i<5+extra;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
  const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9+extra;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
  if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10+extra;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
  table.append(tbody);root.append(table);root.append(notes)}
@@ -714,17 +776,18 @@ function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <sp
 
 // ---------- csv & copy ----------
 function csvCell(v){const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function downloadCsv(){if(!payload)return;const L=ledgerIndex();const head=['date','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','position','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
- const lines=[`# moex-spread-lab execution-proof ${payload.schema_version}`,`# run_id: ${payload.run_id}`,`# universe: ${universe}`,`# selection: ${JSON.stringify(payload.selection)}`,`# price_role: ${payload.price_role}`,`# provenance: ${JSON.stringify(payload.provenance)}`,`# notes: ${payload.notes.join(' | ')}`,head.join(',')];
- for(const r of payload.series){const l=L[r.date];lines.push([r.date,r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,l?.position,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
+function downloadCsv(){if(!payload)return;const L=ledgerIndex();const head=['date','period','signal','near','near_open','near_volume','far','far_open','far_volume','spread','spread_open','spread_last_trade','spread_rel','spread_open_rel','spread_last_trade_rel','spread_volume','funding_rub','funding_swaprate_rub_per_unit','funding_lot_size','funding_contracts','funding_source','position','event','day_pnl_rub','costs_rub','cumulative_net_rub'];
+ const lines=[`# moex-spread-lab execution-proof ${payload.schema_version}`,`# run_id: ${payload.run_id}`,`# universe: ${universe}`,`# scope: full_history`,`# evaluation: ${JSON.stringify(payload.evaluation)}`,`# selection: ${JSON.stringify(payload.selection)}`,`# price_role: ${payload.price_role}`,`# provenance: ${JSON.stringify(payload.provenance)}`,`# notes: ${payload.notes.join(' | ')}`,head.join(',')];
+ for(const r of payload.series){const l=L[r.date];lines.push([r.date,rowPeriod(r),r.signal_z!=null?`z ${r.signal_z}`:(r.dev_pp!=null?`pp ${r.dev_pp}`:''),r.near,r.near_open,r.near_volume,r.far,r.far_open,r.far_volume,r.spread,r.spread_open,r.spread_last_trade,r.spread_rel,r.spread_open_rel,r.spread_last_trade_rel,r.spread_volume,l?.funding_rub,r.funding_swaprate_rub_per_unit,r.funding_lot_size,r.funding_contracts,r.funding_source,l?.position,l?.event,l?.mark_pnl_rub,l?.costs_rub,l?.cumulative_net_rub].map(csvCell).join(','))}
  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`proof-${universe}-${proofLabel().replaceAll('/','-')}-${payload.run_id}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id скопирован в буфер обмена',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
 
 // ---------- render ----------
-function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();const fit=buildCharts();renderTable();$('notes').textContent=payload.notes.join(' · ');updateNormScores();applyNormHint();return fit}
+function render(){renderPeriodResult();renderEvidence();renderSummary();$('charts-empty')?.remove();const fit=buildCharts();renderTable();$('notes').textContent=payload.notes.join(' · ');updateNormScores();applyNormHint();return fit}
 
 // ---------- boot ----------
-(async()=>{try{catalog=await api('/api/proof/catalog');
+bindSettings();
+(async()=>{try{const [settings,c]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog')]);if(settings)setGlobalPercent(settings.validation_percent);$('open-settings').disabled=false;catalog=c;
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillFills();fillMainAssets();
  $('main-asset').addEventListener('change',()=>refreshSelectionControls(true));
@@ -743,7 +806,7 @@ function render(){renderEvidence();renderSummary();$('charts-empty')?.remove();c
  if(uq==='pair_screen'&&want){const p=pairAvailability(want);if(p){$('main-asset').value=`pair_screen|${p.near}`;refreshSelectionControls(false);$('pair').value=want;syncPairStrategy();if(q.get('strategy')&&[...$('strategy').options].some(o=>o.value===q.get('strategy'))){$('strategy').value=q.get('strategy');fillStrategy()}show()}else show()}
  else if(uq==='calendar_native'&&q.get('asset')){$('main-asset').value=`calendar_native|${q.get('asset')}`;refreshSelectionControls(false);if(want&&[...$('window').options].some(o=>o.value===want))$('window').value=want;if(q.get('strategy')&&[...$('cstrategy').options].some(o=>o.value===q.get('strategy'))){$('cstrategy').value=q.get('strategy');syncCalendarParams()}show()}
  else show()
-}catch(e){status(e.message)}})();
+}catch(e){$('open-settings').disabled=false;status(e.message)}})();
 </script>
 </body>
 </html>

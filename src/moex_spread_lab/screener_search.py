@@ -10,6 +10,7 @@ from datetime import date
 from itertools import product
 from typing import Any
 
+from .evaluation_periods import EvaluationSplit, read_settings
 from .screener_app import (
     PAIRS,
     STRATEGIES,
@@ -17,8 +18,8 @@ from .screener_app import (
     ScreenerInputs,
     _parameters,
     build_result,
-    execution_settings,
     catalog,
+    execution_settings,
 )
 from .w0 import W0Error
 
@@ -50,13 +51,24 @@ def _projection(result: dict[str, Any]) -> dict[str, Any]:
         if len(rows) >= MIN_TABLE_OBSERVATIONS
         else None
     )
+    evaluation = result["evaluation"]
+    dates = evaluation["periods"]
+    basis = evaluation["result_basis"]
+    anchor = dates["training"][-1] if basis == "validation" else first["date"]
+    scored = (
+        _annualized(rows, anchor, last["date"])
+        if evaluation["observations"][basis] >= MIN_TABLE_OBSERVATIONS
+        else None
+    )
     metrics = result["metrics"]
     return {
-        "status": "exploratory" if annualized is not None else "short_history",
+        "status": "exploratory" if scored is not None else "short_history",
         "reason": None
-        if annualized is not None
+        if scored is not None
         else "Годовой результат скрыт: недостаточно наблюдений, календарного охвата или состоятельной траектории капитала.",
         "period": result["period"],
+        "metrics_scope": "full_history",
+        "evaluation": {**evaluation, "result": {"annualized_excess_pp": scored}},
         "metrics": {
             "closed_trades": metrics["closed_trades"],
             "open_positions": metrics["open_positions"],
@@ -96,6 +108,7 @@ def screen_table(
     *,
     evaluator: Callable = build_result,
 ) -> dict[str, Any]:
+    share = read_settings(inputs.root)["validation_percent"]
     if not isinstance(selection, dict):
         raise ScreenerError("screen selection must be an object")
     strategy = selection.get("strategy")
@@ -133,12 +146,14 @@ def screen_table(
                         "parameters": parameters,
                         **execution,
                     },
+                    validation_share=share,
                 )
                 row.update(_projection(result))
             except (W0Error, OSError, ValueError) as exc:
                 row.update({"status": "blocked", "reason": str(exc)})
         pairs.append(row)
     identity = {
+        "validation_percent": share,
         "strategy": strategy,
         "parameters": parameters,
         "execution": execution,
@@ -148,9 +163,14 @@ def screen_table(
         :16
     ]
     return {
-        "schema_version": "screener-table.v1",
+        "schema_version": "screener-table.v2",
         "run_id": run_id,
-        "selection": {"strategy": strategy, "parameters": parameters, "execution": execution},
+        "selection": {
+            "strategy": strategy,
+            "parameters": parameters,
+            "execution": execution,
+            "validation_percent": share,
+        },
         "pairs": pairs,
         "warning": "Независимые проекции по парам, а не корзина с общим капиталом. Годовой излишек сравнивает геометрические доходности стратегии и LQDT на собственных датах каждой строки; периоды могут различаться. Исторические прокси — не исполнения.",
     }
@@ -224,6 +244,7 @@ def optimize(
 ) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise ScreenerError("search request must be an object")
+    percent = read_settings(inputs.root)["validation_percent"]
     selected = request.get("pairs")
     if (
         not isinstance(selected, list)
@@ -268,52 +289,38 @@ def optimize(
         raise ScreenerError(
             f"selected pairs have only {len(dates)} common dates; at least {MIN_COMMON_OBSERVATIONS} required"
         )
-    train_end = int(len(dates) * 0.5)
-    validation_end = int(len(dates) * 0.75)
-    train_dates = (dates[0], dates[train_end - 1])
-    validation_dates = (dates[train_end - 1], dates[validation_end - 1])
-    confirmation_dates = (dates[validation_end - 1], dates[-1])
-    if any(
-        (date.fromisoformat(end) - date.fromisoformat(start)).days < 30
-        for start, end in (train_dates, validation_dates, confirmation_dates)
-    ):
+    split = EvaluationSplit.from_dates(dates, percent)
+    train_dates = (split.training[0], split.training[-1])
+    if (
+        date.fromisoformat(train_dates[1]) - date.fromisoformat(train_dates[0])
+    ).days < 30:
         raise ScreenerError(
-            "each chronological segment needs at least 30 calendar days"
+            "training needs at least 30 calendar days for an annualized score"
         )
     trials = []
-    reports = {}
     for point in points:
         params = dict(zip(axes, point))
         trial = {"parameters": params, "status": "evaluated", "reason": None}
         pair_reports = {}
         try:
             for pair in selected:
-                pair_reports[pair] = evaluator(
-                    inputs,
-                    {
-                        "pair": pair,
-                        "strategy": strategy,
-                        "parameters": params,
-                        **execution,
-                    },
-                )
+                settings = {
+                    "pair": pair,
+                    "strategy": strategy,
+                    "parameters": params,
+                    **execution,
+                }
+                pair_reports[pair] = evaluator(inputs, settings, through=train_dates[1])
             train = [
                 _segment(pair_reports[pair]["daily"], *train_dates) for pair in selected
             ]
-            validation = [
-                _segment(pair_reports[pair]["daily"], *validation_dates)
-                for pair in selected
-            ]
-            if any(
-                value is None or not math.isfinite(value)
-                for value in (*train, *validation)
-            ):
-                raise ScreenerError("non-annualizable common window")
+            if any(value is None or not math.isfinite(value) for value in train):
+                raise ScreenerError("non-annualizable training window")
             visible_rows = [
                 row
-                for result in pair_reports.values()
-                for row in result["daily"]
-                if row["date"] <= validation_dates[1] and row["date"] >= dates[0]
+                for report in pair_reports.values()
+                for row in report["daily"]
+                if dates[0] <= row["date"] <= train_dates[1]
             ]
             max_dd = max(row["D"] for row in visible_rows) / INITIAL_CAPITAL * 100
             worst_shortfall = (
@@ -322,10 +329,8 @@ def optimize(
             trial.update(
                 {
                     "train_min_excess_pp": round(min(train), 3),
-                    "validation_min_excess_pp": round(min(validation), 3),
-                    "validation_by_pair_pp": {
-                        pair: round(value, 3)
-                        for pair, value in zip(selected, validation)
+                    "train_by_pair_pp": {
+                        pair: round(value, 3) for pair, value in zip(selected, train)
                     },
                     "max_excess_drawdown_pct": round(max_dd, 2),
                     "worst_shortfall_pct": round(worst_shortfall, 2),
@@ -341,8 +346,6 @@ def optimize(
                         "reason": "Пробой рабочих исследовательских лимитов относительно бенчмарка.",
                     }
                 )
-            else:
-                reports[point] = pair_reports
         except (W0Error, OSError, ValueError) as exc:
             trial.update({"status": "rejected", "reason": str(exc)})
         trials.append(trial)
@@ -351,20 +354,16 @@ def optimize(
     }
     plateaus = []
     for point, trial in by_point.items():
-        if (
-            trial["status"] != "evaluated"
-            or trial["train_min_excess_pp"] <= 0
-            or trial["validation_min_excess_pp"] <= 0
-        ):
+        if trial["status"] != "evaluated" or trial["train_min_excess_pp"] <= 0:
             continue
         neighbors = _neighbors(point, points)
         stable = [
             other
             for other in neighbors
             if by_point[other]["status"] == "evaluated"
-            and by_point[other]["validation_min_excess_pp"]
-            >= PLATEAU_RATIO * trial["validation_min_excess_pp"]
-            and by_point[other]["validation_min_excess_pp"] > 0
+            and by_point[other]["train_min_excess_pp"]
+            >= PLATEAU_RATIO * trial["train_min_excess_pp"]
+            and by_point[other]["train_min_excess_pp"] > 0
         ]
         trial["stable_neighbor_count"] = len(stable)
         required = 2 if strategy == "funding_only" else 3
@@ -373,7 +372,7 @@ def optimize(
             plateaus.append(
                 (
                     min(
-                        by_point[other]["validation_min_excess_pp"]
+                        by_point[other]["train_min_excess_pp"]
                         for other in (*stable, point)
                     ),
                     point,
@@ -382,13 +381,27 @@ def optimize(
             )
     plateaus.sort(reverse=True)
     chosen = plateaus[0] if plateaus else None
-    confirmation = None
+    selected_params = dict(zip(axes, chosen[1])) if chosen else None
+    by_pair = None
     if chosen:
-        _, point, stable = chosen
-        confirmation = {
-            pair: _segment(reports[point][pair]["daily"], *confirmation_dates)
-            for pair in selected
-        }
+        by_pair = dict(by_point[chosen[1]]["train_by_pair_pp"])
+        if split.validation:
+            by_pair = {}
+            for pair in selected:
+                report = evaluator(
+                    inputs,
+                    {
+                        "pair": pair,
+                        "strategy": strategy,
+                        "parameters": selected_params,
+                        **execution,
+                    },
+                    through=split.validation[-1],
+                )
+                # Anchor at the last training mark to include the first validation session's change.
+                by_pair[pair] = _segment(
+                    report["daily"], train_dates[1], split.validation[-1]
+                )
     identity = {
         "pairs": selected,
         "strategy": strategy,
@@ -396,14 +409,15 @@ def optimize(
         "seed": seed,
         "dates": dates,
         "trials": trials,
-        "confirmation": confirmation,
+        "split": split.metadata(),
+        "result_by_pair_pp": by_pair,
         "input_run_ids": {pair: initial[pair].get("run_id") for pair in selected},
     }
     run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
         :16
     ]
     return {
-        "schema_version": "screener-search.v1",
+        "schema_version": "screener-search.v2",
         "run_id": run_id,
         "status": "exploratory_plateau_found"
         if chosen
@@ -423,23 +437,16 @@ def optimize(
             "plateau_ratio": PLATEAU_RATIO,
             "minimum_stable_neighbors": 2 if strategy == "funding_only" else 3,
             "risk_basis": "working 10k excess drawdown / 15k shortfall limits on 30k initial research allocation",
-            "selection_data": "chronological training and validation only",
-            "confirmation_note": "Подтверждение в этом поиске не использовалось, но та же история могла просматриваться в других экспериментах; это не запечатанный проспективный тест.",
+            "selection_data": "training only; validation is reporting-only when enabled",
         },
-        "periods": {
-            "training": train_dates,
-            "validation": validation_dates,
-            "confirmation": confirmation_dates,
-        },
-        "selected_parameters": dict(zip(axes, chosen[1])) if chosen else None,
+        **split.metadata(),
+        "selected_parameters": selected_params,
         "stable_neighbors": [dict(zip(axes, point)) for point in chosen[2]]
         if chosen
         else [],
-        "confirmation_by_pair_pp": {
-            pair: round(value, 3) if value is not None else None
-            for pair, value in confirmation.items()
-        }
-        if confirmation
+        "result_by_pair_pp": by_pair,
+        "result_note": "Годовая оценка требует не менее 30 календарных дней в расчётном периоде."
+        if by_pair and any(v is None for v in by_pair.values())
         else None,
         "trials": trials,
     }

@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     ledger_parser.add_argument("--baseline", type=Path, required=True)
     ledger_parser.add_argument("--output", type=Path, required=True)
 
-    validation_parser = subparsers.add_parser("validate-analytics", help="build a chronological W7 validation report")
+    validation_parser = subparsers.add_parser("validate-analytics", help="reproduce the historical W7 protocol (not the interactive screener split)")
     validation_parser.add_argument("--baseline", type=Path, required=True)
     validation_parser.add_argument("--ledger", type=Path, required=True)
     validation_parser.add_argument("--sensitivity", type=Path, action="append", default=[])

@@ -1,6 +1,6 @@
 # Decision register
 
-Updated 2026-11-16 (A-14 execution-proof slices 1–2) and 2026-11-08 (user's screener-first product direction). User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
+Updated 2026-11-18 (revised BR-10). User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
 
 | ID | Confirmed user decision | Boundary / unresolved part |
 |---|---|---|
@@ -28,6 +28,8 @@ The user subsequently specified a table-first interface (2026-11-08): each row i
 This revises the order of Stage-9 delivery, not the research/live boundary: first a local dark-only analytical interface and transparent experiments, then guarded parameter search and portfolio-level basket evaluation; monitoring, Telegram, broker integration and trading remain separately gated. A good-looking backtest, including the reference SBRF calendar-spread result, is not approved performance. The original brief remains the source record; current priorities are in Stages 4–8.
 
 **2026-11-18 UI direction:** The execution proof replaces the pair table at `/`. The second column provides library-based auto-tuning for the selected strategy, per-field plateau lamps with detailed scores, and a fresh proof on every search. [Implementation and score definition](development/execution-proof.md). No risk/admission or trading authority changed.
+
+**2026-11-18 — BR-10 superseded.** The user withdrew the separate confirmation interval. Use one project-wide validation share, from 0% through 50%, default 0%. The earlier training interval is the sole basis for parameter selection. Report on the final validation interval if enabled; at 0% report on all training data. Do not recast archived W7 or S2 results under a split they did not use. No changes to costs, capital controls or trading authority.
 
 ## Delegated operational defaults (not empirical findings)
 

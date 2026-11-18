@@ -59,7 +59,7 @@ tr.fill td{cursor:pointer}tr.entry td{background:#142b3a}tr.exit td{background:#
 .badge{display:inline-block;border-radius:6px;padding:2px 7px;font-size:9.5px;font-weight:750;letter-spacing:.04em}.badge.entry{background:#123a52;color:#8ec9f0;border:1px solid #2a5a7d}.badge.exit{background:#3a2a12;color:#f0c98e;border:1px solid #6a5a2c}.badge.open{background:#3a2312;color:#f0b2a9;border:1px solid #7a4540}
 tr.card td{background:#0d1723 !important;padding:0}.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:10px 14px}.cardgroup{background:#111d2a;border:1px solid #233648;border-radius:10px;padding:9px 11px;font-size:10.5px;line-height:1.6}.cardgroup h4{margin:0 0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:#8aa0b3}.cardgroup .k{color:#8aa0b3}.cardgroup b{color:#e8f0f7}.win-chip{color:#78e0b4;font-weight:750}.loss-chip{color:#f0928a;font-weight:750}.flat-chip{color:#a9bccb;font-weight:750}
 tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.recon td{background:#111d2a;font-size:10px;color:#a9bccb}tr.recon.ok b{color:#78e0b4}tr.recon.warn b{color:#e7bd82}tr.note td{background:#2a1f12;color:#e7c98e;font-size:10px}
-.notes{color:#8da1b4;font-size:9.5px;line-height:1.5;padding:5px 12px;max-height:64px;overflow:auto;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
+.notes{flex:0 0 auto;color:#8da1b4;font-size:9.5px;line-height:1.5;padding:8px 12px;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
 @media (max-width:940px){body{overflow:auto;height:auto;min-height:100vh}.app{height:auto;min-height:100vh}.layout{display:flex;flex-direction:column;height:auto;gap:10px}.column-resizer{display:none}#col-selection{min-height:700px}.selection-lists{flex:1 1 auto;min-height:360px}#pair,#norm{min-height:130px}#calendar-controls{flex:none}#window{min-height:130px}.maintabs{min-height:420px}#charts{max-height:520px}}
 </style>
 </head>
@@ -172,10 +172,8 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
             <div class="table-head">
               <div class="eyebrow">Единый журнал · одна таблица</div>
               <h3>Журнал исполнения</h3>
-              <p>Один ряд на день: цены, объёмы, позиция, отмеченный результат и кумулятивный нетто. Дни входа и выхода отмечены бейджем — клик по ряду разворачивает карточку исполнения: цены исполнения, контракты, объёмы дня и разбивка комиссий (биржа / брокер / слиппедж). В карточке выхода — результат сделки (гросс, нетто, плюс/минус, барьер LQDT на маржу, сверх). Итоги сверяются со сводкой ≤ 0.01–0.02 ₽.</p>
             </div>
-            <div class="tablewrap" id="ledger-table"><div class="empty">Запуска ещё не было.</div></div>
-            <div class="notes" id="notes"></div>
+            <div class="tablewrap" id="ledger-table"><div class="empty">Запуска ещё не было.</div><div class="notes" id="notes"></div></div>
           </div>
         </div>
       </div>
@@ -194,7 +192,7 @@ const cls=v=>v>0?'pos':v<0?'neg':'';
 const signed=v=>v==null?'—':`${v>0?'+':''}${fmt(v,2)}`;
 const STRATEGY_RU={mean_reversion:'Возврат спреда к среднему',funding_only:'Фондирование перпетуального свопа (carry)',zscore_mean_reversion:'Возврат к среднему · z-скор',convergence_to_ruonia:'Сходимость к справедливой цене RUONIA'};
 const FILL_RU={next_open:'следующее открытие',settlement:'расчётная цена',same_day_settlement:'расчёт в тот же день',next_close:'следующее закрытие',reference_same_bar:'справочное закрытие'};
-const FAMILY_RU={perpetual_quarterly_same_asset:'перпетуал-квартальный · один актив',dated_calendar_same_asset:'датированный календарь · один актив'};
+const FAMILY_RU={perpetual_quarterly_same_asset:'вечный/квартальный',dated_calendar_same_asset:'датированный календарь'};
 const CATSTATUS_RU={local_inputs_available:'локальные входы доступны',intake_required:'нужна загрузка данных',excluded_thin_leg:'исключена: тонкая нога',proof_ready_thin_leg:'данные есть, но нога тонкая'};
 const GROUP_RU={stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'};
 const REASON_RU={mean_reversion_exit:'возврат к среднему',end_of_sample:'конец выборки',end_of_window:'конец окна',open_at_data_end_no_executable_exit:'принудительная отметка в конце данных',perpetual_execution_window:'окно исполнения перпетуала',basis_reached_trailing_median:'базис достиг скользящей медианы',trailing_funding_non_positive:'фондирование стало неположительным',expiry_buffer:'буфер до экспирации',positive_trailing_funding:'положительное фондирование',positive_trailing_funding_and_low_basis:'фондирование положительно и базис низкий'};
@@ -276,7 +274,7 @@ function fillMainAssets(preferred){
  const s=$('main-asset');s.replaceChildren();const pairGroups=new Map();
  for(const p of catalog.pair_screen?.pairs||[]){const family=p.family||'other';if(!pairGroups.has(family))pairGroups.set(family,new Map());const byNear=pairGroups.get(family);if(!byNear.has(p.near))byNear.set(p.near,[]);byNear.get(p.near).push(p)}
  for(const [family,byNear] of pairGroups){const group=document.createElement('optgroup');group.label=FAMILY_RU[family]||String(family).replaceAll('_',' ');for(const [near,pairs] of byNear){const available=pairs.some(pairHasLocalData);const option=el('option','',`${near}${available?'':' · нет локальных данных'}`);option.value=`pair_screen|${near}`;option.disabled=!available;group.append(option)}s.append(group)}
- if((catalog.assets||[]).length){const group=document.createElement('optgroup');group.label='Календарные спреды · активы';for(const a of catalog.assets){const option=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);option.value=`calendar_native|${a.asset}`;option.disabled=!a.windows?.length;group.append(option)}s.append(group)}
+ if((catalog.assets||[]).length){const group=document.createElement('optgroup');group.label='Календарные спреды';for(const a of catalog.assets){const option=el('option','',`${a.asset} · ${a.name} · ${GROUP_RU[a.group]||a.group}${a.monthly?' · месячный':''}`);option.value=`calendar_native|${a.asset}`;option.disabled=!a.windows?.length;group.append(option)}s.append(group)}
  const desired=preferred&&[...s.options].some(o=>o.value===preferred&&!o.disabled)?preferred:null;const firstPair=[...s.options].find(o=>o.value.startsWith('pair_screen|')&&!o.disabled);const first=[...s.options].find(o=>!o.disabled);s.value=desired||(firstPair?.value||first?.value||'');refreshSelectionControls(false)
 }
 function refreshSelectionControls(run=true){
@@ -576,7 +574,7 @@ function dayVolumeCell(r){const nv=r.near_volume!=null?fmt(r.near_volume):'—',
 function spreadCell(r){return`${r.spread_rel==null?'—':fmt(r.spread_rel,2)+'%'}<small>откр. ${r.spread_open_rel==null?'—':fmt(r.spread_open_rel,2)+'%'} · абс. ${px(r.spread)}</small>`}
 function signalCell(r){if(r.signal_z!=null)return`z ${fmt(r.signal_z,2)}`;if(r.dev_pp!=null)return`${fmt(r.dev_pp,2)} pp`;if((r.funding_rub??0)!==0)return`фонд ${signed(r.funding_rub)}`;return''}
 function fundingCell(r,l){if(l.funding_rub==null)return'—';const amount=Number(l.funding_rub)||0;if(!amount)return'0,00';const action=amount>0?'начислено':amount<0?'списано':'нет платежа';const rate=r.funding_swaprate_rub_per_unit;const lot=r.funding_lot_size;const qty=r.funding_contracts;const detail=rate!=null?`−pos ${signed(l.position??0,0)} × SWAPRATE ${signed(rate,4)} ₽/ед. × лот ${fmt(lot)} × ${fmt(qty)} контр.`:'значение ISS, см. оговорку';return`${action} ${signed(amount,2)}<small>${detail}</small>`}
-function renderTable(){const root=$('ledger-table');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
+function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
  const showSpreadVolume=universe==='calendar_native',extra=showSpreadVolume?1:0;const headers=['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём',...(showSpreadVolume?['Объём спреда']:[]),'Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽'];const table=el('table');table.append(th(headers));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=[];if(ev){clsRow.push('fill');if(ev.some(e=>e.side==='entry'))clsRow.push('entry');if(ev.some(e=>e.side==='exit'))clsRow.push('exit');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
   const tr=el('tr',clsRow.join(' '));if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
@@ -596,7 +594,7 @@ function renderTable(){const root=$('ledger-table');root.replaceChildren();const
  const tot=el('tr','totals');td(tot,'Итого',{klass:''});for(let i=0;i<5+extra;i++)td(tot,'');td(tot,rub(s.gross_rub,2),{num:true,klass:cls(s.gross_rub)});td(tot,signed(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0),2),{num:true,klass:cls(payload.ledger.reduce((sum,row)=>sum+(row.funding_rub??0),0))});td(tot,`−${fmt(s.costs_rub,2)}`,{num:true});td(tot,rub(s.net_rub,2),{num:true,klass:cls(s.net_rub)});tbody.append(tot);
  const recon=el('tr','recon '+(Math.abs(s.ledger_reconciliation_rub)<0.5?'ok':'warn'));td(recon,'Сверка',{klass:''});const rctd=el('td','');rctd.colSpan=9+extra;rctd.innerHTML=`нетто − кумулятив = <b>${rub(s.ledger_reconciliation_rub,2)}</b>${s.fx_point_value_drift_rub!=null?` &nbsp;·&nbsp; дрейф стоимости пункта FX ${rub(s.fx_point_value_drift_rub,2)}`:''} &nbsp;·&nbsp; издержки по сторонам: биржа + слиппедж; брокер 0`;recon.append(rctd);tbody.append(recon);
  if(s.open_positions){const nt=el('tr','note');const ntd=el('td','');ntd.colSpan=10+extra;ntd.textContent='Есть принудительная отметка в конце данных — это не исполняемая сделка и не реализованный результат.';nt.append(ntd);tbody.append(nt)}
- table.append(tbody);root.append(table)}
+ table.append(tbody);root.append(table);root.append(notes)}
 function toggleCard(day,tr,ev){const existing=tr.nextElementSibling;if(existing&&existing.classList.contains('card')){existing.remove();return}
  const trade=ev[0].t;const card=el('tr','card');const cell=el('td');cell.colSpan=10+(universe==='calendar_native'?1:0);card.append(cell);
  const wrap=el('div','cardgrid');

@@ -116,6 +116,36 @@ class ScreenerAppTests(unittest.TestCase):
                                               "raw_response_sha256": "cd" * 32}))
         self.days = days
 
+    def test_hourly_price_pair_proof_does_not_require_daily_swaprate(self):
+        pair = {"pair_id": "GLDRUBF/GLZ6", "near": "GLDRUBF", "far": "GLZ6"}
+        for secid, offset in (("GLDRUBF", 0), ("GLZ6", 1)):
+            path = self.inputs.candles(pair["pair_id"], secid, "1h")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            rows = []
+            for i, day in enumerate(self.days):
+                for hour in (10, 11):
+                    close = 10 + offset + i * 0.01 + (i % 8) * 0.003
+                    rows.append({
+                        "begin": f"{day.isoformat()} {hour:02d}:00:00",
+                        "open": close,
+                        "close": close,
+                        "volume": 500,
+                    })
+            path.write_text(json.dumps({
+                "schema_version": "iss-candles.v1", "secid": secid,
+                "interval": 60, "timeframe": "1h", "rows": rows,
+            }))
+
+        entry = next(
+            row for row in catalog(self.inputs, timeframe="1h")["pairs"]
+            if row["id"] == pair["pair_id"]
+        )
+        self.assertEqual(entry["observations"], len(self.days) * 2)
+        self.assertTrue(entry["proof_strategies"]["mean_reversion"])
+        self.assertFalse(entry["proof_strategies"]["funding_only"])
+        self.assertIn("carry требует дневных", entry["data_reasons"]["funding_only"])
+        self.assertNotIn("SWAPRATE", entry["data_reasons"].get("mean_reversion", ""))
+
     def test_zero_volume_on_either_leg_is_excluded_from_gate_dates(self):
         pair = {"pair_id": "GLDRUBF/GLZ6", "near": "GLDRUBF", "far": "GLZ6"}
         near_path = self.inputs.candles(pair["pair_id"], pair["near"])

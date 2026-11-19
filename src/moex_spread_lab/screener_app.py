@@ -10,6 +10,7 @@ import socket
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -191,34 +192,52 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
-def _session_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME):
+@lru_cache(maxsize=256)
+def _candle_summary_cached(path_text: str, mtime_ns: int, size: int):
+    # Cache compact metadata, not the full large hourly OHLCV payload.
     try:
-        legs = {}
-        for secid in (pair["near"], pair["far"]):
-            payload = json.loads(
-                inputs.candles(pair["pair_id"], secid, timeframe).read_text(encoding="utf-8")
-            )
-            volumes: dict[str, float | None] = {}
-            invalid_days = set()
-            for row in payload.get("rows", []):
-                begin = row.get("begin")
-                if not isinstance(begin, str) or len(begin) < 10:
-                    continue
-                day = begin[:10]
-                value = row.get("volume")
-                if value is None or isinstance(value, bool):
-                    invalid_days.add(day)
-                    continue
-                number = float(value)
-                if not math.isfinite(number) or number < 0:
-                    invalid_days.add(day)
-                    continue
-                volumes[day] = float(volumes.get(day) or 0.0) + number
-            for day in invalid_days:
-                volumes[day] = None
-            legs[secid] = volumes
-    except (OSError, ValueError, KeyError, TypeError):
+        payload = json.loads(Path(path_text).read_text(encoding="utf-8"))
+        timestamps: set[str] = set()
+        volumes: dict[str, float | None] = {}
+        invalid_days: set[str] = set()
+        for row in payload.get("rows", []):
+            begin = row.get("begin")
+            if begin and row.get("close") is not None:
+                timestamps.add(str(begin))
+            if not isinstance(begin, str) or len(begin) < 10:
+                continue
+            day = begin[:10]
+            value = row.get("volume")
+            if value is None or isinstance(value, bool):
+                invalid_days.add(day)
+                continue
+            number = float(value)
+            if not math.isfinite(number) or number < 0:
+                invalid_days.add(day)
+                continue
+            volumes[day] = float(volumes.get(day) or 0.0) + number
+        for day in invalid_days:
+            volumes[day] = None
+        return {"timestamps": frozenset(timestamps), "volumes": volumes}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, KeyError, TypeError):
         return None
+
+
+def _candle_summary(path: Path):
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return _candle_summary_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+
+
+def _session_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME):
+    legs = {}
+    for secid in (pair["near"], pair["far"]):
+        summary = _candle_summary(inputs.candles(pair["pair_id"], secid, timeframe))
+        if summary is None:
+            return None
+        legs[secid] = dict(summary["volumes"])
     return legs
 
 
@@ -247,25 +266,18 @@ def _positive_leg_volume_dates(inputs: ScreenerInputs, pair: dict[str, str], tim
 
 
 def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME) -> tuple[str | None, str | None, int, set[str]]:
-    try:
-        legs = []
-        for secid in (pair["near"], pair["far"]):
-            payload = json.loads(
-                inputs.candles(pair["pair_id"], secid, timeframe).read_text(encoding="utf-8")
-            )
-            legs.append({
-                str(row.get("begin", ""))
-                for row in payload.get("rows", [])
-                if row.get("begin") and row.get("close") is not None
-            })
-        common = legs[0] & legs[1]
-        ordered = sorted(common)
-        return (
-            ordered[0][:10], ordered[-1][:10], len(ordered),
-            {timestamp[:10] for timestamp in common},
-        ) if ordered else (None, None, 0, set())
-    except (OSError, ValueError, KeyError, TypeError):
-        return None, None, 0, set()
+    legs = []
+    for secid in (pair["near"], pair["far"]):
+        summary = _candle_summary(inputs.candles(pair["pair_id"], secid, timeframe))
+        if summary is None:
+            return None, None, 0, set()
+        legs.append(summary["timestamps"])
+    common = legs[0] & legs[1]
+    ordered = sorted(common)
+    return (
+        ordered[0][:10], ordered[-1][:10], len(ordered),
+        {timestamp[:10] for timestamp in common},
+    ) if ordered else (None, None, 0, set())
 
 
 def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_capital=INITIAL_CAPITAL, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
@@ -308,8 +320,24 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
         )
         volumes = _leg_volumes(inputs, pair, timeframe)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
-        days = _positive_leg_volume_dates(inputs, pair, timeframe) if pair["family"] == "perpetual_quarterly_same_asset" else set()
-        proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
+        days = (
+            _positive_leg_volume_dates(inputs, pair, timeframe)
+            if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
+            else set()
+        )
+        if spec.supports_funding_strategy:
+            proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
+        else:
+            missing_price = next((path for path in price_files if not path.is_file()), None)
+            proof_available = {
+                "mean_reversion": missing_price is None and history_observations >= 2,
+                "funding_only": False,
+            }
+            reasons = {}
+            if missing_price is not None:
+                reasons["mean_reversion"] = f"Нет локальных данных: {missing_price.name}."
+            elif history_observations < 2:
+                reasons["mean_reversion"] = "Меньше двух общих ценовых наблюдений."
         if not spec.supports_pair_proof:
             proof_available["mean_reversion"] = False
             reasons["mean_reversion"] = f"{spec.label}: ценовой pair-proof не реализован для этого интервала."

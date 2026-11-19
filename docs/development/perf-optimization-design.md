@@ -182,6 +182,37 @@ Per-trial (песочница): 17.6 мс → 11.8 мс (≈1.5×).
 | `w = 6` | 30.694 с | 11.651 с | 10.169 с | 3.35 GB |
 | **`w = 8` (дефолт)** | **22.088 с** | **5.878 с** | **5.890 с** | 4.25 GB (при 16 GB RAM) |
 
+## 10. Итерация 4 — C99-акселератор горячих циклов (`_fastcore.c`) с автоматическим Python fallback (готово)
+
+### 10.1 Архитектура и обеспечение побитовой эквивалентности
+
+* `src/moex_spread_lab/_fastcore.c` — автономный CPython C99-модуль без внешних зависимостей (не требует `Cython` или `setuptools`), реализующий 4 горячие функции:
+  * `compute_rolling_z(spread_ticks, lookback, delay)` — точный оконный population z-score с компенсированным суммированием Неумайера (повторяет алгоритм `builtin_sum` в CPython 3.12) и делением `/ (double)lookback` (вместо умножения на `1.0 / lookback`), что гарантирует `0 ULP` расхождения даже на граничных точках вроде `z == -2.0` (`CRZ6/CRH7`);
+  * `clean_obj(value)` — рекурсивная замена не-конечных `float` (`nan`, `±inf`) на `None` с сохранением знака `-0.0`;
+  * `mean_reversion_scan(...)` — проход конечного автомата входа/выхода по `precomputed_z` для режима `fast_intents` (включая `forced_exit_end_of_sample` и `funding_swaprates`);
+  * `size_proof_metrics(...)` — полный расчёт `size_proof(metrics_only=True)` с динамическим сайзингом макс. доступного лота и `exact_round2` (`floor(x * 100 + 0.5) / 100` при отступе `> 1e-6` от `.xx5`, fallback на Python `__round__(2)` вблизи границ полуокругления и `copysign(0.0, x)` для сохранения `-0.0`).
+* `src/moex_spread_lab/_fastcore_loader.py`:
+  * Ленивая атомарная сборка `_fastcore<EXT_SUFFIX>` через `clang -O3 -ffp-contract=off -shared -fPIC` (`-ffp-contract=off` исключает FMA-расхождения между ARM64/x86_64 и IEEE-754 в CPython) при наличии компилятора и `Python.h`, `*.so` добавлен в `.gitignore`.
+  * Автоматический fallback на чистый Python при отсутствии компилятора или при `MOEX_PROOF_DISABLE_C=1`.
+* Интеграции:
+  * `src/moex_spread_lab/analytics.py` (`compute_rolling_z`, `run_mean_reversion_baseline` при `fast_intents` и `precomputed_z`);
+  * `src/moex_spread_lab/proof.py` (`_clean` и `scan_cols_cache` для повторного использования статических колонок между прогонами Optuna);
+  * `src/moex_spread_lab/position_sizing.py` (`size_proof(..., metrics_only=True)` → `_size_proof_fast_c`);
+  * `src/moex_spread_lab/screener.py` (устранение двойного вызова `canonical_timestamp(row)`).
+
+### 10.2 Замеры на реальных данных (MacBook Pro 16" 2019, i7-9750H, CPython 3.12.14)
+
+Во всех 3 реальных сценариях подтверждена **100% побитовая эквивалентность** между `_fastcore` C и чистым Python (`MOEX_PROOF_DISABLE_C=1`):
+
+| Сценарий (`1h`, `AUTO_SIZING`) | Pure Python (`MOEX_PROOF_DISABLE_C=1`) | `_fastcore` C (по умолчанию) | Ускорение | SHA-256 (`C == Py`) |
+|--------------------------------|----------------------------------------|------------------------------|-----------|---------------------|
+| `CNYRUBF` 17 пар (`w=1`, до Итер. 4 `cProfile` 48.18 с / `opt` 23.18 с) | — | `opt` **10.339 с**, `plat` **4.723 с**, `win` **3.668 с** | **~2.2–4.6×** | `d609b7a5bf25df7a` |
+| `CNYRUBF` 17 пар (`w=8`, `opt_cold` / `opt_warm` / `plat` / `win`) | 8.293 / 7.805 / 2.401 / 1.469 с | **3.754 / 2.656 / 0.908 / 0.691 с** | **2.2×–2.9×** | `d609b7a5bf25df7a` |
+| Полная когорта `110` пар `pair_screen 1h` (`w=8`, `opt` / `win`) | 18.933 / 9.688 с | **12.385 / 4.572 с** (RSS 864.1 MB) | **1.53× / 2.12×** | `74b6f2b55eec38ac` |
+| `calendar_native 1h` 15 окон (`w=8`, `opt` / `plat` / `win`) | 10.182 / 1.541 / 1.056 с | **10.026 / 1.480 / 1.089 с** | паритет (proxy-цикл в Python) | `f7eac35ba8441689` |
+
+Полный набор автотестов (`PYTHONPATH=tests .venv/bin/python -m unittest discover -s tests`) прошёл **210 / 210** за **61.306 с** (включая новый `test_fastcore_c_matches_python_fallback_bit_for_bit` в `tests/test_perf_equivalence.py`).
+
 ---
 
 AGENTS.md: проект — локальная разработка на macOS, ответы на русском, outcome-first, кратко. Документ хранится в репозитории и не содержит секретов или датасетов.

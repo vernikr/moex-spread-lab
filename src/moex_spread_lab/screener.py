@@ -87,8 +87,16 @@ def _normalized_series(
             return None
         return value[:19].replace(" ", "T") if len(value) >= 19 else value[:10]
 
-    near_rows = {canonical_timestamp(row): row for row in near_payload.get("rows", []) if canonical_timestamp(row) and row.get("close") is not None}
-    far_rows = {canonical_timestamp(row): row for row in far_payload.get("rows", []) if canonical_timestamp(row) and row.get("close") is not None}
+    near_rows = {
+        ts: row
+        for row in near_payload.get("rows", [])
+        if (ts := canonical_timestamp(row)) and row.get("close") is not None
+    }
+    far_rows = {
+        ts: row
+        for row in far_payload.get("rows", [])
+        if (ts := canonical_timestamp(row)) and row.get("close") is not None
+    }
     benchmark = {row["date"]: row for row in benchmark_payload.get("rows", []) if row.get("date")}
     observed = sorted(benchmark)
     rows = []

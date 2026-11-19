@@ -345,6 +345,11 @@ def compute_rolling_z(
     decision_delay_bars: int,
 ) -> list[float | None]:
     """Compute exact population z-scores matching run_mean_reversion_baseline."""
+    from ._fastcore_loader import load_fastcore
+
+    fc = load_fastcore()
+    if fc is not None and lookback > 0 and decision_delay_bars >= 0:
+        return fc.compute_rolling_z(spread_ticks, lookback, decision_delay_bars)
     n = len(spread_ticks)
     result: list[float | None] = [None] * n
     start = lookback + decision_delay_bars
@@ -528,6 +533,67 @@ def run_mean_reversion_baseline(
         entry_signal_z = None
 
     use_open = fill == "open"
+    if fast_intents and precomputed_z is not None:
+        from ._fastcore_loader import load_fastcore
+
+        fc = load_fastcore()
+        if fc is not None:
+            trade_tuples, action_pairs = fc.mean_reversion_scan(
+                precomputed_z,
+                row_count,
+                lookback,
+                decision_delay_bars,
+                entry_z,
+                exit_z,
+                bool(funding_swaprates),
+            )
+            for e_idx, x_idx, pos_val, sig_z, forced in trade_tuples:
+                e_row = rows[e_idx]
+                x_row = rows[x_idx]
+                e_near, e_far = (e_row["near_open"], e_row["far_open"]) if use_open else (e_row["near_close"], e_row["far_close"])
+                if forced:
+                    x_near, x_far = x_row["near_close"], x_row["far_close"]
+                    reason = "end_of_sample"
+                else:
+                    x_near, x_far = (x_row["near_open"], x_row["far_open"]) if use_open else (x_row["near_close"], x_row["far_close"])
+                    reason = "mean_reversion_exit"
+                trades.append({
+                    "entry_date": e_row.get("timestamp", e_row["date"]),
+                    "exit_date": x_row.get("timestamp", x_row["date"]),
+                    "direction": "long_near_short_far" if pos_val > 0 else "short_near_long_far",
+                    "quantity": quantity,
+                    "entry_near_fill": e_near,
+                    "entry_far_fill": e_far,
+                    "exit_near_fill": x_near,
+                    "exit_far_fill": x_far,
+                    "entry_spread_fill": _round(e_near * near_multiplier - e_far * far_multiplier),
+                    "exit_spread_fill": _round(x_near * near_multiplier - x_far * far_multiplier),
+                    "entry_signal_z": _round(sig_z),
+                    "exit_reason": reason,
+                })
+            if funding_swaprates and action_pairs is not None:
+                action_names = (
+                    "hold_flat",
+                    "hold_position",
+                    "exit",
+                    "enter_long_spread",
+                    "enter_short_spread",
+                    "forced_exit_end_of_sample",
+                )
+                lot_q = lot_size * quantity
+                daily = [
+                    {
+                        "date": (d := row["date"]),
+                        "action": action_names[act],
+                        "position": 0 if act == 5 else pos_val,
+                        "funding_rub": _round(-pos_val * float(sw) * lot_q)
+                        if (pos_val and (sw := funding_swaprates.get(d)) is not None)
+                        else 0.0,
+                    }
+                    for row, (act, pos_val) in zip(rows, action_pairs)
+                ]
+            return {"trades": trades, "daily": daily}
+
     for index, row in enumerate(rows):
         action = "hold_flat" if position == 0 else "hold_position"
         signal_z = None

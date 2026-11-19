@@ -53,6 +53,11 @@ def reference_eval() -> bool:
 
 
 def _clean(value: Any) -> Any:
+    from ._fastcore_loader import load_fastcore
+
+    fc = load_fastcore()
+    if fc is not None:
+        return fc.clean_obj(value)
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):
@@ -303,6 +308,7 @@ class ProofService:
         dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
         contracts = _load_instruments(self.root / "data/w1/current-intake.json")
         marks_cache: dict[str | None, dict[str, float]] = {}
+        scan_cols_cache: dict[str | None, Any] = {}
 
         def sized_replay(request, through=None, *, metrics_only: bool = False):
             unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
@@ -348,6 +354,8 @@ class ProofService:
                 contracts,
                 metrics_only=metrics_only,
                 copy_unit=False,
+                _scan_cache=scan_cols_cache if metrics_only else None,
+                _scan_key=through,
             )
 
         return sized_replay

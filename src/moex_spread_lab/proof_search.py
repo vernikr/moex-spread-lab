@@ -83,6 +83,16 @@ def _ordered(values):
 
 
 def _validate(request):
+    if not isinstance(request, dict):
+        raise W0Error("Выбор должен быть объектом.")
+    if "optimize_strategy" in request and type(request["optimize_strategy"]) is not bool:
+        raise W0Error("optimize_strategy: укажите true или false.")
+    if "price_fill" in request and request["price_fill"] not in ("next_open", "next_close", "reference_same_bar"):
+        raise W0Error("Неизвестное исполнение ценовых стратегий.")
+    if request.get("optimize_strategy") and request.get("fill", "next_open") not in (
+        "next_open", "next_close", "reference_same_bar", "same_day_settlement"
+    ):
+        raise W0Error("Неизвестное исполнение.")
     if request.get("sizing") not in (None, AUTO_SIZING):
         raise W0Error("Неизвестный режим расчёта размера позиции.")
     if automatic(request) and request.get("quantity") is not None:
@@ -155,6 +165,17 @@ def _excess_curve(proof, marks):
         hurdle += delta
         curve[row["date"]] = row["cumulative_net_rub"] - hurdle
     return curve
+
+
+def account_checks(proof):
+    """Descriptive cash-path evidence; it never waives a failed annualization/ranking gate."""
+    rows = proof["ledger"]
+    failed = [r for r in rows if r["cash_shortfall"]]
+    return {
+        "cash_shortfall_rows": len(failed),
+        "first_cash_shortfall_date": failed[0]["date"] if failed else None,
+        "minimum_free_cash_rub": round(min(r["free_cash_rub"] for r in rows), 2),
+    }
 
 
 def _annualized_returns(proof, marks, split):
@@ -357,7 +378,7 @@ class Landscape:
         }
 
 
-def _tune(land, seed, strategy_axes, train_size):
+def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS):
     """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
     study = optuna.create_study(
         direction="maximize",
@@ -378,7 +399,7 @@ def _tune(land, seed, strategy_axes, train_size):
         study.enqueue_trial({k: seed[k] for k in strategy_axes})
     best, best_score = None, -math.inf
     attempts = []
-    for _ in range(TRIALS):
+    for _ in range(trials):
         trial = study.ask()
         point = dict(seed)
         for name, axis in strategy_axes.items():
@@ -481,6 +502,7 @@ class StudyWindow:
             **self.settings.metadata(),
             **self.split.metadata(),
             "execution_reference": p.get("execution_reference", False),
+            **({"account_checks": account_checks(p)} if automatic(p["selection"]) else {}),
             "failed_screens": [
                 name
                 for name, key in (
@@ -533,9 +555,15 @@ def research_run(
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     if optimize:
+        if request.get("optimize_strategy"):
+            from .proof_strategy_search import strategy_search
+
+            return strategy_search(service, request, settings, benchmark, check_cancelled)
         from .proof_batch import batch_search
 
         return batch_search(service, request, settings, benchmark, check_cancelled)
+    if request.get("optimize_strategy"):
+        raise W0Error("Выбор стратегии выполняется только запросом подбора.")
     if "targets" in request:
         raise W0Error("Журнал исполнения относится к одному открытому окну.")
     case = StudyWindow(service, request, settings, benchmark)

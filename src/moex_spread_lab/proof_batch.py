@@ -149,7 +149,7 @@ class _Cohort:
         return _lamps(first.fit if native_single else self.land, point, reason)
 
 
-def _prepare_cohort(service, request, settings, benchmark, check_cancelled):
+def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, calendar=None):
     from .calendar_spreads import CalendarData
 
     targets = _targets(request)
@@ -159,7 +159,7 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled):
     seed = _active_seed(request, active)
     proposed = {**request, "parameters": {k: seed[k] for k in axes}}
     members, rejected = [], []
-    calendar = CalendarData(service.root)  # Loaded lazily, at most once per request.
+    calendar = calendar if calendar is not None else CalendarData(service.root)
     for target in targets:
         check_cancelled()
         try:
@@ -310,10 +310,16 @@ def batch_search(service, request, settings, benchmark, check_cancelled):
     if isinstance(group, dict):
         return group
     axes, seed, members, land = group.axes, group.seed, group.members, group.land
-    first = members[0][1]
     best, trials, attempts = _tune(
         land, seed, axes, min(len(case.split.training) for _, case in members)
     )
+    return _cohort_result(request, settings, group, best, trials, attempts, check_cancelled)
+
+
+def _cohort_result(request, settings, group, best, trials, attempts, check_cancelled):
+    """Report only a training-selected winner, without running another search."""
+    axes, seed, members, land = group.axes, group.seed, group.members, group.land
+    first = members[0][1]
     records = [
         {"trial": i, "parameters": {k: p[k] for k in axes}, **land.measure(p)}
         for i, p in enumerate(attempts)

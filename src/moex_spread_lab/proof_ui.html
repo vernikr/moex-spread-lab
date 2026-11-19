@@ -22,7 +22,6 @@
 body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none!important}
 .side{padding:10px;overflow:auto;display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0}
 .side-title{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#8aa0b3;font-weight:750}
-.side-sub{font-size:9px;color:#62788c;margin-top:-4px}
 .universe-switch{display:flex;gap:6px;flex:0 0 auto}.uopt{flex:1;border:1px solid #345469;background:#16293a;color:#a9bccb;border-radius:9px;padding:6px 8px;font-size:11px;font-weight:700;text-align:left;line-height:1.35}.uopt.active{border-color:#70e1b9;color:#072119;background:#70e1b9}.uopt small{display:block;font-weight:500;font-size:9px;color:inherit;opacity:.8}
 .listbox{font-variant-numeric:tabular-nums;background:#1a2a3b;border:1px solid #365066;border-radius:8px;color:#e7eef5;outline:none;width:100%;font-size:11px;flex:1 1 auto}.listbox:focus{border-color:#63d9b2}.listbox option{padding:3px 8px}.listbox option:disabled{color:#5b7186}.listbox optgroup{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#8aa0b3;font-style:normal;padding:4px 6px 2px}
 #pair{min-height:150px}#norm{min-height:180px;flex:1 1 0}
@@ -70,9 +69,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 .result-strip{padding:6px 10px;border:1px solid #30465a;border-left:3px solid #63b99e;border-radius:8px;background:#101d29;line-height:1.4}.result-strip[hidden]{display:none}.result-head{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;font-size:11px}.result-head strong{font-size:12px}.result-head b{font-variant-numeric:tabular-nums}.result-meta,.history-label{color:#9db2c2;font-size:9.5px}.history-label{font-weight:650}.result-warning{font-size:10px;color:#e7bd82}.result-strip[data-basis=validation]{border-left-color:#d5a562}.validation-line{position:absolute;z-index:3;pointer-events:none;border-left:2px dashed #e9b569;top:0}.validation-line[hidden]{display:none}.validation-start td{border-top:2px dashed #d5a562}.validation-tag{color:#f1c98f;font-size:9px;font-weight:650}
 @media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px;flex-wrap:wrap}.top{flex-wrap:wrap}.top,.brand{gap:5px}.flag{max-width:100%;white-space:normal;overflow-wrap:anywhere}.app{padding:6px 8px}}
 .pick-panel{min-height:0;display:flex;flex-direction:column;gap:0}.pick-panel h2{margin:0 0 4px;color:#a7b8c8;font-size:10px}.pick-all,.picker-row{display:flex;align-items:center;gap:6px;min-height:25px;padding:2px 7px}.pick-all{background:#233649;border:1px solid #365066;border-radius:7px 7px 0 0;color:#d9e9ef;font-size:11px;font-weight:650;cursor:pointer}.pick-list{flex:1;min-height:0;overflow:auto;background:#162636;border:1px solid #365066;border-top:0;border-radius:0 0 7px 7px;scrollbar-width:thin}.picker-row{border-bottom:1px solid #203142}.pick-check{margin:0;width:14px;height:14px;accent-color:#6edcb5;cursor:pointer;flex:none}.pick-check:disabled{opacity:.4;cursor:not-allowed}.pick-name{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px;color:#c2d1df;font:inherit;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.picker-row.family{background:#1c2e40}.family .pick-name{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8ea6ba;font-weight:700}.picker-row.branch{padding-left:15px}.picker-row.unavailable .pick-name{color:#91a1b0}.picker-row.current{background:#21423e;box-shadow:inset 2px 0 #77e0b9}.current .pick-name{color:#a5f1d4;font-weight:600}.pick-name:focus-visible,.pick-check:focus-visible{outline:2px solid #70e1b9;outline-offset:1px}.group-note{font-size:10px;color:#9db2c2}.review{width:min(520px,94vw)}.review ul{padding-left:19px;max-height:36vh;overflow:auto;font-size:12px;color:#c5d4e1}.review li{margin:5px 0}.batch-result{background:#172c30;border:1px solid #3f6560;border-radius:8px;padding:6px 10px;font-size:11px;max-height:28vh;overflow:auto}.batch-result summary{cursor:pointer;color:#a7ead1;font-weight:650}.batch-result .group-note{margin:6px 0}.batch-result[hidden]{display:none}.batch-result td small{white-space:normal}.group-note{line-height:1.4}@media(max-width:940px){.pick-panel{height:260px}}
-#focus-editor{display:contents}#cohort-editor{display:flex;flex-direction:column;gap:6px}#focus-editor[hidden],#cohort-editor[hidden]{display:none}.group-cap{display:grid;gap:2px;padding:6px 8px;border-left:2px solid #70d7b2;background:#162c30;color:#b3ead6;font-size:11px}.group-cap small{font-size:10px;color:#a5bbca}#group-profile-state[data-state=unavailable],#group-profile-state[data-state=invalid]{color:#efc38a}#chart-selection-scope{margin:0 2px}
+.strategy-block{border:1px solid #365066;border-radius:8px;padding:9px;background:#142333;display:flex;flex-direction:column;gap:8px;flex:none;min-width:0}#focus-editor{display:contents}#cohort-editor{display:flex;flex-direction:column;gap:6px}#focus-editor[hidden],#cohort-editor[hidden]{display:none}.group-cap{display:grid;gap:2px;padding:6px 8px;border-left:2px solid #70d7b2;background:#162c30;color:#b3ead6;font-size:11px}.group-cap small{font-size:10px;color:#a5bbca}#group-profile-state[data-state=unavailable],#group-profile-state[data-state=invalid]{color:#efc38a}#chart-selection-scope{margin:0 2px}
 
-.window-table{table-layout:fixed;width:100%;font-size:10px}.window-table .picker-row{display:table-row;padding:0;min-height:0;cursor:pointer}.window-table th,.window-table td{padding:4px 2px;vertical-align:middle;border-bottom:1px solid #233748}.window-table th{top:0;font-size:9px;z-index:2}.window-table th:first-child{width:20px}.window-table th:nth-child(3),.window-table th:nth-child(4){width:20px;text-align:center}.window-table th:nth-child(5){width:27px;text-align:right}.window-table th:nth-child(6){width:54px;text-align:right}.window-table .window-period{position:relative;white-space:normal}.window-period .pick-name{display:block;width:100%;padding:0;font-size:9.5px;line-height:1.35;white-space:nowrap}.window-period small{font-size:9px;margin:0;color:#8399ab}.window-table .current td{background:#21423e}.window-table .window-number{text-align:right;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-size:9.5px}.window-table .window-check{text-align:center}.window-table .window-gate{display:inline-grid;place-items:center;width:15px;height:17px;font-size:12px;cursor:help}.window-gate.pass{color:#78e0b4}.window-gate.fail{color:#f0928a}.window-gate.unknown{color:#71879a}.window-download{position:absolute;right:1px;top:8px;font-size:15px;color:#83b9ef;cursor:help}.unavailable .window-period .pick-name{padding-right:12px}.window-table tr:not(.current):hover td{background:#1b3442}
+.window-table{table-layout:fixed;width:100%;min-width:260px;font-size:10px}.window-table .picker-row{display:table-row;padding:0;min-height:0;cursor:pointer}.window-table th,.window-table td{padding:4px 2px;vertical-align:middle;border-bottom:1px solid #233748}.window-table th{top:0;font-size:9px;z-index:2}.window-table th:first-child{width:20px}.window-table th:nth-child(3),.window-table th:nth-child(4){width:20px;text-align:center}.window-table th:nth-child(5){width:27px;text-align:right}.window-table th:nth-child(6){width:54px;text-align:right}.window-table .window-period{position:relative;white-space:normal}.window-period .pick-name{display:block;width:100%;padding:0;font-size:9.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}.window-period small{font-size:9px;margin:0;color:#8399ab}.window-table .current td{background:#21423e}.window-table .window-number{text-align:right;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-size:9.5px}.window-table .window-check{text-align:center}.window-table .window-gate{display:inline-grid;place-items:center;width:15px;height:17px;font-size:12px;cursor:help}.window-gate.pass{color:#78e0b4}.window-gate.fail{color:#f0928a}.window-gate.unknown{color:#71879a}.window-download{position:absolute;right:1px;top:8px;font-size:15px;color:#83b9ef;cursor:help}.unavailable .window-period .pick-name{padding-right:12px}.window-table tr:not(.current):hover td{background:#1b3442}
 </style>
 </head>
 <body>
@@ -83,7 +82,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
   <dialog class="settings-dialog" id="global-settings" aria-labelledby="settings-title">
     <form id="settings-form">
       <div class="eyebrow">Глобальные настройки</div><h2 id="settings-title">Настройки расчёта</h2>
-      <p>Настройки общие для всех пар и стратегий. Для проверки резервируется последняя часть истории. Optuna подбирает параметры только на обучении.</p>
+      <p>Настройки общие для всех пар и стратегий. Для проверки резервируется последняя часть истории. Optuna выбирает стратегию и параметры только на обучении.</p>
       <label for="global-capital">Капитал · ₽</label>
       <div class="settings-value"><input id="global-capital" type="number" min="0.01" max="1000000000" step="0.01" required autofocus title="Одинаковый стартовый капитал независимого расчёта каждого окна. Не подбирается Optuna."><span>на каждое окно</span></div>
       <label for="validation-percent">Доля истории для проверки</label>
@@ -120,7 +119,6 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
     <!-- Колонка 2: нормализация, параметры стратегии и подбор -->
     <aside class="panel side" id="col-norm">
       <div class="side-title">Нормализация</div>
-      <div class="side-sub">только график спреда · причинные окна</div>
       <select id="norm" class="listbox" size="14">
         <optgroup label="Уровень">
           <option value="raw">Сырой · % от дальней ноги</option>
@@ -147,6 +145,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </select>
       <div class="norm-hint" id="norm-hint"></div>
       <div class="norm-score" id="norm-score"></div>
+      <section id="strategy-form" class="strategy-block" aria-label="Стратегия и параметры">
       <div id="focus-editor">
         <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="hint" id="pair-hint"></div>
@@ -174,9 +173,10 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <div id="group-profile-state" class="tune-help" role="status" aria-live="polite"></div>
       </section>
       <div class="tune-tool">
-        <button class="tune-button" id="auto-tune" type="button" disabled><span id="tune-label">Подобрать параметры</span><small>Optuna</small></button>
+        <button class="tune-button" id="auto-tune" type="button" disabled><span id="tune-label">Подобрать стратегию и параметры</span><small>Optuna</small></button>
         <div class="tune-state" id="tune-state" role="status"></div>
       </div>
+      </section>
     </aside>
 
     <div class="column-resizer" id="resize-norm" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки нормализации" aria-valuemin="190" aria-valuemax="480" aria-valuenow="262" tabindex="0"></div>
@@ -387,22 +387,26 @@ function windowGates(row,l){const c=l.meta||{},cal=l.target.universe==='calendar
  const volumeOk=c.tradable_every_day??(volume!=null?volume>=rule:null),margin=c.max_pair_margin_rub,capitalOk=margin!=null?3*margin+5000+5000<=preferences.initial_capital_rub:null;
  row.querySelector('[data-gate=volume]').replaceChildren(gateIndicator(volumeOk,volume==null?'V: нет данных для проверки объёма.':`V: ${volumeOk?'пройдена':'не пройдена'}. Минимальный дневной объём ${cal?'биржевого спреда':'ноги'}: ${fmt(volume)}; порог: ${fmt(rule)}. Нулевые наблюдения — только журнал.`));
  row.querySelector('[data-gate=capital]').replaceChildren(gateIndicator(capitalOk,capitalOk==null?'C: нет параметров для стресс-проверки капитала.':`C: ${capitalOk?'пройдена':'не пройдена'}. ГО одного спреда ${margin==null?'неизвестно':fmt(margin,2)+' ₽'}; стресс 3×ГО и рабочие буферы против ${fmt(preferences.initial_capital_rub,2)} ₽. Это проверка одного спреда; допуск в настройках её не меняет.`))}
-function windowRow(l){const row=el('tr','picker-row window-row'+(!l.enabled?' unavailable':''));row.dataset.leaf=l.key;
+function recentWindows(b){return [...b.children].sort((a,b)=>String(b.to||'').localeCompare(String(a.to||''))||String(b.from||'').localeCompare(String(a.from||''))||a.key.localeCompare(b.key))}
+function periodMonth(d){return d?d.slice(0,7).replace('-','.'):''}
+function windowRow(l){const row=el('tr','picker-row window-row'+(!l.enabled?' unavailable':''));row.dataset.leaf=l.key;row.dataset.from=l.from||'';row.dataset.to=l.to||'';
  const cb=document.createElement('input');cb.type='checkbox';cb.className='pick-check';cb._leaves=()=>[l];cb.setAttribute('aria-label','Включить в подбор: '+l.period);cb.addEventListener('change',()=>setChecks([l],cb.checked));const check=el('td');check.append(cb);
- const cell=el('td','window-period'),button=el('button','pick-name');button.type='button';button.append(el('span','',l.from?l.from.split('-').reverse().join('.'):'Нет истории'));if(l.to)button.append(el('small','','— '+l.to.split('-').reverse().join('.')));button.title=l.observations?`${l.period} · ${l.observations} наблюдений`:l.period;button.addEventListener('click',()=>openLeaf(l.key));cell.append(button);
+ const cell=el('td','window-period'),button=el('button','pick-name');button.type='button';button.textContent=l.from&&l.to?`${periodMonth(l.from)}-${periodMonth(l.to)}`:'Нет истории';button.title=l.observations?`${l.period} · ${l.observations} наблюдений`:l.period;button.addEventListener('click',()=>openLeaf(l.key));cell.append(button);
  if(!l.enabled){const missing=el('span','window-download','⇩');missing.dataset.icon='download';missing.title='Нужна загрузка локальных данных. '+Object.values(l.meta?.data_reasons||{}).filter(Boolean).join(' ');missing.setAttribute('role','img');missing.setAttribute('aria-label',missing.title);cell.append(missing)}
  row.append(check,cell);for(const name of ['volume','capital']){const td=el('td','window-check');td.dataset.gate=name;row.append(td)}for(const name of ['trades','rate']){const td=el('td','window-number','—');td.dataset.metric=name;row.append(td)}
  row.addEventListener('click',e=>{if(e.target.closest('button,input')||e.target.closest('[data-gate]'))return;openLeaf(l.key)});windowGates(row,l);return row}
 function renderWindowTable(b){const table=el('table','window-table');table.setAttribute('aria-label','Исторические окна и текущая симуляция');
- const head=el('thead'),tr=el('tr');for(const [label,title] of [['','Отметить для совместного подбора'],['Период','Период локальной истории, без тикеров'],['V','Исходная проверка объёма'],['C','Исходная стресс-проверка капитала'],['Сд.','Число принятых входов во всей текущей симуляции; открытые позиции учитываются'],['п.п./г','Годовая доходность сверх LQDT в процентных пунктах: проверка, если включена, иначе обучение']]){const n=el('th','',label);n.scope='col';n.title=title;tr.append(n)}head.append(tr);const body=el('tbody');for(const l of [...b.children].sort((a,b)=>Number(b.enabled)-Number(a.enabled)))body.append(windowRow(l));table.append(head,body);$('window-list').replaceChildren(table)}
+ const head=el('thead'),tr=el('tr');for(const [label,title] of [['','Отметить для совместного подбора'],['Период','Период локальной истории, без тикеров'],['V','Исходная проверка объёма'],['C','Исходная стресс-проверка капитала'],['Сд.','Число принятых входов во всей текущей симуляции; открытые позиции учитываются'],['п.п./г','Годовая доходность сверх LQDT в процентных пунктах: проверка, если включена, иначе обучение']]){const n=el('th','',label);n.scope='col';n.title=title;tr.append(n)}head.append(tr);const body=el('tbody');for(const l of recentWindows(b))body.append(windowRow(l));table.append(head,body);$('window-list').replaceChildren(table)}
 function windowReadingFromProof(p){return {status:'measured',selection:p.selection,run_id:p.run_id,trades:p.summary.trades,closed_trades:p.summary.closed_trades,open_positions:p.summary.open_positions,annualized_excess_pp:p.evaluation.result.annualized_excess_pp,evaluation:p.evaluation,window:p.window,execution_reference:p.execution_reference}}
 function cacheWindowProof(req,p){windowReadings.set(proofPlanKey(req),windowReadingFromProof(p));paintWindowReadings()}
 function paintWindowReadings(){for(const row of $('window-list').querySelectorAll('tr[data-leaf]')){const l=leaves.get(row.dataset.leaf);if(!l)continue;const plan=leafPlan(l),reading=windowReadings.get(proofPlanKey(plan.req)),count=row.querySelector('[data-metric=trades]'),rate=row.querySelector('[data-metric=rate]');
  row.dataset.reading=reading?.status||(!l.enabled?'missing':'pending');count.textContent=reading?.trades==null?'—':String(reading.trades);rate.textContent=reading?.annualized_excess_pp==null?'—':signed(reading.annualized_excess_pp);
  rate.className='window-number '+(reading?.execution_reference?'warn':cls(reading?.annualized_excess_pp));const e=reading?.evaluation,period=e?.periods?.[e.result_basis],reason=reading?.reason||e?.result?.reason||(!l.enabled?'Нужна загрузка локальных данных.':'Выполняется расчёт для этих параметров.');
+ const cash=e?.account_checks,cashNote=cash?.cash_shortfall_rows?`Дефицит свободных средств: ${cash.cash_shortfall_rows} сесс.; впервые ${cash.first_cash_shortfall_date}; минимум ${fmt(cash.minimum_free_cash_rub,2)} ₽. Входы могли пройти раньше, но годовая оценка такого счёта недопустима.`:'';
  const settings=`${STRATEGY_RU[plan.req.strategy]||plan.req.strategy} · ${FILL_RU[plan.req.fill]||plan.req.fill||'следующее открытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'} · капитал ${fmt(e?.initial_capital_rub??preferences.initial_capital_rub,2)} ₽`;
  count.title=reading?.trades==null?reason:`Вся симуляция: ${reading.trades} входов; ${reading.closed_trades} закрыто, ${reading.open_positions} открыто на конце. ${settings}`;
- rate.title=[reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter((text,i,items)=>text&&items.indexOf(text)===i).join(' ');
+ rate.title=[reading?.status==='measured'&&reading.annualized_excess_pp==null?'Годовая оценка недоступна.':'',cashNote,reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter((text,i,items)=>text&&items.indexOf(text)===i).join(' ');
+ rate.tabIndex=0;rate.setAttribute('aria-label',rate.title);row.dataset.rateState=reading?.annualized_excess_pp!=null?'measured':reading?.status==='measured'?'unavailable':reading?.status||(!l.enabled?'missing':'pending');
  row.dataset.runId=reading?.run_id||'';row.dataset.reference=String(!!reading?.execution_reference);}}
 function stopWindowReadings(){clearTimeout(windowReadTimer);windowReadTimer=null;windowReadVersion++;windowReadController?.abort();windowReadController=null}
 function refreshWindowReadings(delay=220){stopWindowReadings();paintWindowReadings();const version=windowReadVersion,branch=branchId;
@@ -428,7 +432,7 @@ function openBranch(key,wanted='',strategy='',run=true){const b=branches.get(key
  $('pair-controls').classList.toggle('hidden',universe!=='pair_screen');$('calendar-controls').classList.toggle('hidden',universe!=='calendar_native');
  $('window-label').textContent=universe==='pair_screen'?'Исторические окна':'Календарные окна';
  const list=$('window-list');renderWindowTable(b);
- const selected=b.children.find(l=>l.target.pair===(wanted||b.lastPair))||b.children.find(l=>l.enabled)||b.children[0];
+ const sorted=recentWindows(b),selected=sorted.find(l=>l.target.pair===(wanted||b.lastPair))||sorted.find(l=>l.enabled)||sorted[0];
  openLeaf(selected?.key||'',strategy||prior,run);list.scrollTop=0;
 }
 function activeStrategyName(){return universe==='pair_screen'?$('strategy').value:$('cstrategy').value}
@@ -460,7 +464,7 @@ const hasSelection=()=>!!leafId&&(universe==='calendar_native'||!!researchStrate
 let proofController=null,openLamp=null,searchController=null,searchVersion=0,searchUsesChecks=false;
 function cancelSearch(){if(!tuning)return;searchVersion++;searchController?.abort();searchController=null;tuning=false;finishReview(false);setSearchProgress(false);tuneButton()}
 function tuneState(message,ok=false){const n=$('tune-state');n.textContent=message;n.classList.toggle('ok',ok)}
-function tuneButton(busy=tuning){$('auto-tune').disabled=busy||(!leafId&&!checked.size);$('auto-tune').setAttribute('aria-busy',String(busy));$('tune-label').textContent=busy?'Идёт подбор…':'Подобрать параметры'}
+function tuneButton(busy=tuning){$('auto-tune').disabled=busy||(!leafId&&!checked.size);$('auto-tune').setAttribute('aria-busy',String(busy));$('tune-label').textContent=busy?'Идёт подбор…':'Подобрать стратегию и параметры'}
 function hidePlateauTip(){if(openLamp){openLamp.removeAttribute('aria-describedby');openLamp=null}$('plateau-tip').hidden=true}
 function showPlateauTip(lamp){
  hidePlateauTip();openLamp=lamp;const tip=$('plateau-tip');tip.replaceChildren(el('strong','',lamp.dataset.heading),document.createTextNode(lamp.dataset.detail||'Нет оценки.'));
@@ -493,18 +497,18 @@ function drawLamps(inputs,plateau,empty,group){
 const sharedInputs=()=>[...$('cohort-editor').querySelectorAll('.number-shell input')];
 const checkedTargets=()=>[...checked].sort().map(k=>leaves.get(k).target);
 const isMR=s=>s==='mean_reversion'||s==='zscore_mean_reversion';
-let sharedStrategy=null,sharedMR='mean_reversion',sharedDrafts=new Map();
+let sharedStrategy=null,sharedMR='mean_reversion',sharedPriceFill='next_open',sharedDrafts=new Map();
 let profileKey='',profileVersion=0,profileTimer=null,profileController=null,chartKey='',chartWithLamps=false;
 function translateParams(params,strategy){const p={...params};if(strategy==='mean_reversion'&&'window' in p){p.lookback=p.window;delete p.window}if(strategy==='zscore_mean_reversion'&&'lookback' in p){p.window=p.lookback;delete p.lookback}return p}
-function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:$('group-fill').value}}
+function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));if(sharedStrategy!=='funding_only')sharedPriceFill=$('group-fill').value;return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:$('group-fill').value}}
 function pointError(inputs){const n=inputs.find(n=>n.value===''||!n.validity.valid);if(n)return `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`;
  const entry=inputs.find(n=>n.dataset.axis==='entry_z'),exit=inputs.find(n=>n.dataset.axis==='exit_z');return entry&&exit&&exit.valueAsNumber>=entry.valueAsNumber?'Порог выхода должен быть ниже порога входа.':''}
 function groupField(id,point){const copy=$(id).closest('.control').cloneNode(true),input=copy.querySelector('input'),k=input.dataset.axis;copy.className='control';input.id='group-'+k;copy.querySelector('label').htmlFor=input.id;
  input.value=point[k]??input.defaultValue;copy.querySelector('button').removeAttribute('aria-describedby');bindLamp(input);input.addEventListener('input',()=>sharedEdited(220));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sharedEdited(0)}});return copy}
-function renderSharedEditor(req){hidePlateauTip();sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
+function renderSharedEditor(req){hidePlateauTip();if(['next_open','next_close','reference_same_bar'].includes(req.fill))sharedPriceFill=req.fill;sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
  const ids={mean_reversion:['entry','exit','lookback'],zscore_mean_reversion:['centry','cexit','clookback'],funding_only:['lookback'],convergence_to_ruonia:['cthreshold']}[req.strategy];
  const point={...req.parameters};$('group-params').replaceChildren(...ids.map(id=>groupField(id,point)));
- const fill=$('group-fill');if(req.strategy==='funding_only'){const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';fill.replaceChildren(o);fill.disabled=true}else{fill.replaceChildren(...[...$('cfill').options].map(o=>o.cloneNode(true)));fill.disabled=false;fill.value=[...fill.options].some(o=>o.value===req.fill)?req.fill:'next_open'}
+ const fill=$('group-fill');if(req.strategy==='funding_only'){const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';fill.replaceChildren(o);fill.disabled=true}else{fill.replaceChildren(...[...$('cfill').options].map(o=>o.cloneNode(true)));fill.disabled=false;fill.value=[...fill.options].some(o=>o.value===req.fill)?req.fill:sharedPriceFill}
 }
 function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedInputs()))sharedDrafts.set(sharedStrategy,old);
  const chosen=$('group-strategy').value,name=chosen==='mr'?sharedMR:chosen;
@@ -525,7 +529,7 @@ function refreshGroupProfile(delay=140){if(!sharedStrategy||!checked.size)return
   }catch(e){if(version===profileVersion){profileKey='';paintGroup(null,'Не удалось рассчитать светофор группы: '+e.message,'unavailable')}}finally{if(version===profileVersion)profileController=null}
  },delay)}
 function syncEditorScope(){const on=checked.size>0;$('focus-editor').hidden=on;$('cohort-editor').hidden=!on;
- if(on){if(!sharedStrategy){const req=currentRequest();sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}}
+ if(on){if(!sharedStrategy){const req=currentRequest();sharedPriceFill=focusedPriceFill(req);sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}}
  else{stopProfile();sharedStrategy=null;sharedDrafts.clear();hidePlateauTip()}}
 function sharedEdited(delay){cancelSearch();clearGroup();tuneState('');refreshGroupProfile(delay);syncChartScope(delay)}
 function commonPlan(own,target,key){let req=own,common=false;
@@ -535,7 +539,9 @@ function commonPlan(own,target,key){let req=own,common=false;
  return {req,common,key:proofPlanKey(req)}}
 function chartPlan(){const target=leaves.get(leafId)?.target,plan=commonPlan(currentRequest(),target,leafId),note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${plan.common?'общие параметры':'параметры окна'}`;return plan}
 function syncChartScope(delay=0){const plan=chartPlan();if(chartKey!==plan.key||(!checked.size&&!chartWithLamps))scheduleShow(delay);else if(!checked.size&&payload?.plateau)paintPlateaus(payload.plateau);refreshWindowReadings()}
-function adoptSearchProfile(result){if(!sharedStrategy||!result.selected_parameters)return;for(const n of sharedInputs())if(n.dataset.axis in result.selected_parameters)n.value=result.selected_parameters[n.dataset.axis];
+function adoptSearchProfile(result){if(!sharedStrategy||!result.selected_parameters)return;
+ if(result.selected_strategy&&result.selected_strategy!==sharedStrategy){sharedDrafts.set(sharedStrategy,sharedRequest());renderSharedEditor({strategy:result.selected_strategy,parameters:result.selected_parameters,fill:result.selected_fill})}
+ else for(const n of sharedInputs())if(n.dataset.axis in result.selected_parameters)n.value=result.selected_parameters[n.dataset.axis];
  stopProfile();if(result.plateau&&settingsKey(result.group)===settingsKey()){profileKey=groupSpec().key;showGroupReading(result.plateau)}else refreshGroupProfile(0)}
 
 function invalidateProof(fromSearch=false){
@@ -554,25 +560,28 @@ function emptyProof(message){
 function clearGroup(){$('batch-result').hidden=true;$('batch-result').replaceChildren()}
 function pp(v){return v==null?'нет оценки':`${signed(v)} п.п./год`}
 function displayGroup(result){const g=result.group;if(!g)return;const root=$('batch-result');root.hidden=false;root.replaceChildren();const label=g.result_basis==='validation'?'проверка':'обучение';
- const heading=el('summary','',`Последний подбор${g.execution_reference?' · справочно':''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
+ const heading=el('summary','',`Последний подбор${result.selected_strategy?' · '+STRATEGY_RU[result.selected_strategy]:''}${g.execution_reference?' · справочно':''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
  if(g.execution_reference)root.append(el('div','result-warning','Справочный same-bar подбор: закрытие сигнального бара уже известно. Все оценки группы — ориентир, не проверка исполнимой доходности.'));
  root.append(el('div','group-note',`Среднее на обучении: ${pp(g.training_mean_pp)}. Вес каждого окна одинаков. Это независимые расчёты, не доходность портфеля. График относится к открытому окну; при отметках светофор относится ко всей группе. Годовые ставки пересчитаны по фактическим датам, в том числе для неполного года.`));
+ if(result.strategy_search)root.append(el('div','group-note',result.strategy_search.alternatives.map(a=>`${STRATEGY_RU[a.strategy]}: ${a.trial_count} испытаний · ${a.training_best_pp==null?'нет допустимого результата':pp(a.training_best_pp)}`).join(' · ')));
  if(result.selected_parameters)root.append(el('div','group-note','Общие параметры · '+Object.entries(result.selected_parameters).map(([k,v])=>`${PARAM_RU[k]}: ${fmt(v,Number.isInteger(v)?0:1)}`).join(' · ')));
  const table=el('table');table.append(th(['Окно','Обучение, п.п./год','Результат, п.п./год','Расчётный период']));for(const r of g.members){const tr=el('tr'),e=r.evaluation,range=e?.periods?.[e.result_basis];
   for(const text of [(r.target.universe==='calendar_native'?'Календарь · ':'Пара · ')+r.target.pair,r.training_annualized_excess_pp==null?'—':signed(r.training_annualized_excess_pp),e?.result.annualized_excess_pp==null?'—':signed(e.result.annualized_excess_pp),range?range.join(' — ')+(e.result.calendar_days?' · '+e.result.calendar_days+' кал. дн.':''):'—'])tr.append(el('td','',text));table.append(tr)}root.append(table);
  if(result.plateau){root.append(el('div','group-note','Устойчивость на обучении: '+Object.entries(result.plateau.fields).map(([k,v])=>`${PARAM_RU[k]}: ${v.score==null?'нет оценки':fmt(v.score,0)+'/100'}`).join(' · ')+'. Не влияет на выбор максимума.'))}}
 const PARAM_RU={lookback:'Окно',window:'Окно',entry_z:'Вход z',exit_z:'Выход z',threshold_pp:'Порог RUONIA'};
 function reviewExclusions(result){const d=$('compatibility'),rows=$('compatibility-list');rows.replaceChildren();for(const x of result.excluded)rows.append(el('li','',`${x.target.pair} — ${x.reason}`));
- $('compatibility-message').textContent=`Для стратегии «${STRATEGY_RU[sharedStrategy||activeStrategyName()]}» при этих условиях исполнения не подходят ${result.excluded.length} из ${checked.size} отмеченных окон. `+(result.remaining_count?`После снятия отметок в подборе останется ${result.remaining_count}.`:'Совместимых окон не останется. Подбор не запустится.');
+ $('compatibility-message').textContent=(result.strategy_search?`Ни одна из сравниваемых стратегий не может учесть ${result.excluded.length} из ${checked.size} отмеченных окон. `:`Для стратегии «${STRATEGY_RU[sharedStrategy||activeStrategyName()]}» при этих условиях исполнения не подходят ${result.excluded.length} из ${checked.size} отмеченных окон. `)+(result.remaining_count?`После снятия отметок в подборе останется ${result.remaining_count}.`:'Совместимых окон не останется. Подбор не запустится.');
  $('compatibility-yes').textContent=result.remaining_count?'Снять отметки и продолжить':'Снять отметки';d.showModal();return new Promise(resolve=>{resolveCompatibility=resolve})}
 function finishReview(yes){if(!$('compatibility').open)return;$('compatibility').close();const resolve=resolveCompatibility;resolveCompatibility=null;resolve?.(yes)}
 function invalidForm(){const n=activeInputs().find(n=>n.value===''||!n.validity.valid);return n?`Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`:''}
-async function startTuning(){const request=checked.size?sharedRequest():currentRequest(),validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
+function focusedPriceFill(req){return ['next_open','next_close','reference_same_bar'].includes(req.fill)?req.fill:formStates.get(formKey(leafId,'mean_reversion'))?.fill||'next_open'}
+function searchPriceFill(req){return checked.size&&req.strategy==='funding_only'?sharedPriceFill:focusedPriceFill(req)}
+async function startTuning(){const own=checked.size?sharedRequest():currentRequest(),request={...own,optimize_strategy:true,price_fill:searchPriceFill(own)},validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
  const explicit=checked.size>0;if(tuning)return;stopWindowReadings();if(!explicit)invalidateProof();
  const id=++searchVersion,fresh=()=>id===searchVersion,controller=new AbortController();searchController=controller;searchUsesChecks=explicit;tuning=true;tuneButton();setSearchProgress(true);status('');clearGroup();
  try{let result;
   while(fresh()){
-   const targets=[...checked].map(k=>leaves.get(k).target);tuneState(`Optuna: проверка допуска и поиск на обучении · окон: ${explicit?targets.length:1}…`);
+   const targets=[...checked].map(k=>leaves.get(k).target);tuneState(`Optuna: сравнение общих стратегий и параметров на обучении · окон: ${explicit?targets.length:1}…`);
    result=await api('/api/proof/optimize',{...request,...(explicit?{targets}:{})},controller.signal);if(!fresh())return;
    if(settingsKey(result.group||result.evaluation||result)!==settingsKey()){cancelSearch();void refreshGlobalSettings(true);tuneState('Настройки расчёта изменились. Запустите подбор заново.');return}
    if(result.status!=='selection_requires_confirmation')break;
@@ -584,7 +593,7 @@ async function startTuning(){const request=checked.size?sharedRequest():currentR
   if(!fresh())return;
   if(result.selected_parameters){for(const row of result.group.members){if(!row.selection)continue;const k=targetKey(row.target);formStates.set(formKey(k,row.selection.strategy),row.selection);if(k===leafId){if(universe==='pair_screen')fillStrategy(row.selection.strategy);else fillCalendarStrategies(row.selection.strategy);applyToForm(row.selection)}}}
   adoptSearchProfile(result);
-  const message=result.selected_parameters?`Применён лучший из проверенных вариантов на обучении: ${pp(result.group.training_mean_pp)} · окон: ${result.group.member_count} · испытаний: ${result.trial_count}.`:(result.reason||'Нет допустимого результата. Параметры сохранены.');
+  const message=result.selected_parameters?`Применён лучший из проверенных вариантов${result.selected_strategy?' · '+STRATEGY_RU[result.selected_strategy]:''} на обучении: ${pp(result.group.training_mean_pp)} · окон: ${result.group.member_count} · испытаний: ${result.trial_count}.`:(result.reason||'Нет допустимого результата. Параметры сохранены.');
   // Refresh the open proof even when it was not in the cohort; do not apply another row's settings to it.
   await show(true);if(!fresh())return;displayGroup(result);tuneState(message,result.group?.training_mean_pp>0);
  }catch(e){if(fresh())tuneState(`Подбор недоступен: ${e.message}`)}finally{if(fresh()){tuning=false;searchController=null;setSearchProgress(false);tuneButton();if(payload)paintPlateaus(payload.plateau)}}
@@ -621,7 +630,6 @@ function renderPeriodResult(){const e=payload.evaluation,r=e.result,p=e.periods,
  const rate=el('span','',`Годовых сверх LQDT: ${pp(r.annualized_excess_pp)}`);rate.title=`База — весь расчётный счёт: на старте ${fmt(e.initial_capital_rub,2)} ₽ на окно, на проверке — стоимость счёта на конец обучения. Вычитается годовая доходность LQDT за те же даты.`;head.append(rate);
  const period=(label,dates,count)=>`${label}: ${dates.join(' — ')} (${count} набл.)`;
  elRoot.replaceChildren(head,el('div','result-meta',period('Обучение',p.training,n.training)+' · '+(check?period(`Проверка ${pct(e.validation_percent)}`,p.validation,n.validation):'Проверка отключена (0%)')));
- for(const text of [payload.execution_reference?'Справочный режим: цена закрытия сигнального бара уже известна. Это ориентир, не проверка исполнимой доходности.':''].filter(Boolean))elRoot.append(el('div','result-warning',text));
  $('chart-scope').textContent=check?'Вся история · пунктир — начало проверки':'Вся история · обучение';
 }
 function rowPeriod(r){const v=payload.evaluation.periods.validation;return r.volume_eligible===false?'journal_only':v&&r.date>=v[0]?'validation':'training'}

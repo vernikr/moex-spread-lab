@@ -133,9 +133,8 @@ def run(browser, url):
     ready(pg, "training")
     matches_chart()
     assert pg.evaluate("payload.execution_reference")
-    expect(pg.locator("#period-result")).to_contain_text(
-        "не проверка исполнимой доходности"
-    )
+    expect(pg.locator("#period-result .result-warning")).to_have_count(0)
+    assert pg.evaluate("payload.execution_reference")
     assert pg.evaluate("payload.trades.every(t=>t.signal.date===t.entry.date)")
     cny = "pair_screen||CNYRUBF/CRZ6"
     row(cny).locator("input").check()

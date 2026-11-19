@@ -182,9 +182,8 @@ def run(browser, url):
 
     with post(pair, "proof/plateau"):
         pair.locator("#group-fill").select_option("reference_same_bar")
-    expect(pair.locator("#period-result")).to_contain_text(
-        "не проверка исполнимой доходности"
-    )
+    expect(pair.locator("#period-result .result-warning")).to_have_count(0)
+    assert pair.evaluate("payload.execution_reference")
     pair.locator("#toggle-summary").click()
     with pair.expect_download() as download:
         pair.locator("#download-csv").click()

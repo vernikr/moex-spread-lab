@@ -73,3 +73,56 @@ def screen_failures(root, *, thin_calendar=False):
                 6000  # ~12k actual margin fits; 3× margin plus buffers fails.
             )
     path.write_text(json.dumps(doc))
+
+
+def funding_winner(root):
+    """Flat leg prices and positive published funding: MR idle, funded carry profitable.
+
+    Deliberately synthetic choice-of-strategy fixture, never market evidence.
+    """
+    two_calendar_windows(root)
+    for secid in ("CNYRUBF", "CRZ6"):
+        path = root / f"data/w1/candles/{secid}_1d.json"
+        data = json.loads(path.read_text())
+        for row in data["rows"]:
+            for key in ("open", "high", "low", "close"):
+                row[key] = 13.0
+        path.write_text(json.dumps(data))
+        for path in (root / "data/carry-history-cache").glob(f"{secid}-*.json"):
+            data = json.loads(path.read_text())
+            block = data["payload"]["history"]
+            for row in block["data"]:
+                for key in ("SETTLEPRICE", "PREVSETTLEPRICE", "LASTTRADEPRICE"):
+                    if key in block["columns"]:
+                        row[block["columns"].index(key)] = 13.0
+            path.write_text(json.dumps(data))
+
+
+def rising_calendar(root):
+    """Synthetic dividend-free rising spread: delayed convergence can beat idle MR."""
+    paths = {
+        s: next((root / "data/spread-history-cache").glob(f"{s}-*.json"))
+        for s in ("SRM3", "SRU3", "SRM3SRU3")
+    }
+    docs = {s: json.loads(p.read_text()) for s, p in paths.items()}
+    near = docs["SRM3"]["payload"]["history"]
+    reference = {
+        r[near["columns"].index("TRADEDATE")]: r[near["columns"].index("SETTLEPRICE")]
+        for r in near["data"]
+    }
+    for secid in ("SRU3", "SRM3SRU3"):
+        block = docs[secid]["payload"]["history"]
+        columns = block["columns"]
+        i = 0
+        for row in block["data"]:
+            day = row[columns.index("TRADEDATE")]
+            if day not in reference:
+                continue
+            if day >= "2023-03-17":
+                i += 1
+            spread = 50 + i * 10
+            for field in ("OPEN", "HIGH", "LOW", "CLOSE", "SETTLEPRICE"):
+                row[columns.index(field)] = (
+                    (reference[day] + spread) if secid == "SRU3" else spread
+                )
+        paths[secid].write_text(json.dumps(docs[secid]))

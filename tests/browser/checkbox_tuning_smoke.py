@@ -115,27 +115,39 @@ def run(browser, url):
         float(page.locator("#centry").input_value())
         == group["selected_parameters"]["entry_z"]
     )
-    # Funding on the pair is incompatible with the offscreen calendar. Cancel preserves both.
+    # Strategy search can replace an incompatible editor strategy with common MR;
+    # it must not discard a valid calendar just to keep funding carry.
     open_branch(PAIR_B)
     change_strategy("#group-strategy", "funding_only")
+    common = tuned(page.locator("#auto-tune"))
+    assert common["selected_strategy"] == "mean_reversion"
+    assert page.evaluate("checked.size") == 2
+    expect(page.locator("#group-strategy")).to_have_value("mr")
+    # A universally data-missing window still requires explicit cancel/confirm.
+    missing = page.evaluate(
+        "branches.get('pair_screen|CNYRUBF').children.find(l=>!l.enabled).key"
+    )
+    missing_pair = page.evaluate("key=>leaves.get(key).target.pair", missing)
+    leaf(missing).locator("input").check()
     review()
-    expect(page.locator("#compatibility-list")).to_contain_text("SRH3/SRM3")
-    expect(page.locator("#compatibility-message")).to_contain_text("останется 1")
+    expect(page.locator("#compatibility-list")).to_contain_text(missing_pair)
+    expect(page.locator("#compatibility-message")).to_contain_text("останется 2")
     expect(branch(CAL_B).locator("input")).to_be_checked()
     attempts = len(searches)
     page.keyboard.press("Escape")
     expect(page.locator("#compatibility")).not_to_be_visible()
     expect(page.locator("#tune-state")).to_contain_text("Отметки не изменены")
-    assert len(searches) == attempts and page.evaluate("checked.size") == 2
+    assert len(searches) == attempts and page.evaluate("checked.size") == 3
     review()
     result = tuned(page.locator("#compatibility-yes"))
-    assert result["group"]["member_count"] == 1
-    expect(branch(CAL_B).locator("input")).not_to_be_checked()
+    assert result["group"]["member_count"] == 2
+    expect(leaf(missing).locator("input")).not_to_be_checked()
     expect(leaf(PAIR).locator("input")).to_be_checked()
-    assert all(t["universe"] == "pair_screen" for t in searches[-1]["targets"])
-    # All checked rows incompatible. Confirming must not immediately tune the unchecked focus.
-    leaf(PAIR).locator("input").uncheck()
-    branch(CAL_B).locator("input").check()
+    # A partial tri-state is not checked; normalize it before Playwright unchecks.
+    # Confirming an all-unavailable checked set must not then tune the unchecked focus.
+    all_top.check()
+    all_top.uncheck()
+    leaf(missing).locator("input").check()
     review()
     expect(page.locator("#compatibility-message")).to_contain_text("не останется")
     assert page.evaluate("checked.size") == 1
@@ -169,7 +181,7 @@ def run(browser, url):
         branch(CAL_B).locator("button").click()
     ready(page, "validation")
     expect(page.locator("#clookback")).to_have_value(
-        str(off["selected_parameters"]["lookback"])
+        str(off["selected_parameters"]["window"])
     )
     # A late response from the previous cohort cannot change inputs or resurrect its summary.
     original = page.locator("#clookback").input_value()

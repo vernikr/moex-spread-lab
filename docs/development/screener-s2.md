@@ -16,15 +16,7 @@ In the original delivery, confirmation was calculated only for the chosen neighb
 
 ## Operating boundary
 
-Run as before:
-
-```bash
-uv run python -m moex_spread_lab.cli screener --port 8765
-```
-
-Open `http://127.0.0.1:8765/` on the workstation. The server binds only to loopback and never downloads data. Data preparation follows [S1](screener-s1.md); new pairs require daily ISS candles in `data/w1/candles-screen/`, and their perpetual funding variants require cached FORTS EOD history in `data/carry-screen-history-cache/`. The CLI `carry-study` keeps non-CNY funding caps unmodelled rather than borrowing CNY rules.
-
-The table's annualization uses each pair's own dated interval and therefore does not make all rows directly comparable. Short history withholds annualization. The optimizer intersects selected pairs' dates, but **does not sum stand-alone curves, share capital, model concurrent positions or claim basket performance**. That remains S4. `SBERF/SRZ6` is a perpetual/dated pair; the positive near/far SBRF calendar reference has not been reproduced and remains S3. No broker, VPS, Telegram or live trading is enabled.
+See the [local startup command](../../README.md#run-locally) and [input preparation](screener-s1.md). S2 is now API-only. Its table annualizes each pair over its own interval; the legacy optimizer intersects dates but does not share capital. [S4](../stages/08-planning.md#next-stage-9-delivery-slices) is the shared-capital workstream, distinct from the [SBRF reference audit](profit-audit.md).
 
 ## Acceptance evidence
 

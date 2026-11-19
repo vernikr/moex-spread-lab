@@ -30,7 +30,6 @@ from .proof_signals import (
     attach_entry_levels,
     pair_fill,
 )
-from .screener import _normalized_series
 from .w0 import W0Error
 
 PROOF_SCHEMA = "execution-proof.v1"
@@ -70,6 +69,10 @@ def _benchmark_marks(path: Path) -> tuple[list[str], dict[str, float]]:
 def _mark(dates: list[str], prices: dict[str, float], day: str) -> float:
     index = max(0, bisect_right(dates, day) - 1)
     return prices[dates[index]]
+
+
+def _positive_pair_volume(row: dict[str, Any]) -> bool:
+    return all(value is not None and float(value) > 0 for value in (row.get("near_volume"), row.get("far_volume")))
 
 
 def _cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
@@ -383,31 +386,17 @@ class ProofService:
 
         return replay
 
-    # ------------------------------------------------------ mean reversion
-
     def _price_inputs(self, inputs, pair, funding, validation_percent):
-        pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-        book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
-        series = _normalized_series(
-            inputs.candles(pair_id, near),
-            inputs.candles(pair_id, far),
-            inputs.benchmark,
-            inputs.contracts,
-            near=near,
-            far=far,
-            prior_benchmark_dates=book.no_clearing_dates if book else (),
-        )
-        analysis_rows = [
-            row for row in series["rows"]
-            if row.get("near_volume") is not None and row.get("far_volume") is not None
-            and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0
-        ]
+        from .screener_app import pair_price_inputs
+
+        series, book = pair_price_inputs(inputs, pair, funding)
+        analysis_rows = [row for row in series["rows"] if _positive_pair_volume(row)]
         if len(analysis_rows) < 2:
             raise W0Error("fewer than two positive-volume common observations")
         if book is None:
             return series, analysis_rows, None, {}
         window = FundingWindow(book, (r["date"] for r in analysis_rows), validation_percent)
-        hashes = funding.source(pair_id, near)["source"]["raw_response_sha256"]
+        hashes = funding.source(pair["pair_id"], pair["near"])["source"]["raw_response_sha256"]
         return series, analysis_rows, window, {"near_funding_history_sha256": hashes}
 
     def _mean_reversion_proof(
@@ -503,8 +492,7 @@ class ProofService:
                     "far_volume": row.get("far_volume"),
                     "spread_volume": None,
                     "spread_trades": None,
-                    "volume_eligible": row.get("near_volume") is not None and row.get("far_volume") is not None
-                    and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0,
+                    "volume_eligible": _positive_pair_volume(row),
                     "days_to_near_expiry": None,
                     "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in marks else None,
                     "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
@@ -604,11 +592,17 @@ class ProofService:
         leg_contracts = _load_contracts_for_side_cost(inputs.contracts, near, far)
         reference_side = side_cost(tariff, [(leg_contracts[near], ref_near), (leg_contracts[far], ref_far)], 1)
         entry_costs = {key: round(value * quantity, 2) for key, value in reference_side.items()}
-        exit_costs = dict(entry_costs)
 
         signal_reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])}
         daily_rows = report["daily"]
         daily_by_date = {row["date"]: row for row in daily_rows}
+
+        def settlement_fill(day, costs):
+            row = daily_by_date[day]
+            near_price, far_price = row["near_settle"], row["far_settle"]
+            far_value = far_price * far_mult
+            spread = round(near_price * near_mult - far_value, 8)
+            return self._fill_block(day, spread, near_price, far_price, daily_by_date, costs, far_value=far_value)
 
         trades: list[dict[str, Any]] = []
         last_date = daily_rows[-1]["date"]
@@ -616,35 +610,12 @@ class ProofService:
             open_at_end = row["status"] == "open_at_data_end_no_executable_exit"
             entry_date = row["entry_execution_date"]
             exit_date = row["exit_execution_date"] or last_date
-            entry_row = daily_by_date[entry_date]
-            exit_row = daily_by_date[exit_date]
-            entry_fill = {
-                "spread_fill": round(entry_row["near_settle"] * near_mult - entry_row["far_settle"] * far_mult, 8),
-                "near_price": entry_row["near_settle"],
-                "far_price": entry_row["far_settle"],
-            }
-            exit_fill = {
-                "spread_fill": round(exit_row["near_settle"] * near_mult - exit_row["far_settle"] * far_mult, 8),
-                "near_price": exit_row["near_settle"],
-                "far_price": exit_row["far_settle"],
-            }
-            side = "short_spread"
-            entry = self._fill_block(
-                entry_date, entry_fill["spread_fill"], entry_fill["near_price"], entry_fill["far_price"],
-                daily_by_date, entry_costs, far_value=entry_fill["far_price"] * far_mult,
-            )
-            exit_ = self._fill_block(
-                exit_date, exit_fill["spread_fill"], exit_fill["near_price"], exit_fill["far_price"],
-                daily_by_date, {} if open_at_end else exit_costs, far_value=exit_fill["far_price"] * far_mult,
-            )
-            if open_at_end:
-                cost_rub = float(row["transaction_costs"])
-            else:
-                cost_rub = float(row["transaction_costs"])
+            entry = settlement_fill(entry_date, entry_costs)
+            exit_ = settlement_fill(exit_date, {} if open_at_end else entry_costs)
             trades.append(
                 self._trade_block(
                     number=number,
-                    side=side,
+                    side="short_spread",
                     quantity=quantity,
                     signal={
                         "kind": "funding",
@@ -661,7 +632,7 @@ class ProofService:
                     ),
                     margin_pair=margin_pair,
                     gross_rub=float(row["gross_pnl"]),
-                    costs_rub=cost_rub,
+                    costs_rub=float(row["transaction_costs"]),
                     net_rub=float(row["net_pnl"]),
                     benchmark_dates=benchmark_dates,
                     benchmark_prices=benchmark_prices,
@@ -704,7 +675,7 @@ class ProofService:
                 }
             )
 
-        ledger = self._funding_ledger(report["daily"], trades, quantity)
+        ledger = self._funding_ledger(report["daily"], trades)
         return self._pair_payload(
             pair=pair,
             strategy="funding_only",
@@ -863,7 +834,7 @@ class ProofService:
                 mark += sign * quantity * (
                     (row["near"] - entry["near_price"]) * near_mult - (row["far"] - entry["far_price"]) * far_mult
                 )
-                position = {"sign": sign, "near": row["near"], "far": row["far"], "number": entering["number"]}
+                position = {"sign": sign, "near": row["near"], "far": row["far"]}
             funding = float(row.get("funding_rub") or 0.0)
             mark += funding
             cumulative += mark - cost
@@ -885,7 +856,6 @@ class ProofService:
         self,
         daily_rows: list[dict[str, Any]],
         trades: list[dict[str, Any]],
-        quantity: int,
     ) -> list[dict[str, Any]]:
         by_entry = {trade["entry"]["date"]: trade for trade in trades}
         by_exit = {trade["exit"]["date"]: trade for trade in trades}
@@ -948,17 +918,12 @@ class ProofService:
         volumes = [
             min(row["near_volume"], row["far_volume"])
             for row in series_rows
-            if row.get("near_volume") is not None and row.get("far_volume") is not None
-            and float(row["near_volume"]) > 0 and float(row["far_volume"]) > 0
+            if _positive_pair_volume(row)
         ]
         min_leg_volume = min(volumes) if volumes else None
-        trade_volume_rule = (
-            all(
-                min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
-                for trade in trades for side in ("entry", "exit")
-            )
-            if trades
-            else True
+        trade_volume_rule = all(
+            min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
+            for trade in trades for side in ("entry", "exit")
         )
         near_group = CONTRACT_GROUP.get(near)
         far_group = CONTRACT_GROUP.get(far)

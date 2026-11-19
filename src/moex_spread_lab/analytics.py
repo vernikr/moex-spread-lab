@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from bisect import bisect_left
 from copy import deepcopy
@@ -13,7 +12,7 @@ from typing import Any
 
 from .costs import COST_COMPONENTS, COST_SCHEMA, side_cost
 from .portfolio import lqdt_overlay_values
-from .w0 import W0Error
+from .w0 import W0Error, read_hashed_json
 
 ANALYTICS_SCHEMA = "analytical-baseline.v1"
 REQUIRED_COST_COMPONENTS = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
@@ -100,17 +99,6 @@ def _validate_cost_profile(profile: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _read_json(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        raw = path.read_bytes()
-        value = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AnalyticsError(f"cannot read JSON input {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise AnalyticsError(f"JSON input is not an object: {path}")
-    return value, hashlib.sha256(raw).hexdigest()
-
-
 def _number(value: Any, field: str, *, positive: bool = False) -> float:
     if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise AnalyticsError(f"{field} must be a finite number")
@@ -168,11 +156,11 @@ def _date_key(value: Any, field: str) -> str:
 
 
 def load_contracts(path: Path, near: str, far: str) -> tuple[dict[str, Any], str]:
-    payload, digest = _read_json(path)
+    payload, digest = read_hashed_json(path, error=AnalyticsError)
     instruments = {row.get("secid"): row for row in payload.get("instruments", []) if isinstance(row, dict)}
     historical_path = Path(path).parent / "historical-contracts.json"
     if historical_path.is_file():
-        historical, historical_digest = _read_json(historical_path)
+        historical, historical_digest = read_hashed_json(historical_path, error=AnalyticsError)
         instruments.update({row.get("secid"): row for row in historical.get("instruments", []) if isinstance(row, dict)})
         digest = hashlib.sha256(f"{digest}:{historical_digest}".encode("ascii")).hexdigest()
     selected = {}
@@ -201,7 +189,7 @@ def load_contracts(path: Path, near: str, far: str) -> tuple[dict[str, Any], str
 
 
 def _load_candles(path: Path, secid: str, interval: int) -> tuple[dict[str, dict[str, Any]], str]:
-    payload, digest = _read_json(path)
+    payload, digest = read_hashed_json(path, error=AnalyticsError)
     if payload.get("schema_version") != "iss-candles.v1" or payload.get("secid") != secid:
         raise AnalyticsError(f"unsupported candle input for {secid}: {path}")
     if payload.get("interval") != interval:
@@ -232,7 +220,7 @@ def _load_candles(path: Path, secid: str, interval: int) -> tuple[dict[str, dict
 
 
 def _load_benchmark(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
-    payload, digest = _read_json(path)
+    payload, digest = read_hashed_json(path, error=AnalyticsError)
     if payload.get("schema_version") != "lqdt-lineage.v1":
         raise AnalyticsError("unsupported LQDT benchmark schema")
     result = {}
@@ -640,8 +628,3 @@ def run_mean_reversion_baseline(
         "daily": daily,
         "input_provenance": series["provenance"],
     }
-
-
-def write_analytics(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

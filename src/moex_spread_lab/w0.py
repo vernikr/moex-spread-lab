@@ -60,6 +60,19 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def read_hashed_json(
+    path: Path, *, error: type[W0Error], label: str = "JSON input",
+) -> tuple[dict[str, Any], str]:
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise error(f"cannot read {label} {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise error(f"{label} is not an object: {path}")
+    return value, sha256_bytes(raw)
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

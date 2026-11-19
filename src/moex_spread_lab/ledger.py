@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .w0 import W0Error
+from .w0 import W0Error, read_hashed_json
 
 
 LEDGER_SCHEMA = "execution-ledger.v1"
@@ -16,17 +14,6 @@ LEDGER_SCHEMA = "execution-ledger.v1"
 
 class LedgerError(W0Error):
     """Raised when an analytical execution ledger cannot be rebuilt safely."""
-
-
-def _read_json(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        raw = path.read_bytes()
-        value = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise LedgerError(f"cannot read JSON input {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise LedgerError(f"JSON input is not an object: {path}")
-    return value, hashlib.sha256(raw).hexdigest()
 
 
 def _timestamp(value: Any, field: str) -> str:
@@ -136,7 +123,7 @@ def rebuild_projection(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_ledger(baseline_path: Path) -> dict[str, Any]:
-    baseline, baseline_hash = _read_json(baseline_path)
+    baseline, baseline_hash = read_hashed_json(baseline_path, error=LedgerError)
     if baseline.get("schema_version") != "analytical-baseline.v1":
         raise LedgerError("unsupported analytical baseline schema")
     rows = baseline.get("daily")
@@ -256,8 +243,3 @@ def build_ledger(baseline_path: Path) -> dict[str, Any]:
         },
     }
     return result
-
-
-def write_ledger(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

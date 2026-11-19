@@ -1,6 +1,10 @@
+import json
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
-from io import BytesIO
+from io import BytesIO, StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -13,9 +17,49 @@ from moex_spread_lab.benchmark import (
     fetch_moex_history,
     rate_rows_to_price,
 )
+from moex_spread_lab.cli import main
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_lineage_cli_reuses_cache_but_refreshes_unavailable_ruonia(self):
+        first, last = "2020-01-01", "2020-01-03"
+        common = {"from": first, "till": last, "raw_response_hashes": ["fixture"]}
+        with TemporaryDirectory() as directory:
+            cache = Path(directory)
+            output = cache / "out" / "lineage.json"
+            for ticker in ("FXMM", "VTBM", "LQDT"):
+                rows = [dict(date=d, price=1.01, board="TQTF", source_ticker=ticker,
+                             source_kind="observed") for d in (first, last)]
+                (cache / f"{ticker}.json").write_text(json.dumps({
+                    **common, "source": ticker, "board": "TQTF", "page_count": 1, "rows": rows,
+                }))
+            rates = [{"date": d, "rate": 6} for d in (first, last)]
+            (cache / "RUSFAR.json").write_text(json.dumps({
+                **common, "source": "RUSFAR", "page_count": 1, "rows": rates,
+            }))
+            ruonia = {**common, "source": "CBR", "request_count": 1, "methods": ["fixture"]}
+            (cache / "CBR_RUONIA.json").write_text(json.dumps({**ruonia, "status": "unavailable", "rows": []}))
+            argv = ["cli", "benchmark-lineage", "--from-date", first, "--till-date", last,
+                    "--cache-dir", directory, "--output", str(output)]
+            with (
+                patch("sys.argv", argv), redirect_stdout(StringIO()),
+                patch("moex_spread_lab.benchmark.fetch_moex_history") as moex,
+                patch("moex_spread_lab.benchmark.fetch_rusfar_rates") as rusfar,
+                patch("moex_spread_lab.benchmark.fetch_cbr_ruonia_rates",
+                      return_value={**ruonia, "status": "available", "rows": rates}) as cbr,
+            ):
+                self.assertEqual(main(), 0)
+                original = output.read_bytes()
+                self.assertEqual(main(), 0)
+                self.assertEqual(output.read_bytes(), original)
+            moex.assert_not_called()
+            rusfar.assert_not_called()
+            cbr.assert_called_once_with(first, last, delay_seconds=0.1)
+            result = json.loads(original)
+            self.assertEqual(result["missing_sources"], [])
+            self.assertEqual(result["source_reports"]["LQDT"]["board_row_counts"], {"TQTF": 2})
+            self.assertEqual(result["source_reports"]["CBR_RUONIA"]["methods"], ["fixture"])
+
     def test_rate_proxy_compounds_over_elapsed_days(self):
         rows = rate_rows_to_price(
             [{"date": "2020-01-01", "rate": 10}, {"date": "2020-01-02", "rate": 10}],

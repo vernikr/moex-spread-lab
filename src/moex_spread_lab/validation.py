@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
-from .w0 import W0Error
+from .w0 import W0Error, read_hashed_json
 
 
 VALIDATION_SCHEMA = "validation-report.v1"
@@ -15,17 +13,6 @@ VALIDATION_SCHEMA = "validation-report.v1"
 
 class ValidationError(W0Error):
     """Raised when a W7 report cannot be built from the supplied artifacts."""
-
-
-def _read_json(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        raw = path.read_bytes()
-        value = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"cannot read JSON input {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ValidationError(f"JSON input is not an object: {path}")
-    return value, hashlib.sha256(raw).hexdigest()
 
 
 def _round(value: float) -> float:
@@ -98,7 +85,7 @@ def _trade_concentration(baseline: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sensitivity(path: Path) -> dict[str, Any]:
-    report, digest = _read_json(path)
+    report, digest = read_hashed_json(path, error=ValidationError)
     if report.get("schema_version") != "analytical-baseline.v1":
         raise ValidationError(f"sensitivity is not analytical-baseline.v1: {path}")
     summary = report.get("summary", {})
@@ -128,8 +115,8 @@ def build_validation(
     train_fraction: float = 0.6,
     confirmation_fraction: float = 0.2,
 ) -> dict[str, Any]:
-    baseline, baseline_hash = _read_json(baseline_path)
-    ledger, ledger_hash = _read_json(ledger_path)
+    baseline, baseline_hash = read_hashed_json(baseline_path, error=ValidationError)
+    ledger, ledger_hash = read_hashed_json(ledger_path, error=ValidationError)
     if baseline.get("schema_version") != "analytical-baseline.v1":
         raise ValidationError("unsupported baseline schema")
     if ledger.get("schema_version") != "execution-ledger.v1":
@@ -209,8 +196,3 @@ def build_validation(
         },
     }
     return result
-
-
-def write_validation(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -42,126 +42,20 @@ The following pair-search slice adds a bounded, declared parameter grid, a trial
 - current ГО or tariff values silently backfilled into expired periods;
 - a claim that a free public endpoint permits unattended collection or redistribution.
 
-## Delivered W0–W7 foundation (retained)
+## Delivered W0–W7 foundation
 
-These are the original offline work-package contracts; their mechanics and exploratory implementations already exist. The next user-visible sequence is S1–S4 below. Each work package has a clear input/output contract and can be owned by an independent team. A package is not accepted through private implementation tests alone: it must pass the shared schema fixtures and produce provenance.
+See [W0](../development/w0.md), the [offline pipeline and replay command](../development/w1-w7.md) and the [analytical validation](../development/w7-validation.md). Fixtures verify mechanics, not live readiness. Production-facing acceptance still requires the following evidence:
 
-### W0 — Run and evidence manifest
-
-**Purpose:** make every later result reproducible before adding market logic.
-
-**Deliverables:**
-
-- pinned module/artifact manifest;
-- source request manifest and rights-status field;
-- run ID, configuration hash and trial counter;
-- fixture loader that works without network access;
-- redaction and secret-scanning check.
-
-**Gate:** the same fixture and manifest produce the same normalized output after a clean restart.
-
-### W1 — Catalog and price-role intake
-
-**Purpose:** build the smallest trustworthy input set.
-
-**Deliverables:**
-
-- dynamic ISS adapter pattern: board discovery, aliases, pagination and explicit fields;
-- raw response retention where permitted, with content hash and receipt time;
-- stable contract identity, expiry and source-vintage checks;
-- separate settlement, last-trade close, analytical close, bid/ask and live-mark fields;
-- candidate-pair registry and an explicit “not admitted” outcome.
-
-**Gate:** no reused short code, missing required field or current snapshot is accepted as historical evidence without an explicit status.
-
-### W2 — Corporate-action and dividend evidence
-
-**Purpose:** prevent dividend and split information from leaking into historical decisions.
-
-**Deliverables:**
-
-- official-first corporate-action adapter;
-- source roles, availability vintages and conflict status;
-- reviewed seed fixture and conflicting-source fixture;
-- split/adjustment lineage;
-- derived price-gap check kept separate from factual event dates.
-
-**Gate:** an event without reliable `available_at` cannot affect a historical signal. A price gap cannot overwrite the primary ex-date or amount.
-
-### W3 — Domain normalization and spread economics
-
-**Purpose:** turn source observations into typed, unit-safe domain inputs.
-
-**Deliverables:**
-
-- contract terms, lot, tick, multiplier, expiry and settlement type;
-- calendar-spread direction and leg mapping;
-- raw and derived spread series;
-- carry inputs, dividend window treatment and reference-rate inputs where applicable;
-- explicit missingness and quality statuses;
-- cost profiles with separate exchange, clearing, broker, spread/slippage, funding and exit components.
-
-**Gate:** unit checks, sign checks, integer quantities and missing-cost failures pass. Unknown cost is never treated as zero.
-
-### W4 — Delayed virtual execution
-
-**Purpose:** model the user's manual workflow rather than filling at signal time.
-
-**Deliverables:**
-
-- signal timestamp and simulated decision timestamp;
-- fresh revalidation of both legs, session, quote age, costs, capital and margin;
-- native calendar-spread scenario and independent-two-leg scenario where both are relevant;
-- conservative no-quote, stale, partial-fill, one-leg and unknown-outcome paths;
-- explicit exposure-increase, reduction and exit lifecycles.
-
-**Gate:** no candle midpoint or stale signal becomes a fill. Partial execution never becomes an invisible balanced position.
-
-### W5 — Portfolio and matched LQDT accounting
-
-**Purpose:** produce the single realistic portfolio and benchmark-relative ledger.
-
-**Deliverables:**
-
-- append-only portfolio events and rebuildable projections;
-- cash, reservations, positions, VM, costs, margin needs and funding events;
-- matched `B(t)` path and strategy-enabled `V(t)` path;
-- continuous `X`, `H`, `D`, cumulative shortfall and lifetime top-up usage;
-- no double-counting checks for internal transfers, LQDT return and futures P&L;
-- explicit unresolved attribution state.
-
-**Gate:** replay after restart produces identical events, projections and benchmark-relative metrics. Missing actual LQDT inputs block a clean account-level conclusion.
-
-### W6 — Baseline strategies and exposure ladder
-
-**Purpose:** test the economic idea before adding model complexity.
-
-**Deliverables:**
-
-- no-trade control;
-- fixed-parameter spread mean-reversion control;
-- carry/calendar hypothesis only when its reference rate, contract terms and dividend treatment are valid;
-- predeclared entry, add, reduce and exit ladder;
-- fixed quantities, aggregate cap, invalidation, cooldown and risk overrides;
-- complete trial registry, including rejected signals and parameter attempts.
-
-**Gate:** every increase passes the original RUB 30,000 envelope without emergency funding and the stress condition from the pilot policy. A failing minimum step means no trade or a revised, versioned hypothesis—not an invented smaller fill.
-
-### W7 — Validation and report
-
-**Purpose:** distinguish a useful result from an attractive historical artifact.
-
-**Deliverables:**
-
-- chronological train/test or walk-forward split;
-- for historical W7 reproduction only, the original sealed-period diagnostics; current screener policy is BR-10;
-- delay, cost and mark sensitivity;
-- null/sign-flip and synthetic-no-edge checks;
-- regime and contract-vintage breakdown where sample size permits;
-- result decomposition: gross movement, costs, funding, execution loss, LQDT opportunity cost and residual uncertainty;
-- list of all eligible, rejected, stale, unfilled and partially filled opportunities.
-
-**Gate:** no PASS conclusion if the result depends on a later event, a current specification, fabricated execution, incomplete costs or an unresolved benchmark path.
+| Wave | Gate |
+|---|---|
+| W0 | Same fixture and manifest yield identical normalized output after restart. |
+| W1 | Contract identity, price roles and source vintage are explicit; current snapshots are not historical evidence. |
+| W2 | Only available-at event evidence can enter signals; price gaps cannot overwrite primary dividend dates or amounts. |
+| W3 | Units, signs and integer quantities reconcile; unknown costs are not zero. |
+| W4 | Revalidate both legs at execution; stale/no quotes and partial or unknown outcomes are visible. |
+| W5 | Rebuild events and matched LQDT metrics after restart without double-counting cash flows or resetting risk state. |
+| W6 | Every exposure increase fits the original envelope without emergency funding and passes stress; otherwise no trade. |
+| W7 | No pass depends on later events, backfilled terms, fabricated fills, incomplete costs or an unresolved benchmark. The old sealed split is for W7 reproduction only. |
 
 ## Next Stage-9 delivery slices
 
@@ -171,8 +65,7 @@ These are new work packages within Stage 9, not a reset of W0–W7 or a new stag
 |---|---|---|
 | S1 — Visible local screener (delivered 2026-11-08) | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
 | S2 — Table-first common-parameter laboratory (delivered 2026-11-08) | One strategy/parameter set updates all compatible pair rows with percentage-only performance and risk. Checkboxes select independent pairs; a bounded grid around the current settings logs all trials and searches training dates for a stable positive neighborhood. | No isolated peak is promoted; an inconclusive/no-plateau result is valid. Report on the optional final validation share (0–50%; at 0% report on all training data). Previously viewed history is not a prospective test. Independent pair scores are not basket wealth. See [S2](../development/screener-s2.md). |
-| Execution-proof cohort extension (2026-11-18) | Separate focus from checked pair/calendar windows; select one common strategy and Optuna vector across independent windows (latest user clarification). | 80 trials per compatible family; selected price fill / native funding settlement; no smaller-cohort family fit. Confirmation before universally incompatible removals; fixed denominator, annualized excess maximum on training, advisory lamps and a separate BR-10 result. Newest-first compact periods and evidenced unavailable returns. [Contract and fixtures](../development/execution-proof.md). |
-| Global proof-capital revision (2026-11-18) | One saved capital hypothesis (default RUB 30,000) across independent windows; quieter result panels. | Per-entry funded quantities, both screens and LQDT scores use one request snapshot; cross-tab/cache/cohort regressions. Fixed risk/funding authority and archived studies stay unchanged. [Contract](../development/execution-proof.md#global-capital-and-quieter-results-2026-11-18). |
+| Execution proof (delivered) | Unified pair/calendar workbench with common-strategy search and the same starting-capital setting for each independent account. | [Proof contract and evidence](../development/execution-proof.md). |
 | S3 — SBRF reference reproduction (reproduced and not accepted 2026-11-08; see [profit audit](../development/profit-audit.md)) | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
 | S4 — Basket evaluation and search | Select a finite set of admitted pairs and compatible strategies, run concurrent proposals through one portfolio with frozen priority, shared RUB/margin/VM headroom and concentration checks; then search bounded per-pair and shared parameters on earlier periods only. | The basket `V/B/X/D` and risk path is not a sum of stand-alone curves; every blocked competing signal is logged. Selection across pairs/trials is included in the trial count and later-period checks. |
 | Later | Pair dossier, broader pool ranking, persistent experiment views, monitoring, Telegram, richer optimization methods and broker adapters. | Separate evidence, resource and live-authorization gates. |

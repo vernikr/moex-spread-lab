@@ -380,6 +380,17 @@ def _history_source(inputs: ScreenerInputs, pair_id: str, secid: str) -> dict[st
     )
 
 
+def pair_price_inputs(inputs: ScreenerInputs, pair: dict[str, str], funding: ProofFunding):
+    pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
+    book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
+    series = _normalized_series(
+        inputs.candles(pair_id, near), inputs.candles(pair_id, far),
+        inputs.benchmark, inputs.contracts, near=near, far=far,
+        prior_benchmark_dates=book.no_clearing_dates if book else (),
+    )
+    return series, book
+
+
 def build_result(
     inputs: ScreenerInputs,
     selection: dict[str, Any],
@@ -404,16 +415,7 @@ def build_result(
     evidence = None
 
     if strategy == "mean_reversion":
-        book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
-        series = _normalized_series(
-            inputs.candles(pair_id, near),
-            inputs.candles(pair_id, far),
-            inputs.benchmark,
-            inputs.contracts,
-            near=near,
-            far=far,
-            prior_benchmark_dates=book.no_clearing_dates if book else (),
-        )
+        series, book = pair_price_inputs(inputs, pair, funding)
         if through is not None:
             series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
@@ -421,7 +423,7 @@ def build_result(
             raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
         funding_swaprates: dict[str, float] = {}
         funding_source = None
-        if pair["family"] == "perpetual_quarterly_same_asset":
+        if book is not None:
             funding_source = funding.source(pair_id, near)
             requested_dates = [row["date"] for row in series["rows"]]
             evidence = FundingWindow(book, requested_dates, share).resolve(through)
@@ -438,16 +440,7 @@ def build_result(
             cash_in_lqdt=True,
             funding_swaprates=funding_swaprates,
         )
-        daily = [
-            {
-                "date": row["date"],
-                "V": row["strategy_value"],
-                "B": row["benchmark_value"],
-                "X": row["X"],
-                "D": row["D"],
-            }
-            for row in report["daily"]
-        ]
+        value_key = "strategy_value"
         summary = report["summary"]
         trades = summary["trade_count"]
         open_positions = 0
@@ -487,16 +480,7 @@ def build_result(
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
-        daily = [
-            {
-                "date": row["date"],
-                "V": row["strategy_value_proxy"],
-                "B": row["benchmark_value"],
-                "X": row["X"],
-                "D": row["D"],
-            }
-            for row in report["daily"]
-        ]
+        value_key = "strategy_value_proxy"
         summary = report["summary"]
         trades = summary["closed_trade_count"]
         open_positions = summary["open_trade_count"]
@@ -523,6 +507,10 @@ def build_result(
     if evidence:
         provenance.update(evidence.provenance)
         notes.extend(evidence.notes())
+    daily = [
+        {"date": row["date"], "V": row[value_key], "B": row["benchmark_value"], "X": row["X"], "D": row["D"]}
+        for row in report["daily"]
+    ]
     first, last = daily[0], daily[-1]
     initial = INITIAL_CAPITAL
     result = {
@@ -770,27 +758,21 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     from .proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
-                    if path == "/api/proof/windows":
+                    if path in {"/api/proof/windows", "/api/proof/plateau"}:
+                        from .proof_batch import checked_plateau
                         from .proof_windows import window_summaries
 
-                        while not store.proof_windows_lock.acquire(timeout=0.15):
-                            self._check_connected()
-                        try:
-                            result = window_summaries(store.proof, selection, check_cancelled=self._check_connected)
-                        finally:
-                            store.proof_windows_lock.release()
-                    elif path == "/api/proof/plateau":
-                        from .proof_batch import checked_plateau
-
-                        # A burst of edits can supersede outstanding requests. Serialize probes,
-                        # check for disconnection, and never lock out an explicit optimization.
-                        while not store.proof_profile_lock.acquire(timeout=0.15):
+                        if path == "/api/proof/windows":
+                            lock, read = store.proof_windows_lock, window_summaries
+                        else:
+                            lock, read = store.proof_profile_lock, checked_plateau
+                        while not lock.acquire(timeout=0.15):
                             self._check_connected()
                         try:
                             self._check_connected()
-                            result = checked_plateau(store.proof, selection, check_cancelled=self._check_connected)
+                            result = read(store.proof, selection, check_cancelled=self._check_connected)
                         finally:
-                            store.proof_profile_lock.release()
+                            lock.release()
                     elif search:
                         if not store.proof_search_lock.acquire(blocking=False):
                             self._json(409, {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."})
@@ -817,7 +799,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                         store.save_search(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return
-            except (ValueError, json.JSONDecodeError, W0Error, OSError) as exc:
+            except (ValueError, OSError) as exc:
                 self._json(400, {"error": str(exc)})
                 return
             self._json(200, result)

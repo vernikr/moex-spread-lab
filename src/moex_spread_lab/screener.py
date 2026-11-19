@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
+from functools import partial
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
-from .w0 import W0Error
+from .w0 import W0Error, read_hashed_json
 
 SCREEN_SCHEMA = "pair-screen.v1"
 SCREEN_PAIRS = (
@@ -31,15 +30,7 @@ def _round(value: float) -> float:
     return round(float(value), 8)
 
 
-def _read_json(path: Path) -> tuple[dict[str, Any], str]:
-    try:
-        raw = path.read_bytes()
-        payload = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ScreenError(f"cannot read screen input {path}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise ScreenError(f"screen input is not an object: {path}")
-    return payload, hashlib.sha256(raw).hexdigest()
+_read_json = partial(read_hashed_json, error=ScreenError, label="screen input")
 
 
 def _basis_daily_pnl(series: dict[str, Any]) -> list[float]:
@@ -267,8 +258,3 @@ def screen_pairs(
             "candidate_source": "R06_documented_flagship_same_asset_pairs",
         },
     }
-
-
-def write_screen(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

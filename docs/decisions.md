@@ -47,19 +47,6 @@ This revises the order of Stage-9 delivery, not the research/live boundary: firs
 
 ## Delegated operational defaults (not empirical findings)
 
-The user asked the assistant to choose reasonable interim-drawdown and maximum-top-up values and to proceed to stage 2. The assistant selected the following research/pilot defaults; full definitions and consequences are in [the versioned policy](risk/pilot-policy.md).
-
-| Control | Selected default | Status |
-|---|---|---|
-| Excess-curve peak drawdown | 5,000 warning; 10,000 action trigger | Assistant-selected under delegation; needs stress/execution validation. |
-| Cumulative LQDT shortfall | Act/exit at 10,000; outer boundary 15,000 | Uses the user’s range to leave an action buffer; not a guaranteed loss cap. |
-| Additional funding | 15,000 lifetime cumulative gross; no replenishment by withdrawals | Per-event user approval remains mandatory; no new exposure financed by rescue money. |
-| Gross contributed envelope | 45,000 including original 30,000 | Internal funding ceiling, not a notional/maximum-loss/broker-recourse limit. |
-| Review convention | 90 calendar days from activation | Provisional planning convention; no forced time exit or resets. |
-| Numeric reporting basis | Before investor-specific taxes, after trading/funding costs | Provisional implementation convention; show tax sensitivity pending R05 and actual tax facts. |
-
-User requested advancement to stage 2. Research reports, strategy approval, live activation and actual funding remain separate gates.
-
-Repository created private as `vernikr/moex-spread-lab`. Name chosen as a working label, not a user-specified product name.
+The user delegated interim drawdown and maximum top-up defaults and approved moving to Stage 2. The [versioned pilot policy](risk/pilot-policy.md) owns these provisional numbers, their review and reporting conventions, and the conditions for resuming.
 
 No user approval of a strategy, stack, legal interpretation, automated trading permission or VPS deployment is implied by these decisions.

@@ -1,9 +1,11 @@
-"""Command-line entry points for the W0 reproducibility package."""
+"""Command-line entry points for offline research."""
 
 from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
+from functools import partial
 from pathlib import Path
 
 from .iss import (
@@ -228,8 +230,7 @@ def main() -> int:
                 near_secid=args.near,
                 far_secid=args.far,
             )
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            write_json(args.output, result)
             print(json.dumps({
                 "admission_status": result["admission_status"],
                 "candidate": result["candidate"]["candidate_id"],
@@ -259,7 +260,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "iss-candles":
-            from .iss import fetch_candle_series, write_candle_series
+            from .iss import fetch_candle_series
 
             results = []
             for secid in args.secid:
@@ -278,7 +279,7 @@ def main() -> int:
                         retries=args.retries,
                     )
                     output = args.output_dir / f"{secid}_{result['timeframe']}.json"
-                    write_candle_series(result, output)
+                    write_json(output, result)
                     results.append({
                         "secid": secid,
                         "timeframe": result["timeframe"],
@@ -288,21 +289,20 @@ def main() -> int:
                         "output": str(output),
                     })
             summary = args.output_dir / "summary.json"
-            summary.parent.mkdir(parents=True, exist_ok=True)
-            summary.write_text(json.dumps({
+            write_json(summary, {
                 "schema_version": "iss-candle-intake-summary.v1",
                 "from": args.from_date,
                 "till": args.till_date,
                 "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
                 "series": results,
-            }, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            })
             print(json.dumps({"series": results, "summary": str(summary)}, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "iss-candle-pair-check":
-            from .iss import analyze_candle_pair, write_pair_quality
+            from .iss import analyze_candle_pair
 
             result = analyze_candle_pair(args.near, args.far)
-            write_pair_quality(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "timeframe": result["timeframe"],
                 "common_timestamp_count": result["synchronization"]["common_timestamp_count"],
@@ -318,97 +318,64 @@ def main() -> int:
                 fetch_moex_history,
                 fetch_rusfar_rates,
                 rate_rows_to_price,
-                write_benchmark,
             )
 
-            def cached_source(path: Path) -> dict | None:
+            def load_source(ticker, fetch, *, valid=lambda _: True):
+                path = args.cache_dir / f"{ticker}.json"
                 try:
-                    value = json.loads(path.read_text(encoding="utf-8"))
+                    cached = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                    return None
-                return value if isinstance(value, dict) else None
+                    cached = None
+                if (
+                    isinstance(cached, dict)
+                    and cached.get("from") == args.from_date
+                    and cached.get("till") == args.till_date
+                    and valid(cached)
+                ):
+                    return cached
+                source = fetch(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                return source
 
-            raw_sources = {}
-            source_reports = {}
-
-            def provenance(rows: list[dict]) -> dict:
-                boards = {}
-                for row in rows:
-                    board = row.get("board") or "not_applicable"
-                    boards[board] = boards.get(board, 0) + 1
+            def source_report(source, **details):
+                rows = source["rows"]
+                boards = Counter(row.get("board") or "not_applicable" for row in rows)
                 return {
+                    "source": source["source"],
+                    "row_count": len(rows),
+                    "raw_response_hashes": source["raw_response_hashes"],
                     "first_date": rows[0]["date"] if rows else None,
                     "last_date": rows[-1]["date"] if rows else None,
-                    "board_row_counts": boards,
+                    "board_row_counts": dict(boards),
+                    **details,
                 }
 
+            raw_sources, source_reports = {}, {}
             for ticker in ("FXMM", "VTBM", "LQDT"):
-                cache_path = args.cache_dir / f"{ticker}.json"
-                cached = cached_source(cache_path) if cache_path.exists() else None
-                if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
-                    source = cached
-                else:
-                    source = fetch_moex_history(ticker, args.from_date, args.till_date, delay_seconds=args.delay_seconds)
-                    cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    cache_path.write_text(json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                source = load_source(ticker, partial(fetch_moex_history, ticker))
                 raw_sources[ticker] = source["rows"]
-                source_reports[ticker] = {
-                    "source": source["source"],
-                    "board": source.get("board"),
-                    "page_count": source["page_count"],
-                    "row_count": len(source["rows"]),
-                    "raw_response_hashes": source["raw_response_hashes"],
-                    **provenance(source["rows"]),
-                }
+                source_reports[ticker] = source_report(source, board=source.get("board"), page_count=source["page_count"])
 
-            rusfar_cache = args.cache_dir / "RUSFAR.json"
-            cached = cached_source(rusfar_cache) if rusfar_cache.exists() else None
-            if cached and cached.get("from") == args.from_date and cached.get("till") == args.till_date:
-                rusfar_source = cached
-            else:
-                rusfar_source = fetch_rusfar_rates(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
-                rusfar_cache.parent.mkdir(parents=True, exist_ok=True)
-                rusfar_cache.write_text(json.dumps(rusfar_source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-            raw_sources["RUSFAR"] = rate_rows_to_price(rusfar_source["rows"], "RUSFAR")
-            source_reports["RUSFAR"] = {
-                "source": rusfar_source["source"],
-                "page_count": rusfar_source["page_count"],
-                "row_count": len(rusfar_source["rows"]),
-                "raw_response_hashes": rusfar_source["raw_response_hashes"],
-                **provenance(rusfar_source["rows"]),
-            }
+            rusfar = load_source("RUSFAR", fetch_rusfar_rates)
+            raw_sources["RUSFAR"] = rate_rows_to_price(rusfar["rows"], "RUSFAR")
+            source_reports["RUSFAR"] = source_report(rusfar, page_count=rusfar["page_count"])
 
-            ruonia_cache = args.cache_dir / "CBR_RUONIA.json"
-            cached = cached_source(ruonia_cache) if ruonia_cache.exists() else None
-            if (
-                cached
-                and cached.get("from") == args.from_date
-                and cached.get("till") == args.till_date
-                and cached.get("status") == "available"
-                and "methods" in cached
-            ):
-                ruonia_source = cached
-            else:
-                ruonia_source = fetch_cbr_ruonia_rates(args.from_date, args.till_date, delay_seconds=args.delay_seconds)
-                ruonia_cache.parent.mkdir(parents=True, exist_ok=True)
-                ruonia_cache.write_text(json.dumps(ruonia_source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-            if ruonia_source["rows"]:
-                raw_sources["CBR_RUONIA"] = rate_rows_to_price(ruonia_source["rows"], "CBR_RUONIA")
-            source_reports["CBR_RUONIA"] = {
-                "source": ruonia_source["source"],
-                "request_count": ruonia_source["request_count"],
-                "methods": ruonia_source.get("methods", []),
-                "row_count": len(ruonia_source["rows"]),
-                "status": ruonia_source["status"],
-                "raw_response_hashes": ruonia_source["raw_response_hashes"],
-                **provenance(ruonia_source["rows"]),
-            }
+            ruonia = load_source(
+                "CBR_RUONIA", fetch_cbr_ruonia_rates,
+                valid=lambda value: value.get("status") == "available" and "methods" in value,
+            )
+            if ruonia["rows"]:
+                raw_sources["CBR_RUONIA"] = rate_rows_to_price(ruonia["rows"], "CBR_RUONIA")
+            source_reports["CBR_RUONIA"] = source_report(
+                ruonia, request_count=ruonia["request_count"], methods=ruonia.get("methods", []), status=ruonia["status"],
+            )
             missing_sources = [ticker for ticker in ("CBR_RUONIA", "RUSFAR", "FXMM", "VTBM", "LQDT") if not raw_sources.get(ticker)]
             result = build_lineage(raw_sources)
             result["source_reports"] = source_reports
             result["missing_sources"] = missing_sources
             result["release_state"] = "observed_plus_labelled_proxy" if not missing_sources else "exploratory_proxy_only"
-            write_benchmark(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "extended_start": result["extended_start"],
                 "extended_end": result["extended_end"],
@@ -420,7 +387,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "analytical-baseline":
-            from .analytics import build_series, get_cost_scenario, run_mean_reversion_baseline, write_analytics
+            from .analytics import build_series, get_cost_scenario, run_mean_reversion_baseline
 
             series = build_series(
                 args.near_candles,
@@ -452,7 +419,7 @@ def main() -> int:
                 analysis_role=args.analysis_role,
                 cost_profile=cost_profile,
             )
-            write_analytics(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "timeframe": result["timeframe"],
@@ -469,10 +436,10 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "execution-ledger":
-            from .ledger import build_ledger, write_ledger
+            from .ledger import build_ledger
 
             result = build_ledger(args.baseline)
-            write_ledger(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "timeframe": result["timeframe"],
@@ -483,7 +450,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "validate-analytics":
-            from .validation import build_validation, write_validation
+            from .validation import build_validation
 
             result = build_validation(
                 args.baseline,
@@ -492,7 +459,7 @@ def main() -> int:
                 train_fraction=args.train_fraction,
                 confirmation_fraction=args.confirmation_fraction,
             )
-            write_validation(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "verdict": result["verdict"],
@@ -504,23 +471,12 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "carry-study":
-            from .carry import build_carry_study, fetch_history, write_carry_study
+            from .carry import build_carry_study, fetch_history
 
-            near_source = fetch_history(
-                args.near,
-                args.from_date,
-                args.till_date,
-                cache_dir=args.cache_dir,
-                delay_seconds=args.delay_seconds,
-                timeout=args.timeout,
-            )
-            far_source = fetch_history(
-                args.far,
-                args.from_date,
-                args.till_date,
-                cache_dir=args.cache_dir,
-                delay_seconds=args.delay_seconds,
-                timeout=args.timeout,
+            near_source, far_source = (
+                fetch_history(secid, args.from_date, args.till_date, cache_dir=args.cache_dir,
+                              delay_seconds=args.delay_seconds, timeout=args.timeout)
+                for secid in (args.near, args.far)
             )
             result = build_carry_study(
                 near_source,
@@ -530,7 +486,7 @@ def main() -> int:
                 far=args.far,
                 funding_regimes=None if args.near == "CNYRUBF" else (),
             )
-            write_carry_study(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "study_role": result["study_role"],
@@ -544,7 +500,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "carry-strategy":
-            from .carry import build_carry_strategy, write_carry_strategy
+            from .carry import build_carry_strategy
 
             try:
                 carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
@@ -558,7 +514,7 @@ def main() -> int:
                 initial_capital=args.initial_capital,
                 strategy_variant="funding_only" if args.hypothesis == "h3-funding-only" else "basis_median",
             )
-            write_carry_strategy(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "rule_id": result["rule_id"],
                 "release_state": result["release_state"],
@@ -581,7 +537,7 @@ def main() -> int:
                         float(row["daily_gross_carry_pnl"])
                         for row in carry_study.get("rows", [])[1:]
                     ]
-                except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                except (OSError, KeyError, TypeError, ValueError) as exc:
                     raise W0Error(f"cannot read carry study for risk screen: {exc}") from exc
             result = assess_vtb_pair(
                 args.contracts,
@@ -593,8 +549,7 @@ def main() -> int:
                 key_rate=args.key_rate,
                 observed_daily_pnl=observed_daily_pnl,
             )
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            write_json(args.output, result)
             print(json.dumps({
                 "schema_version": result["schema_version"],
                 "current_snapshot_passed": result["summary"]["current_snapshot_passed"],
@@ -605,7 +560,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "pair-screen":
-            from .screener import screen_pairs, write_screen
+            from .screener import screen_pairs
 
             result = screen_pairs(
                 args.candles_dir,
@@ -613,7 +568,7 @@ def main() -> int:
                 args.contracts,
                 initial_capital=args.initial_capital,
             )
-            write_screen(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "schema_version": result["schema_version"],
                 "candidate_count": result["summary"]["candidate_count"],
@@ -672,7 +627,7 @@ def main() -> int:
                 print(json.dumps({key: variant[key] for key in ("strategy", "variant", "cost_model", "trades", "gross_rub", "net_rub", "excess_over_lqdt_on_margin_rub")}, sort_keys=True))
             return 0
         if args.command == "funding-screen":
-            from .funding_screen import screen_funding_pairs, write_funding_screen
+            from .funding_screen import screen_funding_pairs
 
             result = screen_funding_pairs(
                 contracts_path=args.contracts,
@@ -685,7 +640,7 @@ def main() -> int:
                 delay_seconds=args.delay_seconds,
                 timeout=args.timeout,
             )
-            write_funding_screen(result, args.output)
+            write_json(args.output, result)
             print(json.dumps({
                 "schema_version": result["schema_version"],
                 "candidate_count": result["summary"]["candidate_count"],

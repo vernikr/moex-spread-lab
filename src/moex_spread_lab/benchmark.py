@@ -424,8 +424,3 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
             "split_handling": "VTBM internal 1000:1 split adjusted before return stitching",
         },
     }
-
-
-def write_benchmark(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

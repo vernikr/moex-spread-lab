@@ -347,11 +347,6 @@ def build_carry_study(
     }
 
 
-def write_carry_study(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
     try:
         raw = path.read_bytes()
@@ -792,8 +787,3 @@ def build_carry_strategy(
             "execution_evidence_status": "historical_bid_ask_unavailable",
         },
     }
-
-
-def write_carry_strategy(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

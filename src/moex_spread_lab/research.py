@@ -42,12 +42,6 @@ def _timestamp(value: Any, context: str) -> datetime:
         raise ResearchError(f"{context} is not an ISO timestamp: {value}") from exc
 
 
-def _bool(value: Any, context: str) -> bool:
-    if not isinstance(value, bool):
-        raise ResearchError(f"{context} must be boolean")
-    return value
-
-
 def load_research_fixture(path: Path) -> dict[str, Any]:
     fixture = load_json(path)
     if _require(fixture, "schema_version", "research fixture") != RESEARCH_FIXTURE_SCHEMA:

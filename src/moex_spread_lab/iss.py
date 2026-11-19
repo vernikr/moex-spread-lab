@@ -11,14 +11,13 @@ import json
 import csv
 import time
 from urllib.parse import urlencode
-import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .w0 import W0Error
+from .w0 import W0Error, write_json
 
 
 ISS_MODULE_SCHEMA = "iss-intake.v1"
@@ -269,11 +268,6 @@ def fetch_candle_series(
     }
 
 
-def write_candle_series(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
     try:
         near_series = json.loads(near_path.read_text(encoding="utf-8"))
@@ -332,15 +326,12 @@ def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
     }
 
 
-def write_pair_quality(result: dict[str, Any], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _fetch_json(url: str, *, timeout: float, opener: Callable[..., Any]) -> tuple[dict[str, Any], str, str]:
+def _fetch_json(
+    url: str, *, timeout: float, opener: Callable[..., Any], probe: str = "coverage",
+) -> tuple[dict[str, Any], str, str]:
     request = urllib.request.Request(
         url,
-        headers={"Accept": "application/json", "User-Agent": "moex-spread-lab/0.1 W1 coverage probe"},
+        headers={"Accept": "application/json", "User-Agent": f"moex-spread-lab/0.1 W1 {probe} probe"},
         method="GET",
     )
     received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -349,7 +340,7 @@ def _fetch_json(url: str, *, timeout: float, opener: Callable[..., Any]) -> tupl
             raw = response.read()
             status = getattr(response, "status", 200)
             content_type = response.headers.get("Content-Type", "")
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+    except OSError as exc:
         raise IssIntakeError(f"ISS request failed: {exc}") from exc
     if status != 200:
         raise IssIntakeError(f"ISS request returned HTTP {status}")
@@ -454,8 +445,7 @@ def fetch_candle_coverage(
 
 
 def write_timeframe_inventory(result: dict[str, Any], output: Path, csv_output: Path | None = None) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(output, result)
     if csv_output is None:
         return
     csv_output.parent.mkdir(parents=True, exist_ok=True)
@@ -600,30 +590,9 @@ def fetch_iss_catalog(
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> dict[str, Any]:
     url = _url(base_url, board)
-    request = urllib.request.Request(
-        url,
-        headers={"Accept": "application/json", "User-Agent": "moex-spread-lab/0.1 W1 read-only probe"},
-        method="GET",
+    payload, received_at, raw_sha256 = _fetch_json(
+        url, timeout=timeout, opener=opener, probe="read-only",
     )
-    received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    try:
-        with opener(request, timeout=timeout) as response:
-            raw = response.read()
-            status = getattr(response, "status", 200)
-            content_type = response.headers.get("Content-Type", "")
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        raise IssIntakeError(f"ISS request failed: {exc}") from exc
-    if status != 200:
-        raise IssIntakeError(f"ISS request returned HTTP {status}")
-    if b"<html" in raw[:1024].lower() or "json" not in content_type.lower():
-        raise IssIntakeError("ISS response is not JSON; possible access/error page")
-    raw_sha256 = hashlib.sha256(raw).hexdigest()
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise IssIntakeError("ISS response is not valid UTF-8 JSON") from exc
-    if not isinstance(payload, dict):
-        raise IssIntakeError("ISS JSON root is not an object")
     return normalize_iss_intake(
         payload,
         url=url,

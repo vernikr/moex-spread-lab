@@ -52,7 +52,7 @@ def window_summaries(service, request, *, check_cancelled=lambda: None):
         identities.append(target)
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    calendar = CalendarData(service.root)
+    calendar = service._calendar or CalendarData(service.root)
     rows = []
     for item, target in zip(requests, identities):
         check_cancelled()

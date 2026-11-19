@@ -19,13 +19,14 @@ from .proof_batch import (
     _translate,
 )
 from .proof_search import SEED, _tune
+from .timeframes import get_timeframe
 
 TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 MR = ("mean_reversion", "zscore_mean_reversion")
 
 
-def _families(request, targets):
+def _families(request, targets, timeframe):
     active = request.get("strategy", "zscore_mean_reversion")
     native = active in ("zscore_mean_reversion", "convergence_to_ruonia")
     # The MR adapters are one strategy family, not two competing choices.
@@ -46,7 +47,16 @@ def _families(request, targets):
         if CALENDAR_UNIVERSE not in kinds
         else []
     )
-    return [price, *others]
+    families = [price, *others]
+    # A family the timeframe cannot execute is skipped upfront instead of being
+    # prepared and excluded per trial. If no family remains, the existing
+    # no-common-strategy semantics apply unchanged.
+    supported = []
+    for name in families:
+        if name == "funding_only" and not timeframe.supports_funding_strategy:
+            continue
+        supported.append(name)
+    return supported
 
 
 def _same_family(a, b):
@@ -75,13 +85,14 @@ def _candidate_request(request, strategy, targets, price_fill):
 
 def strategy_search(service, request, settings, benchmark, check_cancelled):
     targets = _targets(request)
+    spec = get_timeframe(settings.timeframe)
     price_fill = request.get("price_fill") or (
         request.get("fill") if request.get("fill") in PRICE_FILLS else "next_open"
     )
     active = request.get("strategy", "zscore_mean_reversion")
-    calendar = CalendarData(service.root)
+    calendar = service._calendar or CalendarData(service.root)
     prepared, alternatives, failures = [], [], []
-    for name in _families(request, targets):
+    for name in _families(request, targets, spec):
         check_cancelled()
         proposed = _candidate_request(request, name, targets, price_fill)
         group = _prepare_cohort(

@@ -690,7 +690,7 @@ class ScreenerStore:
     @property
     def proof(self) -> ProofService:
         if self._proof is None:
-            self._proof = ProofService(self.inputs.root)
+            self._proof = ProofService(self.inputs.root, calendar=self.calendar)
         return self._proof
 
     @property

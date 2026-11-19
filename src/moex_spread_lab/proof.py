@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from bisect import bisect_right
 from collections.abc import Callable
 from datetime import date, datetime
@@ -37,6 +38,15 @@ PROOF_SCHEMA = "execution-proof.v1"
 PAIR_UNIVERSE = "pair_screen"
 CALENDAR_UNIVERSE = "calendar_native"
 FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"})
+
+
+def reference_eval() -> bool:
+    """Full reference path (series, summary, run_id) vs the metrics-only fast path.
+
+    Defaults to the reference path so behaviour is unchanged unless the operator
+    explicitly opts into the fast path with MOEX_PROOF_REFERENCE_EVAL=0.
+    """
+    return os.environ.get("MOEX_PROOF_REFERENCE_EVAL", "1") == "1"
 
 
 def _clean(value: Any) -> Any:
@@ -159,8 +169,9 @@ def _days_held(entry_date: str, exit_date: str) -> int | float | None:
 class ProofService:
     """Single entry point for /api/proof/*; dispatches on the `universe` field."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, calendar=None):
         self.root = Path(root).resolve()
+        self._calendar = calendar
 
     # ------------------------------------------------------------------ catalog
 
@@ -173,7 +184,9 @@ class ProofService:
         try:
             if not spec.supports_calendar:
                 raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
-            calendar = CalendarData(self.root).catalog(initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe)
+            calendar = (self._calendar or CalendarData(self.root)).catalog(
+                initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe
+            )
         except (W0Error, OSError) as exc:
             calendar = {
                 "till": None,
@@ -209,7 +222,7 @@ class ProofService:
             initial_capital_rub=saved.initial_capital_rub,
             timeframe=saved.timeframe,
         )
-        return self.prepare(selection, settings=strict)(selection)
+        return self.prepare(selection, calendar=self._calendar, settings=strict)(selection)
 
     def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
@@ -229,14 +242,43 @@ class ProofService:
         def sized_replay(request, through=None):
             unit = replay(intent_request(request), through=through)
             if unit.get("schema_version") == "calendar-proof.v1":
-                unit = self._calendar_proof(request, unit)
+                if through is None:
+                    unit = self._calendar_proof(request, unit)
+                else:
+                    # Partial (training) replays skip the full _calendar_proof
+                    # enrichment (run_id, notes, summary) to save per-trial work,
+                    # but the structural markers size_proof/_Terms need must still
+                    # be present. `universe` routes _Terms to the native branch;
+                    # `run_id` is the unit identity fed into proof run_id (unused
+                    # by _measure, only needed so size_proof does not crash).
+                    unit.setdefault("universe", CALENDAR_UNIVERSE)
+                    unit.setdefault(
+                        "run_id",
+                        _run_id(
+                            {
+                                "selection": unit.get("selection", {}),
+                                "daily": unit.get("series", []),
+                                "source_hashes": {
+                                    k: v
+                                    for k, v in (unit.get("provenance") or {}).items()
+                                    if isinstance(v, str) and "sha256" in k
+                                },
+                            }
+                        ),
+                    )
             if not dates or dates[0] > unit["series"][0]["date"]:
                 raise W0Error("Нет отметки LQDT на начало истории.")
             marks = {
                 r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
                 for r in unit["series"]
             }
-            return size_proof(unit, marks, settings, contracts)
+            return size_proof(
+                unit,
+                marks,
+                settings,
+                contracts,
+                metrics_only=(through is not None and not reference_eval()),
+            )
 
         return sized_replay
 

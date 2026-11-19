@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -60,17 +63,60 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+# Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
+# A file whose mtime_ns and size are unchanged is byte-identical, so its cached
+# (value, sha256) is exact; any external edit changes the key and invalidates.
+_HASHED_JSON_CACHE_CAPACITY = int(os.environ.get("MOEX_HASHED_JSON_CACHE_CAPACITY", "256"))
+
+
+class _HashedJSONCache:
+    def __init__(self, capacity: int) -> None:
+        self._capacity = max(1, capacity)
+        self._data: "OrderedDict[tuple[str, int, int], tuple[dict[str, Any], str]]" = (
+            OrderedDict()
+        )
+        self._lock = threading.Lock()
+
+    def get(self, key: tuple[str, int, int]):
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is not None:
+                self._data.move_to_end(key)
+            return entry
+
+    def put(self, key: tuple[str, int, int], value: tuple[dict[str, Any], str]) -> None:
+        with self._lock:
+            self._data[key] = value
+            self._data.move_to_end(key)
+            while len(self._data) > self._capacity:
+                self._data.popitem(last=False)
+
+
+_HASHED_JSON_CACHE = _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)
+
+
 def read_hashed_json(
     path: Path, *, error: type[W0Error], label: str = "JSON input",
 ) -> tuple[dict[str, Any], str]:
+    resolved = path.resolve()
     try:
-        raw = path.read_bytes()
+        stat = resolved.stat()
+    except OSError as exc:
+        raise error(f"cannot stat {label} {path}: {exc}") from exc
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    cached = _HASHED_JSON_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        raw = resolved.read_bytes()
         value = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise error(f"cannot read {label} {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise error(f"{label} is not an object: {path}")
-    return value, sha256_bytes(raw)
+    result = (value, sha256_bytes(raw))
+    _HASHED_JSON_CACHE.put(key, result)
+    return result
 
 
 def write_json(path: Path, value: Any) -> None:

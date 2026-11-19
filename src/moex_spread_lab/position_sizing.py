@@ -140,18 +140,19 @@ class _Terms:
         return self.margin * quantity
 
 
-def size_proof(unit, marks, settings, contracts):
+def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
     """Replay independent signal intents; all account observations are prefix-causal.
 
-    Sizing uses the last account mark plus an exit filled earlier on this row, before
-    today's close-to-close LQDT return or a new position's intraday P&L. Earnings never
-    expand the configured starting-capital authority. Unfundable intents are recorded and do
-    not become positions; retry only at the strategy's next declared entry intent.
+    When `metrics_only` is True (training probes), the output keeps only the fields
+    the objective reader needs: thin trades (entry/exit dates, margin, lqdt hurdle)
+    and a thin ledger (date, cumulative_net_rub, account_value_rub, cash_shortfall).
+    Presentation (series mutation, sizing/summary/notes/run_id) and the input copy
+    are skipped; ephemeral training units may be mutated in place.
     """
     from .proof import _cost_totals, _run_id
 
     initial = _positive(settings.initial_capital_rub, "начальный капитал")
-    proof = deepcopy(unit)
+    proof = unit if metrics_only else deepcopy(unit)
     terms = _Terms(proof, contracts, settings)
     rows = proof["series"]
     prices = [_positive(marks[r["date"]], "отметка LQDT") for r in rows]
@@ -350,7 +351,7 @@ def size_proof(unit, marks, settings, contracts):
                 "quantity": q_held,
                 "mark_pnl_rub": daily,
                 "costs_rub": cost,
-                "funding_rub": row.get("funding_rub"),
+                "funding_rub": funding if unit_funding is not None else None,
                 "lqdt_on_margin_rub": None,
                 "cumulative_net_rub": cumulative,
                 "event": " + ".join(events) or None,
@@ -444,21 +445,28 @@ def size_proof(unit, marks, settings, contracts):
                 for t in accepted
             )
         )
-    proof["notes"].extend(
-        [
-            f"Размер каждого входа — максимум целых спредов по последней доступной стоимости счёта, не выше исходного капитала {initial:,.2f} ₽ из общих настроек; размер удерживается до выхода. Прибыль не расширяет исходный лимит, пополнений нет.",
-            "Размер покрывает ГО, комиссию и проскальзывание входа плюс резерв выхода по ценам входа. При обязательном стресс-гейте также учитываются 3×ГО, VM-буфер 5 000 ₽ на спред и буфер неопределённости 5 000 ₽ (для календаря — на спред, для пары — на счёт).",
-            "Это максимум по модели капитала, не гарантия доступного объёма в стакане. Пропуски записаны отдельно; новая попытка — на следующем входном сигнале стратегии.",
-        ]
-    )
-    proof["run_id"] = _run_id(
-        {
-            "unit_intents": unit["run_id"],
-            "sizing": proof["sizing"],
-            "settings": settings.metadata(),
-            "trades": accepted,
-            "ledger": ledger,
-            "skipped_entries": rejected,
-        }
-    )
+    if not metrics_only:
+        # Presentation fields (notes, run_id) are only required for the published
+        # report. Training probes (`metrics_only`) are consumed by _measure, which
+        # reads ledger/trades/sizing — never run_id or notes. Skipping them here
+        # also avoids requiring `unit["run_id"]`, which partial calendar replays
+        # do not carry (only the full _calendar_proof sets it).
+        proof["notes"].extend(
+            [
+                f"Размер каждого входа — максимум целых спредов по последней доступной стоимости счёта, не выше исходного капитала {initial:,.2f} ₽ из общих настроек; размер удерживается до выхода. Прибыль не расширяет исходный лимит, пополнений нет.",
+                "Размер покрывает ГО, комиссию и проскальзывание входа плюс резерв выхода по ценам входа. При обязательном стресс-гейте также учитываются 3×ГО, VM-буфер 5 000 ₽ на спред и буфер неопределённости 5 000 ₽ (для календаря — на спред, для пары — на счёт).",
+                "Это максимум по модели капитала, не гарантия доступного объёма в стакане. Пропуски записаны отдельно; новая попытка — на следующем входном сигнале стратегии.",
+            ]
+        )
+        proof["run_id"] = _run_id(
+            {
+                "unit_intents": unit["run_id"],
+                "sizing": proof["sizing"],
+                "settings": settings.metadata(),
+                "trades": accepted,
+                "ledger": ledger,
+                "skipped_entries": rejected,
+            }
+        )
+
     return proof

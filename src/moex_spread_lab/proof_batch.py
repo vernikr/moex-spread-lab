@@ -287,7 +287,9 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    group = _prepare_cohort(service, request, settings, benchmark, check_cancelled)
+    group = _prepare_cohort(
+        service, request, settings, benchmark, check_cancelled, calendar=service._calendar
+    )
     base = {
         "scope": "checked",
         "member_count": len(targets),
@@ -306,7 +308,9 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
 
 
 def batch_search(service, request, settings, benchmark, check_cancelled):
-    group = _prepare_cohort(service, request, settings, benchmark, check_cancelled)
+    group = _prepare_cohort(
+        service, request, settings, benchmark, check_cancelled, calendar=service._calendar
+    )
     if isinstance(group, dict):
         return group
     axes, seed, members, land = group.axes, group.seed, group.members, group.land

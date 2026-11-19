@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from functools import cached_property
 from typing import Any
 
 import optuna
@@ -438,7 +439,8 @@ class StudyWindow:
         self.request = request
         self.settings = settings
         self.replay = service.prepare(request, calendar=calendar, settings=settings)
-        self.full = self.replay(request)
+        # `full` is a cached_property: the expensive seed proof is built once, on
+        # first access, and reused for the report winner instead of per trial.
         selection = self.full["selection"]
         self.strategy_axes = STRATEGY_AXES[selection["strategy"]]
         self.execution_axes = execution_axes(selection)
@@ -467,6 +469,10 @@ class StudyWindow:
                 self.proof(point, training=True), self.marks, self.train, self.settings
             ),
         )
+
+    @cached_property
+    def full(self):
+        return self.replay(self.request)
 
     def proof(self, point, *, training):
         prefix = training and self.split.validation

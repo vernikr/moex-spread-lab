@@ -786,6 +786,174 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 self.assertIn("free_cash_rub", cal_replay["ledger"][0])
                 self.assertIn("run_id", cal_replay)
 
+    def test_spawn_pool_matches_sequential_bit_for_bit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_pool_test_workspace(root)
+            targets = [
+                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
+                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
+                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
+                {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
+            ]
+            batch_req = {
+                "universe": PAIR_UNIVERSE,
+                "pair": "CNYRUBF/CRZ6",
+                "strategy": "mean_reversion",
+                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                "fill": "next_open",
+                "sizing": AUTO_SIZING,
+                "targets": targets,
+            }
+            strat_req = {**batch_req, "optimize_strategy": True}
+            win_req = {
+                "requests": [
+                    {
+                        "universe": PAIR_UNIVERSE,
+                        "pair": "CNYRUBF/CRZ6",
+                        "strategy": "mean_reversion",
+                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                        "fill": "next_open",
+                        "sizing": AUTO_SIZING,
+                    },
+                    {
+                        "universe": PAIR_UNIVERSE,
+                        "pair": "CNYRUBF/CRM6",
+                        "strategy": "mean_reversion",
+                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                        "fill": "next_open",
+                        "sizing": AUTO_SIZING,
+                    },
+                    {
+                        "universe": PAIR_UNIVERSE,
+                        "pair": "CNYRUBF/CRU6",
+                        "strategy": "mean_reversion",
+                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                        "fill": "next_open",
+                        "sizing": AUTO_SIZING,
+                    },
+                    {
+                        "universe": CALENDAR_UNIVERSE,
+                        "asset": "SR",
+                        "pair": "SRH3/SRM3",
+                        "strategy": "zscore_mean_reversion",
+                        "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
+                        "fill": "next_open",
+                        "sizing": AUTO_SIZING,
+                    },
+                ]
+            }
+
+            def run_mode(workers: str, force: str):
+                with patch.dict(
+                    os.environ,
+                    {"MOEX_PROOF_WORKERS": workers, "MOEX_PROOF_FORCE_POOL": force},
+                ):
+                    svc = ProofService(root)
+                    try:
+                        return {
+                            "batch": research_run(svc, batch_req, optimize=True),
+                            "strategy": research_run(svc, strat_req, optimize=True),
+                            "plateau": checked_plateau(svc, batch_req),
+                            "windows": window_summaries(svc, win_req),
+                        }
+                    finally:
+                        svc.close()
+
+            seq = run_mode("1", "0")
+            par = run_mode("3", "1")
+            self.assertEqual(seq["batch"]["status"], "maximum_found")
+            self.assertEqual(seq["batch"]["group"]["member_count"], 4)
+            self.assertEqual(_canon_sha(par), _canon_sha(seq))
+            self.assertEqual(par, seq)
+
+    def test_spawn_pool_cooperative_cancellation_and_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_pool_test_workspace(root)
+            req = {
+                "universe": PAIR_UNIVERSE,
+                "pair": "CNYRUBF/CRZ6",
+                "strategy": "mean_reversion",
+                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                "fill": "next_open",
+                "sizing": AUTO_SIZING,
+                "targets": [
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
+                    {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
+                ],
+            }
+            with patch.dict(
+                os.environ,
+                {"MOEX_PROOF_WORKERS": "3", "MOEX_PROOF_FORCE_POOL": "1"},
+            ):
+                svc = ProofService(root)
+                try:
+                    calls = 0
+
+                    def cancel_soon():
+                        nonlocal calls
+                        calls += 1
+                        if calls >= 12:
+                            raise ConnectionAbortedError("client disconnected")
+
+                    with self.assertRaises(ConnectionAbortedError):
+                        research_run(svc, req, optimize=True, check_cancelled=cancel_soon)
+
+                    # Pool remains healthy and produces the exact canonical result after cancellation.
+                    recovered = research_run(svc, req, optimize=True)
+                    self.assertIn("run_id", recovered)
+                    self.assertEqual(recovered["status"], "maximum_found")
+                    self.assertEqual(recovered["group"]["member_count"], 4)
+                finally:
+                    svc.close()
+
+
+def _build_pool_test_workspace(root: Path) -> None:
+    _build_h1_workspace(root)
+    intake_path = root / "data/w1/current-intake.json"
+    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    crz6 = next(item for item in intake["instruments"] if item.get("secid") == "CRZ6")
+    intake["instruments"] = [
+        item for item in intake["instruments"] if item.get("secid") != "CRM6"
+    ]
+    intake["instruments"].append(
+        {
+            **crz6,
+            "secid": "CRM6",
+            "expiry": "2026-06-18",
+            "settlement": 13.45,
+            "tariff_group": "currency",
+        }
+    )
+    intake["instruments"].append(
+        {
+            **crz6,
+            "secid": "CRU6",
+            "expiry": "2026-09-17",
+            "settlement": 13.55,
+            "tariff_group": "currency",
+        }
+    )
+    intake_path.write_text(json.dumps(intake), encoding="utf-8")
+    crz6_candles = root / "data/w1/candles-screen/CRZ6_1h.json"
+    (root / "data/w1/candles-screen/CRU6_1h.json").write_text(
+        crz6_candles.read_text(encoding="utf-8").replace("CRZ6", "CRU6"),
+        encoding="utf-8",
+    )
+    save_settings(
+        root,
+        {
+            "timeframe": "1h",
+            "validation_percent": 20,
+            "allow_failed_volume": True,
+            "allow_failed_capital": True,
+            "initial_capital_rub": 100000.0,
+        },
+    )
+
 
 if __name__ == "__main__":
     unittest.main()

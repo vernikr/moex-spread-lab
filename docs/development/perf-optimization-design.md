@@ -86,8 +86,9 @@ Per-trial (песочница): 17.6 мс → 11.8 мс (≈1.5×).
 * [x] Iteration 0 — тестовый набор эквивалентности + базовые замеры
 * [x] Iteration 1 — `metrics_only`, ленивый `StudyWindow.full`, I/O кэш `w0`, общий `CalendarData`
 * [x] Iteration 2 — upstream `metrics_only` в генераторах replay (`proof.py`, `analytics.py`, `carry.py`, `calendar_spreads.py`, `s3_reference.py`), z-score/through/series кэширование на титрах, `MOEX_PROOF_REFERENCE_EVAL` по умолчанию `"0"`, `(resolved_path, st_mtime_ns, st_size)` кэш для `carry.fetch_history`
-* [x] Бит-в-бит эквивалентность подтверждена (тесты + реальные датасеты на целевом железе)
-* [ ] Опционально: дальнейшая оптимизация фиксированных накладных (`Optuna TPESampler`, холодный `_intraday_windows_for` в `catalog(1h)`)
+* [x] Iteration 3 — долгоживущий `spawn`-пул (`CohortWorkerPool`) с `Sticky Sharding`, `LPT`-балансировкой, двухфазным `Canary + Fan-Out`, пакетным `plateau` / `report` / `/api/proof/windows`, кооперативной отменой и кэшем JSON-метаданных (`_benchmark_marks`, `_load_instruments`, `_sha256_bytes`)
+* [x] Бит-в-бит эквивалентность подтверждена (тесты + реальные датасеты `CNYRUBF 1h` 17 пар и все воркер-конфигурации `1/4/6/8/10`)
+* [ ] Опционально: дальнейшая оптимизация холодного `_intraday_windows_for` в `catalog(1h)`
 
 ## 7. Состав изменений (Итерация 1, коммит `f568c8a`)
 
@@ -140,6 +141,46 @@ Per-trial (песочница): 17.6 мс → 11.8 мс (≈1.5×).
 | `CAL 1d` (`SRM3/SRU3`, `SRU3/SRZ3`, холодный `_load`) | 5.780 с (`cProfile`) | 2.148 с | **2.471 с** (доминирует Optuna TPE + холодный `_load`) |
 
 Бит-в-бит эквивалентность (`ref=1` == `ref=0`) подтверждена как на синтетическом наборе `tests/test_perf_equivalence.py`, так и на всех 4 реальных прогонах `data/`.
+
+## 9. Итерация 3 — `spawn`-пул воркеров (`CohortWorkerPool`) и пакетный параллелизм (готово)
+
+### 9.1 Архитектура
+
+* `src/moex_spread_lab/proof.py`:
+  * `_sha256_bytes`, `_benchmark_marks`, `_load_instruments` переведены на `read_hashed_json` + `_HashedJSONCache` по `(resolved_path, st_mtime_ns, st_size)` — исключено повторное чтение `current-intake.json` / `historical-contracts.json` / `lqdt-lineage.json` в когорте и в воркерах.
+  * `ProofService.worker_pool()` / `close()` — ленивое владение пулом `CohortWorkerPool`.
+* `src/moex_spread_lab/proof_pool.py`:
+  * Долгоживущий `spawn`-пул (`multiprocessing.get_context("spawn")`, по 1 `ProcessPoolExecutor(max_workers=1)` на слот для явной привязки шардов). По умолчанию `min(8, os.cpu_count() or 6)` воркеров (переопределяется через `MOEX_PROOF_WORKERS`).
+  * Включается при `N >= 3` валидных окнах и достаточном объёме (`estimated_bars >= 1500` или `N >= 4`; либо `MOEX_PROOF_FORCE_POOL=1`).
+  * **LPT-балансировка (`_estimate_weight`)** по размеру файлов `1h`-свечей с сортировкой каждого шарда по каноническому `idx` и **`Sticky Sharding`**: `StudyWindow` создаётся один раз внутри своего воркера (`_worker_init_cohort`) и остаётся в `_WORKER_COHORTS[cohort_id]` на весь поиск, `plateau` и `report`.
+  * **Двухфазный `Canary + Fan-Out` (`eval_point`)**: сначала проверяется `canary_idx` (1 IPC); при отказе `canary == 0` — мгновенный short-circuit без пробуждения остальных воркеров; при `canary > 0` проверяются только индексы `< canary`, гарантируя канонический `reason` минимального отказавшего индекса.
+  * **Пакетный `plateau` (`eval_plateau_batch`)**, параллельный финальный `report_cohort` и параллельный `/api/proof/windows` (`window_summaries`).
+  * **Кооперативная отмена (`_await_futures`)**: поллинг `wait(..., timeout=0.05)` с `check_cancelled()`, немедленная отмена futures и освобождение `release_cohort` в `finally`, `ScreenerStore.close()` и `atexit`.
+* `src/moex_spread_lab/proof_batch.py`, `proof_strategy_search.py`, `proof_windows.py`, `screener_app.py`:
+  * Интеграция `_RemoteCohort`, гарантированное закрытие когорт в `finally` (включая `strategy_search` по всем семействам), авто-fallback на однопоточный путь при моках `StudyWindow`/`CalendarData`.
+
+### 9.2 Замеры на реальных данных (MacBook Pro 16" 2019, i7-9750H 6C/12T, 16 GB RAM)
+
+#### 17 готовых пар `CNYRUBF 1h` (`validation_percent=20`, ~50.5 тыс. баров)
+
+Все конфигурации `w = 1, 4, 6, 8, 10` дали **побитово идентичный SHA-256** (`0965a34d3fb3520c`) по `optimize`, `checked_plateau` и `window_summaries`:
+
+| Воркеры (`MOEX_PROOF_WORKERS`) | `optimize` (cold pool) | `optimize` (warm pool) | `checked_plateau` | `window_summaries` |
+|--------------------------------|------------------------|------------------------|-------------------|--------------------|
+| `1` (последовательно, Итер. 2) | 53.746 с (ранее 23.18 с без доп. нагрузки) | 53.463 с | 13.522 с | 12.847 с |
+| `4` | 22.022 с | 20.051 с | 4.443 с | 3.361 с |
+| `6` | 16.942 с | 11.617 с | 2.116 с | 1.237 с |
+| **`8` (дефолт)** | **6.635 с** | **5.654 с** | **1.320 с** | **0.860 с** |
+| `10` | 7.159 с | 5.950 с | 1.618 с | 1.469 с |
+
+*(Примечание: исходный прогон до Итерации 1 занимал ~380 с — итоговое ускорение **>55–67×**.)*
+
+#### Полная когорта из всех `110` готовых пар `pair_screen 1h`
+
+| Конфигурация | `optimize` (110 пар) | `checked_plateau` | `window_summaries` (110 окон) | Суммарный RSS (родитель + воркеры) |
+|--------------|----------------------|-------------------|-------------------------------|------------------------------------|
+| `w = 6` | 30.694 с | 11.651 с | 10.169 с | 3.35 GB |
+| **`w = 8` (дефолт)** | **22.088 с** | **5.878 с** | **5.890 с** | 4.25 GB (при 16 GB RAM) |
 
 ---
 

@@ -15,6 +15,7 @@ from .proof_search import (
     Landscape,
     StudyWindow,
     _lamps,
+    _ordered,
     _tune,
     _validate,
     execution_axes,
@@ -22,6 +23,7 @@ from .proof_search import (
 from .w0 import W0Error
 
 MAX_TARGETS = 1024
+_DEFAULT_STUDY_WINDOW = StudyWindow
 
 
 def _identity(request):
@@ -116,6 +118,42 @@ def _active_seed(request, active):
 
 
 @dataclass
+class _TrainingSlice:
+    first: str
+    last: str
+    count: int
+
+    def __len__(self) -> int:
+        return self.count
+
+    def __getitem__(self, idx: int) -> str:
+        if idx == 0:
+            return self.first
+        if idx == -1 or idx == self.count - 1:
+            return self.last
+        raise IndexError(idx)
+
+
+@dataclass
+class _RemoteSplit:
+    training: _TrainingSlice
+
+
+@dataclass
+class _RemoteCase:
+    request: dict
+    strategy_axes: dict
+    execution_axes: dict
+    axes: dict
+    seed: dict
+    split: _RemoteSplit
+    _lamp_warning: str | None
+
+    def lamp_warning(self):
+        return self._lamp_warning
+
+
+@dataclass
 class _Cohort:
     active: str
     axes: dict
@@ -123,8 +161,10 @@ class _Cohort:
     members: list
     land: Landscape
 
-    def plateau(self, point):
-        # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
+    def close(self) -> None:
+        pass
+
+    def _plateau_reason(self, point):
         reason = next(
             (
                 f"{k}: общий допустимый диапазон {a.low}–{a.high}."
@@ -142,11 +182,141 @@ class _Cohort:
                 ),
                 None,
             )
+        return reason
+
+    def plateau(self, point):
+        # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
+        reason = self._plateau_reason(point)
         first = self.members[0][1]
         native_single = (
             len(self.members) == 1 and first.request["strategy"] == self.active
         )
         return _lamps(first.fit if native_single else self.land, point, reason)
+
+    def report_members(self, point, best, settings, check_cancelled):
+        rows = []
+        single = None
+        any_exec_ref = any(
+            case.full.get("execution_reference", False) for _, case in self.members
+        )
+        for target, case in self.members:
+            check_cancelled()
+            local = _translate(point, case.request["strategy"])
+            selection = {
+                **case.full["selection"],
+                **{k: local[k] for k in case.execution_axes},
+                "parameters": {k: local[k] for k in case.strategy_axes},
+            }
+            if not best and any(not a.contains(local[k]) for k, a in case.axes.items()):
+                rows.append(
+                    {
+                        "target": target,
+                        "reason": "Исходные параметры не входят в общий диапазон.",
+                    }
+                )
+                continue
+            training_rate = case.fit.measure(local).get("rank_score")
+            row = {
+                "target": target,
+                "selection": selection,
+                "input_run_id": case.full["run_id"],
+                "training_annualized_excess_pp": training_rate,
+            }
+            try:
+                single = case.report(local)
+                rows.append(
+                    {**row, "run_id": single["run_id"], "evaluation": single["evaluation"]}
+                )
+            except (W0Error, OSError) as exc:
+                rows.append(
+                    {
+                        **row,
+                        "evaluation": {
+                            **settings.metadata(),
+                            **case.split.metadata(),
+                            "execution_reference": case.full.get("execution_reference", False),
+                            "result": {"reason": str(exc)},
+                        },
+                    }
+                )
+        return rows, any_exec_ref, single
+
+
+@dataclass
+class _RemoteCohort(_Cohort):
+    pool: object = None
+    cohort_state: dict = None
+    distinct_strategies: tuple = ()
+    check_cancelled: object = None
+
+    def close(self) -> None:
+        if self.pool is not None and self.cohort_state is not None:
+            self.pool.release_cohort(
+                self.cohort_state["cohort_id"], self.cohort_state["owner_of"]
+            )
+            self.cohort_state = None
+
+    def plateau(self, point):
+        reason = self._plateau_reason(point)
+        if not reason:
+            # Pre-warm center + all valid neighbor points in one parallel batch.
+            uncached_points = []
+            seen_keys = set()
+
+            def enqueue(candidate):
+                key = tuple(candidate[name] for name in self.land.axes)
+                if key not in self.land.cache and key not in seen_keys:
+                    seen_keys.add(key)
+                    point_by_strat = {
+                        strat: _translate(candidate, strat)
+                        for strat in self.distinct_strategies
+                    }
+                    uncached_points.append((key, point_by_strat))
+
+            enqueue(point)
+            for name, axis in self.land.axes.items():
+                value = point[name]
+                for offset in (-2, -1, 1, 2):
+                    neighbor = round(value + offset * axis.step, 6)
+                    other = {**point, name: neighbor}
+                    if axis.contains(neighbor) and _ordered(other):
+                        enqueue(other)
+
+            if uncached_points:
+                batch_payload = [
+                    (idx, p_by_strat) for idx, (_, p_by_strat) in enumerate(uncached_points)
+                ]
+                batch_out = self.pool.eval_plateau_batch(
+                    self.cohort_state, batch_payload, self.check_cancelled
+                )
+                for idx, (key, _) in enumerate(uncached_points):
+                    self.land.cache[key] = batch_out[idx]
+        return _lamps(self.land, point, reason)
+
+    def report_members(self, point, best, settings, check_cancelled):
+        point_by_strat = {
+            strat: _translate(point, strat) for strat in self.distinct_strategies
+        }
+        results = self.pool.report_cohort(
+            self.cohort_state, point_by_strat, not best, settings, check_cancelled
+        )
+        rows = [row for _, row, _, _ in results]
+        any_exec_ref = any(exec_ref for _, _, exec_ref, _ in results)
+        single = next((s for _, _, _, s in reversed(results) if s is not None), None)
+        return rows, any_exec_ref, single
+
+
+def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
+    from .calendar_spreads import CalendarData
+    from .proof_pool import _estimate_weight
+
+    if StudyWindow is not _DEFAULT_STUDY_WINDOW:
+        return False
+    if type(calendar) is not CalendarData:
+        return False
+    pool = service.worker_pool()
+    est = sum(_estimate_weight(service.root, t, timeframe) for _, t, _ in valid_specs)
+    return pool.should_use(len(valid_specs), est)
 
 
 def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, calendar=None):
@@ -158,12 +328,122 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, c
     axes = dict(STRATEGY_AXES[active])
     seed = _active_seed(request, active)
     proposed = {**request, "parameters": {k: seed[k] for k in axes}}
-    members, rejected = [], []
     calendar = calendar if calendar is not None else CalendarData(service.root)
-    for target in targets:
+
+    early_rejected = {}
+    valid_specs = []
+    for idx, target in enumerate(targets):
         check_cancelled()
         try:
             native = _native_request(proposed, target)
+            valid_specs.append((idx, target, native))
+        except (W0Error, OSError) as exc:
+            if not checked:
+                raise
+            early_rejected[idx] = {"target": target, "reason": str(exc)}
+
+    if _can_use_pool(service, calendar, valid_specs, settings.timeframe):
+        pool = service.worker_pool()
+        items = [(idx, target, native, checked) for idx, target, native in valid_specs]
+        cohort_state = pool.init_cohort(
+            service.root, settings, benchmark, items, check_cancelled
+        )
+        worker_by_idx = {
+            idx: (status, info) for idx, status, info in cohort_state["results"]
+        }
+        members, rejected = [], []
+        for idx, target in enumerate(targets):
+            if idx in early_rejected:
+                rejected.append(early_rejected[idx])
+                continue
+            status, info = worker_by_idx[idx]
+            if status != "ok":
+                rejected.append({"target": target, "reason": info["reason"]})
+                continue
+            case = _RemoteCase(
+                request={"strategy": info["strategy"]},
+                strategy_axes=info["strategy_axes"],
+                execution_axes=info["execution_axes"],
+                axes=info["axes"],
+                seed=info["seed"],
+                split=_RemoteSplit(
+                    _TrainingSlice(
+                        info["training_first"],
+                        info["training_last"],
+                        info["training_count"],
+                    )
+                ),
+                _lamp_warning=info["lamp_warning"],
+            )
+            members.append((target, case))
+            for name, other in _translate(case.strategy_axes, active).items():
+                a = axes[name]
+                axes[name] = Axis(
+                    max(a.low, other.low), min(a.high, other.high), a.step
+                )
+        minimum = max(
+            (a.low + 2 for k, a in axes.items() if k in ("window", "lookback")),
+            default=2,
+        )
+        compatible = []
+        for target, case in members:
+            if len(case.split.training) >= minimum:
+                compatible.append((target, case))
+            else:
+                rejected.append(
+                    {
+                        "target": target,
+                        "reason": f"Для общего окна сигнала нужно не менее {minimum} наблюдений на обучении.",
+                    }
+                )
+        members = compatible
+        if rejected:
+            pool.release_cohort(cohort_state["cohort_id"], cohort_state["owner_of"])
+            return {
+                "status": "selection_requires_confirmation",
+                **settings.metadata(),
+                "excluded": rejected,
+                "remaining_count": len(members),
+                "trial_count": 0,
+                "selected_parameters": None,
+            }
+
+        distinct_strategies = tuple(
+            dict.fromkeys(case.request["strategy"] for _, case in members)
+        )
+        canary_box = [0]
+        total_members = len(members)
+
+        def average(point):
+            point_by_strat = {
+                strat: _translate(point, strat) for strat in distinct_strategies
+            }
+            return pool.eval_point(
+                cohort_state, point_by_strat, canary_box, total_members, check_cancelled
+            )
+
+        land = Landscape(axes | execution_axes(request), average)
+        return _RemoteCohort(
+            active=active,
+            axes=axes,
+            seed=seed,
+            members=members,
+            land=land,
+            pool=pool,
+            cohort_state=cohort_state,
+            distinct_strategies=distinct_strategies,
+            check_cancelled=check_cancelled,
+        )
+
+    members, rejected = [], []
+    spec_by_idx = {idx: native for idx, _, native in valid_specs}
+    for idx, target in enumerate(targets):
+        check_cancelled()
+        if idx in early_rejected:
+            rejected.append(early_rejected[idx])
+            continue
+        native = spec_by_idx[idx]
+        try:
             if checked and target["universe"] == CALENDAR_UNIVERSE:
                 calendar.check_training_window(
                     target["asset"], target["pair"], native.get("quantity", 1), settings
@@ -304,7 +584,10 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
             "excluded": group["excluded"],
             "plateau": None,
         }
-    return {**base, "status": "measured", "plateau": group.plateau(group.seed)}
+    try:
+        return {**base, "status": "measured", "plateau": group.plateau(group.seed)}
+    finally:
+        group.close()
 
 
 def batch_search(service, request, settings, benchmark, check_cancelled):
@@ -313,11 +596,14 @@ def batch_search(service, request, settings, benchmark, check_cancelled):
     )
     if isinstance(group, dict):
         return group
-    axes, seed, members, land = group.axes, group.seed, group.members, group.land
-    best, trials, attempts = _tune(
-        land, seed, axes, min(len(case.split.training) for _, case in members)
-    )
-    return _cohort_result(request, settings, group, best, trials, attempts, check_cancelled)
+    try:
+        axes, seed, members, land = group.axes, group.seed, group.members, group.land
+        best, trials, attempts = _tune(
+            land, seed, axes, min(len(case.split.training) for _, case in members)
+        )
+        return _cohort_result(request, settings, group, best, trials, attempts, check_cancelled)
+    finally:
+        group.close()
 
 
 def _cohort_result(request, settings, group, best, trials, attempts, check_cancelled):
@@ -329,58 +615,14 @@ def _cohort_result(request, settings, group, best, trials, attempts, check_cance
         for i, p in enumerate(attempts)
     ]
     point = best or seed
-    rows = []
-    single = None
-    for target, case in members:
-        check_cancelled()
-        local = _translate(point, case.request["strategy"])
-        selection = {
-            **case.full["selection"],
-            **{k: local[k] for k in case.execution_axes},
-            "parameters": {k: local[k] for k in case.strategy_axes},
-        }
-        # No valid winner: keep the actual requested settings, never apply the preflight seed.
-        if not best and any(not a.contains(local[k]) for k, a in case.axes.items()):
-            rows.append(
-                {
-                    "target": target,
-                    "reason": "Исходные параметры не входят в общий диапазон.",
-                }
-            )
-            continue
-        training_rate = case.fit.measure(local).get("rank_score")
-        row = {
-            "target": target,
-            "selection": selection,
-            "input_run_id": case.full["run_id"],
-            "training_annualized_excess_pp": training_rate,
-        }
-        try:
-            single = case.report(local)
-            rows.append(
-                {**row, "run_id": single["run_id"], "evaluation": single["evaluation"]}
-            )
-        except (W0Error, OSError) as exc:
-            rows.append(
-                {
-                    **row,
-                    "evaluation": {
-                        **settings.metadata(),
-                        **case.split.metadata(),
-                        "execution_reference": case.full.get("execution_reference", False),
-                        "result": {"reason": str(exc)},
-                    },
-                }
-            )
+    rows, any_exec_ref, single = group.report_members(point, best, settings, check_cancelled)
     rates = [
         r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp")
         for r in rows
     ]
     summary = {
         "member_count": len(rows),
-        "execution_reference": any(
-            case.full.get("execution_reference", False) for _, case in members
-        ),
+        "execution_reference": any_exec_ref,
         "unit": "annualized_excess_pp",
         "members": rows,
         **settings.metadata(),

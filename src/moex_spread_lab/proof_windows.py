@@ -14,6 +14,7 @@ from .proof_search import StudyWindow, _validate
 from .w0 import W0Error
 
 MAX_WINDOW_REQUESTS = 128
+_DEFAULT_STUDY_WINDOW = StudyWindow
 
 
 def compact_result(proof):
@@ -53,6 +54,18 @@ def window_summaries(service, request, *, check_cancelled=lambda: None):
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
+    if StudyWindow is _DEFAULT_STUDY_WINDOW and type(calendar) is CalendarData:
+        from .proof_pool import _estimate_weight
+
+        pool = service.worker_pool()
+        est = sum(_estimate_weight(service.root, t, settings.timeframe) for t in identities)
+        if pool.should_use(len(requests), est):
+            items = list(enumerate(zip(requests, identities)))
+            payload = [(idx, item, target) for idx, (item, target) in items]
+            rows = pool.window_summaries(
+                service.root, settings, benchmark, payload, check_cancelled
+            )
+            return {**settings.metadata(), "rows": rows}
     rows = []
     for item, target in zip(requests, identities):
         check_cancelled()

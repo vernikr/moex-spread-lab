@@ -701,6 +701,9 @@ class ScreenerStore:
             self._calendar = CalendarData(self.inputs.root)
         return self._calendar
 
+    def close(self) -> None:
+        self.proof.close()
+
     @staticmethod
     def _recent(path: Path) -> list[dict[str, Any]]:
         try:
@@ -910,11 +913,13 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
 def serve(inputs: ScreenerInputs, port: int = 8765) -> None:
     if not 0 <= port <= 65535:
         raise ScreenerError("порт должен быть в диапазоне 0–65535")
+    store = ScreenerStore(inputs)
     server = ThreadingHTTPServer(
-        ("127.0.0.1", port), make_handler(ScreenerStore(inputs))
+        ("127.0.0.1", port), make_handler(store)
     )
     print(f"Local research screener: http://127.0.0.1:{server.server_port}", flush=True)
     try:
         server.serve_forever()
     finally:
         server.server_close()
+        store.close()

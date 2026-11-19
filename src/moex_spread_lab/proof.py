@@ -32,12 +32,15 @@ from .proof_signals import (
     pair_fill,
 )
 from .timeframes import get_timeframe, timeframe_options
-from .w0 import W0Error
+from .w0 import W0Error, _HashedJSONCache, read_hashed_json
 
 PROOF_SCHEMA = "execution-proof.v1"
 PAIR_UNIVERSE = "pair_screen"
 CALENDAR_UNIVERSE = "calendar_native"
 FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"})
+_BENCHMARK_MARKS_CACHE = _HashedJSONCache(32)
+_INSTRUMENTS_CACHE = _HashedJSONCache(32)
+_SHA256_CACHE = _HashedJSONCache(512)
 
 
 def reference_eval() -> bool:
@@ -61,20 +64,49 @@ def _clean(value: Any) -> Any:
 
 def _sha256_bytes(path: Path) -> str | None:
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        resolved = path.resolve()
+        stat = resolved.stat()
     except OSError:
         return None
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    cached = _SHA256_CACHE.get(key)
+    if cached is not None:
+        return cached[1]
+    try:
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    _SHA256_CACHE.put(key, (None, digest))
+    return digest
 
 
 def _benchmark_marks(path: Path) -> tuple[list[str], dict[str, float]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    resolved = path.resolve()
+    try:
+        stat = resolved.stat()
+    except OSError:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = [
+            (row["date"], float(row["price"]))
+            for row in payload.get("rows", [])
+            if row.get("date") and row.get("price") is not None
+        ]
+        rows.sort(key=lambda item: item[0])
+        return [day for day, _ in rows], dict(rows)
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    cached = _BENCHMARK_MARKS_CACHE.get(key)
+    if cached is not None:
+        return cached[0]
+    payload, _ = read_hashed_json(resolved, error=W0Error, label="LQDT benchmark")
     rows = [
         (row["date"], float(row["price"]))
         for row in payload.get("rows", [])
         if row.get("date") and row.get("price") is not None
     ]
     rows.sort(key=lambda item: item[0])
-    return [day for day, _ in rows], dict(rows)
+    result = ([day for day, _ in rows], dict(rows))
+    _BENCHMARK_MARKS_CACHE.put(key, (result, ""))
+    return result
 
 
 def _mark(dates: list[str], prices: dict[str, float], day: str) -> float:
@@ -131,14 +163,33 @@ def _rel_pct(value: Any, base: Any) -> float | None:
 
 def _load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
     try:
-        rows = json.loads(contracts_path.read_text(encoding="utf-8"))["instruments"]
-        historical_path = contracts_path.parent / "historical-contracts.json"
-        if historical_path.is_file():
-            historical_rows = json.loads(historical_path.read_text(encoding="utf-8")).get("instruments", [])
-            rows.extend(historical_rows)
-    except (OSError, ValueError, KeyError, TypeError):
+        resolved = contracts_path.resolve()
+        stat = resolved.stat()
+        historical_path = resolved.parent / "historical-contracts.json"
+        h_stat = historical_path.stat() if historical_path.is_file() else None
+    except OSError:
         return {}
-    return {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
+    key = (
+        str(resolved),
+        stat.st_mtime_ns,
+        stat.st_size,
+        h_stat.st_mtime_ns if h_stat else None,
+        h_stat.st_size if h_stat else None,
+    )
+    cached = _INSTRUMENTS_CACHE.get(key)
+    if cached is not None:
+        return cached[0]
+    try:
+        main_payload, _ = read_hashed_json(resolved, error=W0Error, label="contracts")
+        rows = list(main_payload["instruments"])
+        if h_stat is not None:
+            hist_payload, _ = read_hashed_json(historical_path, error=W0Error, label="historical contracts")
+            rows.extend(hist_payload.get("instruments", []))
+    except (W0Error, OSError, ValueError, KeyError, TypeError):
+        return {}
+    mapping = {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
+    _INSTRUMENTS_CACHE.put(key, (mapping, ""))
+    return mapping
 
 
 def _point_value(terms: dict[str, Any], fallback: float = 1.0) -> float:
@@ -172,6 +223,19 @@ class ProofService:
     def __init__(self, root: Path, calendar=None):
         self.root = Path(root).resolve()
         self._calendar = calendar
+        self._pool = None
+
+    def worker_pool(self):
+        if self._pool is None:
+            from .proof_pool import CohortWorkerPool
+
+            self._pool = CohortWorkerPool()
+        return self._pool
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait_for=True)
+            self._pool = None
 
     # ------------------------------------------------------------------ catalog
 

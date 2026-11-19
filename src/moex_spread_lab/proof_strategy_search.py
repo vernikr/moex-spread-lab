@@ -179,68 +179,72 @@ def strategy_search(service, request, settings, benchmark, check_cancelled):
         return {**result, "run_id": _run_id(result)}
 
     winner, top, records = None, -float("inf"), []
-    for proposed, group, item in prepared:
-        check_cancelled()
-        best, count, attempts = _tune(
-            group.land,
-            group.seed,
-            group.axes,
-            min(len(case.split.training) for _, case in group.members),
-            trials=TRIALS_PER_STRATEGY,
-        )
-        item["trial_count"] = count
-        score = group.land.measure(best)["rank_score"] if best is not None else None
-        item.update(
-            status="measured" if best is not None else "no_admissible_candidate",
-            training_best_pp=score,
-        )
-        for i, point in enumerate(attempts):
-            records.append(
-                {
-                    "trial": len(records),
-                    "strategy_trial": i,
-                    "strategy": group.active,
-                    "fill": proposed["fill"],
-                    "parameters": {k: point[k] for k in group.axes},
-                    **group.land.measure(point),
-                }
+    try:
+        for proposed, group, item in prepared:
+            check_cancelled()
+            best, count, attempts = _tune(
+                group.land,
+                group.seed,
+                group.axes,
+                min(len(case.split.training) for _, case in group.members),
+                trials=TRIALS_PER_STRATEGY,
             )
-        # On a cross-family exact tie retain the current family, then the first
-        # declared family. Holdout, trade count and plateau never break ties.
-        if best is not None and (
-            score > top
-            or (
-                score == top
-                and _same_family(group.active, active)
-                and not _same_family(winner[1].active, active)
+            item["trial_count"] = count
+            score = group.land.measure(best)["rank_score"] if best is not None else None
+            item.update(
+                status="measured" if best is not None else "no_admissible_candidate",
+                training_best_pp=score,
             )
-        ):
-            winner, top = (proposed, group, best, count, attempts), score
+            for i, point in enumerate(attempts):
+                records.append(
+                    {
+                        "trial": len(records),
+                        "strategy_trial": i,
+                        "strategy": group.active,
+                        "fill": proposed["fill"],
+                        "parameters": {k: point[k] for k in group.axes},
+                        **group.land.measure(point),
+                    }
+                )
+            # On a cross-family exact tie retain the current family, then the first
+            # declared family. Holdout, trade count and plateau never break ties.
+            if best is not None and (
+                score > top
+                or (
+                    score == top
+                    and _same_family(group.active, active)
+                    and not _same_family(winner[1].active, active)
+                )
+            ):
+                winner, top = (proposed, group, best, count, attempts), score
 
-    if winner is None:
-        result = {
-            **base,
-            "status": "no_admissible_candidate",
-            "trial_count": len(records),
-            "candidates": records,
-            "reason": "Нет допустимого результата ни у одной общей стратегии. Стратегия и параметры сохранены.",
-        }
+        if winner is None:
+            result = {
+                **base,
+                "status": "no_admissible_candidate",
+                "trial_count": len(records),
+                "candidates": records,
+                "reason": "Нет допустимого результата ни у одной общей стратегии. Стратегия и параметры сохранены.",
+            }
+            return {**result, "run_id": _run_id(result)}
+
+        proposed, group, best, count, attempts = winner
+        # Only the final training-selected family is reported on full/validation data.
+        result = _cohort_result(
+            proposed, settings, group, best, count, attempts, check_cancelled
+        )
+        result.update(
+            schema_version=base["schema_version"],
+            method=base["method"],
+            selection=base["selection"],
+            selected_strategy=group.active,
+            selected_fill=proposed["fill"],
+            trial_count=len(records),
+            candidates=records,
+            strategy_search=policy,
+        )
+        result.pop("run_id", None)
         return {**result, "run_id": _run_id(result)}
-
-    proposed, group, best, count, attempts = winner
-    # Only the final training-selected family is reported on full/validation data.
-    result = _cohort_result(
-        proposed, settings, group, best, count, attempts, check_cancelled
-    )
-    result.update(
-        schema_version=base["schema_version"],
-        method=base["method"],
-        selection=base["selection"],
-        selected_strategy=group.active,
-        selected_fill=proposed["fill"],
-        trial_count=len(records),
-        candidates=records,
-        strategy_search=policy,
-    )
-    result.pop("run_id", None)
-    return {**result, "run_id": _run_id(result)}
+    finally:
+        for _, group, _ in prepared:
+            group.close()

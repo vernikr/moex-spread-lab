@@ -44,7 +44,7 @@ def run(browser, url):
             ).count()
             == 0
         )
-        expect(page.locator("#sizing-hint")).to_contain_text("автоматически")
+        expect(page.locator("#sizing-hint")).to_have_count(0)
         assert page.evaluate("payload.selection.sizing") == "max_affordable"
         assert not page.locator(
             "#col-norm input[data-axis=quantity],#col-norm input[data-axis=slippage_ticks]"

@@ -16,7 +16,6 @@ from .w0 import W0Error
 
 AUTO_SIZING = "max_affordable"
 SIZING_POLICY = "max-affordable.v1"
-INITIAL_CAPITAL = 30_000.0
 
 
 def automatic(request):
@@ -145,11 +144,12 @@ def size_proof(unit, marks, settings, contracts):
 
     Sizing uses the last account mark plus an exit filled earlier on this row, before
     today's close-to-close LQDT return or a new position's intraday P&L. Earnings never
-    expand the original 30k entry authority. Unfundable intents are recorded and do
+    expand the configured starting-capital authority. Unfundable intents are recorded and do
     not become positions; retry only at the strategy's next declared entry intent.
     """
     from .proof import _cost_totals, _run_id
 
+    initial = _positive(settings.initial_capital_rub, "начальный капитал")
     proof = deepcopy(unit)
     terms = _Terms(proof, contracts, settings)
     rows = proof["series"]
@@ -157,8 +157,8 @@ def size_proof(unit, marks, settings, contracts):
     intents = {t["entry"]["date"]: t for t in proof["trades"]}
     accepted, rejected, ledger = [], [], []
     position = None
-    cumulative, free, posted = 0.0, INITIAL_CAPITAL, 0.0
-    wealth = INITIAL_CAPITAL
+    cumulative, free, posted = 0.0, initial, 0.0
+    wealth = initial
     peak = drawdown = 0.0
     paused = False
     shortfalls = 0
@@ -227,10 +227,8 @@ def size_proof(unit, marks, settings, contracts):
             margin, entry_costs = terms.at_fill(
                 candidate["entry"], i, at_open=terms.open_fill
             )
-            budget = max(0.0, min(INITIAL_CAPITAL, fill_wealth))
-            fill_excess = (
-                fill_wealth - INITIAL_CAPITAL * prices[max(i - 1, 0)] / prices[0]
-            )
+            budget = max(0.0, min(initial, fill_wealth))
+            fill_excess = fill_wealth - initial * prices[max(i - 1, 0)] / prices[0]
             # An exit can cross a limit before a same-row re-entry, not just at close.
             paused |= peak - fill_excess >= 10_000 or fill_excess <= -10_000
             q = (
@@ -325,7 +323,7 @@ def size_proof(unit, marks, settings, contracts):
         # Journal-only zero-volume rows cannot revalue the position or its margin.
         free = wealth - posted
         shortfalls += free < -1e-7
-        excess = wealth - INITIAL_CAPITAL * prices[i] / prices[0]
+        excess = wealth - initial * prices[i] / prices[0]
         peak = max(peak, excess)
         drawdown = max(drawdown, peak - excess)
         paused |= peak - excess >= 10_000 or excess <= -10_000 or free < -1e-7
@@ -379,7 +377,10 @@ def size_proof(unit, marks, settings, contracts):
     hurdle = _money(sum(t["lqdt_on_margin_rub"] for t in accepted))
     quantities = [t["quantity"] for t in accepted]
     proof["selection"].update(
-        sizing=AUTO_SIZING, quantity=None, slippage_ticks=settings.slippage_ticks
+        sizing=AUTO_SIZING,
+        quantity=None,
+        slippage_ticks=settings.slippage_ticks,
+        initial_capital_rub=initial,
     )
     if terms.native:
         editable = (
@@ -395,14 +396,15 @@ def size_proof(unit, marks, settings, contracts):
             k: v for k, v in parameters.items() if k in editable
         }
     proof.update(
+        initial_capital_rub=initial,
         trades=accepted,
         ledger=ledger,
         skipped_entries=rejected,
         sizing={
             "policy": SIZING_POLICY,
             "mode": AUTO_SIZING,
-            "initial_capital_rub": INITIAL_CAPITAL,
-            "entry_capital_ceiling_rub": INITIAL_CAPITAL,
+            "initial_capital_rub": initial,
+            "entry_capital_ceiling_rub": initial,
             "stress_reserve_enforced": not settings.allow_failed_capital,
             "exit_cost_reserve": "entry_priced_one_side",
             "uncertainty_buffer_basis": "per_spread" if terms.native else "per_account",
@@ -436,7 +438,7 @@ def size_proof(unit, marks, settings, contracts):
         )
     proof["notes"].extend(
         [
-            "Размер каждого входа — максимум целых спредов по последней доступной стоимости счёта, не выше исходных 30 000 ₽; размер удерживается до выхода. Прибыль не расширяет исходный лимит, пополнений нет.",
+            f"Размер каждого входа — максимум целых спредов по последней доступной стоимости счёта, не выше исходного капитала {initial:,.2f} ₽ из общих настроек; размер удерживается до выхода. Прибыль не расширяет исходный лимит, пополнений нет.",
             "Размер покрывает ГО, комиссию и проскальзывание входа плюс резерв выхода по ценам входа. При обязательном стресс-гейте также учитываются 3×ГО, VM-буфер 5 000 ₽ на спред и буфер неопределённости 5 000 ₽ (для календаря — на спред, для пары — на счёт).",
             "Это максимум по модели капитала, не гарантия доступного объёма в стакане. Пропуски записаны отдельно; новая попытка — на следующем входном сигнале стратегии.",
         ]

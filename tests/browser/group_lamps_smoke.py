@@ -87,7 +87,8 @@ def run(browser, url):
         entry["by_window_pp"][1] == 0
         and entry["utility"] == sum(entry["by_window_pp"]) / 2
     )
-    expect(pg.locator("#group-count")).to_contain_text("2")
+    assert pg.evaluate("checked.size") == 2
+    expect(pg.locator("#group-count")).to_have_count(0)
     expect(pg.locator("#focus-editor")).to_be_hidden()
     both = snapshot()
     calls = len(profiles)
@@ -140,7 +141,8 @@ def run(browser, url):
     validate_ui(current.value.json())
     new_snapshot = snapshot()
     pg.evaluate("window.releaseOld()")
-    expect(pg.locator("#group-count")).to_contain_text("2")
+    assert pg.evaluate("checked.size") == 2
+    expect(pg.locator("#group-count")).to_have_count(0)
     assert snapshot() == new_snapshot
     # Group optimization should continue if the user merely inspects the other row while it is running.
     pg.evaluate(

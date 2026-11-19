@@ -2,6 +2,8 @@
 
 Version: 2026-10-26, stage-5 architecture clarification. **Assistant-selected operational defaults under the user's delegation; not statistically validated limits or trading authorization.** Research R01/R05/R07/R08 may tighten or replace them with an explicit revision. This document defines research scenarios now, not running software or broker controls.
 
+**2026-11-18 research-UI clarification:** the proof workbench now exposes a global starting-capital hypothesis (default RUB 30,000; see [execution proof](../development/execution-proof.md#global-capital-and-quieter-results-2026-11-18)). It determines each independent historical account’s budget, not an approved transfer or a pilot-policy revision. Increasing it does not scale the fixed RUB risk triggers/reserves, enlarge actual funding authority or authorize emergency entries. The original pilot numbers and per-event approvals below remain in force.
+
 ## Authority and numbers
 
 | Control | Default | Meaning |

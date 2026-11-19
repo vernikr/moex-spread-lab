@@ -160,8 +160,9 @@ class ProofService:
         from . import screener_app
         from .calendar_spreads import CalendarData
 
+        settings = ResearchSettings.load(self.root)
         try:
-            calendar = CalendarData(self.root).catalog()
+            calendar = CalendarData(self.root).catalog(initial_capital=settings.initial_capital_rub)
         except (W0Error, OSError) as exc:
             calendar = {
                 "till": None,
@@ -171,9 +172,10 @@ class ProofService:
                 "assets": [],
                 "error": str(exc),
             }
-        pair = screener_app.catalog(screener_app.ScreenerInputs(self.root))
+        pair = screener_app.catalog(screener_app.ScreenerInputs(self.root), initial_capital=settings.initial_capital_rub)
         return {
             **calendar,
+            "initial_capital_rub": settings.initial_capital_rub,
             "universes": [CALENDAR_UNIVERSE, PAIR_UNIVERSE],
             "pair_screen": pair,
         }
@@ -228,7 +230,7 @@ class ProofService:
         calendar = calendar if calendar is not None else CalendarData(self.root)
 
         def replay(request, through=None):
-            payload = calendar.proof(request, through=through)
+            payload = calendar.proof(request, through=through, initial_capital=settings.initial_capital_rub)
             # The search only needs trades, daily marks and admissions from partial replays.
             return payload if through is not None else self._calendar_proof(request, payload)
 
@@ -341,7 +343,7 @@ class ProofService:
             raise W0Error("неизвестная стратегия")
         inputs = screener_app.ScreenerInputs(self.root)
         funding = ProofFunding(inputs)
-        entry = screener_app.catalog(inputs, registry=(pair,), funding=funding)["pairs"][0]
+        entry = screener_app.catalog(inputs, registry=(pair,), funding=funding, initial_capital=settings.initial_capital_rub)["pairs"][0]
         if not entry["proof_strategies"].get(strategy):
             raise W0Error(entry["data_reasons"][strategy])
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
@@ -350,7 +352,7 @@ class ProofService:
 
         @cache
         def risk_for(quantity):
-            risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity)
+            risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity, initial_capital=settings.initial_capital_rub)
             if not settings.allow_failed_capital and not risk["summary"]["all_scenarios_passed"]:
                 raise W0Error("пара не проходит стресс-экран рабочего капитала")
             return risk
@@ -374,7 +376,7 @@ class ProofService:
 
         def replay(request, through=None):
             execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
-                         "fill": pair_fill(request, strategy)}
+                         "fill": pair_fill(request, strategy), "initial_capital_rub": settings.initial_capital_rub}
             params = screener_app._parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
                           risk_for(execution["quantity"]), prepared, through)
@@ -430,6 +432,7 @@ class ProofService:
         margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
         report = run_mean_reversion_baseline(
             analysis_series,
+            initial_capital=execution["initial_capital_rub"],
             lookback=int(params["lookback"]),
             entry_z=float(params["entry_z"]),
             exit_z=float(params["exit_z"]),
@@ -584,6 +587,7 @@ class ProofService:
             transaction_cost_scenario="tariff",
             warmup_observations=int(params["lookback"]),
             strategy_variant="funding_only",
+            initial_capital=execution["initial_capital_rub"],
             quantity=quantity,
             execution_delay_rows=0,
             cash_in_lqdt=True,
@@ -967,6 +971,7 @@ class ProofService:
             "quantity": quantity,
             "slippage_ticks": slippage,
             "parameters": params,
+            "initial_capital_rub": risk["stress_inputs"]["initial_capital_rub"],
         }
         payload = {
             "schema_version": PROOF_SCHEMA,
@@ -981,6 +986,7 @@ class ProofService:
                 else "ISS: расчётная цена на конец дня (прокси)"
             ),
             "selection": selection_out,
+            "initial_capital_rub": selection_out["initial_capital_rub"],
             "instrument": {
                 "near": near,
                 "far": far,

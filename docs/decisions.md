@@ -1,6 +1,6 @@
 # Decision register
 
-Updated 2026-11-18 (revised BR-10). User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
+Updated 2026-11-18 (revised BR-10 and research capital). User answers override proposed interpretations; project assumptions and delegated defaults remain distinct from verified external facts.
 
 | ID | Confirmed user decision | Boundary / unresolved part |
 |---|---|---|
@@ -40,6 +40,8 @@ This revises the order of Stage-9 delivery, not the research/live boundary: firs
 **2026-11-18 — Per-entry automatic size / shared slippage.** The user removes manual contracts and asks for the maximum possible whole-contract size **for every trade**, not one fixed size per backtest. The proof workbench applies one causal funded sizing rule within the original 30,000 RUB authority, including costs and active reserves; losses reduce capacity, unaffordable entries are explained skips, profits/top-ups do not enlarge entry authority. Rename the field to **Проскальзывание** and keep one persistent global preference for all strategies/windows; neither size nor this shared cost assumption is optimized. Legacy fixed-size APIs/CLI and archived results remain explicit compatibility paths. [Sizing/accounting details](development/execution-proof.md#automatic-per-entry-size-and-global-slippage-2026-11-18). Independent window studies are still not an S4 shared-capital basket or trading authorization.
 
 **2026-11-18 — Period table / signal thresholds / reference consistency.** The user replaces the lower selector's ticker rows with periods, V/C tooltip indicators, a distinct missing-data icon and exact current-simulation **Сд. / п.п./г**; removes the long instruction block; requests two true strategy-entry lines on the raw spread pane and expands it by default. Clarification: same-bar reference already exists for calendars but must also work for ordinary CNYRUBF pairs. Forward the same supported price fills across those adapters/cohorts, keeping next-open as default and zero-delay close explicitly diagnostic, not a reversal of A-12 or evidence of executable returns. Funding strategies keep their own non-price-based rules. [Implementation and regression contract](development/execution-proof.md#window-table-signal-lines-and-reference-fills-2026-11-18). No screening, finite-capital, funding, validation or trading-authority relaxation.
+
+**2026-11-18 — Global research capital / quieter UI.** The user makes starting capital a global setting (no new amount supplied; default remains RUB 30,000) and removes the automatic-sizing hint, unchecked/checked count captions and the quoted volume/risk/cash warnings from the right column. Apply the saved amount to independent proof accounts, entry sizing, both capital screens and LQDT-relative evaluation. Tuning continues to honor the current execution selection on every trial; checked windows use their shared editor. This revises the hardcoded 30,000 **research assumption** in the preceding sizing entry, not A-02 or the pilot’s real-funding/loss limits. API diagnostics, invalid-score rules and explicit same-bar reference labels remain. [Contract and regression coverage](development/execution-proof.md#global-capital-and-quieter-results-2026-11-18).
 
 ## Delegated operational defaults (not empirical findings)
 

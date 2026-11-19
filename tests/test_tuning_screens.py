@@ -40,6 +40,7 @@ class TuningScreenTests(unittest.TestCase):
                 "allow_failed_volume": True,
                 "allow_failed_capital": True,
                 "slippage_ticks": 1.0,
+                "initial_capital_rub": 30000.0,
             },
         )
         self.assertEqual(path.read_text(), legacy)
@@ -53,6 +54,7 @@ class TuningScreenTests(unittest.TestCase):
                 "allow_failed_capital": False,
                 "validation_percent": 31.5,
                 "slippage_ticks": 1.0,
+                "initial_capital_rub": 30000.0,
             },
         )
         for key in ("allow_failed_volume", "allow_failed_capital"):

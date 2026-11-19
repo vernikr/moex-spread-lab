@@ -12,6 +12,8 @@ from tempfile import TemporaryDirectory
 from .w0 import W0Error
 
 DEFAULT_VALIDATION_PERCENT = 0
+DEFAULT_INITIAL_CAPITAL_RUB = 30_000.0
+MAX_RESEARCH_CAPITAL_RUB = 1_000_000_000.0
 
 
 def validation_percent(value: object) -> float:
@@ -28,6 +30,7 @@ class ResearchSettings:
     allow_failed_volume: bool = True
     allow_failed_capital: bool = True
     slippage_ticks: float = 1.0
+    initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
 
     def metadata(self) -> dict[str, float | bool]:
         return asdict(self)
@@ -51,6 +54,17 @@ def _validated_patch(value: object) -> dict:
     patch = dict(value)
     if "validation_percent" in patch:
         patch["validation_percent"] = validation_percent(patch["validation_percent"])
+    if "initial_capital_rub" in patch:
+        value = patch["initial_capital_rub"]
+        if (
+            type(value) not in (int, float)
+            or not 0.01 <= value <= MAX_RESEARCH_CAPITAL_RUB
+            or round(value, 2) != value
+        ):
+            raise W0Error(
+                "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
+            )
+        patch["initial_capital_rub"] = float(value)
     if "slippage_ticks" in patch:
         value = patch["slippage_ticks"]
         if type(value) not in (int, float) or not 0 <= value <= 10:
@@ -73,7 +87,7 @@ def read_settings(root: Path) -> dict[str, float | bool]:
         )
         if "validation_percent" not in stored:
             raise W0Error("В настройках отсутствует доля проверки.")
-        # Older projects stored only the split. GET never rewrites their preference.
+        # Older files omit newer preferences. GET supplies defaults without rewriting them.
         return ResearchSettings(**stored).metadata()
     except FileNotFoundError:
         return ResearchSettings().metadata()

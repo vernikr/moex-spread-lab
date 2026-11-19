@@ -167,9 +167,9 @@ def _positive_spread_volume_rows(rows: list[dict[str, Any]]) -> list[dict[str, A
     return [row for row in rows if row.get("min_volume") is not None and float(row["min_volume"]) > 0]
 
 
-def _stress_ok(margin: float, quantity: int = 1) -> bool:
+def _stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIAL_CAPITAL) -> bool:
     buffers = (DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER) * quantity
-    return 3 * margin * quantity + buffers <= INITIAL_CAPITAL
+    return 3 * margin * quantity + buffers <= initial_capital
 
 
 def build_windows(
@@ -334,7 +334,7 @@ class CalendarData:
                             "benchmark": read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")}
         return self._loaded
 
-    def catalog(self) -> dict[str, Any]:
+    def catalog(self, *, initial_capital: float = INITIAL_CAPITAL) -> dict[str, Any]:
         data = self._load()
         return {
             "till": data["till"],
@@ -349,7 +349,7 @@ class CalendarData:
                     "windows": [
                         {"pair": w["pair"], "from": w["first_date"], "to": w["last_date"], "observations": len(w["rows"]),
                          "min_spread_volume": w["min_spread_volume"], "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
-                         "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"])}
+                         "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"], initial_capital=initial_capital)}
                         for w in windows
                     ],
                 }
@@ -386,10 +386,10 @@ class CalendarData:
             window = self._through(window, cutoff)
         if not settings.allow_failed_volume and window["min_spread_volume"] < MIN_DAILY_VOLUME:
             raise W0Error("Не пройдено правило ликвидности на обучении.")
-        if not settings.allow_failed_capital and not _stress_ok(window["max_pair_margin_rub"], quantity):
+        if not settings.allow_failed_capital and not _stress_ok(window["max_pair_margin_rub"], quantity, settings.initial_capital_rub):
             raise W0Error("Не пройден стресс-тест капитала на обучении.")
 
-    def proof(self, selection: dict[str, Any], *, through: str | None = None) -> dict[str, Any]:
+    def proof(self, selection: dict[str, Any], *, through: str | None = None, initial_capital: float = INITIAL_CAPITAL) -> dict[str, Any]:
         data = self._load()
         asset, pair = selection.get("asset"), selection.get("pair")
         strategy, fill_label = selection.get("strategy", "zscore_mean_reversion"), selection.get("fill", "next_open")
@@ -423,7 +423,7 @@ class CalendarData:
         per_pair = {pair: runner(analysis_rows)}
         account = account_trades("proof", per_pair, data["benchmark"], profile, native_spread=True, quantity=quantity)
         return _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity, float(slippage),
-                              data["terms"][asset], profile)
+                              data["terms"][asset], profile, initial_capital)
 
 
 def _rel_pct(value: Any, base: Any) -> float | None:
@@ -448,7 +448,7 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity, slippage, terms, profile) -> dict[str, Any]:
+def _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity, slippage, terms, profile, initial_capital=INITIAL_CAPITAL) -> dict[str, Any]:
     rows = window["rows"]
     trades = []
     for number, trade in enumerate(account["trade_list"], start=1):
@@ -526,15 +526,16 @@ def _proof_payload(window, account, asset, strategy, fill_label, options, thresh
     reconciliation = round(net - cumulative, 2)
     return _clean({
         "schema_version": "calendar-proof.v1",
+        "initial_capital_rub": initial_capital,
         "selection": {"asset": asset, "pair": window["pair"], "spread_instrument": window["spread_instrument"], "strategy": strategy,
-                      "fill": fill_label, "quantity": quantity, "slippage_ticks": slippage,
+                      "fill": fill_label, "quantity": quantity, "slippage_ticks": slippage, "initial_capital_rub": initial_capital,
                       "parameters": {**options, "threshold_pp": threshold}},
         "window": {"from": window["first_date"], "to": window["last_date"], "near_expiry": window["near_expiry"],
                    "near": window["near"], "far": window["far"], "min_spread_volume": window["min_spread_volume"],
                    "tradable_every_day": window["min_spread_volume"] >= MIN_DAILY_VOLUME,
                    "min_daily_volume_rule": MIN_DAILY_VOLUME,
                    "excluded_volume_observations": sum(r.get("min_volume") is None or r["min_volume"] <= 0 for r in rows),
-                   "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity),
+                   "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
                    "max_pair_margin_rub": window["max_pair_margin_rub"]},
         "contract": {"point_value_rub": terms["mult"], "tick_size": terms["tick_size"], "reference_contract": terms["reference_contract"],
                      "margin_rate": terms["margin_rate"],

@@ -13,7 +13,11 @@ from typing import Any
 
 import optuna
 
-from .evaluation_periods import EvaluationSplit, ResearchSettings
+from .evaluation_periods import (
+    DEFAULT_INITIAL_CAPITAL_RUB,
+    EvaluationSplit,
+    ResearchSettings,
+)
 from .portfolio import lqdt_overlay_values
 from .position_sizing import AUTO_SIZING, automatic
 from .proof import ProofService, _benchmark_marks, _mark, _run_id
@@ -155,7 +159,9 @@ def _excess_curve(proof, marks):
 
 def _annualized_returns(proof, marks, split):
     """Two independently annualized wealth returns on the same dates, in percentage points."""
-    from .screener_app import INITIAL_CAPITAL
+    initial = proof.get("sizing", {}).get(
+        "initial_capital_rub", proof.get("initial_capital_rub", DEFAULT_INITIAL_CAPITAL_RUB)
+    )
 
     start, train_end = split.training[0], split.training[-1]
     end = split.validation[-1] if split.validation else train_end
@@ -182,11 +188,11 @@ def _annualized_returns(proof, marks, split):
         shortfalls = any(r["cash_shortfall"] for r in rows)
     else:
         values, shortfalls = lqdt_overlay_values(
-            INITIAL_CAPITAL, [r["cumulative_net_rub"] for r in rows], margins, prices
+            initial, [r["cumulative_net_rub"] for r in rows], margins, prices
         )
     anchor = train_end if split.validation else start
     elapsed = (date.fromisoformat(end) - date.fromisoformat(anchor)).days
-    opening = values[idx[anchor]] if split.validation else INITIAL_CAPITAL
+    opening = values[idx[anchor]] if split.validation else initial
     if elapsed <= 0 or min(opening, values[-1]) <= 0:
         raise W0Error(
             "Нет положительного капитала или календарного интервала для годовой доходности."

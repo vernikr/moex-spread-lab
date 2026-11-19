@@ -79,7 +79,8 @@ def run(browser, url):
     # The upper toggle covers every leaf, including unavailable and offscreen windows. Lower is local only.
     all_top.check()
     n = page.evaluate("leaves.size")
-    expect(page.locator("#selection-count")).to_contain_text(str(n))
+    assert page.evaluate("checked.size") == n
+    expect(page.locator("#selection-count")).to_have_count(0)
     expect(branch(CAL_B).locator("input")).to_be_checked()
     all_bottom.uncheck()
     expect(branch(CAL_B).locator("input")).to_be_checked()
@@ -87,7 +88,7 @@ def run(browser, url):
     expect(all_top).to_have_attribute("aria-checked", "mixed")
     all_top.check()
     all_top.uncheck()
-    expect(page.locator("#selection-count")).to_contain_text("Нет отметок")
+    assert page.evaluate("checked.size") == 0
     leaf(PAIR).locator("input").check()
     open_branch(CAL_B)
     expect(all_bottom).not_to_be_checked()
@@ -192,7 +193,7 @@ def run(browser, url):
     expect(page.locator("#clookback")).to_have_value(original)
     all_bottom.check()
     page.set_viewport_size({"width": 400, "height": 850})
-    expect(page.locator("#selection-count")).to_contain_text("1")
+    assert page.evaluate("checked.size") == 1
     assert (
         page.evaluate("document.documentElement.scrollWidth<=innerWidth") and not errors
     ), errors

@@ -237,7 +237,7 @@ def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[st
         return None, None, 0, set()
 
 
-def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str, Any]:
+def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_capital=INITIAL_CAPITAL) -> dict[str, Any]:
     funding = funding or ProofFunding(inputs)
     try:
         instruments = {
@@ -285,7 +285,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str
         near_terms, far_terms = instruments.get(near, {}), instruments.get(far, {})
         margins = (near_terms.get("initial_margin"), far_terms.get("initial_margin"))
         margin_pct = (
-            round(sum(float(value) for value in margins) / 30_000 * 100, 2)
+            round(sum(float(value) for value in margins) / initial_capital * 100, 2)
             if all(isinstance(value, (int, float)) for value in margins)
             else None
         )
@@ -302,7 +302,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None) -> dict[str
                 "expiry": far_terms.get("expiry"),
                 "current_margin_pct": margin_pct,
                 "max_pair_margin_rub": margin,
-                "passes_capital_screen": (3 * margin + DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER <= INITIAL_CAPITAL) if margin is not None else None,
+                "passes_capital_screen": (3 * margin + DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER <= initial_capital) if margin is not None else None,
                 "tradable_every_day": tradable if volumes is not None else None,
                 "min_daily_volume_rule": MIN_DAILY_VOLUME,
                 "min_leg_daily_volume": min(volumes.values()) if volumes else None,

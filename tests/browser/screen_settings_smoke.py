@@ -1,5 +1,6 @@
 """Actual controls and research API: allow or require each screen without changing the checked cohort."""
 
+import re
 import tempfile
 import threading
 from http.server import ThreadingHTTPServer
@@ -44,6 +45,7 @@ def run(browser, url):
             "allow_failed_volume": volume,
             "validation_percent": share,
             "slippage_ticks": 1.0,
+            "initial_capital_rub": 30000.0,
         }
         return live.value.json()
 
@@ -51,8 +53,10 @@ def run(browser, url):
     other.goto(url + "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
     ready(pg, "training")
     ready(other, "training")
-    expect(pg.locator("#period-result")).to_contain_text("объём")
-    expect(other.locator("#period-result")).to_contain_text("капитал")
+    assert "volume" in pg.evaluate("payload.evaluation.failed_screens")
+    assert "capital" in other.evaluate("payload.evaluation.failed_screens")
+    expect(pg.locator("#period-result")).not_to_contain_text("Не пройдена проверка")
+    expect(other.locator("#period-result")).not_to_contain_text("Не пройдена проверка")
     controls = open_dialog(pg)
     expect(controls.get_by_role("checkbox", name="на объём")).to_be_checked()
     expect(controls.get_by_role("checkbox", name="на капитал")).to_be_checked()
@@ -69,13 +73,20 @@ def run(browser, url):
     assert opt.value.json()["status"] == "maximum_found"
     expect(pg.locator("#tune-state")).to_contain_text("Применён")
     pg.locator("#batch-result summary").click()
-    expect(pg.locator("#batch-result")).to_contain_text("проверка (капитал)")
-    expect(pg.locator("#batch-result")).to_contain_text("проверка (объём)")
+    assert {
+        name
+        for m in opt.value.json()["group"]["members"]
+        for name in m["evaluation"]["failed_screens"]
+    } == {"capital", "volume"}
+    expect(pg.locator("#batch-result")).not_to_contain_text("допуск разрешён")
     r = edit(True, False)
     assert [x["target"]["pair"] for x in r["excluded"]] == ["SRH3/SRM3"]
     expect(pg.locator("#batch-result")).to_be_hidden()
     expect(pg.locator("#group-profile-state")).to_contain_text("1 из 2")
-    expect(other.locator("#period-result")).to_contain_text(
+    expect(
+        other.locator("#window-list tr.current [data-metric=rate]")
+    ).to_have_attribute("title", re.compile("Не пройден стресс-тест капитала"))
+    expect(other.locator("#period-result")).not_to_contain_text(
         "Не пройден стресс-тест капитала"
     )
     with wait(pg, "proof/optimize") as rejection:
@@ -88,7 +99,7 @@ def run(browser, url):
     assert [x["target"]["pair"] for x in r["excluded"]] == ["CNYRUBF/CRZ6"]
     expect(pg.locator("#charts-empty")).to_be_visible()
     expect(pg.locator("#status")).to_contain_text("на объём")
-    expect(other.locator("#period-result")).to_contain_text("допуск разрешён")
+    expect(other.locator("#period-result")).not_to_contain_text("допуск разрешён")
     other.reload()
     ready(other, "training")
     g = open_dialog(other)
@@ -105,7 +116,7 @@ def run(browser, url):
         and r["validation_percent"] == 25
     )
     ready(pg, "validation")
-    expect(pg.locator("#period-result")).to_contain_text("допуск разрешён")
+    expect(pg.locator("#period-result")).not_to_contain_text("допуск разрешён")
     assert not errors, errors
     ctx.close()
 

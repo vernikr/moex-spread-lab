@@ -21,7 +21,7 @@ from .evaluation_periods import (
 )
 from .portfolio import lqdt_overlay_values
 from .position_sizing import AUTO_SIZING, automatic
-from .proof import ProofService, _benchmark_marks, _mark, _run_id
+from .proof import ProofService, _benchmark_marks, _mark, _run_id, reference_eval
 from .timeframes import get_timeframe
 from .w0 import W0Error
 
@@ -490,7 +490,11 @@ class StudyWindow:
             if training
             else None
         )
-        return self.replay(req, through=through)
+        return self.replay(
+            req,
+            through=through,
+            metrics_only=(training and not reference_eval()),
+        )
 
     def lamp_warning(self):
         n = len(self.split.training)

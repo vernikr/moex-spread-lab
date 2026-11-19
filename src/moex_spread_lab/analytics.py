@@ -333,9 +333,28 @@ def build_daily_series(
 
 
 def _rolling_stats(values: list[float]) -> tuple[float, float]:
-    mean = sum(values) / len(values)
-    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    n = len(values)
+    mean = sum(values) / n
+    variance = sum([(value - mean) ** 2 for value in values]) / n
     return mean, math.sqrt(variance)
+
+
+def compute_rolling_z(
+    spread_ticks: list[float],
+    lookback: int,
+    decision_delay_bars: int,
+) -> list[float | None]:
+    """Compute exact population z-scores matching run_mean_reversion_baseline."""
+    n = len(spread_ticks)
+    result: list[float | None] = [None] * n
+    start = lookback + decision_delay_bars
+    for index in range(start, n):
+        signal_index = index - decision_delay_bars
+        window = spread_ticks[signal_index - lookback:signal_index]
+        mean, standard_deviation = _rolling_stats(window)
+        deviation = spread_ticks[signal_index] - mean
+        result[index] = deviation / standard_deviation if standard_deviation > 0 else 0.0
+    return result
 
 
 def run_mean_reversion_baseline(
@@ -353,6 +372,8 @@ def run_mean_reversion_baseline(
     cash_in_lqdt: bool = False,
     funding_swaprates: dict[str, float] | None = None,
     sizing_intents: bool = False,
+    metrics_only: bool = False,
+    precomputed_z: list[float | None] | None = None,
 ) -> dict[str, Any]:
     """Run the delayed z-score control.
 
@@ -390,7 +411,10 @@ def run_mean_reversion_baseline(
         )
     near_multiplier = near_contract["tick_value"] / near_contract["tick_size"]
     far_multiplier = far_contract["tick_value"] / far_contract["tick_size"]
-    normalized_cost_profile = _validate_cost_profile(cost_profile) if cost_profile is not None else None
+    fast_intents = metrics_only and sizing_intents
+    normalized_cost_profile = (
+        None if fast_intents else _validate_cost_profile(cost_profile) if cost_profile is not None else None
+    )
     tariff_costs = normalized_cost_profile is not None and normalized_cost_profile["schema_version"] == COST_SCHEMA
     cost_components = COST_COMPONENTS if tariff_costs else REQUIRED_COST_COMPONENTS
     cost_status = (
@@ -401,6 +425,7 @@ def run_mean_reversion_baseline(
         raise AnalyticsError("open fills require open prices in the series")
 
     benchmark_start = rows[0]["benchmark_price"]
+    spread_ticks = None if precomputed_z is not None else [float(item["spread_ticks"]) for item in rows]
     position = 0
     entry_near = entry_far = 0.0
     entry_date: str | None = None
@@ -409,11 +434,13 @@ def run_mean_reversion_baseline(
     cumulative_funding = 0.0
     trade_funding = 0.0
     funding_swaprates = funding_swaprates or {}
+    lot_size = float(near_contract["lot_size"])
     trades: list[dict[str, Any]] = []
     daily = []
     cost_totals = {component: 0.0 for component in cost_components}
     entry_breakdown: dict[str, float] | None = None
     entry_signal_z: float | None = None
+    row_count = len(rows)
 
     def pnl_at(current_near: float, current_far: float) -> float:
         if position == 0:
@@ -422,6 +449,27 @@ def run_mean_reversion_baseline(
 
     def close_trade(date_key: str, current_near: float, current_far: float, reason: str) -> None:
         nonlocal position, entry_near, entry_far, entry_date, realized_gross, realized_costs, entry_breakdown, entry_signal_z, trade_funding
+        if fast_intents:
+            trades.append({
+                "entry_date": entry_date,
+                "exit_date": date_key,
+                "direction": "long_near_short_far" if position > 0 else "short_near_long_far",
+                "quantity": quantity,
+                "entry_near_fill": entry_near,
+                "entry_far_fill": entry_far,
+                "exit_near_fill": current_near,
+                "exit_far_fill": current_far,
+                "entry_spread_fill": _round(entry_near * near_multiplier - entry_far * far_multiplier),
+                "exit_spread_fill": _round(current_near * near_multiplier - current_far * far_multiplier),
+                "entry_signal_z": _round(entry_signal_z) if entry_signal_z is not None else None,
+                "exit_reason": reason,
+            })
+            position = 0
+            entry_date = None
+            trade_funding = 0.0
+            entry_breakdown = None
+            entry_signal_z = None
+            return
         price_gross = pnl_at(current_near, current_far)
         gross = price_gross + trade_funding
         exit_breakdown = (
@@ -479,20 +527,25 @@ def run_mean_reversion_baseline(
         entry_breakdown = None
         entry_signal_z = None
 
+    use_open = fill == "open"
     for index, row in enumerate(rows):
         action = "hold_flat" if position == 0 else "hold_position"
         signal_z = None
         signal_index = index - decision_delay_bars
         if signal_index >= lookback:
-            window = [float(item["spread_ticks"]) for item in rows[signal_index - lookback:signal_index]]
-            mean, standard_deviation = _rolling_stats(window)
-            deviation = float(rows[signal_index]["spread_ticks"]) - mean
-            signal_z = deviation / standard_deviation if standard_deviation > 0 else 0.0
-            fill_near, fill_far = (row["near_open"], row["far_open"]) if fill == "open" else (row["near_close"], row["far_close"])
+            if precomputed_z is not None:
+                signal_z = precomputed_z[index]
+            else:
+                window = spread_ticks[signal_index - lookback:signal_index]
+                mean, standard_deviation = _rolling_stats(window)
+                deviation = spread_ticks[signal_index] - mean
+                signal_z = deviation / standard_deviation if standard_deviation > 0 else 0.0
             if position != 0 and abs(signal_z) <= exit_z:
+                fill_near, fill_far = (row["near_open"], row["far_open"]) if use_open else (row["near_close"], row["far_close"])
                 close_trade(row.get("timestamp", row["date"]), fill_near, fill_far, "mean_reversion_exit")
                 action = "exit"
-            elif position == 0 and index < len(rows) - 1 and abs(signal_z) >= entry_z:
+            elif position == 0 and index < row_count - 1 and abs(signal_z) >= entry_z:
+                fill_near, fill_far = (row["near_open"], row["far_open"]) if use_open else (row["near_close"], row["far_close"])
                 position = 1 if signal_z < 0 else -1
                 entry_near, entry_far = fill_near, fill_far
                 entry_date = row.get("timestamp", row["date"])
@@ -505,11 +558,22 @@ def run_mean_reversion_baseline(
                 action = "enter_long_spread" if position > 0 else "enter_short_spread"
 
         funding_today = 0.0
-        swaprate = funding_swaprates.get(row["date"])
-        if position and swaprate is not None:
-            funding_today = -position * float(swaprate) * float(near_contract["lot_size"]) * quantity
-            trade_funding += funding_today
-            cumulative_funding += funding_today
+        if funding_swaprates and position:
+            swaprate = funding_swaprates.get(row["date"])
+            if swaprate is not None:
+                funding_today = -position * float(swaprate) * lot_size * quantity
+                if not fast_intents:
+                    trade_funding += funding_today
+                    cumulative_funding += funding_today
+        if fast_intents:
+            if funding_swaprates:
+                daily.append({
+                    "date": row["date"],
+                    "action": action,
+                    "position": position,
+                    "funding_rub": _round(funding_today),
+                })
+            continue
         benchmark_value = initial_capital * row["benchmark_price"] / benchmark_start
         strategy_value = initial_capital + realized_gross - realized_costs + cumulative_funding + pnl_at(row["near_close"], row["far_close"])
         daily.append({
@@ -533,12 +597,20 @@ def run_mean_reversion_baseline(
     if position != 0:
         last = rows[-1]
         close_trade(last.get("timestamp", last["date"]), last["near_close"], last["far_close"], "end_of_sample")
-        daily[-1]["action"] = "forced_exit_end_of_sample"
-        daily[-1]["position"] = 0
-        daily[-1]["strategy_value"] = _round(initial_capital + realized_gross + cumulative_funding - realized_costs)
-        daily[-1]["X"] = _round(daily[-1]["strategy_value"] - daily[-1]["benchmark_value"])
-        daily[-1]["gross_realized_pnl"] = _round(realized_gross + cumulative_funding)
-        daily[-1]["modeled_costs"] = _round(realized_costs) if normalized_cost_profile is not None else None
+        if fast_intents:
+            if funding_swaprates:
+                daily[-1]["action"] = "forced_exit_end_of_sample"
+                daily[-1]["position"] = 0
+        else:
+            daily[-1]["action"] = "forced_exit_end_of_sample"
+            daily[-1]["position"] = 0
+            daily[-1]["strategy_value"] = _round(initial_capital + realized_gross + cumulative_funding - realized_costs)
+            daily[-1]["X"] = _round(daily[-1]["strategy_value"] - daily[-1]["benchmark_value"])
+            daily[-1]["gross_realized_pnl"] = _round(realized_gross + cumulative_funding)
+            daily[-1]["modeled_costs"] = _round(realized_costs) if normalized_cost_profile is not None else None
+
+    if fast_intents:
+        return {"trades": trades, "daily": daily}
 
     cash_shortfall_rows = 0
     if cash_in_lqdt:

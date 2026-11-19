@@ -85,11 +85,11 @@ Per-trial (песочница): 17.6 мс → 11.8 мс (≈1.5×).
 
 * [x] Iteration 0 — тестовый набор эквивалентности + базовые замеры
 * [x] Iteration 1 — `metrics_only`, ленивый `StudyWindow.full`, I/O кэш `w0`, общий `CalendarData`
-* [x] Бит-в-бит эквивалентность подтверждена (206 тестов OK на целевом железе)
-* [ ] Мультипарковый прогон для приближения к целевому ускорению 12–18×
-* [ ] `proof_batch._prepare_cohort` — общий `CalendarData` уже передаётся; кэширование самого экземпляра опционально
+* [x] Iteration 2 — upstream `metrics_only` в генераторах replay (`proof.py`, `analytics.py`, `carry.py`, `calendar_spreads.py`, `s3_reference.py`), z-score/through/series кэширование на титрах, `MOEX_PROOF_REFERENCE_EVAL` по умолчанию `"0"`, `(resolved_path, st_mtime_ns, st_size)` кэш для `carry.fetch_history`
+* [x] Бит-в-бит эквивалентность подтверждена (тесты + реальные датасеты на целевом железе)
+* [ ] Опционально: дальнейшая оптимизация фиксированных накладных (`Optuna TPESampler`, холодный `_intraday_windows_for` в `catalog(1h)`)
 
-## 7. Состав変更 (коммит `f568c8a`)
+## 7. Состав изменений (Итерация 1, коммит `f568c8a`)
 
 * `src/moex_spread_lab/position_sizing.py` — `metrics_only` в `size_proof`, исправление `funding_rub` в журнале, `notes`/`run_id` только вне `metrics_only`
 * `src/moex_spread_lab/proof.py` — `reference_eval()`, `ProofService(calendar=...)`, shared `CalendarData`, частичные calendar-реплеи с `universe`/`run_id`
@@ -100,6 +100,46 @@ Per-trial (песочница): 17.6 мс → 11.8 мс (≈1.5×).
 * `tests/test_perf_equivalence.py` — новый набор тестов (Iteration 0)
 
 Принято решение: качество не деградирует; Optuna-траектория, IEEE-754 арифметика, `max_affordable`, риск/допуск, `canonical reason`, `plateau` и `run_id` сохраняются точно.
+
+## 8. Итерация 2 — сквозной fast-path симуляции и кэширование (готово)
+
+### 8.1 Что оптимизировано
+
+Профилирование (`cProfile`) на реальных данных Mac показало, что после Итерации 1 основное время в 1h/1d поиске тратилось **до** `size_proof` — на построение полных презентационных payload (`_clean`, `attach_entry_levels`, `json.dumps` для `_run_id`, `_price_ledger`, `_rel_pct`), повторный расчёт rolling z-score (`_rolling_stats` / `statistics.stdev`), повторную фильтрацию `through`, `deepcopy` в `size_proof`, `ThreadPoolExecutor` над локальными JSON и некэшированные чтения EOD-кэша `carry`.
+
+* `src/moex_spread_lab/analytics.py`:
+  * Добавлен `compute_rolling_z(spread_ticks, lookback, decision_delay_bars)` (точная арифметика `_rolling_stats` с list comprehension вместо генератора — 100% бит-в-бит).
+  * `run_mean_reversion_baseline(..., metrics_only=False, precomputed_z=None)` — использует кэшированный `precomputed_z`, а при `metrics_only and sizing_intents` пропускает расчёт комиссий/LQDT/дневного скругления.
+* `src/moex_spread_lab/s3_reference.py`:
+  * `zscore_trades`: кэш `z_cache` по `(z_cache_key, window, include_current)`, префиксные суммы `signal_eligible`, кэш парсинга дат для `max_hold`.
+  * `account_trades`: принимает предсортированный `benchmark_dates`.
+* `src/moex_spread_lab/carry.py`:
+  * Выделенный ограниченный LRU-кэш `_HISTORY_JSON_CACHE` (4096 записей) и `_BENCHMARK_PARSED_CACHE` (64 записи) по `(resolved_path, st_mtime_ns, st_size)`.
+  * В `build_carry_strategy(..., metrics_only=False)`: пропуск `statistics.median` для `strategy_variant == "funding_only"`, а при `metrics_only=True` пропуск `assess_vtb_pair`, `_benchmark_rows`, `lqdt_overlay_values` и тяжёлой `daily`-серии.
+* `src/moex_spread_lab/calendar_spreads.py`:
+  * `fetch_inputs`: при `opener is not None` (локальный `_offline` режим) не создаёт `ThreadPoolExecutor(max_workers=1)` на 1770 futures.
+  * `_load()` и `_intraday_window()`: предсортированный `benchmark_dates`, кэш `date.fromisoformat(session_day)`.
+  * `proof()` и `_proof_payload()`: request-scoped `_cache` (`through`, `h1`, `daily_eligible`, `z`, `series`), пропуск `_clean`/`notes`/`_rel_pct`/`ledger` при `metrics_only=True`.
+* `src/moex_spread_lab/position_sizing.py`:
+  * `size_proof(..., metrics_only=False, copy_unit=True)`: при `metrics_only=True` не делает `deepcopy`, не мутирует строки `series` (безопасное переиспользование `series` между титрами), строит 4-польный `ledger`, пропускает `summary`/`_cost_totals`/`notes`/`_run_id`; `copy_unit=False` для свежих unit из `sized_replay`.
+* `src/moex_spread_lab/proof.py` и `src/moex_spread_lab/proof_search.py`:
+  * `reference_eval()` теперь по умолчанию `"0"` (opt-out: `MOEX_PROOF_REFERENCE_EVAL=1`).
+  * Контракт прямого `replay(req, through=cutoff)` сохранён: `metrics_only=False` по умолчанию; `metrics_only=True` включает только `StudyWindow.proof(..., training=True)` при `not reference_eval()`.
+  * В `ProofService._prepare_pair` / `_mean_reversion_proof` / `_funding_proof` / `prepare`: request-scoped кэширование `through`-срезов, `marks`, `z_cache`, `signal_dates`, неизменяемых `base_series` и `window_meta`, пропуск `_clean`/`attach_entry_levels`/`_run_id` на обучающих титрах.
+
+### 8.2 Замеры на реальных данных (MacBook Pro 16" 2019, i7-9750H, CPython 3.12.14)
+
+Сравнение на реальных кэшах `data/` (`validation_percent=20`, `allow_failed_volume=True`, `allow_failed_capital=True`, 2 инструмента на сценарий):
+
+| Сценарий (2 инструмента) | Итерация 1 (`cProfile`) | Итерация 2 (`ref=1`, с кэшами) | Итерация 2 (`ref=0`, fast-path по умолчанию) |
+|--------------------------|-------------------------|---------------------------------|----------------------------------------------|
+| `catalog(1h)` холодный | 12.575 с (`cProfile`) | — | **7.710 с** (wall-clock) |
+| `PAIR 1h` (`CNYRUBF/CRZ6`, `GLDRUBF/GLZ6`) | 84.422 с (`cProfile`) | 29.692 с | **4.979 с** (**5.96×** к `ref=1`, **~17×** к `cProfile` Итер. 1) |
+| `CALENDAR 1h` (`SRZ4/SRH5`, `SRH5/SRM5`, холодный `_load`) | 46.568 с (`cProfile`) | 8.317 с | **4.636 с** (**1.79×** к `ref=1`, **~10×** к `cProfile` Итер. 1) |
+| `PAIR 1d` (`CNYRUBF/CRZ6`, `IMOEXF/MMZ6`, `optimize_strategy=True`) | 18.228 с (`cProfile`) | 9.384 с | **4.474 с** (**2.10×** к `ref=1`, доминирует Optuna TPE ~3 с) |
+| `CAL 1d` (`SRM3/SRU3`, `SRU3/SRZ3`, холодный `_load`) | 5.780 с (`cProfile`) | 2.148 с | **2.471 с** (доминирует Optuna TPE + холодный `_load`) |
+
+Бит-в-бит эквивалентность (`ref=1` == `ref=0`) подтверждена как на синтетическом наборе `tests/test_perf_equivalence.py`, так и на всех 4 реальных прогонах `data/`.
 
 ---
 

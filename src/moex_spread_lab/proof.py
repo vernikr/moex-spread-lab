@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .account_risk import assess_vtb_pair
-from .analytics import run_mean_reversion_baseline
+from .analytics import compute_rolling_z, run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study
 from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
@@ -43,10 +43,10 @@ FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data
 def reference_eval() -> bool:
     """Full reference path (series, summary, run_id) vs the metrics-only fast path.
 
-    Defaults to the reference path so behaviour is unchanged unless the operator
-    explicitly opts into the fast path with MOEX_PROOF_REFERENCE_EVAL=0.
+    Defaults to the metrics-only training fast path ("0"); set MOEX_PROOF_REFERENCE_EVAL=1
+    to force the full reference path during training probes.
     """
-    return os.environ.get("MOEX_PROOF_REFERENCE_EVAL", "1") == "1"
+    return os.environ.get("MOEX_PROOF_REFERENCE_EVAL", "0") == "1"
 
 
 def _clean(value: Any) -> Any:
@@ -238,9 +238,10 @@ class ProofService:
         replay = self._prepare_fixed(intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True)
         dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
         contracts = _load_instruments(self.root / "data/w1/current-intake.json")
+        marks_cache: dict[str | None, dict[str, float]] = {}
 
-        def sized_replay(request, through=None):
-            unit = replay(intent_request(request), through=through)
+        def sized_replay(request, through=None, *, metrics_only: bool = False):
+            unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
             if unit.get("schema_version") == "calendar-proof.v1":
                 if through is None:
                     unit = self._calendar_proof(request, unit)
@@ -250,34 +251,39 @@ class ProofService:
                     # but the structural markers size_proof/_Terms need must still
                     # be present. `universe` routes _Terms to the native branch;
                     # `run_id` is the unit identity fed into proof run_id (unused
-                    # by _measure, only needed so size_proof does not crash).
+                    # by _measure, only needed when metrics_only is False).
                     unit.setdefault("universe", CALENDAR_UNIVERSE)
-                    unit.setdefault(
-                        "run_id",
-                        _run_id(
-                            {
-                                "selection": unit.get("selection", {}),
-                                "daily": unit.get("series", []),
-                                "source_hashes": {
-                                    k: v
-                                    for k, v in (unit.get("provenance") or {}).items()
-                                    if isinstance(v, str) and "sha256" in k
-                                },
-                            }
-                        ),
-                    )
-            if not dates or dates[0] > unit["series"][0]["date"]:
-                raise W0Error("Нет отметки LQDT на начало истории.")
-            marks = {
-                r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
-                for r in unit["series"]
-            }
+                    if not metrics_only:
+                        unit.setdefault(
+                            "run_id",
+                            _run_id(
+                                {
+                                    "selection": unit.get("selection", {}),
+                                    "daily": unit.get("series", []),
+                                    "source_hashes": {
+                                        k: v
+                                        for k, v in (unit.get("provenance") or {}).items()
+                                        if isinstance(v, str) and "sha256" in k
+                                    },
+                                }
+                            ),
+                        )
+            marks = marks_cache.get(through)
+            if marks is None:
+                if not dates or dates[0] > unit["series"][0]["date"]:
+                    raise W0Error("Нет отметки LQDT на начало истории.")
+                marks = {
+                    r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
+                    for r in unit["series"]
+                }
+                marks_cache[through] = marks
             return size_proof(
                 unit,
                 marks,
                 settings,
                 contracts,
-                metrics_only=(through is not None and not reference_eval()),
+                metrics_only=metrics_only,
+                copy_unit=False,
             )
 
         return sized_replay
@@ -302,10 +308,18 @@ class ProofService:
         from .calendar_spreads import CalendarData
 
         calendar = calendar if calendar is not None else CalendarData(self.root)
+        cal_cache: dict[str, Any] = {}
 
-        def replay(request, through=None):
-            payload = calendar.proof({**request, "timeframe": settings.timeframe}, through=through,
-                                    initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe)
+        def replay(request, through=None, *, metrics_only: bool = False):
+            payload = calendar.proof(
+                {**request, "timeframe": settings.timeframe},
+                through=through,
+                initial_capital=settings.initial_capital_rub,
+                timeframe=settings.timeframe,
+                metrics_only=metrics_only,
+                sizing_intents=sizing_intents,
+                _cache=cal_cache,
+            )
             # The search only needs trades, daily marks and admissions from partial replays.
             return payload if through is not None else self._calendar_proof(request, payload)
 
@@ -460,13 +474,22 @@ class ProofService:
             "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
         }
         prepared = (*prepared, source_hashes)
+        pair_cache: dict[str, Any] = {
+            "through": {},
+            "signal_dates": {},
+            "z": {},
+            "series": {},
+            "window_meta": {},
+            "funding_through": {},
+        }
 
-        def replay(request, through=None):
+        def replay(request, through=None, *, metrics_only: bool = False):
             execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
                          "fill": pair_fill(request, strategy), "initial_capital_rub": settings.initial_capital_rub}
             params = screener_app._parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
-                          risk_for(execution["quantity"]), prepared, through)
+                          risk_for(execution["quantity"]), prepared, through,
+                          metrics_only=metrics_only, pair_cache=pair_cache)
 
         return replay
 
@@ -485,36 +508,57 @@ class ProofService:
 
     def _mean_reversion_proof(
         self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
+        *, metrics_only: bool = False, pair_cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         near, far = pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
         fill_label = execution["fill"]
         delay, fill_quote = PRICE_FILLS[fill_label]
         series, analysis_rows, window, funding_provenance, source_hashes = prepared
-        evidence = window.resolve(through) if window else None
-        marks = evidence.marks if evidence else {}
-        funding_swaprates = evidence.rates if evidence else {}
-        if through is not None:
-            def inside_cutoff(row):
-                key = (
-                    row.get("session_date", row["date"][:10])
-                    if len(through) == 10 and get_timeframe(series["timeframe"]).intraday
-                    else row["date"]
-                )
-                return key <= through
+        intraday = get_timeframe(series["timeframe"]).intraday
+        through_cache = pair_cache["through"] if pair_cache is not None else None
+        if through_cache is not None and through in through_cache:
+            series, analysis_rows, analysis_series, spread_ticks, evidence, marks, funding_swaprates, volume_map = through_cache[through]
+        else:
+            evidence = window.resolve(through) if window else None
+            marks = evidence.marks if evidence else {}
+            funding_swaprates = evidence.rates if evidence else {}
+            if through is not None:
+                def inside_cutoff(row):
+                    key = (
+                        row.get("session_date", row["date"][:10])
+                        if len(through) == 10 and intraday
+                        else row["date"]
+                    )
+                    return key <= through
 
-            series = {**series, "rows": [r for r in series["rows"] if inside_cutoff(r)]}
-            analysis_rows = [r for r in analysis_rows if inside_cutoff(r)]
-        analysis_series = {**series, "rows": analysis_rows}
+                series = {**series, "rows": [r for r in series["rows"] if inside_cutoff(r)]}
+                analysis_rows = [r for r in analysis_rows if inside_cutoff(r)]
+            analysis_series = {**series, "rows": analysis_rows}
+            spread_ticks = [float(item["spread_ticks"]) for item in analysis_rows]
+            volume_map = {row["date"]: row for row in series["rows"]}
+            if through_cache is not None:
+                through_cache[through] = (series, analysis_rows, analysis_series, spread_ticks, evidence, marks, funding_swaprates, volume_map)
         near_contract = series["contracts"][near]
         far_contract = series["contracts"][far]
         near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
         far_mult = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
         margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
+        lookback = int(params["lookback"])
+        z_cache = pair_cache["z"] if pair_cache is not None else None
+        z_key = (through, lookback, delay)
+        precomputed_z = z_cache.get(z_key) if z_cache is not None else None
+        if precomputed_z is None:
+            precomputed_z = compute_rolling_z(
+                spread_ticks, lookback=lookback, decision_delay_bars=delay
+            )
+            if z_cache is not None:
+                z_cache[z_key] = precomputed_z
+        sizing_intents = bool(execution.get("sizing_intents", False))
         report = run_mean_reversion_baseline(
             analysis_series,
             initial_capital=execution["initial_capital_rub"],
-            lookback=int(params["lookback"]),
+            lookback=lookback,
             entry_z=float(params["entry_z"]),
             exit_z=float(params["exit_z"]),
             quantity=quantity,
@@ -524,14 +568,136 @@ class ProofService:
             decision_delay_bars=delay,
             cash_in_lqdt=True,
             funding_swaprates=funding_swaprates,
-            sizing_intents=execution.get("sizing_intents", False),
+            sizing_intents=sizing_intents,
+            metrics_only=metrics_only,
+            precomputed_z=precomputed_z,
         )
-        daily_map = {row["date"]: row for row in report["daily"]}
-        volume_map = {row["date"]: row for row in series["rows"]}
+        sd_cache = pair_cache["signal_dates"] if pair_cache is not None else None
+        sd_key = (through, delay)
+        signal_dates = sd_cache.get(sd_key) if sd_cache is not None else None
+        if signal_dates is None:
+            signal_dates = {r["date"]: analysis_rows[max(0, i - delay)]["date"] for i, r in enumerate(analysis_rows)}
+            if sd_cache is not None:
+                sd_cache[sd_key] = signal_dates
 
-        trades: list[dict[str, Any]] = []
-        intraday = get_timeframe(series["timeframe"]).intraday
-        signal_dates = {r["date"]: analysis_rows[max(0, i - delay)]["date"] for i, r in enumerate(analysis_rows)}
+        if metrics_only and sizing_intents:
+            trades: list[dict[str, Any]] = []
+            for row in report["trades"]:
+                side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
+                entry_date = row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
+                exit_date = row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
+                trades.append({
+                    "side": side,
+                    "signal": {"kind": "z", "value": row.get("entry_signal_z"), "date": signal_dates[entry_date]},
+                    "entry": {
+                        "date": entry_date,
+                        "spread_fill": row["entry_spread_fill"],
+                        "near_price": row["entry_near_fill"],
+                        "far_price": row["entry_far_fill"],
+                    },
+                    "exit": {
+                        "date": exit_date,
+                        "spread_fill": row["exit_spread_fill"],
+                        "near_price": row["exit_near_fill"],
+                        "far_price": row["exit_far_fill"],
+                    },
+                    "exit_reason": row["exit_reason"],
+                    "open_at_end": row["exit_reason"] in FORCED_EXIT_REASONS,
+                })
+
+            series_cache = pair_cache["series"] if pair_cache is not None else None
+            base_series = series_cache.get(through) if series_cache is not None else None
+            if base_series is None:
+                base_series = [
+                    {
+                        "date": row["date"],
+                        "benchmark_mark_date": row.get("benchmark_mark_date"),
+                        "spread": row["spread_value"],
+                        "volume_eligible": _positive_pair_volume(row),
+                        "funding_rub": None,
+                        "funding_contracts": 0,
+                    }
+                    for row in series["rows"]
+                ]
+                if series_cache is not None:
+                    series_cache[through] = base_series
+
+            if funding_swaprates:
+                daily_map = {row["date"]: row for row in report["daily"]}
+                position_on_last_analyzed_day = 0
+                series_rows = []
+                for base_row in base_series:
+                    day = base_row["date"]
+                    daily = daily_map.get(day, {})
+                    if day in daily_map:
+                        position_on_last_analyzed_day = daily.get("position") or 0
+                    position = daily.get("position", position_on_last_analyzed_day) or 0
+                    held_for_clearing = bool(position) or daily.get("action") == "forced_exit_end_of_sample"
+                    series_rows.append({
+                        **base_row,
+                        "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in marks else None,
+                        "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,
+                    })
+            else:
+                series_rows = base_series
+
+            meta_cache = pair_cache["window_meta"] if pair_cache is not None else None
+            window_meta = meta_cache.get(through) if meta_cache is not None else None
+            if window_meta is None:
+                from .screener_app import MIN_DAILY_VOLUME, _session_volumes
+
+                if "sessions" not in pair_cache:
+                    pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
+                sessions = pair_cache["sessions"]
+                near_sess = sessions.get(near, {})
+                far_sess = sessions.get(far, {})
+                volumes = []
+                for row in series["rows"]:
+                    sdate = row.get("session_date", row["date"][:10])
+                    nv = near_sess.get(sdate)
+                    fv = far_sess.get(sdate)
+                    if nv is not None and fv is not None and float(nv) > 0 and float(fv) > 0:
+                        volumes.append(min(nv, fv))
+                min_leg_volume = min(volumes) if volumes else None
+                window_meta = {
+                    "min_leg_volume": min_leg_volume,
+                    "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                }
+                if meta_cache is not None:
+                    meta_cache[through] = window_meta
+
+            return {
+                "schema_version": PROOF_SCHEMA,
+                "universe": PAIR_UNIVERSE,
+                "selection": {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": pair["pair_id"],
+                    "strategy": "mean_reversion",
+                    "timeframe": series["timeframe"],
+                    "fill": fill_label,
+                    "quantity": quantity,
+                    "slippage_ticks": slippage,
+                    "parameters": params,
+                    "initial_capital_rub": execution["initial_capital_rub"],
+                },
+                "initial_capital_rub": execution["initial_capital_rub"],
+                "instrument": {
+                    "near": near,
+                    "far": far,
+                    "family": pair["family"],
+                },
+                "window": {
+                    **window_meta,
+                    "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
+                },
+                "contract": {},
+                "series": series_rows,
+                "trades": trades,
+                "provenance": funding_provenance,
+            }
+
+        daily_map = {row["date"]: row for row in report["daily"]}
+        trades = []
         for number, row in enumerate(report["trades"], start=1):
             side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
             entry_date = row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
@@ -560,7 +726,12 @@ class ProofService:
             )
 
         from .screener_app import _session_volumes
-        sessions = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
+        if pair_cache is not None:
+            if "sessions" not in pair_cache:
+                pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
+            sessions = pair_cache["sessions"]
+        else:
+            sessions = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
         series_rows = []
         position_on_last_analyzed_day = 0
         for row in series["rows"]:
@@ -608,6 +779,47 @@ class ProofService:
             )
 
         ledger = self._price_ledger(series_rows, trades, near_mult, far_mult, quantity)
+        if metrics_only:
+            from .screener_app import MIN_DAILY_VOLUME
+
+            volumes = [
+                min(row.get("near_session_volume", row.get("near_volume")), row.get("far_session_volume", row.get("far_volume")))
+                for row in series_rows
+                if row.get("near_session_volume", row.get("near_volume")) is not None
+                and row.get("far_session_volume", row.get("far_volume")) is not None
+                and float(row.get("near_session_volume", row.get("near_volume"))) > 0
+                and float(row.get("far_session_volume", row.get("far_volume"))) > 0
+            ]
+            min_leg_volume = min(volumes) if volumes else None
+            return {
+                "schema_version": PROOF_SCHEMA,
+                "universe": PAIR_UNIVERSE,
+                "selection": {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": pair["pair_id"],
+                    "strategy": "mean_reversion",
+                    "timeframe": series["timeframe"],
+                    "fill": fill_label,
+                    "quantity": quantity,
+                    "slippage_ticks": slippage,
+                    "parameters": params,
+                    "initial_capital_rub": execution["initial_capital_rub"],
+                },
+                "initial_capital_rub": execution["initial_capital_rub"],
+                "instrument": {
+                    "near": near,
+                    "far": far,
+                    "family": pair["family"],
+                },
+                "window": {
+                    "min_leg_volume": min_leg_volume,
+                    "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                    "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
+                },
+                "trades": trades,
+                "ledger": ledger,
+                "provenance": funding_provenance,
+            }
         return self._pair_payload(
             pair=pair,
             strategy="mean_reversion",
@@ -663,13 +875,40 @@ class ProofService:
 
     def _funding_proof(
         self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
+        *, metrics_only: bool = False, pair_cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        from .screener_app import MIN_DAILY_VOLUME
+
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
         study, near_source, far_source, window, source_hashes = prepared
-        evidence = window.resolve(through)
-        if through is not None:
-            study = {**study, "rows": [row for row in study["rows"] if row["date"] <= through]}
+        ft_cache = pair_cache["funding_through"] if pair_cache is not None else None
+        if ft_cache is not None and through in ft_cache:
+            study, evidence, study_by_date, ref_near, ref_far, window_meta = ft_cache[through]
+        else:
+            evidence = window.resolve(through)
+            if through is not None:
+                study = {**study, "rows": [row for row in study["rows"] if row["date"] <= through]}
+            study_rows = study["rows"]
+            study_by_date = {row["date"]: row for row in study_rows}
+            ref_near = float(study_rows[-1]["near_settle"])
+            ref_far = float(study_rows[-1]["far_settle"])
+            volumes = [
+                min(row.get("near_volume"), row.get("far_volume"))
+                for row in study_rows
+                if row.get("near_volume") is not None
+                and row.get("far_volume") is not None
+                and float(row.get("near_volume")) > 0
+                and float(row.get("far_volume")) > 0
+            ]
+            min_leg_volume = min(volumes) if volumes else None
+            window_meta = {
+                "min_leg_volume": min_leg_volume,
+                "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+            }
+            if ft_cache is not None:
+                ft_cache[through] = (study, evidence, study_by_date, ref_near, ref_far, window_meta)
+
         report = build_carry_strategy(
             study,
             inputs.benchmark,
@@ -682,22 +921,87 @@ class ProofService:
             execution_delay_rows=0,
             cash_in_lqdt=True,
             slippage_ticks=slippage,
+            metrics_only=metrics_only,
         )
         near_mult = _point_value(terms[near], fallback=1.0)
         far_mult = _point_value(terms[far], fallback=near_mult)
         margin_pair = (float(terms[near].get("initial_margin") or 0.0) + float(terms[far].get("initial_margin") or 0.0)) * quantity
+        sizing_intents = bool(execution.get("sizing_intents", False))
+        daily_rows = report["daily"]
+        daily_by_date = {row["date"]: row for row in daily_rows}
+        last_date = daily_rows[-1]["date"]
+
+        if metrics_only and sizing_intents:
+            trades: list[dict[str, Any]] = []
+            for row in report["trades"]:
+                open_at_end = row["status"] == "open_at_data_end_no_executable_exit"
+                entry_date = row["entry_execution_date"]
+                exit_date = row["exit_execution_date"] or last_date
+                erow = daily_by_date[entry_date]
+                xrow = daily_by_date[exit_date]
+                trades.append({
+                    "side": "short_spread",
+                    "signal": {"kind": "funding", "value": None, "date": row["entry_decision_date"]},
+                    "entry": {
+                        "date": entry_date,
+                        "spread_fill": round(erow["near_settle"] * near_mult - erow["far_settle"] * far_mult, 8),
+                        "near_price": erow["near_settle"],
+                        "far_price": erow["far_settle"],
+                    },
+                    "exit": {
+                        "date": exit_date,
+                        "spread_fill": round(xrow["near_settle"] * near_mult - xrow["far_settle"] * far_mult, 8),
+                        "near_price": xrow["near_settle"],
+                        "far_price": xrow["far_settle"],
+                    },
+                    "open_at_end": open_at_end,
+                })
+            series_rows = [
+                {
+                    "date": row["date"],
+                    "spread": round(row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8),
+                    "funding_rub": round(row["daily_funding_included_rub"], 2),
+                    "funding_contracts": quantity if row["position"] else 0,
+                }
+                for row in daily_rows
+            ]
+            return {
+                "schema_version": PROOF_SCHEMA,
+                "universe": PAIR_UNIVERSE,
+                "selection": {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": pair_id,
+                    "strategy": "funding_only",
+                    "timeframe": "1d",
+                    "fill": "same_day_settlement",
+                    "quantity": quantity,
+                    "slippage_ticks": slippage,
+                    "parameters": params,
+                    "initial_capital_rub": execution["initial_capital_rub"],
+                },
+                "initial_capital_rub": execution["initial_capital_rub"],
+                "instrument": {
+                    "near": near,
+                    "far": far,
+                    "family": pair["family"],
+                },
+                "window": {
+                    **window_meta,
+                    "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
+                },
+                "contract": {},
+                "series": series_rows,
+                "trades": trades,
+                "provenance": evidence.provenance,
+            }
 
         study_rows = study["rows"]
-        ref_near = float(study_rows[-1]["near_settle"])
-        ref_far = float(study_rows[-1]["far_settle"])
         tariff = tariff_profile(slippage)
         leg_contracts = _load_contracts_for_side_cost(inputs.contracts, near, far)
         reference_side = side_cost(tariff, [(leg_contracts[near], ref_near), (leg_contracts[far], ref_far)], 1)
         entry_costs = {key: round(value * quantity, 2) for key, value in reference_side.items()}
 
         signal_reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])}
-        daily_rows = report["daily"]
-        daily_by_date = {row["date"]: row for row in daily_rows}
 
         def settlement_fill(day, costs):
             row = daily_by_date[day]
@@ -706,8 +1010,7 @@ class ProofService:
             spread = round(near_price * near_mult - far_value, 8)
             return self._fill_block(day, spread, near_price, far_price, daily_by_date, costs, far_value=far_value)
 
-        trades: list[dict[str, Any]] = []
-        last_date = daily_rows[-1]["date"]
+        trades = []
         for number, row in enumerate(report["trades"], start=1):
             open_at_end = row["status"] == "open_at_data_end_no_executable_exit"
             entry_date = row["entry_execution_date"]
@@ -742,7 +1045,37 @@ class ProofService:
                 )
             )
 
-        study_by_date = {row["date"]: row for row in study_rows}
+        if metrics_only:
+            ledger = self._funding_ledger(daily_rows, trades)
+            return {
+                "schema_version": PROOF_SCHEMA,
+                "universe": PAIR_UNIVERSE,
+                "selection": {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": pair_id,
+                    "strategy": "funding_only",
+                    "timeframe": "1d",
+                    "fill": "same_day_settlement",
+                    "quantity": quantity,
+                    "slippage_ticks": slippage,
+                    "parameters": params,
+                    "initial_capital_rub": execution["initial_capital_rub"],
+                },
+                "initial_capital_rub": execution["initial_capital_rub"],
+                "instrument": {
+                    "near": near,
+                    "far": far,
+                    "family": pair["family"],
+                },
+                "window": {
+                    **window_meta,
+                    "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
+                },
+                "trades": trades,
+                "ledger": ledger,
+                "provenance": evidence.provenance,
+            }
+
         near_lot = float(terms[near].get("lot_size") or 1.0)
         series_rows = []
         for row in daily_rows:

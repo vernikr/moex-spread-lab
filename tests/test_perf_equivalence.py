@@ -16,10 +16,10 @@ from unittest.mock import patch
 from proof_fixtures import fixture, funding_winner
 
 from moex_spread_lab.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.carry import _history_url
+from moex_spread_lab.carry import _history_url, fetch_history
 from moex_spread_lab.evaluation_periods import ResearchSettings, save_settings
 from moex_spread_lab.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
+from moex_spread_lab.proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService, reference_eval
 from moex_spread_lab.proof_batch import checked_plateau
 from moex_spread_lab.proof_search import research_run
 from moex_spread_lab.proof_windows import window_summaries
@@ -707,6 +707,84 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             cat_after = service.catalog()
             self.assertIsNotNone(cat_after)
             self.assertEqual(cat_before["timeframe"], cat_after["timeframe"])
+
+            # 4. Also verify carry.fetch_history's dedicated mtime/size cache
+            #    observes a same-size in-place edit immediately.
+            till_match = srh3_eod.name.split("-")[4:7]
+            till_str = "-".join(till_match)
+            before_hist = fetch_history(
+                "SRH3",
+                HISTORY_FROM,
+                till_str,
+                cache_dir=root / "data/spread-history-cache",
+                delay_seconds=0,
+                fields=HISTORY_FIELDS,
+            )
+            mutated_srh3_2 = mutated_srh3.replace("30001.0", "30002.0", 1)
+            self.assertEqual(len(mutated_srh3), len(mutated_srh3_2))
+            time.sleep(0.02)
+            srh3_eod.write_text(mutated_srh3_2, encoding="utf-8")
+            after_hist = fetch_history(
+                "SRH3",
+                HISTORY_FROM,
+                till_str,
+                cache_dir=root / "data/spread-history-cache",
+                delay_seconds=0,
+                fields=HISTORY_FIELDS,
+            )
+            self.assertNotEqual(before_hist["rows"][0], after_hist["rows"][0])
+
+    def test_default_reference_eval_is_fast_while_direct_through_replay_stays_full(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MOEX_PROOF_REFERENCE_EVAL", None)
+            self.assertFalse(reference_eval())
+        with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "1"}):
+            self.assertTrue(reference_eval())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_h1_workspace(root)
+            settings = ResearchSettings(
+                timeframe="1h",
+                validation_percent=20,
+                allow_failed_volume=True,
+                allow_failed_capital=True,
+                initial_capital_rub=100000.0,
+            )
+            service = ProofService(root)
+            pair_req = {
+                "universe": PAIR_UNIVERSE,
+                "pair": "CNYRUBF/CRZ6",
+                "strategy": "mean_reversion",
+                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                "fill": "next_open",
+                "sizing": AUTO_SIZING,
+            }
+            cal_req = {
+                "universe": CALENDAR_UNIVERSE,
+                "asset": "SR",
+                "pair": "SRH3/SRM3",
+                "strategy": "zscore_mean_reversion",
+                "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
+                "fill": "next_open",
+                "sizing": AUTO_SIZING,
+            }
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MOEX_PROOF_REFERENCE_EVAL", None)
+                pair_replay = service.prepare(pair_req, settings=settings)(
+                    pair_req, through="2026-01-20"
+                )
+                self.assertIn("session_date", pair_replay["series"][0])
+                self.assertIn("free_cash_rub", pair_replay["ledger"][0])
+                self.assertIn("run_id", pair_replay)
+                self.assertIn("provenance", pair_replay)
+
+                cal_replay = service.prepare(cal_req, settings=settings)(
+                    cal_req, through="2023-03-01"
+                )
+                self.assertIn("session_date", cal_replay["series"][0])
+                self.assertIn("free_cash_rub", cal_replay["ledger"][0])
+                self.assertIn("run_id", cal_replay)
 
 
 if __name__ == "__main__":

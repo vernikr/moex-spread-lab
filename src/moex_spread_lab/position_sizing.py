@@ -140,7 +140,7 @@ class _Terms:
         return self.margin * quantity
 
 
-def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
+def size_proof(unit, marks, settings, contracts, *, metrics_only=False, copy_unit=True):
     """Replay independent signal intents; all account observations are prefix-causal.
 
     When `metrics_only` is True (training probes), the output keeps only the fields
@@ -152,7 +152,13 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
     from .proof import _cost_totals, _run_id
 
     initial = _positive(settings.initial_capital_rub, "начальный капитал")
-    proof = unit if metrics_only else deepcopy(unit)
+    proof = (
+        {**unit, "selection": dict(unit["selection"])}
+        if metrics_only
+        else deepcopy(unit)
+        if copy_unit
+        else unit
+    )
     terms = _Terms(proof, contracts, settings)
     rows = proof["series"]
     prices = [_positive(marks[r["date"]], "отметка LQDT") for r in rows]
@@ -164,6 +170,7 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
     peak = drawdown = 0.0
     paused = False
     shortfalls = 0
+    strategy_name = proof["selection"]["strategy"]
 
     def scaled(costs, q):
         return {k: _money(v * q) for k, v in costs.items()}
@@ -184,7 +191,7 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
         entry_eligible = row.get("entry_eligible", eligible)
         exit_eligible = row.get("exit_eligible", eligible)
         daily = cost = 0.0
-        events = []
+        events = None if metrics_only else []
         funding_owner = None
         # Account resources observable at this row's fill, not at its later close.
         fill_wealth = wealth
@@ -210,13 +217,14 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and proof["selection"]["strategy"] == "funding_only"
+                        and strategy_name == "funding_only"
                         else scaled(unit_costs, t["quantity"])
                     )
                     fee = sum(t["exit"]["costs"].values())
                     cost += fee
                     fill_wealth += change - fee
-                    events.append(f"EXIT #{t['number']}")
+                    if events is not None:
+                        events.append(f"EXIT #{t['number']}")
                     position = None
             if position is not None:
                 funding_owner = t
@@ -246,22 +254,23 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
                 )
             )
             if not q:
-                why = (
-                    "Достигнут лимит риска; новые входы остановлены."
-                    if paused
-                    else "Недостаточно средств на один спред, издержки и обязательный резерв."
-                )
-                rejected.append(
-                    {
-                        "date": day,
-                        "quantity": 0,
-                        "reason": why,
-                        "available_capital_rub": _money(budget),
-                        "margin_per_pair_rub": _money(margin),
-                        "signal": candidate.get("signal"),
-                    }
-                )
-                events.append("SKIP: " + why)
+                if not metrics_only:
+                    why = (
+                        "Достигнут лимит риска; новые входы остановлены."
+                        if paused
+                        else "Недостаточно средств на один спред, издержки и обязательный резерв."
+                    )
+                    rejected.append(
+                        {
+                            "date": day,
+                            "quantity": 0,
+                            "reason": why,
+                            "available_capital_rub": _money(budget),
+                            "margin_per_pair_rub": _money(margin),
+                            "signal": candidate.get("signal"),
+                        }
+                    )
+                    events.append("SKIP: " + why)
             else:
                 t = candidate
                 t.update(
@@ -270,20 +279,22 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
                     margin_rub=_money(margin * q),
                     _gross=0.0,
                     _funding=0.0,
-                    sizing={
+                )
+                if not metrics_only:
+                    t["sizing"] = {
                         "mode": AUTO_SIZING,
                         "available_capital_rub": _money(budget),
                         "margin_per_pair_rub": margin,
                         "entry_cost_per_pair_rub": sum(entry_costs.values()),
                         "stress_reserve_enforced": not settings.allow_failed_capital,
-                    },
-                )
+                    }
+                    t["entry"]["margin_rub"] = t["margin_rub"]
                 t["entry"]["costs"] = scaled(entry_costs, q)
-                t["entry"]["margin_rub"] = t["margin_rub"]
                 fee = sum(t["entry"]["costs"].values())
                 cost += fee
                 accepted.append(t)
-                events.append(f"ENTRY #{t['number']}")
+                if events is not None:
+                    events.append(f"ENTRY #{t['number']}")
                 sign = 1 if t["side"] == "long_spread" else -1
                 position = {"trade": t, "sign": sign, "mark": t["entry"]["spread_fill"]}
                 funding_owner = t
@@ -301,11 +312,12 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and proof["selection"]["strategy"] == "funding_only"
+                        and strategy_name == "funding_only"
                         else scaled(exit_costs, q)
                     )
                     cost += sum(t["exit"]["costs"].values())
-                    events.append(f"EXIT #{t['number']}")
+                    if events is not None:
+                        events.append(f"EXIT #{t['number']}")
                     position = None
 
         funding_q = (
@@ -328,11 +340,22 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
             posted = terms.posted_margin(i, position["trade"]["quantity"])
         # Journal-only zero-volume rows cannot revalue the position or its margin.
         free = wealth - posted
-        shortfalls += free < -1e-7
+        shortfall = free < -1e-7
+        shortfalls += shortfall
         excess = wealth - initial * prices[i] / prices[0]
         peak = max(peak, excess)
         drawdown = max(drawdown, peak - excess)
-        paused |= peak - excess >= 10_000 or excess <= -10_000 or free < -1e-7
+        paused |= peak - excess >= 10_000 or excess <= -10_000 or shortfall
+        if metrics_only:
+            ledger.append(
+                {
+                    "date": day,
+                    "cumulative_net_rub": cumulative,
+                    "account_value_rub": wealth,
+                    "cash_shortfall": shortfall,
+                }
+            )
+            continue
         q_held = position["trade"]["quantity"] if position is not None else 0
         row.update(
             quantity=q_held,
@@ -358,9 +381,27 @@ def size_proof(unit, marks, settings, contracts, *, metrics_only=False):
                 "posted_margin_rub": posted,
                 "free_cash_rub": free,
                 "account_value_rub": wealth,
-                "cash_shortfall": free < -1e-7,
+                "cash_shortfall": shortfall,
             }
         )
+
+    if metrics_only:
+        for t in accepted:
+            t["gross_rub"] = _money(t.pop("_gross"))
+            t.pop("_funding")
+            t["costs_rub"] = _money(
+                sum(sum(t[s]["costs"].values()) for s in ("entry", "exit"))
+            )
+            t["net_rub"] = _money(t["gross_rub"] - t["costs_rub"])
+            t["lqdt_on_margin_rub"] = _money(
+                t["margin_rub"] * (marks[t["exit"]["date"]] / marks[t["entry"]["date"]] - 1)
+            )
+        proof["selection"]["sizing"] = AUTO_SIZING
+        proof["initial_capital_rub"] = initial
+        proof["trades"] = accepted
+        proof["ledger"] = ledger
+        proof["sizing"] = {"initial_capital_rub": initial}
+        return proof
 
     for t in accepted:
         t["gross_rub"] = _money(t.pop("_gross"))

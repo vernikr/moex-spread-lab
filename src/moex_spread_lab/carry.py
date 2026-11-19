@@ -19,7 +19,7 @@ from .account_risk import assess_vtb_pair
 from .analytics import load_contracts
 from .costs import side_cost, tariff_profile
 from .portfolio import lqdt_overlay_values
-from .w0 import W0Error
+from .w0 import W0Error, _HashedJSONCache, read_hashed_json
 
 CARRY_SCHEMA = "carry-study.v1"
 HISTORY_SCHEMA = "iss-history.v1"
@@ -102,6 +102,10 @@ def _history_url(secid: str, from_date: str, till_date: str, start: int, fields:
     return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
 
 
+_HISTORY_JSON_CACHE = _HashedJSONCache(4096)
+_BENCHMARK_PARSED_CACHE = _HashedJSONCache(64)
+
+
 def fetch_history(
     secid: str,
     from_date: str,
@@ -126,12 +130,20 @@ def fetch_history(
         cache_path = cache_dir / f"{secid}-{from_date}-{till_date}-{start}.json" if cache_dir else None
         payload = None
         raw_hash = None
-        if cache_path and cache_path.exists():
+        if cache_path:
             try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if isinstance(cached, dict) and cached.get("url") == url:
-                    payload = cached.get("payload")
-                    raw_hash = cached.get("raw_response_sha256")
+                resolved = cache_path.resolve()
+                stat = resolved.stat()
+                cache_key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+                cached = _HISTORY_JSON_CACHE.get(cache_key)
+                if cached is None:
+                    cached_obj = json.loads(resolved.read_text(encoding="utf-8"))
+                    if isinstance(cached_obj, dict):
+                        _HISTORY_JSON_CACHE.put(cache_key, (cached_obj, ""))
+                        cached = (cached_obj, "")
+                if cached is not None and cached[0].get("url") == url:
+                    payload = cached[0].get("payload")
+                    raw_hash = cached[0].get("raw_response_sha256")
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 payload = None
         if payload is None:
@@ -348,11 +360,21 @@ def build_carry_study(
 
 
 def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
+    resolved = path.resolve()
     try:
-        raw = path.read_bytes()
-        payload = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        stat = resolved.stat()
+    except OSError as exc:
         raise CarryStrategyError(f"cannot read LQDT benchmark {path}: {exc}") from exc
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    cached = _BENCHMARK_PARSED_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        payload, digest = read_hashed_json(resolved, error=CarryStrategyError, label="LQDT benchmark")
+    except CarryStrategyError:
+        raise
+    except W0Error as exc:
+        raise CarryStrategyError(str(exc)) from exc
     if not isinstance(payload, dict) or payload.get("schema_version") != "lqdt-lineage.v1":
         raise CarryStrategyError("unsupported LQDT benchmark schema")
     rows = {}
@@ -373,7 +395,9 @@ def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
         }
     if not rows:
         raise CarryStrategyError("empty LQDT benchmark")
-    return rows, hashlib.sha256(raw).hexdigest()
+    result = (rows, digest)
+    _BENCHMARK_PARSED_CACHE.put(key, result)
+    return result
 
 
 def _transaction_cost_profile(
@@ -456,6 +480,7 @@ def build_carry_strategy(
     execution_delay_rows: int = 1,
     cash_in_lqdt: bool = False,
     slippage_ticks: float = 1.0,
+    metrics_only: bool = False,
 ) -> dict[str, Any]:
     """Evaluate a frozen carry hypothesis on settlement proxies.
 
@@ -491,12 +516,14 @@ def build_carry_strategy(
     except (TypeError, ValueError) as exc:
         raise CarryStrategyError(f"invalid expiry for {far}") from exc
     expiry_cutoff = expiry_date - timedelta(days=expiry_buffer_days)
+    expiry_cutoff_iso = expiry_cutoff.isoformat()
     observed_dates = [date.fromisoformat(row["date"]) for row in rows if date.fromisoformat(row["date"]) < expiry_date]
     assignment_window_start: date | None = None
     assignment_window_status = "not_observable_in_input_window"
     if observed_dates and observed_dates[-1] >= expiry_date - timedelta(days=15) and len(observed_dates) >= assignment_window_trading_days:
         assignment_window_start = observed_dates[-assignment_window_trading_days]
         assignment_window_status = "observed_common_eod_calendar"
+    assignment_window_start_iso = assignment_window_start.isoformat() if assignment_window_start else None
     last_row = rows[-1]
     near_reference_price = float(last_row["near_settle"]) if "near_settle" in last_row else None
     far_reference_price = float(last_row["far_settle"]) if "far_settle" in last_row else None
@@ -523,29 +550,35 @@ def build_carry_strategy(
         )
     entry_cost = cost_profile["entry_cost"] * quantity
     exit_cost = cost_profile["exit_cost"] * quantity
-    account_risk = assess_vtb_pair(
-        contracts_path,
-        near,
-        far,
-        initial_capital=initial_capital,
-        observed_daily_pnl=(float(row["daily_gross_carry_pnl"]) for row in rows[1:]),
-        quantity=quantity,
-    )
-    benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
-    benchmark_dates = sorted(benchmark)
-    if not benchmark_dates:
-        raise CarryStrategyError("benchmark has no dates")
+    if not metrics_only:
+        account_risk = assess_vtb_pair(
+            contracts_path,
+            near,
+            far,
+            initial_capital=initial_capital,
+            observed_daily_pnl=(float(row["daily_gross_carry_pnl"]) for row in rows[1:]),
+            quantity=quantity,
+        )
+        benchmark, benchmark_hash = _benchmark_rows(benchmark_path)
+        benchmark_dates = sorted(benchmark)
+        if not benchmark_dates:
+            raise CarryStrategyError("benchmark has no dates")
 
-    def benchmark_mark(date_key: str) -> dict[str, Any]:
-        index = bisect_left(benchmark_dates, date_key)
-        if index < len(benchmark_dates) and benchmark_dates[index] == date_key:
-            return {**benchmark[date_key], "mark_kind": "daily_close_same_date"}
-        if index == 0:
-            raise CarryStrategyError(f"benchmark has no mark on or before {date_key}")
-        prior = benchmark[benchmark_dates[index - 1]]
-        return {**prior, "mark_kind": "prior_daily_close"}
+        def benchmark_mark(date_key: str) -> dict[str, Any]:
+            index = bisect_left(benchmark_dates, date_key)
+            if index < len(benchmark_dates) and benchmark_dates[index] == date_key:
+                return {**benchmark[date_key], "mark_kind": "daily_close_same_date"}
+            if index == 0:
+                raise CarryStrategyError(f"benchmark has no mark on or before {date_key}")
+            prior = benchmark[benchmark_dates[index - 1]]
+            return {**prior, "mark_kind": "prior_daily_close"}
 
-    start_benchmark = benchmark_mark(rows[0]["date"])
+        start_benchmark = benchmark_mark(rows[0]["date"])
+    else:
+        account_risk = None
+        benchmark_hash = None
+        benchmark_mark = None
+        start_benchmark = None
     position = False
     entry_index: int | None = None
     entry_decision_date: str | None = None
@@ -556,6 +589,11 @@ def build_carry_strategy(
     trades: list[dict[str, Any]] = []
     daily = []
     signals = []
+    funding_vals = [float(row["daily_funding_received_short_near"]) for row in rows]
+    funding_known = [row.get("funding_known_on", "") for row in rows]
+    need_basis_median = strategy_variant == "basis_median"
+    basis_vals = [float(row["basis_far_minus_near"]) for row in rows] if need_basis_median else None
+    row_count = len(rows)
 
     def execute(order: dict[str, Any], index: int, date_key: str) -> None:
         nonlocal position, entry_index, entry_decision_date, cumulative_cost, trade_gross
@@ -582,12 +620,11 @@ def build_carry_strategy(
 
     for index, row in enumerate(rows):
         date_key = row["date"]
-        current_date = date.fromisoformat(date_key)
         increment = 0.0
         funding_included = 0.0
         if position and entry_index is not None and index > entry_index:
             increment = quantity * float(row["daily_gross_carry_pnl"])
-            funding_included = quantity * float(row["daily_funding_received_short_near"])
+            funding_included = quantity * funding_vals[index]
             cumulative_gross += increment
             trade_gross += increment
 
@@ -596,34 +633,36 @@ def build_carry_strategy(
             pending = None
 
         if index >= warmup_observations:
-            trailing = rows[index - warmup_observations:index]
             # A midpoint backfills cash-flow accounting, not knowledge at decision time.
             # Today's clearing is not yet known at the same-settlement decision. Never
             # shorten the lookback or turn an unknown rate into a zero/exit signal.
-            trailing_funding = (
-                statistics.fmean(float(item["daily_funding_received_short_near"]) for item in trailing)
-                if all(item.get("funding_known_on", "") < date_key for item in trailing) else None
-            )
-            trailing_basis_median = statistics.median(float(item["basis_far_minus_near"]) for item in trailing)
-            expiry_signal = current_date >= expiry_cutoff
-            assignment_window_signal = assignment_window_start is not None and current_date >= assignment_window_start
+            w_start = index - warmup_observations
+            known_ok = True
+            for j in range(w_start, index):
+                if funding_known[j] >= date_key:
+                    known_ok = False
+                    break
+            trailing_funding = statistics.fmean(funding_vals[w_start:index]) if known_ok else None
+            trailing_basis_median = statistics.median(basis_vals[w_start:index]) if need_basis_median else 0.0
+            expiry_signal = date_key >= expiry_cutoff_iso
+            assignment_window_signal = assignment_window_start_iso is not None and date_key >= assignment_window_start_iso
             if position:
                 exit_reason = None
                 if assignment_window_signal:
                     exit_reason = "perpetual_execution_window"
-                elif strategy_variant == "basis_median" and float(row["basis_far_minus_near"]) >= trailing_basis_median:
+                elif need_basis_median and basis_vals[index] >= trailing_basis_median:
                     exit_reason = "basis_reached_trailing_median"
                 elif trailing_funding is not None and trailing_funding <= 0:
                     exit_reason = "trailing_funding_non_positive"
                 elif expiry_signal:
                     exit_reason = "expiry_buffer"
                 if exit_reason and pending is None:
-                    available = index + execution_delay_rows < len(rows)
+                    available = index + execution_delay_rows < row_count
                     if available:
                         pending = {"action": "exit", "execute_index": index + execution_delay_rows, "decision_date": date_key, "reason": exit_reason}
                     signals.append({"date": date_key, "action": "exit", "reason": exit_reason, "execution_available": available})
                     if available and execution_delay_rows == 0:
-                        funding_today = quantity * float(row["daily_funding_received_short_near"])
+                        funding_today = quantity * funding_vals[index]
                         increment -= funding_today
                         funding_included = 0.0
                         cumulative_gross -= funding_today
@@ -634,10 +673,10 @@ def build_carry_strategy(
                 not expiry_signal
                 and not assignment_window_signal
                 and trailing_funding is not None and trailing_funding > 0
-                and (strategy_variant == "funding_only" or float(row["basis_far_minus_near"]) <= trailing_basis_median)
+                and (not need_basis_median or basis_vals[index] <= trailing_basis_median)
                 and pending is None
             ):
-                available = index + 1 < len(rows)
+                available = index + 1 < row_count
                 entry_reason = "positive_trailing_funding" if strategy_variant == "funding_only" else "positive_trailing_funding_and_low_basis"
                 if available:
                     pending = {"action": "entry", "execute_index": index + execution_delay_rows, "decision_date": date_key, "reason": entry_reason}
@@ -646,6 +685,16 @@ def build_carry_strategy(
                     execute(pending, index, date_key)
                     pending = None
 
+        if metrics_only:
+            daily.append({
+                "date": date_key,
+                "position": 1 if position else 0,
+                "gross_pnl_increment": round(increment, 8),
+                "near_settle": row.get("near_settle"),
+                "far_settle": row.get("far_settle"),
+                "daily_funding_included_rub": round(funding_included, 8),
+            })
+            continue
         benchmark_mark_row = benchmark_mark(date_key)
         strategy_value = initial_capital + cumulative_gross - cumulative_cost
         benchmark_value = initial_capital * benchmark_mark_row["price"] / start_benchmark["price"]
@@ -667,7 +716,7 @@ def build_carry_strategy(
             "near_volume": row.get("near_volume"),
             "far_volume": row.get("far_volume"),
             "daily_basis_pnl_contract": float(row.get("daily_basis_pnl_short_near_long_far") or 0.0),
-            "daily_funding_contract": float(row.get("daily_funding_received_short_near") or 0.0),
+            "daily_funding_contract": funding_vals[index],
             "daily_funding_included_rub": round(funding_included, 8),
         })
 
@@ -683,6 +732,9 @@ def build_carry_strategy(
             "transaction_costs": entry_cost,
             "net_pnl": round(gross_open - entry_cost, 8),
         })
+
+    if metrics_only:
+        return {"trades": trades, "signals": signals, "daily": daily}
 
     if cash_in_lqdt:
         margin = (contracts[near]["initial_margin"] + contracts[far]["initial_margin"]) * quantity

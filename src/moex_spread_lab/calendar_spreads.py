@@ -102,7 +102,14 @@ def fetch_inputs(
             return secid, None
         return secid, {row["TRADEDATE"]: row for row in source["rows"]}
 
-    with ThreadPoolExecutor(max_workers=1 if opener is not None else 6) as pool:
+    if opener is not None:
+        out = {}
+        for secid in secids:
+            _, rows = load(secid)
+            if rows:
+                out[secid] = rows
+        return out
+    with ThreadPoolExecutor(max_workers=6) as pool:
         return {secid: rows for secid, rows in pool.map(load, secids) if rows}
 
 
@@ -339,13 +346,15 @@ class CalendarData:
             factors = _fx_factors(histories)
             windows = {a: build_windows(histories, a, terms[a], ruonia, factors) for a in ASSETS if a in terms and any(
                 s in histories for s in contract_chain(a))}
+            benchmark = read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")
             self._loaded = {
                 "windows": windows,
                 "terms": terms,
                 "till": till,
                 "ruonia": ruonia,
                 "fx_factors": factors,
-                "benchmark": read_benchmark(self.root / "data/benchmark/lqdt-lineage.json"),
+                "benchmark": benchmark,
+                "benchmark_dates": sorted(benchmark),
             }
         return self._loaded
 
@@ -502,10 +511,11 @@ class CalendarData:
             if asset == "SR" and expiry_date < ex <= expiry_date + timedelta(days=QUARTER_DAYS)
         ) * DIVIDEND_SHARES_PER_CONTRACT
         ruonia_dates, rates = data["ruonia"]
-        benchmark_dates = sorted(data["benchmark"])
+        benchmark_dates = data["benchmark_dates"]
         fx_name = config.get("fx")
         fx_values = data["fx_factors"].get(fx_name, {}) if fx_name else {}
         fx_dates = sorted(fx_values)
+        days_to_expiry_cache: dict[str, int] = {}
         cumulative_native: dict[str, float] = {}
         cumulative_near: dict[str, float] = {}
         cumulative_far: dict[str, float] = {}
@@ -613,7 +623,9 @@ class CalendarData:
                 "ruonia_rate": rate,
                 "ruonia_rate_date": rate_date,
                 "fx_rate_date": fx_date,
-                "days_to_near_expiry": (expiry_date - date.fromisoformat(session_day)).days,
+                "days_to_near_expiry": days_to_expiry_cache.setdefault(
+                    session_day, (expiry_date - date.fromisoformat(session_day)).days
+                ),
                 "dividend_in_window": dividend > 0,
                 "margin": margin,
                 "mult": mult,
@@ -842,8 +854,17 @@ class CalendarData:
         if not settings.allow_failed_capital and not _stress_ok(window["max_pair_margin_rub"], quantity, settings.initial_capital_rub):
             raise W0Error("Не пройден стресс-тест капитала на обучении.")
 
-    def proof(self, selection: dict[str, Any], *, through: str | None = None,
-              initial_capital: float = INITIAL_CAPITAL, timeframe: str | None = None) -> dict[str, Any]:
+    def proof(
+        self,
+        selection: dict[str, Any],
+        *,
+        through: str | None = None,
+        initial_capital: float = INITIAL_CAPITAL,
+        timeframe: str | None = None,
+        metrics_only: bool = False,
+        sizing_intents: bool = False,
+        _cache: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         data = self._load()
         asset, pair = selection.get("asset"), selection.get("pair")
         timeframe = timeframe or selection.get("timeframe", "1d")
@@ -853,9 +874,15 @@ class CalendarData:
             raise W0Error("unknown asset, strategy or fill rule")
         if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 50:
             raise W0Error("contracts must be an integer between 1 and 50")
-        window = self.window(asset, pair, timeframe)
-        if through is not None:
-            window = self._through(window, through)
+        through_cache = _cache.setdefault("through", {}) if _cache is not None else None
+        if through_cache is not None and through in through_cache:
+            window = through_cache[through]
+        else:
+            window = self.window(asset, pair, timeframe)
+            if through is not None:
+                window = self._through(window, through)
+            if through_cache is not None:
+                through_cache[through] = window
         delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
         options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
         params = selection.get("parameters", {})
@@ -870,41 +897,71 @@ class CalendarData:
             raise W0Error("strategy parameters must be positive finite numbers")
         options["window"] = int(options["window"])
         profile = {**tariff_profile(float(slippage)), "tariff_group": ASSETS[asset]["group"]}
+        z_cache = _cache.setdefault("z", {}) if _cache is not None else None
+        z_cache_key = (through, fill, quantity)
         runner = strategy_runner(strategy, delay=delay, fill=fill, close_at_end=True, skip_dividend_windows_in_zscore=False,
-                                 threshold=threshold, zscore_options=options)
+                                 threshold=threshold, zscore_options=options, z_cache=z_cache, z_cache_key=z_cache_key)
         if timeframe == "1h":
-            h1_rows = []
-            for row in window["rows"]:
-                row = dict(row)
-                close_ok = bool(row.get("volume_eligible"))
-                if fill == "open":
-                    fill_ok = (
-                        row.get("liquidity_cumulative_before", 0.0) >= window["liquidity_gate"]
-                        and row.get("prior_bar_volume", 0.0) >= quantity
-                    )
-                else:
-                    fill_ok = close_ok and row.get("min_volume", 0.0) >= quantity
-                row["signal_eligible"] = close_ok
-                row["entry_eligible"] = bool(fill_ok)
-                row["exit_eligible"] = bool(fill_ok)
-                h1_rows.append(row)
-            window = {**window, "rows": h1_rows}
-            if sum(bool(row["signal_eligible"]) for row in h1_rows) < 2:
-                raise W0Error("fewer than two causally liquidity-eligible hourly observations")
-            analysis_rows = h1_rows
+            h1_cache = _cache.setdefault("h1", {}) if _cache is not None else None
+            h1_key = (through, fill, quantity)
+            if h1_cache is not None and h1_key in h1_cache:
+                window, analysis_rows = h1_cache[h1_key]
+            else:
+                h1_rows = []
+                is_open = fill == "open"
+                gate = window["liquidity_gate"]
+                for row in window["rows"]:
+                    row = dict(row)
+                    close_ok = bool(row.get("volume_eligible"))
+                    if is_open:
+                        fill_ok = (
+                            row.get("liquidity_cumulative_before", 0.0) >= gate
+                            and row.get("prior_bar_volume", 0.0) >= quantity
+                        )
+                    else:
+                        fill_ok = close_ok and row.get("min_volume", 0.0) >= quantity
+                    row["signal_eligible"] = close_ok
+                    row["entry_eligible"] = bool(fill_ok)
+                    row["exit_eligible"] = bool(fill_ok)
+                    h1_rows.append(row)
+                if sum(bool(row["signal_eligible"]) for row in h1_rows) < 2:
+                    raise W0Error("fewer than two causally liquidity-eligible hourly observations")
+                window = {**window, "rows": h1_rows}
+                analysis_rows = h1_rows
+                if h1_cache is not None:
+                    h1_cache[h1_key] = (window, analysis_rows)
         else:
             # Zero-volume native spread rows remain journal-only on the daily path.
-            analysis_rows = _positive_spread_volume_rows(window["rows"])
-            if len(analysis_rows) < 2:
-                raise W0Error("fewer than two positive-volume calendar-spread observations")
+            elig_cache = _cache.setdefault("daily_eligible", {}) if _cache is not None else None
+            if elig_cache is not None and through in elig_cache:
+                analysis_rows = elig_cache[through]
+            else:
+                analysis_rows = _positive_spread_volume_rows(window["rows"])
+                if len(analysis_rows) < 2:
+                    raise W0Error("fewer than two positive-volume calendar-spread observations")
+                if elig_cache is not None:
+                    elig_cache[through] = analysis_rows
         per_pair = {pair: runner(analysis_rows)}
         native_order = window.get("native_spread_order", True)
         account = account_trades("proof", per_pair, data["benchmark"], profile,
-                                 native_spread=native_order, quantity=quantity)
-        payload = _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity,
-                                 float(slippage), data["terms"][asset], profile, initial_capital)
+                                 native_spread=native_order, quantity=quantity,
+                                 benchmark_dates=data["benchmark_dates"])
+        series_cache = _cache.setdefault("series", {}) if (_cache is not None and metrics_only) else None
+        series_key = (through, fill, quantity) if timeframe == "1h" else (through,)
+        payload = _proof_payload(
+            window, account, asset, strategy, fill_label, options, threshold, quantity,
+            float(slippage), data["terms"][asset], profile, initial_capital,
+            metrics_only=metrics_only, sizing_intents=sizing_intents,
+            series_cache=series_cache, series_key=series_key,
+        )
         price_source = window.get("price_source", "native_daily_spread")
         payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
+        if metrics_only:
+            payload["window"].update({
+                "timeframe": timeframe,
+                "price_source": price_source,
+            })
+            return payload
         payload["window"].update({
             "timeframe": timeframe,
             "price_source": price_source,
@@ -974,8 +1031,235 @@ def _elapsed_days(start: str, end: str) -> float:
     return (date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days
 
 
-def _proof_payload(window, account, asset, strategy, fill_label, options, threshold, quantity, slippage, terms, profile, initial_capital=INITIAL_CAPITAL) -> dict[str, Any]:
+def _proof_payload(
+    window,
+    account,
+    asset,
+    strategy,
+    fill_label,
+    options,
+    threshold,
+    quantity,
+    slippage,
+    terms,
+    profile,
+    initial_capital=INITIAL_CAPITAL,
+    *,
+    metrics_only: bool = False,
+    sizing_intents: bool = False,
+    series_cache: dict | None = None,
+    series_key: Any = None,
+) -> dict[str, Any]:
     rows = window["rows"]
+    tf = window.get("timeframe", "1d")
+    if metrics_only:
+        is_open = fill_label == "next_open"
+        if series_cache is not None and series_key in series_cache:
+            compact_series = series_cache[series_key]
+        else:
+            compact_series = [
+                {
+                    "date": r["date"],
+                    "session_date": r.get("session_date", r["date"][:10]),
+                    "benchmark_mark_date": r.get("benchmark_mark_date"),
+                    "near": r["near_price"],
+                    "far": r["far_price"],
+                    "near_open": r["near_open_price"],
+                    "far_open": r["far_open_price"],
+                    "spread": r["spread_price"],
+                    "volume_eligible": r.get("volume_eligible", r["min_volume"] > 0),
+                    "entry_eligible": r.get("entry_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
+                    "exit_eligible": r.get("exit_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
+                    "point_value_rub": r["mult"],
+                }
+                for r in rows
+            ]
+            if series_cache is not None:
+                series_cache[series_key] = compact_series
+        if sizing_intents:
+            trades = [
+                {
+                    "number": number,
+                    "side": "short_spread" if trade["direction"] < 0 else "long_spread",
+                    "signal": trade["signal"],
+                    "entry": {
+                        "date": trade["entry_row"]["date"],
+                        "spread_fill": trade["entry_row"]["spread_open_price"] if is_open else trade["entry_row"]["spread_price"],
+                        "near_price": trade["entry_row"]["near_open_price"] if is_open else trade["entry_row"]["near_price"],
+                        "far_price": trade["entry_row"]["far_open_price"] if is_open else trade["entry_row"]["far_price"],
+                    },
+                    "exit": {
+                        "date": trade["exit_row"]["date"],
+                        "spread_fill": trade["exit_row"]["spread_open_price"] if is_open else trade["exit_row"]["spread_price"],
+                        "near_price": trade["exit_row"]["near_open_price"] if is_open else trade["exit_row"]["near_price"],
+                        "far_price": trade["exit_row"]["far_open_price"] if is_open else trade["exit_row"]["far_price"],
+                    },
+                    "reason": trade["reason"],
+                }
+                for number, trade in enumerate(account["trade_list"], start=1)
+            ]
+            return {
+                "schema_version": "calendar-proof.v1",
+                "initial_capital_rub": initial_capital,
+                "selection": {
+                    "asset": asset,
+                    "pair": window["pair"],
+                    "spread_instrument": window["spread_instrument"],
+                    "strategy": strategy,
+                    "fill": fill_label,
+                    "quantity": quantity,
+                    "slippage_ticks": slippage,
+                    "initial_capital_rub": initial_capital,
+                    "parameters": {**options, "threshold_pp": threshold},
+                },
+                "window": {
+                    "from": window["first_date"],
+                    "to": window["last_date"],
+                    "near_expiry": window["near_expiry"],
+                    "near": window["near"],
+                    "far": window["far"],
+                    "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
+                    "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
+                    "max_pair_margin_rub": window["max_pair_margin_rub"],
+                    "timeframe": tf,
+                    "price_source": window.get("price_source", "native_daily_spread"),
+                    "observations": len(rows),
+                },
+                "contract": {
+                    "point_value_rub": terms["mult"],
+                    "tick_size": terms["tick_size"],
+                    "reference_contract": terms["reference_contract"],
+                    "margin_rate": terms["margin_rate"],
+                    "tariff_group": ASSETS[asset]["group"],
+                    "taker_rate_percent": TAKER_RATE_PERCENT[ASSETS[asset]["group"]],
+                    "broker_fee_rub": 0.0,
+                },
+                "series": compact_series,
+                "trades": trades,
+                "ledger": [],
+                "summary": {},
+            }
+        trades = []
+        for number, trade in enumerate(account["trade_list"], start=1):
+            entry, exit_row, side = trade["entry_row"], trade["exit_row"], trade["direction"]
+            entry_fee, exit_fee = trade["entry_costs"], trade["exit_costs"]
+            trades.append({
+                "number": number,
+                "side": "short_spread" if side < 0 else "long_spread",
+                "quantity": quantity,
+                "signal": trade["signal"],
+                "entry": {
+                    "date": entry["date"],
+                    "spread_fill": entry["spread_open_price"] if is_open else entry["spread_price"],
+                    "costs": entry_fee,
+                },
+                "exit": {
+                    "date": exit_row["date"],
+                    "spread_fill": exit_row["spread_open_price"] if is_open else exit_row["spread_price"],
+                    "costs": exit_fee,
+                },
+                "reason": trade["reason"],
+                "margin_rub": trade["margin_rub"],
+                "gross_rub": trade["gross_rub"],
+                "costs_rub": trade["costs_rub"],
+                "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
+                "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
+                "excess_rub": round(trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2),
+            })
+        ledger, position, cumulative = [], None, 0.0
+        by_entry = {t["entry"]["date"]: t for t in trades}
+        by_exit = {t["exit"]["date"]: t for t in trades}
+        marked = {t["number"]: 0.0 for t in trades}
+        for row in rows:
+            day, daily, cost = row["date"], 0.0, 0.0
+            point = row["mult"] * quantity
+            volume_eligible = row.get("volume_eligible", row.get("min_volume") is not None and row["min_volume"] > 0)
+            entry_eligible = row.get("entry_eligible", volume_eligible)
+            exit_eligible = row.get("exit_eligible", volume_eligible)
+            if position is not None:
+                exiting = by_exit.get(day)
+                forced_end_mark = exiting is not None and exiting["reason"] == "end_of_window"
+                if exiting is not None and (exit_eligible or forced_end_mark):
+                    end = exiting["exit"]["spread_fill"]
+                    move = position["sign"] * (end - position["mark"]) * point
+                    daily += move
+                    marked[position["number"]] += move
+                    cost += sum(exiting["exit"]["costs"].values())
+                    position = None
+                elif volume_eligible:
+                    move = position["sign"] * (row["spread_price"] - position["mark"]) * point
+                    daily += move
+                    marked[position["number"]] += move
+                    position["mark"] = row["spread_price"]
+            entering = by_entry.get(day) if entry_eligible else None
+            if entering:
+                sign = 1 if entering["side"] == "long_spread" else -1
+                cost += sum(entering["entry"]["costs"].values())
+                if volume_eligible:
+                    move = sign * (row["spread_price"] - entering["entry"]["spread_fill"]) * point
+                    daily += move
+                    marked[entering["number"]] += move
+                    mark = row["spread_price"]
+                else:
+                    mark = entering["entry"]["spread_fill"]
+                position = {"sign": sign, "mark": mark, "number": entering["number"]}
+            cumulative += daily - cost
+            ledger.append({"date": day, "cumulative_net_rub": round(cumulative, 2)})
+        for trade in trades:
+            trade["gross_rub"] = round(marked[trade["number"]], 2)
+            trade["net_rub"] = round(trade["gross_rub"] - trade["costs_rub"], 2)
+            trade["excess_rub"] = round(trade["net_rub"] - trade["lqdt_on_margin_rub"], 2)
+        gross = sum(t["gross_rub"] for t in trades)
+        net = sum(t["net_rub"] for t in trades)
+        return {
+            "schema_version": "calendar-proof.v1",
+            "initial_capital_rub": initial_capital,
+            "selection": {
+                "asset": asset,
+                "pair": window["pair"],
+                "spread_instrument": window["spread_instrument"],
+                "strategy": strategy,
+                "fill": fill_label,
+                "quantity": quantity,
+                "slippage_ticks": slippage,
+                "initial_capital_rub": initial_capital,
+                "parameters": {**options, "threshold_pp": threshold},
+            },
+            "window": {
+                "from": window["first_date"],
+                "to": window["last_date"],
+                "near_expiry": window["near_expiry"],
+                "near": window["near"],
+                "far": window["far"],
+                "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
+                "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
+                "max_pair_margin_rub": window["max_pair_margin_rub"],
+                "timeframe": tf,
+                "price_source": window.get("price_source", "native_daily_spread"),
+                "observations": len(rows),
+            },
+            "contract": {
+                "point_value_rub": terms["mult"],
+                "tick_size": terms["tick_size"],
+                "reference_contract": terms["reference_contract"],
+                "margin_rate": terms["margin_rate"],
+                "tariff_group": ASSETS[asset]["group"],
+                "taker_rate_percent": TAKER_RATE_PERCENT[ASSETS[asset]["group"]],
+                "broker_fee_rub": 0.0,
+            },
+            "series": compact_series,
+            "trades": trades,
+            "ledger": ledger,
+            "summary": {
+                "trades": len(trades),
+                "gross_rub": round(gross, 2),
+                "costs_rub": account["costs_rub"],
+                "net_rub": round(net, 2),
+                "lqdt_on_margin_rub": account["lqdt_on_pair_margin_while_open_rub"],
+                "excess_over_lqdt_rub": round(net - account["lqdt_on_pair_margin_while_open_rub"], 2),
+                "winners": sum(t["net_rub"] > 0 for t in trades),
+            },
+        }
     trades = []
     for number, trade in enumerate(account["trade_list"], start=1):
         entry, exit_row, side = trade["entry_row"], trade["exit_row"], trade["direction"]

@@ -29,6 +29,17 @@ class GlobalPeriodTests(unittest.TestCase):
             with self.assertRaisesRegex(W0Error, "Недостаточно наблюдений"):
                 EvaluationSplit.from_dates(dates, percent)
 
+    def test_timeframe_is_validated_and_survives_partial_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            saved = save_settings(root, {"timeframe": "1h"})
+            self.assertEqual(saved["timeframe"], "1h")
+            self.assertEqual(save_settings(root, {"slippage_ticks": 2.5})["timeframe"], "1h")
+            for value in ("15m", 60, True, None, []):
+                with self.subTest(value=value), self.assertRaises(W0Error):
+                    save_settings(root, {"timeframe": value})
+                self.assertEqual(read_settings(root)["timeframe"], "1h")
+
     def test_project_settings_persist_without_touching_input_caches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -40,6 +51,7 @@ class GlobalPeriodTests(unittest.TestCase):
                     "allow_failed_capital": True,
                     "slippage_ticks": 1.0,
                     "initial_capital_rub": 30000.0,
+                    "timeframe": "1d",
                 },
             )
             self.assertFalse(settings_path(root).exists())

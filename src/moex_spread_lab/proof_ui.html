@@ -85,6 +85,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <p>Настройки общие для всех пар и стратегий. Для проверки резервируется последняя часть истории. Optuna выбирает стратегию и параметры только на обучении.</p>
       <label for="global-capital">Капитал · ₽</label>
       <div class="settings-value"><input id="global-capital" type="number" min="0.01" max="1000000000" step="0.01" required autofocus title="Одинаковый стартовый капитал независимого расчёта каждого окна. Не подбирается Optuna."><span>на каждое окно</span></div>
+      <label for="global-timeframe">Таймфрейм свечей</label>
+      <div class="settings-value"><select id="global-timeframe" required aria-describedby="timeframe-help"></select></div>
+      <p id="timeframe-help">Интервал применяется к загрузке свечей, pair-proof и графикам. Для календарных спредов доступны дневные данные; недостающие интервалы не подменяются дневными.</p>
       <label for="validation-percent">Доля истории для проверки</label>
       <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview"><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
       <p id="split-preview" aria-live="polite"></p>
@@ -263,13 +266,21 @@ function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-
 async function api(path,body,signal){const r=await fetch(path,body?{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
 
 // The server owns the setting; localStorage only notifies other open tabs.
-let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000},settingRevision=0,savingSettings=false;
-const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub]);
+let timeframeOptions=[{id:'1d',label:'1 день',intraday:false,supports_calendar:true}];
+function timeframeOption(id){return timeframeOptions.find(item=>item.id===id)}
+function isIntraday(id){return !!timeframeOption(id)?.intraday}
+function supportsCalendar(id){const item=timeframeOption(id);return item?item.supports_calendar===true:id==='1d'}
+function installTimeframeOptions(items){if(!Array.isArray(items)||!items.length)return;timeframeOptions=items;const select=$('global-timeframe');select.replaceChildren(...items.map(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=item.label;return option}));if(preferences.timeframe)select.value=preferences.timeframe}
+function timeframeLabel(id){return timeframeOption(id)?.label||id||'1 день'}
+let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000,timeframe:'1d'},settingRevision=0,savingSettings=false;
+const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub,x.timeframe]);
 const settingsEventKey='moex-proof-settings-updated';
 const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
-function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub};
- $('settings-badge').textContent=`Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
+function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub,timeframe:x.timeframe||'1d'};
+ const selector=$('global-timeframe');if(selector&&[...selector.options].some(o=>o.value===preferences.timeframe))selector.value=preferences.timeframe;
+ $('settings-badge').textContent=`${timeframeLabel(preferences.timeframe)} · Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
  if(changed){windowReadings.clear();stopWindowReadings();cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
+  if(!supportsCalendar(preferences.timeframe)&&universe==='calendar_native'&&catalog){const candidate=(catalog.pair_screen?.pairs||[]).find(row=>row.proof_strategies?.mean_reversion)||catalog.pair_screen?.pairs?.[0];const branch=candidate&&branches.get('pair_screen|'+candidate.near);if(branch)openBranch(branch.key,candidate.id,'mean_reversion',false)}
   for(const row of $('window-list').querySelectorAll('tr[data-leaf]')){const l=leaves.get(row.dataset.leaf);if(l)windowGates(row,l)}
   if(catalog&&leafId&&universe==='pair_screen'){const values=currentRequest();fillStrategy();if(activeStrategyName()===values.strategy)applyToForm(values);else restoreForm()}}
  return changed}
@@ -277,19 +288,23 @@ function previewSplit(){const n=$('validation-percent'),v=n.valueAsNumber;
  $('split-preview').textContent=!n.validity.valid?'Введите число от 0 до 50%.':v===0?'Обучение — 100%. Проверка отключена. Результат считается по всей истории обучения.':`Обучение — ${pct(100-v)}, проверка — ${pct(v)}. Результат считается только по проверке.`;
  if(n.validity.valid)$('validation-range').value=v;
 }
+async function refreshCatalog(){const oldTarget=leaves.get(leafId)?.target,oldBranch=branchId,oldStrategy=activeStrategyName();catalog=await api('/api/proof/catalog');buildPicker();let target=oldTarget;
+ if(!supportsCalendar(preferences.timeframe)&&target?.universe==='calendar_native'){const candidate=(catalog.pair_screen?.pairs||[]).find(row=>row.proof_strategies?.mean_reversion)||catalog.pair_screen?.pairs?.[0];target=candidate?{universe:'pair_screen',pair:candidate.id}:null}
+ const leaf=target&&leaves.get(targetKey(target));let key=leaf?.branch||oldBranch;if(!branches.has(key))key=[...branches.values()].find(b=>b.children.some(item=>item.enabled))?.key||[...branches.keys()][0];
+ if(key)openBranch(key,target?.pair||leafId?.split('|').pop()||'',oldStrategy,false);return catalog}
 async function refreshGlobalSettings(force=false){if(savingSettings)return;const rev=++settingRevision;try{const x=await api('/api/settings');
  if(rev!==settingRevision||savingSettings)return;const changed=setPreferences(x);
- if(force&&!changed&&sharedStrategy){stopProfile();refreshGroupProfile(0)}if(catalog&&(changed||force))scheduleShow(0)
+ if(force&&!changed&&sharedStrategy){stopProfile();refreshGroupProfile(0)}if(catalog&&(changed||force)){await refreshCatalog();scheduleShow(0)}
  }catch(e){status(e.message)}}
-function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),submit=$('apply-settings');
- $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
+function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),timeframe=$('global-timeframe'),submit=$('apply-settings');
+ $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;timeframe.value=preferences.timeframe;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
  $('cancel-settings').addEventListener('click',()=>dlg.close());
  dlg.addEventListener('cancel',e=>{if(savingSettings)e.preventDefault()});
  $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
- $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity())return;
+ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!timeframe.reportValidity())return;
   ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';cancelSearch();invalidateProof();
-  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber});setPreferences(x);dlg.close();
-   try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog)void show();
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:timeframe.value});setPreferences(x);dlg.close();
+   try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog){await refreshCatalog();void show()}
   }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
  });
  window.addEventListener('storage',e=>{if(e.key===settingsEventKey)void refreshGlobalSettings()});
@@ -365,6 +380,7 @@ function currentAsset(){return branches.get(branchId)?.asset||null}
 function currentPair(){return leaves.get(leafId)?.target.pair||''}
 function addLeaf(b,target,meta,enabled=true){const key=targetKey(target),period=meta.from&&meta.to?`${meta.from} — ${meta.to}`:'Нет локальной истории';const leaf={key,branch:b.key,target,meta,period,from:meta.from,to:meta.to,observations:meta.observations,enabled};leaves.set(key,leaf);b.children.push(leaf)}
 function buildPicker(){
+ branches.clear();leaves.clear();
  const create=(kind,id,family,title,asset=null)=>{const b={key:kind+'|'+id,kind,id,family,title,asset,children:[]};branches.set(b.key,b);return b};
  for(const p of catalog.pair_screen?.pairs||[]){const key='pair_screen|'+p.near,b=branches.get(key)||create('pair_screen',p.near,FAMILY_RU[p.family]||p.family,p.near);
   addLeaf(b,{universe:'pair_screen',pair:p.id},p,pairHasLocalData(p))}
@@ -420,7 +436,7 @@ function refreshWindowReadings(delay=220){stopWindowReadings();paintWindowReadin
 
 function checkboxChanged(){cancelSearch();clearGroup();tuneState('');syncEditorScope();refreshChecks();refreshGroupProfile();syncChartScope()}
 function setChecks(entries,on){for(const l of entries){if(on)checked.add(l.key);else checked.delete(l.key)}checkboxChanged()}
-function initAll(id,entries){const cb=$(id);cb._leaves=entries;cb.addEventListener('change',()=>setChecks(entries(),cb.checked))}
+function initAll(id,entries){const cb=$(id);cb._leaves=entries;cb.onchange=()=>setChecks(entries(),cb.checked)}
 function pickerRow(text,entries,kind,open){const row=el('div','picker-row '+kind),cb=document.createElement('input');cb.type='checkbox';cb.className='pick-check';cb._leaves=()=>entries;cb.setAttribute('aria-label','Включить в подбор: '+text);cb.addEventListener('change',()=>setChecks(entries,cb.checked));
  const button=el('button','pick-name',text);button.type='button';button.title=text;if(kind==='leaf'&&!entries[0].enabled)row.classList.add('unavailable');
  button.addEventListener('click',open);row.addEventListener('click',e=>{if(e.target===row)open()});row.append(cb,button);return row}
@@ -628,7 +644,7 @@ function renderPeriodResult(){const e=payload.evaluation,r=e.result,p=e.periods,
  const head=el('div','result-head');head.append(el('strong','',check?'Результат на проверке':'Результат на обучении'));
  for(const [label,value] of [['Нетто',r.net_rub],['Сверх LQDT',r.excess_rub]]){const item=el('span','',label+' ');item.append(el('b',cls(value),rub(value,2)));head.append(item)}
  const rate=el('span','',`Годовых сверх LQDT: ${pp(r.annualized_excess_pp)}`);rate.title=`База — весь расчётный счёт: на старте ${fmt(e.initial_capital_rub,2)} ₽ на окно, на проверке — стоимость счёта на конец обучения. Вычитается годовая доходность LQDT за те же даты.`;head.append(rate);
- const period=(label,dates,count)=>`${label}: ${dates.join(' — ')} (${count} набл.)`;
+ const period=(label,dates,count)=>`${label}: ${dates.map(displayTime).join(' — ')} (${count} набл.)`;
  elRoot.replaceChildren(head,el('div','result-meta',period('Обучение',p.training,n.training)+' · '+(check?period(`Проверка ${pct(e.validation_percent)}`,p.validation,n.validation):'Проверка отключена (0%)')));
  $('chart-scope').textContent=check?'Вся история · пунктир — начало проверки':'Вся история · обучение';
 }
@@ -639,7 +655,7 @@ function tile(label,value,klass='',sub=null){const t=el('div','tile');t.append(e
 function renderSummary(){const s=payload.summary,w=payload.window;const f=$('flags');f.replaceChildren();const flag=(text,ok)=>f.append(el('span','flag '+(ok?'ok':'bad'),text));
  const vol=universe==='pair_screen'?w.min_leg_volume:w.min_spread_volume;const volLabel=universe==='pair_screen'?'мин. объём ноги':'мин. объём спреда';
  const obs=w.observations??payload.series.length;
- flag(`Вся история: ${w.from} → ${w.to} · ${obs} дней`,true);
+ flag(`Вся история: ${displayTime(w.from)} → ${displayTime(w.to)} · ${obs} ${isIntraday(w.timeframe)?'баров':'дней'}`,true);
  flag(w.tradable_every_day?`Правило объёма пройдено: ${volLabel} ${fmt(vol)} ≥ ${w.min_daily_volume_rule} контр./день`:`Правило объёма НЕ пройдено: ${volLabel} ${fmt(vol)} < ${w.min_daily_volume_rule}`,w.tradable_every_day);
  flag(w.passes_capital_screen?`Скрининг капитала пройден (маржа ≤ ${fmt(w.max_pair_margin_rub)} ₽)`:`Скрининг капитала НЕ пройден (маржа до ${fmt(w.max_pair_margin_rub)} ₽ со стрессовыми буферами)`,w.passes_capital_screen);
  flag(`Комиссия ${payload.contract.taker_rate_percent??'—'}% от стоимости контракта за ногу и сторону (${({stock:'акции',index:'индекс',interest:'ставки',currency:'валюта',commodity:'сырьё'}[payload.contract.tariff_group])||payload.contract.tariff_group}); брокерская 0`,true);
@@ -659,9 +675,9 @@ function renderSummary(){const s=payload.summary,w=payload.window;const f=$('fla
 
 // ---------- evidence bar ----------
 function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-runid').textContent=payload.run_id;
- $('ev-period').textContent=`Вся история: ${payload.window.from} → ${payload.window.to}`;
+ $('ev-period').textContent=`Вся история: ${displayTime(payload.window.from)} → ${displayTime(payload.window.to)}`;
  const s=payload.selection;const inst=payload.instrument||{};const pairLabel=s.pair||(inst.spread_instrument||'');
- $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · ${s.sizing==='max_affordable'?`размер: авто (${payload.summary.min_quantity}–${payload.summary.max_quantity} контр.)`:`контрактов: ${s.quantity}`} · проскальзывание ${s.slippage_ticks} т.`;
+ $('ev-selection').textContent=`${universe==='pair_screen'?'пара':'календарь'} ${pairLabel} · ${timeframeLabel(s.timeframe||'1d')} · ${STRATEGY_RU[s.strategy]||s.strategy} · ${FILL_RU[s.fill]||s.fill||''} · ${s.sizing==='max_affordable'?`размер: авто (${payload.summary.min_quantity}–${payload.summary.max_quantity} контр.)`:`контрактов: ${s.quantity}`} · проскальзывание ${s.slippage_ticks} т.`;
  $('ev-role').textContent=payload.price_role||'';
  const prov=payload.provenance||{};const provKeys=Object.keys(prov);const provEl=$('ev-provenance');
  provEl.textContent=provKeys.length?`происхождение: ${provKeys.length} хэшей входных данных`:'происхождение: не записано';
@@ -670,7 +686,11 @@ function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-
 
 // ---------- charts ----------
 const LWC=window.LightweightCharts;
-function chartOpts(){return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2b3',width:1,style:2,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#9bbbd499',width:1,style:2,labelBackgroundColor:'#2a4a63'}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:false},timeScale:{borderColor:'#293b4e',rightOffset:3},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'ru-RU'}}}
+function chartTime(value){if(typeof value!=='string'||!value.includes('T'))return value;const zoned=/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(value)?value:value+'+03:00';const ms=Date.parse(zoned);return Number.isFinite(ms)?Math.floor(ms/1000):value}
+const moscowTimeFormatter=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const moscowDateTimeFormatter=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+function displayTime(value){const stamp=chartTime(value);return typeof stamp==='number'?moscowDateTimeFormatter.format(new Date(stamp*1000)):value}
+function chartOpts(){const intraday=isIntraday(payload?.selection?.timeframe);return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2b3',width:1,style:2,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#9bbbd499',width:1,style:2,labelBackgroundColor:'#2a4a63'}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:false},timeScale:{borderColor:'#293b4e',rightOffset:3,timeVisible:intraday,secondsVisible:false,tickMarkFormatter:time=>typeof time==='number'?moscowTimeFormatter.format(new Date(time*1000)):undefined},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'ru-RU',...(intraday?{timeFormatter:time=>typeof time==='number'?moscowTimeFormatter.format(new Date(time*1000)):String(time)}:{})}}}
 const charts=[];
 function fitChartsToVisibleArea(){const snapshot=charts.slice();return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{if(snapshot.length===charts.length&&snapshot.every((chart,index)=>charts[index]===chart)){for(const chart of snapshot){if(chart._pane?.classList.contains('hidden'))continue;try{chart.timeScale().fitContent()}catch(e){}}}resolve()})))}
 function makePane(parent,heightClass,title,tagline,legend,collapsible=true){const head=el('div','panel-title');const left=el('span');const div=el('div','chart '+heightClass);
@@ -773,7 +793,7 @@ function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'ra
  b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · возврат '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
 function markValidationStart(chart,pane,day){
  if(!day)return;const line=el('div','validation-line'),scale=chart.timeScale();line.hidden=true;line.setAttribute('aria-hidden','true');pane.append(line);
- const place=()=>{if(!pane.isConnected)return;const x=scale.timeToCoordinate(day);line.hidden=x==null||x<0||x>=scale.width();if(!line.hidden){line.style.left=`${chart.priceScale('left').width()+x}px`;line.style.bottom=scale.height()+'px'}};
+ const place=()=>{if(!pane.isConnected)return;const x=scale.timeToCoordinate(chartTime(day));line.hidden=x==null||x<0||x>=scale.width();if(!line.hidden){line.style.left=`${chart.priceScale('left').width()+x}px`;line.style.bottom=scale.height()+'px'}};
  scale.subscribeVisibleLogicalRangeChange(place);scale.subscribeSizeChange(place);requestAnimationFrame(place);
 }
 function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart of charts){try{chart.remove()}catch(e){}}root.replaceChildren();charts.length=0;markersApis.length=0;primarySpreadChart=null;const S=payload.series,L=ledgerIndex();
@@ -785,7 +805,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  const rawSpreadPane=makePane(root,'h-spread-raw','3 · СПРЕД (ненормализованный)','% от дальней ноги',[['расчётный',COLORS.spread]].concat(hasLast?[['последняя сделка','#88a1b5']]:[]).concat(payload.signal_levels?.kind==='entry_bands'&&S.some(r=>r.buy_level_rel!=null)?[['порог покупки','#65adf1'],['порог продажи','#f0a36d']]:[]),true);
  rawSpreadPane.previousElementSibling.title=payload.signal_levels?.note||'';
  const spreadPane=makePane(root,'h-spread','4 · СПРЕД — входы и выходы',null,[['расчётный',COLORS.spread]].concat(showLast?[['последняя сделка','#88a1b5']]:[]));
- const volPane=makePane(root,'h-vol','5 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]],true);
+ const volPane=makePane(root,'h-vol',isIntraday(payload.selection?.timeframe)?'5 · ОБЪЁМ за бар':'5 · ОБЪЁМ за день',universe==='pair_screen'?'min(ближняя, дальняя) — прокси пары':'инструмент спреда',[['объём',COLORS.vol]],true);
  const showFunding=S.some(r=>r.funding_rub!=null)||payload.ledger.some(r=>r.funding_rub!=null);
  const totalFunding=showFunding?payload.ledger.reduce((acc,r)=>acc+(r.funding_rub??0),0):null;
  const fundingPane=showFunding?makePane(root,'h-fund','6 · ФАНДИНГ: начислено (+) / списано (−)',`по удерживаемой позиции · нетто ${rub(totalFunding,2)}`,[['фондирование',COLORS.fund]]):null;
@@ -802,46 +822,46 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  charts.push(cNear,cFar,cSpreadRaw,cSpread,cVol);if(cFund)charts.push(cFund);charts.push(cCum);
  const lineSeries=(chart,color,width=2,dashed=false,priceFormat=null)=>chart.addSeries(LWC.LineSeries,{color,lineWidth:width,lineStyle:dashed?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,...(priceFormat?{priceFormat}:{})});
  const legPriceFormat=legQuoteIsRuble()?{type:'price',precision:0,minMove:1}:null;const nearSeries=lineSeries(cNear,COLORS.near,2,false,legPriceFormat),farSeries=lineSeries(cFar,COLORS.far,2,false,legPriceFormat);
- nearSeries.setData(S.map(r=>({time:r.date,value:r.near})));farSeries.setData(S.map(r=>({time:r.date,value:r.far})));
+ nearSeries.setData(S.map(r=>({time:chartTime(r.date),value:r.near})));farSeries.setData(S.map(r=>({time:chartTime(r.date),value:r.far})));
  const rawSpreadFormat={type:'percent',precision:2,minMove:0.01};
  const rawSpreadSeries=lineSeries(cSpreadRaw,COLORS.spread,2,false,rawSpreadFormat);
  const sRaw=spreadDisplayValues(S,'raw');
- rawSpreadSeries.setData(S.map((r,i)=>sRaw[i]!=null?{time:r.date,value:sRaw[i]}:{time:r.date}));
- rawSpreadPane._signalLevels={};for(const [name,key,color] of [['buy','buy_level_rel','#65adf1'],['sell','sell_level_rel','#f0a36d']])if(S.some(r=>r[key]!=null)){const line=lineSeries(cSpreadRaw,color,1,false,rawSpreadFormat);line.setData(S.map(r=>r[key]!=null?{time:r.date,value:r[key]}:{time:r.date}));rawSpreadPane._signalLevels[name]=line}rawSpreadPane.dataset.signalLines=String(Object.keys(rawSpreadPane._signalLevels).length);
- if(hasLast){const rawLt=lineSeries(cSpreadRaw,'#88a1b5',1,true,rawSpreadFormat);rawLt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:r.date,value:r.spread_last_trade_rel}:{time:r.date}))}
+ rawSpreadSeries.setData(S.map((r,i)=>sRaw[i]!=null?{time:chartTime(r.date),value:sRaw[i]}:{time:chartTime(r.date)}));
+ rawSpreadPane._signalLevels={};for(const [name,key,color] of [['buy','buy_level_rel','#65adf1'],['sell','sell_level_rel','#f0a36d']])if(S.some(r=>r[key]!=null)){const line=lineSeries(cSpreadRaw,color,1,false,rawSpreadFormat);line.setData(S.map(r=>r[key]!=null?{time:chartTime(r.date),value:r[key]}:{time:chartTime(r.date)}));rawSpreadPane._signalLevels[name]=line}rawSpreadPane.dataset.signalLines=String(Object.keys(rawSpreadPane._signalLevels).length);
+ if(hasLast){const rawLt=lineSeries(cSpreadRaw,'#88a1b5',1,true,rawSpreadFormat);rawLt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:chartTime(r.date),value:r.spread_last_trade_rel}:{time:chartTime(r.date)}))}
  const spreadSeries=lineSeries(cSpread,COLORS.spread,2);
  const sDisp=spreadDisplayValues(S);
- spreadSeries.setData(S.map((r,i)=>sDisp[i]!=null?{time:r.date,value:sDisp[i]}:{time:r.date}));
- if(showLast){const lt=lineSeries(cSpread,'#88a1b5',1,true);lt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:r.date,value:r.spread_last_trade_rel}:{time:r.date}))}
+ spreadSeries.setData(S.map((r,i)=>sDisp[i]!=null?{time:chartTime(r.date),value:sDisp[i]}:{time:chartTime(r.date)}));
+ if(showLast){const lt=lineSeries(cSpread,'#88a1b5',1,true);lt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:chartTime(r.date),value:r.spread_last_trade_rel}:{time:chartTime(r.date)}))}
  const volSeries=cVol.addSeries(LWC.HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false});
- volSeries.setData(S.map(r=>({time:r.date,value:(universe==='pair_screen'?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0,color:(L[r.date]?.mark_pnl_rub??0)>=0?'#2f8f6a':'#a24d47'})));
- const rule=payload.window.min_daily_volume_rule;if(rule!=null)volSeries.createPriceLine({price:rule,color:COLORS.loss,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'правило'});
+ volSeries.setData(S.map(r=>({time:chartTime(r.date),value:(universe==='pair_screen'?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0,color:(L[r.date]?.mark_pnl_rub??0)>=0?'#2f8f6a':'#a24d47'})));
+ const rule=payload.window.min_daily_volume_rule;if(rule!=null&&!isIntraday(payload.selection?.timeframe))volSeries.createPriceLine({price:rule,color:COLORS.loss,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'правило'});
  let fundSeries=null;
  if(cFund){fundSeries=cFund.addSeries(LWC.HistogramSeries,{priceLineVisible:false,lastValueVisible:false,base:0});
-  fundSeries.setData(S.map(r=>r.funding_rub!=null?{time:r.date,value:r.funding_rub,color:r.funding_rub>=0?'#5b8f6a':'#a24d47'}:{time:r.date}));
+  fundSeries.setData(S.map(r=>r.funding_rub!=null?{time:chartTime(r.date),value:r.funding_rub,color:r.funding_rub>=0?'#5b8f6a':'#a24d47'}:{time:chartTime(r.date)}));
   fundSeries.createPriceLine({price:0,color:'#3b5367',lineStyle:0,lineWidth:1,axisLabelVisible:false,title:''})}
  const cumSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.spread,lineWidth:2,priceLineVisible:false,lastValueVisible:false});
- cumSeries.setData(payload.ledger.map(r=>({time:r.date,value:r.cumulative_net_rub})));
+ cumSeries.setData(payload.ledger.map(r=>({time:chartTime(r.date),value:r.cumulative_net_rub})));
  cumSeries.createPriceLine({price:0,color:'#3b5367',lineStyle:0,lineWidth:1,axisLabelVisible:false,title:''});
- let peak=-Infinity;drawdownByDate={};const ddPoints=payload.ledger.map(r=>{peak=Math.max(peak,r.cumulative_net_rub);const dd=r.cumulative_net_rub-peak;drawdownByDate[r.date]=dd;return {time:r.date,value:dd}});
+ let peak=-Infinity;drawdownByDate={};const ddPoints=payload.ledger.map(r=>{peak=Math.max(peak,r.cumulative_net_rub);const dd=r.cumulative_net_rub-peak;drawdownByDate[r.date]=dd;return {time:chartTime(r.date),value:dd}});
  const ddSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.warn,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceScaleId:'left'});
  ddSeries.setData(ddPoints);
  // entry/exit markers on raw and normalized spread panes
  const markers=buildMarkers();markersApis.push(LWC.createSeriesMarkers(rawSpreadSeries,markers),LWC.createSeriesMarkers(spreadSeries,markers));
- const onSpreadClick=param=>{const day=param.time;if(!day)return;const hits=payload.trades.filter(t=>t.entry.date===day||t.exit.date===day);if(!hits.length)return;if(dayClick.day===day)dayClick.index=(dayClick.index+1)%hits.length;else dayClick={day,index:0};selectedTrade=hits[dayClick.index].number;refreshSelection()};
+ const onSpreadClick=param=>{const day=param.time==null?null:seriesByTime.get(param.time)?.r.date;if(!day)return;const hits=payload.trades.filter(t=>t.entry.date===day||t.exit.date===day);if(!hits.length)return;if(dayClick.day===day)dayClick.index=(dayClick.index+1)%hits.length;else dayClick={day,index:0};selectedTrade=hits[dayClick.index].number;refreshSelection()};
  cSpreadRaw.subscribeClick(onSpreadClick);cSpread.subscribeClick(onSpreadClick);
  // synchronized full dashed crosshair across all visible panes; tooltip stays on the hovered pane only
  const tipDiv=tip;
- const seriesByDate=new Map(S.map((r,i)=>[r.date,{r,i}]));
+ const seriesByTime=new Map(S.map((r,i)=>[chartTime(r.date),{r,i}]));
  const chartMeta=new Map([
-  [cNear,{pane:nearPane,series:nearSeries,value:d=>seriesByDate.get(d)?.r.near}],
-  [cFar,{pane:farPane,series:farSeries,value:d=>seriesByDate.get(d)?.r.far}],
-  [cSpreadRaw,{pane:rawSpreadPane,series:rawSpreadSeries,value:d=>{const e=seriesByDate.get(d);return e?sRaw[e.i]:null}}],
-  [cSpread,{pane:spreadPane,series:spreadSeries,value:d=>{const e=seriesByDate.get(d);return e?sDisp[e.i]:null}}],
-  [cVol,{pane:volPane,series:volSeries,value:d=>{const r=seriesByDate.get(d)?.r;return r?((universe==='pair_screen'?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0):null}}],
+  [cNear,{pane:nearPane,series:nearSeries,value:d=>seriesByTime.get(d)?.r.near}],
+  [cFar,{pane:farPane,series:farSeries,value:d=>seriesByTime.get(d)?.r.far}],
+  [cSpreadRaw,{pane:rawSpreadPane,series:rawSpreadSeries,value:d=>{const e=seriesByTime.get(d);return e?sRaw[e.i]:null}}],
+  [cSpread,{pane:spreadPane,series:spreadSeries,value:d=>{const e=seriesByTime.get(d);return e?sDisp[e.i]:null}}],
+  [cVol,{pane:volPane,series:volSeries,value:d=>{const r=seriesByTime.get(d)?.r;return r?((universe==='pair_screen'?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0):null}}],
  ]);
- if(cFund&&fundSeries)chartMeta.set(cFund,{pane:fundingPane,series:fundSeries,value:d=>seriesByDate.get(d)?.r.funding_rub});
- chartMeta.set(cCum,{pane:cumPane,series:cumSeries,value:d=>L[d]?.cumulative_net_rub});
+ if(cFund&&fundSeries)chartMeta.set(cFund,{pane:fundingPane,series:fundSeries,value:d=>seriesByTime.get(d)?.r.funding_rub});
+ chartMeta.set(cCum,{pane:cumPane,series:cumSeries,value:d=>L[seriesByTime.get(d)?.r.date]?.cumulative_net_rub});
  chartMeta.forEach(({pane},chart)=>{chart._pane=pane;markValidationStart(chart,pane,payload.evaluation.periods.validation?.[0])});
  // time-scale sync across visible panes; the fit runs after the new layout has painted
  let syncing=false;charts.forEach(chart=>{chart.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(syncing||!range||chart._pane?.classList.contains('hidden')||chart._pane?._revealing)return;syncing=true;for(const other of charts){if(other!==chart&&!other._pane?.classList.contains('hidden')&&!other._pane?._revealing)try{other.timeScale().setVisibleLogicalRange(range)}catch(e){}}syncing=false})});
@@ -855,7 +875,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
     if(activeHoverChart===chart){activeHoverChart=null;tipDiv.style.display='none';clearCrosshairs(chart)}
     return;
    }
-   const entry=seriesByDate.get(day);
+   const entry=seriesByTime.get(day);
    if(!entry){
     if(activeHoverChart===chart){activeHoverChart=null;tipDiv.style.display='none';clearCrosshairs(chart)}
     return;
@@ -868,7 +888,7 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
     try{other.setCrosshairPosition(v!=null&&isFinite(v)?v:NaN,day,otherMeta.series)}catch(e){}
    });
    syncingCrosshair=false;
-   tipDiv.innerHTML=tipHtml(entry.r,L[day]);tipDiv.style.display='block';
+   tipDiv.innerHTML=tipHtml(entry.r,L[entry.r.date]);tipDiv.style.display='block';
    const wb=root.getBoundingClientRect();
    const leftScaleW=(()=>{try{return chart.priceScale('left').width()||0}catch(e){return 0}})();
    const anchorX=paneEl.offsetLeft+leftScaleW+pt.x;
@@ -881,11 +901,11 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
 function ledgerIndex(){const m={};for(const row of payload.ledger)m[row.date]=row;return m}
 function markerColor(t,sel){if(sel)return'#ffffff';if(t.open_at_end)return COLORS.warn;return t.net_rub>0?COLORS.win:t.net_rub<0?COLORS.loss:'#d7e6f3'}
 function buildMarkers(){const m=[];for(const t of payload.trades){const dir=t.side==='long_spread'?1:-1;const sel=t.number===selectedTrade;const size=sel?2:1;
- m.push({time:t.entry.date,position:dir>0?'belowBar':'aboveBar',color:sel?'#ffffff':COLORS.entry,shape:dir>0?'arrowUp':'arrowDown',text:`#${t.number} ${dir>0?'ПОК':'ПРОД'} · ${t.quantity}@${t.entry.spread_fill_rel!=null?fmt(t.entry.spread_fill_rel,2)+'%':px(t.entry.spread_fill)}`,size});
- m.push({time:t.exit.date,position:dir>0?'aboveBar':'belowBar',color:markerColor(t,sel),shape:'circle',text:t.open_at_end?`#${t.number} ОТКР · форсировано`:`#${t.number} ${rub(t.net_rub)}`,size})}
+ m.push({time:chartTime(t.entry.date),position:dir>0?'belowBar':'aboveBar',color:sel?'#ffffff':COLORS.entry,shape:dir>0?'arrowUp':'arrowDown',text:`#${t.number} ${dir>0?'ПОК':'ПРОД'} · ${t.quantity}@${t.entry.spread_fill_rel!=null?fmt(t.entry.spread_fill_rel,2)+'%':px(t.entry.spread_fill)}`,size});
+ m.push({time:chartTime(t.exit.date),position:dir>0?'aboveBar':'belowBar',color:markerColor(t,sel),shape:'circle',text:t.open_at_end?`#${t.number} ОТКР · форсировано`:`#${t.number} ${rub(t.net_rub)}`,size})}
  m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);return m}
 function refreshSelection(){for(const api of markersApis)api.setMarkers(buildMarkers());applySelectionToRows()}
-function applySelectionToRows(){const sel=selectedTrade==null?null:payload.trades.find(t=>t.number===selectedTrade);document.querySelectorAll('#ledger-table tbody tr').forEach(tr=>{const day=tr.children[0]?.textContent?.slice(0,10);tr.classList.toggle('sel',!!sel&&(sel.entry.date===day||sel.exit.date===day))})}
+function applySelectionToRows(){const sel=selectedTrade==null?null:payload.trades.find(t=>t.number===selectedTrade);document.querySelectorAll('#ledger-table tbody tr').forEach(tr=>{const key=tr.dataset.dateKey;tr.classList.toggle('sel',!!sel&&(sel.entry.date===key||sel.exit.date===key))})}
 
 // ---------- unified ledger table ----------
 function th(labels){const tr=el('tr');for(const l of labels){const h=el('th');h.innerHTML=l;tr.append(h)}const thead=el('thead');thead.append(tr);return thead}
@@ -906,8 +926,8 @@ function fundingCell(r,l){
 function renderTable(){const root=$('ledger-table'),notes=$('notes');root.replaceChildren();const S=payload.series,L=ledgerIndex(),events={};for(const t of payload.trades){(events[t.entry.date] ||= []).push({t,side:'entry'});(events[t.exit.date] ||= []).push({t,side:'exit'})}
  const showSpreadVolume=universe==='calendar_native',extra=showSpreadVolume?1:0;const headers=['Дата','Сигнал','Ближняя · цена · объём','Дальняя · цена · объём',...(showSpreadVolume?['Объём спреда']:[]),'Спред % от дальней · откр.','Событие','P&L дня ₽','Фондирование ₽','Издержки ₽','Кумулятивно ₽'];const table=el('table');table.append(th(headers));const tbody=el('tbody');
  for(const r of S){const l=L[r.date]||{};const ev=events[r.date];const clsRow=[];if(ev){clsRow.push('fill');if(ev.some(e=>e.side==='entry'))clsRow.push('entry');if(ev.some(e=>e.side==='exit'))clsRow.push('exit');if(ev.some(e=>e.t.number===selectedTrade))clsRow.push('sel')}
-  const boundary=r.date===payload.evaluation.periods.validation?.[0];if(boundary)clsRow.push('validation-start');const tr=el('tr',clsRow.join(' '));tr.dataset.period=rowPeriod(r);if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
-  td(tr,`${r.date}${boundary?'<small class="validation-tag">Начало проверки</small>':''}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
+  const boundary=r.date===payload.evaluation.periods.validation?.[0];if(boundary)clsRow.push('validation-start');const tr=el('tr',clsRow.join(' '));tr.dataset.period=rowPeriod(r);tr.dataset.dateKey=r.date;if(ev)tr.addEventListener('click',()=>toggleCard(r.date,tr,ev));
+  td(tr,`${displayTime(r.date)}${boundary?'<small class="validation-tag">Начало проверки</small>':''}<small>${r.days_to_near_expiry!=null?r.days_to_near_expiry+'д до экспирации ближней':''}</small>`);
   td(tr,signalCell(r),{num:true});
   td(tr,dayVolumeCell(r),{num:true});td(tr,`${px(r.far)}<small>цена · объём ${r.far_volume!=null?fmt(r.far_volume):'—'}</small>`,{num:true});
   if(showSpreadVolume)td(tr,r.spread_volume!=null?fmt(r.spread_volume):'—',{num:true});
@@ -933,14 +953,14 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
  const rows=isEntry
   ?`<h4>${isEntry?'Вход':'Выход'} #${t.number} — ${t.side==='long_spread'?'лонг спред':'шорт спред'} · контрактов: ${t.quantity}</h4>
      <div><span class="k">ноги</span> ${t.legs}</div>
-     <div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${humanReason(t.signal.reason)}`:''} · ${t.signal.date}</div>
-     <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}</div>
+     <div><span class="k">сигнал</span> ${t.signal.kind} ${t.signal.value!=null?fmt(t.signal.value,2):''}${t.signal.reason?` · ${humanReason(t.signal.reason)}`:''} · ${displayTime(t.signal.date)}</div>
+     <div><span class="k">дата</span> <b>${displayTime(b.date)}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}</div>
      <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
-     <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>`
+     <div><span class="k">${isIntraday(payload.selection?.timeframe)?'объём за бар':'объём за день'}</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>`
   :`<h4>Выход #${t.number} — ${t.side==='long_spread'?'лонг спред':'шорт спред'} · контрактов: ${t.quantity}</h4>
-     <div><span class="k">дата</span> <b>${b.date}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}${t.open_at_end?' · <b class="warn">принудительная отметка в конце данных</b>':''}</div>
+     <div><span class="k">дата</span> <b>${displayTime(b.date)}</b> · <span class="k">дней в позиции</span> ${t.days_held!=null?t.days_held:'—'}${t.open_at_end?' · <b class="warn">принудительная отметка в конце данных</b>':''}</div>
      <div><span class="k">исполнение спреда</span> <b>${px(b.spread_fill)}</b>${b.spread_fill_rel!=null?` <span class="k">(${fmt(b.spread_fill_rel,2)}%)</span>`:''} · <span class="k">ноги ближняя / дальняя</span> <b>${px(b.near_price)} / ${px(b.far_price)}</b></div>
-     <div><span class="k">объём за день</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>
+     <div><span class="k">${isIntraday(payload.selection?.timeframe)?'объём за бар':'объём за день'}</span> ближняя ${fmt(b.near_volume)} · дальняя ${fmt(b.far_volume)}${b.spread_volume!=null?` · спред ${fmt(b.spread_volume)}`:''}</div>
      <div><span class="k">причина выхода</span> ${humanReason(t.exit_reason)}</div>
      <hr style="border:0;border-top:1px solid #233648;margin:6px 0">
      <div><span class="k">гросс</span> <b>${rub(t.gross_rub,2)}</b>${t.gross_pts!=null?` (${fmt(t.gross_pts,3)} п.)`:''}</div>
@@ -953,21 +973,21 @@ function fillCard(t,side){const isEntry=side==='entry';const b=isEntry?t.entry:t
  return g}
 
 // ---------- tooltip ----------
-function tipHtml(s,l){let h=`<b>${s.date}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}д до экспирации ближней</span>`:''}<hr>`;
+function tipHtml(s,l){let h=`<b>${displayTime(s.date)}</b>${s.days_to_near_expiry!=null?` <span class="k">· ${s.days_to_near_expiry}д до экспирации ближней</span>`:''}<hr>`;
  h+=`<span class="k">ближняя</span> ${legPrice(s.near)} <span class="k">(откр. ${legPrice(s.near_open)}, объём ${fmt(s.near_volume)})</span><br><span class="k">дальняя</span> ${legPrice(s.far)} <span class="k">(откр. ${legPrice(s.far_open)}, объём ${fmt(s.far_volume)})</span><br>`;
  h+=`<span class="k">спред</span> <b>${s.spread_rel!=null?fmt(s.spread_rel,2)+'%':'—'}</b> <span class="k">(абс. ${legPrice(s.spread)}${s.spread_open_rel!=null?` · откр. ${fmt(s.spread_open_rel,2)}%`:''}${s.spread_last_trade_rel!=null?` · посл. ${fmt(s.spread_last_trade_rel,2)}%`:''})</span><br>`;
  const nmode=$('norm')?.value||'raw';if(nmode!=='raw'){const i=payload.series.indexOf(s);const v=spreadDisplayValues(payload.series)[i];
   const unit={stoch20:'%',rz20:'σ',ewma10:'σ',mad20:'σ',garch:'σ',kalman:'σ'}[nmode]||'pp';
   h+=`<span class="k">нормализован · ${NORM_PANEL[nmode]||nmode}</span> ${v==null?'—':fmt(v,2)}${unit==='pp'?'%':unit}<br>`}
- h+=`<span class="k">объём</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume!=null?` · спред ${fmt(s.spread_volume)}${s.spread_trades!=null?' за '+fmt(s.spread_trades)+' сделок':''}`:''}`;
+ h+=`<span class="k">${isIntraday(s.timeframe)?'объём за бар':'объём за день'}</span> ближняя ${fmt(s.near_volume)} · дальняя ${fmt(s.far_volume)}${s.spread_volume!=null?` · спред ${fmt(s.spread_volume)}${s.spread_trades!=null?' за '+fmt(s.spread_trades)+' сделок':''}`:''}`;
  if(s.buy_level_rel!=null)h+=`<br><span class="k">Порог покупки / продажи</span> ${fmt(s.buy_level_rel,3)}% / ${fmt(s.sell_level_rel,3)}% · на закрытии сигнального бара`;
  if(s.funding_rub!=null)h+=`<br><span class="k">фандинг: ${s.funding_rub>=0?'начислено':'списано'}</span> ${signed(s.funding_rub,2)} ₽`;
  if(s.signal_z!=null)h+=`<br><span class="k">сигнал z</span> ${fmt(s.signal_z,2)}`;
  if(s.dev_pp!=null)h+=`<br><span class="k">имплицитная ставка − RUONIA</span> ${fmt(s.dev_pp,2)} pp`;
- if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'}${l.quantity?` · ${l.quantity} контр.`:''} · <span class="k">результат дня</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)} ₽${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)} ₽`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)} ₽</b>`:''}`;
+ if(l)h+=`<hr><span class="k">позиция</span> ${l.position>0?'лонг':l.position<0?'шорт':'флэт'}${l.quantity?` · ${l.quantity} контр.`:''} · <span class="k">${isIntraday(s.timeframe)?'результат бара':'результат дня'}</span> ${rub(l.mark_pnl_rub,2)} · <span class="k">издержки</span> −${fmt(l.costs_rub,2)} ₽${l.funding_rub!=null?` · <span class="k">фондирование</span> ${signed(l.funding_rub,2)} ₽`:''} · <span class="k">кумулятивно</span> <b class="${cls(l.cumulative_net_rub)}">${rub(l.cumulative_net_rub,2)}</b>${drawdownByDate[s.date]!=null?` · <span class="k">просадка</span> <b class="warn">−${fmt(-drawdownByDate[s.date],2)} ₽</b>`:''}`;
  const dayEvents=payload.trades.flatMap(t=>[['ENTRY',t.entry],['EXIT',t.exit]].filter(([_,leg])=>leg.date===s.date).map(([kind])=>({kind,t})));
  for(const {kind,t} of dayEvents){const leg=kind==='ENTRY'?t.entry:t.exit;const fees=Object.entries(leg.costs||{}).filter(([k,v])=>v).map(([k,v])=>`${humanCost(k)} ${fmt(v,2)} ₽`).join(', ');
-  h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class="k">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class="k">объём за день</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
+  h+=`<hr><b>#${t.number} ${kind==='ENTRY'?'ВХОД':'ВЫХОД'}</b> ${t.side==='long_spread'?'покупка ближней / продажа дальней':'продажа ближней / покупка дальней'} · контрактов: ${t.quantity}${t.open_at_end&&kind==='EXIT'?' · принудительная отметка':''}<br><span class="k">исполнение спреда</span> <b>${legPrice(leg.spread_fill)}</b> · <span class="k">ноги</span> ${legPrice(leg.near_price)} / ${legPrice(leg.far_price)}<br><span class="k">${isIntraday(payload.selection?.timeframe)?'объём за бар':'объём за день'}</span> ближняя ${fmt(leg.near_volume)} · дальняя ${fmt(leg.far_volume)}${leg.spread_volume!=null?` · спред ${fmt(leg.spread_volume)}`:''}<br><span class="k">комиссии</span> ${fees||'—'}`;
   if(kind==='EXIT')h+=`<br><span class="k">результат</span> гросс ${rub(t.gross_rub,2)} · нетто <b class="${cls(t.net_rub)}">${rub(t.net_rub,2)}</b>`}
  return h}
 
@@ -984,7 +1004,7 @@ function render(){renderPeriodResult();renderEvidence();renderSummary();$('chart
 
 // ---------- boot ----------
 bindSettings();
-(async()=>{try{const [settings,c]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog')]);if(settings)setPreferences(settings);$('open-settings').disabled=false;catalog=c;
+(async()=>{try{const [settings,c,timeframes]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog'),api('/api/timeframes').catch(()=>null)]);installTimeframeOptions(timeframes||c.timeframes||[]);if(settings)setPreferences(settings);$('open-settings').disabled=false;catalog=c;
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillFills();buildPicker();$('group-strategy').addEventListener('change',changeSharedStrategy);$('group-fill').addEventListener('change',()=>sharedEdited(0));
  $('strategy').addEventListener('change',()=>{fillStrategy();restoreForm();clearGroup();scheduleShow(100)});
@@ -997,7 +1017,7 @@ bindSettings();
  applyNormHint();
  // Deep links keep their old shape while both universes share the same two-step selector.
  const q=new URLSearchParams(location.search),kind=q.get('universe'),pair=q.get('pair');
- const desired=kind==='calendar_native'?'calendar_native|'+q.get('asset'):kind==='pair_screen'?'pair_screen|'+pairAvailability(pair)?.near:null;
+ const desired=kind==='calendar_native'&&supportsCalendar(preferences.timeframe)?'calendar_native|'+q.get('asset'):kind==='pair_screen'?'pair_screen|'+pairAvailability(pair)?.near:null;
  const first=[...branches.values()].find(b=>b.children.some(l=>l.enabled))||[...branches.values()][0];openBranch(branches.has(desired)?desired:first?.key,pair,q.get('strategy'),false);void show();
 }catch(e){$('open-settings').disabled=false;status(e.message)}})();
 </script>

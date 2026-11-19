@@ -338,6 +338,9 @@ def size_proof(unit, marks, settings, contracts):
         ledger.append(
             {
                 "date": day,
+                "timestamp": row.get("timestamp", day),
+                "session_date": row.get("session_date", day[:10]),
+                "benchmark_mark_date": row.get("benchmark_mark_date"),
                 "position": position["sign"] if position else 0,
                 "quantity": q_held,
                 "mark_pnl_rub": daily,

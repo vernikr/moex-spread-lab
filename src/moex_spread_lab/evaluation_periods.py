@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from .timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from .w0 import W0Error
 
 DEFAULT_VALIDATION_PERCENT = 0
@@ -31,8 +32,9 @@ class ResearchSettings:
     allow_failed_capital: bool = True
     slippage_ticks: float = 1.0
     initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
+    timeframe: str = DEFAULT_TIMEFRAME
 
-    def metadata(self) -> dict[str, float | bool]:
+    def metadata(self) -> dict[str, float | bool | str]:
         return asdict(self)
 
     @classmethod
@@ -65,6 +67,11 @@ def _validated_patch(value: object) -> dict:
                 "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
             )
         patch["initial_capital_rub"] = float(value)
+    if "timeframe" in patch:
+        try:
+            get_timeframe(patch["timeframe"])
+        except ValueError as exc:
+            raise W0Error(str(exc)) from exc
     if "slippage_ticks" in patch:
         value = patch["slippage_ticks"]
         if type(value) not in (int, float) or not 0 <= value <= 10:
@@ -80,7 +87,7 @@ def settings_path(root: Path) -> Path:
     return root / "data/analytics/research-settings.json"
 
 
-def read_settings(root: Path) -> dict[str, float | bool]:
+def read_settings(root: Path) -> dict[str, float | bool | str]:
     try:
         stored = _validated_patch(
             json.loads(settings_path(root).read_text(encoding="utf-8"))
@@ -97,7 +104,7 @@ def read_settings(root: Path) -> dict[str, float | bool]:
         ) from exc
 
 
-def save_settings(root: Path, body: object) -> dict[str, float | bool]:
+def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
     patch = _validated_patch(body)
     # A full valid submission can also repair corrupt settings. Legacy split-only
     # clients and partial updates must preserve every other saved preference.

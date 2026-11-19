@@ -107,3 +107,12 @@ The workbench has resizable, persisted columns, synchronized chart panes and a d
 - `last(ledger.cumulative_net) == Σ trade net` (±0.02 ₽); `ledger_reconciliation_rub == 0.0`.
 - `cost_totals` equals the sum of per-side component dictionaries; broker component always 0.0 (VTB zero fee to 2026-12-31).
 - Same inputs → identical `run_id`.
+
+## Global candle timeframe (2026-11-19)
+
+- The global research settings dialog selects a candle interval. `1d` remains the default (including for older settings files); `/api/timeframes` is generated from `src/moex_spread_lab/timeframes.py`. Add a registry entry with its ISS interval, local filename suffix, bar kind and adapter capabilities before exposing another interval. Missing interval files are reported as unavailable; the loader never substitutes daily data.
+- `1h` currently supports price-based pair proof only. Calendar spread proof, funding-only/carry, and the batch screener remain day-only and are explicitly gated. The hourly selector is not a blanket opt-in to unsupported strategies.
+- Pair timestamps remain unique ISO-like local bar keys (`YYYY-MM-DDTHH:MM:SS`). The chart converts MOEX-local timestamps to epoch seconds using the current Moscow UTC+03 offset; ticks, tooltips, table dates and fills are displayed in `Europe/Moscow`. Daily bars retain date-only chart keys.
+- Each hourly pair bar uses the previous observed daily LQDT close, never the same session's later close. The source mark date is carried through trade attribution, ledger, search and sizing. A date-only replay cutoff includes the entire named session. Hourly validation splits use chronological bar observations; elapsed-time annualization uses the actual timestamps.
+- Pair liquidity screens aggregate hourly volumes by session to preserve the existing minimum daily volume rule. Signals and fills remain bar-based; the per-bar volume series remains separate from session-volume gate metadata. Daily SWAPRATE is not multiplied across hourly bars.
+- The UI reads interval capabilities from `/api/timeframes` instead of special-casing `1h`, refreshes the proof catalog after a settings save (including other tabs), and selects a compatible pair branch when a calendar-only selection becomes unsupported.

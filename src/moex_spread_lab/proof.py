@@ -12,7 +12,7 @@ import json
 import math
 from bisect import bisect_right
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,7 @@ from .proof_signals import (
     attach_entry_levels,
     pair_fill,
 )
+from .timeframes import get_timeframe, timeframe_options
 from .w0 import W0Error
 
 PROOF_SCHEMA = "execution-proof.v1"
@@ -144,8 +145,12 @@ def _legs_label(side: str) -> str:
     return "buy near / sell far" if side == "long_spread" else "sell near / buy far"
 
 
-def _days_held(entry_date: str, exit_date: str) -> int | None:
+def _days_held(entry_date: str, exit_date: str) -> int | float | None:
     try:
+        if "T" in entry_date or "T" in exit_date:
+            start = datetime.fromisoformat(entry_date.replace("Z", ""))
+            end = datetime.fromisoformat(exit_date.replace("Z", ""))
+            return round((end - start).total_seconds() / 86400, 4)
         return (date.fromisoformat(exit_date[:10]) - date.fromisoformat(entry_date[:10])).days
     except ValueError:
         return None
@@ -164,7 +169,10 @@ class ProofService:
         from .calendar_spreads import CalendarData
 
         settings = ResearchSettings.load(self.root)
+        spec = get_timeframe(settings.timeframe)
         try:
+            if not spec.supports_calendar:
+                raise W0Error(f"{spec.label}: календарный proof поддерживается только на 1d.")
             calendar = CalendarData(self.root).catalog(initial_capital=settings.initial_capital_rub)
         except (W0Error, OSError) as exc:
             calendar = {
@@ -175,10 +183,16 @@ class ProofService:
                 "assets": [],
                 "error": str(exc),
             }
-        pair = screener_app.catalog(screener_app.ScreenerInputs(self.root), initial_capital=settings.initial_capital_rub)
+        pair = screener_app.catalog(
+            screener_app.ScreenerInputs(self.root),
+            initial_capital=settings.initial_capital_rub,
+            timeframe=settings.timeframe,
+        )
         return {
             **calendar,
             "initial_capital_rub": settings.initial_capital_rub,
+            "timeframe": settings.timeframe,
+            "timeframes": timeframe_options(),
             "universes": [CALENDAR_UNIVERSE, PAIR_UNIVERSE],
             "pair_screen": pair,
         }
@@ -186,7 +200,16 @@ class ProofService:
     # ------------------------------------------------------------------- proof
 
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
-        return self.prepare(selection)(selection)
+        saved = ResearchSettings.load(self.root)
+        strict = ResearchSettings(
+            validation_percent=saved.validation_percent,
+            allow_failed_volume=False,
+            allow_failed_capital=False,
+            slippage_ticks=saved.slippage_ticks,
+            initial_capital_rub=saved.initial_capital_rub,
+            timeframe=saved.timeframe,
+        )
+        return self.prepare(selection, settings=strict)(selection)
 
     def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
@@ -209,7 +232,10 @@ class ProofService:
                 unit = self._calendar_proof(request, unit)
             if not dates or dates[0] > unit["series"][0]["date"]:
                 raise W0Error("Нет отметки LQDT на начало истории.")
-            marks = {r["date"]: _mark(dates, prices, r["date"]) for r in unit["series"]}
+            marks = {
+                r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
+                for r in unit["series"]
+            }
             return size_proof(unit, marks, settings, contracts)
 
         return sized_replay
@@ -228,6 +254,9 @@ class ProofService:
             return self._prepare_pair(selection, settings, sizing_intents=sizing_intents)
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
+        spec = get_timeframe(settings.timeframe)
+        if not spec.supports_calendar:
+            raise W0Error(f"{spec.label}: календарный proof поддерживается только на 1d.")
         from .calendar_spreads import CalendarData
 
         calendar = calendar if calendar is not None else CalendarData(self.root)
@@ -346,7 +375,13 @@ class ProofService:
             raise W0Error("неизвестная стратегия")
         inputs = screener_app.ScreenerInputs(self.root)
         funding = ProofFunding(inputs)
-        entry = screener_app.catalog(inputs, registry=(pair,), funding=funding, initial_capital=settings.initial_capital_rub)["pairs"][0]
+        timeframe = get_timeframe(settings.timeframe)
+        if not timeframe.supports_pair_proof:
+            raise W0Error(f"{timeframe.label}: pair-proof не поддерживается.")
+        entry = screener_app.catalog(
+            inputs, registry=(pair,), funding=funding,
+            initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe,
+        )["pairs"][0]
         if not entry["proof_strategies"].get(strategy):
             raise W0Error(entry["data_reasons"][strategy])
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
@@ -365,7 +400,7 @@ class ProofService:
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
         dates, prices = _benchmark_marks(inputs.benchmark)
         if strategy == "mean_reversion":
-            prepared, engine = self._price_inputs(inputs, pair, funding, settings.validation_percent), self._mean_reversion_proof
+            prepared, engine = self._price_inputs(inputs, pair, funding, settings.validation_percent, settings.timeframe), self._mean_reversion_proof
         else:
             prepared, engine = self._funding_inputs(inputs, pair, funding, settings.validation_percent), self._funding_proof
 
@@ -386,10 +421,10 @@ class ProofService:
 
         return replay
 
-    def _price_inputs(self, inputs, pair, funding, validation_percent):
+    def _price_inputs(self, inputs, pair, funding, validation_percent, timeframe="1d"):
         from .screener_app import pair_price_inputs
 
-        series, book = pair_price_inputs(inputs, pair, funding)
+        series, book = pair_price_inputs(inputs, pair, funding, timeframe=timeframe)
         analysis_rows = [row for row in series["rows"] if _positive_pair_volume(row)]
         if len(analysis_rows) < 2:
             raise W0Error("fewer than two positive-volume common observations")
@@ -411,8 +446,16 @@ class ProofService:
         marks = evidence.marks if evidence else {}
         funding_swaprates = evidence.rates if evidence else {}
         if through is not None:
-            series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
-            analysis_rows = [r for r in analysis_rows if r["date"] <= through]
+            def inside_cutoff(row):
+                key = (
+                    row.get("session_date", row["date"][:10])
+                    if len(through) == 10 and get_timeframe(series["timeframe"]).intraday
+                    else row["date"]
+                )
+                return key <= through
+
+            series = {**series, "rows": [r for r in series["rows"] if inside_cutoff(r)]}
+            analysis_rows = [r for r in analysis_rows if inside_cutoff(r)]
         analysis_series = {**series, "rows": analysis_rows}
         near_contract = series["contracts"][near]
         far_contract = series["contracts"][far]
@@ -438,10 +481,12 @@ class ProofService:
         volume_map = {row["date"]: row for row in series["rows"]}
 
         trades: list[dict[str, Any]] = []
+        intraday = get_timeframe(series["timeframe"]).intraday
         signal_dates = {r["date"]: analysis_rows[max(0, i - delay)]["date"] for i, r in enumerate(analysis_rows)}
         for number, row in enumerate(report["trades"], start=1):
             side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
-            entry_date, exit_date = row["entry_date"][:10], row["exit_date"][:10]
+            entry_date = row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
+            exit_date = row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
             entry_costs = row.get("entry_costs") or {}
             exit_costs = row.get("exit_costs") or {}
             entry = self._fill_block(entry_date, row["entry_spread_fill"], row["entry_near_fill"], row["entry_far_fill"], volume_map, entry_costs, far_value=row["entry_far_fill"] * far_mult)
@@ -465,6 +510,8 @@ class ProofService:
                 )
             )
 
+        from .screener_app import _session_volumes
+        sessions = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
         series_rows = []
         position_on_last_analyzed_day = 0
         for row in series["rows"]:
@@ -477,7 +524,13 @@ class ProofService:
             series_rows.append(
                 {
                     "date": day,
-                    **({"benchmark_mark_kind": "prior_daily_close", "benchmark_mark_date": row["benchmark_mark_date"]} if row.get("benchmark_mark_date") else {}),
+                    "timestamp": row.get("timestamp", day),
+                    "session_date": row.get("session_date", day[:10]),
+                    "timeframe": series["timeframe"],
+                    "benchmark_mark_kind": row.get("benchmark_mark_kind"),
+                    "benchmark_mark_date": row.get("benchmark_mark_date"),
+                    "near_session_volume": sessions.get(near, {}).get(row.get("session_date", day[:10])),
+                    "far_session_volume": sessions.get(far, {}).get(row.get("session_date", day[:10])),
                     "near": row["near_close"],
                     "far": row["far_close"],
                     "near_open": row["near_open"],
@@ -526,7 +579,7 @@ class ProofService:
                 **(evidence.provenance if evidence else {}),
             },
             notes=[
-                *(evidence.notes() if evidence else ["Для пары без вечного фьючерса фандинг неприменим."]),
+                *(evidence.notes() if evidence else ["На выбранном внутридневном таймфрейме SWAPRATE не включён: дневную ставку нельзя размножать на внутридневные бары." if intraday else "Для пары без вечного фьючерса фандинг неприменим."]),
                 *(["Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."] if evidence else []),
                 "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
                 (REFERENCE_WARNING if fill_label == "reference_same_bar" else
@@ -734,6 +787,7 @@ class ProofService:
         row = rows_by_date.get(day, {})
         return {
             "date": day,
+            "benchmark_mark_date": row.get("benchmark_mark_date"),
             "spread_fill": spread_fill,
             "spread_fill_rel": _rel_pct(spread_fill, far_value if far_value is not None else far_price),
             "near_price": near_price,
@@ -765,8 +819,8 @@ class ProofService:
         funding_rub: float | None = None,
     ) -> dict[str, Any]:
         open_at_end = open_at_end if open_at_end is not None else exit_reason in FORCED_EXIT_REASONS
-        entry_mark = _mark(benchmark_dates, benchmark_prices, entry["date"])
-        exit_mark = _mark(benchmark_dates, benchmark_prices, exit["date"])
+        entry_mark = _mark(benchmark_dates, benchmark_prices, entry.get("benchmark_mark_date") or entry["date"][:10])
+        exit_mark = _mark(benchmark_dates, benchmark_prices, exit.get("benchmark_mark_date") or exit["date"][:10])
         hurdle = margin_pair * (exit_mark / entry_mark - 1)
         return {
             "number": number,
@@ -841,6 +895,9 @@ class ProofService:
             ledger.append(
                 {
                     "date": day,
+                    "timestamp": row.get("timestamp", day),
+                    "session_date": row.get("session_date", day[:10]),
+                    "benchmark_mark_date": row.get("benchmark_mark_date"),
                     "position": position["sign"] if position else 0,
                     "mark_pnl_rub": round(mark, 2),
                     "funding_rub": row.get("funding_rub"),
@@ -916,14 +973,21 @@ class ProofService:
         hurdle = sum(trade["lqdt_on_margin_rub"] for trade in trades)
         cumulative = ledger[-1]["cumulative_net_rub"] if ledger else 0.0
         volumes = [
-            min(row["near_volume"], row["far_volume"])
+            min(row.get("near_session_volume", row.get("near_volume")), row.get("far_session_volume", row.get("far_volume")))
             for row in series_rows
-            if _positive_pair_volume(row)
+            if row.get("near_session_volume", row.get("near_volume")) is not None
+            and row.get("far_session_volume", row.get("far_volume")) is not None
+            and float(row.get("near_session_volume", row.get("near_volume"))) > 0
+            and float(row.get("far_session_volume", row.get("far_volume"))) > 0
         ]
         min_leg_volume = min(volumes) if volumes else None
-        trade_volume_rule = all(
-            min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
-            for trade in trades for side in ("entry", "exit")
+        trade_volume_rule = (
+            all(
+                min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
+                for trade in trades for side in ("entry", "exit")
+            )
+            if trades
+            else True
         )
         near_group = CONTRACT_GROUP.get(near)
         far_group = CONTRACT_GROUP.get(far)
@@ -932,6 +996,7 @@ class ProofService:
             "universe": PAIR_UNIVERSE,
             "pair": pair_id,
             "strategy": strategy,
+            "timeframe": series_rows[0].get("timeframe", "1d") if series_rows else "1d",
             "fill": fill_label,
             "quantity": quantity,
             "slippage_ticks": slippage,
@@ -943,10 +1008,10 @@ class ProofService:
             "universe": PAIR_UNIVERSE,
             "status": "exploratory_proxy_not_live",
             "price_role": (
-                ("ISS: справочное закрытие сигнального бара, не исполнимая доходность"
+                (f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, справочное закрытие сигнального бара, не исполнимая доходность"
                  if fill_label == "reference_same_bar" else
-                 "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
-                 if fill_label == "next_open" else "ISS: дневной candle, следующее закрытие (прокси)")
+                 f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, заполнение по открытию, отметки по закрытию"
+                 if fill_label == "next_open" else f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, следующее закрытие (прокси)")
                 if strategy == "mean_reversion"
                 else "ISS: расчётная цена на конец дня (прокси)"
             ),
@@ -967,6 +1032,7 @@ class ProofService:
             "window": {
                 "from": series_rows[0]["date"] if series_rows else None,
                 "to": series_rows[-1]["date"] if series_rows else None,
+                "timeframe": series_rows[0].get("timeframe", "1d") if series_rows else "1d",
                 "observations": len(series_rows),
                 "near": near,
                 "far": far,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from functools import partial
 from itertools import pairwise
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
+from .timeframes import get_timeframe, timeframe_for_interval
 from .w0 import W0Error, read_hashed_json
 
 SCREEN_SCHEMA = "pair-screen.v1"
@@ -57,6 +59,7 @@ def _normalized_series(
     near: str,
     far: str,
     prior_benchmark_dates=(),
+    timeframe: str | None = None,
 ) -> dict[str, Any]:
     near_payload, near_hash = _read_json(near_path)
     far_payload, far_hash = _read_json(far_path)
@@ -65,51 +68,64 @@ def _normalized_series(
         raise ScreenError("screen requires iss-candles.v1 pair inputs")
     if benchmark_payload.get("schema_version") != "lqdt-lineage.v1":
         raise ScreenError("screen requires lqdt-lineage.v1 benchmark")
+    try:
+        spec = get_timeframe(timeframe) if timeframe is not None else timeframe_for_interval(near_payload.get("interval"))
+    except ValueError as exc:
+        raise ScreenError(str(exc)) from exc
+    if near_payload.get("interval") != spec.iss_interval or far_payload.get("interval") != spec.iss_interval:
+        raise ScreenError(f"candle interval mismatch: expected {spec.iss_interval} ({spec.id})")
     contracts, contracts_hash = load_contracts(contracts_path, near, far)
     near_contract = contracts[near]
     far_contract = contracts[far]
     near_multiplier = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
     far_multiplier = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
     common_tick_rub = max(float(near_contract["tick_value"]), float(far_contract["tick_value"]), 1.0)
-    near_rows = {row["begin"]: row for row in near_payload.get("rows", []) if row.get("begin") and row.get("close") is not None}
-    far_rows = {row["begin"]: row for row in far_payload.get("rows", []) if row.get("begin") and row.get("close") is not None}
+
+    def canonical_timestamp(row):
+        value = row.get("begin")
+        if not isinstance(value, str) or len(value) < 10:
+            return None
+        return value[:19].replace(" ", "T") if len(value) >= 19 else value[:10]
+
+    near_rows = {canonical_timestamp(row): row for row in near_payload.get("rows", []) if canonical_timestamp(row) and row.get("close") is not None}
+    far_rows = {canonical_timestamp(row): row for row in far_payload.get("rows", []) if canonical_timestamp(row) and row.get("close") is not None}
     benchmark = {row["date"]: row for row in benchmark_payload.get("rows", []) if row.get("date")}
-    # Only documented non-clearing sessions may reuse the last *already observed*
-    # LQDT mark. Never forward a futures candle or fabricate a settlement.
     observed = sorted(benchmark)
-    for day in sorted(prior_benchmark_dates):
-        if day not in benchmark:
-            earlier = [d for d in observed if d < day]
-            if earlier:
-                prior = earlier[-1]
-                benchmark[day] = benchmark[prior]
     rows = []
     for timestamp in sorted(set(near_rows) & set(far_rows)):
-        date_key = timestamp[:10]
-        benchmark_row = benchmark.get(date_key)
+        session_date = timestamp[:10]
+        benchmark_date = session_date
+        benchmark_row = benchmark.get(session_date)
+        mark_kind = "daily_close_same_date"
+        if spec.intraday or (benchmark_row is None and session_date in prior_benchmark_dates):
+            prior_index = bisect_left(observed, session_date) - 1
+            benchmark_date = observed[prior_index] if prior_index >= 0 else None
+            benchmark_row = benchmark.get(benchmark_date) if benchmark_date else None
+            mark_kind = "prior_daily_close"
         if benchmark_row is None:
             continue
-        near_close = float(near_rows[timestamp]["close"])
-        far_close = float(far_rows[timestamp]["close"])
+        near_row, far_row = near_rows[timestamp], far_rows[timestamp]
+        near_close, far_close = float(near_row["close"]), float(far_row["close"])
         normalized_spread = near_close * near_multiplier - far_close * far_multiplier
         rows.append({
-            "date": date_key,
+            "date": timestamp if spec.intraday else session_date,
+            "session_date": session_date,
             "timestamp": timestamp,
             "near_close": near_close,
             "far_close": far_close,
-            "near_open": float(near_rows[timestamp].get("open") or near_close),
-            "far_open": float(far_rows[timestamp].get("open") or far_close),
+            "near_open": float(near_row.get("open") or near_close),
+            "far_open": float(far_row.get("open") or far_close),
             "spread_value": _round(normalized_spread),
             "spread_ticks": _round(normalized_spread / common_tick_rub),
             "benchmark_price": float(benchmark_row["price"]),
             "benchmark_source_ticker": benchmark_row.get("source_ticker"),
             "benchmark_source_kind": benchmark_row.get("source_kind"),
-            "benchmark_mark_kind": "prior_daily_close" if benchmark_row["date"] != date_key else "daily_close_same_date",
-            **({"benchmark_mark_date": benchmark_row["date"]} if benchmark_row["date"] != date_key else {}),
-            "near_price_proxy_kind": near_rows[timestamp].get("price_proxy_kind", "candle_close"),
-            "far_price_proxy_kind": far_rows[timestamp].get("price_proxy_kind", "candle_close"),
-            "near_volume": near_rows[timestamp].get("volume"),
-            "far_volume": far_rows[timestamp].get("volume"),
+            "benchmark_mark_kind": mark_kind,
+            "benchmark_mark_date": benchmark_date,
+            "near_price_proxy_kind": near_row.get("price_proxy_kind", "candle_close"),
+            "far_price_proxy_kind": far_row.get("price_proxy_kind", "candle_close"),
+            "near_volume": near_row.get("volume"),
+            "far_volume": far_row.get("volume"),
         })
     if len(rows) < 2:
         raise ScreenError(f"fewer than two normalized common rows for {near}/{far}")
@@ -117,8 +133,8 @@ def _normalized_series(
         "schema_version": "analytical-series.v1",
         "near": near,
         "far": far,
-        "interval": 24,
-        "timeframe": "1d",
+        "interval": spec.iss_interval,
+        "timeframe": spec.id,
         "direction": "near_minus_far_normalized_rub",
         "price_unit": "rub_normalized_per_pair",
         "spread_tick_value_rub": common_tick_rub,
@@ -134,6 +150,7 @@ def _normalized_series(
             "benchmark_path": str(benchmark_path),
             "contracts_path": str(contracts_path),
             "normalization": "close * (tick_value / tick_size) per leg",
+            "benchmark_alignment": "previous observed daily close for intraday bars" if spec.intraday else "same-day close; documented non-clearing fallback only",
         },
     }
 

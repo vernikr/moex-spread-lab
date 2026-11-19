@@ -31,6 +31,7 @@ from .evaluation_periods import EvaluationSplit, read_settings, save_settings
 from .proof import ProofService
 from .proof_funding import FundingWindow, ProofFunding
 from .screener import SCREEN_PAIRS, _normalized_series
+from .timeframes import DEFAULT_TIMEFRAME, get_timeframe, timeframe_options
 from .w0 import W0Error
 
 EXTRA_PAIRS = (
@@ -160,10 +161,13 @@ class ScreenerInputs:
     def search_history(self) -> Path:
         return self.root / "data/analytics/screener-searches.jsonl"
 
-    def candles(self, pair_id: str, secid: str) -> Path:
-        primary = self.root / "data/w1/candles-screen" / f"{secid}_1d.json"
-        original = self.root / "data/w1/candles" / f"{secid}_1d.json"
-        return primary if primary.is_file() else original
+    def candles(self, pair_id: str, secid: str, timeframe: str = DEFAULT_TIMEFRAME) -> Path:
+        spec = get_timeframe(timeframe)
+        screened = self.root / "data/w1/candles-screen" / f"{secid}_{spec.file_suffix}.json"
+        intake = self.root / "data/w1/candles" / f"{secid}_{spec.file_suffix}.json"
+        if screened.is_file():
+            return screened
+        return intake
 
     def history_cache(self, pair_id: str) -> Path:
         folder = (
@@ -187,57 +191,85 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
-def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str]) -> dict[str, int] | None:
-    """Smallest daily volume of each leg over the days both legs traded; None if candles are missing."""
+def _session_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME):
     try:
-        legs = {
-            secid: {
-                row["begin"][:10]: row["volume"]
-                for row in json.loads(
-                    inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8")
-                )["rows"]
-            }
-            for secid in (pair["near"], pair["far"])
-        }
+        legs = {}
+        for secid in (pair["near"], pair["far"]):
+            payload = json.loads(
+                inputs.candles(pair["pair_id"], secid, timeframe).read_text(encoding="utf-8")
+            )
+            volumes: dict[str, float | None] = {}
+            invalid_days = set()
+            for row in payload.get("rows", []):
+                begin = row.get("begin")
+                if not isinstance(begin, str) or len(begin) < 10:
+                    continue
+                day = begin[:10]
+                value = row.get("volume")
+                if value is None or isinstance(value, bool):
+                    invalid_days.add(day)
+                    continue
+                number = float(value)
+                if not math.isfinite(number) or number < 0:
+                    invalid_days.add(day)
+                    continue
+                volumes[day] = float(volumes.get(day) or 0.0) + number
+            for day in invalid_days:
+                volumes[day] = None
+            legs[secid] = volumes
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    return legs
+
+
+def _leg_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, float] | None:
+    legs = _session_volumes(inputs, pair, timeframe)
+    if legs is None:
+        return None
     days = set(legs[pair["near"]]) & set(legs[pair["far"]])
-    eligible = [day for day in days if all(legs[secid][day] is not None and float(legs[secid][day]) > 0 for secid in (pair["near"], pair["far"]))]
-    return {secid: min(legs[secid][day] for day in eligible) for secid in legs} if eligible else None
+    eligible = [
+        day for day in days
+        if all(legs[secid].get(day) is not None and float(legs[secid][day]) > 0
+               for secid in (pair["near"], pair["far"]))
+    ]
+    return {secid: min(float(legs[secid][day]) for day in eligible) for secid in legs} if eligible else None
 
 
-def _positive_leg_volume_dates(inputs: ScreenerInputs, pair: dict[str, str]) -> set[str]:
-    try:
-        legs = {
-            secid: {
-                row["begin"][:10]: row.get("volume")
-                for row in json.loads(inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8")).get("rows", [])
-                if row.get("begin")
-            }
-            for secid in (pair["near"], pair["far"])
-        }
-    except (OSError, ValueError, KeyError, TypeError):
+def _positive_leg_volume_dates(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME) -> set[str]:
+    legs = _session_volumes(inputs, pair, timeframe)
+    if legs is None:
         return set()
     return {
         day for day in set(legs[pair["near"]]) & set(legs[pair["far"]])
-        if all(legs[secid][day] is not None and float(legs[secid][day]) > 0 for secid in (pair["near"], pair["far"]))
+        if all(legs[secid].get(day) is not None and float(legs[secid][day]) > 0
+               for secid in (pair["near"], pair["far"]))
     }
 
 
-def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str]) -> tuple[str | None, str | None, int, set[str]]:
+def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME) -> tuple[str | None, str | None, int, set[str]]:
     try:
         legs = []
         for secid in (pair["near"], pair["far"]):
-            payload = json.loads(inputs.candles(pair["pair_id"], secid).read_text(encoding="utf-8"))
-            legs.append({str(row.get("begin", ""))[:10] for row in payload.get("rows", []) if row.get("begin")})
+            payload = json.loads(
+                inputs.candles(pair["pair_id"], secid, timeframe).read_text(encoding="utf-8")
+            )
+            legs.append({
+                str(row.get("begin", ""))
+                for row in payload.get("rows", [])
+                if row.get("begin") and row.get("close") is not None
+            })
         common = legs[0] & legs[1]
         ordered = sorted(common)
-        return (ordered[0], ordered[-1], len(ordered), common) if ordered else (None, None, 0, set())
+        return (
+            ordered[0][:10], ordered[-1][:10], len(ordered),
+            {timestamp[:10] for timestamp in common},
+        ) if ordered else (None, None, 0, set())
     except (OSError, ValueError, KeyError, TypeError):
         return None, None, 0, set()
 
 
-def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_capital=INITIAL_CAPITAL) -> dict[str, Any]:
+def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_capital=INITIAL_CAPITAL, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
+    spec = get_timeframe(timeframe)
     funding = funding or ProofFunding(inputs)
     try:
         instruments = {
@@ -259,11 +291,11 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
     pairs = []
     for pair in registry:
         pair_id = pair["pair_id"]
-        history_from, history_to, history_observations, _ = _pair_history_span(inputs, pair)
+        history_from, history_to, history_observations, _ = _pair_history_span(inputs, pair, timeframe)
         near, far = pair["near"], pair["far"]
         price_files = (
-            inputs.candles(pair_id, near),
-            inputs.candles(pair_id, far),
+            inputs.candles(pair_id, near, timeframe),
+            inputs.candles(pair_id, far, timeframe),
             inputs.benchmark,
             inputs.contracts,
         )
@@ -274,10 +306,16 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
             inputs.benchmark,
             inputs.contracts,
         )
-        volumes = _leg_volumes(inputs, pair)
+        volumes = _leg_volumes(inputs, pair, timeframe)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
-        days = _positive_leg_volume_dates(inputs, pair) if pair["family"] == "perpetual_quarterly_same_asset" else set()
+        days = _positive_leg_volume_dates(inputs, pair, timeframe) if pair["family"] == "perpetual_quarterly_same_asset" else set()
         proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
+        if not spec.supports_pair_proof:
+            proof_available["mean_reversion"] = False
+            reasons["mean_reversion"] = f"{spec.label}: ценовой pair-proof не реализован для этого интервала."
+        if not spec.supports_funding_strategy:
+            proof_available["funding_only"] = False
+            reasons["funding_only"] = f"{spec.label}: carry требует дневных расчётных ставок."
         available = {
             "mean_reversion": tradable and proof_available["mean_reversion"],
             "funding_only": tradable and proof_available["funding_only"],
@@ -293,6 +331,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
         pairs.append(
             {
                 "id": pair_id,
+                "timeframe": timeframe,
                 "near": near,
                 "far": far,
                 "family": pair["family"],
@@ -319,6 +358,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
             }
         )
     return {
+        "timeframe": timeframe,
         "pairs": pairs,
         "strategies": STRATEGIES,
         "execution_defaults": {"slippage_ticks": 1.0, "quantity": 1},
@@ -380,13 +420,24 @@ def _history_source(inputs: ScreenerInputs, pair_id: str, secid: str) -> dict[st
     )
 
 
-def pair_price_inputs(inputs: ScreenerInputs, pair: dict[str, str], funding: ProofFunding):
+def pair_price_inputs(
+    inputs: ScreenerInputs,
+    pair: dict[str, str],
+    funding: ProofFunding,
+    timeframe: str = DEFAULT_TIMEFRAME,
+):
     pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
-    book = funding.timeline(pair) if pair["family"] == "perpetual_quarterly_same_asset" else None
+    spec = get_timeframe(timeframe)
+    book = (
+        funding.timeline(pair)
+        if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
+        else None
+    )
     series = _normalized_series(
-        inputs.candles(pair_id, near), inputs.candles(pair_id, far),
+        inputs.candles(pair_id, near, timeframe), inputs.candles(pair_id, far, timeframe),
         inputs.benchmark, inputs.contracts, near=near, far=far,
         prior_benchmark_dates=book.no_clearing_dates if book else (),
+        timeframe=timeframe,
     )
     return series, book
 
@@ -407,17 +458,28 @@ def build_result(
         raise ScreenerError("неизвестная стратегия")
     execution = execution_settings(selection)
     params = _parameters(selection, strategy)
+    settings = read_settings(inputs.root)
+    timeframe = settings["timeframe"]
+    spec = get_timeframe(timeframe)
+    if strategy == "funding_only" and not spec.supports_funding_strategy:
+        raise ScreenerError(f"{spec.label}: carry требует дневных расчётных ставок.")
     funding = ProofFunding(inputs)
-    entry = catalog(inputs, registry=(pair,), funding=funding)["pairs"][0]
+    entry = catalog(inputs, registry=(pair,), funding=funding, initial_capital=settings["initial_capital_rub"], timeframe=timeframe)["pairs"][0]
     if not entry["strategies"][strategy]:
         raise ScreenerError(entry["data_reasons"].get(strategy, "Не пройдено правило ликвидности пары."))
     share = (read_settings(inputs.root)["validation_percent"] if validation_share is None else validation_share) if through is None else 0
     evidence = None
 
     if strategy == "mean_reversion":
-        series, book = pair_price_inputs(inputs, pair, funding)
+        series, book = pair_price_inputs(inputs, pair, funding, timeframe=timeframe)
         if through is not None:
-            series = {**series, "rows": [r for r in series["rows"] if r["date"] <= through]}
+            series = {
+                **series,
+                "rows": [
+                    r for r in series["rows"]
+                    if (r.get("session_date", r["date"][:10]) if len(through) == 10 and spec.intraday else r["date"]) <= through
+                ],
+            }
         risk = assess_vtb_pair(inputs.contracts, near, far, quantity=execution["quantity"])
         if not risk["summary"]["all_scenarios_passed"]:
             raise ScreenerError("пара не проходит стресс-экран рабочего капитала")
@@ -448,11 +510,12 @@ def build_result(
         provenance = dict(report["input_provenance"])
         if funding_source is not None:
             provenance["near_funding_history_sha256"] = funding_source["source"]["raw_response_sha256"]
-        price_role = "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
+        price_role = "ISS: дневной candle, заполнение по открытию, отметки по закрытию" if not spec.intraday else f"ISS: свеча {spec.label}, заполнение по открытию, отметки по закрытию"
         notes = [
-            *( ["Фандинг включён: биржевой SWAPRATE или явно отмеченная расчётная ставка; сумма = −position × SWAPRATE × лот × quantity."] if funding_source is not None else ["Для пары без вечного фьючерса фандинг неприменим."]),
+            *( ["Фандинг включён: биржевой SWAPRATE или явно отмеченная расчётная ставка; сумма = −position × SWAPRATE × лот × quantity."] if funding_source is not None else ["На выбранном внутридневном таймфрейме SWAPRATE не включён: дневную ставку нельзя размножать на внутридневные бары." if spec.intraday else "Для пары без вечного фьючерса фандинг неприменим."]),
             *( ["Итоговый EOD SWAPRATE отражает клиринговый расчёт MOEX, включая действовавшие лимиты; минутный D/K1/K2 не пересчитывается. Лот берётся из текущего intake снапшота, не из эффективной исторической спецификации. Это не брокерская выписка."] if funding_source is not None else []),
-            "Сигнал по закрытию дня, исполнение по следующему открытию дня (прокси реакции в пределах минут–часов).",
+            "Сигнал по закрытию дня, исполнение по следующему открытию дня (прокси реакции в пределах минут–часов)."
+            if not spec.intraday else f"Сигнал по закрытию бара {spec.label}; исполнение по открытию следующего бара (прокси).",
             "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.",
         ]
     else:
@@ -512,7 +575,7 @@ def build_result(
         for row in report["daily"]
     ]
     first, last = daily[0], daily[-1]
-    initial = INITIAL_CAPITAL
+    initial = float(settings["initial_capital_rub"])
     result = {
         "selection": {
             "pair": pair_id,
@@ -705,13 +768,16 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     self._json(200, read_settings(store.inputs.root))
                 except (ValueError, OSError) as exc:
                     self._json(400, {"error": str(exc)})
+            elif path == "/api/timeframes":
+                self._json(200, timeframe_options())
             elif path == "/api/proof/catalog":
                 try:
                     self._json(200, store.proof.catalog())
                 except (W0Error, OSError) as exc:
                     self._json(400, {"error": str(exc)})
             elif path == "/api/catalog":
-                self._json(200, catalog(store.inputs))
+                settings = read_settings(store.inputs.root)
+                self._json(200, catalog(store.inputs, initial_capital=settings["initial_capital_rub"], timeframe=settings["timeframe"]))
             elif path == "/api/runs":
                 self._json(200, store.list_runs())
             elif path == "/api/searches":
@@ -791,6 +857,9 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 else:
                     from .screener_search import optimize, screen_table
 
+                    active_timeframe = get_timeframe(read_settings(store.inputs.root)["timeframe"])
+                    if active_timeframe.intraday:
+                        raise ScreenerError("Пакетный screener пока работает только на 1d; для выбранного интервала используйте pair-proof.")
                     if path == "/api/screen":
                         result = screen_table(store.inputs, selection)
                         store.save_screen(result)

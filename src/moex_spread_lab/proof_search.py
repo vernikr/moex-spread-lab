@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time
 from typing import Any
 
 import optuna
@@ -21,6 +21,7 @@ from .evaluation_periods import (
 from .portfolio import lqdt_overlay_values
 from .position_sizing import AUTO_SIZING, automatic
 from .proof import ProofService, _benchmark_marks, _mark, _run_id
+from .timeframes import get_timeframe
 from .w0 import W0Error
 
 TRIALS = 40
@@ -130,6 +131,7 @@ def _admission(proof, settings):
     if (
         proof["selection"]["strategy"] == "mean_reversion"
         and proof["instrument"]["family"] == "perpetual_quarterly_same_asset"
+        and get_timeframe(proof["selection"].get("timeframe", "1d")).supports_funding_strategy
         and not proof["provenance"].get("near_funding_history_sha256")
     ):
         return "Нет полного ряда SWAPRATE."
@@ -212,13 +214,19 @@ def _annualized_returns(proof, marks, split):
             initial, [r["cumulative_net_rub"] for r in rows], margins, prices
         )
     anchor = train_end if split.validation else start
-    elapsed = (date.fromisoformat(end) - date.fromisoformat(anchor)).days
+    def as_datetime(value):
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return datetime.combine(date.fromisoformat(value), time.min)
+
+    elapsed_days = (as_datetime(end) - as_datetime(anchor)).total_seconds() / 86400
     opening = values[idx[anchor]] if split.validation else initial
-    if elapsed <= 0 or min(opening, values[-1]) <= 0:
+    if elapsed_days <= 0 or min(opening, values[-1]) <= 0:
         raise W0Error(
             "Нет положительного капитала или календарного интервала для годовой доходности."
         )
-    power = 365 / elapsed
+    power = 365 / elapsed_days
     try:
         strategy = 100 * math.expm1(power * math.log(values[-1] / opening))
         benchmark = 100 * math.expm1(power * math.log(prices[-1] / prices[idx[anchor]]))
@@ -231,7 +239,7 @@ def _annualized_returns(proof, marks, split):
         "strategy_annualized_pct": strategy,
         "lqdt_annualized_pct": benchmark,
         "annualized_excess_pp": 0.0 if abs(excess) < 1e-10 else excess,
-        "calendar_days": elapsed,
+        "calendar_days": round(elapsed_days, 4),
         "cash_shortfall": bool(shortfalls),
     }
 
@@ -450,7 +458,8 @@ class StudyWindow:
         if not dates or dates[0] > self.train.training[0]:
             raise W0Error("Нет отметки LQDT на начало истории.")
         self.marks = {
-            r["date"]: _mark(dates, prices, r["date"]) for r in self.full["ledger"]
+            r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
+            for r in self.full["ledger"]
         }
         self.fit = Landscape(
             self.axes,

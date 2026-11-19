@@ -92,6 +92,68 @@ class ExecutionProofTests(unittest.TestCase):
         # calendar block degrades gracefully when the calendar cache is absent
         self.assertIn("assets", catalog)
 
+    def test_hourly_pair_proof_uses_unique_timestamps_and_prior_daily_benchmark(self):
+        from moex_spread_lab.evaluation_periods import ResearchSettings, save_settings
+
+        for secid, close_fn in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
+            daily = json.loads((self.root / f"data/w1/candles/{secid}_1d.json").read_text())
+            hourly_rows = []
+            for i, day_row in enumerate(daily["rows"]):
+                day = day_row["begin"][:10]
+                base = close_fn(i)
+                for j, hour in enumerate((9, 10, 11, 12)):
+                    close = base + 0.28 * math.sin(i * 0.65 + j * 1.1 + (secid == "CRZ6"))
+                    hourly_rows.append({
+                        "begin": f"{day} {hour:02}:00:00",
+                        "open": close - 0.025,
+                        "high": close + 0.04,
+                        "low": close - 0.04,
+                        "close": close,
+                        "volume": 200,
+                        "price_proxy_kind": "candle_close",
+                    })
+            (self.root / f"data/w1/candles/{secid}_1h.json").write_text(json.dumps({
+                "schema_version": "iss-candles.v1", "secid": secid,
+                "interval": 60, "timeframe": "1h", "rows": hourly_rows,
+            }))
+        save_settings(self.root, {"timeframe": "1h", "validation_percent": 20})
+        catalog = self.proof.catalog()
+        self.assertEqual(catalog["timeframe"], "1h")
+        pair = next(row for row in catalog["pair_screen"]["pairs"] if row["id"] == "CNYRUBF/CRZ6")
+        self.assertTrue(pair["proof_strategies"]["mean_reversion"])
+        self.assertFalse(pair["proof_strategies"]["funding_only"])
+        self.assertFalse(catalog["assets"])
+
+        selection = {
+            "universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
+            "strategy": "mean_reversion", "sizing": "max_affordable",
+            "parameters": {"lookback": 5, "entry_z": 0.8, "exit_z": 0.2},
+        }
+        result = self.proof.proof(selection)
+        ids = [row["date"] for row in result["series"]]
+        self.assertGreater(len(ids), 100)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(row["benchmark_mark_date"] < row["session_date"] for row in result["series"]))
+        self.assertEqual(result["window"]["min_leg_volume"], 800)
+        self.assertEqual(result["selection"]["timeframe"], "1h")
+        from moex_spread_lab.proof_search import research_run
+        evaluated = research_run(self.proof, selection, optimize=False, include_plateau=False)
+        self.assertIsNotNone(evaluated["evaluation"]["periods"]["validation"])
+        self.assertGreater(evaluated["evaluation"]["observations"]["validation"], 0)
+        self.assertAlmostEqual(result["summary"]["ledger_reconciliation_rub"], 0.0, places=2)
+        self.assertTrue(any("SWAPRATE не включён" in note for note in result["notes"]))
+
+        cutoff = daily["rows"][10]["begin"][:10]
+        replay = self.proof.prepare(
+            selection,
+            settings=ResearchSettings(timeframe="1h", validation_percent=20),
+        )
+        partial = replay(selection, through=cutoff)
+        partial_sessions = [row["session_date"] for row in partial["series"]]
+        self.assertTrue(partial_sessions)
+        self.assertEqual(partial_sessions[-1], cutoff)
+        self.assertTrue(all(day <= cutoff for day in partial_sessions))
+
     def test_mean_reversion_proof_reconciles(self):
         result = self.proof.proof({"universe": "pair_screen", "pair": "CNYRUBF/CRZ6",
                                    "strategy": "mean_reversion", "quantity": 2, "slippage_ticks": 1.0,

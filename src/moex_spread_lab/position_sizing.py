@@ -74,6 +74,7 @@ def maximum_quantity(budget, margin, unit_costs, *, stress, native_spread=False)
 class _Terms:
     def __init__(self, proof, contracts, settings):
         self.native = proof.get("universe") == "calendar_native"
+        self.native_order = self.native and proof.get("selection", {}).get("price_source") != "synthetic_leg_proxy"
         self.rows = proof["series"]
         self.open_fill = proof["selection"].get("fill") == "next_open"
         self.profile = tariff_profile(settings.slippage_ticks)
@@ -130,7 +131,7 @@ class _Terms:
         else:
             legs = list(zip(self.legs, (near, far)))
             margin = self.margin
-        return margin, side_cost(self.profile, legs, 1, native_spread=self.native)
+        return margin, side_cost(self.profile, legs, 1, native_spread=self.native_order)
 
     def posted_margin(self, index, quantity):
         if self.native:
@@ -179,6 +180,8 @@ def size_proof(unit, marks, settings, contracts):
         unit_funding = row.get("funding_rub")
         unit_funding_contracts = row.get("funding_contracts", 0)
         eligible = row.get("volume_eligible", True)
+        entry_eligible = row.get("entry_eligible", eligible)
+        exit_eligible = row.get("exit_eligible", eligible)
         daily = cost = 0.0
         events = []
         funding_owner = None
@@ -187,15 +190,14 @@ def size_proof(unit, marks, settings, contracts):
         if position is not None:
             t = position["trade"]
             exiting = day == t["exit"]["date"]
-            if eligible:
-                end = t["exit"]["spread_fill"] if exiting else row["spread"]
-                at_open = exiting and terms.open_fill and not t.get("open_at_end")
-                point = (
-                    terms.fill_point(i, at_open=at_open) if exiting else terms.point(i)
-                )
+            should_exit = exiting and (exit_eligible or t.get("open_at_end"))
+            if should_exit or (eligible and not exiting):
+                end = t["exit"]["spread_fill"] if should_exit else row["spread"]
+                at_open = should_exit and terms.open_fill and not t.get("open_at_end")
+                point = terms.fill_point(i, at_open=at_open) if should_exit else terms.point(i)
                 change = move(position, end, point)
                 daily += change
-                if exiting:
+                if should_exit:
                     # Forced end marks can still include the last proxy clearing payment.
                     if unit_funding_contracts:
                         funding_owner = t
@@ -219,7 +221,7 @@ def size_proof(unit, marks, settings, contracts):
                 funding_owner = t
 
         candidate = intents.get(day)
-        if candidate is not None and eligible:
+        if candidate is not None and entry_eligible:
             if position is not None:
                 raise W0Error(
                     "Перекрывающиеся сигналы не поддерживаются одним счётом окна."
@@ -239,7 +241,7 @@ def size_proof(unit, marks, settings, contracts):
                     margin,
                     entry_costs,
                     stress=not settings.allow_failed_capital,
-                    native_spread=terms.native,
+                    native_spread=terms.native_order,
                 )
             )
             if not q:
@@ -285,11 +287,14 @@ def size_proof(unit, marks, settings, contracts):
                 position = {"trade": t, "sign": sign, "mark": t["entry"]["spread_fill"]}
                 funding_owner = t
                 same_day_exit = t["exit"]["date"] == day
-                daily += move(
-                    position,
-                    t["exit"]["spread_fill"] if same_day_exit else row["spread"],
-                    terms.point(i),
-                )
+                if eligible:
+                    daily += move(
+                        position,
+                        t["exit"]["spread_fill"] if same_day_exit else row["spread"],
+                        terms.point(i),
+                    )
+                else:
+                    position["mark"] = t["entry"]["spread_fill"]
                 if same_day_exit:
                     _, exit_costs = terms.at_fill(t["exit"], i, at_open=False)
                     t["exit"]["costs"] = (
@@ -318,7 +323,7 @@ def size_proof(unit, marks, settings, contracts):
         wealth = free * growth + posted + daily - cost
         if position is None:
             posted = 0.0
-        elif eligible:
+        elif eligible or entry_eligible:
             posted = terms.posted_margin(i, position["trade"]["quantity"])
         # Journal-only zero-volume rows cannot revalue the position or its margin.
         free = wealth - posted
@@ -410,7 +415,7 @@ def size_proof(unit, marks, settings, contracts):
             "entry_capital_ceiling_rub": initial,
             "stress_reserve_enforced": not settings.allow_failed_capital,
             "exit_cost_reserve": "entry_priced_one_side",
-            "uncertainty_buffer_basis": "per_spread" if terms.native else "per_account",
+            "uncertainty_buffer_basis": "per_spread" if terms.native_order else "per_account",
             "additional_funding_rub": 0,
         },
     )

@@ -24,7 +24,7 @@ class TimeframeSpec:
 # deliberately gated instead of silently falling back to daily prices.
 TIMEFRAMES: tuple[TimeframeSpec, ...] = (
     TimeframeSpec("1d", "1 день", 24, "1d", False, True, True, True),
-    TimeframeSpec("1h", "1 час", 60, "1h", True, True, False, False),
+    TimeframeSpec("1h", "1 час", 60, "1h", True, True, True, False),
 )
 DEFAULT_TIMEFRAME = "1d"
 _BY_ID = {spec.id: spec for spec in TIMEFRAMES}

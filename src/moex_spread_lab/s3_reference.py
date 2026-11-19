@@ -6,8 +6,8 @@ import csv
 import json
 import math
 import statistics
-from bisect import bisect_right
-from datetime import date
+from bisect import bisect_left, bisect_right
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -71,16 +71,25 @@ def _trade(entry, exit_row, direction, fill, reason, signal_kind, signal_row, si
     }
 
 
+def _elapsed_days(start: str, end: str) -> float:
+    if "T" in start or "T" in end:
+        left = datetime.fromisoformat(str(start).replace("Z", ""))
+        right = datetime.fromisoformat(str(end).replace("Z", ""))
+        return (right - left).total_seconds() / 86400
+    return (date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days
+
+
 def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2, close_at_end: bool = False):
     position, entry, trades, signal_row = 0, None, [], None
     if rows[0]["dividend_in_window"]:
         return trades
     for index, row in enumerate(rows):
-        if position and row["days_to_near_expiry"] <= exit_days:
+        if position and row.get("exit_eligible", True) and row["days_to_near_expiry"] <= exit_days:
             trades.append(_trade(entry, row, position, fill, "near_expiry_buffer", "dev_pp", signal_row, signal_row["dev_pp"]))
             position = 0
         signal = rows[index - delay] if index >= delay else None
-        if (not position and signal and row["days_to_near_expiry"] > exit_days and not math.isnan(signal["dev_pp"])
+        if (not position and signal and signal.get("signal_eligible", True) and row.get("entry_eligible", True)
+                and row["days_to_near_expiry"] > exit_days and not math.isnan(signal["dev_pp"])
                 and abs(signal["dev_pp"]) >= threshold):
             position, entry, signal_row = (-1 if signal["dev_pp"] > 0 else 1), row, signal
     if position and close_at_end:
@@ -93,16 +102,21 @@ def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: 
     if skip_dividend_windows and rows[0]["dividend_in_window"]:
         return []
     include_current = delay == 0
-    spreads = [r["spread"] for r in rows]
     z = [math.nan] * len(rows)
     for index in range(window - include_current, len(rows)):
-        sample = spreads[index - window + 1:index + 1] if include_current else spreads[index - window:index]
+        if not rows[index].get("signal_eligible", True):
+            continue
+        start = index - window + 1 if include_current else index - window
+        end = index + 1 if include_current else index
+        sample = [float(rows[i]["spread"]) for i in range(start, end) if rows[i].get("signal_eligible", True)]
+        if len(sample) != window:
+            continue
         deviation = statistics.stdev(sample)
-        z[index] = (spreads[index] - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
+        z[index] = (float(rows[index]["spread"]) - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
     position, entry, trades, signal_index = 0, None, [], 0
     for index, row in enumerate(rows):
-        if position:
-            held = (date.fromisoformat(row["date"]) - date.fromisoformat(entry["date"])).days
+        if position and row.get("exit_eligible", True):
+            held = _elapsed_days(entry["date"], row["date"])
             exit_signal = z[index - delay] if index >= delay else math.nan
             reason = (
                 "z_reverted" if abs(exit_signal) <= exit_z
@@ -114,13 +128,13 @@ def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: 
                 trades.append(_trade(entry, row, position, fill, reason, "z", rows[signal_index], z[signal_index]))
                 position = 0
         signal = index - delay
-        if (not position and signal >= 0 and not math.isnan(z[signal]) and row["days_to_near_expiry"] > close_before
-                and abs(z[signal]) >= entry_z):
+        if (not position and signal >= 0 and rows[signal].get("signal_eligible", True)
+                and row.get("entry_eligible", True) and not math.isnan(z[signal])
+                and row["days_to_near_expiry"] > close_before and abs(z[signal]) >= entry_z):
             position, entry, signal_index = (-1 if z[signal] > 0 else 1), row, signal
     if position and close_at_end:
         trades.append(_trade(entry, rows[-1], position, fill, "end_of_window", "z", rows[signal_index], z[signal_index]))
     return trades
-
 
 def trade_costs(profile: dict[str, Any] | None, row: dict[str, Any], quantity: int, native_spread: bool) -> dict[str, float]:
     """Cost of one side at a row's leg values; the reference flat model splits its round trip evenly."""
@@ -137,8 +151,12 @@ def account_trades(
 ) -> dict[str, Any]:
     dates = sorted(benchmark)
 
-    def price(day: str) -> float:
-        return benchmark[dates[max(0, bisect_right(dates, day) - 1)]]
+    def price(observation: str | dict[str, Any]) -> float:
+        mark_day = observation.get("benchmark_mark_date") if isinstance(observation, dict) else None
+        day = observation.get("date") if isinstance(observation, dict) else observation
+        target = str(mark_day or day)[:10]
+        index = bisect_right(dates, target) - 1 if mark_day is not None or "T" not in str(day) else bisect_left(dates, target) - 1
+        return benchmark[dates[max(0, index)]]
 
     gross = costs = lqdt_on_margin = 0.0
     trades = []
@@ -148,7 +166,7 @@ def account_trades(
             pnl = direction * (item["exit_price"] - item["entry_price"]) * quantity
             entry_cost, exit_cost = (trade_costs(profile, row, quantity, native_spread) for row in (entry, exit_row))
             cost = sum(entry_cost.values()) + sum(exit_cost.values())
-            hurdle = entry["margin"] * quantity * (price(exit_row["date"]) / price(entry["date"]) - 1)
+            hurdle = entry["margin"] * quantity * (price(exit_row) / price(entry) - 1)
             gross += pnl
             costs += cost
             lqdt_on_margin += hurdle

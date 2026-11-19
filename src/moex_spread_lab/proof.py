@@ -172,8 +172,8 @@ class ProofService:
         spec = get_timeframe(settings.timeframe)
         try:
             if not spec.supports_calendar:
-                raise W0Error(f"{spec.label}: календарный proof поддерживается только на 1d.")
-            calendar = CalendarData(self.root).catalog(initial_capital=settings.initial_capital_rub)
+                raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
+            calendar = CalendarData(self.root).catalog(initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe)
         except (W0Error, OSError) as exc:
             calendar = {
                 "till": None,
@@ -256,13 +256,14 @@ class ProofService:
             raise W0Error("неизвестная вселенная")
         spec = get_timeframe(settings.timeframe)
         if not spec.supports_calendar:
-            raise W0Error(f"{spec.label}: календарный proof поддерживается только на 1d.")
+            raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
         from .calendar_spreads import CalendarData
 
         calendar = calendar if calendar is not None else CalendarData(self.root)
 
         def replay(request, through=None):
-            payload = calendar.proof(request, through=through, initial_capital=settings.initial_capital_rub)
+            payload = calendar.proof({**request, "timeframe": settings.timeframe}, through=through,
+                                    initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe)
             # The search only needs trades, daily marks and admissions from partial replays.
             return payload if through is not None else self._calendar_proof(request, payload)
 
@@ -302,10 +303,16 @@ class ProofService:
         attach_entry_levels(payload)
         if payload["execution_reference"]:
             payload["notes"].append(REFERENCE_WARNING)
+        timeframe = selection_out.get("timeframe") or (payload.get("window") or {}).get("timeframe") or "1d"
+        selection_out.setdefault("timeframe", timeframe)
         fill = (selection.get("fill") or "next_open").replace("_", " ")
-        payload["price_role"] = (
-            f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
-        )
+        price_source = (payload.get("window") or {}).get("price_source") or selection_out.get("price_source")
+        if price_source == "synthetic_leg_proxy":
+            payload["price_role"] = f"Синтетический H1 proxy far − near по синхронным свечам ног; исполнение {fill}"
+        elif timeframe == "1h":
+            payload["price_role"] = f"Нативные часовые свечи календарного спреда; исполнение {fill}"
+        else:
+            payload["price_role"] = f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
         payload["run_id"] = _run_id(
             {
                 "selection": payload["selection"],

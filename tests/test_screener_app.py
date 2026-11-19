@@ -369,7 +369,7 @@ class ScreenerAppTests(unittest.TestCase):
         hourly = next(item for item in timeframes if item["id"] == "1h")
         self.assertTrue(hourly["intraday"])
         self.assertTrue(hourly["supports_pair_proof"])
-        self.assertFalse(hourly["supports_calendar"])
+        self.assertTrue(hourly["supports_calendar"])
         self.assertFalse(hourly["supports_funding_strategy"])
         connection.request("GET", "/api/settings")
         settings_response = connection.getresponse()

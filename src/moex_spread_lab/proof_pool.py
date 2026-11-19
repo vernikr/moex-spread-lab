@@ -277,7 +277,7 @@ def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str) -> int:
     return 1000 if timeframe == "1h" else 200
 
 
-def _await_futures(futures, check_cancelled):
+def _await_futures(futures, check_cancelled, on_done=None):
     pending = set(futures)
     while pending:
         try:
@@ -287,6 +287,9 @@ def _await_futures(futures, check_cancelled):
                 fut.cancel()
             raise
         done, pending = wait(pending, timeout=POLL_INTERVAL_SECONDS, return_when=FIRST_COMPLETED)
+        if on_done is not None and done:
+            for fut in done:
+                on_done(fut)
     return [fut.result() for fut in futures]
 
 
@@ -328,6 +331,7 @@ class CohortWorkerPool:
         benchmark: tuple[list[str], dict[str, float]],
         items: list[tuple[int, dict[str, Any], dict[str, Any], bool]],
         check_cancelled,
+        on_progress=None,
     ) -> dict[str, Any]:
         """Distribute windows LPT-wise across worker processes and initialize StudyWindows."""
         n = len(items)
@@ -351,15 +355,29 @@ class CohortWorkerPool:
 
         cohort_id = uuid.uuid4().hex
         root_str = str(root.resolve())
-        futures = [
-            slots[s_idx].submit(
-                _worker_init_cohort, cohort_id, root_str, settings, benchmark, shard
-            )
-            for s_idx, shard in enumerate(shards)
-            if shard
-        ]
+        futures = []
+        fut_weights: dict[Any, int] = {}
+        for s_idx, shard in enumerate(shards):
+            if shard:
+                fut = slots[s_idx].submit(
+                    _worker_init_cohort, cohort_id, root_str, settings, benchmark, shard
+                )
+                futures.append(fut)
+                fut_weights[fut] = len(shard)
+        done_count = 0
+
+        def _on_done(fut) -> None:
+            nonlocal done_count
+            done_count += fut_weights.get(fut, 0)
+            if on_progress is not None:
+                on_progress(done_count, n)
+
         try:
-            chunks = _await_futures(futures, check_cancelled)
+            chunks = _await_futures(
+                futures,
+                check_cancelled,
+                on_done=_on_done if on_progress is not None else None,
+            )
         except BaseException:
             self.release_cohort(cohort_id, owner_of)
             raise
@@ -486,6 +504,7 @@ class CohortWorkerPool:
         cohort_state: dict[str, Any],
         points: list[tuple[int, dict[str, dict[str, Any]]]],
         check_cancelled,
+        on_progress=None,
     ) -> dict[int, dict[str, Any]]:
         """Evaluate multiple uncached neighbor points in a single parallel batch."""
         if not points:
@@ -497,7 +516,16 @@ class CohortWorkerPool:
             slots[s_idx].submit(_worker_eval_plateau_batch, cohort_id, points)
             for s_idx in active_slots
         ]
-        shard_maps = _await_futures(futs, check_cancelled)
+        total_slots = len(futs)
+        done_slots = 0
+
+        def _on_done(_fut) -> None:
+            nonlocal done_slots
+            done_slots += 1
+            if on_progress is not None:
+                on_progress(done_slots, total_slots)
+
+        shard_maps = _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None)
         results: dict[int, dict[str, Any]] = {}
         for p_idx, _ in points:
             min_fail = None
@@ -533,18 +561,31 @@ class CohortWorkerPool:
         best_is_none: bool,
         settings: ResearchSettings,
         check_cancelled,
+        on_progress=None,
     ) -> list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]]:
         cohort_id = cohort_state["cohort_id"]
         slots = cohort_state["slots"]
+        shards = cohort_state["shards"]
         active_slots = sorted(set(cohort_state["owner_of"].values()))
-        futs = [
-            slots[s_idx].submit(
+        total_members = sum(len(shards[s_idx]) for s_idx in active_slots)
+        futs = []
+        fut_weights: dict[Any, int] = {}
+        for s_idx in active_slots:
+            fut = slots[s_idx].submit(
                 _worker_report_cohort, cohort_id, point_by_strategy, best_is_none, settings
             )
-            for s_idx in active_slots
-        ]
+            futs.append(fut)
+            fut_weights[fut] = len(shards[s_idx])
+        done_count = 0
+
+        def _on_done(fut) -> None:
+            nonlocal done_count
+            done_count += fut_weights.get(fut, 0)
+            if on_progress is not None:
+                on_progress(done_count, total_members)
+
         combined: list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]] = []
-        for chunk in _await_futures(futs, check_cancelled):
+        for chunk in _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None):
             combined.extend(chunk)
         combined.sort(key=lambda item: item[0])
         return combined
@@ -556,30 +597,44 @@ class CohortWorkerPool:
         benchmark: tuple[list[str], dict[str, float]],
         items: list[tuple[int, dict[str, Any], dict[str, Any]]],
         check_cancelled,
+        on_progress=None,
     ) -> list[dict[str, Any]]:
-        w = min(self.max_workers, len(items))
+        n = len(items)
+        w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
         weighted = sorted(
             items,
             key=lambda entry: _estimate_weight(root, entry[1], settings.timeframe),
             reverse=True,
         )
-        shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [[] for _ in range(w)]
-        shard_loads = [0] * w
+        # Split into up to 2 micro-batches per worker for larger sets so progress updates smoothly.
+        batches = min(n, w * 2) if n >= w * 2 else w
+        shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [[] for _ in range(batches)]
+        shard_loads = [0] * batches
         for entry in weighted:
-            s_idx = min(range(w), key=lambda k: shard_loads[k])
+            s_idx = min(range(batches), key=lambda k: shard_loads[k])
             shards[s_idx].append(entry)
             shard_loads[s_idx] += _estimate_weight(root, entry[1], settings.timeframe)
         root_str = str(root.resolve())
-        futs = [
-            slots[s_idx].submit(
-                _worker_window_summaries, root_str, settings, benchmark, shard
-            )
-            for s_idx, shard in enumerate(shards)
-            if shard
-        ]
+        futs = []
+        fut_weights: dict[Any, int] = {}
+        for b_idx, shard in enumerate(shards):
+            if shard:
+                fut = slots[b_idx % w].submit(
+                    _worker_window_summaries, root_str, settings, benchmark, shard
+                )
+                futs.append(fut)
+                fut_weights[fut] = len(shard)
+        done_count = 0
+
+        def _on_done(fut) -> None:
+            nonlocal done_count
+            done_count += fut_weights.get(fut, 0)
+            if on_progress is not None:
+                on_progress(done_count, n)
+
         combined: list[tuple[int, dict[str, Any]]] = []
-        for chunk in _await_futures(futs, check_cancelled):
+        for chunk in _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None):
             combined.extend(chunk)
         combined.sort(key=lambda entry: entry[0])
         return [entry[1] for entry in combined]

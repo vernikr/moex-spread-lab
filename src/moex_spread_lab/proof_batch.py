@@ -1,6 +1,7 @@
 """One Optuna objective on a fixed, equally weighted cohort of independent proof windows."""
 
 from dataclasses import dataclass
+import inspect
 from statistics import fmean
 
 import optuna
@@ -24,6 +25,20 @@ from .w0 import W0Error
 
 MAX_TARGETS = 1024
 _DEFAULT_STUDY_WINDOW = StudyWindow
+
+
+def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
+    if on_progress is not None:
+        try:
+            params = inspect.signature(fn).parameters.values()
+        except (TypeError, ValueError):
+            params = ()
+        if any(
+            p.name == "on_progress" or p.kind is inspect.Parameter.VAR_KEYWORD
+            for p in params
+        ):
+            kwargs["on_progress"] = on_progress
+    return fn(*args, **kwargs)
 
 
 def _identity(request):
@@ -184,22 +199,28 @@ class _Cohort:
             )
         return reason
 
-    def plateau(self, point):
+    def plateau(self, point, *, on_progress=None):
         # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
         reason = self._plateau_reason(point)
         first = self.members[0][1]
         native_single = (
             len(self.members) == 1 and first.request["strategy"] == self.active
         )
-        return _lamps(first.fit if native_single else self.land, point, reason)
+        return _lamps(
+            first.fit if native_single else self.land,
+            point,
+            reason,
+            on_progress=on_progress,
+        )
 
-    def report_members(self, point, best, settings, check_cancelled):
+    def report_members(self, point, best, settings, check_cancelled, on_progress=None):
         rows = []
         single = None
         any_exec_ref = any(
             case.full.get("execution_reference", False) for _, case in self.members
         )
-        for target, case in self.members:
+        total_members = len(self.members)
+        for idx, (target, case) in enumerate(self.members, start=1):
             check_cancelled()
             local = _translate(point, case.request["strategy"])
             selection = {
@@ -214,6 +235,8 @@ class _Cohort:
                         "reason": "Исходные параметры не входят в общий диапазон.",
                     }
                 )
+                if on_progress is not None:
+                    on_progress(idx, total_members)
                 continue
             training_rate = case.fit.measure(local).get("rank_score")
             row = {
@@ -239,6 +262,8 @@ class _Cohort:
                         },
                     }
                 )
+            if on_progress is not None:
+                on_progress(idx, total_members)
         return rows, any_exec_ref, single
 
 
@@ -256,7 +281,7 @@ class _RemoteCohort(_Cohort):
             )
             self.cohort_state = None
 
-    def plateau(self, point):
+    def plateau(self, point, *, on_progress=None):
         reason = self._plateau_reason(point)
         if not reason:
             # Pre-warm center + all valid neighbor points in one parallel batch.
@@ -287,18 +312,26 @@ class _RemoteCohort(_Cohort):
                     (idx, p_by_strat) for idx, (_, p_by_strat) in enumerate(uncached_points)
                 ]
                 batch_out = self.pool.eval_plateau_batch(
-                    self.cohort_state, batch_payload, self.check_cancelled
+                    self.cohort_state,
+                    batch_payload,
+                    self.check_cancelled,
+                    on_progress=on_progress,
                 )
                 for idx, (key, _) in enumerate(uncached_points):
                     self.land.cache[key] = batch_out[idx]
         return _lamps(self.land, point, reason)
 
-    def report_members(self, point, best, settings, check_cancelled):
+    def report_members(self, point, best, settings, check_cancelled, on_progress=None):
         point_by_strat = {
             strat: _translate(point, strat) for strat in self.distinct_strategies
         }
         results = self.pool.report_cohort(
-            self.cohort_state, point_by_strat, not best, settings, check_cancelled
+            self.cohort_state,
+            point_by_strat,
+            not best,
+            settings,
+            check_cancelled,
+            on_progress=on_progress,
         )
         rows = [row for _, row, _, _ in results]
         any_exec_ref = any(exec_ref for _, _, exec_ref, _ in results)
@@ -319,7 +352,9 @@ def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
     return pool.should_use(len(valid_specs), est)
 
 
-def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, calendar=None):
+def _prepare_cohort(
+    service, request, settings, benchmark, check_cancelled, *, calendar=None, on_progress=None
+):
     from .calendar_spreads import CalendarData
 
     targets = _targets(request)
@@ -346,7 +381,12 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, c
         pool = service.worker_pool()
         items = [(idx, target, native, checked) for idx, target, native in valid_specs]
         cohort_state = pool.init_cohort(
-            service.root, settings, benchmark, items, check_cancelled
+            service.root,
+            settings,
+            benchmark,
+            items,
+            check_cancelled,
+            on_progress=on_progress,
         )
         worker_by_idx = {
             idx: (status, info) for idx, status, info in cohort_state["results"]
@@ -437,10 +477,13 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, c
 
     members, rejected = [], []
     spec_by_idx = {idx: native for idx, _, native in valid_specs}
+    total_targets = len(targets)
     for idx, target in enumerate(targets):
         check_cancelled()
         if idx in early_rejected:
             rejected.append(early_rejected[idx])
+            if on_progress is not None:
+                on_progress(idx + 1, total_targets)
             continue
         native = spec_by_idx[idx]
         try:
@@ -487,6 +530,8 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, c
             if not checked:
                 raise
             rejected.append({"target": target, "reason": str(exc)})
+        if on_progress is not None:
+            on_progress(idx + 1, total_targets)
     # Some individual histories fit the native domain but not its intersection
     # (e.g. a 5-session calendar combined with a 5-lookback-minimum pair).
     minimum = max(
@@ -540,7 +585,7 @@ def _prepare_cohort(service, request, settings, benchmark, check_cancelled, *, c
     return _Cohort(active, axes, seed, members, land)
 
 
-def checked_plateau(service, request, *, check_cancelled=lambda: None):
+def checked_plateau(service, request, *, check_cancelled=lambda: None, on_progress=None):
     """Read-only probes at one shared point. No focus, Optuna trials, logs or implicit exclusions."""
     request = {
         k: request[k]
@@ -567,8 +612,37 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    group = _prepare_cohort(
-        service, request, settings, benchmark, check_cancelled, calendar=service._calendar
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "prepare",
+                "done": 0,
+                "total": len(targets),
+                "percent": 5.0,
+                "label": f"Светофор группы: подготовка 0/{len(targets)}…",
+            }
+        )
+    group = _call_with_optional_progress(
+        _prepare_cohort,
+        service,
+        request,
+        settings,
+        benchmark,
+        check_cancelled,
+        calendar=service._calendar,
+        on_progress=(
+            None
+            if on_progress is None
+            else lambda done, total: on_progress(
+                {
+                    "stage": "prepare",
+                    "done": done,
+                    "total": total,
+                    "percent": round(5.0 + 40.0 * (done / max(total, 1)), 1),
+                    "label": f"Светофор группы: подготовка {done}/{total}",
+                }
+            )
+        ),
     )
     base = {
         "scope": "checked",
@@ -585,28 +659,114 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None):
             "plateau": None,
         }
     try:
-        return {**base, "status": "measured", "plateau": group.plateau(group.seed)}
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "plateau",
+                    "done": 0,
+                    "total": 1,
+                    "percent": 45.0,
+                    "label": "Светофор группы: расчёт плато…",
+                }
+            )
+        plateau = group.plateau(
+            group.seed,
+            on_progress=(
+                None
+                if on_progress is None
+                else lambda done, total: on_progress(
+                    {
+                        "stage": "plateau",
+                        "done": done,
+                        "total": total,
+                        "percent": round(45.0 + 53.0 * (done / max(total, 1)), 1),
+                        "label": f"Светофор группы: проверка плато {done}/{total}",
+                    }
+                )
+            ),
+        )
+        return {**base, "status": "measured", "plateau": plateau}
     finally:
         group.close()
 
 
-def batch_search(service, request, settings, benchmark, check_cancelled):
-    group = _prepare_cohort(
-        service, request, settings, benchmark, check_cancelled, calendar=service._calendar
+def batch_search(service, request, settings, benchmark, check_cancelled, *, on_progress=None):
+    targets = _targets(request)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "prepare",
+                "done": 0,
+                "total": len(targets),
+                "percent": 2.0,
+                "label": f"Подготовка окон: 0/{len(targets)}…",
+            }
+        )
+    group = _call_with_optional_progress(
+        _prepare_cohort,
+        service,
+        request,
+        settings,
+        benchmark,
+        check_cancelled,
+        calendar=service._calendar,
+        on_progress=(
+            None
+            if on_progress is None
+            else lambda done, total: on_progress(
+                {
+                    "stage": "prepare",
+                    "done": done,
+                    "total": total,
+                    "percent": round(2.0 + 10.0 * (done / max(total, 1)), 1),
+                    "label": f"Подготовка окон: {done}/{total}",
+                }
+            )
+        ),
     )
     if isinstance(group, dict):
         return group
     try:
         axes, seed, members, land = group.axes, group.seed, group.members, group.land
-        best, trials, attempts = _tune(
-            land, seed, axes, min(len(case.split.training) for _, case in members)
+        from .proof_search import TRIALS
+
+        best, trials, attempts = _call_with_optional_progress(
+            _tune,
+            land,
+            seed,
+            axes,
+            min(len(case.split.training) for _, case in members),
+            on_progress=(
+                None
+                if on_progress is None
+                else lambda done, total: on_progress(
+                    {
+                        "stage": "search",
+                        "done": done,
+                        "total": total or TRIALS,
+                        "percent": round(12.0 + 76.0 * (done / max(total or TRIALS, 1)), 1),
+                        "label": f"Optuna: испытание {done}/{total}",
+                    }
+                )
+            ),
         )
-        return _cohort_result(request, settings, group, best, trials, attempts, check_cancelled)
+        return _cohort_result(
+            request,
+            settings,
+            group,
+            best,
+            trials,
+            attempts,
+            check_cancelled,
+            on_progress=on_progress,
+        )
     finally:
         group.close()
 
 
-def _cohort_result(request, settings, group, best, trials, attempts, check_cancelled):
+def _cohort_result(
+    request, settings, group, best, trials, attempts, check_cancelled, *, on_progress=None
+):
     """Report only a training-selected winner, without running another search."""
     axes, seed, members, land = group.axes, group.seed, group.members, group.land
     first = members[0][1]
@@ -615,7 +775,35 @@ def _cohort_result(request, settings, group, best, trials, attempts, check_cance
         for i, p in enumerate(attempts)
     ]
     point = best or seed
-    rows, any_exec_ref, single = group.report_members(point, best, settings, check_cancelled)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "report",
+                "done": 0,
+                "total": len(members),
+                "percent": 88.0,
+                "label": f"Финальный расчёт: 0/{len(members)}…",
+            }
+        )
+    rows, any_exec_ref, single = group.report_members(
+        point,
+        best,
+        settings,
+        check_cancelled,
+        on_progress=(
+            None
+            if on_progress is None
+            else lambda done, total: on_progress(
+                {
+                    "stage": "report",
+                    "done": done,
+                    "total": total,
+                    "percent": round(88.0 + 6.0 * (done / max(total, 1)), 1),
+                    "label": f"Финальный расчёт: {done}/{total}",
+                }
+            )
+        ),
+    )
     rates = [
         r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp")
         for r in rows
@@ -634,7 +822,35 @@ def _cohort_result(request, settings, group, best, trials, attempts, check_cance
     }
     # Same fixed-cohort diagnostic used by the live form, only after the final choice.
     native_single = len(members) == 1 and first.request["strategy"] == group.active
-    plateau = group.plateau(point) if best or native_single else None
+    if best or native_single:
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "plateau",
+                    "done": 0,
+                    "total": 1,
+                    "percent": 94.0,
+                    "label": "Расчёт светофора устойчивости…",
+                }
+            )
+        plateau = group.plateau(
+            point,
+            on_progress=(
+                None
+                if on_progress is None
+                else lambda done, total: on_progress(
+                    {
+                        "stage": "plateau",
+                        "done": done,
+                        "total": total,
+                        "percent": round(94.0 + 5.0 * (done / max(total, 1)), 1),
+                        "label": f"Светофор устойчивости: {done}/{total}",
+                    }
+                )
+            ),
+        )
+    else:
+        plateau = None
     result = {
         "schema_version": "proof-search.v3",
         "method": "Optuna TPESampler",

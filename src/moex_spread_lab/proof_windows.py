@@ -35,7 +35,9 @@ def compact_result(proof):
     }
 
 
-def window_summaries(service, request, *, check_cancelled=lambda: None):
+def window_summaries(
+    service, request, *, check_cancelled=lambda: None, on_progress=None
+):
     if not isinstance(request, dict) or request.keys() != {"requests"}:
         raise W0Error("Для таблицы нужен список requests.")
     requests = request["requests"]
@@ -51,6 +53,17 @@ def window_summaries(service, request, *, check_cancelled=lambda: None):
             raise W0Error("Окно таблицы указано дважды.")
         seen.add(key)
         identities.append(target)
+    total_windows = len(requests)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "windows",
+                "done": 0,
+                "total": total_windows,
+                "percent": 4.0,
+                "label": f"Окна: 0/{total_windows}",
+            }
+        )
     settings = ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
@@ -63,11 +76,28 @@ def window_summaries(service, request, *, check_cancelled=lambda: None):
             items = list(enumerate(zip(requests, identities)))
             payload = [(idx, item, target) for idx, (item, target) in items]
             rows = pool.window_summaries(
-                service.root, settings, benchmark, payload, check_cancelled
+                service.root,
+                settings,
+                benchmark,
+                payload,
+                check_cancelled,
+                on_progress=(
+                    None
+                    if on_progress is None
+                    else lambda done, total: on_progress(
+                        {
+                            "stage": "windows",
+                            "done": done,
+                            "total": total,
+                            "percent": round(4.0 + 94.0 * (done / max(total, 1)), 1),
+                            "label": f"Окна: {done}/{total}",
+                        }
+                    )
+                ),
             )
             return {**settings.metadata(), "rows": rows}
     rows = []
-    for item, target in zip(requests, identities):
+    for idx, (item, target) in enumerate(zip(requests, identities), start=1):
         check_cancelled()
         try:
             _validate(item)
@@ -81,4 +111,14 @@ def window_summaries(service, request, *, check_cancelled=lambda: None):
                 "reason": str(exc),
             }
         rows.append({"target": target, **result})
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "windows",
+                    "done": idx,
+                    "total": total_windows,
+                    "percent": round(4.0 + 94.0 * (idx / max(total_windows, 1)), 1),
+                    "label": f"Окна: {idx}/{total_windows}",
+                }
+            )
     return {**settings.metadata(), "rows": rows}

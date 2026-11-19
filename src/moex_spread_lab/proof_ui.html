@@ -9,8 +9,10 @@
 *{box-sizing:border-box}body{margin:0;height:100vh;overflow:hidden}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
 .app{width:100%;min-width:0;height:100vh;max-width:none;margin:0;padding:6px 12px;display:flex;flex-direction:column;gap:6px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:0 0 auto;padding:2px 0}.brand{display:flex;align-items:center;gap:10px}.mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(145deg,#6fe4bd,#377eaa);display:grid;place-items:center;color:#09201d;font-weight:900;font-size:13px}
-.render-progress{position:fixed;z-index:1000;top:0;left:0;right:0;height:3px;overflow:hidden;background:#172738;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease}.render-progress.active{opacity:1;visibility:visible}.render-progress>span{position:absolute;top:0;bottom:0;left:-32%;width:32%;background:linear-gradient(90deg,transparent,#469e88,#a2ffda,#469e88,transparent)}.render-progress.active>span{animation:render-progress-run 1.25s linear infinite}@keyframes render-progress-run{from{left:-32%}to{left:100%}}
-@media (prefers-reduced-motion:reduce){.render-progress.active>span{left:0;width:100%;animation:none;background:#70e1b9}}
+.render-progress{position:fixed;z-index:1000;top:0;left:0;right:0;height:3px;overflow:hidden;background:#172738;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease}.render-progress.active{opacity:1;visibility:visible}.render-progress>span{position:absolute;top:0;bottom:0;left:0;width:0%;background:linear-gradient(90deg,#469e88,#70e1b9,#a2ffda);transition:width .14s ease-out}
+@media (prefers-reduced-motion:reduce){.render-progress>span{transition:none}}
+.progress-pill{font-size:10px;color:#a7ead1;background:#132a2c;border:1px solid #2c6a58;border-radius:999px;padding:3px 9px;font-variant-numeric:tabular-nums;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress-pill[hidden]{display:none}
 .eyebrow{font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#8aa0b3;font-weight:750}h1{margin:1px 0 0;font-size:14px;letter-spacing:-.02em}
 .nav-links{display:flex;gap:10px;align-items:center}
 .layout{--selection-width:296px;--norm-width:262px;flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:minmax(220px,var(--selection-width)) 8px minmax(190px,var(--norm-width)) 8px minmax(320px,1fr)}
@@ -29,7 +31,7 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 .number-shell{display:block;position:relative;min-width:0}.number-shell input{padding-inline:6px 23px;font-variant-numeric:tabular-nums;appearance:textfield}.number-shell input::-webkit-inner-spin-button,.number-shell input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .plateau-dot{--lamp:#75879a;position:absolute;inset-inline-end:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:20px;height:23px;border:0;padding:0;background:transparent;cursor:help}.plateau-dot::before{content:"–";display:grid;place-items:center;width:12px;height:12px;border-radius:50%;background:var(--lamp);color:#0b1820;font:bold 9px/1 system-ui}.plateau-dot[data-level=green]{--lamp:#78e0b4}.plateau-dot[data-level=green]::before{content:"✓"}.plateau-dot[data-level=amber]{--lamp:#efbe72}.plateau-dot[data-level=amber]::before{content:"~"}.plateau-dot[data-level=red]{--lamp:#f0928a}.plateau-dot[data-level=red]::before{content:"!"}.plateau-dot:focus-visible{outline:1px solid #70e1b9;border-radius:5px}
 .plateau-tip{position:fixed;z-index:90;pointer-events:none;white-space:pre-line;width:max-content;max-width:min(340px,calc(100vw - 16px));padding:10px 12px;border:1px solid #496379;border-radius:9px;background:#101d2b;color:#c6d4e0;box-shadow:0 6px 24px #0008;font-size:11px;line-height:1.45;font-variant-numeric:tabular-nums}.plateau-tip strong{display:block;color:#f0f5f9;margin-bottom:3px}.plateau-tip[hidden]{display:none}
-.tune-tool{flex:none;display:grid;gap:4px;padding-top:6px;border-top:1px solid #293b4e}.tune-button{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:4px 7px;border:1px solid #539f8b;border-radius:7px;background:#173a36;color:#acedd4;font-size:11px;font-weight:700}.tune-button:not(:disabled):hover,.tune-button:focus-visible{background:#214c44;border-color:#78e0b4}.tune-button small{font-size:9px;font-weight:650;color:#8bb9ad}.tune-help,.tune-state{font-size:9.5px;line-height:1.4;color:#93a9ba}.tune-state{color:#e7bd82}.tune-state.ok{color:#78e0b4}.tune-state:empty{display:none}
+.tune-tool{flex:none;display:grid;gap:4px;padding-top:6px;border-top:1px solid #293b4e}.tune-button{position:relative;overflow:hidden;width:100%;display:flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:4px 7px;border:1px solid #539f8b;border-radius:7px;background:linear-gradient(90deg,#21574c var(--tune-pct,0%),#173a36 var(--tune-pct,0%));color:#acedd4;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}.tune-button:not(:disabled):hover,.tune-button:focus-visible{background:#214c44;border-color:#78e0b4}.tune-button[aria-busy=true]{background:linear-gradient(90deg,#21574c var(--tune-pct,0%),#173a36 var(--tune-pct,0%))}.tune-button small{font-size:9px;font-weight:650;color:#8bb9ad}.tune-help,.tune-state{font-size:9.5px;line-height:1.4;color:#93a9ba}.tune-state{color:#e7bd82;font-variant-numeric:tabular-nums}.tune-state.ok{color:#78e0b4}.tune-state:empty{display:none}
 .control select.listbox{padding:0;border-radius:8px}
 .selection-lists{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));gap:6px;flex:1 1 0;min-height:0}
 .selection-list-control{display:flex;flex-direction:column;min-height:0;margin:0;flex:initial}
@@ -75,9 +77,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 </style>
 </head>
 <body>
-<div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuetext="Загрузка и отрисовка результатов" aria-hidden="true"><span aria-hidden="true"></span></div>
+<div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ожидание" aria-hidden="true"><span id="render-progress-bar" aria-hidden="true"></span></div>
 <div class="app">
-  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><button class="ghost settings-trigger" id="open-settings" type="button" disabled aria-haspopup="dialog" aria-controls="global-settings">Настройки <small id="settings-badge">Проверка: —</small></button><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
+  <header class="top"><div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div><div class="nav-links"><span id="progress-pill" class="progress-pill" hidden aria-live="polite"></span><button class="ghost settings-trigger" id="open-settings" type="button" disabled aria-haspopup="dialog" aria-controls="global-settings">Настройки <small id="settings-badge">Проверка: —</small></button><button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button></div></header>
 
   <dialog class="settings-dialog" id="global-settings" aria-labelledby="settings-title">
     <form id="settings-form">
@@ -259,12 +261,94 @@ const proofLabel=()=>payload?(payload.selection.spread_instrument||payload.selec
 const COLORS={near:'#6fb7ff',far:'#f3b36b',spread:'#70e1b9',vol:'#4d7fa6',volWin:'#2f8f6a',volLoss:'#a24d47',win:'#78e0b4',loss:'#f0928a',entry:'#d7e6f3',warn:'#e7bd82',fund:'#b39ddb'};
 function status(text,ok=false){$('status').textContent=text;$('status').className='status'+(ok?' ok':'')}
 let chartBusy=false,searchBusy=false;
-function setRenderProgress(value){chartBusy=value;updateProgress()}
-function setSearchProgress(value){searchBusy=value;updateProgress()}
-function updateProgress(){const active=chartBusy||searchBusy,n=$('render-progress');n.classList.toggle('active',active);n.setAttribute('aria-hidden',String(!active))}
-function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
+const PROGRESS_PRIORITY=['search','chart','plateau','windows','boot'];
+const progressChannels=new Map();
+let progressTicker=null,progressHideTimer=null;
+function currentProgressChannel(){for(const key of PROGRESS_PRIORITY)if(progressChannels.has(key))return progressChannels.get(key);return null}
+function computeChannelPct(ch){
+ if(!ch)return 0;
+ if(ch.ceiling<=ch.floor||!ch.tauMs)return ch.floor;
+ const elapsed=Math.max(0,performance.now()-ch.startedAt);
+ const ease=1-Math.exp(-elapsed/ch.tauMs);
+ return Math.min(ch.ceiling,Math.max(ch.visual,ch.floor+(ch.ceiling-ch.floor)*ease));
+}
+function renderProgressUi(){
+ const ch=currentProgressChannel(),barWrap=$('render-progress'),bar=$('render-progress-bar'),pill=$('progress-pill');
+ if(!ch){
+  if(progressTicker){clearInterval(progressTicker);progressTicker=null}
+  if(!progressHideTimer){barWrap.classList.remove('active');barWrap.setAttribute('aria-hidden','true');bar.style.width='0%';barWrap.setAttribute('aria-valuenow','0');barWrap.setAttribute('aria-valuetext','Ожидание');pill.hidden=true;pill.textContent=''}
+  return;
+ }
+ clearTimeout(progressHideTimer);progressHideTimer=null;
+ ch.visual=computeChannelPct(ch);
+ const pct=Math.max(0,Math.min(100,Math.round(ch.visual)));
+ barWrap.classList.add('active');barWrap.setAttribute('aria-hidden','false');
+ bar.style.width=pct+'%';barWrap.setAttribute('aria-valuenow',String(pct));
+ const text=ch.label?`${ch.label} · ${pct}%`:`${pct}%`;
+ barWrap.setAttribute('aria-valuetext',text);pill.hidden=false;pill.textContent=text;
+}
+function ensureProgressTicker(){if(!progressTicker)progressTicker=setInterval(renderProgressUi,80)}
+function startProgress(channel,label,floorPct=2,ceilingPct=floorPct,tauMs=0){
+ progressChannels.set(channel,{label,floor:floorPct,ceiling:Math.max(floorPct,ceilingPct),tauMs,startedAt:performance.now(),visual:floorPct});
+ if(ceilingPct>floorPct&&tauMs>0)ensureProgressTicker();
+ renderProgressUi();
+}
+function updateProgressChannel(channel,pct,label='',ceilingPct=null,tauMs=0){
+ const prev=progressChannels.get(channel),now=performance.now();
+ const floor=prev?Math.max(prev.floor,prev.visual,pct):pct;
+ const ceil=ceilingPct!=null?Math.max(floor,ceilingPct):floor;
+ progressChannels.set(channel,{label:label||prev?.label||'',floor,ceiling:ceil,tauMs,startedAt:now,visual:floor});
+ if(ceil>floor&&tauMs>0)ensureProgressTicker();
+ renderProgressUi();
+}
+function finishProgress(channel){
+ const had=progressChannels.delete(channel);
+ if(!had)return;
+ if(!progressChannels.size){
+  const barWrap=$('render-progress'),bar=$('render-progress-bar'),pill=$('progress-pill');
+  barWrap.classList.add('active');bar.style.width='100%';barWrap.setAttribute('aria-valuenow','100');
+  clearTimeout(progressHideTimer);
+  progressHideTimer=setTimeout(()=>{progressHideTimer=null;renderProgressUi()},160);
+ }else renderProgressUi();
+}
+function setRenderProgress(value){chartBusy=value;if(!value)finishProgress('chart')}
+function setSearchProgress(value){searchBusy=value;if(!value)finishProgress('search')}
+function updateProgress(){renderProgressUi()}
 async function api(path,body,signal){const r=await fetch(path,body?{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
+async function apiStream(path,body,signal,onProgress){
+ const r=await fetch(path,{signal,method:'POST',headers:{'Content-Type':'application/json','X-Progress-Stream':'1'},body:JSON.stringify(body)});
+ const ctype=(r.headers.get('Content-Type')||'').toLowerCase();
+ if(!r.ok||!ctype.includes('ndjson')||!r.body){
+  const d=await r.json();if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d;
+ }
+ const reader=r.body.getReader(),dec=new TextDecoder();
+ let buf='',result=null;
+ while(true){
+  const {value,done}=await reader.read();
+  if(value)buf+=dec.decode(value,{stream:!done});
+  let nl;
+  while((nl=buf.indexOf('\n'))!==-1){
+   const line=buf.slice(0,nl).trim();buf=buf.slice(nl+1);
+   if(!line)continue;
+   const msg=JSON.parse(line);
+   if(msg.type==='progress')onProgress?.(msg);
+   else if(msg.type==='error')throw Error(msg.error||'Request failed');
+   else if(msg.type==='result')result=msg.data;
+  }
+  if(done)break;
+ }
+ const tail=buf.trim();
+ if(tail){
+  const msg=JSON.parse(tail);
+  if(msg.type==='progress')onProgress?.(msg);
+  else if(msg.type==='error')throw Error(msg.error||'Request failed');
+  else if(msg.type==='result')result=msg.data;
+ }
+ if(result==null)throw Error('Пустой ответ сервера');
+ return result;
+}
 
+function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
 // The server owns the setting; localStorage only notifies other open tabs.
 let timeframeOptions=[{id:'1d',label:'1 день',intraday:false,supports_calendar:true},{id:'1h',label:'1 час',intraday:true,supports_calendar:true}];
 function timeframeOption(id){return timeframeOptions.find(item=>item.id===id)}
@@ -424,14 +508,23 @@ function paintWindowReadings(){for(const row of $('window-list').querySelectorAl
  rate.title=[reading?.status==='measured'&&reading.annualized_excess_pp==null?'Годовая оценка недоступна.':'',cashNote,reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter((text,i,items)=>text&&items.indexOf(text)===i).join(' ');
  rate.tabIndex=0;rate.setAttribute('aria-label',rate.title);row.dataset.rateState=reading?.annualized_excess_pp!=null?'measured':reading?.status==='measured'?'unavailable':reading?.status||(!l.enabled?'missing':'pending');
  row.dataset.runId=reading?.run_id||'';row.dataset.reference=String(!!reading?.execution_reference);}}
-function stopWindowReadings(){clearTimeout(windowReadTimer);windowReadTimer=null;windowReadVersion++;windowReadController?.abort();windowReadController=null}
+function stopWindowReadings(){clearTimeout(windowReadTimer);windowReadTimer=null;windowReadVersion++;windowReadController?.abort();windowReadController=null;finishProgress('windows');const wl=$('window-label');if(wl)wl.textContent=universe==='pair_screen'?'Исторические окна':'Календарные окна'}
 function refreshWindowReadings(delay=220){stopWindowReadings();paintWindowReadings();const version=windowReadVersion,branch=branchId;
  windowReadTimer=setTimeout(async()=>{const pending=(branches.get(branch)?.children||[]).filter(l=>l.enabled).map(l=>({leaf:l,...leafPlan(l)})).filter(p=>!windowReadings.has(proofPlanKey(p.req)));if(!pending.length)return;
   const controller=new AbortController();windowReadController=controller;const wanted=new Map(pending.map(p=>[p.leaf.key,p]));
-  try{const r=await api('/api/proof/windows',{requests:pending.map(p=>p.req)},controller.signal);if(version!==windowReadVersion||branch!==branchId)return;if(settingsKey(r)!==settingsKey()){void refreshGlobalSettings(true);return}
+  const baseLabel=universe==='pair_screen'?'Исторические окна':'Календарные окна';
+  startProgress('windows',`Окна: 0/${pending.length}`,4,12,600);
+  $('window-label').textContent=`${baseLabel} · 0/${pending.length}`;
+  try{const r=await apiStream('/api/proof/windows',{requests:pending.map(p=>p.req)},controller.signal,ev=>{
+    if(version!==windowReadVersion||branch!==branchId)return;
+    const pct=Math.round(ev.percent||0);
+    updateProgressChannel('windows',ev.percent||0,ev.label||`Окна: ${ev.done}/${ev.total}`);
+    $('window-label').textContent=`${baseLabel} · ${ev.done}/${ev.total} (${pct}%)`;
+   });
+   if(version!==windowReadVersion||branch!==branchId)return;if(settingsKey(r)!==settingsKey()){void refreshGlobalSettings(true);return}
    for(const reading of r.rows){const p=wanted.get(targetKey(reading.target));if(p)windowReadings.set(proofPlanKey(p.req),reading)}paintWindowReadings();
   }catch(e){if(version===windowReadVersion){for(const p of pending)windowReadings.set(proofPlanKey(p.req),{status:'unavailable',reason:e.message});paintWindowReadings()}}
-  finally{if(version===windowReadVersion)windowReadController=null}
+  finally{if(version===windowReadVersion){windowReadController=null;finishProgress('windows');$('window-label').textContent=universe==='pair_screen'?'Исторические окна':'Календарные окна'}}
  },delay)}
 
 function checkboxChanged(){cancelSearch();clearGroup();tuneState('');syncEditorScope();refreshChecks();refreshGroupProfile();syncChartScope()}
@@ -480,7 +573,13 @@ const hasSelection=()=>!!leafId&&(universe==='calendar_native'||!!researchStrate
 let proofController=null,openLamp=null,searchController=null,searchVersion=0,searchUsesChecks=false;
 function cancelSearch(){if(!tuning)return;searchVersion++;searchController?.abort();searchController=null;tuning=false;finishReview(false);setSearchProgress(false);tuneButton()}
 function tuneState(message,ok=false){const n=$('tune-state');n.textContent=message;n.classList.toggle('ok',ok)}
-function tuneButton(busy=tuning){$('auto-tune').disabled=busy||(!leafId&&!checked.size);$('auto-tune').setAttribute('aria-busy',String(busy));$('tune-label').textContent=busy?'Идёт подбор…':'Подобрать стратегию и параметры'}
+function tuneButton(busy=tuning,pct=null){
+ const btn=$('auto-tune');btn.disabled=busy||(!leafId&&!checked.size);btn.setAttribute('aria-busy',String(busy));
+ if(!busy){btn.style.removeProperty('--tune-pct');$('tune-label').textContent='Подобрать стратегию и параметры';return}
+ const p=pct==null?null:Math.max(0,Math.min(100,Math.round(pct)));
+ btn.style.setProperty('--tune-pct',(p??0)+'%');
+ $('tune-label').textContent=p==null?'Идёт подбор…':`Подбор · ${p}%`;
+}
 function hidePlateauTip(){if(openLamp){openLamp.removeAttribute('aria-describedby');openLamp=null}$('plateau-tip').hidden=true}
 function showPlateauTip(lamp){
  hidePlateauTip();openLamp=lamp;const tip=$('plateau-tip');tip.replaceChildren(el('strong','',lamp.dataset.heading),document.createTextNode(lamp.dataset.detail||'Нет оценки.'));
@@ -531,18 +630,26 @@ function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedI
  const next=sharedDrafts.get(name)||{strategy:name,parameters:{},fill:old.fill};renderSharedEditor(next);sharedEdited(0)}
 function paintGroup(plateau,message,state){if(!sharedStrategy||!checked.size)return;const n=$('group-profile-state');n.dataset.state=state;n.textContent=message;n.title=message;n.setAttribute('aria-busy',String(state==='loading'));
  drawLamps(sharedInputs(),plateau,message,{count:checked.size,percent:preferences.validation_percent,reference:sharedRequest().fill==='reference_same_bar'})}
-function stopProfile(){clearTimeout(profileTimer);profileTimer=null;profileVersion++;profileController?.abort();profileController=null;profileKey=''}
+function stopProfile(){clearTimeout(profileTimer);profileTimer=null;profileVersion++;profileController?.abort();profileController=null;profileKey='';finishProgress('plateau')}
 function groupSpec(){const body={...sharedRequest(),targets:checkedTargets()};return {body,key:JSON.stringify([settingsKey(),body])}}
 function showGroupReading(plateau){const fields=Object.values(plateau.fields);const any=fields.some(f=>f.score!=null),reason=fields.find(f=>f.reason)?.reason;
  paintGroup(plateau,any?'Светофор: по средней доходности на обучении.':`Нет групповой оценки. ${reason||''}`,any?'ready':'unavailable')}
 function refreshGroupProfile(delay=140){if(!sharedStrategy||!checked.size)return;const {body,key}=groupSpec();if(profileKey===key)return;stopProfile();profileKey=key;const version=profileVersion;
  const error=pointError(sharedInputs());if(error){paintGroup(null,error,'invalid');return}
- paintGroup(null,'Рассчитывается светофор отмеченных окон…','loading');profileTimer=setTimeout(async()=>{
+ paintGroup(null,'Светофор группы: подготовка 0%…','loading');profileTimer=setTimeout(async()=>{
   const controller=new AbortController();profileController=controller;
-  try{const r=await api('/api/proof/plateau',body,controller.signal);if(version!==profileVersion)return;
+  startProgress('plateau','Светофор группы: подготовка…',4,38,1500);
+  try{const r=await apiStream('/api/proof/plateau',body,controller.signal,ev=>{
+    if(version!==profileVersion)return;
+    const pct=Math.round(ev.percent||0);
+    const ceil=ev.stage==='prepare'?45:98;
+    updateProgressChannel('plateau',ev.percent||0,ev.label||'Светофор группы…',ceil,ev.stage==='plateau'?1200:0);
+    const n=$('group-profile-state');n.dataset.state='loading';n.textContent=`${ev.label||'Светофор группы…'} (${pct}%)`;n.title=n.textContent;
+   });
+   if(version!==profileVersion)return;
    if(settingsKey(r)!==settingsKey()){void refreshGlobalSettings(true);return}
    if(r.plateau)showGroupReading(r.plateau);else{const xs=r.excluded||[],first=xs[0];paintGroup(null,`Нет групповой оценки: не прошли проверку ${xs.length} из ${r.member_count}. ${first?first.target.pair+' — '+first.reason:''} Отметки сохранены.`,'unavailable')}
-  }catch(e){if(version===profileVersion){profileKey='';paintGroup(null,'Не удалось рассчитать светофор группы: '+e.message,'unavailable')}}finally{if(version===profileVersion)profileController=null}
+  }catch(e){if(version===profileVersion){profileKey='';paintGroup(null,'Не удалось рассчитать светофор группы: '+e.message,'unavailable')}}finally{if(version===profileVersion){profileController=null;finishProgress('plateau')}}
  },delay)}
 function syncEditorScope(){const on=checked.size>0;$('focus-editor').hidden=on;$('cohort-editor').hidden=!on;
  if(on){if(!sharedStrategy){const req=currentRequest();sharedPriceFill=focusedPriceFill(req);sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}}
@@ -594,30 +701,47 @@ function focusedPriceFill(req){return ['next_open','next_close','reference_same_
 function searchPriceFill(req){return checked.size&&req.strategy==='funding_only'?sharedPriceFill:focusedPriceFill(req)}
 async function startTuning(){const own=checked.size?sharedRequest():currentRequest(),request={...own,optimize_strategy:true,price_fill:searchPriceFill(own)},validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
  const explicit=checked.size>0;if(tuning)return;stopWindowReadings();if(!explicit)invalidateProof();
- const id=++searchVersion,fresh=()=>id===searchVersion,controller=new AbortController();searchController=controller;searchUsesChecks=explicit;tuning=true;tuneButton();setSearchProgress(true);status('');clearGroup();
+ const id=++searchVersion,fresh=()=>id===searchVersion,controller=new AbortController();searchController=controller;searchUsesChecks=explicit;tuning=true;tuneButton(true,2);setSearchProgress(true);startProgress('search','Подготовка к подбору Optuna…',2,10,1500);status('');clearGroup();
  try{let result;
   while(fresh()){
-   const targets=[...checked].map(k=>leaves.get(k).target);tuneState(`Optuna: сравнение общих стратегий и параметров на обучении · окон: ${explicit?targets.length:1}…`);
-   result=await api('/api/proof/optimize',{...request,...(explicit?{targets}:{})},controller.signal);if(!fresh())return;
+   const targets=[...checked].map(k=>leaves.get(k).target);tuneState(`Optuna: подготовка окон (${explicit?targets.length:1}) · 2%`);
+   result=await apiStream('/api/proof/optimize',{...request,...(explicit?{targets}:{})},controller.signal,ev=>{
+    if(!fresh())return;
+    const pct=Math.max(0,Math.min(99,Math.round(ev.percent||0)));
+    const ceil=ev.stage==='prepare'?11:ev.stage==='search'?Math.min(88,ev.percent+1):99;
+    updateProgressChannel('search',ev.percent||0,ev.label||'Optuna…',ceil,ev.stage==='prepare'?1500:0);
+    tuneButton(true,pct);
+    tuneState(`${ev.label||'Optuna…'} · ${pct}%`);
+   });
+   if(!fresh())return;
    if(settingsKey(result.group||result.evaluation||result)!==settingsKey()){cancelSearch();void refreshGlobalSettings(true);tuneState('Настройки расчёта изменились. Запустите подбор заново.');return}
    if(result.status!=='selection_requires_confirmation')break;
    setSearchProgress(false);const ok=await reviewExclusions(result);if(!fresh())return;
    if(!ok){tuneState('Подбор отменён. Отметки не изменены.');return}
    for(const x of result.excluded)checked.delete(targetKey(x.target));syncEditorScope();refreshChecks();refreshGroupProfile();
-   if(!checked.size){await show(true);if(fresh())tuneState('Совместимых отмеченных окон нет. Подбор не запускался.');return}setSearchProgress(true);
+   if(!checked.size){await show(true);if(fresh())tuneState('Совместимых отмеченных окон нет. Подбор не запускался.');return}setSearchProgress(true);startProgress('search','Повторная подготовка окон…',2,12,1200);
   }
   if(!fresh())return;
   if(result.selected_parameters){for(const row of result.group.members){if(!row.selection)continue;const k=targetKey(row.target);formStates.set(formKey(k,row.selection.strategy),row.selection);if(k===leafId){if(universe==='pair_screen')fillStrategy(row.selection.strategy);else fillCalendarStrategies(row.selection.strategy);applyToForm(row.selection)}}}
   adoptSearchProfile(result);
   const message=result.selected_parameters?`Применён лучший из проверенных вариантов${result.selected_strategy?' · '+STRATEGY_RU[result.selected_strategy]:''} на обучении: ${pp(result.group.training_mean_pp)} · окон: ${result.group.member_count} · испытаний: ${result.trial_count}.`:(result.reason||'Нет допустимого результата. Параметры сохранены.');
   // Refresh the open proof even when it was not in the cohort; do not apply another row's settings to it.
+  updateProgressChannel('search',99,'Обновление графика и сводки…');
   await show(true);if(!fresh())return;displayGroup(result);tuneState(message,result.group?.training_mean_pp>0);
  }catch(e){if(fresh())tuneState(`Подбор недоступен: ${e.message}`)}finally{if(fresh()){tuning=false;searchController=null;setSearchProgress(false);tuneButton();if(payload)paintPlateaus(payload.plateau)}}
 }
 async function show(fromSearch=false){invalidateProof(fromSearch);const id=analysisRequestId,plan=chartPlan(),request=plan.req,fresh=()=>id===analysisRequestId;chartKey=plan.key;chartWithLamps=!checked.size;
  const message=plan.common?'':!hasSelection()?`Для выбранного инструмента: ${pairUnavailable(pairAvailability(currentPair()),activeStrategyName())}.`:invalidForm();if(message){status(message);paintPlateaus(null,message);emptyProof(message);refreshWindowReadings();return}
- const controller=new AbortController();proofController=controller;$('period-result').hidden=true;setRenderProgress(true);status('');paintPlateaus(null,'Выполняется расчёт…');
- try{const next=await api('/api/proof/run',{...request,include_plateau:chartWithLamps},controller.signal);if(!fresh())return;if(settingsKey(next.evaluation)!==settingsKey()){void refreshGlobalSettings(true);return}payload=next;cacheWindowProof(request,next);selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();if(fresh())status('')}
+ const controller=new AbortController();proofController=controller;$('period-result').hidden=true;setRenderProgress(true);startProgress('chart','Запуск расчёта окна…',8,32,900);status('');paintPlateaus(null,'Выполняется расчёт…');
+ try{const next=await apiStream('/api/proof/run',{...request,include_plateau:chartWithLamps},controller.signal,ev=>{
+   if(!fresh())return;
+   const ceil=ev.stage==='prepare'?32:ev.stage==='run'?56:95;
+   updateProgressChannel('chart',ev.percent||0,ev.label||'Расчёт окна…',ceil,ev.stage==='run'?900:0);
+   paintPlateaus(null,`${ev.label||'Выполняется расчёт…'} (${Math.round(ev.percent||0)}%)`);
+  });
+  if(!fresh())return;if(settingsKey(next.evaluation)!==settingsKey()){void refreshGlobalSettings(true);return}
+  updateProgressChannel('chart',96,'Отрисовка графиков и таблицы…',99,300);
+  payload=next;cacheWindowProof(request,next);selectedTrade=null;dayClick={day:null,index:0};paintPlateaus(next.plateau);switchTab('charts');await render();if(fresh())status('')}
  catch(e){if(fresh()){status(e.message);paintPlateaus(null,e.message);emptyProof('Нет результата для текущих параметров.')}}finally{if(fresh()){proofController=null;setRenderProgress(false);tuneButton();refreshWindowReadings()}}
 }
 function bindLamp(input){
@@ -1005,7 +1129,7 @@ function render(){renderPeriodResult();renderEvidence();renderSummary();$('chart
 
 // ---------- boot ----------
 bindSettings();
-(async()=>{try{const [settings,c,timeframes]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog'),api('/api/timeframes').catch(()=>null)]);installTimeframeOptions(timeframes||c.timeframes||[]);if(settings)setPreferences(settings);$('open-settings').disabled=false;catalog=c;
+(async()=>{startProgress('boot','Загрузка каталога и настроек…',8,68,3500);try{const [settings,c,timeframes]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog'),api('/api/timeframes').catch(()=>null)]);updateProgressChannel('boot',74,'Построение списка инструментов…',78,200);installTimeframeOptions(timeframes||c.timeframes||[]);if(settings)setPreferences(settings);$('open-settings').disabled=false;catalog=c;
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
  fillFills();buildPicker();$('group-strategy').addEventListener('change',changeSharedStrategy);$('group-fill').addEventListener('change',()=>sharedEdited(0));
  $('strategy').addEventListener('change',()=>{fillStrategy();restoreForm();clearGroup();scheduleShow(100)});
@@ -1019,8 +1143,8 @@ bindSettings();
  // Deep links keep their old shape while both universes share the same two-step selector.
  const q=new URLSearchParams(location.search),kind=q.get('universe'),pair=q.get('pair');
  const desired=kind==='calendar_native'&&supportsCalendar(preferences.timeframe)?'calendar_native|'+q.get('asset'):kind==='pair_screen'?'pair_screen|'+pairAvailability(pair)?.near:null;
- const first=[...branches.values()].find(b=>b.children.some(l=>l.enabled))||[...branches.values()][0];openBranch(branches.has(desired)?desired:first?.key,pair,q.get('strategy'),false);void show();
-}catch(e){$('open-settings').disabled=false;status(e.message)}})();
+ const first=[...branches.values()].find(b=>b.children.some(l=>l.enabled))||[...branches.values()][0];openBranch(branches.has(desired)?desired:first?.key,pair,q.get('strategy'),false);finishProgress('boot');void show();
+}catch(e){finishProgress('boot');$('open-settings').disabled=false;status(e.message)}})();
 </script>
 </body>
 </html>

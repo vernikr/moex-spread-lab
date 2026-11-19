@@ -1030,6 +1030,131 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 _canon(run_with_c("1")),
             )
 
+    def test_streaming_progress_is_monotonic_and_matches_json_bit_for_bit(self):
+        import threading
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+        from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_pool_test_workspace(root)
+            store = ScreenerStore(ScreenerInputs(root))
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base_url = f"http://127.0.0.1:{server.server_port}"
+
+            def post_json(endpoint: str, body: dict):
+                req = urllib.request.Request(
+                    f"{base_url}{endpoint}",
+                    data=json.dumps(body).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+
+            def post_stream(endpoint: str, body: dict):
+                req = urllib.request.Request(
+                    f"{base_url}{endpoint}",
+                    data=json.dumps(body).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Progress-Stream": "1",
+                    },
+                )
+                events = []
+                result = None
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    self.assertIn("application/x-ndjson", resp.headers.get("Content-Type", ""))
+                    for raw in resp:
+                        line = raw.decode("utf-8").strip()
+                        if not line:
+                            continue
+                        msg = json.loads(line)
+                        if msg["type"] == "progress":
+                            events.append(msg)
+                        elif msg["type"] == "result":
+                            result = msg["data"]
+                        else:
+                            self.fail(f"Unexpected stream message: {msg}")
+                return events, result
+
+            try:
+                targets = [
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
+                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
+                ]
+                run_body = {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": "CNYRUBF/CRZ6",
+                    "strategy": "mean_reversion",
+                    "fill": "next_open",
+                    "sizing": AUTO_SIZING,
+                    "parameters": {"lookback": 12, "entry_z": 1.5, "exit_z": 0.4},
+                    "include_plateau": True,
+                }
+                opt_body = {
+                    "universe": PAIR_UNIVERSE,
+                    "pair": "CNYRUBF/CRZ6",
+                    "strategy": "mean_reversion",
+                    "fill": "next_open",
+                    "sizing": AUTO_SIZING,
+                    "optimize_strategy": True,
+                    "targets": targets,
+                }
+                plat_body = {
+                    "targets": targets,
+                    "strategy": "mean_reversion",
+                    "fill": "next_open",
+                    "sizing": AUTO_SIZING,
+                    "parameters": {"lookback": 12, "entry_z": 1.5, "exit_z": 0.4},
+                }
+                win_body = {
+                    "requests": [
+                        {
+                            **t,
+                            "strategy": "mean_reversion",
+                            "fill": "next_open",
+                            "sizing": AUTO_SIZING,
+                            "parameters": {"lookback": 12, "entry_z": 1.5, "exit_z": 0.4},
+                        }
+                        for t in targets
+                    ]
+                }
+
+                for endpoint, body, min_events in [
+                    ("/api/proof/run", run_body, 3),
+                    ("/api/proof/optimize", opt_body, 10),
+                    ("/api/proof/plateau", plat_body, 2),
+                    ("/api/proof/windows", win_body, 2),
+                ]:
+                    plain = post_json(endpoint, body)
+                    events, streamed = post_stream(endpoint, body)
+                    self.assertGreaterEqual(len(events), min_events, endpoint)
+                    pcts = [float(ev["percent"]) for ev in events]
+                    self.assertEqual(pcts, sorted(pcts), f"Non-monotonic progress on {endpoint}: {pcts}")
+                    self.assertGreaterEqual(pcts[0], 0.0)
+                    self.assertLessEqual(pcts[-1], 100.0)
+                    for ev in events:
+                        self.assertTrue(ev.get("stage"))
+                        self.assertTrue(ev.get("label"))
+                        self.assertGreaterEqual(ev["done"], 0)
+                        self.assertGreaterEqual(ev["total"], ev["done"])
+                    self.assertEqual(_canon(streamed), _canon(plain))
+
+                ui_html = (Path(__file__).resolve().parents[1] / "src/moex_spread_lab/proof_ui.html").read_text(encoding="utf-8")
+                self.assertNotIn("render-progress-run", ui_html)
+                self.assertIn('aria-valuemin="0"', ui_html)
+                self.assertIn('aria-valuemax="100"', ui_html)
+                self.assertIn("apiStream", ui_html)
+                self.assertIn("progress-pill", ui_html)
+            finally:
+                server.shutdown()
+                server.server_close()
+                store.close()
+
 
 def _build_pool_test_workspace(root: Path) -> None:
     _build_h1_workspace(root)

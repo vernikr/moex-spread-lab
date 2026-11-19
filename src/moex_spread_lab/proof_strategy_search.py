@@ -13,6 +13,7 @@ import optuna
 from .calendar_spreads import CalendarData
 from .proof import CALENDAR_UNIVERSE, _run_id
 from .proof_batch import (
+    _call_with_optional_progress,
     _cohort_result,
     _prepare_cohort,
     _targets,
@@ -83,7 +84,17 @@ def _candidate_request(request, strategy, targets, price_fill):
     }
 
 
-def strategy_search(service, request, settings, benchmark, check_cancelled):
+_STRATEGY_LABELS = {
+    "mean_reversion": "возврат к среднему",
+    "zscore_mean_reversion": "возврат к среднему",
+    "funding_only": "фондирование",
+    "convergence_to_ruonia": "сходимость к RUONIA",
+}
+
+
+def strategy_search(
+    service, request, settings, benchmark, check_cancelled, *, on_progress=None
+):
     targets = _targets(request)
     spec = get_timeframe(settings.timeframe)
     price_fill = request.get("price_fill") or (
@@ -91,12 +102,47 @@ def strategy_search(service, request, settings, benchmark, check_cancelled):
     )
     active = request.get("strategy", "zscore_mean_reversion")
     calendar = service._calendar or CalendarData(service.root)
+    families = _families(request, targets, spec)
+    total_families = max(len(families), 1)
     prepared, alternatives, failures = [], [], []
-    for name in _families(request, targets, spec):
+    for f_idx, name in enumerate(families):
         check_cancelled()
         proposed = _candidate_request(request, name, targets, price_fill)
-        group = _prepare_cohort(
-            service, proposed, settings, benchmark, check_cancelled, calendar=calendar
+        s_label = _STRATEGY_LABELS.get(name, name)
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "prepare",
+                    "done": f_idx * len(targets),
+                    "total": total_families * len(targets),
+                    "percent": round(2.0 + 10.0 * (f_idx / total_families), 1),
+                    "label": f"Подготовка окон ({s_label}, {f_idx + 1}/{total_families}): 0/{len(targets)}…",
+                }
+            )
+        group = _call_with_optional_progress(
+            _prepare_cohort,
+            service,
+            proposed,
+            settings,
+            benchmark,
+            check_cancelled,
+            calendar=calendar,
+            on_progress=(
+                None
+                if on_progress is None
+                else lambda done, total, fi=f_idx, sl=s_label: on_progress(
+                    {
+                        "stage": "prepare",
+                        "done": fi * total + done,
+                        "total": total_families * total,
+                        "percent": round(
+                            2.0 + 10.0 * ((fi + done / max(total, 1)) / total_families),
+                            1,
+                        ),
+                        "label": f"Подготовка окон ({sl}, {fi + 1}/{total_families}): {done}/{total}",
+                    }
+                )
+            ),
         )
         item = {
             "strategy": name,
@@ -179,15 +225,37 @@ def strategy_search(service, request, settings, benchmark, check_cancelled):
         return {**result, "run_id": _run_id(result)}
 
     winner, top, records = None, -float("inf"), []
+    total_prepared = len(prepared)
+    total_budget = total_prepared * TRIALS_PER_STRATEGY
     try:
-        for proposed, group, item in prepared:
+        for p_idx, (proposed, group, item) in enumerate(prepared):
             check_cancelled()
-            best, count, attempts = _tune(
+            s_label = _STRATEGY_LABELS.get(group.active, group.active)
+            best, count, attempts = _call_with_optional_progress(
+                _tune,
                 group.land,
                 group.seed,
                 group.axes,
                 min(len(case.split.training) for _, case in group.members),
                 trials=TRIALS_PER_STRATEGY,
+                on_progress=(
+                    None
+                    if on_progress is None
+                    else lambda done, total, pi=p_idx, sl=s_label: on_progress(
+                        {
+                            "stage": "search",
+                            "done": pi * TRIALS_PER_STRATEGY + done,
+                            "total": total_budget,
+                            "percent": round(
+                                12.0
+                                + 76.0
+                                * ((pi * TRIALS_PER_STRATEGY + done) / max(total_budget, 1)),
+                                1,
+                            ),
+                            "label": f"Optuna ({sl}, {pi + 1}/{total_prepared}): испытание {done}/{total}",
+                        }
+                    )
+                ),
             )
             item["trial_count"] = count
             score = group.land.measure(best)["rank_score"] if best is not None else None
@@ -231,7 +299,14 @@ def strategy_search(service, request, settings, benchmark, check_cancelled):
         proposed, group, best, count, attempts = winner
         # Only the final training-selected family is reported on full/validation data.
         result = _cohort_result(
-            proposed, settings, group, best, count, attempts, check_cancelled
+            proposed,
+            settings,
+            group,
+            best,
+            count,
+            attempts,
+            check_cancelled,
+            on_progress=on_progress,
         )
         result.update(
             schema_version=base["schema_version"],

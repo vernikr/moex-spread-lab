@@ -774,6 +774,26 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 "application/json; charset=utf-8",
             )
 
+        def _start_ndjson(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'",
+            )
+            self.close_connection = True
+            self.end_headers()
+
+        def _emit_ndjson(self, value: Any) -> None:
+            line = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
+            try:
+                self.wfile.write(line)
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                raise ConnectionAbortedError("Клиент закрыл соединение.") from exc
+
         def _local_request(self) -> bool:
             host = self.headers.get("Host", "")
             port = self.server.server_port
@@ -851,10 +871,26 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 elif path in {"/api/proof/run", "/api/proof/optimize", "/api/proof/plateau", "/api/proof/windows"}:
                     if not isinstance(selection, dict):
                         raise ScreenerError("выбор должен быть объектом")
+                    stream = self.headers.get("X-Progress-Stream") == "1"
                     search = path == "/api/proof/optimize"
                     from .proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
+                    stream_started = False
+
+                    def run_and_send(fn):
+                        nonlocal stream_started
+                        if not stream:
+                            return fn(None)
+                        self._start_ndjson()
+                        stream_started = True
+                        try:
+                            data = fn(lambda ev: self._emit_ndjson({"type": "progress", **ev}))
+                            self._emit_ndjson({"type": "result", "data": data})
+                        except (ValueError, OSError) as exc:
+                            self._emit_ndjson({"type": "error", "error": str(exc)})
+                        return None
+
                     if path in {"/api/proof/windows", "/api/proof/plateau"}:
                         from .proof_batch import checked_plateau
                         from .proof_windows import window_summaries
@@ -867,7 +903,14 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                             self._check_connected()
                         try:
                             self._check_connected()
-                            result = read(store.proof, selection, check_cancelled=self._check_connected)
+                            result = run_and_send(
+                                lambda cb: read(
+                                    store.proof,
+                                    selection,
+                                    check_cancelled=self._check_connected,
+                                    on_progress=cb,
+                                )
+                            )
                         finally:
                             lock.release()
                     elif search:
@@ -875,13 +918,34 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                             self._json(409, {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."})
                             return
                         try:
-                            result = research_run(store.proof, selection, optimize=True, check_cancelled=self._check_connected)
-                            if result.get("run_id"):
-                                store.save_proof_search(result)
+                            def _run_search(cb):
+                                res = research_run(
+                                    store.proof,
+                                    selection,
+                                    optimize=True,
+                                    check_cancelled=self._check_connected,
+                                    on_progress=cb,
+                                )
+                                if res.get("run_id"):
+                                    store.save_proof_search(res)
+                                return res
+
+                            result = run_and_send(_run_search)
                         finally:
                             store.proof_search_lock.release()
                     else:
-                        result = research_run(store.proof, selection, optimize=False, include_plateau=diagnostics)
+                        result = run_and_send(
+                            lambda cb: research_run(
+                                store.proof,
+                                selection,
+                                optimize=False,
+                                include_plateau=diagnostics,
+                                check_cancelled=self._check_connected,
+                                on_progress=cb,
+                            )
+                        )
+                    if stream_started:
+                        return
                 elif path == "/api/run":
                     result = build_result(store.inputs, selection)
                     store.save(result)

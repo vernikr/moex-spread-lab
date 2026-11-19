@@ -387,7 +387,7 @@ class Landscape:
         }
 
 
-def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS):
+def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS, on_progress=None):
     """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
     study = optuna.create_study(
         direction="maximize",
@@ -408,7 +408,7 @@ def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS):
         study.enqueue_trial({k: seed[k] for k in strategy_axes})
     best, best_score = None, -math.inf
     attempts = []
-    for _ in range(trials):
+    for idx in range(trials):
         trial = study.ask()
         point = dict(seed)
         for name, axis in strategy_axes.items():
@@ -427,6 +427,8 @@ def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS):
             if score > best_score or (score == best_score and point == seed):
                 best, best_score = point, score
         attempts.append(point)
+        if on_progress is not None:
+            on_progress(idx + 1, trials)
     return best, len(study.trials), attempts
 
 
@@ -544,15 +546,37 @@ class StudyWindow:
         }
 
 
-def _lamps(land, point, reason=None):
-    fields = (
-        {
+def _lamps(land, point, reason=None, *, on_progress=None):
+    if reason:
+        fields = {
             k: {"value": point[k], "score": None, "reason": reason, "neighbors": []}
             for k in land.axes
         }
-        if reason
-        else {k: land.profile(point, k) for k in land.axes}
-    )
+    elif on_progress is not None:
+        # Count deterministic neighbor probes upfront for monotonic progress updates.
+        probe_points = []
+        seen = set()
+        center_key = tuple(point[n] for n in land.axes)
+        if center_key not in land.cache:
+            seen.add(center_key)
+            probe_points.append(point)
+        for name, axis in land.axes.items():
+            value = point[name]
+            for offset in (-2, -1, 1, 2):
+                neighbor = round(value + offset * axis.step, 6)
+                other = {**point, name: neighbor}
+                if axis.contains(neighbor) and _ordered(other):
+                    key = tuple(other[n] for n in land.axes)
+                    if key not in land.cache and key not in seen:
+                        seen.add(key)
+                        probe_points.append(other)
+        total_probes = len(probe_points)
+        for idx, probe in enumerate(probe_points, start=1):
+            land.measure(probe)
+            on_progress(idx, total_probes)
+        fields = {k: land.profile(point, k) for k in land.axes}
+    else:
+        fields = {k: land.profile(point, k) for k in land.axes}
     return {
         "basis": "training",
         "unit": "annualized_excess_pp",
@@ -569,6 +593,7 @@ def research_run(
     optimize: bool,
     include_plateau: bool = True,
     check_cancelled=lambda: None,
+    on_progress=None,
 ):
     _validate(request)
     settings = ResearchSettings.load(service.root)
@@ -577,18 +602,78 @@ def research_run(
         if request.get("optimize_strategy"):
             from .proof_strategy_search import strategy_search
 
-            return strategy_search(service, request, settings, benchmark, check_cancelled)
+            return strategy_search(
+                service,
+                request,
+                settings,
+                benchmark,
+                check_cancelled,
+                on_progress=on_progress,
+            )
         from .proof_batch import batch_search
 
-        return batch_search(service, request, settings, benchmark, check_cancelled)
+        return batch_search(
+            service,
+            request,
+            settings,
+            benchmark,
+            check_cancelled,
+            on_progress=on_progress,
+        )
     if request.get("optimize_strategy"):
         raise W0Error("Выбор стратегии выполняется только запросом подбора.")
     if "targets" in request:
         raise W0Error("Журнал исполнения относится к одному открытому окну.")
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "prepare",
+                "done": 0,
+                "total": 1,
+                "percent": 15.0,
+                "label": "Загрузка и подготовка ряда…",
+            }
+        )
     case = StudyWindow(service, request, settings, benchmark)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "run",
+                "done": 1,
+                "total": 2 if include_plateau else 1,
+                "percent": 35.0 if include_plateau else 60.0,
+                "label": "Симуляция счёта и расчёт доходности…",
+            }
+        )
     report = case.report(case.seed)
     if include_plateau:
+        warn = case.admission() or case.lamp_warning()
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "plateau",
+                    "done": 0,
+                    "total": 1,
+                    "percent": 58.0,
+                    "label": "Оценка устойчивости параметров…",
+                }
+            )
         report["plateau"] = _lamps(
-            case.fit, case.seed, case.admission() or case.lamp_warning()
+            case.fit,
+            case.seed,
+            warn,
+            on_progress=(
+                None
+                if on_progress is None
+                else lambda done, total: on_progress(
+                    {
+                        "stage": "plateau",
+                        "done": done,
+                        "total": total,
+                        "percent": round(58.0 + 37.0 * (done / max(total, 1)), 1),
+                        "label": f"Оценка устойчивости: проверка {done}/{total}",
+                    }
+                )
+            ),
         )
     return report

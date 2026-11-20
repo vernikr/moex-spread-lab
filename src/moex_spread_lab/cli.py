@@ -36,6 +36,15 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--root", type=Path, default=Path.cwd())
     scan_parser.add_argument("--tracked-only", action="store_true")
 
+    inventory_parser = subparsers.add_parser(
+        "data-inventory", help="build a read-only local-data inventory and retention manifest",
+    )
+    inventory_parser.add_argument("--root", type=Path, default=Path.cwd())
+    inventory_parser.add_argument("--output", type=Path)
+    inventory_parser.add_argument("--hashes", action="store_true", help="include SHA-256 for every local file")
+    inventory_parser.add_argument("--fast", action="store_true", help="skip JSON payload inspection")
+    inventory_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
@@ -213,6 +222,26 @@ def main() -> int:
                 print(json.dumps({"status": "failed", "findings": findings}, sort_keys=True))
                 return 1
             print(json.dumps({"status": "passed", "findings": []}, sort_keys=True))
+            return 0
+        if args.command == "data-inventory":
+            from .data_inventory import build_data_inventory
+
+            result = build_data_inventory(
+                args.root,
+                include_hashes=args.hashes,
+                inspect_json=not args.fast,
+            )
+            if args.output:
+                write_json(args.output, result)
+            if args.format == "json":
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    "status": "ok",
+                    "schema_version": result["schema_version"],
+                    "summary": result["summary"],
+                    "output": str(args.output) if args.output else None,
+                }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "research-pipeline":
             result = run_research_pipeline(args.manifest, args.fixture)

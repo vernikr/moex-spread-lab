@@ -41,7 +41,7 @@ body.is-resizing,body.is-resizing *{cursor:col-resize!important;user-select:none
 .sidegrid{display:flex;gap:6px;flex:0 0 auto}
 .ghost{border:1px solid #345469;background:transparent;color:#a9bccb;border-radius:7px;min-height:26px;padding:0 9px;font-size:10px;white-space:nowrap}.ghost:hover{border-color:#63d9b2;color:#d8efe4}
 .status{font-size:10px;color:#e7bd82;min-height:14px;line-height:1.4;flex:0 0 auto}.status.ok{color:#75d9ad}.status:empty{display:none}
-.norm-hint{color:#9db1c2;font-size:9.5px;line-height:1.45}.norm-score{color:#6f8296;font-size:9.5px;line-height:1.45;border-top:1px solid #223142;padding-top:6px}
+.norm-hint{color:#9db1c2;font-size:9.5px;line-height:1.45}
 .main{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:0}
 .evidence{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 10px;border:1px solid #293b4e;border-radius:9px;background:#0d1723;font-size:10px;color:#a9bccb}.evidence.show{display:flex}.evidence code{background:#16293a;border-radius:5px;padding:2px 6px;color:#8be0bd;font-size:10px;letter-spacing:.02em}.evidence .price-role{color:#e7bd82}
 .flags{display:flex;gap:6px;flex-wrap:wrap}.flag{font-size:9.5px;border-radius:50px;padding:3px 9px;border:1px solid #345469;color:#a9bccb;white-space:nowrap}.flag.ok{color:#78e0b4;border-color:#2c6a58}.flag.bad{color:#f0b2a9;border-color:#7a4540}.flag.warn{color:#e7bd82;border-color:#6a5a2c}
@@ -154,7 +154,6 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         </optgroup>
       </select>
       <div class="norm-hint" id="norm-hint"></div>
-      <div class="norm-score" id="norm-score"></div>
       <section id="strategy-form" class="strategy-block" aria-label="Стратегия и параметры">
       <div id="focus-editor">
         <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
@@ -355,7 +354,7 @@ async function apiStream(path,body,signal,onProgress){
 
 function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
 // The server owns the setting; localStorage only notifies other open tabs.
-let timeframeOptions=[{id:'1d',label:'1 день',intraday:false,supports_calendar:true},{id:'1h',label:'1 час',intraday:true,supports_calendar:true}];
+let timeframeOptions=[{id:'1h',label:'1 час',intraday:true,supports_calendar:true},{id:'1d',label:'1 день',intraday:false,supports_calendar:true}];
 let selectedTimeframe='1d';
 function timeframeOption(id){return timeframeOptions.find(item=>item.id===id)}
 function isIntraday(id){return !!timeframeOption(id)?.intraday}
@@ -716,7 +715,7 @@ function emptyProof(message){
  $('period-result').hidden=true;$('chart-scope').textContent='Вся история';payload=null;selectedTrade=null;for(const c of charts.splice(0)){try{c.remove()}catch(e){}}markersApis.length=0;primarySpreadChart=null;
  const empty=el('div','empty',message);empty.id='charts-empty';const chartTip=$('tip');chartTip.style.display='none';$('charts').replaceChildren(empty,chartTip);
  const notes=$('notes');notes.textContent='';$('ledger-table').replaceChildren(el('div','empty',message),notes);
- $('evidence').classList.remove('show');$('flags').replaceChildren();$('tiles').replaceChildren();updateNormScores();applyNormHint();
+ $('evidence').classList.remove('show');$('flags').replaceChildren();$('tiles').replaceChildren();applyNormHint();
 }
 function clearGroup(){$('batch-result').hidden=true;$('batch-result').replaceChildren()}
 function pp(v){return v==null?'нет оценки':`${signed(v)} п.п./год`}
@@ -848,10 +847,12 @@ function renderEvidence(){const ev=$('evidence');ev.classList.add('show');$('ev-
 // ---------- charts ----------
 const LWC=window.LightweightCharts;
 function chartTime(value){if(typeof value!=='string'||!value.includes('T'))return value;const zoned=/(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(value)?value:value+'+03:00';const ms=Date.parse(zoned);return Number.isFinite(ms)?Math.floor(ms/1000):value}
-const moscowTimeFormatter=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const moscowDateFormatter=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'});
 const moscowDateTimeFormatter=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 function displayTime(value){const stamp=chartTime(value);return typeof stamp==='number'?moscowDateTimeFormatter.format(new Date(stamp*1000)):value}
-function chartOpts(){const intraday=isIntraday(payload?.selection?.timeframe);return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2b3',width:1,style:2,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#9bbbd499',width:1,style:2,labelBackgroundColor:'#2a4a63'}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:false},timeScale:{borderColor:'#293b4e',rightOffset:3,timeVisible:intraday,secondsVisible:false,tickMarkFormatter:time=>typeof time==='number'?moscowTimeFormatter.format(new Date(time*1000)):undefined},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'ru-RU',...(intraday?{timeFormatter:time=>typeof time==='number'?moscowTimeFormatter.format(new Date(time*1000)):String(time)}:{})}}}
+// Time axis shows dates only (no hours), Moscow time; the hover tooltip keeps the full date-time.
+function axisDateParts(stamp){const [day,month,year]=moscowDateFormatter.format(new Date(stamp*1000)).split('.');return {day,month,year}}
+function chartOpts(){return {layout:{background:{color:'transparent'},textColor:'#8ea3b6',fontSize:10,attributionLogo:false},grid:{vertLines:{color:'#1b2a3a'},horzLines:{color:'#1b2a3a'}},crosshair:{vertLine:{color:'#cfe3f2b3',width:1,style:2,labelBackgroundColor:'#2a4a63'},horzLine:{color:'#9bbbd499',width:1,style:2,labelBackgroundColor:'#2a4a63'}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:false},timeScale:{borderColor:'#293b4e',rightOffset:3,timeVisible:false,secondsVisible:false,tickMarkFormatter:(time,type)=>{if(typeof time!=='number')return undefined;const {day,month,year}=axisDateParts(time);return type===0?year:type===1?month+'.'+year:day+'.'+month}},rightPriceScale:{borderColor:'#293b4e'},autoSize:true,localization:{locale:'ru-RU',timeFormatter:time=>typeof time==='number'?moscowDateFormatter.format(new Date(time*1000)):String(time)}}}
 const charts=[];
 function fitChartsToVisibleArea(){const snapshot=charts.slice();return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{if(snapshot.length===charts.length&&snapshot.every((chart,index)=>charts[index]===chart)){for(const chart of snapshot){if(chart._pane?.classList.contains('hidden'))continue;try{chart.timeScale().fitContent()}catch(e){}}}resolve()})))}
 function makePane(parent,heightClass,title,tagline,legend,collapsible=true){const head=el('div','panel-title');const left=el('span');const div=el('div','chart '+heightClass);
@@ -924,34 +925,7 @@ const NORM_HINTS={
  kalman:'Инновация Калмана в единицах своей σ — local-level модель (уровень — случайное блуждание, фиксированные Q/R). Без окна вообще — адаптируется непрерывно через смены режима; ровно настолько хороша, насколько верны фиксированные Q/R.',
  stoch20:'(Спред − min окна)/(max окна − min окна) за 20 точек, в %. Ограничено 0–100 — «где внутри недавнего диапазона», читать проще всего; про σ и half-life не говорит ничего.'};
 const NORM_PANEL={raw:'спред в % от дальней ноги',expanding:'остаток к expanding-среднему · причинный',rm20:'остаток к среднему · 20 набл. · причинный',rm60:'остаток к среднему · 60 набл. · причинный',ema10:'остаток к EMA · полураспад 10 · причинный',ols20:'остаток к OLS · 20 набл. · причинный',ols60:'остаток к OLS · 60 набл. · причинный',ou60:'остаток ОУ от равновесия · 60 набл. · причинный',rz20:'z-скор · среднее и σ за 20 · причинный',ewma10:'z-скор · EWMA · полураспад 10 · причинный',mad20:'робастный z · медиана/MAD · 20 · причинный',garch:'GARCH(1,1) z · трейлинг-рекурсия · причинный',kalman:'z инновации Калмана · локальный уровень · причинный',stoch20:'stochastic · 20 набл. · 0–100 · причинный'};
-// Quality score for a normalized series (display-chart property, NOT a trading signal).
-// Horizontality 40%: 1 - R^2 of OLS of the series on time. Mean reversion 30%: AR(1) phi mapped 1-phi.
-// Vol uniformity 30%: 1 - CV of per-block vol of first differences (up to 6 blocks). See docs/research/normalization-methods.md
-function seriesQuality(v){const n0=v.length,pts=[],idx=[];
- for(let i=0;i<n0;i++){const x=v[i];if(x!=null&&isFinite(x)){pts.push(x);idx.push(i)}}
- const n=pts.length;if(n<20)return null;
- const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
- const mX=avg(idx),mY=avg(pts);
- let sxy=0,sxx=0,syy=0;for(let k=0;k<n;k++){const dx=idx[k]-mX,dy=pts[k]-mY;sxy+=dx*dy;sxx+=dx*dx;syy+=dy*dy}
- const r2=(sxx>0&&syy>0)?Math.min(1,Math.max(0,(sxy*sxy)/(sxx*syy))):0;
- const level=100*(1-r2);
- let num=0,den=0;for(let i=1;i<n;i++){num+=(pts[i]-mY)*(pts[i-1]-mY);den+=(pts[i-1]-mY)*(pts[i-1]-mY)}
- let phi=den>0?num/den:0;if(!isFinite(phi))phi=0;
- const mr=100*Math.min(1,Math.max(0,1-phi));
- const K=Math.min(6,Math.floor(n/10)),bl=Math.floor(n/K),bv=[];
- for(let b=0;b<K;b++){const seg=pts.slice(b*bl,b===K-1?n:(b+1)*bl);if(seg.length<4)continue;
-  const d=seg.slice(1).map((x,i)=>x-seg[i]);const dm=avg(d);bv.push(Math.sqrt(avg(d.map(x=>(x-dm)*(x-dm)))))}
- let uniform=null;if(bv.length>=2){const bm=avg(bv);if(bm>0){const cv=Math.sqrt(avg(bv.map(x=>(x-bm)*(x-bm))))/bm;uniform=100*Math.min(1,Math.max(0,1-cv))}}
- const total=uniform==null?(0.6*level+0.4*mr):(0.4*level+0.3*mr+0.3*uniform);
- return {level,mr,phi,r2,uniform,total:total/10}}
-const NORM_BASE={};(function(){const sel=$('norm');if(sel)for(const o of sel.options)NORM_BASE[o.value]=o.textContent})();
-let NORM_QUALITY=null;
-function updateNormScores(){const sel=$('norm');if(!sel)return;if(!payload){NORM_QUALITY=null;for(const o of sel.options)o.textContent=NORM_BASE[o.value];return}
- const S=payload.series;NORM_QUALITY={};
- for(const o of sel.options){const m=o.value;const q=seriesQuality(spreadDisplayValues(S,m));NORM_QUALITY[m]=q;o.textContent=NORM_BASE[m]+(q?'  ·  '+q.total.toFixed(1):'  ·  —')}}
-function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||'';
- const b=$('norm-score');if(!b)return;const q=NORM_QUALITY&&NORM_QUALITY[mode];
- b.textContent=q?('оценка '+q.total.toFixed(1)+' / 10 · горизонталь '+Math.round(q.level)+' (R²='+q.r2.toFixed(2)+') · возврат '+Math.round(q.mr)+' (φ='+q.phi.toFixed(2)+') · равномерность волы '+(q.uniform==null?'—':String(Math.round(q.uniform)))):''}
+function applyNormHint(){const h=$('norm-hint');const mode=$('norm')?.value||'raw';if(h)h.textContent=NORM_HINTS[mode]||''}
 function markValidationStart(chart,pane,day){
  if(!day)return;const line=el('div','validation-line'),scale=chart.timeScale();line.hidden=true;line.setAttribute('aria-hidden','true');pane.append(line);
  const place=()=>{if(!pane.isConnected)return;const x=scale.timeToCoordinate(chartTime(day));line.hidden=x==null||x<0||x>=scale.width();if(!line.hidden){line.style.left=`${chart.priceScale('left').width()+x}px`;line.style.bottom=scale.height()+'px'}};
@@ -982,30 +956,32 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  const cCum=LWC.createChart(cumPane,cumFrom());
  charts.push(cNear,cFar,cSpreadRaw,cSpread,cVol);if(cFund)charts.push(cFund);charts.push(cCum);
  const lineSeries=(chart,color,width=2,dashed=false,priceFormat=null)=>chart.addSeries(LWC.LineSeries,{color,lineWidth:width,lineStyle:dashed?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:true,...(priceFormat?{priceFormat}:{})});
- const legPriceFormat=legQuoteIsRuble()?{type:'price',precision:0,minMove:1}:null;const nearSeries=lineSeries(cNear,COLORS.near,2,false,legPriceFormat),farSeries=lineSeries(cFar,COLORS.far,2,false,legPriceFormat);
+ const axisRub=v=>Number.isFinite(v)?Math.round(v)+' ₽':'—';
+ const legPriceFormat=legQuoteIsRuble()?{type:'custom',formatter:axisRub,minMove:1}:{type:'price',precision:0,minMove:1};const nearSeries=lineSeries(cNear,COLORS.near,2,false,legPriceFormat),farSeries=lineSeries(cFar,COLORS.far,2,false,legPriceFormat);
  nearSeries.setData(S.map(r=>({time:chartTime(r.date),value:r.near})));farSeries.setData(S.map(r=>({time:chartTime(r.date),value:r.far})));
- const rawSpreadFormat={type:'percent',precision:2,minMove:0.01};
+ const rawSpreadFormat={type:'percent',precision:0,minMove:1};
  const rawSpreadSeries=lineSeries(cSpreadRaw,COLORS.spread,2,false,rawSpreadFormat);
  const sRaw=spreadDisplayValues(S,'raw');
  rawSpreadSeries.setData(S.map((r,i)=>sRaw[i]!=null?{time:chartTime(r.date),value:sRaw[i]}:{time:chartTime(r.date)}));
  rawSpreadPane._signalLevels={};for(const [name,key,color] of [['buy','buy_level_rel','#65adf1'],['sell','sell_level_rel','#f0a36d']])if(S.some(r=>r[key]!=null)){const line=lineSeries(cSpreadRaw,color,1,false,rawSpreadFormat);line.setData(S.map(r=>r[key]!=null?{time:chartTime(r.date),value:r[key]}:{time:chartTime(r.date)}));rawSpreadPane._signalLevels[name]=line}rawSpreadPane.dataset.signalLines=String(Object.keys(rawSpreadPane._signalLevels).length);
  if(hasLast){const rawLt=lineSeries(cSpreadRaw,'#88a1b5',1,true,rawSpreadFormat);rawLt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:chartTime(r.date),value:r.spread_last_trade_rel}:{time:chartTime(r.date)}))}
- const spreadSeries=lineSeries(cSpread,COLORS.spread,2);
+ const spreadDisplayFormat={type:'price',precision:0,minMove:1};
+ const spreadSeries=lineSeries(cSpread,COLORS.spread,2,false,spreadDisplayFormat);
  const sDisp=spreadDisplayValues(S);
  spreadSeries.setData(S.map((r,i)=>sDisp[i]!=null?{time:chartTime(r.date),value:sDisp[i]}:{time:chartTime(r.date)}));
- if(showLast){const lt=lineSeries(cSpread,'#88a1b5',1,true);lt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:chartTime(r.date),value:r.spread_last_trade_rel}:{time:chartTime(r.date)}))}
- const volSeries=cVol.addSeries(LWC.HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false});
+ if(showLast){const lt=lineSeries(cSpread,'#88a1b5',1,true,spreadDisplayFormat);lt.setData(S.map(r=>r.spread_last_trade_rel!=null?{time:chartTime(r.date),value:r.spread_last_trade_rel}:{time:chartTime(r.date)}))}
+ const volSeries=cVol.addSeries(LWC.HistogramSeries,{priceFormat:{type:'volume',precision:0,minMove:1},priceLineVisible:false,lastValueVisible:false});
  volSeries.setData(S.map(r=>({time:chartTime(r.date),value:(universe==='pair_screen'||calendarProxy?Math.min(r.near_volume??0,r.far_volume??0):r.spread_volume)??0,color:(L[r.date]?.mark_pnl_rub??0)>=0?'#2f8f6a':'#a24d47'})));
  const rule=payload.window.min_daily_volume_rule;if(rule!=null&&!isIntraday(payload.selection?.timeframe))volSeries.createPriceLine({price:rule,color:COLORS.loss,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'правило'});
  let fundSeries=null;
- if(cFund){fundSeries=cFund.addSeries(LWC.HistogramSeries,{priceLineVisible:false,lastValueVisible:false,base:0});
+ if(cFund){fundSeries=cFund.addSeries(LWC.HistogramSeries,{priceLineVisible:false,lastValueVisible:false,base:0,priceFormat:{type:'custom',formatter:axisRub,minMove:1}});
   fundSeries.setData(S.map(r=>r.funding_rub!=null?{time:chartTime(r.date),value:r.funding_rub,color:r.funding_rub>=0?'#5b8f6a':'#a24d47'}:{time:chartTime(r.date)}));
   fundSeries.createPriceLine({price:0,color:'#3b5367',lineStyle:0,lineWidth:1,axisLabelVisible:false,title:''})}
- const cumSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.spread,lineWidth:2,priceLineVisible:false,lastValueVisible:false});
+ const cumSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.spread,lineWidth:2,priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'custom',formatter:axisRub,minMove:1}});
  cumSeries.setData(payload.ledger.map(r=>({time:chartTime(r.date),value:r.cumulative_net_rub})));
  cumSeries.createPriceLine({price:0,color:'#3b5367',lineStyle:0,lineWidth:1,axisLabelVisible:false,title:''});
  let peak=-Infinity;drawdownByDate={};const ddPoints=payload.ledger.map(r=>{peak=Math.max(peak,r.cumulative_net_rub);const dd=r.cumulative_net_rub-peak;drawdownByDate[r.date]=dd;return {time:chartTime(r.date),value:dd}});
- const ddSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.warn,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceScaleId:'left'});
+ const ddSeries=cCum.addSeries(LWC.LineSeries,{color:COLORS.warn,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,priceScaleId:'left',priceFormat:{type:'custom',formatter:axisRub,minMove:1}});
  ddSeries.setData(ddPoints);
  // entry/exit markers on raw and normalized spread panes
  const markers=buildMarkers();markersApis.push(LWC.createSeriesMarkers(rawSpreadSeries,markers),LWC.createSeriesMarkers(spreadSeries,markers));
@@ -1161,7 +1137,7 @@ function downloadCsv(){if(!payload)return;const L=ledgerIndex(),entryQty=Object.
 function copyRunId(){const v=payload?.run_id;if(!v)return;const done=()=>status('run_id скопирован в буфер обмена',true);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(v).then(done).catch(()=>fallback());else fallback();function fallback(){const ta=document.createElement('textarea');ta.value=v;document.body.append(ta);ta.select();try{document.execCommand('copy');done()}catch(e){}ta.remove()}}
 
 // ---------- render ----------
-function render(){renderPeriodResult();renderEvidence();renderSummary();$('charts-empty')?.remove();const fit=buildCharts();renderTable();$('notes').textContent=payload.notes.join(' · ');updateNormScores();applyNormHint();return fit}
+function render(){renderPeriodResult();renderEvidence();renderSummary();$('charts-empty')?.remove();const fit=buildCharts();renderTable();$('notes').textContent=payload.notes.join(' · ');applyNormHint();return fit}
 
 // ---------- boot ----------
 bindSettings();

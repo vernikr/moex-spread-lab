@@ -365,7 +365,7 @@ class ScreenerAppTests(unittest.TestCase):
         timeframes_response = connection.getresponse()
         self.assertEqual(timeframes_response.status, 200)
         timeframes = json.loads(timeframes_response.read())
-        self.assertEqual([item["id"] for item in timeframes], ["1d", "1h"])
+        self.assertEqual([item["id"] for item in timeframes], ["1h", "1d"])
         hourly = next(item for item in timeframes if item["id"] == "1h")
         self.assertTrue(hourly["intraday"])
         self.assertTrue(hourly["supports_pair_proof"])

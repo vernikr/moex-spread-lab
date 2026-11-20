@@ -281,7 +281,9 @@ class CalendarProofTests(unittest.TestCase):
         self.assertEqual(catalog_response.status, 200)
         catalog = json.loads(catalog_response.read())
         self.assertEqual(catalog["timeframe"], "1h")
-        self.assertTrue(catalog["timeframes"][1]["supports_calendar"])
+        by_id = {item["id"]: item for item in catalog["timeframes"]}
+        self.assertTrue(by_id["1h"]["supports_calendar"])
+        self.assertEqual([item["id"] for item in catalog["timeframes"]], ["1h", "1d"])
         catalog_window = next(
             window for asset in catalog["assets"] if asset["asset"] == "SR"
             for window in asset["windows"] if window["pair"] == "SRH3/SRM3"

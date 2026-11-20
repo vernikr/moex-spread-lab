@@ -80,3 +80,20 @@ def test_failed_evidence_and_sealed_refresh_refused(archive_case):
     from moex_spread_lab.data_refresh import refresh_candle_datasets, RefreshTarget, DataRefreshError
     with pytest.raises(DataRefreshError,match='deactivate'):
         refresh_candle_datasets(root=root,targets=[RefreshTarget('NEAR',60)],till_date='2026-11-21')
+
+
+def test_retry_requires_full_restore_and_preserves_prior_journal(archive_case):
+    root,intake,screen,candidate,evidence,archive,ap=archive_case
+    originals={p:p.read_bytes() for p in (intake,screen)}
+    _prepare(archive_case)
+    with patch('moex_spread_lab.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
+        execute(root,ap,'apply')
+        with pytest.raises(DataLakeError): execute(root,ap,'apply',retry_restored=True)
+        for p,raw in originals.items():
+            p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
+        with pytest.raises(FileExistsError): execute(root,ap,'apply')
+        result=execute(root,ap,'apply',retry_restored=True)
+    from pathlib import Path
+    previous=Path(result['previous_attempt_journal'])
+    assert previous.is_file() and json.loads(previous.read_text())['status']=='applied'
+    assert len(result['deleted'])==2 and not intake.exists() and not screen.exists()

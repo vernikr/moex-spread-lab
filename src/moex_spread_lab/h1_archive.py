@@ -6,6 +6,7 @@ import json
 import os
 import tarfile
 import tempfile
+import uuid
 from pathlib import Path
 
 import zstandard as zstd
@@ -84,7 +85,7 @@ def _gain(root: Path, plan: dict):
             'net_allocated_gain_bytes':sources-overhead, 'net_gain_fraction':fraction}
 
 
-def execute(root: Path, plan_path: Path, mode: str, *, archive=None, evidence=None):
+def execute(root: Path, plan_path: Path, mode: str, *, archive=None, evidence=None, retry_restored=False):
     root = root.resolve()
     with (root/'.data-archive-candidates.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -127,6 +128,20 @@ def execute(root: Path, plan_path: Path, mode: str, *, archive=None, evidence=No
         _validate(plan,root)  # All sources, source selection, seal and evidence before first unlink.
         result={'status':'prepared','archive_sha256':record['archive_sha256'],
                 'source_fingerprint':plan['source_fingerprint'],'storage':storage,'deleted':[]}
+        if retry_restored:
+            # Explicit retry only after _validate proved every original restored.
+            # Never silently resume a partial deletion or overwrite its journal.
+            if not journal.is_file() or journal.is_symlink():
+                raise DataLakeError('restored retry requires a regular previous apply journal')
+            previous=json.loads(journal.read_text())
+            if (previous.get('status') not in ('applied','interrupted','prepared')
+                    or previous.get('archive_sha256')!=record['archive_sha256']
+                    or previous.get('source_fingerprint')!=plan['source_fingerprint']):
+                raise DataLakeError('previous apply journal does not match restored plan')
+            saved=journal.with_name(journal.name+'.attempt-'+uuid.uuid4().hex)
+            os.link(journal,saved)
+            journal.unlink()
+            result['previous_attempt_journal']=str(saved)
         _json_new(journal,result)
         try:
             for e in plan['files']:

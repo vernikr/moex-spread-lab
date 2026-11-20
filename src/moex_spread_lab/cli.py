@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     h1_archive.add_argument("--plan", type=Path, required=True)
     h1_archive.add_argument("--archive", type=Path)
     h1_archive.add_argument("--evidence", type=Path)
+    h1_archive.add_argument("--retry-restored", action="store_true", help="explicitly retry apply only after all originals are restored; preserve prior journal")
     h1_archive_mode = h1_archive.add_mutually_exclusive_group(required=True)
     h1_archive_mode.add_argument("--dry-run", action="store_true")
     h1_archive_mode.add_argument("--archive-only", action="store_true")
@@ -370,9 +371,11 @@ def main() -> int:
             try:
                 if not args.dry_run and (args.archive or args.evidence):
                     raise W0Error("archive/evidence paths must come from the reviewed plan")
+                if args.retry_restored and not args.apply:
+                    raise W0Error("--retry-restored requires --apply")
                 result = execute(args.root, args.plan,
                                  "dry-run" if args.dry_run else "archive-only" if args.archive_only else "apply",
-                                 archive=args.archive, evidence=args.evidence)
+                                 archive=args.archive, evidence=args.evidence, retry_restored=args.retry_restored)
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise W0Error(f"H1 archival failed: {exc}") from exc
             print(json.dumps({k:v for k,v in result.items() if k != "deleted"}, sort_keys=True))

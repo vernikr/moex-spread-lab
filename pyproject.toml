@@ -1,6 +1,6 @@
 [project]
 name = "moex-spread-lab"
-version = "0.8.0"
+version = "0.8.1"
 description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
 dependencies = [

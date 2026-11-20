@@ -446,3 +446,15 @@ C1 `data-h1-stage --verify` deliberately still requires the original source plan
 it is a staging preflight, not the post-archive maintenance command. Restore into
 new empty staging first, verify member hashes, and copy only missing originals
 without overwriting changed files before guarded `data-h1-seal --deactivate`.
+
+### Restored retry (0.8.1)
+
+If a supervised wrapper restored **all** originals after an apply/post-check
+failure, retry is explicit: `data-h1-archive --apply --retry-restored --plan …`.
+All original hashes, selection, seal, evidence, archive and gain gates are checked
+again. The matching previous journal is retained under a unique `.attempt-*`
+name before a new journal is created. Default apply still refuses an existing
+journal; this is not partial resume and never skips missing originals. Record the
+failure/recovery reason separately. OS Finder `.DS_Store` metadata may change
+independently; report that separately without modifying it or exempting research
+inputs from integrity checks.

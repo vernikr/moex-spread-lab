@@ -947,9 +947,11 @@ function buildCharts(){const root=$('charts');const tip=$('tip');for(const chart
  const cumNo=showFunding?7:6;
  const cumPane=makePane(root,'h-cum',`${cumNo} · КУМУЛЯТИВНЫЙ НЕТТО — ₽ после издержек`,'просадка от текущего пика — по левой оси',[['кумулятив',COLORS.spread],['просадка',COLORS.warn]]);
  const opts=chartOpts();
- const legFrom=c=>{const o=JSON.parse(JSON.stringify(opts));o.timeScale.visible=false;return o};
+ // Clone chart options without JSON so formatter functions survive on every pane.
+ const cloneOpts=o=>{const c={...o};for(const k of ['layout','grid','crosshair','handleScroll','handleScale','timeScale','rightPriceScale','localization'])if(c[k])c[k]={...c[k]};return c};
+ const legFrom=c=>{const o=cloneOpts(opts);o.timeScale.visible=false;return o};
  const fundsFrom=c=>{const o=legFrom(c);return o};
- const cumFrom=c=>({...JSON.parse(JSON.stringify(opts)),leftPriceScale:{visible:true,borderColor:'#293b4e'}});
+ const cumFrom=c=>({...cloneOpts(opts),leftPriceScale:{visible:true,borderColor:'#293b4e'}});
  const cNear=LWC.createChart(nearPane,legFrom()),cFar=LWC.createChart(farPane,legFrom()),cSpreadRaw=LWC.createChart(rawSpreadPane,legFrom()),cSpread=LWC.createChart(spreadPane,opts),cVol=LWC.createChart(volPane,opts);
  nearPane._chart=cNear;farPane._chart=cFar;rawSpreadPane._chart=cSpreadRaw;spreadPane._chart=cSpread;volPane._chart=cVol;primarySpreadChart=cSpread;
  const cFund=fundingPane?LWC.createChart(fundingPane,fundsFrom()):null;

@@ -8,7 +8,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import ready
+from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import two_calendar_windows
 
@@ -20,6 +20,7 @@ def run(browser, url):
     pair, cal = ctx.new_page(), ctx.new_page()
     errors = []
     for page in (pair, cal):
+        install_stream_spy(page)
         page.on("pageerror", lambda e: errors.append(str(e)))
 
     def post(page, route):
@@ -58,6 +59,15 @@ def run(browser, url):
                 "payload.evaluation.result.annualized_excess_pp==null?'—':signed(payload.evaluation.result.annualized_excess_pp)"
             )
         )
+
+    def change_fill(page, value):
+        page.locator("#open-settings").click()
+        page.locator("#global-fill").select_option(value)
+        with post(page, "settings") as saved:
+            page.locator("#apply-settings").click()
+        assert saved.value.json()["price_fill"] == value
+        ready(pair, "training")
+        ready(cal, "training")
 
     pair.goto(
         url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
@@ -139,8 +149,7 @@ def run(browser, url):
     with post(pair, "proof/run"):
         pair.locator(f'[data-leaf="{sr}"] button').click()
     ready(pair, "training")
-    with post(pair, "proof/plateau"):
-        pair.locator("#group-fill").select_option("next_close")
+    change_fill(pair, "next_close")
     pair.wait_for_function("() => payload?.selection.fill==='next_close'")
     current_table_matches(pair)
     assert pair.evaluate("checked.size") == 2
@@ -158,14 +167,14 @@ def run(browser, url):
         "[...windowReadings.values()].every(r=>!r.evaluation||r.evaluation.initial_capital_rub===60000)"
     )
     assert pair.evaluate("checked.size") == 2
-    expect(pair.locator("#group-fill")).to_have_value("next_close")
+    expect(pair.locator("#group-fill,#fill,#cfill")).to_have_count(0)
     expect(
         pair.locator("#window-list tr.current [data-gate=capital] span")
     ).to_have_attribute("data-state", "pass")
 
-    with post(pair, "proof/optimize") as result:
+    with expect_api_json(pair, "/api/proof/optimize") as result:
         pair.locator("#auto-tune").click()
-    r = result.value.json()
+    r = result["data"]
     assert r["status"] == "maximum_found"
     assert r["group"]["initial_capital_rub"] == 60000
     for member in r["group"]["members"]:
@@ -173,15 +182,14 @@ def run(browser, url):
         assert member["selection"]["initial_capital_rub"] == 60000
         assert member["evaluation"]["initial_capital_rub"] == 60000
     assert set(r["selected_parameters"]) == {"lookback", "entry_z", "exit_z"}
-    expect(pair.locator("#tune-state")).to_contain_text("Применён", timeout=20000)
+    expect(pair.locator("#tune-state")).to_be_empty()
     current_table_matches(pair)
     expect(pair.locator("#batch-result")).not_to_contain_text("допуск разрешён")
     expect(pair.locator("#batch-result")).not_to_contain_text(
         "Свободные средства недостаточны"
     )
 
-    with post(pair, "proof/plateau"):
-        pair.locator("#group-fill").select_option("reference_same_bar")
+    change_fill(pair, "reference_same_bar")
     expect(pair.locator("#period-result .result-warning")).to_have_count(0)
     assert pair.evaluate("payload.execution_reference")
     pair.locator("#toggle-summary").click()

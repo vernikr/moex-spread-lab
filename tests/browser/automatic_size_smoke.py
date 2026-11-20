@@ -87,7 +87,7 @@ def run(browser, url):
     with cal.expect_response(lambda r: r.url.endswith("/api/proof/run")):
         cal.locator("#auto-tune").click()
     ready(cal, "training")
-    expect(cal.locator("#tune-state")).to_contain_text("Применён")
+    expect(cal.locator("#tune-state")).to_be_empty()
     assert cal.evaluate("payload.selection.slippage_ticks") == 2.5
     assert set(cal.evaluate("Object.keys(payload.selection.parameters)")) == {
         "window",

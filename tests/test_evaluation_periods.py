@@ -40,6 +40,18 @@ class GlobalPeriodTests(unittest.TestCase):
                     save_settings(root, {"timeframe": value})
                 self.assertEqual(read_settings(root)["timeframe"], "1h")
 
+    def test_price_fill_is_validated_and_survives_partial_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.assertEqual(read_settings(root)["price_fill"], "reference_same_bar")
+            saved = save_settings(root, {"price_fill": "next_open"})
+            self.assertEqual(saved["price_fill"], "next_open")
+            self.assertEqual(save_settings(root, {"slippage_ticks": 2.5})["price_fill"], "next_open")
+            for value in ("bad", "same_day_settlement", 1, True, None, []):
+                with self.subTest(value=value), self.assertRaises(W0Error):
+                    save_settings(root, {"price_fill": value})
+                self.assertEqual(read_settings(root)["price_fill"], "next_open")
+
     def test_project_settings_persist_without_touching_input_caches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,6 +64,7 @@ class GlobalPeriodTests(unittest.TestCase):
                     "slippage_ticks": 1.0,
                     "initial_capital_rub": 30000.0,
                     "timeframe": "1d",
+                    "price_fill": "reference_same_bar",
                 },
             )
             self.assertFalse(settings_path(root).exists())

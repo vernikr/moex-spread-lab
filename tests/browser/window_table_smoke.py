@@ -8,7 +8,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import apply, ready
+from period_settings_smoke import apply, expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import two_calendar_windows
 
@@ -18,6 +18,7 @@ from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_han
 def run(browser, url):
     ctx = browser.new_context(viewport={"width": 1500, "height": 980})
     pg = ctx.new_page()
+    install_stream_spy(pg)
     pg.set_default_timeout(12000)
     errors, searches = [], []
     pg.on("pageerror", lambda e: errors.append(str(e)))
@@ -82,7 +83,7 @@ def run(browser, url):
     ]
     text = pg.locator("#window-list").inner_text()
     assert "SRH3" not in text and "SRM3" not in text and "мин. объём" not in text
-    assert "Минимальный дневной объём" in row(a).locator(
+    assert "объём календарного спреда" in row(a).locator(
         "[data-gate=volume] span"
     ).get_attribute("title")
     assert "3×ГО" in row(a).locator("[data-gate=capital] span").get_attribute("title")
@@ -117,7 +118,7 @@ def run(browser, url):
     matches_chart()
     expect(pg.locator("#clookback")).to_have_value("10")
 
-    # The existing reference mode must also work in a standalone ordinary CNY pair.
+    # The existing reference mode is the global default and works in standalone ordinary CNY pair.
     pg.goto(
         url + "/proof?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
     )
@@ -128,9 +129,6 @@ def run(browser, url):
     with post("run"):
         pg.locator("#lookback").press("Enter")
     ready(pg, "training")
-    with post("run"):
-        pg.locator("#fill").select_option("reference_same_bar")
-    ready(pg, "training")
     matches_chart()
     assert pg.evaluate("payload.execution_reference")
     expect(pg.locator("#period-result .result-warning")).to_have_count(0)
@@ -138,29 +136,28 @@ def run(browser, url):
     assert pg.evaluate("payload.trades.every(t=>t.signal.date===t.entry.date)")
     cny = "pair_screen||CNYRUBF/CRZ6"
     row(cny).locator("input").check()
-    expect(pg.locator("#group-fill")).to_have_value("reference_same_bar")
+    expect(pg.locator("#group-fill,#fill,#cfill")).to_have_count(0)
     with post("run"):
         pg.locator('[data-branch="calendar_native|SR"] button').click()
     ready(pg, "training")
-    with post("plateau") as profile:
+    with expect_api_json(pg, "/api/proof/plateau") as profile:
         row(a).locator("input").check()
-    assert profile.value.json()["status"] == "measured"
-    assert profile.value.json()["execution_reference"]
+    assert profile["data"]["status"] == "measured"
+    assert profile["data"]["execution_reference"]
     assert not pg.locator("#compatibility").is_visible()
-    with post("optimize") as result:
+    with expect_api_json(pg, "/api/proof/optimize") as result:
         pg.locator("#auto-tune").click()
-    assert result.value.json()["status"] == "maximum_found"
-    expect(pg.locator("#tune-state")).to_contain_text("Применён", timeout=20000)
+    assert result["data"]["status"] == "maximum_found"
+    expect(pg.locator("#tune-state")).to_be_empty()
     ready(pg, "training")
     matches_chart()
     assert pg.evaluate("checked.size") == 2
     assert all(
         r["selection"]["fill"] == "reference_same_bar"
-        for r in result.value.json()["group"]["members"]
+        for r in result["data"]["group"]["members"]
     )
-    # The open, unchecked window keeps its own next-open form, not the cohort fill.
     assert pg.evaluate("leafId") == b
-    assert not pg.evaluate("payload.execution_reference")
+    assert pg.evaluate("payload.execution_reference")
     expect(pg.locator("#batch-result summary")).to_contain_text("справочно")
     expect(pg.locator("#batch-result")).to_contain_text(
         "Все оценки группы — ориентир, не проверка исполнимой доходности"
@@ -173,7 +170,7 @@ def run(browser, url):
     ready(pg, "training")
     matches_chart()
     assert pg.evaluate("payload.execution_reference")
-    pg.screenshot(path="/home/user/moex-window-preview.png")
+    pg.screenshot(path=str(Path(tempfile.gettempdir()) / "moex-window-preview.png"))
 
     # Hold a stale table response across navigation; it cannot repaint another asset.
     pg.evaluate(

@@ -7,6 +7,7 @@ import re
 import sys
 import tempfile
 import threading
+from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -16,6 +17,57 @@ from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_han
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from proof_fixtures import fixture
+
+_STREAM_SPY = """
+(() => {
+  window.__proofResults = [];
+  const orig = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const res = await orig(...args);
+    const url = String(args[0] && args[0].url ? args[0].url : args[0]);
+    if (url.includes('/api/')) {
+      const clone = res.clone();
+      clone.text().then(txt => {
+        const ctype = (res.headers.get('content-type') || '').toLowerCase();
+        let data = null;
+        if (ctype.includes('ndjson')) {
+          for (const line of txt.split(String.fromCharCode(10))) {
+            const s = line.trim();
+            if (!s) continue;
+            const msg = JSON.parse(s);
+            if (msg.type === 'result') data = msg.data;
+            else if (msg.type === 'error') data = { error: msg.error };
+          }
+        } else if (txt.trim()) {
+          data = JSON.parse(txt);
+        }
+        window.__proofResults.push({ url, status: res.status, data });
+      }).catch(() => {});
+    }
+    return res;
+  };
+})();
+"""
+
+
+def install_stream_spy(target):
+    target.add_init_script(_STREAM_SPY)
+
+
+@contextmanager
+def expect_api_json(page, suffix, timeout=20000):
+    box = {}
+    start = page.evaluate("window.__proofResults ? window.__proofResults.length : 0")
+    yield box
+    page.wait_for_function(
+        "([s, n]) => (window.__proofResults || []).slice(n).some(r => r.url.endsWith(s))",
+        arg=[suffix, start],
+        timeout=timeout,
+    )
+    box["data"] = page.evaluate(
+        "([s, n]) => { const m = (window.__proofResults || []).slice(n).filter(r => r.url.endsWith(s)); return m.length ? m[m.length - 1].data : null; }",
+        arg=[suffix, start],
+    )
 
 
 def ready(page, basis):
@@ -53,6 +105,17 @@ def run(browser, url):
     pair.locator("#open-settings").click()
     expect(pair.get_by_role("dialog")).to_be_visible()
     expect(pair.locator("#validation-percent")).to_have_value("0")
+    expect(pair.locator("#global-fill")).to_have_value("reference_same_bar")
+    expect(pair.locator('#global-timeframe[role="radiogroup"]')).to_be_visible()
+    expect(pair.locator('#global-timeframe [role="radio"][data-value="1d"]')).to_have_attribute("aria-checked", "true")
+    settings_text = pair.locator("#global-settings").inner_text()
+    assert "Снимите галочку, чтобы сделать проверку обязательной" not in settings_text
+    assert "Настройки общие для всех пар и стратегий" not in settings_text
+    assert pair.locator("#global-settings .settings-footer").evaluate("n=>getComputedStyle(n).position") == "sticky"
+    # Clicking outside on the backdrop closes the dialog.
+    pair.mouse.click(5, 5)
+    expect(pair.get_by_role("dialog")).not_to_be_visible()
+    pair.locator("#open-settings").click()
     pair.locator("#validation-percent").fill("51")
     pair.locator("#apply-settings").click()
     expect(pair.get_by_role("dialog")).to_be_visible()
@@ -83,7 +146,8 @@ def run(browser, url):
     with pair.expect_response(lambda r: r.url.endswith("/api/proof/run")):
         pair.locator("#auto-tune").click()
     ready(pair, "validation")
-    expect(pair.locator("#tune-state")).to_contain_text("на обучении")
+    expect(pair.locator("#tune-state")).to_be_empty()
+    expect(pair.locator("#batch-result")).to_be_visible()
     pair.locator("#toggle-summary").click()
     with pair.expect_download() as download:
         pair.locator("#download-csv").click()

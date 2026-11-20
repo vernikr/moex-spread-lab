@@ -6,7 +6,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import ready
+from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 
 from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
@@ -70,9 +70,9 @@ def run(page, url, root, days):
     ready(page, "training")
     page.locator('[data-branch="pair_screen|CNYRUBF"] input').check()
     page.locator('[data-branch="pair_screen|GAZPF"] input').check()
-    with page.expect_response(lambda r: r.url.endswith("/api/proof/optimize")) as rx:
+    with expect_api_json(page, "/api/proof/optimize") as rx:
         page.locator("#auto-tune").click()
-    r = rx.value.json()
+    r = rx["data"]
     assert r["trial_count"] == 0
     expect(page.locator("#compatibility-list")).to_contain_text("без ставки: 4")
     page.keyboard.press("Escape")
@@ -98,8 +98,10 @@ if __name__ == "__main__":
         threading.Thread(target=server.serve_forever, daemon=True).start()
         browser = pw.chromium.launch()
         try:
+            pg = browser.new_page(viewport={"width": 1440, "height": 900})
+            install_stream_spy(pg)
             run(
-                browser.new_page(viewport={"width": 1440, "height": 900}),
+                pg,
                 f"http://127.0.0.1:{server.server_port}",
                 root,
                 ds,

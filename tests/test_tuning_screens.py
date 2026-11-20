@@ -42,6 +42,7 @@ class TuningScreenTests(unittest.TestCase):
                 "slippage_ticks": 1.0,
                 "initial_capital_rub": 30000.0,
                 "timeframe": "1d",
+                "price_fill": "reference_same_bar",
             },
         )
         self.assertEqual(path.read_text(), legacy)
@@ -57,6 +58,7 @@ class TuningScreenTests(unittest.TestCase):
                 "slippage_ticks": 1.0,
                 "initial_capital_rub": 30000.0,
                 "timeframe": "1d",
+                "price_fill": "reference_same_bar",
             },
         )
         for key in ("allow_failed_volume", "allow_failed_capital"):

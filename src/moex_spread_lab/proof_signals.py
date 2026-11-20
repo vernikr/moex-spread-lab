@@ -23,8 +23,8 @@ REFERENCE_WARNING = (
 )
 
 
-def pair_fill(request, strategy):
-    default = "same_day_settlement" if strategy == "funding_only" else "next_open"
+def pair_fill(request, strategy, *, default_price_fill="reference_same_bar"):
+    default = "same_day_settlement" if strategy == "funding_only" else default_price_fill
     fill = request.get("fill", default)
     allowed = ("same_day_settlement",) if strategy == "funding_only" else PRICE_FILLS
     if not isinstance(fill, str) or fill not in allowed:

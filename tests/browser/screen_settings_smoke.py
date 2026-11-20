@@ -6,7 +6,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import ready
+from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import screen_failures
 
@@ -19,6 +19,7 @@ def run(browser, url):
     other = ctx.new_page()
     errors = []
     for page in (pg, other):
+        install_stream_spy(page)
         page.on("pageerror", lambda e: errors.append(str(e)))
 
     def wait(page, route):
@@ -38,7 +39,7 @@ def run(browser, url):
         group.get_by_role("checkbox", name="на объём").set_checked(volume)
         group.get_by_role("checkbox", name="на капитал").set_checked(capital)
         pg.locator("#validation-percent").fill(str(share))
-        with wait(pg, "proof/plateau") as live, wait(pg, "settings") as saved:
+        with expect_api_json(pg, "/api/proof/plateau") as live, wait(pg, "settings") as saved:
             pg.locator("#apply-settings").click()
         assert saved.value.json() == {
             "allow_failed_capital": capital,
@@ -46,8 +47,10 @@ def run(browser, url):
             "validation_percent": share,
             "slippage_ticks": 1.0,
             "initial_capital_rub": 30000.0,
+            "timeframe": "1d",
+            "price_fill": "reference_same_bar",
         }
-        return live.value.json()
+        return live["data"]
 
     pg.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion")
     other.goto(url + "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
@@ -65,17 +68,17 @@ def run(browser, url):
     expect(open_dialog(pg).get_by_role("checkbox", name="на капитал")).to_be_checked()
     pg.keyboard.press("Escape")
     pg.locator('[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
-    with wait(pg, "proof/plateau") as combined:
+    with expect_api_json(pg, "/api/proof/plateau") as combined:
         pg.locator('[data-branch="calendar_native|SR"] input').check()
-    assert combined.value.json()["status"] == "measured"
-    with wait(pg, "proof/optimize") as opt:
+    assert combined["data"]["status"] == "measured"
+    with expect_api_json(pg, "/api/proof/optimize") as opt:
         pg.locator("#auto-tune").click()
-    assert opt.value.json()["status"] == "maximum_found"
-    expect(pg.locator("#tune-state")).to_contain_text("Применён")
+    assert opt["data"]["status"] == "maximum_found"
+    expect(pg.locator("#tune-state")).to_be_empty()
     pg.locator("#batch-result summary").click()
     assert {
         name
-        for m in opt.value.json()["group"]["members"]
+        for m in opt["data"]["group"]["members"]
         for name in m["evaluation"]["failed_screens"]
     } == {"capital", "volume"}
     expect(pg.locator("#batch-result")).not_to_contain_text("допуск разрешён")
@@ -89,9 +92,9 @@ def run(browser, url):
     expect(other.locator("#period-result")).not_to_contain_text(
         "Не пройден стресс-тест капитала"
     )
-    with wait(pg, "proof/optimize") as rejection:
+    with expect_api_json(pg, "/api/proof/optimize") as rejection:
         pg.locator("#auto-tune").click()
-    assert rejection.value.json()["trial_count"] == 0
+    assert rejection["data"]["trial_count"] == 0
     expect(pg.locator("#compatibility-list")).to_contain_text("SRH3/SRM3")
     pg.keyboard.press("Escape")
     assert pg.evaluate("checked.size") == 2

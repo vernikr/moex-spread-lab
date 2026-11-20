@@ -67,7 +67,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 .notes{flex:0 0 auto;color:#8da1b4;font-size:9.5px;line-height:1.5;padding:8px 12px;border-top:1px solid #223142}.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}.hidden{display:none !important}
 @media (max-width:940px){body{overflow:auto;height:auto;min-height:100vh}.app{height:auto;min-height:100vh}.layout{display:flex;flex-direction:column;height:auto;gap:10px}.column-resizer{display:none}#col-selection{min-height:700px}.selection-lists{flex:1 1 auto;min-height:360px}#pair,#norm{min-height:130px}#calendar-controls{flex:none}#window{min-height:130px}.maintabs{min-height:420px}#charts{max-height:520px}}
 .settings-trigger{display:inline-flex;align-items:center;gap:7px}.settings-trigger small{border-left:1px solid #345469;padding-left:7px;color:#87c4b3;font-size:9px}
-.settings-dialog{width:min(400px,calc(100vw - 28px));padding:20px;border:1px solid #3c576b;border-radius:13px;background:#111e2b;color:#e6edf4;box-shadow:0 18px 65px #0008}.settings-dialog::backdrop{background:#050d17b8}.settings-dialog h2{font-size:18px;margin:4px 0 8px}.settings-dialog p{color:#a8bdcc;font-size:12px;line-height:1.5;margin:6px 0 14px}.settings-dialog label{font-size:12px;font-weight:650}.settings-value{display:flex;align-items:center;gap:10px;margin:8px 0}.settings-value input[type=number]{width:74px;height:34px;padding:4px 6px;color:inherit;background:#1a2a3b;border:1px solid #456277;border-radius:6px;font:inherit}.settings-value #global-capital{width:160px;max-width:55%}.settings-value input[type=range]{flex:1;min-width:0;accent-color:#70e1b9}.settings-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:16px}.settings-actions button{font-size:11px;min-height:30px}.settings-actions .apply{background:#174137;color:#aeebd1;border-color:#529b86}.screen-options{display:grid;gap:6px;margin:15px 0 6px;padding:10px 12px;border:1px solid #344d60;border-radius:8px;min-width:0}.screen-options legend{max-width:100%;padding:0 4px;color:#dcE7EF;font-size:12px;line-height:1.45}.screen-options label{display:flex;align-items:center;gap:9px;cursor:pointer;padding:3px}.screen-options input{width:16px;height:16px;accent-color:#70e1b9;margin:0}.settings-error{color:#f0b2a9;font-size:11px}
+.settings-dialog{width:min(440px,calc(100vw - 28px));max-height:calc(100vh - 28px);padding:0;overflow:hidden;border:1px solid #3c576b;border-radius:13px;background:#111e2b;color:#e6edf4;box-shadow:0 18px 65px #0008}.settings-dialog[open]{display:flex;flex-direction:column}.settings-dialog::backdrop{background:#050d17b8}.settings-dialog form,.settings-dialog .dialog-scroll{display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 28px);overflow:hidden}.settings-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:20px 20px 12px}.settings-footer{position:sticky;bottom:0;z-index:2;flex:0 0 auto;background:#111e2b;border-top:1px solid #293b4e;padding:12px 20px 16px}.settings-dialog h2{font-size:18px;margin:4px 0 8px}.settings-dialog p{color:#a8bdcc;font-size:12px;line-height:1.5;margin:6px 0 14px}.settings-dialog label,.settings-dialog .settings-label{display:block;font-size:12px;font-weight:650}.settings-dialog select{width:100%;height:34px;padding:4px 8px;color:inherit;background:#1a2a3b;border:1px solid #456277;border-radius:6px;font:inherit;font-size:12px}.settings-value{display:flex;align-items:center;gap:10px;margin:8px 0}.settings-value input[type=number]{width:74px;height:34px;padding:4px 6px;color:inherit;background:#1a2a3b;border:1px solid #456277;border-radius:6px;font:inherit}.settings-value #global-capital{width:160px;max-width:55%}.settings-value input[type=range]{flex:1;min-width:0;accent-color:#70e1b9}.segmented{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;width:100%;padding:3px;background:#1a2a3b;border:1px solid #456277;border-radius:8px}.seg-option{border:0;border-radius:6px;background:transparent;color:#a9bccb;padding:6px 10px;font-size:12px;font-weight:600;transition:background .12s,color .12s}.seg-option:hover{color:#e6edf4}.seg-option.active{background:#70e1b9;color:#072119;font-weight:750}.seg-option:focus-visible{outline:2px solid #70e1b9;outline-offset:1px}.settings-actions{display:flex;justify-content:flex-end;gap:7px}.settings-actions button{font-size:11px;min-height:30px}.settings-actions .apply{background:#174137;color:#aeebd1;border-color:#529b86}.screen-options{display:grid;gap:6px;margin:15px 0 6px;padding:10px 12px;border:1px solid #344d60;border-radius:8px;min-width:0}.screen-options legend{max-width:100%;padding:0 4px;color:#dcE7EF;font-size:12px;line-height:1.45}.screen-options label{display:flex;align-items:center;gap:9px;cursor:pointer;padding:3px;font-weight:650}.screen-options input{width:16px;height:16px;accent-color:#70e1b9;margin:0}.settings-error{display:block;color:#f0b2a9;font-size:11px;margin-bottom:8px}.settings-error:empty{display:none;margin-bottom:0}
 .result-strip{padding:6px 10px;border:1px solid #30465a;border-left:3px solid #63b99e;border-radius:8px;background:#101d29;line-height:1.4}.result-strip[hidden]{display:none}.result-head{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;font-size:11px}.result-head strong{font-size:12px}.result-head b{font-variant-numeric:tabular-nums}.result-meta,.history-label{color:#9db2c2;font-size:9.5px}.history-label{font-weight:650}.result-warning{font-size:10px;color:#e7bd82}.result-strip[data-basis=validation]{border-left-color:#d5a562}.validation-line{position:absolute;z-index:3;pointer-events:none;border-left:2px dashed #e9b569;top:0}.validation-line[hidden]{display:none}.validation-start td{border-top:2px dashed #d5a562}.validation-tag{color:#f1c98f;font-size:9px;font-weight:650}
 @media(max-width:530px){.settings-trigger small{display:none}.nav-links{gap:5px;flex-wrap:wrap}.top{flex-wrap:wrap}.top,.brand{gap:5px}.flag{max-width:100%;white-space:normal;overflow-wrap:anywhere}.app{padding:6px 8px}}
 .pick-panel{min-height:0;display:flex;flex-direction:column;gap:0}.pick-panel h2{margin:0 0 4px;color:#a7b8c8;font-size:10px}.pick-all,.picker-row{display:flex;align-items:center;gap:6px;min-height:25px;padding:2px 7px}.pick-all{background:#233649;border:1px solid #365066;border-radius:7px 7px 0 0;color:#d9e9ef;font-size:11px;font-weight:650;cursor:pointer}.pick-list{flex:1;min-height:0;overflow:auto;background:#162636;border:1px solid #365066;border-top:0;border-radius:0 0 7px 7px;scrollbar-width:thin}.picker-row{border-bottom:1px solid #203142}.pick-check{margin:0;width:14px;height:14px;accent-color:#6edcb5;cursor:pointer;flex:none}.pick-check:disabled{opacity:.4;cursor:not-allowed}.pick-name{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px;color:#c2d1df;font:inherit;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.picker-row.family{background:#1c2e40}.family .pick-name{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8ea6ba;font-weight:700}.picker-row.branch{padding-left:15px}.picker-row.unavailable .pick-name{color:#91a1b0}.picker-row.current{background:#21423e;box-shadow:inset 2px 0 #77e0b9}.current .pick-name{color:#a5f1d4;font-weight:600}.pick-name:focus-visible,.pick-check:focus-visible{outline:2px solid #70e1b9;outline-offset:1px}.group-note{font-size:10px;color:#9db2c2}.review{width:min(520px,94vw)}.review ul{padding-left:19px;max-height:36vh;overflow:auto;font-size:12px;color:#c5d4e1}.review li{margin:5px 0}.batch-result{background:#172c30;border:1px solid #3f6560;border-radius:8px;padding:6px 10px;font-size:11px;max-height:28vh;overflow:auto}.batch-result summary{cursor:pointer;color:#a7ead1;font-weight:650}.batch-result .group-note{margin:6px 0}.batch-result[hidden]{display:none}.batch-result td small{white-space:normal}.group-note{line-height:1.4}@media(max-width:940px){.pick-panel{height:260px}}
@@ -83,30 +83,35 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
 
   <dialog class="settings-dialog" id="global-settings" aria-labelledby="settings-title">
     <form id="settings-form">
-      <div class="eyebrow">Глобальные настройки</div><h2 id="settings-title">Настройки расчёта</h2>
-      <p>Настройки общие для всех пар и стратегий. Для проверки резервируется последняя часть истории. Optuna выбирает стратегию и параметры только на обучении.</p>
-      <label for="global-capital">Капитал · ₽</label>
-      <div class="settings-value"><input id="global-capital" type="number" min="0.01" max="1000000000" step="0.01" required autofocus title="Одинаковый стартовый капитал независимого расчёта каждого окна. Не подбирается Optuna."><span>на каждое окно</span></div>
-      <label for="global-timeframe">Таймфрейм свечей</label>
-      <div class="settings-value"><select id="global-timeframe" required aria-describedby="timeframe-help"></select></div>
-      <p id="timeframe-help">Интервал применяется к свечам, pair-proof и графикам. Календарь на 1h использует нативный spread H1, если он доступен; иначе явно помеченный far − near proxy по синхронным H1 ногам. Дневные цены не подставляются.</p>
-      <label for="validation-percent">Доля истории для проверки</label>
-      <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview"><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
-      <p id="split-preview" aria-live="polite"></p>
-      <label for="global-slippage">Проскальзывание · тики</label>
-      <div class="settings-value"><input id="global-slippage" type="number" min="0" max="10" step="0.5" required aria-describedby="slippage-help"><span>на исполнение</span></div>
-      <p id="slippage-help">Общее для всех стратегий и окон. Для биржевого календарного спреда — по одному разу на входе и на выходе, для обычной пары — по каждой ноге. Добавляется к комиссии.</p>
-      <fieldset class="screen-options" aria-describedby="screen-help">
-        <legend>При подборе параметров позволять учитывать спреды, не прошедшие проверку:</legend>
-        <label><input id="allow-failed-volume" type="checkbox" checked> на объём</label>
-        <label><input id="allow-failed-capital" type="checkbox" checked> на капитал</label>
-      </fieldset>
-      <p id="screen-help">Снимите галочку, чтобы сделать проверку обязательной. Допуск к подбору не увеличивает заданный капитал.</p>
-      <span class="settings-error" role="alert" id="settings-error"></span>
-      <div class="settings-actions"><button type="button" class="ghost" id="cancel-settings">Отмена</button><button type="submit" class="ghost apply" id="apply-settings">Применить</button></div>
+      <div class="settings-body">
+        <div class="eyebrow">Глобальные настройки</div><h2 id="settings-title">Настройки расчёта</h2>
+        <label for="global-capital">Размер капитала · ₽</label>
+        <div class="settings-value"><input id="global-capital" type="number" min="0.01" max="1000000000" step="0.01" required autofocus title="Одинаковый стартовый капитал независимого расчёта каждого окна. Не подбирается Optuna."><span>на каждое окно</span></div>
+        <span class="settings-label" id="global-timeframe-label">Таймфрейм свечей</span>
+        <div class="settings-value"><div id="global-timeframe" class="segmented" role="radiogroup" aria-labelledby="global-timeframe-label" aria-describedby="timeframe-help"></div></div>
+        <p id="timeframe-help">Интервал применяется к свечам, pair-proof и графикам. Календарь на 1h использует нативный spread H1, если он доступен; иначе явно помеченный far − near proxy по синхронным H1 ногам. Дневные цены не подставляются.</p>
+        <label for="global-fill">Исполнение</label>
+        <div class="settings-value"><select id="global-fill" required aria-describedby="fill-help"></select></div>
+        <p id="fill-help">Для ценовых стратегий (возврат к среднему и сходимость к RUONIA). Стратегия фондирования всегда использует расчётную цену в тот же день.</p>
+        <label for="validation-percent">Доля истории для проверки</label>
+        <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview"><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
+        <p id="split-preview" aria-live="polite"></p>
+        <label for="global-slippage">Проскальзывание · тики</label>
+        <div class="settings-value"><input id="global-slippage" type="number" min="0" max="10" step="0.5" required aria-describedby="slippage-help"><span>на исполнение</span></div>
+        <p id="slippage-help">Общее для всех стратегий и окон. Для биржевого календарного спреда — по одному разу на входе и на выходе, для обычной пары — по каждой ноге. Добавляется к комиссии.</p>
+        <fieldset class="screen-options">
+          <legend>При подборе параметров позволять учитывать спреды, не прошедшие проверку:</legend>
+          <label><input id="allow-failed-volume" type="checkbox" checked> на объём</label>
+          <label><input id="allow-failed-capital" type="checkbox" checked> на капитал</label>
+        </fieldset>
+      </div>
+      <div class="settings-footer">
+        <span class="settings-error" role="alert" id="settings-error"></span>
+        <div class="settings-actions"><button type="button" class="ghost" id="cancel-settings">Отмена</button><button type="submit" class="ghost apply" id="apply-settings">Применить</button></div>
+      </div>
     </form>
   </dialog>
-  <dialog id="compatibility" class="settings-dialog review" aria-labelledby="compatibility-title" aria-describedby="compatibility-message"><div class="eyebrow">Совместимость выбора</div><h2 id="compatibility-title">Снять несовместимые отметки?</h2><p id="compatibility-message"></p><ul id="compatibility-list"></ul><div class="settings-actions"><button type="button" class="ghost" id="compatibility-no" autofocus>Отмена</button><button type="button" class="ghost apply" id="compatibility-yes">Снять отметки и продолжить</button></div></dialog>
+  <dialog id="compatibility" class="settings-dialog review" aria-labelledby="compatibility-title" aria-describedby="compatibility-message"><div class="dialog-scroll"><div class="settings-body"><div class="eyebrow">Совместимость выбора</div><h2 id="compatibility-title">Снять несовместимые отметки?</h2><p id="compatibility-message"></p><ul id="compatibility-list"></ul></div><div class="settings-footer"><div class="settings-actions"><button type="button" class="ghost" id="compatibility-no" autofocus>Отмена</button><button type="button" class="ghost apply" id="compatibility-yes">Снять отметки и продолжить</button></div></div></div></dialog>
   <div class="layout" id="layout">
     <!-- Колонка 1: инструмент и период -->
     <aside class="panel side" id="col-selection">
@@ -154,7 +159,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       <div id="focus-editor">
         <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="hint" id="pair-hint"></div>
-        <div class="sidegrid"><div class="control" style="flex:1.5"><label for="strategy">Стратегия</label><select id="strategy"></select></div><div class="control"><label for="fill">Исполнение</label><select id="fill"></select></div></div>
+        <div class="control"><label for="strategy">Стратегия</label><select id="strategy"></select></div>
         <div class="sidegrid" id="pair-params">
           <div class="control mr-only"><label for="entry">Вход · z</label><span class="number-shell"><input id="entry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="2.0"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control mr-only"><label for="exit">Выход · z</label><span class="number-shell"><input id="exit" data-axis="exit_z" type="number" min="0" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
@@ -162,7 +167,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         </div>
       </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
-        <div class="sidegrid"><div class="control" style="flex:1.4"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div><div class="control"><label for="cfill">Исполнение</label><select id="cfill"></select></div></div>
+        <div class="control"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div>
         <div class="sidegrid" id="calendar-params">
           <div class="control z-only"><label for="centry">Вход · z</label><span class="number-shell"><input id="centry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="1.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control z-only"><label for="cexit">Выход · z</label><span class="number-shell"><input id="cexit" data-axis="exit_z" type="number" min="0.1" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
@@ -173,7 +178,7 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
       </div>
       <section id="cohort-editor" aria-labelledby="group-heading" hidden>
         <div class="group-cap"><b id="group-heading">Параметры и светофор группы</b></div>
-        <div class="sidegrid"><div class="control" style="flex:1.4"><label for="group-strategy">Общая стратегия</label><select id="group-strategy"><option value="mr">Возврат к среднему</option><option value="funding_only">Фондирование</option><option value="convergence_to_ruonia">Сходимость к RUONIA</option></select></div><div class="control"><label for="group-fill">Исполнение</label><select id="group-fill"></select></div></div>
+        <div class="control"><label for="group-strategy">Общая стратегия</label><select id="group-strategy"><option value="mr">Возврат к среднему</option><option value="funding_only">Фондирование</option><option value="convergence_to_ruonia">Сходимость к RUONIA</option></select></div>
         <div class="sidegrid" id="group-params"></div>
         <div id="group-profile-state" class="tune-help" role="status" aria-live="polite"></div>
       </section>
@@ -351,18 +356,45 @@ async function apiStream(path,body,signal,onProgress){
 function toggleSummaryBlock(){const button=$('toggle-summary'),block=$('summary-block'),visible=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(visible));button.textContent=visible?'Скрыть сводку':'Показать сводку';block.classList.toggle('hidden',!visible)}
 // The server owns the setting; localStorage only notifies other open tabs.
 let timeframeOptions=[{id:'1d',label:'1 день',intraday:false,supports_calendar:true},{id:'1h',label:'1 час',intraday:true,supports_calendar:true}];
+let selectedTimeframe='1d';
 function timeframeOption(id){return timeframeOptions.find(item=>item.id===id)}
 function isIntraday(id){return !!timeframeOption(id)?.intraday}
 function supportsCalendar(id){const item=timeframeOption(id);return item?item.supports_calendar===true:id==='1d'}
-function installTimeframeOptions(items){if(!Array.isArray(items)||!items.length)return;timeframeOptions=items;const select=$('global-timeframe');select.replaceChildren(...items.map(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=item.label;return option}));if(preferences.timeframe)select.value=preferences.timeframe}
+function setSegmentedTimeframe(id){
+ const valid=timeframeOptions.some(item=>item.id===id)?id:(timeframeOptions[0]?.id||'1d');
+ selectedTimeframe=valid;
+ const group=$('global-timeframe');if(!group)return;
+ group.dataset.value=valid;
+ for(const btn of group.querySelectorAll('[role=radio]')){
+  const active=btn.dataset.value===valid;
+  btn.classList.toggle('active',active);
+  btn.setAttribute('aria-checked',String(active));
+ }
+}
+function installTimeframeOptions(items){if(!Array.isArray(items)||!items.length)return;timeframeOptions=items;const group=$('global-timeframe');
+ group.replaceChildren(...items.map((item,idx)=>{
+  const btn=document.createElement('button');btn.type='button';btn.className='seg-option';btn.setAttribute('role','radio');btn.dataset.value=item.id;btn.textContent=item.label;
+  btn.addEventListener('click',()=>setSegmentedTimeframe(item.id));
+  btn.addEventListener('keydown',e=>{
+   const btns=[...group.querySelectorAll('[role=radio]')];if(!btns.length)return;
+   let nextIdx=null;
+   if(e.key==='ArrowRight'||e.key==='ArrowDown')nextIdx=(idx+1)%btns.length;
+   else if(e.key==='ArrowLeft'||e.key==='ArrowUp')nextIdx=(idx-1+btns.length)%btns.length;
+   if(nextIdx!=null){e.preventDefault();const nextBtn=btns[nextIdx];setSegmentedTimeframe(nextBtn.dataset.value);nextBtn.focus()}
+  });
+  return btn;
+ }));
+ setSegmentedTimeframe(preferences.timeframe);
+}
 function timeframeLabel(id){return timeframeOption(id)?.label||id||'1 день'}
-let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000,timeframe:'1d'},settingRevision=0,savingSettings=false;
-const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub,x.timeframe]);
+let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000,timeframe:'1d',price_fill:'reference_same_bar'},settingRevision=0,savingSettings=false;
+const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub,x.timeframe,x.price_fill]);
 const settingsEventKey='moex-proof-settings-updated';
 const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
-function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub,timeframe:x.timeframe||'1d'};
- const selector=$('global-timeframe');if(selector&&[...selector.options].some(o=>o.value===preferences.timeframe))selector.value=preferences.timeframe;
- $('settings-badge').textContent=`${timeframeLabel(preferences.timeframe)} · Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
+function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub,timeframe:x.timeframe||'1d',price_fill:x.price_fill||'reference_same_bar'};
+ setSegmentedTimeframe(preferences.timeframe);
+ const fillSel=$('global-fill');if(fillSel&&[...fillSel.options].some(o=>o.value===preferences.price_fill))fillSel.value=preferences.price_fill;
+ $('settings-badge').textContent=`${timeframeLabel(preferences.timeframe)} · ${FILL_RU[preferences.price_fill]||preferences.price_fill} · Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
  if(changed){windowReadings.clear();stopWindowReadings();cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
   if(!supportsCalendar(preferences.timeframe)&&universe==='calendar_native'&&catalog){const candidate=(catalog.pair_screen?.pairs||[]).find(row=>row.proof_strategies?.mean_reversion)||catalog.pair_screen?.pairs?.[0];const branch=candidate&&branches.get('pair_screen|'+candidate.near);if(branch)openBranch(branch.key,candidate.id,'mean_reversion',false)}
   for(const row of $('window-list').querySelectorAll('tr[data-leaf]')){const l=leaves.get(row.dataset.leaf);if(l)windowGates(row,l)}
@@ -380,14 +412,23 @@ async function refreshGlobalSettings(force=false){if(savingSettings)return;const
  if(rev!==settingRevision||savingSettings)return;const changed=setPreferences(x);
  if(force&&!changed&&sharedStrategy){stopProfile();refreshGroupProfile(0)}if(catalog&&(changed||force)){await refreshCatalog();scheduleShow(0)}
  }catch(e){status(e.message)}}
-function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),timeframe=$('global-timeframe'),submit=$('apply-settings');
- $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;timeframe.value=preferences.timeframe;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
+function bindBackdropClose(dlg,onClose,guard=()=>false){
+ dlg.addEventListener('click',e=>{
+  if(guard()||e.target!==dlg)return;
+  const r=dlg.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();
+ });
+}
+function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),fill=$('global-fill'),submit=$('apply-settings');
+ priceFillOptions(fill);fill.value=preferences.price_fill;
+ $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;setSegmentedTimeframe(preferences.timeframe);fill.value=preferences.price_fill;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
  $('cancel-settings').addEventListener('click',()=>dlg.close());
  dlg.addEventListener('cancel',e=>{if(savingSettings)e.preventDefault()});
+ bindBackdropClose(dlg,()=>dlg.close(),()=>savingSettings);
  $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
- $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!timeframe.reportValidity())return;
+ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!fill.reportValidity())return;
   ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';cancelSearch();invalidateProof();
-  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:timeframe.value});setPreferences(x);dlg.close();
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:selectedTimeframe,price_fill:fill.value});setPreferences(x);dlg.close();
    try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog){await refreshCatalog();void show()}
   }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
  });
@@ -476,11 +517,11 @@ function buildPicker(){
 }
 // Compact window table: exact chart requests, independent of the checked cohort's mean.
 const windowReadings=new Map();let windowReadVersion=0,windowReadTimer=null,windowReadController=null;
-function proofPlanKey(req){const fill=req.fill||(req.strategy==='funding_only'?'same_day_settlement':'next_open');return JSON.stringify([targetKey(req),req.strategy,fill,req.sizing,Object.entries(req.parameters||{}).sort(),settingsKey()])}
-function defaultLeafRequest(l){const cal=l.target.universe==='calendar_native',tf=cal?{timeframe:preferences.timeframe}:{},name=activeStrategyName(),saved=formStates.get(formKey(l.key,name));if(saved)return {...l.target,...tf,strategy:saved.strategy,parameters:saved.parameters,sizing:'max_affordable',fill:saved.fill||'next_open'};
+function proofPlanKey(req){const fill=req.fill||(req.strategy==='funding_only'?'same_day_settlement':preferences.price_fill);return JSON.stringify([targetKey(req),req.strategy,fill,req.sizing,Object.entries(req.parameters||{}).sort(),settingsKey()])}
+function defaultLeafRequest(l){const cal=l.target.universe==='calendar_native',tf=cal?{timeframe:preferences.timeframe}:{},name=activeStrategyName(),saved=formStates.get(formKey(l.key,name)),fill=name==='funding_only'?'same_day_settlement':preferences.price_fill;if(saved)return {...l.target,...tf,strategy:saved.strategy,parameters:saved.parameters,sizing:'max_affordable',fill};
  const parameters=cal?(name==='zscore_mean_reversion'?{entry_z:Number($('centry').defaultValue),exit_z:Number($('cexit').defaultValue),window:branches.get(l.branch)?.asset?.monthly?7:20}:{threshold_pp:Number($('cthreshold').defaultValue)}):
   {lookback:Number($('lookback').defaultValue),...(name==='mean_reversion'?{entry_z:Number($('entry').defaultValue),exit_z:Number($('exit').defaultValue)}:{})};
- return {...l.target,...tf,strategy:name,parameters,sizing:'max_affordable',fill:name==='funding_only'?'same_day_settlement':'next_open'}}
+ return {...l.target,...tf,strategy:name,parameters,sizing:'max_affordable',fill}}
 function leafPlan(l){return commonPlan(l.key===leafId?currentRequest():defaultLeafRequest(l),l.target,l.key)}
 function gateIndicator(ok,text){const n=el('span','window-gate '+(ok==null?'unknown':ok?'pass':'fail'),ok==null?'—':ok?'✓':'×');n.dataset.state=ok==null?'unknown':ok?'pass':'fail';n.title=text;n.setAttribute('role','img');n.setAttribute('aria-label',text);n.tabIndex=0;return n}
 function windowGates(row,l){const c=l.meta||{},cal=l.target.universe==='calendar_native';const volume=cal?(c.min_liquidity_volume??c.min_spread_volume):c.min_leg_daily_volume;const rule=cal?(c.liquidity_gate??c.min_daily_volume_rule??catalog.min_daily_volume??100):(c.min_daily_volume_rule??catalog.min_daily_volume??100);const unit=cal?(c.liquidity_gate_unit||'контр./день'):'контр./день';const label=cal?(c.liquidity_volume_label||'объём календарного спреда'):'минимальный дневной объём ног';
@@ -503,7 +544,7 @@ function paintWindowReadings(){for(const row of $('window-list').querySelectorAl
  row.dataset.reading=reading?.status||(!l.enabled?'missing':'pending');count.textContent=reading?.trades==null?'—':String(reading.trades);rate.textContent=reading?.annualized_excess_pp==null?'—':signed(reading.annualized_excess_pp);
  rate.className='window-number '+(reading?.execution_reference?'warn':cls(reading?.annualized_excess_pp));const e=reading?.evaluation,period=e?.periods?.[e.result_basis],reason=reading?.reason||e?.result?.reason||(!l.enabled?'Нужна загрузка локальных данных.':'Выполняется расчёт для этих параметров.');
  const cash=e?.account_checks,cashNote=cash?.cash_shortfall_rows?`Дефицит свободных средств: ${cash.cash_shortfall_rows} сесс.; впервые ${cash.first_cash_shortfall_date}; минимум ${fmt(cash.minimum_free_cash_rub,2)} ₽. Входы могли пройти раньше, но годовая оценка такого счёта недопустима.`:'';
- const settings=`${STRATEGY_RU[plan.req.strategy]||plan.req.strategy} · ${FILL_RU[plan.req.fill]||plan.req.fill||'следующее открытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'} · капитал ${fmt(e?.initial_capital_rub??preferences.initial_capital_rub,2)} ₽`;
+ const settings=`${STRATEGY_RU[plan.req.strategy]||plan.req.strategy} · ${FILL_RU[plan.req.fill]||plan.req.fill||'справочное закрытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'} · капитал ${fmt(e?.initial_capital_rub??preferences.initial_capital_rub,2)} ₽`;
  count.title=reading?.trades==null?reason:`Вся симуляция: ${reading.trades} входов; ${reading.closed_trades} закрыто, ${reading.open_positions} открыто на конце. ${settings}`;
  rate.title=[reading?.status==='measured'&&reading.annualized_excess_pp==null?'Годовая оценка недоступна.':'',cashNote,reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter((text,i,items)=>text&&items.indexOf(text)===i).join(' ');
  rate.tabIndex=0;rate.setAttribute('aria-label',rate.title);row.dataset.rateState=reading?.annualized_excess_pp!=null?'measured':reading?.status==='measured'?'unavailable':reading?.status||(!l.enabled?'missing':'pending');
@@ -550,21 +591,19 @@ const formKey=(key,name)=>key+'|'+name;
 function rememberForm(){if(leafId&&!invalidForm())formStates.set(formKey(leafId,activeStrategyName()),currentRequest())}
 function restoreForm(){const saved=formStates.get(formKey(leafId,activeStrategyName()));if(saved){applyToForm(saved);return}
  for(const n of activeInputs())n.value=n.defaultValue;
- if(universe==='calendar_native'){$('clookback').value=currentAsset()?.monthly?7:20;$('cfill').value='next_open'}else $('fill').value=activeStrategyName()==='funding_only'?'same_day_settlement':'next_open'}
+ if(universe==='calendar_native')$('clookback').value=currentAsset()?.monthly?7:20}
 function openLeaf(key,preferred='',run=true){leafId=key;const want=mappedStrategy(preferred||activeStrategyName());
  if(universe==='pair_screen')fillStrategy(want);else fillCalendarStrategies(want);
  const branch=branches.get(branchId);if(branch)branch.lastPair=currentPair();restoreForm();
  markOpened();refreshChecks();if(run)scheduleShow(0)}
-function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis];if(selection.fill)$(universe==='calendar_native'?'cfill':'fill').value=selection.fill}
-function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));fillPairFills(isMR);$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
+function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis]}
+function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
 function fillCalendarStrategies(preferred){const a=currentAsset(),s=$('cstrategy');s.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a?.convergence)continue;const o=el('option','',STRATEGY_RU[name]||name);o.value=name;s.append(o)}if([...s.options].some(o=>o.value===preferred))s.value=preferred;$('clookback').value=a?.monthly?7:20;syncCalendarParams()}
 function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.data_reasons?.[$('strategy').value]||CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.max_pair_margin_rub!=null?fmt(p.max_pair_margin_rub/preferences.initial_capital_rub*100,2)+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
-function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,fill:$('fill').value,sizing:'max_affordable',parameters}}
+function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,fill:strategy==='funding_only'?'same_day_settlement':preferences.price_fill,sizing:'max_affordable',parameters}}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z));const label=document.querySelector('label[for=clookback]');if(label)label.textContent=preferences.timeframe==='1h'?'Окно · баров':'Окно · дней'}
-function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',timeframe:preferences.timeframe,asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:$('cfill').value,sizing:'max_affordable',parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
-function priceFillOptions(sel){const prev=sel.value;sel.replaceChildren();for(const [value,label] of [['next_open','Следующее открытие (прокси исполнения)'],['next_close','Следующее закрытие'],['reference_same_bar','Справочное закрытие (тот же бар)']]){const o=el('option','',label);o.value=value;sel.append(o)}sel.value=[...sel.options].some(o=>o.value===prev)?prev:'next_open'}
-function fillPairFills(mr){const sel=$('fill');if(mr){priceFillOptions(sel);sel.disabled=false}else{const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';sel.replaceChildren(o);sel.disabled=true}}
-function fillFills(){priceFillOptions($('cfill'))}
+function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',timeframe:preferences.timeframe,asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:preferences.price_fill,sizing:'max_affordable',parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
+function priceFillOptions(sel){const prev=sel.value;sel.replaceChildren();for(const [value,label] of [['reference_same_bar','Справочное закрытие (тот же бар)'],['next_open','Следующее открытие (прокси исполнения)'],['next_close','Следующее закрытие']]){const o=el('option','',label);o.value=value;sel.append(o)}sel.value=[...sel.options].some(o=>o.value===prev)?prev:'reference_same_bar'}
 // ---------- proof search & per-field plateau diagnostics ----------
 const numericInputs=[...$('focus-editor').querySelectorAll('.number-shell input')];
 const activeInputs=()=>numericInputs.filter(n=>!n.closest('.hidden'));
@@ -612,22 +651,21 @@ function drawLamps(inputs,plateau,empty,group){
 const sharedInputs=()=>[...$('cohort-editor').querySelectorAll('.number-shell input')];
 const checkedTargets=()=>[...checked].sort().map(k=>leaves.get(k).target);
 const isMR=s=>s==='mean_reversion'||s==='zscore_mean_reversion';
-let sharedStrategy=null,sharedMR='mean_reversion',sharedPriceFill='next_open',sharedDrafts=new Map();
+let sharedStrategy=null,sharedMR='mean_reversion',sharedDrafts=new Map();
 let profileKey='',profileVersion=0,profileTimer=null,profileController=null,chartKey='',chartWithLamps=false;
 function translateParams(params,strategy){const p={...params};if(strategy==='mean_reversion'&&'window' in p){p.lookback=p.window;delete p.window}if(strategy==='zscore_mean_reversion'&&'lookback' in p){p.window=p.lookback;delete p.lookback}return p}
-function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));if(sharedStrategy!=='funding_only')sharedPriceFill=$('group-fill').value;return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:$('group-fill').value}}
+function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:sharedStrategy==='funding_only'?'same_day_settlement':preferences.price_fill}}
 function pointError(inputs){const n=inputs.find(n=>n.value===''||!n.validity.valid);if(n)return `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`;
  const entry=inputs.find(n=>n.dataset.axis==='entry_z'),exit=inputs.find(n=>n.dataset.axis==='exit_z');return entry&&exit&&exit.valueAsNumber>=entry.valueAsNumber?'Порог выхода должен быть ниже порога входа.':''}
 function groupField(id,point){const copy=$(id).closest('.control').cloneNode(true),input=copy.querySelector('input'),k=input.dataset.axis;copy.className='control';input.id='group-'+k;copy.querySelector('label').htmlFor=input.id;
  input.value=point[k]??input.defaultValue;copy.querySelector('button').removeAttribute('aria-describedby');bindLamp(input);input.addEventListener('input',()=>sharedEdited(220));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sharedEdited(0)}});return copy}
-function renderSharedEditor(req){hidePlateauTip();if(['next_open','next_close','reference_same_bar'].includes(req.fill))sharedPriceFill=req.fill;sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
+function renderSharedEditor(req){hidePlateauTip();sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
  const ids={mean_reversion:['entry','exit','lookback'],zscore_mean_reversion:['centry','cexit','clookback'],funding_only:['lookback'],convergence_to_ruonia:['cthreshold']}[req.strategy];
  const point={...req.parameters};$('group-params').replaceChildren(...ids.map(id=>groupField(id,point)));
- const fill=$('group-fill');if(req.strategy==='funding_only'){const o=el('option','',FILL_RU.same_day_settlement);o.value='same_day_settlement';fill.replaceChildren(o);fill.disabled=true}else{fill.replaceChildren(...[...$('cfill').options].map(o=>o.cloneNode(true)));fill.disabled=false;fill.value=[...fill.options].some(o=>o.value===req.fill)?req.fill:sharedPriceFill}
 }
 function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedInputs()))sharedDrafts.set(sharedStrategy,old);
  const chosen=$('group-strategy').value,name=chosen==='mr'?sharedMR:chosen;
- const next=sharedDrafts.get(name)||{strategy:name,parameters:{},fill:old.fill};renderSharedEditor(next);sharedEdited(0)}
+ const next=sharedDrafts.get(name)||{strategy:name,parameters:{}};renderSharedEditor(next);sharedEdited(0)}
 function paintGroup(plateau,message,state){if(!sharedStrategy||!checked.size)return;const n=$('group-profile-state');n.dataset.state=state;n.textContent=message;n.title=message;n.setAttribute('aria-busy',String(state==='loading'));
  drawLamps(sharedInputs(),plateau,message,{count:checked.size,percent:preferences.validation_percent,reference:sharedRequest().fill==='reference_same_bar'})}
 function stopProfile(){clearTimeout(profileTimer);profileTimer=null;profileVersion++;profileController?.abort();profileController=null;profileKey='';finishProgress('plateau')}
@@ -652,13 +690,13 @@ function refreshGroupProfile(delay=140){if(!sharedStrategy||!checked.size)return
   }catch(e){if(version===profileVersion){profileKey='';paintGroup(null,'Не удалось рассчитать светофор группы: '+e.message,'unavailable')}}finally{if(version===profileVersion){profileController=null;finishProgress('plateau')}}
  },delay)}
 function syncEditorScope(){const on=checked.size>0;$('focus-editor').hidden=on;$('cohort-editor').hidden=!on;
- if(on){if(!sharedStrategy){const req=currentRequest();sharedPriceFill=focusedPriceFill(req);sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}}
+ if(on){if(!sharedStrategy){const req=currentRequest();sharedMR=isMR(req.strategy)?req.strategy:universe==='calendar_native'?'zscore_mean_reversion':'mean_reversion';renderSharedEditor(req)}}
  else{stopProfile();sharedStrategy=null;sharedDrafts.clear();hidePlateauTip()}}
 function sharedEdited(delay){cancelSearch();clearGroup();tuneState('');refreshGroupProfile(delay);syncChartScope(delay)}
 function commonPlan(own,target,key){let req=own,common=false;
  if(target&&sharedStrategy&&checked.has(key)&&!pointError(sharedInputs())){const g=sharedRequest(),cal=target.universe==='calendar_native',name=isMR(g.strategy)?(cal?'zscore_mean_reversion':'mean_reversion'):g.strategy,p=translateParams(g.parameters,name);
   const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&branches.get('calendar_native|'+target.asset)?.asset?.convergence)):!!researchStrategies(pairAvailability(target.pair))?.[name];
-  if(supported&&!(name==='mean_reversion'&&(p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){req={...target,strategy:name,parameters:p,sizing:'max_affordable',fill:g.fill};common=true}}
+  if(supported&&!(name==='mean_reversion'&&(p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){req={...target,strategy:name,parameters:p,sizing:'max_affordable',fill:name==='funding_only'?'same_day_settlement':preferences.price_fill};common=true}}
  return {req,common,key:proofPlanKey(req)}}
 function chartPlan(){const target=leaves.get(leafId)?.target,plan=commonPlan(currentRequest(),target,leafId),note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${plan.common?'общие параметры':'параметры окна'}`;return plan}
 function syncChartScope(delay=0){const plan=chartPlan();if(chartKey!==plan.key||(!checked.size&&!chartWithLamps))scheduleShow(delay);else if(!checked.size&&payload?.plateau)paintPlateaus(payload.plateau);refreshWindowReadings()}
@@ -697,9 +735,7 @@ function reviewExclusions(result){const d=$('compatibility'),rows=$('compatibili
  $('compatibility-yes').textContent=result.remaining_count?'Снять отметки и продолжить':'Снять отметки';d.showModal();return new Promise(resolve=>{resolveCompatibility=resolve})}
 function finishReview(yes){if(!$('compatibility').open)return;$('compatibility').close();const resolve=resolveCompatibility;resolveCompatibility=null;resolve?.(yes)}
 function invalidForm(){const n=activeInputs().find(n=>n.value===''||!n.validity.valid);return n?`Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`:''}
-function focusedPriceFill(req){return ['next_open','next_close','reference_same_bar'].includes(req.fill)?req.fill:formStates.get(formKey(leafId,'mean_reversion'))?.fill||'next_open'}
-function searchPriceFill(req){return checked.size&&req.strategy==='funding_only'?sharedPriceFill:focusedPriceFill(req)}
-async function startTuning(){const own=checked.size?sharedRequest():currentRequest(),request={...own,optimize_strategy:true,price_fill:searchPriceFill(own)},validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
+async function startTuning(){const own=checked.size?sharedRequest():currentRequest(),request={...own,optimize_strategy:true,price_fill:preferences.price_fill},validation=checked.size?pointError(sharedInputs()):invalidForm();if(validation){status(validation);return}if(!checked.size&&!leafId)return;
  const explicit=checked.size>0;if(tuning)return;stopWindowReadings();if(!explicit)invalidateProof();
  const id=++searchVersion,fresh=()=>id===searchVersion,controller=new AbortController();searchController=controller;searchUsesChecks=explicit;tuning=true;tuneButton(true,2);setSearchProgress(true);startProgress('search','Подготовка к подбору Optuna…',2,10,1500);status('');clearGroup();
  try{let result;
@@ -724,10 +760,10 @@ async function startTuning(){const own=checked.size?sharedRequest():currentReque
   if(!fresh())return;
   if(result.selected_parameters){for(const row of result.group.members){if(!row.selection)continue;const k=targetKey(row.target);formStates.set(formKey(k,row.selection.strategy),row.selection);if(k===leafId){if(universe==='pair_screen')fillStrategy(row.selection.strategy);else fillCalendarStrategies(row.selection.strategy);applyToForm(row.selection)}}}
   adoptSearchProfile(result);
-  const message=result.selected_parameters?`Применён лучший из проверенных вариантов${result.selected_strategy?' · '+STRATEGY_RU[result.selected_strategy]:''} на обучении: ${pp(result.group.training_mean_pp)} · окон: ${result.group.member_count} · испытаний: ${result.trial_count}.`:(result.reason||'Нет допустимого результата. Параметры сохранены.');
   // Refresh the open proof even when it was not in the cohort; do not apply another row's settings to it.
   updateProgressChannel('search',99,'Обновление графика и сводки…');
-  await show(true);if(!fresh())return;displayGroup(result);tuneState(message,result.group?.training_mean_pp>0);
+  await show(true);if(!fresh())return;displayGroup(result);
+  tuneState(result.selected_parameters?'':(result.reason||'Нет допустимого результата. Параметры сохранены.'),false);
  }catch(e){if(fresh())tuneState(`Подбор недоступен: ${e.message}`)}finally{if(fresh()){tuning=false;searchController=null;setSearchProgress(false);tuneButton();if(payload)paintPlateaus(payload.plateau)}}
 }
 async function show(fromSearch=false){invalidateProof(fromSearch);const id=analysisRequestId,plan=chartPlan(),request=plan.req,fresh=()=>id===analysisRequestId;chartKey=plan.key;chartWithLamps=!checked.size;
@@ -1131,10 +1167,10 @@ function render(){renderPeriodResult();renderEvidence();renderSummary();$('chart
 bindSettings();
 (async()=>{startProgress('boot','Загрузка каталога и настроек…',8,68,3500);try{const [settings,c,timeframes]=await Promise.all([api('/api/settings').catch(()=>null),api('/api/proof/catalog'),api('/api/timeframes').catch(()=>null)]);updateProgressChannel('boot',74,'Построение списка инструментов…',78,200);installTimeframeOptions(timeframes||c.timeframes||[]);if(settings)setPreferences(settings);$('open-settings').disabled=false;catalog=c;
  if(catalog.error)status(`Кэш календарей недоступен: ${catalog.error}. Пары работают как обычно.`);else status(`${(catalog.assets||[]).length} календарных активов · ${(catalog.pair_screen?.pairs||[]).length} пар в реестре · кэш до ${catalog.till||'—'}`,true);
- fillFills();buildPicker();$('group-strategy').addEventListener('change',changeSharedStrategy);$('group-fill').addEventListener('change',()=>sharedEdited(0));
+ buildPicker();$('group-strategy').addEventListener('change',changeSharedStrategy);
  $('strategy').addEventListener('change',()=>{fillStrategy();restoreForm();clearGroup();scheduleShow(100)});
- $('cstrategy').addEventListener('change',()=>{syncCalendarParams();restoreForm();clearGroup();scheduleShow(100)});$('cfill').addEventListener('change',()=>{rememberForm();clearGroup();scheduleShow(100)});$('fill').addEventListener('change',()=>{rememberForm();clearGroup();scheduleShow(100)});
- $('compatibility-no').addEventListener('click',()=>finishReview(false));$('compatibility-yes').addEventListener('click',()=>finishReview(true));$('compatibility').addEventListener('cancel',e=>{e.preventDefault();finishReview(false)});
+ $('cstrategy').addEventListener('change',()=>{syncCalendarParams();restoreForm();clearGroup();scheduleShow(100)});
+ $('compatibility-no').addEventListener('click',()=>finishReview(false));$('compatibility-yes').addEventListener('click',()=>finishReview(true));$('compatibility').addEventListener('cancel',e=>{e.preventDefault();finishReview(false)});bindBackdropClose($('compatibility'),()=>finishReview(false));
  bindParameterAutoRun();
  $('auto-tune').addEventListener('click',()=>void startTuning());
  $('toggle-summary').addEventListener('click',toggleSummaryBlock);

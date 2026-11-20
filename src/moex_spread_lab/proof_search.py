@@ -91,7 +91,7 @@ def _validate(request):
         raise W0Error("optimize_strategy: укажите true или false.")
     if "price_fill" in request and request["price_fill"] not in ("next_open", "next_close", "reference_same_bar"):
         raise W0Error("Неизвестное исполнение ценовых стратегий.")
-    if request.get("optimize_strategy") and request.get("fill", "next_open") not in (
+    if request.get("optimize_strategy") and request.get("fill", "reference_same_bar") not in (
         "next_open", "next_close", "reference_same_bar", "same_day_settlement"
     ):
         raise W0Error("Неизвестное исполнение.")

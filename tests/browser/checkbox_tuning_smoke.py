@@ -6,7 +6,13 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import apply, fixture, ready
+from period_settings_smoke import (
+    apply,
+    expect_api_json,
+    fixture,
+    install_stream_spy,
+    ready,
+)
 from playwright.sync_api import expect, sync_playwright
 
 from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
@@ -19,6 +25,7 @@ CAL_B = "calendar_native|SR"
 
 def run(browser, url):
     page = browser.new_page(viewport={"width": 1400, "height": 850})
+    install_stream_spy(page)
     errors = []
     searches = []
     runs = []
@@ -47,12 +54,11 @@ def run(browser, url):
         ready(page, "training")
 
     def tuned(button):
-        with page.expect_response(
-            lambda r: r.url.endswith("/api/proof/optimize")
-        ) as done:
+        with expect_api_json(page, "/api/proof/optimize") as done:
             button.click()
-        r = done.value.json()
-        expect(page.locator("#tune-state")).to_contain_text("Применён", timeout=20000)
+        r = done["data"]
+        ready(page, page.evaluate("payload.evaluation.result_basis"))
+        expect(page.locator("#tune-state")).to_be_empty()
         return r
 
     def review():

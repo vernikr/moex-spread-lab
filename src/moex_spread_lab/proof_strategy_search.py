@@ -98,7 +98,7 @@ def strategy_search(
     targets = _targets(request)
     spec = get_timeframe(settings.timeframe)
     price_fill = request.get("price_fill") or (
-        request.get("fill") if request.get("fill") in PRICE_FILLS else "next_open"
+        request.get("fill") if request.get("fill") in PRICE_FILLS else settings.price_fill
     )
     active = request.get("strategy", "zscore_mean_reversion")
     calendar = service._calendar or CalendarData(service.root)

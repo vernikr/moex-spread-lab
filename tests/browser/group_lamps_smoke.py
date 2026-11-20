@@ -5,7 +5,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import apply, ready
+from period_settings_smoke import apply, expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import two_calendar_windows
 
@@ -14,6 +14,7 @@ from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_han
 
 def run(browser, url):
     pg = browser.new_page(viewport={"width": 1440, "height": 900})
+    install_stream_spy(pg)
     pg.set_default_timeout(8000)
     errors = []
     profiles = []
@@ -58,6 +59,11 @@ def run(browser, url):
         + "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
     )
     ready(pg, "training")
+    pg.locator("#open-settings").click()
+    pg.locator("#global-fill").select_option("next_open")
+    with post("run"):
+        pg.locator("#apply-settings").click()
+    ready(pg, "training")
     leaf = lambda pair: pg.locator(f'[data-leaf="calendar_native|SR|{pair}"]')
     branch = lambda name: pg.locator(f'[data-branch="{name}"]')
     a, b = "SRH3/SRM3", "SRM3/SRU3"
@@ -77,9 +83,9 @@ def run(browser, url):
     ready(pg, "training")
     open_row(leaf(a))
     expect(pg.locator("#clookback")).to_have_value("10")
-    with post("plateau") as result:
+    with expect_api_json(pg, "/api/proof/plateau") as result:
         pg.locator("#all-windows").check()
-    together = result.value.json()
+    together = result["data"]
     validate_ui(together)
     assert together["member_count"] == 2 and not searches
     entry = together["plateau"]["fields"]["entry_z"]["center"]
@@ -113,9 +119,9 @@ def run(browser, url):
     assert snapshot() == both and len(profiles) == calls
     open_row(branch("pair_screen|CNYRUBF"))
     run_count = len(runs)
-    with post("plateau") as changed:
+    with expect_api_json(pg, "/api/proof/plateau") as changed:
         pg.locator("#group-window").fill("12")
-    validate_ui(changed.value.json())
+    validate_ui(changed["data"])
     assert (
         profiles[-1]["parameters"]["window"] == 12
         and len(runs) == run_count
@@ -123,10 +129,10 @@ def run(browser, url):
     )
     assert all(not ({"pair", "asset", "universe"} & r.keys()) for r in profiles)
     # Changes to the persistent split re-evaluate the entire fixed cohort, not its current chart.
-    with post("plateau") as res:
+    with expect_api_json(pg, "/api/proof/plateau") as res:
         apply(pg, 25)
-    assert res.value.json()["validation_percent"] == 25
-    validate_ui(res.value.json())
+    assert res["data"]["validation_percent"] == 25
+    validate_ui(res["data"])
     open_row(branch("calendar_native|SR"), "validation")
     open_row(leaf(a), "validation")
     # Deliver a stale profile after its successor. A one-window result or its focus metadata
@@ -136,9 +142,9 @@ def run(browser, url):
     )
     with post("plateau"):
         leaf(b).locator("input").uncheck()
-    with post("plateau") as current:
+    with expect_api_json(pg, "/api/proof/plateau") as current:
         leaf(b).locator("input").check()
-    validate_ui(current.value.json())
+    validate_ui(current["data"])
     new_snapshot = snapshot()
     pg.evaluate("window.releaseOld()")
     assert pg.evaluate("checked.size") == 2
@@ -148,17 +154,17 @@ def run(browser, url):
     pg.evaluate(
         """() => {const old=window.fetch;window.fetch=async(...args)=>{const res=await old(...args);if(String(args[0]).endsWith('/optimize'))await new Promise(r=>window.releaseTune=r);return res}}"""
     )
-    with post("optimize") as optimized:
+    with expect_api_json(pg, "/api/proof/optimize") as optimized:
         pg.locator("#auto-tune").click()
-    with post("run"):
-        leaf(b).locator("button").click()
-    expect(pg.locator("#auto-tune")).to_be_disabled()
-    assert snapshot() == new_snapshot
-    with post("run"):
-        pg.evaluate("window.releaseTune()")
-    expect(pg.locator("#tune-state")).to_contain_text("Применён")
-    ready(pg, "validation")
-    answer = optimized.value.json()
+        with post("run"):
+            leaf(b).locator("button").click()
+        expect(pg.locator("#auto-tune")).to_be_disabled()
+        assert snapshot() == new_snapshot
+        with post("run"):
+            pg.evaluate("window.releaseTune()")
+        ready(pg, "validation")
+    expect(pg.locator("#tune-state")).to_be_empty()
+    answer = optimized["data"]
     assert answer["status"] == "maximum_found"
     validate_ui(answer)
     adopted = snapshot()
@@ -166,9 +172,9 @@ def run(browser, url):
     open_row(leaf(a), "validation")
     assert snapshot() == adopted and count == len(profiles)
     # Incompatible fixed denominator -> unknown, no silent pruning, no unsolicited modal.
-    with post("plateau") as excluded:
+    with expect_api_json(pg, "/api/proof/plateau") as excluded:
         pg.locator("#group-strategy").select_option("funding_only")
-    assert len(excluded.value.json()["excluded"]) == 2
+    assert len(excluded["data"]["excluded"]) == 2
     expect(pg.locator("#group-profile-state")).to_contain_text("2 из 2")
     expect(pg.locator("#compatibility")).not_to_be_visible()
     assert (

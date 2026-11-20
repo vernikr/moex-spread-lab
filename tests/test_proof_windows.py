@@ -97,7 +97,7 @@ class ReferenceAndBandsTests(FixtureCase):
             self.assertEqual(len(set(ids)), 3)
         self.assertEqual(
             self.run_proof(PAIR)["run_id"],
-            self.run_proof({**PAIR, "fill": "next_open"})["run_id"],
+            self.run_proof({**PAIR, "fill": "reference_same_bar"})["run_id"],
         )
 
     def test_every_entry_agrees_with_its_signal_date_band_not_the_later_fill(self):
@@ -124,30 +124,33 @@ class ReferenceAndBandsTests(FixtureCase):
         self,
     ):
         for base in (PAIR, CAL):
-            p = self.run_proof(base)
-            native = base["universe"] == "calendar_native"
-            rows = [r for r in p["series"] if r.get("volume_eligible", True)]
-            window = base["parameters"]["window" if native else "lookback"]
-            i = window + 1
-            sample = [
-                r["spread"] * (r["point_value_rub"] if native else 1)
-                for r in rows[i - window : i]
-            ]
-            mean = statistics.mean(sample)
-            deviation = (
-                statistics.stdev(sample) if native else statistics.pstdev(sample)
-            )
-            point = rows[i]["point_value_rub"] if native else 1
-            self.assertAlmostEqual(
-                rows[i]["buy_level"],
-                (mean - base["parameters"]["entry_z"] * deviation) / point,
-                places=7,
-            )
-            self.assertAlmostEqual(
-                rows[i]["sell_level"],
-                (mean + base["parameters"]["entry_z"] * deviation) / point,
-                places=7,
-            )
+            for fill in ("next_open", "reference_same_bar"):
+                with self.subTest(universe=base["universe"], fill=fill):
+                    p = self.run_proof({**base, "fill": fill})
+                    native = base["universe"] == "calendar_native"
+                    rows = [r for r in p["series"] if r.get("volume_eligible", True)]
+                    window = base["parameters"]["window" if native else "lookback"]
+                    i = window + 1
+                    end = i + 1 if native and fill == "reference_same_bar" else i
+                    sample = [
+                        r["spread"] * (r["point_value_rub"] if native else 1)
+                        for r in rows[end - window : end]
+                    ]
+                    mean = statistics.mean(sample)
+                    deviation = (
+                        statistics.stdev(sample) if native else statistics.pstdev(sample)
+                    )
+                    point = rows[i]["point_value_rub"] if native else 1
+                    self.assertAlmostEqual(
+                        rows[i]["buy_level"],
+                        (mean - base["parameters"]["entry_z"] * deviation) / point,
+                        places=7,
+                    )
+                    self.assertAlmostEqual(
+                        rows[i]["sell_level"],
+                        (mean + base["parameters"]["entry_z"] * deviation) / point,
+                        places=7,
+                    )
 
     def test_bands_are_prefix_causal_and_zero_volume_poison_cannot_enter_the_window(
         self,

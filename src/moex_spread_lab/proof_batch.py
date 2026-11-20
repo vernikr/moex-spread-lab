@@ -62,7 +62,7 @@ def _translate(params, strategy):
     return result
 
 
-def _native_request(active, target):
+def _native_request(active, target, *, default_price_fill="reference_same_bar"):
     from .calendar_spreads import ASSETS
 
     strategy = active.get("strategy", "zscore_mean_reversion")
@@ -77,7 +77,7 @@ def _native_request(active, target):
         "convergence"
     ):
         raise W0Error("Для этого актива не предусмотрена стратегия RUONIA.")
-    fill = active.get("fill", "next_open")
+    fill = active.get("fill", default_price_fill)
     return {
         **target,
         "strategy": strategy,
@@ -370,7 +370,7 @@ def _prepare_cohort(
     for idx, target in enumerate(targets):
         check_cancelled()
         try:
-            native = _native_request(proposed, target)
+            native = _native_request(proposed, target, default_price_fill=settings.price_fill)
             valid_specs.append((idx, target, native))
         except (W0Error, OSError) as exc:
             if not checked:
@@ -648,7 +648,10 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None, on_progre
         "scope": "checked",
         "member_count": len(targets),
         **settings.metadata(),
-        "execution_reference": request.get("fill") == "reference_same_bar",
+        "execution_reference": (
+            request.get("strategy") != "funding_only"
+            and request.get("fill", settings.price_fill) == "reference_same_bar"
+        ),
         "basis": "training",
     }
     if isinstance(group, dict):

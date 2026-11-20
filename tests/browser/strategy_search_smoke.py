@@ -10,7 +10,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from period_settings_smoke import ready
+from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import funding_winner, rising_calendar, two_calendar_windows
 from test_global_capital import PAIR
@@ -36,14 +36,14 @@ def post(page, path):
 
 
 def tune(page, expected):
-    with post(page, "optimize") as done:
+    with expect_api_json(page, "/api/proof/optimize", timeout=30000) as done:
         page.locator("#auto-tune").click()
-    result = done.value.json()
+    result = done["data"]
     assert result["status"] == "maximum_found", result.get("reason")
     assert result["selected_strategy"] == expected
     assert result["trial_count"] == len(result["candidates"]) == 160
-    expect(page.locator("#tune-state")).to_contain_text("Применён", timeout=20000)
     ready(page, "training")
+    expect(page.locator("#tune-state")).to_be_empty()
     assert page.evaluate("payload.selection.strategy") == expected
     assert page.evaluate("payload.run_id") == result["group"]["members"][0]["run_id"]
     expect(page.locator("#batch-result summary")).to_contain_text("окон: 1")
@@ -76,14 +76,13 @@ def presentation(page):
 
 def run_pair(browser, url):
     page = browser.new_page(viewport={"width": 1450, "height": 950})
+    install_stream_spy(page)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(url + PAIR_URL)
     ready(page, "training")
     presentation(page)
-    with post(page, "run"):
-        page.locator("#fill").select_option("reference_same_bar")
-    ready(page, "training")
+    expect(page.locator("#fill,#cfill,#group-fill")).to_have_count(0)
     assert page.evaluate("payload.execution_reference")
     expect(page.locator("#period-result .result-warning")).to_have_count(0)
     r = tune(page, "funding_only")
@@ -94,8 +93,6 @@ def run_pair(browser, url):
         ("funding_only", "same_day_settlement"),
     }
     expect(page.locator("#strategy")).to_have_value("funding_only")
-    expect(page.locator("#fill")).to_have_value("same_day_settlement")
-    expect(page.locator("#fill")).to_be_disabled()
     expect(page.locator("#entry")).to_be_hidden()
     assert not page.evaluate("payload.execution_reference")
     assert (
@@ -106,11 +103,11 @@ def run_pair(browser, url):
     expect(page.locator("#chart-h-spread-raw")).to_have_attribute(
         "data-signal-lines", "0"
     )
-    # A same-day native winner must not overwrite the user's price-fill draft.
+    # A same-day native winner must not overwrite the global price_fill preference.
     with post(page, "run"):
         page.locator("#strategy").select_option("mean_reversion")
     ready(page, "training")
-    expect(page.locator("#fill")).to_have_value("reference_same_bar")
+    assert page.evaluate("payload.selection.fill") == "reference_same_bar"
     page.locator(f'tr[data-leaf="{PAIR_KEY}"] input').check()
     expect(page.locator("#cohort-editor")).to_be_visible()
     expect(page.locator("#focus-editor")).to_be_hidden()
@@ -118,13 +115,12 @@ def run_pair(browser, url):
     tune(page, "funding_only")
     expect(page.locator("#group-strategy")).to_have_value("funding_only")
     expect(page.locator("#group-params input")).to_have_count(1)
-    expect(page.locator("#group-fill")).to_have_value("same_day_settlement")
-    expect(page.locator("#group-fill")).to_be_disabled()
+    assert page.evaluate("payload.selection.fill") == "same_day_settlement"
     assert page.evaluate("checked.size") == 1
     with post(page, "run"):
         page.locator("#group-strategy").select_option("mr")
     ready(page, "training")
-    expect(page.locator("#group-fill")).to_have_value("reference_same_bar")
+    assert page.evaluate("payload.selection.fill") == "reference_same_bar"
     expect(page.locator("#group-params input")).to_have_count(3)
     assert not errors, errors
     page.close()
@@ -132,20 +128,23 @@ def run_pair(browser, url):
 
 def run_calendar(browser, url):
     page = browser.new_page(viewport={"width": 1450, "height": 950})
+    install_stream_spy(page)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(url + CAL_URL)
     ready(page, "training")
     presentation(page)
-    with post(page, "run"):
-        page.locator("#cfill").select_option("next_close")
+    page.locator("#open-settings").click()
+    page.locator("#global-fill").select_option("next_close")
+    with page.expect_response(lambda r: r.url.endswith("/api/settings")):
+        page.locator("#apply-settings").click()
     ready(page, "training")
     result = tune(page, "convergence_to_ruonia")
     assert {c["fill"] for c in result["candidates"]} == {"next_close"}
     expect(page.locator("#cstrategy")).to_have_value("convergence_to_ruonia")
     expect(page.locator("#cthreshold")).to_be_visible()
     expect(page.locator("#centry")).to_be_hidden()
-    expect(page.locator("#cfill")).to_have_value("next_close")
+    assert page.evaluate("payload.selection.fill") == "next_close"
     assert page.evaluate("payload.summary.ledger_reconciliation_rub") == 0
     assert len(page.evaluate("payload.trades")) > 0
     page.locator(f'tr[data-leaf="{CAL_KEY}"] input').check()
@@ -158,7 +157,7 @@ def run_calendar(browser, url):
     expect(page.locator("#group-threshold_pp")).to_have_value(
         str(page.evaluate("payload.selection.parameters.threshold_pp"))
     )
-    expect(page.locator("#group-fill")).to_have_value("next_close")
+    assert page.evaluate("payload.selection.fill") == "next_close"
     expect(page.locator("#group-profile-state")).not_to_have_attribute(
         "data-state", "loading"
     )

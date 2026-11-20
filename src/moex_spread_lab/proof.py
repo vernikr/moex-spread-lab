@@ -290,6 +290,7 @@ class ProofService:
             slippage_ticks=saved.slippage_ticks,
             initial_capital_rub=saved.initial_capital_rub,
             timeframe=saved.timeframe,
+            price_fill=saved.price_fill,
         )
         return self.prepare(selection, calendar=self._calendar, settings=strict)(selection)
 
@@ -302,7 +303,14 @@ class ProofService:
             return self._prepare_fixed(selection, calendar=calendar, settings=settings)
 
         def intent_request(request):
-            return {**request, "quantity": 1, "slippage_ticks": settings.slippage_ticks}
+            strategy = request.get("strategy", "zscore_mean_reversion")
+            default_fill = "same_day_settlement" if strategy == "funding_only" else settings.price_fill
+            return {
+                **request,
+                "quantity": 1,
+                "slippage_ticks": settings.slippage_ticks,
+                **({} if "fill" in request else {"fill": default_fill}),
+            }
 
         replay = self._prepare_fixed(intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True)
         dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
@@ -383,8 +391,13 @@ class ProofService:
         cal_cache: dict[str, Any] = {}
 
         def replay(request, through=None, *, metrics_only: bool = False):
+            effective = {
+                **request,
+                "timeframe": settings.timeframe,
+                **({} if "fill" in request else {"fill": settings.price_fill}),
+            }
             payload = calendar.proof(
-                {**request, "timeframe": settings.timeframe},
+                effective,
                 through=through,
                 initial_capital=settings.initial_capital_rub,
                 timeframe=settings.timeframe,
@@ -393,7 +406,7 @@ class ProofService:
                 _cache=cal_cache,
             )
             # The search only needs trades, daily marks and admissions from partial replays.
-            return payload if through is not None else self._calendar_proof(request, payload)
+            return payload if through is not None else self._calendar_proof(effective, payload)
 
         return replay
 
@@ -557,7 +570,7 @@ class ProofService:
 
         def replay(request, through=None, *, metrics_only: bool = False):
             execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
-                         "fill": pair_fill(request, strategy), "initial_capital_rub": settings.initial_capital_rub}
+                         "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill), "initial_capital_rub": settings.initial_capital_rub}
             params = screener_app._parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
                           risk_for(execution["quantity"]), prepared, through,

@@ -15,6 +15,8 @@ from .w0 import W0Error
 DEFAULT_VALIDATION_PERCENT = 0
 DEFAULT_INITIAL_CAPITAL_RUB = 30_000.0
 MAX_RESEARCH_CAPITAL_RUB = 1_000_000_000.0
+DEFAULT_PRICE_FILL = "reference_same_bar"
+VALID_PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 
 
 def validation_percent(value: object) -> float:
@@ -33,6 +35,7 @@ class ResearchSettings:
     slippage_ticks: float = 1.0
     initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
     timeframe: str = DEFAULT_TIMEFRAME
+    price_fill: str = DEFAULT_PRICE_FILL
 
     def metadata(self) -> dict[str, float | bool | str]:
         return asdict(self)
@@ -72,6 +75,12 @@ def _validated_patch(value: object) -> dict:
             get_timeframe(patch["timeframe"])
         except ValueError as exc:
             raise W0Error(str(exc)) from exc
+    if "price_fill" in patch:
+        value = patch["price_fill"]
+        if not isinstance(value, str) or value not in VALID_PRICE_FILLS:
+            raise W0Error(
+                "Режим исполнения должен быть одним из: next_open, next_close, reference_same_bar."
+            )
     if "slippage_ticks" in patch:
         value = patch["slippage_ticks"]
         if type(value) not in (int, float) or not 0 <= value <= 10:

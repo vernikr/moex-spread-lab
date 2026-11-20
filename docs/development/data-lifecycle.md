@@ -313,3 +313,8 @@ C2 must support exact-path source identity and fail-closed source selection when
 JSON is absent, integrate all production readers, test rollback extraction and
 fixed regression selections, and measure net gain before any active JSON
 archival/removal. A good compression ratio alone is insufficient authorization.
+
+[Workstation C1 evidence, 2026-11-21](h1-candidates-2026-11-21.md) records all 120
+H1 sources / 448,565 rows verified, 14.11 MiB candidate allocation, unchanged
+original data/default lake, and matching fixed shadow-read smoke results. C2
+production selection/sealing and active JSON archival/removal remain pending.

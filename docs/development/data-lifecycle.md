@@ -260,4 +260,6 @@ recoverable from the verified archive regardless of compact-detail TTL.
 This migration adds convenient compact research detail back alongside package
 A's archive; it is **not additional disk reclamation** relative to archive-only
 storage. Measure the resulting size and do not count the already-removed JSON
-a second time. Production migration evidence is recorded separately when run.
+a second time. [Workstation migration evidence, 2026-11-21](baseline-import-2026-11-21.md)
+records 16 verified imports, 5.06 MiB added allocation, unchanged existing data
+and identical production smoke results. Package C remains separately gated.

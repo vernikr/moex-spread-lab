@@ -203,6 +203,9 @@ retention decision. Moving an archive within one disk is not itself a saving.
 
 Validation: isolated-fixture archive/apply/restore, protected inputs, stale
 sources, path traversal, symlinks, corruption, malformed members and publication
-races are covered. Production archive creation/deletion and the original 1,170
-candidate equivalence remain separate approval/evidence gates. Legacy artifact
-migration and active H1 Parquet-only cutover (packages B/C) are not implemented.
+races are covered. The approved workstation operation is recorded in
+[Package A application evidence, 2026-11-21](data-archive-2026-11-21.md): 1,169
+files archived, fully restore-verified and removed; 634.35 MiB conservative net
+allocated reduction. The old plan's inventory control file was deliberately
+excluded. Legacy artifact migration and active H1 Parquet-only cutover
+(packages B/C) are not implemented.

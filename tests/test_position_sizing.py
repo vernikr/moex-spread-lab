@@ -200,11 +200,14 @@ class FundedSizingTests(unittest.TestCase):
         self.assertTrue(all(r["account_value_rub"] == 30000 for r in proof["ledger"]))
         self.assert_reconciles(proof)
 
-    def test_risk_trigger_stops_later_entries_without_rescue_money(self):
+    def test_benchmark_relative_drawdown_no_longer_stops_later_entries(self):
+        # The 10k excess-drawdown trigger is gone: a book that falls behind LQDT
+        # keeps trading. Only a cash shortfall can stop new entries.
         unit, marks, contracts = unit_proof(near=(50000, 47800, 47800, 48000))
         proof = self.replay(unit, marks, contracts)
-        self.assertEqual(len(proof["trades"]), 1)
-        self.assertIn("лимит риска", proof["skipped_entries"][0]["reason"])
+        self.assertEqual(len(proof["trades"]), 2)
+        self.assertEqual(proof["skipped_entries"], [])
+        self.assertGreaterEqual(proof["summary"]["max_excess_drawdown_rub"], 10000)
         self.assert_reconciles(proof)
 
     def test_stress_preference_changes_size_without_changing_raw_window_verdict(self):
@@ -312,13 +315,14 @@ class FundedSizingTests(unittest.TestCase):
         self.assertEqual([t["quantity"] for t in p["trades"]], [5, 4])
         self.assertIn("EXIT #1 + ENTRY #2", p["ledger"][1]["event"])
         self.assert_reconciles(p)
-        # The same rule must stop an entry if the earlier exit just crossed 10k.
+        # The same-row exit frees margin, so the next entry is sized on the new
+        # resources; crossing 10k behind LQDT no longer stops it.
         unit, marks, contracts = unit_proof(
             near=(50000, 47800, 47800, 48000), entries=((0, 1), (1, 3))
         )
         p = self.replay(unit, marks, contracts)
-        self.assertEqual(len(p["trades"]), 1)
-        self.assertIn("лимит риска", p["skipped_entries"][0]["reason"])
+        self.assertEqual(len(p["trades"]), 2)
+        self.assertEqual(p["skipped_entries"], [])
         self.assert_reconciles(p)
 
     def test_rejected_funding_intents_cannot_receive_unit_portfolios_payments(self):
@@ -482,9 +486,9 @@ class SizingIntegrationTests(unittest.TestCase):
         self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
 
     def test_settings_are_snapshotted_for_every_member_of_a_search(self):
-        def change(*args):
+        def change(*args, **kwargs):
             save_settings(self.root, {"slippage_ticks": 4})
-            return _tune(*args)
+            return _tune(*args, **kwargs)
 
         with patch("moex_spread_lab.proof_batch._tune", side_effect=change):
             result = research_run(

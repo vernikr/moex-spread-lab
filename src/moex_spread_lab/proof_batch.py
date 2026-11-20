@@ -10,7 +10,6 @@ from .carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
 from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _benchmark_marks, _run_id
 from .proof_search import (
-    SEED,
     STRATEGY_AXES,
     Axis,
     Landscape,
@@ -20,6 +19,7 @@ from .proof_search import (
     _tune,
     _validate,
     execution_axes,
+    resolve_seed,
 )
 from .w0 import W0Error
 
@@ -739,6 +739,10 @@ def batch_search(service, request, settings, benchmark, check_cancelled, *, on_p
             seed,
             axes,
             min(len(case.split.training) for _, case in members),
+            # The base seed is drawn once per run, so seed 0 makes every run
+            # different while one run stays internally consistent.
+            random_seed=resolve_seed(settings.random_seed),
+            seed_label="cohort",
             on_progress=(
                 None
                 if on_progress is None
@@ -858,7 +862,8 @@ def _cohort_result(
         "schema_version": "proof-search.v3",
         "method": "Optuna TPESampler",
         "library_version": optuna.__version__,
-        "seed": SEED,
+        "seed": settings.random_seed,
+        "seed_used": resolve_seed(settings.random_seed),
         "trial_count": trials,
         "candidates": records,
         "selection_basis": "training",

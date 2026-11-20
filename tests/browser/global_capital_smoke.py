@@ -104,7 +104,7 @@ def run(browser, url):
         )
 
     # Drive both previously noisy result branches without erasing the audit metadata.
-    reason = "Нарушен лимит просадки или отставания от LQDT. Свободные средства недостаточны для маржи."
+    reason = "Свободные средства недостаточны для маржи."
     pair.evaluate(
         "reason => {payload.evaluation.failed_screens=['volume'];payload.evaluation.result.reason=reason;renderPeriodResult()}",
         reason,

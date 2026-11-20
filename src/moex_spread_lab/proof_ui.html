@@ -99,6 +99,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <label for="global-slippage">Проскальзывание · тики</label>
         <div class="settings-value"><input id="global-slippage" type="number" min="0" max="10" step="0.5" required aria-describedby="slippage-help"><span>на исполнение</span></div>
         <p id="slippage-help">Общее для всех стратегий и окон. Для биржевого календарного спреда — по одному разу на входе и на выходе, для обычной пары — по каждой ноге. Добавляется к комиссии.</p>
+        <label for="global-seed">Сид случайности</label>
+        <div class="settings-value"><input id="global-seed" type="number" min="0" max="2147483647" step="1" required aria-describedby="seed-help"><span>0 — новый при каждом запуске</span></div>
+        <p id="seed-help">От него считаются все случайные величины проекта: подбор параметров Optuna. Ненулевое значение делает каждый запуск воспроизводимым — тот же сид даёт тот же результат. При 0 каждый запуск берёт новый сид, и повторный запуск может дать другой результат.</p>
         <fieldset class="screen-options">
           <legend>При подборе параметров позволять учитывать спреды, не прошедшие проверку:</legend>
           <label><input id="allow-failed-volume" type="checkbox" checked> на объём</label>
@@ -386,14 +389,14 @@ function installTimeframeOptions(items){if(!Array.isArray(items)||!items.length)
  setSegmentedTimeframe(preferences.timeframe);
 }
 function timeframeLabel(id){return timeframeOption(id)?.label||id||'1 день'}
-let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000,timeframe:'1d',price_fill:'reference_same_bar'},settingRevision=0,savingSettings=false;
-const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub,x.timeframe,x.price_fill]);
+let preferences={validation_percent:0,allow_failed_volume:true,allow_failed_capital:true,slippage_ticks:1,initial_capital_rub:30000,timeframe:'1d',price_fill:'reference_same_bar',random_seed:0},settingRevision=0,savingSettings=false;
+const settingsKey=(x=preferences)=>JSON.stringify([x.validation_percent,x.allow_failed_volume,x.allow_failed_capital,x.slippage_ticks,x.initial_capital_rub,x.timeframe,x.price_fill,x.random_seed]);
 const settingsEventKey='moex-proof-settings-updated';
 const pct=v=>Number(v).toLocaleString('ru-RU',{maximumFractionDigits:10})+'%';
-function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub,timeframe:x.timeframe||'1d',price_fill:x.price_fill||'reference_same_bar'};
+function setPreferences(x){const changed=settingsKey()!==settingsKey(x);preferences={validation_percent:x.validation_percent,allow_failed_volume:x.allow_failed_volume,allow_failed_capital:x.allow_failed_capital,slippage_ticks:x.slippage_ticks,initial_capital_rub:x.initial_capital_rub,timeframe:x.timeframe||'1d',price_fill:x.price_fill||'reference_same_bar',random_seed:Number(x.random_seed)||0};
  setSegmentedTimeframe(preferences.timeframe);
  const fillSel=$('global-fill');if(fillSel&&[...fillSel.options].some(o=>o.value===preferences.price_fill))fillSel.value=preferences.price_fill;
- $('settings-badge').textContent=`${timeframeLabel(preferences.timeframe)} · ${FILL_RU[preferences.price_fill]||preferences.price_fill} · Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т.`;
+ $('settings-badge').textContent=`${timeframeLabel(preferences.timeframe)} · ${FILL_RU[preferences.price_fill]||preferences.price_fill} · Капитал: ${fmt(x.initial_capital_rub,2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks,1)} т. · Сид: ${preferences.random_seed===0?'случайный':preferences.random_seed}`;
  if(changed){windowReadings.clear();stopWindowReadings();cancelSearch();clearGroup();if(catalog&&sharedStrategy)refreshGroupProfile(0);
   if(!supportsCalendar(preferences.timeframe)&&universe==='calendar_native'&&catalog){const candidate=(catalog.pair_screen?.pairs||[]).find(row=>row.proof_strategies?.mean_reversion)||catalog.pair_screen?.pairs?.[0];const branch=candidate&&branches.get('pair_screen|'+candidate.near);if(branch)openBranch(branch.key,candidate.id,'mean_reversion',false)}
   for(const row of $('window-list').querySelectorAll('tr[data-leaf]')){const l=leaves.get(row.dataset.leaf);if(l)windowGates(row,l)}
@@ -418,16 +421,16 @@ function bindBackdropClose(dlg,onClose,guard=()=>false){
   if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();
  });
 }
-function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),fill=$('global-fill'),submit=$('apply-settings');
+function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent'),slip=$('global-slippage'),capital=$('global-capital'),fill=$('global-fill'),seed=$('global-seed'),submit=$('apply-settings');
  priceFillOptions(fill);fill.value=preferences.price_fill;
- $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;setSegmentedTimeframe(preferences.timeframe);fill.value=preferences.price_fill;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
+ $('open-settings').addEventListener('click',()=>{n.value=preferences.validation_percent;slip.value=preferences.slippage_ticks;capital.value=preferences.initial_capital_rub;seed.value=preferences.random_seed;setSegmentedTimeframe(preferences.timeframe);fill.value=preferences.price_fill;$('allow-failed-volume').checked=preferences.allow_failed_volume;$('allow-failed-capital').checked=preferences.allow_failed_capital;$('settings-error').textContent='';previewSplit();dlg.showModal()});
  $('cancel-settings').addEventListener('click',()=>dlg.close());
  dlg.addEventListener('cancel',e=>{if(savingSettings)e.preventDefault()});
  bindBackdropClose(dlg,()=>dlg.close(),()=>savingSettings);
  $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
- $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!fill.reportValidity())return;
+ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!fill.reportValidity()||!seed.reportValidity())return;
   ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';cancelSearch();invalidateProof();
-  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:selectedTimeframe,price_fill:fill.value});setPreferences(x);dlg.close();
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:selectedTimeframe,price_fill:fill.value,random_seed:seed.valueAsNumber});setPreferences(x);dlg.close();
    try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog){await refreshCatalog();void show()}
   }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
  });

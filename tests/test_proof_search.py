@@ -136,6 +136,37 @@ class PlateauTests(unittest.TestCase):
                         measured["reason"], f"Открытого спреда не было {missing}."
                     )
 
+    def test_benchmark_relative_drawdown_and_shortfall_no_longer_veto_a_candidate(self):
+        # A book that falls far behind LQDT stays a candidate: the measured
+        # excess is the score, and the risk path stays visible in the proof.
+        # The account stays solvent, so the annualization guard still applies.
+        days = [f"2026-01-0{i}" for i in range(1, 5)]
+        proof = {
+            "selection": {"strategy": "funding_only"},
+            "window": {"passes_capital_screen": True, "tradable_every_day": True},
+            "sizing": {"initial_capital_rub": 100_000.0},
+            "ledger": [
+                {"date": d, "cumulative_net_rub": x}
+                for d, x in zip(days, [0, -12_000, -16_000, -18_000])
+            ],
+            "trades": [
+                {
+                    "entry": {"date": days[0]},
+                    "exit": {"date": days[-1]},
+                    "margin_rub": 100,
+                    "lqdt_on_margin_rub": 4,
+                }
+            ],
+        }
+        marks = dict.fromkeys(days, 1.0)
+        measured = _measure(
+            proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings()
+        )
+        self.assertIsNotNone(measured["rank_score"])
+        self.assertIsNotNone(measured["utility"])
+        self.assertNotIn("просадки", str(measured.get("reason", "")))
+        self.assertNotIn("отставания", str(measured.get("reason", "")))
+
     def test_mark_change_including_first_validation_session_not_exit_trade_sum(self):
         days = [f"2026-01-0{i}" for i in range(1, 5)]
         proof = {
@@ -205,9 +236,29 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         builder(root)
         return ProofService(root)
 
+    def test_global_seed_makes_a_run_reproducible_and_zero_draws_a_new_one(self):
+        proof = self.fixture(pair_fixture)
+        req = {**PAIR, "slippage_ticks": 0.5}
+        # A fixed seed reproduces the whole search, proposal by proposal.
+        save_settings(proof.root, {"random_seed": 41})
+        first = research_run(proof, req, optimize=True)
+        self.assertEqual(first["seed"], 41)
+        self.assertEqual(first["seed_used"], 41)
+        again = research_run(proof, req, optimize=True)
+        self.assertEqual(first["candidates"], again["candidates"])
+        self.assertEqual(first["selected_parameters"], again["selected_parameters"])
+        # Seed 0 draws a fresh seed per run, so the search is not pinned.
+        save_settings(proof.root, {"random_seed": 0})
+        drawn = [research_run(proof, req, optimize=True) for _ in range(3)]
+        for run in drawn:
+            self.assertEqual(run["seed"], 0)
+            self.assertGreater(run["seed_used"], 0)
+        self.assertGreater(len({run["seed_used"] for run in drawn}), 1)
+
     def test_pair_replay_reproducibility_and_holdout_is_not_a_selection_input(self):
         proof = self.fixture(pair_fixture)
-        save_settings(proof.root, {"validation_percent": 25})
+        # A fixed seed keeps two runs comparable; seed 0 would draw a new one.
+        save_settings(proof.root, {"validation_percent": 25, "random_seed": 41})
         req = {**PAIR, "slippage_ticks": 0.5}
         a = research_run(proof, req, optimize=True)
         self.assertEqual(a, research_run(proof, req, optimize=True))
@@ -297,7 +348,9 @@ class ProofSearchIntegrationTests(unittest.TestCase):
     def test_validation_liquidity_failure_does_not_veto_calendar_training_plateau(self):
         service = self.fixture(calendar_fixture)
         save_settings(
-            service.root, {"validation_percent": 25, "allow_failed_volume": False}
+            service.root,
+            # A fixed seed keeps the two runs comparable; seed 0 would draw a new one.
+            {"validation_percent": 25, "allow_failed_volume": False, "random_seed": 41},
         )
         req = {**CALENDAR, "strategy": "zscore_mean_reversion"}
         before = research_run(service, req, optimize=True)

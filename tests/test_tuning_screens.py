@@ -43,6 +43,7 @@ class TuningScreenTests(unittest.TestCase):
                 "initial_capital_rub": 30000.0,
                 "timeframe": "1d",
                 "price_fill": "reference_same_bar",
+                "random_seed": 0,
             },
         )
         self.assertEqual(path.read_text(), legacy)
@@ -59,6 +60,7 @@ class TuningScreenTests(unittest.TestCase):
                 "initial_capital_rub": 30000.0,
                 "timeframe": "1d",
                 "price_fill": "reference_same_bar",
+                "random_seed": 0,
             },
         )
         for key in ("allow_failed_volume", "allow_failed_capital"):
@@ -146,7 +148,7 @@ class TuningScreenTests(unittest.TestCase):
         svc = ProofService(root)
         req = {**ACTIVE, "targets": [P, C]}
 
-        def change_while_running(*args):
+        def change_while_running(*args, **kwargs):
             save_settings(
                 root,
                 {
@@ -155,7 +157,7 @@ class TuningScreenTests(unittest.TestCase):
                     "validation_percent": 50,
                 },
             )
-            return _tune(*args)
+            return _tune(*args, **kwargs)
 
         with patch(
             "moex_spread_lab.proof_batch._tune", side_effect=change_while_running

@@ -642,9 +642,6 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
             double budget = fill_wealth;
             if (budget > initial) budget = initial;
             if (budget < 0.0) budget = 0.0;
-            Py_ssize_t prev_i = (i > 0) ? (i - 1) : 0;
-            double fill_excess = fill_wealth - initial * prices[prev_i] / p0;
-            paused |= (peak - fill_excess >= 10000.0) || (fill_excess <= -10000.0);
             Py_ssize_t q = 0;
             if (!paused) {
                 if (calc_max_quantity(budget, candidate->entry_margin, candidate->ec, stress, native_spread, &q) < 0) {
@@ -719,7 +716,10 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
         int shortfall = (free_cash < -1e-7);
         double excess = wealth - initial * prices[i] / p0;
         if (excess > peak) peak = excess;
-        paused |= (peak - excess >= 10000.0) || (excess <= -10000.0) || shortfall;
+        /* Only a cash shortfall stops new entries: without free cash no margin
+           can be posted. Benchmark-relative drawdown limits no longer pause the
+           book, matching the Python fallback. */
+        paused |= shortfall;
 
         PyObject *entry = _PyDict_NewPresized(4);
         PyObject *cum_obj = PyFloat_FromDouble(cumulative);

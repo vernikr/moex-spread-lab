@@ -52,6 +52,20 @@ class GlobalPeriodTests(unittest.TestCase):
                     save_settings(root, {"price_fill": value})
                 self.assertEqual(read_settings(root)["price_fill"], "next_open")
 
+    def test_random_seed_is_validated_and_survives_partial_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # 0 is the default: no fixed seed, a fresh one per run.
+            self.assertEqual(read_settings(root)["random_seed"], 0)
+            saved = save_settings(root, {"random_seed": 41})
+            self.assertEqual(saved["random_seed"], 41)
+            self.assertEqual(save_settings(root, {"validation_percent": 5})["random_seed"], 41)
+            for value in (-1, 2_147_483_648, 1.5, True, None, "41", []):
+                with self.subTest(value=value), self.assertRaises(W0Error):
+                    save_settings(root, {"random_seed": value})
+                self.assertEqual(read_settings(root)["random_seed"], 41)
+            self.assertEqual(save_settings(root, {"random_seed": 0})["random_seed"], 0)
+
     def test_project_settings_persist_without_touching_input_caches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -65,6 +79,7 @@ class GlobalPeriodTests(unittest.TestCase):
                     "initial_capital_rub": 30000.0,
                     "timeframe": "1d",
                     "price_fill": "reference_same_bar",
+                    "random_seed": 0,
                 },
             )
             self.assertFalse(settings_path(root).exists())

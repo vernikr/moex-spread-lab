@@ -78,6 +78,9 @@ class CohortTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         fixture(self.root)
+        # A fixed seed keeps repeated searches comparable; seed 0 would draw a
+        # new one per run and these tests compare two searches against each other.
+        save_settings(self.root, {"random_seed": 41})
         self.service = ProofService(self.root)
 
     def search(self, base=ACTIVE, **kw):
@@ -114,10 +117,11 @@ class CohortTests(unittest.TestCase):
                 5 <= t["parameters"]["lookback"] <= 40
                 and 0.1 <= t["parameters"]["exit_z"] < t["parameters"]["entry_z"]
             )
-            scores[t["rank_score"]] = t["parameters"]
+            scores.setdefault(t["rank_score"], []).append(t["parameters"])
         self.assertEqual(g["training_mean_pp"], max(scores))
         params = result["selected_parameters"]
-        self.assertEqual(scores[max(scores)], params)
+        # Several candidates may tie on the maximum; the winner is one of them.
+        self.assertIn(params, scores[max(scores)])
         self.assertEqual(pair["selection"]["parameters"], params)
         for row, key, strategy in [
             (cal, "window", "zscore_mean_reversion"),

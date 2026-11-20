@@ -17,12 +17,25 @@ DEFAULT_INITIAL_CAPITAL_RUB = 30_000.0
 MAX_RESEARCH_CAPITAL_RUB = 1_000_000_000.0
 DEFAULT_PRICE_FILL = "reference_same_bar"
 VALID_PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
+# 0 means "draw a fresh seed for every run"; any other value makes every random
+# choice of the project reproducible.
+DEFAULT_RANDOM_SEED = 0
+MAX_RANDOM_SEED = 2_147_483_647
 
 
 def validation_percent(value: object) -> float:
     if type(value) not in (int, float) or not 0 <= value <= 50:
         raise W0Error("Доля проверки должна быть числом от 0 до 50%.")
     return int(value) if int(value) == value else value
+
+
+def random_seed(value: object) -> int:
+    """A non-negative integer seed; 0 asks for a fresh random seed per run."""
+    if type(value) is not int or not 0 <= value <= MAX_RANDOM_SEED:
+        raise W0Error(
+            f"Сид должен быть целым числом от 0 до {MAX_RANDOM_SEED}; 0 — новый сид при каждом запуске."
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -36,6 +49,7 @@ class ResearchSettings:
     initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
     timeframe: str = DEFAULT_TIMEFRAME
     price_fill: str = DEFAULT_PRICE_FILL
+    random_seed: int = DEFAULT_RANDOM_SEED
 
     def metadata(self) -> dict[str, float | bool | str]:
         return asdict(self)
@@ -89,6 +103,8 @@ def _validated_patch(value: object) -> dict:
     for k in ("allow_failed_volume", "allow_failed_capital"):
         if k in patch and type(patch[k]) is not bool:
             raise W0Error(f"{k}: укажите true или false.")
+    if "random_seed" in patch:
+        patch["random_seed"] = random_seed(patch["random_seed"])
     return patch
 
 

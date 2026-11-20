@@ -6,7 +6,9 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 
 from __future__ import annotations
 
+import hashlib
 import math
+import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property
@@ -30,6 +32,35 @@ SEED = 41
 GREEN = 70
 AMBER = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
+
+
+def resolve_seed(configured: int | None) -> int:
+    """Turn the global seed preference into the base seed of this run.
+
+    A configured seed of 0 means "no fixed seed": every run draws a fresh base
+    seed so repeated runs explore different parameter proposals. Any other value
+    is used verbatim, which makes every random choice of the run reproducible.
+    """
+    if configured is None:
+        return SEED
+    if type(configured) is not int or configured < 0:
+        raise W0Error("Сид должен быть целым неотрицательным числом.")
+    if configured == 0:
+        return secrets.randbelow(2_147_483_647) + 1
+    return configured
+
+
+def derive_seed(base: int, *parts: object) -> int:
+    """Derive a stable child seed from the run's base seed and a label.
+
+    Independent searches inside one run (one per strategy family) must not
+    propose the same parameter sequence, yet they must stay reproducible
+    together: the child seed depends only on the base seed and the label.
+    """
+    digest = hashlib.sha256(
+        "|".join([str(base), *(str(part) for part in parts)]).encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:4], "big") or 1
 
 
 @dataclass(frozen=True)
@@ -295,14 +326,6 @@ def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
             else missing[0]
         )
         reasons.append(f"Открытого спреда не было {where}.")
-    risk_rejected = False
-    peak = 0.0
-    for value in curve.values():
-        peak = max(peak, value)
-        if peak - value >= 10_000 or value <= -15_000:
-            risk_rejected = True
-            reasons.append("Нарушен лимит просадки или отставания от LQDT.")
-            break
     try:
         annual = _annualized_returns(proof, marks, split)
     except W0Error as exc:
@@ -322,7 +345,10 @@ def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
         }
     # An honestly inactive book holds LQDT: include its zero in the fixed denominator.
     # It is not evidence of a stable trading neighborhood. A risk/data failure is NOT zero.
-    score = None if risk_rejected else annual["annualized_excess_pp"]
+    # Benchmark-relative drawdown/shortfall limits no longer veto a candidate: the
+    # measured excess over LQDT is the score, and the risk path stays visible in the
+    # proof itself.
+    score = annual["annualized_excess_pp"]
     return {
         **metrics,
         **annual,
@@ -387,11 +413,24 @@ class Landscape:
         }
 
 
-def _tune(land, seed, strategy_axes, train_size, *, trials=TRIALS, on_progress=None):
+def _tune(
+    land,
+    seed,
+    strategy_axes,
+    train_size,
+    *,
+    trials=TRIALS,
+    on_progress=None,
+    random_seed=None,
+    seed_label=None,
+):
     """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
+    base = resolve_seed(random_seed)
+    if seed_label is not None:
+        base = derive_seed(base, seed_label)
     study = optuna.create_study(
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=SEED, n_startup_trials=8),
+        sampler=optuna.samplers.TPESampler(seed=base, n_startup_trials=8),
     )
     bounds = {
         name: min(axis.high, train_size - 2)

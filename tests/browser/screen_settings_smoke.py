@@ -49,6 +49,7 @@ def run(browser, url):
             "initial_capital_rub": 30000.0,
             "timeframe": "1d",
             "price_fill": "reference_same_bar",
+            "random_seed": 0,
         }
         return live["data"]
 

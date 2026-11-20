@@ -194,9 +194,12 @@ class CapitalReplayTests(unittest.TestCase):
         self.assertTrue(all(r["account_value_rub"] == 100 for r in p["ledger"]))
         self.assertEqual(p["summary"]["costs_rub"], 0)
 
-    def test_nondefault_budgets_do_not_rescale_the_fixed_ten_thousand_risk_trigger(
+    def test_nondefault_budgets_keep_reporting_drawdown_without_a_risk_trigger(
         self,
     ):
+        # The benchmark-relative 10k drawdown trigger no longer stops entries at
+        # any starting capital: a later entry is attempted and is taken whenever
+        # the account can still fund it.
         for initial, loss_per_spread in ((15000, 5100), (60000, 1000)):
             unit, marks, contracts = unit_proof(
                 near=(
@@ -209,12 +212,21 @@ class CapitalReplayTests(unittest.TestCase):
             p = size_proof(
                 unit, marks, ResearchSettings(initial_capital_rub=initial), contracts
             )
-            self.assertEqual(len(p["trades"]), 1)
-            self.assertEqual(len(p["skipped_entries"]), 1)
-            self.assertIn("Достигнут лимит риска", p["skipped_entries"][0]["reason"])
+            # The drawdown is still reported, it just no longer vetoes an entry.
             self.assertGreaterEqual(p["summary"]["max_excess_drawdown_rub"], 10000)
             self.assertGreater(p["ledger"][-1]["account_value_rub"], 0)
             self.assertEqual(p["summary"]["cash_shortfall_rows"], 0)
+            if initial == 15000:
+                # The account cannot fund a second spread any more.
+                self.assertEqual(len(p["trades"]), 1)
+                self.assertEqual(len(p["skipped_entries"]), 1)
+                self.assertIn(
+                    "Недостаточно средств", p["skipped_entries"][0]["reason"]
+                )
+            else:
+                # Capital is left, so the second spread is taken.
+                self.assertEqual(len(p["trades"]), 2)
+                self.assertEqual(p["skipped_entries"], [])
 
     def test_nonzero_annualization_uses_configured_capital_and_continuous_validation(
         self,
@@ -361,7 +373,7 @@ class CapitalReplayTests(unittest.TestCase):
     def test_a_table_request_freezes_capital_before_loading_any_member(self):
         save_settings(self.root, {"initial_capital_rub": 20000})
 
-        def change_settings(*args):
+        def change_settings(*args, **kwargs):
             save_settings(self.root, {"initial_capital_rub": 60000})
             return StudyWindow(*args)
 
@@ -378,9 +390,9 @@ class CapitalReplayTests(unittest.TestCase):
     def test_search_freezes_capital_and_fill_and_neither_is_an_optimization_axis(self):
         save_settings(self.root, {"initial_capital_rub": 20000})
 
-        def change_settings(*args):
+        def change_settings(*args, **kwargs):
             save_settings(self.root, {"initial_capital_rub": 60000})
-            return _tune(*args)
+            return _tune(*args, **kwargs)
 
         with patch("moex_spread_lab.proof_batch._tune", side_effect=change_settings):
             result = research_run(

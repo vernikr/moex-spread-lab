@@ -443,9 +443,6 @@ def size_proof(
                 candidate["entry"], i, at_open=terms.open_fill
             )
             budget = max(0.0, min(initial, fill_wealth))
-            fill_excess = fill_wealth - initial * prices[max(i - 1, 0)] / prices[0]
-            # An exit can cross a limit before a same-row re-entry, not just at close.
-            paused |= peak - fill_excess >= 10_000 or fill_excess <= -10_000
             q = (
                 0
                 if paused
@@ -460,7 +457,7 @@ def size_proof(
             if not q:
                 if not metrics_only:
                     why = (
-                        "Достигнут лимит риска; новые входы остановлены."
+                        "Недостаточно свободных средств для маржи; новые входы остановлены."
                         if paused
                         else "Недостаточно средств на один спред, издержки и обязательный резерв."
                     )
@@ -549,7 +546,9 @@ def size_proof(
         excess = wealth - initial * prices[i] / prices[0]
         peak = max(peak, excess)
         drawdown = max(drawdown, peak - excess)
-        paused |= peak - excess >= 10_000 or excess <= -10_000 or shortfall
+        # Only a cash shortfall stops new entries: without free cash no margin can
+        # be posted. Benchmark-relative drawdown limits no longer pause the book.
+        paused |= shortfall
         if metrics_only:
             ledger.append(
                 {

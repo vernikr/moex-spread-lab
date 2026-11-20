@@ -336,16 +336,8 @@ def optimize(
                     "worst_shortfall_pct": round(worst_shortfall, 2),
                 }
             )
-            if (
-                max_dd >= 10000 / INITIAL_CAPITAL * 100
-                or worst_shortfall <= -15000 / INITIAL_CAPITAL * 100
-            ):
-                trial.update(
-                    {
-                        "status": "risk_rejected",
-                        "reason": "Пробой рабочих исследовательских лимитов относительно бенчмарка.",
-                    }
-                )
+            # The benchmark-relative drawdown/shortfall limits are reported, not
+            # enforced: a candidate is no longer vetoed for crossing them.
         except (W0Error, OSError, ValueError) as exc:
             trial.update({"status": "rejected", "reason": str(exc)})
         trials.append(trial)

@@ -33,6 +33,9 @@ class StrategyChoiceTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         funding_winner(self.root)
+        # A fixed seed keeps repeated searches comparable; seed 0 would draw a
+        # new one per run and these tests compare two searches against each other.
+        save_settings(self.root, {"random_seed": 41})
         self.service = ProofService(self.root)
 
     def search(self, request=PAIR, **extra):

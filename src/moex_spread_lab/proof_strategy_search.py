@@ -19,7 +19,7 @@ from .proof_batch import (
     _targets,
     _translate,
 )
-from .proof_search import SEED, _tune
+from .proof_search import _tune, resolve_seed
 from .timeframes import get_timeframe
 
 TRIALS_PER_STRATEGY = 80
@@ -102,6 +102,8 @@ def strategy_search(
     )
     active = request.get("strategy", "zscore_mean_reversion")
     calendar = service._calendar or CalendarData(service.root)
+    # One base seed per run; each family derives its own child seed from it.
+    base_seed = resolve_seed(settings.random_seed)
     families = _families(request, targets, spec)
     total_families = max(len(families), 1)
     prepared, alternatives, failures = [], [], []
@@ -183,7 +185,8 @@ def strategy_search(
         "schema_version": "proof-search.v4",
         "method": "Optuna TPESampler per compatible strategy",
         "library_version": optuna.__version__,
-        "seed": SEED,
+        "seed": settings.random_seed,
+        "seed_used": base_seed,
         **settings.metadata(),
         "selection_basis": "training",
         "objective": "arithmetic_mean_of_per_window_strategy_CAGR_minus_LQDT_CAGR_pp",
@@ -238,6 +241,10 @@ def strategy_search(
                 group.axes,
                 min(len(case.split.training) for _, case in group.members),
                 trials=TRIALS_PER_STRATEGY,
+                random_seed=base_seed,
+                # Each family gets its own derived seed, so two families do not
+                # walk the same parameter sequence inside one run.
+                seed_label=group.active,
                 on_progress=(
                     None
                     if on_progress is None

@@ -347,6 +347,8 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             allow_failed_volume=True,
             allow_failed_capital=False,
             initial_capital_rub=30000.0,
+            # Fixed seed: this test compares two runs, which must stay comparable.
+            random_seed=41,
         )
         targets = [
             {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
@@ -442,6 +444,8 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             allow_failed_volume=True,
             allow_failed_capital=True,
             initial_capital_rub=100000.0,
+            # Fixed seed: these tests compare two runs, which must stay comparable.
+            random_seed=41,
         )
         cal_targets = [
             {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
@@ -532,6 +536,8 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 allow_failed_volume=True,
                 allow_failed_capital=True,
                 initial_capital_rub=30000.0,
+                # Fixed seed: these tests compare two runs, which must stay comparable.
+                random_seed=41,
             )
 
             def run_for(env_flag: str):
@@ -750,6 +756,8 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 allow_failed_volume=True,
                 allow_failed_capital=True,
                 initial_capital_rub=100000.0,
+                # Fixed seed: this test compares two runs, which must stay comparable.
+                random_seed=41,
             )
             service = ProofService(root)
             pair_req = {
@@ -1196,6 +1204,8 @@ def _build_pool_test_workspace(root: Path) -> None:
             "allow_failed_volume": True,
             "allow_failed_capital": True,
             "initial_capital_rub": 100000.0,
+            # A fixed seed keeps two runs comparable; seed 0 would draw a new one.
+            "random_seed": 41,
         },
     )
 

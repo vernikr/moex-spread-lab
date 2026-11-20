@@ -56,7 +56,7 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
     for pair in PAIRS:
         near_id, far_id = pair["near"], pair["far"]
         near_path, far_path = inputs.candles(pair["pair_id"], near_id), inputs.candles(pair["pair_id"], far_id)
-        if not (near_path.is_file() and far_path.is_file()):
+        if not (inputs.bar_store.source_available(near_path) and inputs.bar_store.source_available(far_path)):
             continue
         try:
             near_source = inputs.bars(pair["pair_id"], near_id, columns=("begin", "open", "high", "low", "close", "volume"))

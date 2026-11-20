@@ -169,6 +169,8 @@ class ScreenerInputs:
 
     def candles(self, pair_id: str, secid: str, timeframe: str = DEFAULT_TIMEFRAME) -> Path:
         spec = get_timeframe(timeframe)
+        if spec.id == "1h":
+            return self.bar_store.select_h1(secid)
         screened = self.root / "data/w1/candles-screen" / f"{secid}_{spec.file_suffix}.json"
         intake = self.root / "data/w1/candles" / f"{secid}_{spec.file_suffix}.json"
         if screened.is_file():
@@ -331,7 +333,7 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
         if spec.supports_funding_strategy:
             proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
         else:
-            missing_price = next((path for path in price_files if not path.is_file()), None)
+            missing_price = next((path for path in price_files if not inputs.bar_store.source_available(path)), None)
             proof_available = {
                 "mean_reversion": missing_price is None and history_observations >= 2,
                 "funding_only": False,

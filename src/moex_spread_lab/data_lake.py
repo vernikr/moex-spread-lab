@@ -854,7 +854,25 @@ class MarketDataStore:
         self.root = root.resolve()
         self.parquet = ParquetBarStore(self.root, lake_root)
         self.legacy = LegacyJsonBarStore()
+        from .h1_seal import SealedH1Reader
+        self.sealed_h1 = SealedH1Reader(self.root)
         self._cache: dict[tuple[Any, ...], BarSeries] = {}
+
+    def select_h1(self, secid: str) -> Path:
+        return self.sealed_h1.select(secid)
+
+    def source_available(self, path: Path) -> bool:
+        if path.name.endswith("_1h.json") and self.sealed_h1.payload() is not None:
+            value = self.sealed_h1.payload()
+            try:
+                relative = path.absolute().relative_to(self.root).as_posix()
+            except ValueError:
+                return False
+            if relative not in value["records"]:
+                return False
+            self.sealed_h1.read(path, columns=("begin",))
+            return True
+        return path.is_file()
 
     def _cache_key(
         self,
@@ -887,6 +905,10 @@ class MarketDataStore:
 
     def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
         requested_columns = tuple(columns) if columns is not None else None
+        if legacy_path.name.endswith("_1h.json"):
+            sealed = self.sealed_h1.read(legacy_path, columns=requested_columns)
+            if sealed is not None:
+                return sealed
         try:
             record = self.parquet.record_for_legacy_path(legacy_path)
         except DataLakeError:

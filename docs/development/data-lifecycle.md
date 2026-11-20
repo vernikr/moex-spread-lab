@@ -318,3 +318,61 @@ archival/removal. A good compression ratio alone is insufficient authorization.
 H1 sources / 448,565 rows verified, 14.11 MiB candidate allocation, unchanged
 original data/default lake, and matching fixed shadow-read smoke results. C2
 production selection/sealing and active JSON archival/removal remain pending.
+
+## Package C2: explicit sealed H1 reads (0.7.0)
+
+```sh
+# Stop project writers/service for activation. All source JSON must still match C1.
+uv run moex-spread-lab data-h1-seal --root . --activate \
+  --plan ../archives/h1-plan.json --candidate data-lake/candidates/h1-review
+uv run moex-spread-lab data-h1-seal --root . --verify
+
+# Rollback only after every original JSON and source selection is restored.
+uv run moex-spread-lab data-h1-seal --root . --deactivate
+```
+
+Activation revalidates the candidate against its complete source plan and copies
+its exact-path records into `data-lake/h1-seal.json`. The exclusive-created
+`h1-seal.enabled.json` binds the canonical seal SHA-256. Existing activation is
+never overwritten. A marker without a seal, missing marker, invalid control
+content or mismatched digest fails closed, not back to JSON. Interrupted
+activation leaves evidence requiring inspection. Stop the service for control
+changes; a partial change may intentionally make H1 unavailable.
+
+The sealed reader uses the immutable copied records, not a mutable candidate
+manifest lookup by SECID. It verifies both Parquet bars and source-page file
+hashes before reading. Original JSON is optional; if present it must still match
+the sealed source hash. Changed JSON, new preferred screened copies, missing or
+corrupt Parquet, unsealed paths and source symlinks are errors. There is no
+fallback to JSON or an alternate source once H1 sealing applies. Non-H1 reads
+retain the old contract. Content verification is cached against file inode,
+size, mtime and ctime plus seal/marker signatures; changed signatures invalidate
+the cache. These local hashes detect corruption, not malicious rewriting of all
+trusted controls by a privileged actor.
+
+`ScreenerInputs` and the calendar H1 reader share sealed source selection.
+Screen availability and audit checks use the source adapter rather than requiring
+JSON existence. A sealed screened path remains selected after its JSON disappears.
+The reader preserves the original path/hash in provenance, restores price-proxy
+semantics and supports column projection. Its backend is `sealed_parquet`.
+
+`--verify` checks all sealed paths, even with JSON absent. The older default
+lake's `data-verify` still requires its pilot legacy inputs; resolving that
+maintenance contract is an additional prerequisite before actual JSON archival.
+Neither C1 staging nor C2 activation authorizes deletion (`source_deletion_allowed`
+remains false). There is no source archive/delete operation in this CLI.
+
+Deactivation first rebuilds the full H1 plan and requires every original JSON,
+identity/hash and selected path to match. It keeps control-file evidence in a
+unique `data-lake/h1-seal-history/` directory before removing live controls.
+Do not manually remove activation files to bypass a failed rollback check.
+Reactivation from a verified C1 plan is supported. An interrupted control change
+may remain fail-closed until inspected; control operations are not a multi-file
+filesystem transaction.
+
+Tests cover missing JSON, distinct preferred/nonpreferred copies, calendar
+reader equality, provenance, projection, warm-cache corruption, missing controls,
+source changes, new screened sources, unknown inputs, symlinks, immutable copied
+records and repeated activate/deactivate rehearsals. Production fixed cases,
+search/plateau performance and active-JSON archive/restore gates remain separately
+evidenced; fixture success alone is not authority to remove originals.

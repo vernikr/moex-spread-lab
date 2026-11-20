@@ -63,6 +63,15 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
     archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    seal = subparsers.add_parser("data-h1-seal", help="activate/verify sealed H1 reads or restore JSON routing; never deletes source data")
+    seal.add_argument("--root", type=Path, default=Path.cwd())
+    seal.add_argument("--plan", type=Path)
+    seal.add_argument("--candidate", type=Path)
+    seal_mode = seal.add_mutually_exclusive_group(required=True)
+    seal_mode.add_argument("--activate", action="store_true")
+    seal_mode.add_argument("--verify", action="store_true")
+    seal_mode.add_argument("--deactivate", action="store_true")
+
     h1 = subparsers.add_parser("data-h1-stage", help="plan and verify isolated H1 candidate lakes; no runtime activation or deletion")
     h1.add_argument("--root", type=Path, default=Path.cwd())
     h1.add_argument("--plan", type=Path, required=True)
@@ -345,6 +354,21 @@ def main() -> int:
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise W0Error(f"candidate archive failed: {exc}") from exc
             print(json.dumps({key: value for key, value in result.items() if key not in {"files", "manifest"}}, sort_keys=True))
+            return 0
+        if args.command == "data-h1-seal":
+            from .h1_seal import activate_h1, verify_sealed_h1, deactivate_h1
+            try:
+                if args.activate:
+                    if args.plan is None or args.candidate is None:
+                        raise W0Error("activation requires --plan and --candidate")
+                    result = activate_h1(args.root, args.plan, args.candidate)
+                else:
+                    if args.plan is not None or args.candidate is not None:
+                        raise W0Error("--plan/--candidate apply only to activation")
+                    result = verify_sealed_h1(args.root) if args.verify else deactivate_h1(args.root)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise W0Error(f"H1 seal operation failed: {exc}") from exc
+            print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "data-h1-stage":
             from .h1_migration import write_h1_plan, stage_h1, verify_h1_stage

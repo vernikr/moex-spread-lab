@@ -378,9 +378,8 @@ class CalendarData:
         return number if math.isfinite(number) else None
 
     def _read_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
-        folders = (self.root / "data/w1/candles-screen", self.root / "data/w1/candles")
-        path = next((folder / f"{secid}_1h.json" for folder in folders if (folder / f"{secid}_1h.json").is_file()), None)
-        if path is None:
+        path = self.bar_store.select_h1(secid)
+        if not self.bar_store.source_available(path):
             return None, "no_local_h1_file"
         try:
             source = self.bar_store.read(path, columns=("begin", "open", "close", "volume"))

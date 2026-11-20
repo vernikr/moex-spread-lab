@@ -203,6 +203,9 @@ def verify_run_artifact(artifact_dir: Path, *, require_details: bool = True) -> 
         "summary_sha256": manifest.get("summary_sha256"),
         "details": identity_details,
     }
+    if "legacy_import" in manifest:
+        # Imported source identity and equivalence evidence are integrity-bound.
+        identity_content["legacy_import"] = manifest["legacy_import"]
     expected_artifact_id = sha256_bytes(canonical_bytes(identity_content))
     if manifest.get("artifact_id") != expected_artifact_id or manifest.get("run_id") != expected_artifact_id:
         raise RunArtifactError(f"run artifact identity differs from manifest contents: {artifact_dir}")

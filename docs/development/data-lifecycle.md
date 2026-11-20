@@ -207,5 +207,57 @@ races are covered. The approved workstation operation is recorded in
 [Package A application evidence, 2026-11-21](data-archive-2026-11-21.md): 1,169
 files archived, fully restore-verified and removed; 634.35 MiB conservative net
 allocated reduction. The old plan's inventory control file was deliberately
-excluded. Legacy artifact migration and active H1 Parquet-only cutover
-(packages B/C) are not implemented.
+excluded. Package B's importer is described below; active H1 Parquet-only
+cutover (package C) is not implemented.
+
+## Package B: verified legacy baseline import (0.5.0)
+
+```sh
+uv run moex-spread-lab run-artifact-import \
+  --legacy RESTORE_DIR/data/analytics/report.json \
+  --expected-sha256 HASH_FROM_VERIFIED_ARCHIVE_MANIFEST \
+  --output-dir data/analytics/runs/legacy-report
+```
+
+Only `analytical-baseline.v1` is accepted. Other schemas, including calendar
+studies, stay losslessly archived; there is no generic schema conversion.
+Import never deletes or edits the source. When the source was archived by
+package A, first verify that archive and restore needed members into temporary
+staging, checking each against its manifest. Do not permanently restore legacy
+pretty JSON into `data/`. The importer checks `--expected-sha256` when supplied;
+it does not itself authenticate an archive or extract it.
+
+Before publication, import freezes the exact source bytes and creates the four
+Phase-5 files in private staging. It requires canonical JSON equality of the
+**complete** rehydrated report, including all daily/trade rows, summaries,
+parameters, provenance, final X and drawdown. It rejects duplicate JSON keys,
+non-finite numbers and any lossy Arrow inference (including dropped sparse row
+keys, added nulls or numeric type coercion), rather than silently normalizing
+legacy evidence. Reports must also be valid inputs to the existing ledger and
+validation consumers, including validation's minimum ten chronological rows.
+
+It runs `execution-ledger` and `validate-analytics` logic for both source and
+compact artifact. All output must match except the explicitly expected container
+path/content-identity fields: ledger's baseline path/hash, validation's baseline
+and ledger path/hash, and sensitivity path/hash. Original market input provenance
+is not stripped. Sensitivity validation includes the imported report itself.
+The two normalized result fingerprints are retained in `manifest.legacy_import`,
+along with exact legacy byte SHA-256, original filename and canonical report
+SHA-256. This lineage is bound into the artifact identity. Existing non-imported
+Phase-5 artifacts retain their identities and remain readable.
+
+Source SHA-256 is checked again before atomic no-replace directory publication
+(Linux/macOS). Existing files, empty directories and symlinks cannot be replaced,
+even if created during staging. Import failure cleans its temporary files and
+leaves the source and any existing artifact untouched. No automatic retry/resume
+or overwrite is provided. A batch can retain successfully imported artifacts if
+a later item fails; record per-item results before continuing.
+
+Default detail retention is 30 days, unpinned. Use `--pin` only for selected
+important evidence; `--retention-days` is explicit. Original reports remain
+recoverable from the verified archive regardless of compact-detail TTL.
+
+This migration adds convenient compact research detail back alongside package
+A's archive; it is **not additional disk reclamation** relative to archive-only
+storage. Measure the resulting size and do not count the already-removed JSON
+a second time. Production migration evidence is recorded separately when run.

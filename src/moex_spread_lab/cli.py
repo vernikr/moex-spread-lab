@@ -122,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     gc_mode.add_argument("--apply", action="store_true", help="delete only expired, unpinned responses and orphans")
     gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    artifact_import = subparsers.add_parser("run-artifact-import", help="verify and import legacy analytical-baseline.v1 JSON without deleting it")
+    artifact_import.add_argument("--legacy", type=Path, required=True)
+    artifact_import.add_argument("--output-dir", type=Path, required=True)
+    artifact_import.add_argument("--expected-sha256", help="required source hash when restoring from an archive manifest")
+    artifact_import.add_argument("--retention-days", type=int, default=30)
+    artifact_import.add_argument("--pin", action="store_true", help="explicitly retain important evidence details")
+
     artifact_pin_parser = subparsers.add_parser("run-artifact-pin", help="pin or unpin a compact evidence run's Parquet details")
     artifact_pin_parser.add_argument("--artifact-dir", type=Path, required=True)
     artifact_pin_group = artifact_pin_parser.add_mutually_exclusive_group()
@@ -450,6 +457,18 @@ def main() -> int:
                     for key in ("status", "dataset_count", "expired_entry_count", "orphan_file_count", "retained_entry_count")
                     if key in output
                 }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "run-artifact-import":
+            from .run_artifact_import import import_baseline_artifact
+
+            try:
+                result = import_baseline_artifact(
+                    args.legacy, args.output_dir, expected_sha256=args.expected_sha256,
+                    retention_days=args.retention_days, pin=args.pin,
+                )
+            except OSError as exc:
+                raise W0Error(f"legacy import failed: {exc}") from exc
+            print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "run-artifact-pin":
             from .run_artifacts import pin_run_artifact

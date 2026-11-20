@@ -1,6 +1,6 @@
 [project]
 name = "moex-spread-lab"
-version = "0.3.0"
+version = "0.4.0"
 description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
     "pyarrow>=18,<20",
+    "zstandard>=0.23,<1",
 ]
 
 [project.scripts]

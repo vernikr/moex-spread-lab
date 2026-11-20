@@ -29,3 +29,6 @@ data/
 data-lake/
 artifacts/
 .DS_Store
+
+# Local archive operation lock
+.data-archive-candidates.lock

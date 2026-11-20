@@ -31,7 +31,7 @@ Stage 9 is in progress. The proof workbench supersedes the S2 homepage; the S2 c
 - [W0: reproducible run and evidence manifest](docs/development/w0.md)
 - [W1–W7: offline research waves](docs/development/w1-w7.md)
 - [W1: MOEX ISS catalog and price-role intake](docs/development/w1-intake.md)
-- [Local data inventory and retention (Phase 0)](docs/development/data-lifecycle.md)
+- [Local data lifecycle and verified candidate archival](docs/development/data-lifecycle.md)
 - [First analytical baseline](docs/development/analytical-baseline.md)
 - [W4/W5 analytical execution ledger](docs/development/execution-ledger.md)
 - [W7 chronological validation](docs/development/w7-validation.md)

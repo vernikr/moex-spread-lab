@@ -146,3 +146,63 @@ uv run python -m moex_spread_lab.cli run-artifact-gc --root . --apply --format j
 ```
 
 After collection the manifest records `detail_status=collected`; the compact result and its provenance remain inspectable, but consumers which require `daily`/`trades` fail closed rather than inventing a replay. A pin protects details from collection. Integrity verification happens automatically when a compact artifact is read: its summary and each required detail file must match the manifest SHA-256 and recorded table shape.
+
+## Storage optimization package A (0.4.0)
+
+`data-archive-candidates` is separate from the older rebuildable-cache command.
+It accepts only its own versioned dry-run plan, never globs or an arbitrary list
+of paths. Older ad-hoc November 20 plans must be regenerated and compared before
+approval. Planning hashes the inventory and deterministically selects the five
+reviewed groups: analytics/derived, common candles, 10m/unknown candles and
+perpetual-history discovery. Analytics selection is deliberately narrower than
+inventory classification: only top-level schema-bearing JSON reports, excluding
+`data-*`/`archive-*` control files, runtime histories/settings and compact runs.
+Active H1, screened candles, benchmark, funding/calendar caches and unclassified
+files are never selected. No active reader contract changes in this package.
+
+```sh
+# Use fresh paths outside data/. Planning never overwrites an earlier plan.
+uv run moex-spread-lab data-archive-candidates --root . --dry-run \
+  --plan ../archives/candidates-plan.json --archive ../archives/candidates.tar.zst
+
+# Only after separate review/approval; does NOT delete originals.
+uv run moex-spread-lab data-archive-candidates --root . --archive-only \
+  --plan ../archives/candidates-plan.json
+
+# Separate destructive step, only in a maintenance window with writers stopped.
+uv run moex-spread-lab data-archive-candidates --root . --apply \
+  --plan ../archives/candidates-plan.json
+```
+
+The archive embeds `manifest.json` (paths, logical bytes, SHA-256, source
+fingerprint, commit and UTC creation time). Zstandard level 19 compression is
+streamed with a checksum, into a same-directory staging file. Full streamed
+member verification rejects missing/extra/duplicate/non-regular members and
+manifest/size/hash mismatches. Sources are revalidated before atomic no-clobber
+publication. A `.verified.json` sidecar records the archive SHA-256 and embedded
+manifest; apply requires it and repeats full archive and source verification.
+An existing destination is never overwritten.
+
+Apply creates a `.apply.json` journal before deleting anything, records deleted
+paths and completion/interruption, and prunes empty parents only at the end.
+It checks **all** sources before the first unlink and each source again immediately
+before unlink. An advisory repository lock excludes concurrent invocations of
+this CLI; it cannot stop other applications writing files. Use a maintenance
+window. Filesystem failure or external mutation during deletion can leave a
+partial operation; this is not a filesystem transaction. The verified archive
+remains the recovery source. A hard process kill can leave the journal at
+`prepared`; reconcile remaining paths against the manifest rather than retrying
+blindly. No automatic resume or automatic production cleanup is implemented.
+
+Restore into a **new empty staging directory**, not over the running checkout:
+`tar --zstd -xf candidates.tar.zst -C RESTORE_DIR` (with GNU tar/zstd), then compare
+all restored `data/<path>` sizes and SHA-256 values to `manifest.json`. Review
+before copying back to the original paths. Keep the archive, verification
+receipt, plan and apply journal together; schedule a review before any archive
+retention decision. Moving an archive within one disk is not itself a saving.
+
+Validation: isolated-fixture archive/apply/restore, protected inputs, stale
+sources, path traversal, symlinks, corruption, malformed members and publication
+races are covered. Production archive creation/deletion and the original 1,170
+candidate equivalence remain separate approval/evidence gates. Legacy artifact
+migration and active H1 Parquet-only cutover (packages B/C) are not implemented.

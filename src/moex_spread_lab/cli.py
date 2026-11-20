@@ -24,6 +24,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="moex-spread-lab")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    candidates = subparsers.add_parser("data-archive-candidates", help="plan, verify or explicitly apply research candidate archival")
+    candidates.add_argument("--root", type=Path, default=Path("."))
+    candidates.add_argument("--plan", type=Path, required=True, help="new dry-run plan outside data/; required input for other modes")
+    candidates.add_argument("--archive", type=Path, help="new tar.zst destination, dry-run only")
+    mode = candidates.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--archive-only", action="store_true")
+    mode.add_argument("--apply", action="store_true")
+
     replay_parser = subparsers.add_parser("replay", help="replay an offline fixture")
     replay_parser.add_argument("--manifest", type=Path, required=True)
     replay_parser.add_argument("--fixture", type=Path, required=True)
@@ -308,6 +317,18 @@ def main() -> int:
                 print(json.dumps({"status": "failed", "findings": findings}, sort_keys=True))
                 return 1
             print(json.dumps({"status": "passed", "findings": []}, sort_keys=True))
+            return 0
+        if args.command == "data-archive-candidates":
+            from .data_archive_candidates import execute
+            try:
+                if args.archive and not args.dry_run:
+                    raise W0Error("--archive is only accepted for --dry-run; other modes use the plan")
+                result = execute(args.root, args.plan,
+                                 "dry-run" if args.dry_run else "archive-only" if args.archive_only else "apply",
+                                 args.archive)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise W0Error(f"candidate archive failed: {exc}") from exc
+            print(json.dumps({key: value for key, value in result.items() if key not in {"files", "manifest"}}, sort_keys=True))
             return 0
         if args.command == "data-inventory":
             from .data_inventory import build_data_inventory

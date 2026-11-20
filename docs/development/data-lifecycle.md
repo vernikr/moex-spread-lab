@@ -41,3 +41,24 @@ The current policy treats 1d and 1h `w1/candles/` series as active because those
 The full inventory records each file's relative path, logical and allocated bytes, mtime, policy, schema/timeframe metadata where available, row count/date range where discoverable, and optional SHA-256. It also aggregates datasets and reports potential reclaimable bytes for candidates. That byte total intentionally requires review; it is not a deletion plan.
 
 The scanner does not follow symbolic links and does not emit source URLs or credential values from local JSON. JSON inspection can be expensive for multi-gigabyte data trees; use `--fast` for routine status and `--hashes` only when preparing a pinned snapshot.
+
+## Phase 1: verified rebuildable-cache archive
+
+Phase 1 is deliberately narrower than a general cleanup: it archives only files classified as `rebuildable_cache` by a pinned, SHA-256 inventory. The archive must live outside `data/`, contains an embedded manifest, and every member hash is verified before any source file is removed. Active inputs and `archive_candidate` datasets are never selected by this command.
+
+```sh
+# Inspect the exact destructive plan. This changes nothing.
+uv run python -m moex_spread_lab.cli data-archive \
+  --root . \
+  --manifest data/analytics/data-inventory.json \
+  --archive ../moex-spread-lab-archives/rebuildable-cache-YYYYMMDD.tar.gz
+
+# Only after reviewing the plan, create and verify the archive, then remove matching cache files.
+uv run python -m moex_spread_lab.cli data-archive \
+  --root . \
+  --manifest data/analytics/data-inventory.json \
+  --archive ../moex-spread-lab-archives/rebuildable-cache-YYYYMMDD.tar.gz \
+  --apply
+```
+
+The command rejects a stale manifest, a missing or changed source, an existing archive destination, an archive path inside `data/`, symbolic links, and a manifest without file hashes. If archiving fails before verification, no source is deleted. If a source cannot be deleted after a verified archive exists, the verified archive remains the recovery copy and the command reports the failure.

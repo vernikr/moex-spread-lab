@@ -45,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
     inventory_parser.add_argument("--fast", action="store_true", help="skip JSON payload inspection")
     inventory_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    archive_parser = subparsers.add_parser(
+        "data-archive", help="archive verified rebuildable data caches outside the data directory",
+    )
+    archive_parser.add_argument("--root", type=Path, default=Path.cwd())
+    archive_parser.add_argument("--manifest", type=Path, required=True)
+    archive_parser.add_argument("--archive", type=Path, required=True)
+    archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
+    archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
@@ -241,6 +250,27 @@ def main() -> int:
                     "schema_version": result["schema_version"],
                     "summary": result["summary"],
                     "output": str(args.output) if args.output else None,
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "data-archive":
+            from .data_retention import archive_rebuildable_caches, plan_rebuildable_cache_archive
+
+            result = (
+                archive_rebuildable_caches(args.root, args.manifest, args.archive)
+                if args.apply
+                else plan_rebuildable_cache_archive(args.root, args.manifest, args.archive)
+            )
+            if args.format == "json":
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    key: result[key]
+                    for key in (
+                        "schema_version", "status", "archive", "classification", "file_count",
+                        "logical_bytes", "allocated_bytes", "archive_logical_bytes", "deleted_file_count",
+                        "requires_apply",
+                    )
+                    if key in result
                 }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "research-pipeline":

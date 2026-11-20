@@ -26,5 +26,6 @@ coverage/
 *.log
 *.sqlite*
 data/
+data-lake/
 artifacts/
 .DS_Store

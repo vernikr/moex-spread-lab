@@ -62,3 +62,21 @@ uv run python -m moex_spread_lab.cli data-archive \
 ```
 
 The command rejects a stale manifest, a missing or changed source, an existing archive destination, an archive path inside `data/`, symbolic links, and a manifest without file hashes. If archiving fails before verification, no source is deleted. If a source cannot be deleted after a verified archive exists, the verified archive remains the recovery copy and the command reports the failure.
+
+## Phase 2: Parquet pilot store
+
+Phase 2 adds a typed local store beside, not instead of, legacy JSON. `data-lake/` is ignored local state. It contains Zstandard-compressed Parquet bars, a deduplicated Parquet source-page manifest, `manifest.json`, and a DuckDB catalog. No screener reader is switched in this phase and no legacy candle JSON is removed.
+
+The v1 bars schema preserves the legacy timestamp strings and IEEE-754 `float64` OHLCV values. This intentionally prioritizes migration equivalence; integer-tick or decimal storage is a later, separately tested change. Repeated `secid`, timeframe, interval, proxy assumption and source URL/hash are moved out of every bar. `source_page_id` joins a bar to its one-per-page provenance row.
+
+```sh
+uv run python -m moex_spread_lab.cli data-import-candles \
+  --root . \
+  --legacy data/w1/candles/CNYRUBF_1d.json \
+  --legacy data/w1/candles/CRZ6_1d.json \
+  --legacy data/w1/candles/CNYRUBF_1h.json \
+  --legacy data/w1/candles/CRZ6_1h.json \
+  --verify
+```
+
+The importer refuses an existing dataset unless `--replace` is explicit. `--verify` compares Parquet bars and source-page provenance with the legacy JSON and checks the DuckDB catalog plus recorded SHA-256 values.

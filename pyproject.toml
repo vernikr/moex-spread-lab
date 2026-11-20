@@ -5,8 +5,10 @@ description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "certifi>=2024",
+    "duckdb>=1.2,<2",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
+    "pyarrow>=18,<20",
 ]
 
 [project.scripts]

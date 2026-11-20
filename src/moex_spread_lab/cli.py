@@ -54,6 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
     archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    import_parser = subparsers.add_parser(
+        "data-import-candles", help="import legacy iss-candles JSON into the local Parquet data lake",
+    )
+    import_parser.add_argument("--root", type=Path, default=Path.cwd())
+    import_parser.add_argument("--legacy", type=Path, action="append", required=True)
+    import_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    import_parser.add_argument("--replace", action="store_true")
+    import_parser.add_argument("--verify", action="store_true", help="verify each Parquet import against its legacy JSON")
+    import_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
@@ -271,6 +281,28 @@ def main() -> int:
                         "requires_apply",
                     )
                     if key in result
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "data-import-candles":
+            from .data_lake import ParquetBarStore
+
+            lake_root = args.lake_root if args.lake_root.is_absolute() else args.root / args.lake_root
+            store = ParquetBarStore(args.root, lake_root)
+            records = []
+            for legacy in args.legacy:
+                record = store.import_legacy(legacy, replace=args.replace)
+                if args.verify:
+                    record["verification"] = store.verify_legacy(legacy)
+                records.append(record)
+            result = {"status": "ok", "datasets": records}
+            if args.format == "json":
+                print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    "status": "ok",
+                    "dataset_count": len(records),
+                    "row_count": sum(record["row_count"] for record in records),
+                    "datasets": [record["dataset_id"] for record in records],
                 }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "research-pipeline":

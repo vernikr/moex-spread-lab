@@ -10,7 +10,7 @@ import socket
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import lru_cache
+from functools import cached_property
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -28,6 +28,7 @@ from .carry import (
     fetch_history,
 )
 from .costs import tariff_profile
+from .data_lake import BarSeries, MarketDataStore
 from .evaluation_periods import EvaluationSplit, read_settings, save_settings
 from .proof import ProofService
 from .proof_funding import FundingWindow, ProofFunding
@@ -142,6 +143,10 @@ class ScreenerInputs:
     def __post_init__(self) -> None:
         object.__setattr__(self, "root", self.root.resolve())
 
+    @cached_property
+    def bar_store(self) -> MarketDataStore:
+        return MarketDataStore(self.root)
+
     @property
     def benchmark(self) -> Path:
         return self.root / "data/benchmark/lqdt-lineage.json"
@@ -170,6 +175,16 @@ class ScreenerInputs:
             return screened
         return intake
 
+    def bars(
+        self,
+        pair_id: str,
+        secid: str,
+        timeframe: str = DEFAULT_TIMEFRAME,
+        *,
+        columns: tuple[str, ...] | None = None,
+    ) -> BarSeries:
+        return self.bar_store.read(self.candles(pair_id, secid, timeframe), columns=columns)
+
     def history_cache(self, pair_id: str) -> Path:
         folder = (
             "carry-history-cache"
@@ -192,50 +207,37 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
-@lru_cache(maxsize=256)
-def _candle_summary_cached(path_text: str, mtime_ns: int, size: int):
-    # Cache compact metadata, not the full large hourly OHLCV payload.
-    try:
-        payload = json.loads(Path(path_text).read_text(encoding="utf-8"))
-        timestamps: set[str] = set()
-        volumes: dict[str, float | None] = {}
-        invalid_days: set[str] = set()
-        for row in payload.get("rows", []):
-            begin = row.get("begin")
-            if begin and row.get("close") is not None:
-                timestamps.add(str(begin))
-            if not isinstance(begin, str) or len(begin) < 10:
-                continue
-            day = begin[:10]
-            value = row.get("volume")
-            if value is None or isinstance(value, bool):
-                invalid_days.add(day)
-                continue
-            number = float(value)
-            if not math.isfinite(number) or number < 0:
-                invalid_days.add(day)
-                continue
-            volumes[day] = float(volumes.get(day) or 0.0) + number
-        for day in invalid_days:
-            volumes[day] = None
-        return {"timestamps": frozenset(timestamps), "volumes": volumes}
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError, KeyError, TypeError):
-        return None
-
-
-def _candle_summary(path: Path):
-    try:
-        stat = path.stat()
-    except OSError:
-        return None
-    return _candle_summary_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+def _candle_summary(series: BarSeries):
+    timestamps: set[str] = set()
+    volumes: dict[str, float | None] = {}
+    invalid_days: set[str] = set()
+    for row in series.rows:
+        begin = row.get("begin")
+        if begin and row.get("close") is not None:
+            timestamps.add(str(begin))
+        if not isinstance(begin, str) or len(begin) < 10:
+            continue
+        day = begin[:10]
+        value = row.get("volume")
+        if value is None or isinstance(value, bool):
+            invalid_days.add(day)
+            continue
+        number = float(value)
+        if not math.isfinite(number) or number < 0:
+            invalid_days.add(day)
+            continue
+        volumes[day] = float(volumes.get(day) or 0.0) + number
+    for day in invalid_days:
+        volumes[day] = None
+    return {"timestamps": frozenset(timestamps), "volumes": volumes}
 
 
 def _session_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME):
     legs = {}
     for secid in (pair["near"], pair["far"]):
-        summary = _candle_summary(inputs.candles(pair["pair_id"], secid, timeframe))
-        if summary is None:
+        try:
+            summary = _candle_summary(inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume")))
+        except W0Error:
             return None
         legs[secid] = dict(summary["volumes"])
     return legs
@@ -268,8 +270,9 @@ def _positive_leg_volume_dates(inputs: ScreenerInputs, pair: dict[str, str], tim
 def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME) -> tuple[str | None, str | None, int, set[str]]:
     legs = []
     for secid in (pair["near"], pair["far"]):
-        summary = _candle_summary(inputs.candles(pair["pair_id"], secid, timeframe))
-        if summary is None:
+        try:
+            summary = _candle_summary(inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume")))
+        except W0Error:
             return None, None, 0, set()
         legs.append(summary["timestamps"])
     common = legs[0] & legs[1]
@@ -462,7 +465,7 @@ def pair_price_inputs(
         else None
     )
     series = _normalized_series(
-        inputs.candles(pair_id, near, timeframe), inputs.candles(pair_id, far, timeframe),
+        inputs.bars(pair_id, near, timeframe, columns=("begin", "open", "close", "volume", "price_proxy_kind")), inputs.bars(pair_id, far, timeframe, columns=("begin", "open", "close", "volume", "price_proxy_kind")),
         inputs.benchmark, inputs.contracts, near=near, far=far,
         prior_benchmark_dates=book.no_clearing_dates if book else (),
         timeframe=timeframe,

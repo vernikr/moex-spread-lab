@@ -302,8 +302,12 @@ class ProofFunding:
         key = self.inputs.history_cache(pid), near, start, end
         if key not in self._timelines:
             published = published_rates(near, self.source(pid, near)["rows"])
-            candles = json.loads(self.inputs.candles(pid, near).read_text())["rows"]
-            days = {r["begin"][:10] for r in candles if start <= r["begin"][:10] <= end}
+            candles = self.inputs.bars(pid, near, columns=("begin",)).rows
+            days = {
+                row["begin"][:10]
+                for row in candles
+                if isinstance(row.get("begin"), str) and start <= row["begin"][:10] <= end
+            }
             verified = {
                 d: r
                 for d, r in read_supplement(self.inputs.root, near).items()

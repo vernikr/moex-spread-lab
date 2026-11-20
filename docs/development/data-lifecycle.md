@@ -80,3 +80,13 @@ uv run python -m moex_spread_lab.cli data-import-candles \
 ```
 
 The importer refuses an existing dataset unless `--replace` is explicit. `--verify` compares Parquet bars and source-page provenance with the legacy JSON and checks the DuckDB catalog plus recorded SHA-256 values.
+
+## Phase 3: verified read-path cutover
+
+`MarketDataStore` is the narrow compatibility adapter used by the screener, its audit, funding timeline and hourly calendar reader. It returns `BarSeries`, so business logic receives normalized bars rather than a JSON `Path`.
+
+A Parquet dataset is selected only when both conditions hold: its manifest names the exact legacy JSON file selected by the old lookup order, and the current file SHA-256 equals the manifest's `legacy_sha256`. The resulting series deliberately reports that legacy path and hash in provenance, preserving existing run identities. A different `candles-screen` copy, a changed legacy JSON, an unimported series, or a missing data lake remains on `LegacyJsonBarStore` automatically.
+
+The Phase-2 CNYRUBF/CRZ6 pilot can therefore accelerate matching `data/w1/candles` inputs without changing a preferred `candles-screen` source. Legacy JSON remains the compatibility input and is not removed in this phase.
+
+Callers may request the columns they need; Parquet reads use PyArrow column projection while the JSON compatibility reader applies the same logical projection. Series-level price-proxy semantics are restored from the verified manifest so this physical optimization does not change normalized output.

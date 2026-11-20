@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -9,7 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import duckdb
 import pyarrow as pa
@@ -401,6 +402,69 @@ class ParquetBarStore:
                 return record
         raise DataLakeError(f"data-lake dataset is not registered: {dataset_id}")
 
+    def _record_path(self, value: str) -> Path:
+        candidate = Path(value)
+        return candidate if candidate.is_absolute() else self.root / candidate
+
+    def record_for_legacy_path(self, legacy_path: Path) -> dict[str, Any] | None:
+        """Return the registered record only for this exact legacy source path."""
+        try:
+            selected = legacy_path.resolve()
+        except OSError:
+            return None
+        for record in self._read_manifest()["datasets"]:
+            if not isinstance(record, dict) or not isinstance(record.get("legacy_path"), str):
+                continue
+            try:
+                if self._record_path(record["legacy_path"]).resolve() == selected:
+                    return record
+            except OSError:
+                continue
+        return None
+
+    def read_series(
+        self,
+        secid: str,
+        timeframe: str,
+        *,
+        columns: Iterable[str] | None = None,
+        source_path: Path | None = None,
+        source_sha256: str | None = None,
+    ) -> BarSeries:
+        """Read a registered Parquet dataset as rows consumed by research logic."""
+        record = self._record(secid, timeframe)
+        bars_path = self._record_path(record["bars_path"])
+        table = pq.ParquetFile(bars_path).read(columns=list(columns) if columns is not None else None)
+        semantics = record.get("row_semantics")
+        price_proxy_kind = semantics.get("price_proxy_kind") if isinstance(semantics, dict) else None
+        rows = []
+        for row in table.to_pylist():
+            if price_proxy_kind is not None:
+                row["price_proxy_kind"] = price_proxy_kind
+            rows.append(row)
+        selected_path = source_path or self._record_path(record["legacy_path"])
+        try:
+            selected_stat = selected_path.stat()
+            source_fingerprint: tuple[Any, ...] = (selected_stat.st_mtime_ns, selected_stat.st_size)
+        except OSError:
+            source_fingerprint = ()
+        bars_stat = bars_path.stat()
+        return BarSeries(
+            schema_version=LEGACY_CANDLE_SCHEMA,
+            secid=record.get("secid") if isinstance(record.get("secid"), str) else secid,
+            interval=record.get("interval") if isinstance(record.get("interval"), int) else None,
+            timeframe=record.get("timeframe") if isinstance(record.get("timeframe"), str) else timeframe,
+            rows=tuple(rows),
+            source_path=str(selected_path),
+            source_sha256=source_sha256 or str(record["legacy_sha256"]),
+            backend="parquet",
+            cache_key=(
+                "parquet", str(selected_path.resolve()), *source_fingerprint,
+                str(bars_path.resolve()), bars_stat.st_mtime_ns, bars_stat.st_size,
+            ),
+            metadata=record,
+        )
+
     def read_bars(
         self,
         secid: str,
@@ -462,3 +526,148 @@ class ParquetBarStore:
             "legacy_sha256": series.sha256,
             "parquet_sha256": record["parquet_sha256"],
         }
+
+
+@dataclass(frozen=True)
+class BarSeries:
+    """Business-facing candle rows detached from their physical representation.
+
+    ``source_path`` and ``source_sha256`` deliberately remain the selected legacy
+    input identity. A verified Parquet mirror therefore preserves the existing
+    run provenance and is only selected when it represents that exact JSON file.
+    """
+
+    schema_version: str
+    secid: str | None
+    interval: int | None
+    timeframe: str | None
+    rows: tuple[dict[str, Any], ...]
+    source_path: str
+    source_sha256: str
+    backend: str
+    cache_key: tuple[Any, ...]
+    metadata: dict[str, Any]
+
+
+class BarStore(Protocol):
+    """Read the selected legacy input as a stable business-facing bar series."""
+
+    def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
+        """Return a series for ``legacy_path`` without exposing storage details."""
+
+
+class LegacyJsonBarStore:
+    """Compatibility reader for existing ``iss-candles.v1`` files.
+
+    It intentionally accepts the historical lightweight fixture shape too. The
+    stricter ``_read_legacy_series`` remains the importer validation boundary.
+    """
+
+    def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
+        try:
+            raw = legacy_path.read_bytes()
+            payload = json.loads(raw)
+            stat = legacy_path.stat()
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise DataLakeError(f"cannot read legacy candle JSON: {legacy_path}: {exc}") from exc
+        if not isinstance(payload, dict) or payload.get("schema_version") != LEGACY_CANDLE_SCHEMA:
+            raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {legacy_path}")
+        raw_rows = payload.get("rows")
+        if not isinstance(raw_rows, list):
+            raise DataLakeError(f"legacy candle rows must be a list: {legacy_path}")
+        if any(not isinstance(row, dict) for row in raw_rows):
+            raise DataLakeError(f"legacy candle row is not an object: {legacy_path}")
+        interval = payload.get("interval")
+        if isinstance(interval, bool) or not isinstance(interval, int):
+            interval = None
+        secid = payload.get("secid") if isinstance(payload.get("secid"), str) else None
+        timeframe = payload.get("timeframe") if isinstance(payload.get("timeframe"), str) else None
+        return BarSeries(
+            schema_version=LEGACY_CANDLE_SCHEMA,
+            secid=secid,
+            interval=interval,
+            timeframe=timeframe,
+            rows=tuple(
+                ({
+                    **{key: row[key] for key in columns if key in row},
+                    **({"price_proxy_kind": row["price_proxy_kind"]} if "price_proxy_kind" in row else {}),
+                } if columns is not None else dict(row))
+                for row in raw_rows
+            ),
+            source_path=str(legacy_path),
+            source_sha256=hashlib.sha256(raw).hexdigest(),
+            backend="legacy_json",
+            cache_key=("legacy_json", str(legacy_path.resolve()), stat.st_mtime_ns, stat.st_size),
+            metadata={key: value for key, value in payload.items() if key != "rows"},
+        )
+
+
+class MarketDataStore:
+    """Route a selected JSON input to its verified Parquet mirror when safe.
+
+    The source file stays the authority during Phase 3: a Parquet dataset is
+    used only when its manifest names this exact file and its recorded legacy
+    SHA-256 still matches. Otherwise callers transparently retain JSON behavior.
+    """
+
+    def __init__(self, root: Path, lake_root: Path | None = None):
+        self.root = root.resolve()
+        self.parquet = ParquetBarStore(self.root, lake_root)
+        self.legacy = LegacyJsonBarStore()
+        self._cache: dict[tuple[Any, ...], BarSeries] = {}
+
+    def _cache_key(
+        self,
+        legacy_path: Path,
+        columns: tuple[str, ...] | None,
+        record: dict[str, Any] | None,
+    ) -> tuple[Any, ...] | None:
+        try:
+            stat = legacy_path.stat()
+        except OSError:
+            return None
+        key: tuple[Any, ...] = (
+            str(legacy_path.resolve()), stat.st_mtime_ns, stat.st_size, columns,
+        )
+        if record is None:
+            return (*key, "legacy_json")
+        try:
+            bars_path = self.parquet._record_path(str(record["bars_path"]))
+            bars_stat = bars_path.stat()
+            manifest_stat = self.parquet.manifest_path.stat()
+        except (KeyError, OSError):
+            return (*key, "parquet_unavailable", record.get("legacy_sha256"), record.get("parquet_sha256"))
+        return (
+            *key,
+            "parquet",
+            record.get("dataset_id"), record.get("legacy_sha256"), record.get("parquet_sha256"),
+            manifest_stat.st_mtime_ns, manifest_stat.st_size,
+            str(bars_path.resolve()), bars_stat.st_mtime_ns, bars_stat.st_size,
+        )
+
+    def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
+        requested_columns = tuple(columns) if columns is not None else None
+        try:
+            record = self.parquet.record_for_legacy_path(legacy_path)
+        except DataLakeError:
+            # A damaged or absent lake must never displace the retained legacy input.
+            record = None
+        key = self._cache_key(legacy_path, requested_columns, record)
+        if key is not None and key in self._cache:
+            return self._cache[key]
+        if record is not None and sha256_file(legacy_path) == record.get("legacy_sha256"):
+            try:
+                series = self.parquet.read_series(
+                    str(record["secid"]),
+                    str(record["timeframe"]),
+                    columns=requested_columns,
+                    source_path=legacy_path,
+                    source_sha256=str(record["legacy_sha256"]),
+                )
+            except (DataLakeError, OSError, KeyError):
+                series = self.legacy.read(legacy_path, columns=requested_columns)
+        else:
+            series = self.legacy.read(legacy_path, columns=requested_columns)
+        if key is not None:
+            self._cache[key] = series
+        return series

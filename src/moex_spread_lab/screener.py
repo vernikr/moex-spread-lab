@@ -10,6 +10,7 @@ from typing import Any
 
 from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
+from .data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
 from .timeframes import get_timeframe, timeframe_for_interval
 from .w0 import W0Error, read_hashed_json
 
@@ -35,6 +36,17 @@ def _round(value: float) -> float:
 _read_json = partial(read_hashed_json, error=ScreenError, label="screen input")
 
 
+def _bar_series(source: BarSeries | Path) -> BarSeries:
+    if isinstance(source, BarSeries):
+        return source
+    if isinstance(source, Path):
+        try:
+            return LegacyJsonBarStore().read(source)
+        except DataLakeError as exc:
+            raise ScreenError(str(exc)) from exc
+    raise ScreenError("screen candle source must be a BarSeries or Path")
+
+
 def _basis_daily_pnl(series: dict[str, Any]) -> list[float]:
     rows = series["rows"]
     near = series["contracts"][series["near"]]
@@ -51,8 +63,8 @@ def _basis_daily_pnl(series: dict[str, Any]) -> list[float]:
 
 
 def _normalized_series(
-    near_path: Path,
-    far_path: Path,
+    near_source: BarSeries | Path,
+    far_source: BarSeries | Path,
     benchmark_path: Path,
     contracts_path: Path,
     *,
@@ -61,18 +73,18 @@ def _normalized_series(
     prior_benchmark_dates=(),
     timeframe: str | None = None,
 ) -> dict[str, Any]:
-    near_payload, near_hash = _read_json(near_path)
-    far_payload, far_hash = _read_json(far_path)
+    near_series = _bar_series(near_source)
+    far_series = _bar_series(far_source)
     benchmark_payload, benchmark_hash = _read_json(benchmark_path)
-    if near_payload.get("schema_version") != "iss-candles.v1" or far_payload.get("schema_version") != "iss-candles.v1":
+    if near_series.schema_version != "iss-candles.v1" or far_series.schema_version != "iss-candles.v1":
         raise ScreenError("screen requires iss-candles.v1 pair inputs")
     if benchmark_payload.get("schema_version") != "lqdt-lineage.v1":
         raise ScreenError("screen requires lqdt-lineage.v1 benchmark")
     try:
-        spec = get_timeframe(timeframe) if timeframe is not None else timeframe_for_interval(near_payload.get("interval"))
+        spec = get_timeframe(timeframe) if timeframe is not None else timeframe_for_interval(near_series.interval)
     except ValueError as exc:
         raise ScreenError(str(exc)) from exc
-    if near_payload.get("interval") != spec.iss_interval or far_payload.get("interval") != spec.iss_interval:
+    if near_series.interval != spec.iss_interval or far_series.interval != spec.iss_interval:
         raise ScreenError(f"candle interval mismatch: expected {spec.iss_interval} ({spec.id})")
     contracts, contracts_hash = load_contracts(contracts_path, near, far)
     near_contract = contracts[near]
@@ -89,12 +101,12 @@ def _normalized_series(
 
     near_rows = {
         ts: row
-        for row in near_payload.get("rows", [])
+        for row in near_series.rows
         if (ts := canonical_timestamp(row)) and row.get("close") is not None
     }
     far_rows = {
         ts: row
-        for row in far_payload.get("rows", [])
+        for row in far_series.rows
         if (ts := canonical_timestamp(row)) and row.get("close") is not None
     }
     benchmark = {row["date"]: row for row in benchmark_payload.get("rows", []) if row.get("date")}
@@ -149,12 +161,12 @@ def _normalized_series(
         "rows": rows,
         "contracts": contracts,
         "provenance": {
-            "near_candles_sha256": near_hash,
-            "far_candles_sha256": far_hash,
+            "near_candles_sha256": near_series.source_sha256,
+            "far_candles_sha256": far_series.source_sha256,
             "benchmark_sha256": benchmark_hash,
             "contracts_sha256": contracts_hash,
-            "near_candles_path": str(near_path),
-            "far_candles_path": str(far_path),
+            "near_candles_path": near_series.source_path,
+            "far_candles_path": far_series.source_path,
             "benchmark_path": str(benchmark_path),
             "contracts_path": str(contracts_path),
             "normalization": "close * (tick_value / tick_size) per leg",

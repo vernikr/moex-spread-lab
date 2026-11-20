@@ -10,6 +10,7 @@ from typing import Any
 
 from .analytics import run_mean_reversion_baseline
 from .costs import tariff_profile
+from .data_lake import BarSeries
 from .screener import _normalized_series
 from .screener_app import MIN_DAILY_VOLUME, PAIRS, ScreenerInputs
 from .w0 import W0Error
@@ -17,8 +18,8 @@ from .w0 import W0Error
 SLIPPAGE_GRID = (0.0, 1.0, 2.0)
 
 
-def _candles(path: Path) -> dict[str, dict[str, Any]]:
-    return {row["begin"]: row for row in json.loads(path.read_text(encoding="utf-8"))["rows"]}
+def _candles(series: BarSeries) -> dict[str, dict[str, Any]]:
+    return {row["begin"]: row for row in series.rows if isinstance(row.get("begin"), str)}
 
 
 def independent_gross(near: dict, far: dict, near_mult: float, far_mult: float, *, lookback: int = 20,
@@ -57,7 +58,12 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
         near_path, far_path = inputs.candles(pair["pair_id"], near_id), inputs.candles(pair["pair_id"], far_id)
         if not (near_path.is_file() and far_path.is_file()):
             continue
-        near, far = _candles(near_path), _candles(far_path)
+        try:
+            near_source = inputs.bars(pair["pair_id"], near_id, columns=("begin", "open", "high", "low", "close", "volume"))
+            far_source = inputs.bars(pair["pair_id"], far_id, columns=("begin", "open", "high", "low", "close", "volume"))
+        except W0Error:
+            continue
+        near, far = _candles(near_source), _candles(far_source)
         common = set(near) & set(far)
         mult = {s: contracts[s]["tick_value"] / contracts[s]["tick_size"] for s in (near_id, far_id)}
         min_volume = {s: min(r["volume"] for t, r in c.items() if t in common) for s, c in ((near_id, near), (far_id, far))}
@@ -71,7 +77,7 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
             "open_outside_range": sum(not r["low"] <= r["open"] <= r["high"] for r in (*near.values(), *far.values())),
         }
         try:
-            series = _normalized_series(near_path, far_path, inputs.benchmark, inputs.contracts, near=near_id, far=far_id)
+            series = _normalized_series(near_source, far_source, inputs.benchmark, inputs.contracts, near=near_id, far=far_id)
             runs = {
                 slippage: run_mean_reversion_baseline(
                     series, analysis_role="diagnostic_only", cost_profile=tariff_profile(slippage),

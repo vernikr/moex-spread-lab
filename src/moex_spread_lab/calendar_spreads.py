@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import itertools
 import json
 import math
@@ -16,6 +15,7 @@ from typing import Any
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
 from .carry import CarryError, fetch_history
 from .costs import TAKER_RATE_PERCENT, tariff_profile
+from .data_lake import DataLakeError, MarketDataStore
 from .s3_reference import (
     FILLS,
     account_trades,
@@ -332,7 +332,8 @@ class CalendarData:
         self.root = root.resolve()
         self.cache = self.root / "data/spread-history-cache"
         self._loaded: dict[str, Any] | None = None
-        self._h1_candle_cache: dict[str, tuple[tuple[str, int, int], tuple[dict[str, Any] | None, str | None]]] = {}
+        self.bar_store = MarketDataStore(self.root)
+        self._h1_candle_cache: dict[str, tuple[tuple[Any, ...], tuple[dict[str, Any] | None, str | None]]] = {}
         self._h1_windows: dict[str, list[dict[str, Any]]] = {}
 
     def _load(self) -> dict[str, Any]:
@@ -382,22 +383,20 @@ class CalendarData:
         if path is None:
             return None, "no_local_h1_file"
         try:
-            stat = path.stat()
-            fingerprint = (str(path), stat.st_mtime_ns, stat.st_size)
+            source = self.bar_store.read(path, columns=("begin", "open", "close", "volume"))
+            fingerprint = source.cache_key
             cached = self._h1_candle_cache.get(secid)
             if cached and cached[0] == fingerprint:
                 return cached[1]
-            raw = path.read_bytes()
-            payload = json.loads(raw)
-            if payload.get("schema_version") != "iss-candles.v1" or payload.get("interval") != 60:
+            if source.schema_version != "iss-candles.v1" or source.interval != 60:
                 result = (None, "invalid_h1_schema_or_interval")
-            elif payload.get("secid") not in (None, secid):
+            elif source.secid not in (None, secid):
                 result = (None, "secid_mismatch")
-            elif not isinstance(payload.get("rows"), list) or not payload["rows"]:
+            elif not source.rows:
                 result = (None, "empty_h1_series")
             else:
                 rows: dict[str, dict[str, Any]] = {}
-                for source_row in payload["rows"]:
+                for source_row in source.rows:
                     timestamp = self._candle_timestamp(source_row.get("begin"))
                     close = self._number(source_row.get("close"))
                     if timestamp is None or close is None:
@@ -415,13 +414,13 @@ class CalendarData:
                 else:
                     result = ({
                         "secid": secid,
-                        "path": str(path),
-                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "path": source.source_path,
+                        "sha256": source.source_sha256,
                         "rows": rows,
                     }, None)
             self._h1_candle_cache[secid] = (fingerprint, result)
             return result
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (DataLakeError, OSError, TypeError, ValueError):
             return None, "unreadable_h1_series"
 
     @staticmethod

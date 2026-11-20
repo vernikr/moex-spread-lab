@@ -122,3 +122,27 @@ uv run python -m moex_spread_lab.cli data-gc --root . --apply
 ```
 
 The refresh takes an exclusive per-dataset writer lock before reading the watermark and holds it through fetch, publish and verification. It merges on the candle `begin` key, sorts deterministically, atomically publishes the JSON file, upserts its mirror and then runs the same legacy-versus-Parquet verification used by the importer. It does not delete legacy JSON or alter active screen-first source selection.
+
+## Phase 5: compact research run artifacts
+
+Analytical baseline and sensitivity runs are evidence artifacts with a compact control plane and large detail plane. `analytical-baseline --output-dir …` atomically publishes a *new* run directory containing `summary.json`, `daily.parquet`, `trades.parquet` and `manifest.json`. The manifest is `research-run-artifact.v1`; it records the run/artifact ID, input/evidence hashes, component SHA-256 hashes, Parquet row/column counts and detail retention state. Publication stages all files beside the target and refuses to replace an existing directory.
+
+`summary.json` retains the reusable research facts: result schema, release state, pair/timeframe identity, parameters, costs/economics, summary measures and input provenance. It intentionally excludes detailed bars and trades. `daily.parquet` and `trades.parquet` use Zstandard compression. The CLI only writes the older monolithic pretty JSON when `--legacy-json` is explicitly supplied. Existing `execution-ledger` and `validate-analytics` consumers accept a verified run directory as well as that legacy JSON format.
+
+Each new artifact gets a 30-day detail TTL by default; use `--retention-days N` to set it for that run and `--pin` for evidence that must retain its details indefinitely. Collection never removes `summary.json` or `manifest.json`, and it does nothing until `--apply` is explicit:
+
+```bash
+# Review only; default root is data/analytics/runs under --root.
+uv run python -m moex_spread_lab.cli run-artifact-gc --root . --dry-run --format json
+
+# Pin an important run, or later restart its configured TTL.
+uv run python -m moex_spread_lab.cli run-artifact-pin \
+  --artifact-dir data/analytics/runs/cnyrubf-crz6-1d-baseline --pin
+uv run python -m moex_spread_lab.cli run-artifact-pin \
+  --artifact-dir data/analytics/runs/cnyrubf-crz6-1d-baseline --unpin
+
+# Only after reviewing the dry-run plan, collect expired and unpinned detail files.
+uv run python -m moex_spread_lab.cli run-artifact-gc --root . --apply --format json
+```
+
+After collection the manifest records `detail_status=collected`; the compact result and its provenance remain inspectable, but consumers which require `daily`/`trades` fail closed rather than inventing a replay. A pin protects details from collection. Integrity verification happens automatically when a compact artifact is read: its summary and each required detail file must match the manifest SHA-256 and recorded table shape.

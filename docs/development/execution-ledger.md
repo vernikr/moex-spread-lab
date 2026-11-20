@@ -4,7 +4,7 @@ Date: 2026-11-03
 
 ## Purpose
 
-The first external-data ledger makes the execution boundary explicit. It consumes an `analytical-baseline.v1` report and produces an append-only `execution-ledger.v1` report with:
+The first external-data ledger makes the execution boundary explicit. It consumes an `analytical-baseline.v1` report, either as a legacy JSON file or as a verified Phase-5 compact run directory and produces an append-only `execution-ledger.v1` report with:
 
 - signal and simulated decision timestamps;
 - one execution attempt for every baseline entry and exit;
@@ -28,11 +28,11 @@ No partial fill is invented, no leg is silently balanced, and no broker or accou
 
 ```bash
 uv run python -m moex_spread_lab.cli execution-ledger \
-  --baseline data/analytics/cnyrubf-crz6-1d-baseline.json \
+  --baseline data/analytics/runs/cnyrubf-crz6-1d-baseline \
   --output data/analytics/cnyrubf-crz6-1d-ledger.json
 ```
 
-The generated JSON is ignored under `data/`. The 2026-11-03 daily replay produced 22 unresolved attempts (11 entries and 11 exits), 344 portfolio marks and final proxy `X = −RUB 7,572.30`, matching the baseline. Actual account reconciliation remains unresolved.
+The ledger remains JSON because it is compact enough for its current consumer contract. The baseline path may instead name a legacy JSON export when compatibility requires it. All generated files are ignored under `data/`. The 2026-11-03 daily replay produced 22 unresolved attempts (11 entries and 11 exits), 344 portfolio marks and final proxy `X = −RUB 7,572.30`, matching the baseline. Actual account reconciliation remains unresolved.
 
 The module is pinned in `config/run-manifest.json` through `config/modules/execution-ledger.json`; the analytical baseline module is pinned alongside it.
 

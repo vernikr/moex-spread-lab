@@ -52,10 +52,32 @@ uv run python -m moex_spread_lab.cli analytical-baseline \
   --far-candles data/w1/candles/CRZ6_1d.json \
   --benchmark data/benchmark/lqdt-lineage.json \
   --contracts data/w1/current-intake.json \
-  --output data/analytics/cnyrubf-crz6-1d-baseline.json
+  --output-dir data/analytics/runs/cnyrubf-crz6-1d-baseline
 ```
 
-The detailed ignored local report is `data/analytics/cnyrubf-crz6-1d-baseline.json`.
+### Compact run artifact (Phase 5)
+
+New baseline and sensitivity replays publish an immutable local **run directory**, not a large pretty JSON report. The output contains:
+
+- `summary.json`: compact result identity, parameters, economics, costs, summary, plateau/rejection facts and input provenance;
+- `daily.parquet` and `trades.parquet`: Zstandard-compressed detailed marks and trades;
+- `manifest.json`: `research-run-artifact.v1` run/artifact identity, SHA-256 of every component, explicit input/evidence hashes, row/column metadata and retention state.
+
+`execution-ledger` and `validate-analytics` accept either this directory or an older `analytical-baseline.v1` JSON path. They verify the compact artifact before rehydrating its details, so moving the physical detail storage does not change the analytical baseline contract.
+
+A full pretty JSON file is now a compatibility export only; request it explicitly when an external legacy consumer requires it:
+
+```bash
+uv run python -m moex_spread_lab.cli analytical-baseline \
+  --near-candles data/w1/candles/CNYRUBF_1d.json \
+  --far-candles data/w1/candles/CRZ6_1d.json \
+  --benchmark data/benchmark/lqdt-lineage.json \
+  --contracts data/w1/current-intake.json \
+  --output-dir data/analytics/runs/cnyrubf-crz6-1d-baseline \
+  --legacy-json data/analytics/cnyrubf-crz6-1d-baseline.json
+```
+
+Use a new output directory per run. The publisher refuses to overwrite an existing evidence directory.
 
 ## Intraday delay sensitivity
 

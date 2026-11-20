@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .run_artifacts import load_report
 from .w0 import W0Error, read_hashed_json
 
 
@@ -85,7 +86,7 @@ def _trade_concentration(baseline: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sensitivity(path: Path) -> dict[str, Any]:
-    report, digest = read_hashed_json(path, error=ValidationError)
+    report, digest = load_report(path, error=ValidationError)
     if report.get("schema_version") != "analytical-baseline.v1":
         raise ValidationError(f"sensitivity is not analytical-baseline.v1: {path}")
     summary = report.get("summary", {})
@@ -115,7 +116,7 @@ def build_validation(
     train_fraction: float = 0.6,
     confirmation_fraction: float = 0.2,
 ) -> dict[str, Any]:
-    baseline, baseline_hash = read_hashed_json(baseline_path, error=ValidationError)
+    baseline, baseline_hash = load_report(baseline_path, error=ValidationError)
     ledger, ledger_hash = read_hashed_json(ledger_path, error=ValidationError)
     if baseline.get("schema_version") != "analytical-baseline.v1":
         raise ValidationError("unsupported baseline schema")

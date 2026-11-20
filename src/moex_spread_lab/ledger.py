@@ -6,7 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .w0 import W0Error, read_hashed_json
+from .run_artifacts import load_report
+from .w0 import W0Error
 
 
 LEDGER_SCHEMA = "execution-ledger.v1"
@@ -123,7 +124,7 @@ def rebuild_projection(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_ledger(baseline_path: Path) -> dict[str, Any]:
-    baseline, baseline_hash = read_hashed_json(baseline_path, error=LedgerError)
+    baseline, baseline_hash = load_report(baseline_path, error=LedgerError)
     if baseline.get("schema_version") != "analytical-baseline.v1":
         raise LedgerError("unsupported analytical baseline schema")
     rows = baseline.get("daily")

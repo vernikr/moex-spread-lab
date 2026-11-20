@@ -113,6 +113,21 @@ def build_parser() -> argparse.ArgumentParser:
     gc_mode.add_argument("--apply", action="store_true", help="delete only expired, unpinned responses and orphans")
     gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    artifact_pin_parser = subparsers.add_parser("run-artifact-pin", help="pin or unpin a compact evidence run's Parquet details")
+    artifact_pin_parser.add_argument("--artifact-dir", type=Path, required=True)
+    artifact_pin_group = artifact_pin_parser.add_mutually_exclusive_group()
+    artifact_pin_group.add_argument("--pin", action="store_true", help="keep details without TTL; this is the default")
+    artifact_pin_group.add_argument("--unpin", action="store_true", help="restart the artifact's configured detail TTL")
+    artifact_pin_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
+    artifact_gc_parser = subparsers.add_parser("run-artifact-gc", help="plan or collect expired unpinned Parquet run details")
+    artifact_gc_parser.add_argument("--root", type=Path, default=Path.cwd())
+    artifact_gc_parser.add_argument("--runs-root", type=Path, default=Path("data/analytics/runs"))
+    artifact_gc_mode = artifact_gc_parser.add_mutually_exclusive_group()
+    artifact_gc_mode.add_argument("--dry-run", action="store_true", help="report detail files only; this is the default")
+    artifact_gc_mode.add_argument("--apply", action="store_true", help="remove expired detail files while preserving summaries and manifests")
+    artifact_gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
@@ -166,7 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_parser.add_argument("--far-candles", type=Path, required=True)
     baseline_parser.add_argument("--benchmark", type=Path, required=True)
     baseline_parser.add_argument("--contracts", type=Path, required=True)
-    baseline_parser.add_argument("--output", type=Path, required=True)
+    baseline_parser.add_argument("--output-dir", type=Path, required=True, help="new directory for summary.json and Parquet details")
+    baseline_parser.add_argument("--legacy-json", type=Path, help="explicit compatibility export of the full pretty JSON report")
+    baseline_parser.add_argument("--retention-days", type=int, default=30, help="retain unpinned Parquet details for this many days")
+    baseline_parser.add_argument("--pin", action="store_true", help="retain this evidence run's Parquet details without TTL")
     baseline_parser.add_argument("--near", default="CNYRUBF")
     baseline_parser.add_argument("--far", default="CRZ6")
     baseline_parser.add_argument("--initial-capital", type=float, default=30000.0)
@@ -412,6 +430,35 @@ def main() -> int:
                     if key in output
                 }, ensure_ascii=False, sort_keys=True))
             return 0
+        if args.command == "run-artifact-pin":
+            from .run_artifacts import pin_run_artifact
+
+            manifest = pin_run_artifact(args.artifact_dir, pinned=not args.unpin)
+            output = {"status": "pinned" if not args.unpin else "unpinned", "manifest": manifest}
+            if args.format == "json":
+                print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    "status": output["status"],
+                    "artifact_id": manifest["artifact_id"],
+                    "pinned": manifest["retention"]["pinned"],
+                    "expires_at": manifest["retention"]["expires_at"],
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "run-artifact-gc":
+            from .run_artifacts import gc_run_artifacts
+
+            root = args.root.resolve()
+            runs_root = args.runs_root if args.runs_root.is_absolute() else root / args.runs_root
+            output = gc_run_artifacts(runs_root, dry_run=not args.apply)
+            if args.format == "json":
+                print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    key: output[key]
+                    for key in ("status", "expired_artifact_count", "retained_artifact_count")
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
         if args.command == "research-pipeline":
             result = run_research_pipeline(args.manifest, args.fixture)
             write_json(args.output, result)
@@ -617,7 +664,13 @@ def main() -> int:
                 analysis_role=args.analysis_role,
                 cost_profile=cost_profile,
             )
-            write_json(args.output, result)
+            from .run_artifacts import publish_baseline_artifact, write_legacy_json
+
+            artifact = publish_baseline_artifact(
+                args.output_dir, result, retention_days=args.retention_days, pin=args.pin,
+            )
+            if args.legacy_json is not None:
+                write_legacy_json(args.legacy_json, result)
             print(json.dumps({
                 "release_state": result["release_state"],
                 "timeframe": result["timeframe"],
@@ -630,7 +683,9 @@ def main() -> int:
                 "final_X": result["summary"]["final_X"],
                 "max_drawdown_D": result["summary"]["max_drawdown_D"],
                 "cost_status": result["costs"]["status"],
-                "output": str(args.output),
+                "artifact_dir": artifact["artifact_dir"],
+                "artifact_id": artifact["artifact_id"],
+                "legacy_json": str(args.legacy_json) if args.legacy_json else None,
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "execution-ledger":

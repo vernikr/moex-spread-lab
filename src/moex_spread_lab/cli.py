@@ -64,6 +64,55 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--verify", action="store_true", help="verify each Parquet import against its legacy JSON")
     import_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    refresh_parser = subparsers.add_parser(
+        "data-refresh", help="incrementally refresh candle series into legacy JSON and the verified Parquet lake",
+    )
+    refresh_parser.add_argument("--root", type=Path, default=Path.cwd())
+    refresh_parser.add_argument("--secid", action="append", required=True)
+    refresh_parser.add_argument("--interval", action="append", type=int, required=True)
+    refresh_parser.add_argument("--from-date", help="required only for a first dataset or --full-refresh")
+    refresh_parser.add_argument("--till-date", required=True)
+    refresh_parser.add_argument("--output-dir", type=Path, default=Path("data/w1/candles"))
+    refresh_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    refresh_parser.add_argument("--base-url", default=DEFAULT_ISS_BASE_URL)
+    refresh_parser.add_argument("--board", default="RFUD")
+    refresh_parser.add_argument("--overlap-sessions", type=int, default=5)
+    refresh_parser.add_argument("--chunk-days", type=int, default=90)
+    refresh_parser.add_argument("--workers", type=int, default=2)
+    refresh_parser.add_argument("--full-refresh", action="store_true")
+    refresh_parser.add_argument("--raw-ttl-days", type=int, default=30)
+    refresh_parser.add_argument("--pin-raw", action="store_true")
+    refresh_parser.add_argument("--cache-dir", type=Path)
+    refresh_parser.add_argument("--timeout", type=float, default=20.0)
+    refresh_parser.add_argument("--delay-seconds", type=float, default=0.1)
+    refresh_parser.add_argument("--retries", type=int, default=3)
+    refresh_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
+    verify_parser = subparsers.add_parser("data-verify", help="verify every registered Parquet dataset and retained raw response")
+    verify_parser.add_argument("--root", type=Path, default=Path.cwd())
+    verify_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    verify_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
+    compact_parser = subparsers.add_parser("data-compact", help="compact registered Parquet datasets into canonical Zstd files")
+    compact_parser.add_argument("--root", type=Path, default=Path.cwd())
+    compact_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    compact_parser.add_argument("--force", action="store_true", help="rewrite current single-file datasets too")
+    compact_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
+    pin_parser = subparsers.add_parser("data-pin-raw", help="pin a raw .json.zst response against TTL collection")
+    pin_parser.add_argument("--root", type=Path, default=Path.cwd())
+    pin_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    pin_parser.add_argument("--entry-id", required=True)
+    pin_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
+    gc_parser = subparsers.add_parser("data-gc", help="plan or collect expired unpinned raw .json.zst responses")
+    gc_parser.add_argument("--root", type=Path, default=Path.cwd())
+    gc_parser.add_argument("--lake-root", type=Path, default=Path("data-lake"))
+    gc_mode = gc_parser.add_mutually_exclusive_group()
+    gc_mode.add_argument("--dry-run", action="store_true", help="report files only; this is the default")
+    gc_mode.add_argument("--apply", action="store_true", help="delete only expired, unpinned responses and orphans")
+    gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
+
     pipeline_parser = subparsers.add_parser("research-pipeline", help="run offline W1-W7 research waves")
     pipeline_parser.add_argument("--manifest", type=Path, required=True)
     pipeline_parser.add_argument("--fixture", type=Path, required=True)
@@ -303,6 +352,64 @@ def main() -> int:
                     "dataset_count": len(records),
                     "row_count": sum(record["row_count"] for record in records),
                     "datasets": [record["dataset_id"] for record in records],
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command == "data-refresh":
+            from .data_refresh import RefreshTarget, refresh_candle_datasets
+
+            root = args.root.resolve()
+            lake_root = args.lake_root if args.lake_root.is_absolute() else root / args.lake_root
+            output = refresh_candle_datasets(
+                root=root,
+                targets=[RefreshTarget(secid, interval) for secid in args.secid for interval in args.interval],
+                till_date=args.till_date,
+                from_date=args.from_date,
+                output_dir=args.output_dir,
+                lake_root=lake_root,
+                board=args.board,
+                base_url=args.base_url,
+                overlap_sessions=args.overlap_sessions,
+                chunk_days=args.chunk_days,
+                workers=args.workers,
+                full_refresh=args.full_refresh,
+                raw_ttl_days=args.raw_ttl_days,
+                pin_raw=args.pin_raw,
+                timeout=args.timeout,
+                delay_seconds=args.delay_seconds,
+                retries=args.retries,
+                cache_dir=args.cache_dir,
+            )
+            if args.format == "json":
+                print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    "status": output["status"],
+                    "dataset_count": len(output["datasets"]),
+                    "scheduled_chunk_count": output["scheduled_chunk_count"],
+                    "datasets": output["datasets"],
+                }, ensure_ascii=False, sort_keys=True))
+            return 0
+        if args.command in {"data-verify", "data-compact", "data-pin-raw", "data-gc"}:
+            from .data_lake import ParquetBarStore
+
+            root = args.root.resolve()
+            lake_root = args.lake_root if args.lake_root.is_absolute() else root / args.lake_root
+            store = ParquetBarStore(root, lake_root)
+            if args.command == "data-verify":
+                output = store.verify_all()
+            elif args.command == "data-compact":
+                output = store.compact(force=args.force)
+            elif args.command == "data-pin-raw":
+                output = {"status": "pinned", "entry": store.raw_archive.pin(args.entry_id)}
+            else:
+                output = store.raw_archive.gc(dry_run=not args.apply)
+            if args.format == "json":
+                print(json.dumps(output, ensure_ascii=False, sort_keys=True))
+            else:
+                print(json.dumps({
+                    key: output[key]
+                    for key in ("status", "dataset_count", "expired_entry_count", "orphan_file_count", "retained_entry_count")
+                    if key in output
                 }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "research-pipeline":

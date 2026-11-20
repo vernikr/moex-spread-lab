@@ -203,6 +203,7 @@ def fetch_candle_series(
     max_pages: int | None = None,
     retries: int = 3,
     opener: Callable[..., Any] = urllib.request.urlopen,
+    raw_sink: Callable[[str, bytes, str, str], None] | None = None,
 ) -> dict[str, Any]:
     if interval <= 0 or delay_seconds < 0 or retries < 0:
         raise IssIntakeError("invalid candle interval, delay or retries")
@@ -227,7 +228,11 @@ def fetch_candle_series(
             last_error: IssIntakeError | None = None
             for attempt in range(retries + 1):
                 try:
-                    payload, received_at, raw_sha256 = _fetch_json(url, timeout=timeout, opener=opener)
+                    payload, received_at, raw_sha256, raw = _fetch_json(
+                        url, timeout=timeout, opener=opener, return_raw=True,
+                    )
+                    if raw_sink is not None:
+                        raw_sink(url, raw, received_at, raw_sha256)
                     last_error = None
                     break
                 except IssIntakeError as exc:
@@ -327,8 +332,13 @@ def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
 
 
 def _fetch_json(
-    url: str, *, timeout: float, opener: Callable[..., Any], probe: str = "coverage",
-) -> tuple[dict[str, Any], str, str]:
+    url: str,
+    *,
+    timeout: float,
+    opener: Callable[..., Any],
+    probe: str = "coverage",
+    return_raw: bool = False,
+) -> tuple[Any, ...]:
     request = urllib.request.Request(
         url,
         headers={"Accept": "application/json", "User-Agent": f"moex-spread-lab/0.1 W1 {probe} probe"},
@@ -352,7 +362,10 @@ def _fetch_json(
         raise IssIntakeError("ISS response is not valid UTF-8 JSON") from exc
     if not isinstance(payload, dict):
         raise IssIntakeError("ISS JSON root is not an object")
-    return payload, received_at, hashlib.sha256(raw).hexdigest()
+    raw_sha256 = hashlib.sha256(raw).hexdigest()
+    if return_raw:
+        return payload, received_at, raw_sha256, raw
+    return payload, received_at, raw_sha256
 
 
 def fetch_candle_coverage(

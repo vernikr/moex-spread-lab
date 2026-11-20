@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 
@@ -22,6 +22,7 @@ from .w0 import W0Error, canonical_bytes, sha256_file
 
 DATA_LAKE_SCHEMA = "market-data-lake.v1"
 BAR_DATASET_SCHEMA = "market-data-bars.v1"
+RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
 LEGACY_CANDLE_SCHEMA = "iss-candles.v1"
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -261,6 +262,175 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def _atomic_write_bytes(path: Path, value: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(value)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+class RawResponseArchive:
+    """Retention-managed exact ISS response bodies, compressed as ``.json.zst``."""
+
+    def __init__(self, lake_root: Path):
+        self.lake_root = lake_root.resolve()
+        self.root = self.lake_root / "raw"
+        self.manifest_path = self.root / "manifest.json"
+        self._codec = pa.Codec("zstd")
+
+    def _read_manifest(self) -> dict[str, Any]:
+        if not self.manifest_path.is_file():
+            return {"schema_version": RAW_ARCHIVE_SCHEMA, "entries": []}
+        try:
+            value = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise DataLakeError(f"cannot read raw response manifest: {exc}") from exc
+        if not isinstance(value, dict) or value.get("schema_version") != RAW_ARCHIVE_SCHEMA:
+            raise DataLakeError("unsupported raw response manifest schema")
+        if not isinstance(value.get("entries"), list):
+            raise DataLakeError("raw response manifest entries must be a list")
+        return value
+
+    def _write_manifest(self, manifest: dict[str, Any]) -> None:
+        manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        _atomic_write_json(self.manifest_path, manifest)
+
+    @staticmethod
+    def _entry_path(entry: dict[str, Any]) -> str:
+        value = entry.get("path")
+        if not isinstance(value, str) or Path(value).name != value or not value.endswith(".json.zst"):
+            raise DataLakeError("raw response manifest contains an unsafe path")
+        return value
+
+    def archive(
+        self,
+        *,
+        url: str,
+        raw: bytes,
+        received_at: str,
+        ttl_days: int = 30,
+        pin: bool = False,
+    ) -> dict[str, Any]:
+        if not isinstance(url, str) or not url or not isinstance(raw, bytes):
+            raise DataLakeError("raw response requires a URL and exact bytes")
+        if ttl_days < 0:
+            raise DataLakeError("raw response TTL must not be negative")
+        now = datetime.now(UTC)
+        request_sha256 = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        raw_sha256 = hashlib.sha256(raw).hexdigest()
+        received_sha256 = hashlib.sha256(received_at.encode("utf-8")).hexdigest()
+        # The tuple request hash, response hash and observed receipt time is the
+        # identity; two identical bodies observed at different times remain auditable.
+        entry_id = f"{request_sha256}-{raw_sha256}-{received_sha256}"
+        filename = f"{entry_id}.json.zst"
+        compressed = self._codec.compress(raw).to_pybytes()
+        _atomic_write_bytes(self.root / filename, compressed)
+        manifest = self._read_manifest()
+        old = next((item for item in manifest["entries"] if isinstance(item, dict) and item.get("id") == entry_id), None)
+        pinned = bool(pin or (old and old.get("pinned") is True))
+        stored_at = now.isoformat(timespec="seconds")
+        entry = {
+            "id": entry_id,
+            "path": filename,
+            "request_sha256": request_sha256,
+            "raw_response_sha256": raw_sha256,
+            "received_at_sha256": received_sha256,
+            "url": url,
+            "received_at": received_at,
+            "stored_at": stored_at,
+            "last_seen_at": stored_at,
+            "expires_at": None if pinned else (now + timedelta(days=ttl_days)).isoformat(timespec="seconds"),
+            "pinned": pinned,
+            "raw_bytes": len(raw),
+            "compressed_bytes": len(compressed),
+        }
+        entries = [item for item in manifest["entries"] if not (isinstance(item, dict) and item.get("id") == entry_id)]
+        entries.append(entry)
+        manifest["entries"] = sorted(entries, key=lambda item: item["id"])
+        self._write_manifest(manifest)
+        return entry
+
+    def pin(self, entry_id: str, *, pinned: bool = True) -> dict[str, Any]:
+        manifest = self._read_manifest()
+        for entry in manifest["entries"]:
+            if isinstance(entry, dict) and entry.get("id") == entry_id:
+                entry["pinned"] = pinned
+                entry["expires_at"] = None if pinned else entry.get("expires_at") or datetime.now(UTC).isoformat(timespec="seconds")
+                self._write_manifest(manifest)
+                return entry
+        raise DataLakeError(f"raw response entry is not registered: {entry_id}")
+
+    def verify(self) -> dict[str, Any]:
+        manifest = self._read_manifest()
+        entries = [item for item in manifest["entries"] if isinstance(item, dict)]
+        verified_bytes = 0
+        registered_paths: set[str] = set()
+        for entry in entries:
+            name = self._entry_path(entry)
+            registered_paths.add(name)
+            try:
+                raw = self._codec.decompress((self.root / name).read_bytes(), int(entry["raw_bytes"]))
+            except (OSError, ValueError, KeyError) as exc:
+                raise DataLakeError(f"cannot verify raw response {entry.get('id')}: {exc}") from exc
+            url = entry.get("url")
+            received_at = entry.get("received_at")
+            if not isinstance(url, str) or not isinstance(received_at, str):
+                raise DataLakeError(f"raw response provenance is invalid: {entry.get('id')}")
+            request_sha256 = hashlib.sha256(url.encode("utf-8")).hexdigest()
+            received_sha256 = hashlib.sha256(received_at.encode("utf-8")).hexdigest()
+            expected_id = f"{request_sha256}-{entry.get('raw_response_sha256')}-{received_sha256}"
+            if (
+                entry.get("request_sha256") != request_sha256
+                or entry.get("received_at_sha256") != received_sha256
+                or entry.get("id") != expected_id
+            ):
+                raise DataLakeError(f"raw response provenance hash differs from manifest: {entry.get('id')}")
+            if hashlib.sha256(raw).hexdigest() != entry.get("raw_response_sha256"):
+                raise DataLakeError(f"raw response SHA-256 differs from manifest: {entry.get('id')}")
+            verified_bytes += len(raw)
+        orphans = sorted(path.name for path in self.root.glob("*.json.zst") if path.name not in registered_paths)
+        return {"entry_count": len(entries), "verified_raw_bytes": verified_bytes, "orphan_files": orphans}
+
+    def gc(self, *, dry_run: bool = True) -> dict[str, Any]:
+        manifest = self._read_manifest()
+        now = datetime.now(UTC)
+        expired: list[dict[str, Any]] = []
+        keep: list[dict[str, Any]] = []
+        for entry in manifest["entries"]:
+            if not isinstance(entry, dict):
+                raise DataLakeError("raw response manifest entry is invalid")
+            expires_at = entry.get("expires_at")
+            is_expired = False
+            if entry.get("pinned") is not True and isinstance(expires_at, str):
+                try:
+                    is_expired = datetime.fromisoformat(expires_at).astimezone(UTC) <= now
+                except ValueError:
+                    raise DataLakeError(f"raw response expiry is invalid: {entry.get('id')}")
+            (expired if is_expired else keep).append(entry)
+        registered_paths = {self._entry_path(entry) for entry in manifest["entries"]}
+        orphans = sorted(path for path in self.root.glob("*.json.zst") if path.name not in registered_paths)
+        planned = [self._entry_path(entry) for entry in expired] + [path.name for path in orphans]
+        if not dry_run:
+            for name in planned:
+                (self.root / name).unlink(missing_ok=True)
+            manifest["entries"] = keep
+            self._write_manifest(manifest)
+        return {
+            "status": "dry_run" if dry_run else "collected",
+            "expired_entry_count": len(expired),
+            "orphan_file_count": len(orphans),
+            "planned_files": sorted(planned),
+            "retained_entry_count": len(keep),
+        }
+
+
 class ParquetBarStore:
     """Local Parquet/Zstandard store; no runtime reader is switched to it in Phase 2."""
 
@@ -352,6 +522,19 @@ class ParquetBarStore:
 
     def _upsert_manifest(self, record: dict[str, Any]) -> None:
         manifest = self._read_manifest()
+        previous = next(
+            (entry for entry in manifest["datasets"] if isinstance(entry, dict) and entry.get("dataset_id") == record["dataset_id"]),
+            None,
+        )
+        if previous is not None and previous != record:
+            revisions = manifest.setdefault("dataset_revisions", [])
+            if not isinstance(revisions, list):
+                raise DataLakeError("data-lake manifest dataset_revisions must be a list")
+            revisions.append({
+                "dataset_id": record["dataset_id"],
+                "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "record": previous,
+            })
         entries = [entry for entry in manifest["datasets"] if entry.get("dataset_id") != record["dataset_id"]]
         entries.append(record)
         manifest["datasets"] = sorted(entries, key=lambda item: item["dataset_id"])
@@ -525,6 +708,63 @@ class ParquetBarStore:
             "source_page_count": len(series.sources),
             "legacy_sha256": series.sha256,
             "parquet_sha256": record["parquet_sha256"],
+        }
+
+
+    @property
+    def raw_archive(self) -> RawResponseArchive:
+        return RawResponseArchive(self.lake_root)
+
+    def upsert_legacy(self, legacy_path: Path) -> dict[str, Any]:
+        """Atomically replace a dataset from a merged legacy series without duplicate keys."""
+        series = _read_legacy_series(legacy_path)
+        try:
+            self._record(series.secid, series.timeframe)
+            replace = True
+        except DataLakeError:
+            replace = False
+        return self.import_legacy(series.path, replace=replace)
+
+    def verify_all(self) -> dict[str, Any]:
+        records = [item for item in self._read_manifest()["datasets"] if isinstance(item, dict)]
+        datasets = []
+        for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
+            legacy_path = self._record_path(str(record.get("legacy_path", "")))
+            datasets.append(self.verify_legacy(legacy_path))
+        return {
+            "status": "verified",
+            "dataset_count": len(datasets),
+            "datasets": datasets,
+            "raw": self.raw_archive.verify(),
+        }
+
+    def compact(self, *, force: bool = False) -> dict[str, Any]:
+        """Keep each registered dataset as one Zstd bars file and one source file."""
+        records = [item for item in self._read_manifest()["datasets"] if isinstance(item, dict)]
+        results = []
+        for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
+            dataset_id = str(record.get("dataset_id"))
+            if not force:
+                results.append({"dataset_id": dataset_id, "status": "already_compact"})
+                continue
+            bars_path = self._record_path(str(record["bars_path"]))
+            sources_path = self._record_path(str(record["sources_path"]))
+            bars = pq.ParquetFile(bars_path).read()
+            sources = pq.ParquetFile(sources_path).read()
+            _atomic_write_parquet(bars_path, bars)
+            _atomic_write_parquet(sources_path, sources)
+            updated = dict(record)
+            updated["parquet_sha256"] = sha256_file(bars_path)
+            updated["sources_sha256"] = sha256_file(sources_path)
+            updated["compacted_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+            self._upsert_catalog(updated, sources.to_pylist())
+            self._upsert_manifest(updated)
+            self.verify_legacy(self._record_path(str(updated["legacy_path"])))
+            results.append({"dataset_id": dataset_id, "status": "compacted", "row_count": bars.num_rows})
+        return {
+            "status": "compacted" if any(item["status"] == "compacted" for item in results) else "already_compact",
+            "dataset_count": len(results),
+            "datasets": results,
         }
 
 

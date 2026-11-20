@@ -90,3 +90,35 @@ A Parquet dataset is selected only when both conditions hold: its manifest names
 The Phase-2 CNYRUBF/CRZ6 pilot can therefore accelerate matching `data/w1/candles` inputs without changing a preferred `candles-screen` source. Legacy JSON remains the compatibility input and is not removed in this phase.
 
 Callers may request the columns they need; Parquet reads use PyArrow column projection while the JSON compatibility reader applies the same logical projection. Series-level price-proxy semantics are restored from the verified manifest so this physical optimization does not change normalized output.
+
+
+## Phase 4: incremental ingestion, raw retention and maintenance
+
+`data-refresh` keeps the retained legacy JSON compatibility file and its verified Parquet mirror in lockstep. For an existing dataset it reads the recorded watermark and requests only the observed-session overlap before that watermark through `--till-date`; the default overlap is five sessions. If the watermark already reaches `--till-date`, it makes **zero** network requests. A first backfill (or `--full-refresh`) needs `--from-date`.
+
+```bash
+# First dataset: bounded to two ISS workers and 90-day request chunks.
+uv run python -m moex_spread_lab.cli data-refresh \
+  --root . --secid CNYRUBF --interval 60 \
+  --from-date 2026-01-01 --till-date 2026-11-20
+
+# Incremental run: derives the start from the verified watermark.
+uv run python -m moex_spread_lab.cli data-refresh \
+  --root . --secid CNYRUBF --interval 60 --till-date 2026-11-21
+```
+
+Fresh ISS bodies are retained under `data-lake/raw/` as exact Zstandard-compressed `.json.zst` files. The raw manifest records canonical request SHA-256, response SHA-256, received time, TTL and pin state; its identity includes all three hashes so repeated identical responses remain separately auditable. Default retention is 30 days; `--pin-raw` protects bodies produced by an important run. Use `data-pin-raw --entry-id …` later to pin a registered response. When a lake dataset is replaced, the prior dataset record is appended to `manifest.json`'s `dataset_revisions` history rather than being silently discarded.
+
+```bash
+# Integrity verification includes Parquet, source-page provenance, DuckDB catalog and raw bodies.
+uv run python -m moex_spread_lab.cli data-verify --root .
+
+# Existing imports are already a single Zstd file per dataset; force performs a verified rewrite.
+uv run python -m moex_spread_lab.cli data-compact --root . --force
+
+# Collection is non-destructive by default. Only --apply removes expired unpinned raw files/orphans.
+uv run python -m moex_spread_lab.cli data-gc --root . --dry-run
+uv run python -m moex_spread_lab.cli data-gc --root . --apply
+```
+
+The refresh takes an exclusive per-dataset writer lock before reading the watermark and holds it through fetch, publish and verification. It merges on the candle `begin` key, sorts deterministically, atomically publishes the JSON file, upserts its mirror and then runs the same legacy-versus-Parquet verification used by the importer. It does not delete legacy JSON or alter active screen-first source selection.

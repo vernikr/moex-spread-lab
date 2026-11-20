@@ -103,9 +103,16 @@ class DataLakeTests(unittest.TestCase):
                 store.import_legacy(legacy)
             payload = json.loads(legacy.read_text(encoding="utf-8"))
             payload["rows"][0]["close"] = 999.0
+            payload["rows"][0]["price_proxy"] = "999.0"
             legacy.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaises(DataLakeError):
                 store.verify_legacy(legacy)
+            replacement = store.import_legacy(legacy, replace=True)
+            manifest = json.loads((root / "data-lake" / "manifest.json").read_text(encoding="utf-8"))
+            revisions = manifest["dataset_revisions"]
+            self.assertEqual(revisions[-1]["dataset_id"], replacement["dataset_id"])
+            self.assertNotEqual(revisions[-1]["record"]["legacy_sha256"], replacement["legacy_sha256"])
+            self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
 
 
 if __name__ == "__main__":

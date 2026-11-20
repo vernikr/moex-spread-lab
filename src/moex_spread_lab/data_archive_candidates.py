@@ -124,7 +124,7 @@ def verify_archive(path: Path, manifest: dict) -> None:
         raise DataRetentionError("missing archive member")
 
 
-def _publish(root: Path, plan: dict, archive: Path) -> dict:
+def _publish(root: Path, plan: dict, archive: Path, *, validate_sources=None) -> dict:
     if archive.exists() or archive.is_symlink():
         raise DataRetentionError("archive destination already exists")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
@@ -149,7 +149,7 @@ def _publish(root: Path, plan: dict, archive: Path) -> dict:
             raw.flush()
             os.fsync(raw.fileno())
         verify_archive(staging, manifest)
-        _validate(plan, root)
+        (_validate if validate_sources is None else validate_sources)(plan, root)
         # Atomic, no-clobber publication on the same filesystem.
         os.link(staging, archive)
     finally:

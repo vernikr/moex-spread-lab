@@ -184,3 +184,40 @@ def deactivate_h1(root: Path) -> dict:
         path.unlink()
     return {"status": "deactivated", "restored_json_count": len(value["records"]),
             "evidence_dir": str(history)}
+
+
+def reject_sealed_table_write(root: Path, bars_path: Path) -> None:
+    value = SealedH1Reader(root).payload()
+    if value and any((root / r['bars_path']).resolve() == bars_path.resolve() for r in value['records'].values()):
+        raise DataLakeError('cannot rewrite an active sealed table; restore JSON and deactivate first')
+
+
+def verify_archived_record(store: ParquetBarStore, legacy_path: Path) -> dict:
+    """Verify retained pilot/candidate mirrors against sealed semantics after archival."""
+    import duckdb
+    reader = SealedH1Reader(store.root)
+    value = reader.payload()
+    relative = legacy_path.absolute().relative_to(store.root).as_posix()
+    if value is None or relative not in value['records']:
+        raise DataLakeError('missing legacy source without an exact verified H1 seal')
+    sealed = value['records'][relative]
+    reader.read(legacy_path, columns=('begin',))  # Validate seal and both authoritative files.
+    record = store.record_for_legacy_path(legacy_path)
+    if record is None:
+        raise DataLakeError('missing exact-path lake record')
+    for key in ('dataset_id','secid','timeframe','interval','row_count','first_begin','last_begin',
+                'legacy_sha256','legacy_metadata','row_semantics','source_page_count'):
+        if record.get(key) != sealed.get(key):
+            raise DataLakeError(f'archived dataset metadata mismatch: {key}')
+    for path_key, hash_key in (('bars_path','parquet_sha256'),('sources_path','sources_sha256')):
+        path = store._record_path(record[path_key])
+        if sha256_file(path) != record[hash_key]:
+            raise DataLakeError('archived mirror file hash mismatch')
+        if not pq.ParquetFile(path).read().equals(pq.ParquetFile(store.root / sealed[path_key]).read()):
+            raise DataLakeError('archived mirror differs from sealed semantics')
+    with duckdb.connect(str(store.catalog_path), read_only=True) as connection:
+        row = connection.execute('SELECT row_count, legacy_sha256, parquet_sha256, sources_sha256 FROM bar_datasets WHERE dataset_id = ?', [record['dataset_id']]).fetchone()
+    if row != (record['row_count'],record['legacy_sha256'],record['parquet_sha256'],record['sources_sha256']):
+        raise DataLakeError('archived mirror catalog mismatch')
+    return {'status':'verified','verification_basis':'sealed_h1','dataset_id':record['dataset_id'],
+            'row_count':record['row_count'],'legacy_sha256':record['legacy_sha256']}

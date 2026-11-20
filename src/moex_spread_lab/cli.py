@@ -63,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
     archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    h1_archive = subparsers.add_parser("data-h1-archive", help="archive/apply exact sealed H1 sources with restore, evidence and 80% gain gates")
+    h1_archive.add_argument("--root", type=Path, default=Path.cwd())
+    h1_archive.add_argument("--plan", type=Path, required=True)
+    h1_archive.add_argument("--archive", type=Path)
+    h1_archive.add_argument("--evidence", type=Path)
+    h1_archive_mode = h1_archive.add_mutually_exclusive_group(required=True)
+    h1_archive_mode.add_argument("--dry-run", action="store_true")
+    h1_archive_mode.add_argument("--archive-only", action="store_true")
+    h1_archive_mode.add_argument("--apply", action="store_true")
+
     seal = subparsers.add_parser("data-h1-seal", help="activate/verify sealed H1 reads or restore JSON routing; never deletes source data")
     seal.add_argument("--root", type=Path, default=Path.cwd())
     seal.add_argument("--plan", type=Path)
@@ -354,6 +364,18 @@ def main() -> int:
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise W0Error(f"candidate archive failed: {exc}") from exc
             print(json.dumps({key: value for key, value in result.items() if key not in {"files", "manifest"}}, sort_keys=True))
+            return 0
+        if args.command == "data-h1-archive":
+            from .h1_archive import execute
+            try:
+                if not args.dry_run and (args.archive or args.evidence):
+                    raise W0Error("archive/evidence paths must come from the reviewed plan")
+                result = execute(args.root, args.plan,
+                                 "dry-run" if args.dry_run else "archive-only" if args.archive_only else "apply",
+                                 archive=args.archive, evidence=args.evidence)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise W0Error(f"H1 archival failed: {exc}") from exc
+            print(json.dumps({k:v for k,v in result.items() if k != "deleted"}, sort_keys=True))
             return 0
         if args.command == "data-h1-seal":
             from .h1_seal import activate_h1, verify_sealed_h1, deactivate_h1

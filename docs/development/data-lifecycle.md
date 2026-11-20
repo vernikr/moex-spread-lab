@@ -383,3 +383,66 @@ in sealed and rollback modes, then successful reactivation. The C1 directory
 `data-lake/candidates/h1-0fb843b/` is now active storage and must not be cleaned
 as staging. Default maintenance adaptation, broader cutover/performance checks
 and the dedicated active-H1 archive/extraction/apply gates remain C3 work.
+
+## Package C3: reviewed active-H1 archival (0.8.0)
+
+`data-h1-archive` is separate from non-runtime candidate cleanup. It can only
+archive the **entire exact active seal**, never free globs, paths or an arbitrary
+subset. The preflight requires every original JSON and source priority to still
+match the sealed plan, plus passing operator evidence bound to both source
+fingerprint and canonical seal SHA-256. Evidence JSON has `checks` entries
+`regression`, `performance`, `ui_smoke`, all `passed`; preserve the supporting
+case results and measurements, not just those labels. This records a supervised
+operator gate, not independent cryptographic attestation of test execution.
+
+```sh
+uv run moex-spread-lab data-h1-archive --root . --dry-run \
+  --plan ../archives/h1-archive-plan.json --archive ../archives/h1.tar.zst \
+  --evidence ../archives/h1-cutover-evidence.json
+uv run moex-spread-lab data-h1-archive --root . --archive-only \
+  --plan ../archives/h1-archive-plan.json
+# Separate supervised maintenance step, after reviewing the receipt and gain.
+uv run moex-spread-lab data-h1-archive --root . --apply \
+  --plan ../archives/h1-archive-plan.json
+```
+
+Archive-only uses staged Zstd-19 tar, embedded manifest with source hashes and
+release commit, full streamed verification and atomic no-clobber publication.
+It then extracts every member into new temporary staging, verifies every restored
+size/hash and manifest, and removes only this temporary restore copy. Originals
+remain untouched. The receipt binds the archive hash and full restore result.
+
+Both archive-only and apply require **at least 80% measured net allocated gain**.
+The deliberately conservative calculation charges the entire retained `data-lake`
+and the entire archive/evidence directory, including old files, against selected
+source allocation. Failure leaves sources intact and any already-published
+archive for inspection, without a successful receipt. No threshold override is
+provided. Apply repeats receipt/archive/restore-count checks, seal verification,
+all-source selection/hash validation, evidence binding and storage measurement
+before the first unlink. It records each deleted path durably, verifies sealed
+reads afterwards and never changes the active seal. Stop source writers and the
+service during apply; the shared archival lock excludes the archive CLIs, not
+arbitrary external applications. Interrupted apply is not a transaction or
+implicitly resumable operation: reconcile its journal and restore only verified
+missing members if rollback is necessary.
+
+The seal's `source_deletion_allowed=false` means **activation alone never permits
+removal**. Only the separately reviewed plan, passing gates, restore receipt and
+explicit archive `--apply` authorize this narrow operation. Afterwards the seal
+continues to preserve original source identity; deactivation still requires
+restoring all original JSON and exact selections.
+
+Maintenance now supports archived H1: `data-verify` compares exact-path retained
+pilot/candidate records with the authoritative sealed semantics, verifies both
+Parquet files, metadata and catalog, and never substitutes an unrelated source.
+Missing nonsealed/daily sources still fail. Forced compaction or import into an
+active sealed table is refused; H1 refresh refuses an active seal **before**
+network or JSON writes. Worker-pool weighting uses sealed original logical sizes,
+so deleting JSON does not silently change sharding thresholds. Original byte
+hashes, not a newly generated JSON serialization, remain the recovery identity.
+
+After apply, use `data-h1-seal --verify` plus default and candidate `data-verify`.
+C1 `data-h1-stage --verify` deliberately still requires the original source plan;
+it is a staging preflight, not the post-archive maintenance command. Restore into
+new empty staging first, verify member hashes, and copy only missing originals
+without overwriting changed files before guarded `data-h1-seal --deactivate`.

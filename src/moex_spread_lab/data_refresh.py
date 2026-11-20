@@ -179,6 +179,9 @@ def refresh_candle_datasets(
     Phase-3 read-path identity contract.
     """
     root = root.resolve()
+    from .h1_seal import SealedH1Reader
+    if any(target.interval == 60 for target in targets) and SealedH1Reader(root).payload() is not None:
+        raise DataRefreshError("deactivate the H1 seal with restored JSON before refreshing H1")
     if not targets:
         raise DataRefreshError("at least one refresh target is required")
     if not 1 <= workers <= 4:

@@ -544,6 +544,8 @@ class ParquetBarStore:
     def import_legacy(self, legacy_path: Path, *, replace: bool = False) -> dict[str, Any]:
         series = _read_legacy_series(legacy_path)
         bars_path, sources_path = self._paths(series)
+        from .h1_seal import reject_sealed_table_write
+        reject_sealed_table_write(self.root, bars_path)
         if not replace and (bars_path.exists() or sources_path.exists()):
             raise DataLakeError(f"data-lake dataset already exists: {series.dataset_id}; use --replace")
         bars = pa.Table.from_pylist(series.bars, schema=BAR_SCHEMA)
@@ -673,6 +675,9 @@ class ParquetBarStore:
         return table
 
     def verify_legacy(self, legacy_path: Path) -> dict[str, Any]:
+        if not legacy_path.exists():
+            from .h1_seal import verify_archived_record
+            return verify_archived_record(self, legacy_path)
         series = _read_legacy_series(legacy_path)
         record = self._record(series.secid, series.timeframe)
         if record.get("legacy_sha256") != series.sha256:
@@ -744,6 +749,9 @@ class ParquetBarStore:
         results = []
         for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
             dataset_id = str(record.get("dataset_id"))
+            if force:
+                from .h1_seal import reject_sealed_table_write
+                reject_sealed_table_write(self.root, self._record_path(record["bars_path"]))
             if not force:
                 results.append({"dataset_id": dataset_id, "status": "already_compact"})
                 continue

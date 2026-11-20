@@ -268,6 +268,15 @@ def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str) -> int:
         pair = str(item.get("pair") or "")
         parts = pair.split("/")
         if len(parts) == 2:
+            from .h1_seal import SealedH1Reader
+            reader = SealedH1Reader(root)
+            seal = reader.payload()
+            if seal is not None:
+                selected = reader.select(parts[1]).relative_to(reader.root).as_posix()
+                entry = next((e for e in seal["plan"]["files"] if e["legacy_path"] == selected), None)
+                if entry is not None:
+                    return max(100, entry["logical_bytes"] // 128)
+                return 1000
             for subdir in ("candles-screen", "candles"):
                 p = root / "data/w1" / subdir / f"{parts[1]}_1h.json"
                 try:

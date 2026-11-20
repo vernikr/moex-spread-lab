@@ -376,3 +376,10 @@ source changes, new screened sources, unknown inputs, symlinks, immutable copied
 records and repeated activate/deactivate rehearsals. Production fixed cases,
 search/plateau performance and active-JSON archive/restore gates remain separately
 evidenced; fixture success alone is not authority to remove originals.
+
+[Workstation C2 activation evidence, 2026-11-21](h1-seal-2026-11-21.md) records
+120 active sealed sources with all JSON retained, matching fixed smoke outputs
+in sealed and rollback modes, then successful reactivation. The C1 directory
+`data-lake/candidates/h1-0fb843b/` is now active storage and must not be cleaned
+as staging. Default maintenance adaptation, broader cutover/performance checks
+and the dedicated active-H1 archive/extraction/apply gates remain C3 work.

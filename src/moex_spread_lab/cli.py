@@ -45,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--root", type=Path, default=Path.cwd())
     scan_parser.add_argument("--tracked-only", action="store_true")
 
+    budget = subparsers.add_parser("storage-budget", help="read-only allocated storage classes and TTL dry-runs")
+    budget.add_argument("--root", type=Path, default=Path.cwd())
+    budget.add_argument("--archives-root", type=Path)
+    budget.add_argument("--max-allocated-bytes", type=int)
+    budget.add_argument("--output", type=Path)
+    catalog = subparsers.add_parser("archive-catalog", help="verify archives and publish a no-clobber recovery catalog")
+    catalog.add_argument("--archive", type=Path, action="append", required=True)
+    catalog.add_argument("--review-date", required=True)
+    catalog.add_argument("--output", type=Path, required=True)
+
     inventory_parser = subparsers.add_parser(
         "data-inventory", help="build a read-only local-data inventory and retention manifest",
     )
@@ -415,6 +425,21 @@ def main() -> int:
                 raise W0Error(f"H1 candidate operation failed: {exc}") from exc
             print(json.dumps(result, sort_keys=True))
             return 0
+        if args.command in {"storage-budget", "archive-catalog"}:
+            from .storage_policy import storage_budget, archive_catalog, publish_report
+            try:
+                if args.command == "storage-budget":
+                    result = storage_budget(args.root, args.archives_root, args.max_allocated_bytes)
+                else:
+                    result = archive_catalog(args.archive, args.review_date)
+                if args.output:
+                    publish_report(args.output, result)
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                raise W0Error(f"storage policy report failed: {exc}") from exc
+            print(json.dumps(result if args.command == "storage-budget" else {
+                "status": "verified", "archive_count": len(result["entries"]), "output": str(args.output)
+            }, ensure_ascii=False, sort_keys=True))
+            return 2 if result.get("status") == "over_budget" else 0
         if args.command == "data-inventory":
             from .data_inventory import build_data_inventory
 

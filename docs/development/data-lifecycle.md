@@ -458,3 +458,52 @@ journal; this is not partial resume and never skips missing originals. Record th
 failure/recovery reason separately. OS Finder `.DS_Store` metadata may change
 independently; report that separately without modifying it or exempting research
 inputs from integrity checks.
+
+## Package D: steady-state monitoring and recovery catalog (0.9.0)
+
+`storage-budget --root . [--archives-root ../archives] [--output NEW.json]`
+reports logical and allocated file bytes by disjoint class: active inputs,
+archive candidates, derived archives/runtime, unclassified/cache, compact run
+artifacts, raw, retained lake and optional external archives/evidence. It includes
+**dry-run only** default raw/run TTL plans; it never authorizes deletion. Optional
+`--max-allocated-bytes N` returns exit code 2 when exceeded, after emitting the
+report. No arbitrary machine budget is imposed by default. Outputs are exclusive
+(no overwrite). Counts sum file allocation and can overcount hardlinks/clones;
+concurrent writers mean this is monitoring, not an atomic storage snapshot.
+Candidate H1 and pilot mirrors are counted in retained lake, never as disposable
+archive candidates. Nested candidate raw stores are counted but not GC targets.
+
+`archive-catalog --archive ../archives/FILE.tar.zst [--archive OTHER.tar.zst]
+--review-date YYYY-MM-DD --output ../archives/NEW-catalog.json` checks each
+archive SHA against its verified receipt and streams every member to verify the
+embedded manifest and content hashes. The catalog includes the full embedded
+manifest, release commit, archive/receipt/manifest hashes, measured size, restore
+instructions and a future review date. It does not extract, mutate receipts,
+expire archives, or prove an independent backup exists. Only the A/C verified
+receipt format is supported; unknown archive formats must not be labeled verified.
+Do not overwrite old catalogs: retain dated snapshots beside the archives.
+
+### Operating cadence (manual; no automatic deletion job installed)
+
+- Weekly and after imports: run `storage-budget` with the archive directory;
+  compare snapshots and investigate growth, including unclassified files. A budget
+  alert triggers review, never deletion. Set an explicit byte limit only after
+  choosing the workstation's operating budget.
+- Raw ISS remains 30-day TTL; pin only evidence requests. Before any explicit
+  `data-gc --apply`, save/review `data-gc --dry-run --format json` and verify the
+  raw archive. Review orphan files separately; do not blindly approve them.
+- Compact runs keep summaries/manifests. Details retain their configured 30-day
+  TTL unless explicitly pinned. Review `run-artifact-gc --dry-run --format json`
+  before an explicit apply; do not unpin research evidence just to meet budget.
+  Generate pretty legacy JSON only with the existing `--legacy-json` option.
+- After lake growth, verify datasets before considering compaction. **Never force
+  compact/import an active sealed H1 table.** Existing H1 guards remain in force.
+  Record Parquet row groups and fresh-reader timings for any proposed compaction;
+  OS-cache-warm measurements are not cold-disk evidence. No scheduled compaction
+  is installed or required while the active seal is immutable.
+- At archive review, rerun `archive-catalog`, check independent backup availability
+  and rehearse extraction in new staging when recovery procedures change. The
+  review date is not expiry; recovery archives for deleted sources stay protected.
+- During supervised applies, stop writers, retain before/after evidence, verify
+  runtime, then restart service. Existing explicit GC/apply commands are the only
+  mutation paths; these monitoring/catalog commands have no `--apply` mode.

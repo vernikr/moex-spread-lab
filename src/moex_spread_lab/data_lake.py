@@ -217,7 +217,7 @@ def _read_legacy_series(path: Path) -> LegacyCandleSeries:
     }
     return LegacyCandleSeries(
         path=resolved,
-        sha256=sha256_file(resolved),
+        sha256=hashlib.sha256(raw).hexdigest(),
         secid=secid,
         board=board,
         interval=interval,

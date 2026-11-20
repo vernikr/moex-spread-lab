@@ -263,3 +263,53 @@ storage. Measure the resulting size and do not count the already-removed JSON
 a second time. [Workstation migration evidence, 2026-11-21](baseline-import-2026-11-21.md)
 records 16 verified imports, 5.06 MiB added allocation, unchanged existing data
 and identical production smoke results. Package C remains separately gated.
+
+## Package C1: complete H1 inventory and isolated candidate lakes (0.6.0)
+
+```sh
+uv run moex-spread-lab data-h1-stage --root . --dry-run \
+  --plan ../archives/h1-plan.json
+uv run moex-spread-lab data-h1-stage --root . --stage \
+  --plan ../archives/h1-plan.json --output-dir data-lake/candidates/h1-review
+uv run moex-spread-lab data-h1-stage --root . --verify \
+  --plan ../archives/h1-plan.json --output-dir data-lake/candidates/h1-review
+```
+
+This is **preparation**, not runtime activation or an archive/delete operation.
+The deterministic plan inventories every runtime-named `*_1h.json` in both
+`data/w1/candles` and `data/w1/candles-screen`. It checks filename/SECID, H1/60-minute
+identity, importer semantics and strictly ordered timestamps, recording source
+SHA-256, rows, time bounds and source-page counts. The per-SECID selection map
+retains screen-first priority, including both copies where present. Source
+symlinks are rejected. Empty/invalid series fail closed rather than being
+silently omitted from the reviewed set.
+
+Before staging or verification, the CLI regenerates and compares the entire
+plan. Newly added screened copies, missing files, changed bytes, altered paths
+or changed selection invalidate it. Plans are exclusive-create, not overwritten.
+The importer binds its source hash to the bytes actually parsed, avoiding a
+separate post-parse file read for the recorded identity.
+
+A fresh candidate directory is required, outside `data/`. It contains independent
+`candles/` and `candles-screen/` lakes (Parquet bars, provenance tables, DuckDB
+catalog and manifest). This avoids the existing lake's timeframe/SECID identity
+collision across source folders. No existing default lake manifest/catalog is
+replaced, and `MarketDataStore` does not discover these candidates automatically.
+
+Each imported source is semantically verified against its JSON: all normalized
+OHLCV/value/timestamp rows, deduplicated source-page provenance, metadata,
+price-proxy semantics, row counts/time bounds, file SHA-256 and catalog identity.
+The full batch is reverified and sources re-enumerated before it receives
+`verified_candidate`. `h1-stage.json` records per-source evidence and Parquet
+logical/allocated bytes. An interruption/failure leaves a non-activated batch
+with `staging`/`failed` status for inspection; there is no automatic resume,
+replacement, cleanup of evidence, or activation. Use a fresh output directory
+after resolving a failed run. Concurrent source writers should be stopped for a
+stable snapshot; even a completed candidate is revalidated by `--verify`.
+
+This phase **adds temporary mirror storage** while retaining every JSON. It does
+not implement the later sealed Parquet-only reader or make source deletion safe.
+C2 must support exact-path source identity and fail-closed source selection when
+JSON is absent, integrate all production readers, test rollback extraction and
+fixed regression selections, and measure net gain before any active JSON
+archival/removal. A good compression ratio alone is insufficient authorization.

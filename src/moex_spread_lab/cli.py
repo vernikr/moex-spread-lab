@@ -63,6 +63,15 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
     archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
+    h1 = subparsers.add_parser("data-h1-stage", help="plan and verify isolated H1 candidate lakes; no runtime activation or deletion")
+    h1.add_argument("--root", type=Path, default=Path.cwd())
+    h1.add_argument("--plan", type=Path, required=True)
+    h1.add_argument("--output-dir", type=Path)
+    h1_mode = h1.add_mutually_exclusive_group(required=True)
+    h1_mode.add_argument("--dry-run", action="store_true")
+    h1_mode.add_argument("--stage", action="store_true")
+    h1_mode.add_argument("--verify", action="store_true")
+
     import_parser = subparsers.add_parser(
         "data-import-candles", help="import legacy iss-candles JSON into the local Parquet data lake",
     )
@@ -336,6 +345,26 @@ def main() -> int:
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 raise W0Error(f"candidate archive failed: {exc}") from exc
             print(json.dumps({key: value for key, value in result.items() if key not in {"files", "manifest"}}, sort_keys=True))
+            return 0
+        if args.command == "data-h1-stage":
+            from .h1_migration import write_h1_plan, stage_h1, verify_h1_stage
+
+            try:
+                if args.dry_run:
+                    if args.output_dir:
+                        raise W0Error("--output-dir is only used for --stage or --verify")
+                    result = write_h1_plan(args.root, args.plan)
+                    result = {key: value for key, value in result.items() if key not in {"files", "screen_selection"}}
+                    result["status"] = "planned"
+                else:
+                    if args.output_dir is None:
+                        raise W0Error("--output-dir is required for --stage or --verify")
+                    operation = stage_h1 if args.stage else verify_h1_stage
+                    result = operation(args.root, args.plan, args.output_dir)
+                    result = {key: value for key, value in result.items() if key not in {"datasets", "plan"}}
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                raise W0Error(f"H1 candidate operation failed: {exc}") from exc
+            print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "data-inventory":
             from .data_inventory import build_data_inventory

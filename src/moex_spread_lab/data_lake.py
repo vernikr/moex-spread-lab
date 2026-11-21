@@ -442,14 +442,27 @@ class ParquetBarStore:
         self.sources_root = self.lake_root / "sources"
         self.catalog_path = self.lake_root / "catalog.duckdb"
         self.manifest_path = self.lake_root / "manifest.json"
+        self._manifest_sig: tuple[int, int] | None = None
+        self._manifest_cache: dict[str, Any] | None = None
+        self._manifest_by_id: dict[str, dict[str, Any]] = {}
+        self._manifest_by_legacy: dict[Path, dict[str, Any]] = {}
 
     def _paths(self, series: LegacyCandleSeries) -> tuple[Path, Path]:
         prefix = Path(f"timeframe={series.timeframe}") / f"secid={series.secid}"
         return self.bars_root / prefix / "data.parquet", self.sources_root / prefix / "sources.parquet"
 
     def _read_manifest(self) -> dict[str, Any]:
-        if not self.manifest_path.is_file():
+        try:
+            st = self.manifest_path.stat()
+        except OSError:
+            self._manifest_sig = None
+            self._manifest_cache = None
+            self._manifest_by_id.clear()
+            self._manifest_by_legacy.clear()
             return {"schema_version": DATA_LAKE_SCHEMA, "datasets": []}
+        sig = (st.st_mtime_ns, st.st_size)
+        if sig == self._manifest_sig and self._manifest_cache is not None:
+            return self._manifest_cache
         try:
             value = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -458,6 +471,24 @@ class ParquetBarStore:
             raise DataLakeError("unsupported data-lake manifest schema")
         if not isinstance(value.get("datasets"), list):
             raise DataLakeError("data-lake manifest datasets must be a list")
+        by_id: dict[str, dict[str, Any]] = {}
+        by_legacy: dict[Path, dict[str, Any]] = {}
+        for record in value["datasets"]:
+            if not isinstance(record, dict):
+                continue
+            ds_id = record.get("dataset_id")
+            if isinstance(ds_id, str):
+                by_id[ds_id] = record
+            lp = record.get("legacy_path")
+            if isinstance(lp, str):
+                try:
+                    by_legacy[self._record_path(lp).resolve()] = record
+                except OSError:
+                    pass
+        self._manifest_sig = sig
+        self._manifest_cache = value
+        self._manifest_by_id = by_id
+        self._manifest_by_legacy = by_legacy
         return value
 
     def _upsert_catalog(self, record: dict[str, Any], sources: list[dict[str, Any]]) -> None:
@@ -581,10 +612,10 @@ class ParquetBarStore:
 
     def _record(self, secid: str, timeframe: str) -> dict[str, Any]:
         dataset_id = f"{_component(timeframe, 'timeframe')}/{_component(secid, 'SECID')}"
-        manifest = self._read_manifest()
-        for record in manifest["datasets"]:
-            if isinstance(record, dict) and record.get("dataset_id") == dataset_id:
-                return record
+        self._read_manifest()
+        record = self._manifest_by_id.get(dataset_id)
+        if record is not None:
+            return record
         raise DataLakeError(f"data-lake dataset is not registered: {dataset_id}")
 
     def _record_path(self, value: str) -> Path:
@@ -597,15 +628,8 @@ class ParquetBarStore:
             selected = legacy_path.resolve()
         except OSError:
             return None
-        for record in self._read_manifest()["datasets"]:
-            if not isinstance(record, dict) or not isinstance(record.get("legacy_path"), str):
-                continue
-            try:
-                if self._record_path(record["legacy_path"]).resolve() == selected:
-                    return record
-            except OSError:
-                continue
-        return None
+        self._read_manifest()
+        return self._manifest_by_legacy.get(selected)
 
     def read_series(
         self,
@@ -865,6 +889,20 @@ class MarketDataStore:
         from .h1_seal import SealedH1Reader
         self.sealed_h1 = SealedH1Reader(self.root)
         self._cache: dict[tuple[Any, ...], BarSeries] = {}
+        self._sha_cache: dict[tuple[str, int, int], str] = {}
+
+    def _legacy_sha256(self, legacy_path: Path) -> str:
+        resolved = legacy_path.resolve()
+        st = resolved.stat()
+        sig = (str(resolved), st.st_mtime_ns, st.st_size)
+        cached = self._sha_cache.get(sig)
+        if cached is not None:
+            return cached
+        digest = sha256_file(resolved)
+        if len(self._sha_cache) > 4096:
+            self._sha_cache.clear()
+        self._sha_cache[sig] = digest
+        return digest
 
     def select_h1(self, secid: str) -> Path:
         return self.sealed_h1.select(secid)
@@ -925,7 +963,7 @@ class MarketDataStore:
         key = self._cache_key(legacy_path, requested_columns, record)
         if key is not None and key in self._cache:
             return self._cache[key]
-        if record is not None and sha256_file(legacy_path) == record.get("legacy_sha256"):
+        if record is not None and self._legacy_sha256(legacy_path) == record.get("legacy_sha256"):
             try:
                 series = self.parquet.read_series(
                     str(record["secid"]),

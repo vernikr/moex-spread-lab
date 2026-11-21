@@ -62,6 +62,31 @@ def _basis_daily_pnl(series: dict[str, Any]) -> list[float]:
     return result
 
 
+_NORMALIZED_BY_TS_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
+
+
+def _canonical_timestamp(row: dict[str, Any]) -> str | None:
+    value = row.get("begin")
+    if not isinstance(value, str) or len(value) < 10:
+        return None
+    return value[:19].replace(" ", "T") if len(value) >= 19 else value[:10]
+
+
+def _rows_by_ts(series: BarSeries) -> dict[str, dict[str, Any]]:
+    cached = _NORMALIZED_BY_TS_CACHE.get(series.cache_key)
+    if cached is not None:
+        return cached
+    mapped = {
+        ts: row
+        for row in series.rows
+        if (ts := _canonical_timestamp(row)) and row.get("close") is not None
+    }
+    if len(_NORMALIZED_BY_TS_CACHE) > 1024:
+        _NORMALIZED_BY_TS_CACHE.clear()
+    _NORMALIZED_BY_TS_CACHE[series.cache_key] = mapped
+    return mapped
+
+
 def _normalized_series(
     near_source: BarSeries | Path,
     far_source: BarSeries | Path,
@@ -93,22 +118,8 @@ def _normalized_series(
     far_multiplier = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
     common_tick_rub = max(float(near_contract["tick_value"]), float(far_contract["tick_value"]), 1.0)
 
-    def canonical_timestamp(row):
-        value = row.get("begin")
-        if not isinstance(value, str) or len(value) < 10:
-            return None
-        return value[:19].replace(" ", "T") if len(value) >= 19 else value[:10]
-
-    near_rows = {
-        ts: row
-        for row in near_series.rows
-        if (ts := canonical_timestamp(row)) and row.get("close") is not None
-    }
-    far_rows = {
-        ts: row
-        for row in far_series.rows
-        if (ts := canonical_timestamp(row)) and row.get("close") is not None
-    }
+    near_rows = _rows_by_ts(near_series)
+    far_rows = _rows_by_ts(far_series)
     benchmark = {row["date"]: row for row in benchmark_payload.get("rows", []) if row.get("date")}
     observed = sorted(benchmark)
     rows = []

@@ -5,13 +5,16 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import os
 import re
+import time
 from bisect import bisect_left, bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from ._fastcore_loader import load_fastcore
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
 from .carry import CarryError, fetch_history
 from .costs import TAKER_RATE_PERCENT, tariff_profile
@@ -355,31 +358,213 @@ class CalendarData:
         self.root = root.resolve()
         self.cache = self.root / "data/spread-history-cache"
         self._loaded: dict[str, Any] | None = None
+        self._loaded_sig: tuple[Any, ...] | None = None
         self.bar_store = MarketDataStore(self.root)
         self._h1_candle_cache: dict[str, tuple[tuple[Any, ...], tuple[dict[str, Any] | None, str | None]]] = {}
         self._h1_windows: dict[str, list[dict[str, Any]]] = {}
+        self._h1_windows_sig: dict[str, tuple[Any, ...]] = {}
+        self._loaded_assets: dict[str, dict[str, Any]] = {}
+        self._loaded_assets_sig: dict[str, tuple[Any, ...]] = {}
+        self._shared_meta: dict[str, Any] | None = None
+        self._shared_meta_sig: tuple[Any, ...] | None = None
+        self._eod_fetched_once: bool = False
+        self._asset_fetched_once: set[str] = set()
+        self._last_eod_sig_time: float = 0.0
+        self._last_eod_dir_sig: tuple[int, int] | None = None
+
+    def _eod_signature(self) -> tuple[Any, ...]:
+        in_pytest = "PYTEST_CURRENT_TEST" in os.environ
+        if not in_pytest and self._loaded_sig is not None:
+            now = time.monotonic()
+            if now - self._last_eod_sig_time < 0.25:
+                try:
+                    dst = self.cache.stat()
+                    if (dst.st_mtime_ns, dst.st_size) == self._last_eod_dir_sig:
+                        return self._loaded_sig
+                except OSError:
+                    pass
+        files: list[tuple[str, int, int]] = []
+        if self.cache.is_dir():
+            try:
+                dst = self.cache.stat()
+                self._last_eod_dir_sig = (dst.st_mtime_ns, dst.st_size)
+            except OSError:
+                self._last_eod_dir_sig = None
+            for entry in os.scandir(self.cache):
+                name = entry.name
+                if name.endswith(".json"):
+                    try:
+                        st = entry.stat()
+                        files.append((name, st.st_mtime_ns, st.st_size))
+                    except OSError:
+                        pass
+            files.sort()
+        extras: list[tuple[str, int, int] | None] = []
+        for rel in (
+            "data/w1/current-intake.json",
+            "data/benchmark-cache/CBR_RUONIA.json",
+            "data/benchmark/lqdt-lineage.json",
+        ):
+            p = self.root / rel
+            try:
+                st = p.stat()
+                extras.append((rel, st.st_mtime_ns, st.st_size))
+            except OSError:
+                extras.append(None)
+        self._last_eod_sig_time = time.monotonic()
+        return (tuple(files), tuple(extras))
+
+    def _shared_metadata(self) -> dict[str, Any]:
+        extras: list[tuple[str, int, int] | None] = []
+        for rel in (
+            "data/w1/current-intake.json",
+            "data/benchmark-cache/CBR_RUONIA.json",
+            "data/benchmark/lqdt-lineage.json",
+        ):
+            p = self.root / rel
+            try:
+                st = p.stat()
+                extras.append((rel, st.st_mtime_ns, st.st_size))
+            except OSError:
+                extras.append(None)
+        dir_sig = None
+        if self.cache.is_dir():
+            try:
+                dst = self.cache.stat()
+                dir_sig = (dst.st_mtime_ns, dst.st_size)
+            except OSError:
+                pass
+        sig = (tuple(extras), dir_sig)
+        if self._shared_meta is not None and self._shared_meta_sig == sig:
+            return self._shared_meta
+        till = cached_till_date(self.cache)
+        if till is None:
+            raise W0Error("calendar history is not cached; run calendar-study first")
+        terms = _terms(self.root / "data/w1/current-intake.json", tuple(ASSETS))
+        ruonia = _ruonia(self.root / "data/benchmark-cache/CBR_RUONIA.json")
+        benchmark = read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")
+        self._shared_meta = {
+            "till": till,
+            "terms": terms,
+            "ruonia": ruonia,
+            "benchmark": benchmark,
+            "benchmark_dates": sorted(benchmark),
+            "extras_sig": tuple(extras),
+        }
+        self._shared_meta_sig = sig
+        return self._shared_meta
+
+    def _asset_eod_signature(self, asset: str, till: str, extras_sig: tuple[Any, ...]) -> tuple[Any, ...]:
+        needed = {asset}
+        fx = ASSETS.get(asset, {}).get("fx")
+        if fx:
+            needed.add(FX_SOURCE[fx])
+        secids: list[str] = []
+        for a in sorted(needed):
+            chain = contract_chain(a)
+            secids.extend(chain)
+            secids.extend(spread_id(n, f) for n, f in itertools.pairwise(chain))
+        file_sigs: list[tuple[str, int | None, int | None]] = []
+        for secid in secids:
+            idx = 0
+            while True:
+                p = self.cache / f"{secid}-{HISTORY_FROM}-{till}-{idx}.json"
+                try:
+                    st = p.stat()
+                    file_sigs.append((p.name, st.st_mtime_ns, st.st_size))
+                    idx += 1
+                except OSError:
+                    if idx == 0:
+                        file_sigs.append((p.name, None, None))
+                    break
+        return (extras_sig, till, tuple(file_sigs))
+
+    def _load_asset(self, asset: str) -> dict[str, Any]:
+        if asset not in ASSETS:
+            return self._load()
+        if self._loaded is not None and self._loaded_sig == self._eod_signature():
+            return self._loaded
+        meta = self._shared_metadata()
+        sig = self._asset_eod_signature(asset, meta["till"], meta["extras_sig"])
+        if asset in self._loaded_assets and self._loaded_assets_sig.get(asset) == sig:
+            return self._loaded_assets[asset]
+        offline = (
+            os.environ.get("MOEX_OFFLINE_ONLY") == "1"
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or asset in self._asset_fetched_once
+            or self._eod_fetched_once
+        )
+        histories = fetch_inputs(
+            self.cache,
+            (asset,),
+            meta["till"],
+            delay_seconds=0 if offline else 0.05,
+            opener=_offline if offline else None,
+        )
+        self._asset_fetched_once.add(asset)
+        sig = self._asset_eod_signature(asset, meta["till"], meta["extras_sig"])
+        factors = _fx_factors(histories)
+        windows = {}
+        if asset in meta["terms"] and any(s in histories for s in contract_chain(asset)):
+            windows[asset] = build_windows(histories, asset, meta["terms"][asset], meta["ruonia"], factors)
+        data = {
+            "histories": histories,
+            "windows": windows,
+            "terms": meta["terms"],
+            "till": meta["till"],
+            "ruonia": meta["ruonia"],
+            "fx_factors": factors,
+            "benchmark": meta["benchmark"],
+            "benchmark_dates": meta["benchmark_dates"],
+        }
+        self._loaded_assets[asset] = data
+        self._loaded_assets_sig[asset] = sig
+        self._h1_windows.pop(asset, None)
+        self._h1_windows_sig.pop(asset, None)
+        return data
 
     def _load(self) -> dict[str, Any]:
-        if self._loaded is None:
-            till = cached_till_date(self.cache)
-            if till is None:
-                raise W0Error("calendar history is not cached; run calendar-study first")
-            histories = fetch_inputs(self.cache, tuple(ASSETS), till, delay_seconds=0.05, opener=None)
-            terms = _terms(self.root / "data/w1/current-intake.json", tuple(ASSETS))
-            ruonia = _ruonia(self.root / "data/benchmark-cache/CBR_RUONIA.json")
-            factors = _fx_factors(histories)
-            windows = {a: build_windows(histories, a, terms[a], ruonia, factors) for a in ASSETS if a in terms and any(
-                s in histories for s in contract_chain(a))}
-            benchmark = read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")
-            self._loaded = {
-                "windows": windows,
-                "terms": terms,
-                "till": till,
-                "ruonia": ruonia,
-                "fx_factors": factors,
-                "benchmark": benchmark,
-                "benchmark_dates": sorted(benchmark),
-            }
+        sig = self._eod_signature()
+        if self._loaded is not None and self._loaded_sig == sig:
+            return self._loaded
+        till = cached_till_date(self.cache)
+        if till is None:
+            raise W0Error("calendar history is not cached; run calendar-study first")
+        offline = (
+            os.environ.get("MOEX_OFFLINE_ONLY") == "1"
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or self._eod_fetched_once
+        )
+        histories = fetch_inputs(
+            self.cache,
+            tuple(ASSETS),
+            till,
+            delay_seconds=0 if offline else 0.05,
+            opener=_offline if offline else None,
+        )
+        self._eod_fetched_once = True
+        sig = self._eod_signature()
+        terms = _terms(self.root / "data/w1/current-intake.json", tuple(ASSETS))
+        ruonia = _ruonia(self.root / "data/benchmark-cache/CBR_RUONIA.json")
+        factors = _fx_factors(histories)
+        windows = {a: build_windows(histories, a, terms[a], ruonia, factors) for a in ASSETS if a in terms and any(
+            s in histories for s in contract_chain(a))}
+        benchmark = read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")
+        self._loaded = {
+            "histories": histories,
+            "windows": windows,
+            "terms": terms,
+            "till": till,
+            "ruonia": ruonia,
+            "fx_factors": factors,
+            "benchmark": benchmark,
+            "benchmark_dates": sorted(benchmark),
+        }
+        self._loaded_sig = sig
+        self._loaded_assets.clear()
+        self._loaded_assets_sig.clear()
+        self._h1_windows.clear()
+        self._h1_windows_sig.clear()
         return self._loaded
 
     @staticmethod
@@ -407,6 +592,11 @@ class CalendarData:
         target = self.root / "data/w1/candles/1h" / f"{secid}_1h.json"
         if target.exists():
             try:
+                st = target.stat()
+                fp = ("local_1h", str(target), st.st_mtime_ns, st.st_size)
+                cached = self._h1_candle_cache.get(secid)
+                if cached and cached[0] == fp:
+                    return cached[1]
                 raw = target.read_bytes()
                 payload = json.loads(raw.decode("utf-8"))
                 rows = {}
@@ -422,15 +612,17 @@ class CalendarData:
                         "volume": self._number(source_row.get("volume")),
                     }
                 if rows:
-                    return ({
+                    res = ({
                         "secid": secid,
                         "path": str(target),
                         "sha256": hashlib.sha256(raw).hexdigest(),
                         "rows": rows,
                     }, None)
+                    self._h1_candle_cache[secid] = (fp, res)
+                    return res
             except Exception:
                 pass
-        if os.environ.get("MOEX_OFFLINE_ONLY") == "1":
+        if os.environ.get("MOEX_OFFLINE_ONLY") == "1" or "PYTEST_CURRENT_TEST" in os.environ:
             return None, "no_local_h1_file"
         if not hasattr(self, "_h1_fetch_attempted"):
             self._h1_fetch_attempted: set[str] = set()
@@ -782,18 +974,54 @@ class CalendarData:
             "source_hashes": source_hashes,
         }
 
+    def _asset_h1_signature(self, asset: str, data: dict[str, Any]) -> tuple[Any, ...]:
+        daily_windows = data["windows"].get(asset, [])
+        secids: set[str] = set()
+        for dw in daily_windows:
+            near, far = dw["near"], dw["far"]
+            secids.add(near)
+            secids.add(far)
+            secids.add(spread_id(near, far))
+        seal_sig = None
+        if self.bar_store.sealed_h1.payload() is not None:
+            seal_sig = self.bar_store.sealed_h1._snapshot
+        file_sigs: list[tuple[Any, ...]] = []
+        for secid in sorted(secids):
+            for candidate in (
+                self.bar_store.select_h1(secid),
+                self.root / "data/w1/candles/1h" / f"{secid}_1h.json",
+            ):
+                try:
+                    st = candidate.stat()
+                    file_sigs.append((str(candidate), st.st_mtime_ns, st.st_size))
+                except OSError:
+                    file_sigs.append((str(candidate), None, None))
+        eod_sig = self._loaded_assets_sig.get(asset) or self._loaded_sig
+        return (eod_sig, seal_sig, tuple(file_sigs))
+
     def _intraday_windows_for(self, asset: str, *, allow_fetch: bool = True) -> list[dict[str, Any]]:
-        if asset not in self._h1_windows or allow_fetch:
-            data = self._load()
-            if asset not in ASSETS or asset not in data["terms"]:
-                self._h1_windows[asset] = []
-            else:
-                windows = []
-                for daily_window in data["windows"].get(asset, []):
-                    window = self._intraday_window(asset, daily_window, data, allow_fetch=allow_fetch)
-                    if window is not None:
-                        windows.append(window)
-                self._h1_windows[asset] = windows
+        data = self._load_asset(asset) if asset in ASSETS else self._load()
+        sig = self._asset_h1_signature(asset, data)
+        fetched_key = f"_fetched_{asset}"
+        already_fetched = bool(self._h1_windows_sig.get(fetched_key))
+        if (
+            asset in self._h1_windows
+            and self._h1_windows_sig.get(asset) == sig
+            and (not allow_fetch or already_fetched)
+        ):
+            return self._h1_windows[asset]
+        if asset not in ASSETS or asset not in data["terms"]:
+            self._h1_windows[asset] = []
+        else:
+            windows = []
+            for daily_window in data["windows"].get(asset, []):
+                window = self._intraday_window(asset, daily_window, data, allow_fetch=allow_fetch)
+                if window is not None:
+                    windows.append(window)
+            self._h1_windows[asset] = windows
+        self._h1_windows_sig[asset] = self._asset_h1_signature(asset, data)
+        if allow_fetch:
+            self._h1_windows_sig[fetched_key] = (True,)
         return self._h1_windows[asset]
 
     def _intraday_till(self, windows: list[dict[str, Any]]) -> str | None:
@@ -923,7 +1151,8 @@ class CalendarData:
         if timeframe == "1h":
             window = next((window for window in self._intraday_windows_for(asset) if window["pair"] == pair), None)
         elif timeframe == "1d":
-            window = next((window for window in self._load()["windows"].get(asset, []) if window["pair"] == pair), None)
+            data = self._load_asset(asset) if asset in ASSETS else self._load()
+            window = next((window for window in data["windows"].get(asset, []) if window["pair"] == pair), None)
         else:
             raise W0Error("unsupported calendar timeframe")
         if window is None:
@@ -999,15 +1228,22 @@ class CalendarData:
         sizing_intents: bool = False,
         _cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        data = self._load()
         asset, pair = selection.get("asset"), selection.get("pair")
         timeframe = timeframe or selection.get("timeframe", "1d")
         strategy, fill_label = selection.get("strategy", "zscore_mean_reversion"), selection.get("fill", "next_open")
         quantity, slippage = selection.get("quantity", 1), selection.get("slippage_ticks", 1.0)
         if not isinstance(asset, str) or asset not in ASSETS or strategy not in STRATEGIES or fill_label not in FILL_LABELS:
+            if not cached_till_date(self.cache):
+                raise W0Error("calendar history is not cached; run calendar-study first")
             raise W0Error("unknown asset, strategy or fill rule")
         if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 50:
             raise W0Error("contracts must be an integer between 1 and 50")
+        if _cache is not None and "_loaded_data" in _cache:
+            data = _cache["_loaded_data"]
+        else:
+            data = self._load_asset(asset)
+            if _cache is not None:
+                _cache["_loaded_data"] = data
         through_cache = _cache.setdefault("through", {}) if _cache is not None else None
         if through_cache is not None and through in through_cache:
             window = through_cache[through]
@@ -1077,9 +1313,16 @@ class CalendarData:
                     elig_cache[through] = analysis_rows
         per_pair = {pair: runner(analysis_rows)}
         native_order = window.get("native_spread_order", True)
-        account = account_trades("proof", per_pair, data["benchmark"], profile,
-                                 native_spread=native_order, quantity=quantity,
-                                 benchmark_dates=data["benchmark_dates"])
+        if metrics_only and sizing_intents:
+            account = {"trade_list": [
+                {"direction": item["direction"], "signal": item["signal"], "reason": item["reason"],
+                 "entry_row": item["entry"], "exit_row": item["exit"]}
+                for item in per_pair[pair]
+            ]}
+        else:
+            account = account_trades("proof", per_pair, data["benchmark"], profile,
+                                     native_spread=native_order, quantity=quantity,
+                                     benchmark_dates=data["benchmark_dates"])
         series_cache = _cache.setdefault("series", {}) if (_cache is not None and metrics_only) else None
         series_key = (through, fill, quantity) if timeframe == "1h" else (through,)
         payload = _proof_payload(
@@ -1148,6 +1391,9 @@ def _rel_pct(value: Any, base: Any) -> float | None:
 
 
 def _clean(value: Any) -> Any:
+    fc = load_fastcore()
+    if fc is not None:
+        return fc.clean_obj(value)
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):

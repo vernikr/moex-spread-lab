@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 import os
+from array import array
 from bisect import bisect_right
 from collections.abc import Callable
 from datetime import date, datetime
@@ -228,7 +229,24 @@ class ProofService:
     def __init__(self, root: Path, calendar=None):
         self.root = Path(root).resolve()
         self._calendar = calendar
+        self._inputs = None
         self._pool = None
+
+    @property
+    def calendar_data(self):
+        if self._calendar is None:
+            from .calendar_spreads import CalendarData
+
+            self._calendar = CalendarData(self.root)
+        return self._calendar
+
+    @property
+    def screener_inputs(self):
+        if self._inputs is None:
+            from . import screener_app
+
+            self._inputs = screener_app.ScreenerInputs(self.root)
+        return self._inputs
 
     def worker_pool(self):
         if self._pool is None:
@@ -246,14 +264,13 @@ class ProofService:
 
     def catalog(self) -> dict[str, Any]:
         from . import screener_app
-        from .calendar_spreads import CalendarData
 
         settings = ResearchSettings.load(self.root)
         spec = get_timeframe(settings.timeframe)
         try:
             if not spec.supports_calendar:
                 raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
-            calendar = (self._calendar or CalendarData(self.root)).catalog(
+            calendar = self.calendar_data.catalog(
                 initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe
             )
         except (W0Error, OSError) as exc:
@@ -266,7 +283,7 @@ class ProofService:
                 "error": str(exc),
             }
         pair = screener_app.catalog(
-            screener_app.ScreenerInputs(self.root),
+            self.screener_inputs,
             initial_capital=settings.initial_capital_rub,
             timeframe=settings.timeframe,
         )
@@ -292,7 +309,7 @@ class ProofService:
             timeframe=saved.timeframe,
             price_fill=saved.price_fill,
         )
-        return self.prepare(selection, calendar=self._calendar, settings=strict)(selection)
+        return self.prepare(selection, calendar=self.calendar_data, settings=strict)(selection)
 
     def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
@@ -318,7 +335,13 @@ class ProofService:
         marks_cache: dict[str | None, dict[str, float]] = {}
         scan_cols_cache: dict[str | None, Any] = {}
 
-        def sized_replay(request, through=None, *, metrics_only: bool = False):
+        def sized_replay(
+            request,
+            through=None,
+            *,
+            metrics_only: bool = False,
+            scalar_summary: tuple[str, str] | None = None,
+        ):
             unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
             if unit.get("schema_version") == "calendar-proof.v1":
                 if through is None:
@@ -364,6 +387,7 @@ class ProofService:
                 copy_unit=False,
                 _scan_cache=scan_cols_cache if metrics_only else None,
                 _scan_key=through,
+                scalar_summary=scalar_summary if metrics_only else None,
             )
 
         return sized_replay
@@ -385,12 +409,10 @@ class ProofService:
         spec = get_timeframe(settings.timeframe)
         if not spec.supports_calendar:
             raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
-        from .calendar_spreads import CalendarData
-
-        calendar = calendar if calendar is not None else CalendarData(self.root)
+        calendar = calendar if calendar is not None else self.calendar_data
         cal_cache: dict[str, Any] = {}
 
-        def replay(request, through=None, *, metrics_only: bool = False):
+        def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
             effective = {
                 **request,
                 "timeframe": settings.timeframe,
@@ -521,7 +543,7 @@ class ProofService:
         strategy = selection.get("strategy")
         if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
             raise W0Error("неизвестная стратегия")
-        inputs = screener_app.ScreenerInputs(self.root)
+        inputs = self.screener_inputs
         funding = ProofFunding(inputs)
         timeframe = get_timeframe(settings.timeframe)
         if not timeframe.supports_pair_proof:
@@ -568,7 +590,7 @@ class ProofService:
             "funding_through": {},
         }
 
-        def replay(request, through=None, *, metrics_only: bool = False):
+        def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
             execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
                          "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill), "initial_capital_rub": settings.initial_capital_rub}
             params = screener_app._parameters(request, strategy)
@@ -620,7 +642,7 @@ class ProofService:
                 series = {**series, "rows": [r for r in series["rows"] if inside_cutoff(r)]}
                 analysis_rows = [r for r in analysis_rows if inside_cutoff(r)]
             analysis_series = {**series, "rows": analysis_rows}
-            spread_ticks = [float(item["spread_ticks"]) for item in analysis_rows]
+            spread_ticks = array("d", (float(item["spread_ticks"]) for item in analysis_rows))
             volume_map = {row["date"]: row for row in series["rows"]}
             if through_cache is not None:
                 through_cache[through] = (series, analysis_rows, analysis_series, spread_ticks, evidence, marks, funding_swaprates, volume_map)

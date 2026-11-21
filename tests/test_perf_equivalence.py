@@ -1038,6 +1038,41 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 _canon(run_with_c("1")),
             )
 
+            # 5) Calendar 1h strategy_search (zscore_mean_reversion + convergence_to_ruonia)
+            #    C double-double sample stdev/mean + scalar_only sizing vs pure Python fallback
+            cal_req = {
+                "universe": CALENDAR_UNIVERSE,
+                "asset": "SR",
+                "pair": "SRH3/SRM3",
+                "strategy": "zscore_mean_reversion",
+                "fill": "next_open",
+                "sizing": AUTO_SIZING,
+                "optimize_strategy": True,
+                "targets": [
+                    {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
+                    {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRM3/SRU3"},
+                ],
+            }
+
+            def run_cal(disable_c: str, ref_eval: str = "0"):
+                env = {"MOEX_PROOF_WORKERS": "1", "MOEX_PROOF_REFERENCE_EVAL": ref_eval}
+                if disable_c:
+                    env["MOEX_PROOF_DISABLE_C"] = disable_c
+                with patch.dict(os.environ, env, clear=False):
+                    if not disable_c:
+                        os.environ.pop("MOEX_PROOF_DISABLE_C", None)
+                    svc = ProofService(root)
+                    try:
+                        return research_run(svc, cal_req, optimize=True)
+                    finally:
+                        svc.close()
+
+            cal_c_fast = _canon(run_cal("", "0"))
+            cal_py_fast = _canon(run_cal("1", "0"))
+            cal_py_ref = _canon(run_cal("1", "1"))
+            self.assertEqual(cal_c_fast, cal_py_fast)
+            self.assertEqual(cal_c_fast, cal_py_ref)
+
     def test_streaming_progress_is_monotonic_and_matches_json_bit_for_bit(self):
         import threading
         import urllib.request

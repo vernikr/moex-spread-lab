@@ -36,12 +36,14 @@ class SealedH1Reader:
         self._snapshot = None
         self._payload = None
         self._cache = {}
+        self._verified_sigs = set()
 
     def payload(self):
         exists = [os.path.lexists(p) for p in (self.path, self.marker)]
         if not any(exists):
             self._snapshot = self._payload = None
             self._cache.clear()
+            self._verified_sigs.clear()
             return None
         if not all(exists) or self.path.is_symlink() or self.marker.is_symlink():
             raise DataLakeError("H1 seal/activation marker missing or unsafe; refusing fallback")
@@ -69,6 +71,7 @@ class SealedH1Reader:
                 raise DataLakeError("invalid H1 seal selection")
             self._snapshot, self._payload = signature, value
             self._cache.clear()
+            self._verified_sigs.clear()
             return value
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise DataLakeError(f"cannot read H1 seal: {exc}") from exc
@@ -107,15 +110,20 @@ class SealedH1Reader:
                 if not path.resolve().is_relative_to(self.root / "data-lake") or path.is_symlink():
                     raise DataLakeError("sealed tables must remain inside data-lake")
             legacy_signature = _signature(legacy_path) if os.path.lexists(legacy_path) else None
+            bars_sig = _signature(bars)
+            sources_sig = _signature(sources)
             key = (relative, tuple(columns) if columns is not None else None,
-                   _signature(bars), _signature(sources), legacy_signature, self._snapshot)
+                   bars_sig, sources_sig, legacy_signature, self._snapshot)
             if key in self._cache:
                 return self._cache[key]
-            if legacy_signature is not None and sha256_file(legacy_path) != record["legacy_sha256"]:
-                raise DataLakeError("retained H1 JSON changed after sealing; refusing stale Parquet")
-            if (sha256_file(bars) != record["parquet_sha256"]
-                    or sha256_file(sources) != record["sources_sha256"]):
-                raise DataLakeError("sealed H1 table hash mismatch; refusing fallback")
+            verify_key = (relative, bars_sig, sources_sig, legacy_signature, self._snapshot)
+            if verify_key not in self._verified_sigs:
+                if legacy_signature is not None and sha256_file(legacy_path) != record["legacy_sha256"]:
+                    raise DataLakeError("retained H1 JSON changed after sealing; refusing stale Parquet")
+                if (sha256_file(bars) != record["parquet_sha256"]
+                        or sha256_file(sources) != record["sources_sha256"]):
+                    raise DataLakeError("sealed H1 table hash mismatch; refusing fallback")
+                self._verified_sigs.add(verify_key)
             table = pq.ParquetFile(bars).read(columns=list(columns) if columns is not None else None)
             rows = table.to_pylist()
             semantics = record.get("row_semantics", {})

@@ -221,7 +221,13 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     )
 
 
+_CANDLE_SUMMARY_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+
 def _candle_summary(series: BarSeries):
+    cached = _CANDLE_SUMMARY_CACHE.get(series.cache_key)
+    if cached is not None:
+        return cached
     timestamps: set[str] = set()
     volumes: dict[str, float | None] = {}
     invalid_days: set[str] = set()
@@ -243,7 +249,11 @@ def _candle_summary(series: BarSeries):
         volumes[day] = float(volumes.get(day) or 0.0) + number
     for day in invalid_days:
         volumes[day] = None
-    return {"timestamps": frozenset(timestamps), "volumes": volumes}
+    result = {"timestamps": frozenset(timestamps), "volumes": volumes}
+    if len(_CANDLE_SUMMARY_CACHE) > 2048:
+        _CANDLE_SUMMARY_CACHE.clear()
+    _CANDLE_SUMMARY_CACHE[series.cache_key] = result
+    return result
 
 
 def _session_volumes(inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME):
@@ -290,11 +300,14 @@ def _pair_history_span(inputs: ScreenerInputs, pair: dict[str, str], timeframe: 
             return None, None, 0, set()
         legs.append(summary["timestamps"])
     common = legs[0] & legs[1]
-    ordered = sorted(common)
+    if not common:
+        return None, None, 0, set()
+    first = min(common)
+    last = max(common)
     return (
-        ordered[0][:10], ordered[-1][:10], len(ordered),
+        first[:10], last[:10], len(common),
         {timestamp[:10] for timestamp in common},
-    ) if ordered else (None, None, 0, set())
+    )
 
 
 def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_capital=INITIAL_CAPITAL, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
@@ -320,8 +333,33 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
     pairs = []
     for pair in registry:
         pair_id = pair["pair_id"]
-        history_from, history_to, history_observations, _ = _pair_history_span(inputs, pair, timeframe)
         near, far = pair["near"], pair["far"]
+        try:
+            near_sum = _candle_summary(inputs.bars(pair_id, near, timeframe, columns=("begin", "close", "volume")))
+            far_sum = _candle_summary(inputs.bars(pair_id, far, timeframe, columns=("begin", "close", "volume")))
+        except W0Error:
+            near_sum = far_sum = None
+        if near_sum is not None and far_sum is not None:
+            common_ts = near_sum["timestamps"] & far_sum["timestamps"]
+            if common_ts:
+                history_from, history_to, history_observations = min(common_ts)[:10], max(common_ts)[:10], len(common_ts)
+            else:
+                history_from, history_to, history_observations = None, None, 0
+            near_vols, far_vols = near_sum["volumes"], far_sum["volumes"]
+            common_vol_days = set(near_vols) & set(far_vols)
+            pos_days = {
+                day for day in common_vol_days
+                if near_vols.get(day) is not None and float(near_vols[day]) > 0
+                and far_vols.get(day) is not None and float(far_vols[day]) > 0
+            }
+            volumes = (
+                {near: min(float(near_vols[d]) for d in pos_days), far: min(float(far_vols[d]) for d in pos_days)}
+                if pos_days else None
+            )
+        else:
+            history_from, history_to, history_observations = None, None, 0
+            pos_days = set()
+            volumes = None
         price_files = (
             inputs.candles(pair_id, near, timeframe),
             inputs.candles(pair_id, far, timeframe),
@@ -335,10 +373,9 @@ def catalog(inputs: ScreenerInputs, *, registry=PAIRS, funding=None, initial_cap
             inputs.benchmark,
             inputs.contracts,
         )
-        volumes = _leg_volumes(inputs, pair, timeframe)
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
         days = (
-            _positive_leg_volume_dates(inputs, pair, timeframe)
+            pos_days
             if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
             else set()
         )

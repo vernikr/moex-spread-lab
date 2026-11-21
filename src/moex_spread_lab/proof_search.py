@@ -276,8 +276,101 @@ def _annualized_returns(proof, marks, split):
     }
 
 
+def _measure_scalar_train(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
+    if reason := _admission(proof, settings):
+        return {"utility": None, "reason": reason}
+    (
+        initial,
+        p0,
+        end_price,
+        end_wealth,
+        end_cum_net,
+        any_window_shortfall,
+        exposed,
+    ) = proof["_scalar_train_summary"]
+    start, end = split.training[0], split.training[-1]
+    train_x = end_wealth - initial * end_price / p0
+    train_rate = train_x / len(split.training)
+    if not all(math.isfinite(v) for v in (train_rate, train_x)):
+        return {"utility": None, "reason": "Нет конечной оценки результата."}
+    metrics = {
+        "net_rub": round(end_cum_net, 2),
+        "lqdt_on_margin_rub": round(end_cum_net - train_x, 2),
+        "train": round(train_rate, 6),
+        "validation": None,
+        "excess_rub": round(train_x, 2),
+        "rub_per_session": round(train_rate, 6),
+    }
+    reasons = []
+    missing = False
+    if not exposed:
+        missing = True
+        reasons.append("Открытого спреда не было на обучении.")
+
+    def as_datetime(value):
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return datetime.combine(date.fromisoformat(value), time.min)
+
+    anchor_price = marks.get(start)
+    if anchor_price is None or not math.isfinite(anchor_price) or anchor_price <= 0 or not math.isfinite(end_price) or end_price <= 0:
+        return {
+            **metrics,
+            "utility": None,
+            "rank_score": None,
+            "reason": " ".join([*reasons, "Непригодная отметка LQDT в расчётном периоде."]),
+        }
+    elapsed_days = (as_datetime(end) - as_datetime(start)).total_seconds() / 86400
+    if elapsed_days <= 0 or min(initial, end_wealth) <= 0:
+        return {
+            **metrics,
+            "utility": None,
+            "rank_score": None,
+            "reason": " ".join([*reasons, "Нет положительного капитала или календарного интервала для годовой доходности."]),
+        }
+    power = 365 / elapsed_days
+    try:
+        strategy = 100 * math.expm1(power * math.log(end_wealth / initial))
+        benchmark = 100 * math.expm1(power * math.log(end_price / anchor_price))
+        excess = strategy - benchmark
+        if not all(math.isfinite(v) for v in (strategy, benchmark, excess)):
+            raise OverflowError
+    except (OverflowError, ValueError):
+        return {
+            **metrics,
+            "utility": None,
+            "rank_score": None,
+            "reason": " ".join([*reasons, "Годовая оценка не является конечным числом."]),
+        }
+    if any_window_shortfall:
+        reasons.append("Свободные средства недостаточны для маржи.")
+        return {
+            **metrics,
+            "rank_score": None,
+            "utility": None,
+            "reason": " ".join(reasons),
+        }
+    annual = {
+        "strategy_annualized_pct": strategy,
+        "lqdt_annualized_pct": benchmark,
+        "annualized_excess_pp": 0.0 if abs(excess) < 1e-10 else excess,
+        "calendar_days": round(elapsed_days, 4),
+    }
+    score = annual["annualized_excess_pp"]
+    return {
+        **metrics,
+        **annual,
+        "rank_score": score,
+        "utility": None if missing else score,
+        **({"reason": " ".join(reasons)} if reasons else {}),
+    }
+
+
 def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
     """Measure a continuous ledger; the last training mark is validation's opening balance."""
+    if "_scalar_train_summary" in proof and not split.validation:
+        return _measure_scalar_train(proof, marks, split, settings)
     if reason := _admission(proof, settings):
         return {"utility": None, "reason": reason}
     curve = _excess_curve(proof, marks)
@@ -531,10 +624,17 @@ class StudyWindow:
             if training
             else None
         )
+        metrics_only = training and not reference_eval()
+        scalar_summary = (
+            (self.train.training[0], self.train.training[-1])
+            if metrics_only
+            else None
+        )
         return self.replay(
             req,
             through=through,
-            metrics_only=(training and not reference_eval()),
+            metrics_only=metrics_only,
+            scalar_summary=scalar_summary,
         )
 
     def lamp_warning(self):

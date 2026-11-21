@@ -8,6 +8,7 @@ Legacy fixed-quantity analytical reports are deliberately outside this adapter.
 from __future__ import annotations
 
 import math
+from array import array
 from copy import deepcopy
 
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
@@ -144,7 +145,17 @@ _STD_COST_KEYS = frozenset({"exchange_clearing", "broker", "slippage"})
 
 
 def _size_proof_fast_c(
-    fc, proof, terms, marks, settings, initial, strategy_name, _scan_cache=None, _scan_key=None
+    fc,
+    proof,
+    terms,
+    marks,
+    settings,
+    initial,
+    strategy_name,
+    _scan_cache=None,
+    _scan_key=None,
+    *,
+    scalar_summary: tuple[str, str] | None = None,
 ):
     rows = proof["series"]
     n = len(rows)
@@ -155,17 +166,18 @@ def _size_proof_fast_c(
         dates, prices, spreads, points, posted_units, elig, entry_elig, exit_elig, date_to_idx = scan_cols
     else:
         dates = [r["date"] for r in rows]
-        prices = [_positive(marks[d], "отметка LQDT") for d in dates]
-        spreads = [float(r["spread"]) for r in rows]
+        prices = array("d", (_positive(marks[d], "отметка LQDT") for d in dates))
+        spreads = array("d", (float(r["spread"]) for r in rows))
         if terms.native:
-            points = [terms.point(i) for i in range(n)]
-            posted_units = [terms.posted_margin(i, 1) for i in range(n)]
+            points = array("d", (terms.point(i) for i in range(n)))
+            posted_units = array("d", (terms.posted_margin(i, 1) for i in range(n)))
         else:
-            points = [1.0] * n
-            posted_units = [terms.margin] * n
-        elig = [bool(r.get("volume_eligible", True)) for r in rows]
-        entry_elig = [bool(r.get("entry_eligible", e)) for r, e in zip(rows, elig)]
-        exit_elig = [bool(r.get("exit_eligible", e)) for r, e in zip(rows, elig)]
+            points = array("d", [1.0]) * n
+            posted_units = array("d", [terms.margin]) * n
+        elig_list = [1 if r.get("volume_eligible", True) else 0 for r in rows]
+        elig = array("B", elig_list)
+        entry_elig = array("B", (1 if r.get("entry_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list)))
+        exit_elig = array("B", (1 if r.get("exit_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list)))
         date_to_idx = {d: i for i, d in enumerate(dates)}
         if _scan_cache is not None:
             _scan_cache[_scan_key] = (
@@ -245,7 +257,20 @@ def _size_proof_fast_c(
         r.get("funding_rub") is not None or r.get("funding_contracts", 0)
         for r in rows
     )
-    ledger, acc_tuples = fc.size_proof_metrics(
+
+    use_scalar = False
+    start_idx = 0
+    end_idx = n - 1
+    if scalar_summary is not None:
+        s_day, e_day = scalar_summary
+        s_i = date_to_idx.get(s_day)
+        e_i = date_to_idx.get(e_day)
+        if s_i is not None and e_i is not None and s_i <= e_i:
+            use_scalar = True
+            start_idx = s_i
+            end_idx = e_i
+
+    ledger_or_summary, acc_tuples = fc.size_proof_metrics(
         dates,
         prices,
         spreads,
@@ -261,11 +286,35 @@ def _size_proof_fast_c(
         terms.native_order,
         strategy_name == "funding_only",
         has_funding,
+        use_scalar,
+        start_idx,
+        end_idx,
     )
-    if ledger == "overlap":
+    if ledger_or_summary == "overlap":
         raise W0Error(
             "Перекрывающиеся сигналы не поддерживаются одним счётом окна."
         )
+    if use_scalar:
+        p0, end_price, end_wealth, end_cum_net, any_window_shortfall = ledger_or_summary
+        exposed = any(
+            e_i <= end_idx and (x_i < 0 or x_i >= start_idx)
+            for e_i, x_i in acc_tuples
+        )
+        proof["selection"]["sizing"] = AUTO_SIZING
+        proof["initial_capital_rub"] = initial
+        proof["sizing"] = {"initial_capital_rub": initial}
+        proof["_scalar_train_summary"] = (
+            initial,
+            p0,
+            end_price,
+            end_wealth,
+            end_cum_net,
+            bool(any_window_shortfall),
+            exposed,
+        )
+        return proof
+
+    ledger = ledger_or_summary
     accepted = []
     for (
         orig_idx,
@@ -326,6 +375,7 @@ def size_proof(
     copy_unit=True,
     _scan_cache=None,
     _scan_key=None,
+    scalar_summary: tuple[str, str] | None = None,
 ):
     """Replay independent signal intents; all account observations are prefix-causal.
 
@@ -363,6 +413,7 @@ def size_proof(
                 strategy_name,
                 _scan_cache=_scan_cache,
                 _scan_key=_scan_key,
+                scalar_summary=scalar_summary,
             )
             if result is not None:
                 return result

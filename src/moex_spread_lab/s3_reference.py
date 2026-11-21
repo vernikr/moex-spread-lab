@@ -6,11 +6,13 @@ import csv
 import json
 import math
 import statistics
+from array import array
 from bisect import bisect_left, bisect_right
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from ._fastcore_loader import load_fastcore
 from .costs import side_cost, tariff_profile
 from .screener_app import MIN_DAILY_VOLUME
 from .w0 import W0Error
@@ -79,10 +81,58 @@ def _elapsed_days(start: str, end: str) -> float:
     return (date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days
 
 
-def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2, close_at_end: bool = False):
+_EPOCH_DT = datetime(1970, 1, 1)
+_EPOCH_DATE = date(1970, 1, 1)
+_CAL_REASONS = ("z_reverted", "max_hold", "near_expiry_buffer", "end_of_window")
+
+
+def _row_ts_days(raw_date: Any) -> float:
+    s = str(raw_date)
+    if "T" in s:
+        return (datetime.fromisoformat(s.replace("Z", "")) - _EPOCH_DT).total_seconds() / 86400.0
+    return float((date.fromisoformat(s[:10]) - _EPOCH_DATE).days)
+
+
+def _calendar_row_buffers(rows, *, z_cache: dict | None = None, z_cache_key: Any = None):
+    cache_key = ("_cols", z_cache_key) if (z_cache is not None and z_cache_key is not None) else None
+    if cache_key is not None and cache_key in z_cache:
+        return z_cache[cache_key]
+    n = len(rows)
+    spreads = array("d", (float(r["spread"]) for r in rows))
+    dev_pp = array("d", (float(r.get("dev_pp", math.nan)) for r in rows))
+    ts_days = array("d", (_row_ts_days(r["date"]) for r in rows))
+    dte = array("i", (int(r["days_to_near_expiry"]) for r in rows))
+    sig_el = array("B", (1 if r.get("signal_eligible", True) else 0 for r in rows))
+    ent_el = array("B", (1 if r.get("entry_eligible", True) else 0 for r in rows))
+    ext_el = array("B", (1 if r.get("exit_eligible", True) else 0 for r in rows))
+    elig_pref = array("i", [0] * (n + 1))
+    acc = 0
+    for idx in range(n):
+        acc += sig_el[idx]
+        elig_pref[idx + 1] = acc
+    cols = (spreads, dev_pp, ts_days, dte, sig_el, ent_el, ext_el, elig_pref)
+    if cache_key is not None:
+        z_cache[cache_key] = cols
+    return cols
+
+
+def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_days: int = 2, close_at_end: bool = False,
+                       z_cache: dict | None = None, z_cache_key: Any = None):
+    if not rows or rows[0]["dividend_in_window"]:
+        return []
+    fc = load_fastcore()
+    if fc is not None and delay >= 0:
+        _, dev_pp, _, dte, sig_el, ent_el, ext_el, _ = _calendar_row_buffers(
+            rows, z_cache=z_cache, z_cache_key=z_cache_key
+        )
+        specs = fc.calendar_convergence_scan(
+            dev_pp, dte, sig_el, ent_el, ext_el, float(threshold), int(delay), int(exit_days), bool(close_at_end)
+        )
+        return [
+            _trade(rows[e_i], rows[x_i], direction, fill, _CAL_REASONS[r_code], "dev_pp", rows[s_i], s_val)
+            for e_i, x_i, direction, r_code, s_i, s_val in specs
+        ]
     position, entry, trades, signal_row = 0, None, [], None
-    if rows[0]["dividend_in_window"]:
-        return trades
     for index, row in enumerate(rows):
         if position and row.get("exit_eligible", True) and row["days_to_near_expiry"] <= exit_days:
             trades.append(_trade(entry, row, position, fill, "near_expiry_buffer", "dev_pp", signal_row, signal_row["dev_pp"]))
@@ -100,29 +150,48 @@ def convergence_trades(rows, *, threshold: float, delay: int, fill: str, exit_da
 def zscore_trades(rows, *, delay: int, fill: str, entry_z: float = 1.5, exit_z: float = 0.5, window: int = 20,
                   max_hold_days: int = 30, close_before: int = 7, skip_dividend_windows: bool = True, close_at_end: bool = False,
                   z_cache: dict | None = None, z_cache_key: Any = None):
-    if skip_dividend_windows and rows[0]["dividend_in_window"]:
+    if not rows or (skip_dividend_windows and rows[0]["dividend_in_window"]):
         return []
     include_current = delay == 0
     n = len(rows)
+    fc = load_fastcore()
+    if fc is not None and window >= 2 and delay >= 0:
+        spreads, _, ts_days, dte, sig_el, ent_el, ext_el, elig_pref = _calendar_row_buffers(
+            rows, z_cache=z_cache, z_cache_key=z_cache_key
+        )
+        cache_id = (z_cache_key, window, include_current) if z_cache is not None else None
+        z = z_cache.get(cache_id) if cache_id is not None else None
+        if z is None:
+            z = fc.calendar_sample_z(spreads, sig_el, elig_pref, int(window), include_current)
+            if cache_id is not None:
+                z_cache[cache_id] = z
+        specs = fc.calendar_zscore_scan(
+            z, ts_days, dte, sig_el, ent_el, ext_el,
+            int(delay), float(entry_z), float(exit_z), float(max_hold_days), int(close_before), bool(close_at_end),
+        )
+        return [
+            _trade(rows[e_i], rows[x_i], direction, fill, _CAL_REASONS[r_code], "z", rows[s_i], s_val)
+            for e_i, x_i, direction, r_code, s_i, s_val in specs
+        ]
     cache_id = (z_cache_key, window, include_current) if z_cache is not None else None
     z = z_cache.get(cache_id) if cache_id is not None else None
     if z is None:
         z = [math.nan] * n
-        spreads = [float(r["spread"]) for r in rows]
+        spreads_py = [float(r["spread"]) for r in rows]
         elig = [bool(r.get("signal_eligible", True)) for r in rows]
-        elig_pref = [0] * (n + 1)
+        elig_pref_py = [0] * (n + 1)
         for idx, flag in enumerate(elig):
-            elig_pref[idx + 1] = elig_pref[idx] + flag
+            elig_pref_py[idx + 1] = elig_pref_py[idx] + flag
         for index in range(window - include_current, n):
             if not elig[index]:
                 continue
             start = index - window + 1 if include_current else index - window
             end = index + 1 if include_current else index
-            if elig_pref[end] - elig_pref[start] != window:
+            if elig_pref_py[end] - elig_pref_py[start] != window:
                 continue
-            sample = spreads[start:end]
+            sample = spreads_py[start:end]
             deviation = statistics.stdev(sample)
-            z[index] = (spreads[index] - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
+            z[index] = (spreads_py[index] - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
         if cache_id is not None:
             z_cache[cache_id] = z
     position, entry, trades, signal_index = 0, None, [], 0
@@ -238,7 +307,9 @@ def strategy_runner(strategy: str, *, delay: int, fill: str, close_at_end: bool,
                     threshold: float = 1.0, zscore_options: dict[str, Any] | None = None,
                     z_cache: dict | None = None, z_cache_key: Any = None):
     if strategy == "convergence_to_ruonia":
-        return lambda rows: convergence_trades(rows, threshold=threshold, delay=delay, fill=fill, close_at_end=close_at_end)
+        return lambda rows: convergence_trades(
+            rows, threshold=threshold, delay=delay, fill=fill, close_at_end=close_at_end,
+            z_cache=z_cache, z_cache_key=z_cache_key)
     if strategy == "zscore_mean_reversion":
         return lambda rows: zscore_trades(
             rows, delay=delay, fill=fill, skip_dividend_windows=skip_dividend_windows_in_zscore,

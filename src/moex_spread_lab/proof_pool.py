@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import multiprocessing
 import os
+import sys
 import threading
 import uuid
 import weakref
@@ -33,7 +34,10 @@ def configured_workers() -> int:
             return max(1, int(raw))
         except ValueError:
             pass
-    return max(1, min(8, os.cpu_count() or 6))
+    cpu = os.cpu_count() or 6
+    if sys.platform == "darwin" and cpu > 4:
+        return max(2, min(6, cpu // 2))
+    return max(1, min(8, cpu))
 
 
 def _worker_service(root_str: str):
@@ -263,17 +267,27 @@ def _worker_window_summaries(
     return rows
 
 
-def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str) -> int:
+def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None) -> int:
     if timeframe == "1h" and item.get("universe") == "pair_screen":
         pair = str(item.get("pair") or "")
         parts = pair.split("/")
         if len(parts) == 2:
-            from .h1_seal import SealedH1Reader
-            reader = SealedH1Reader(root)
-            seal = reader.payload()
+            if _seal_cache is not None and "reader" in _seal_cache:
+                reader = _seal_cache["reader"]
+                seal = _seal_cache["seal"]
+                by_legacy = _seal_cache["by_legacy"]
+            else:
+                from .h1_seal import SealedH1Reader
+                reader = SealedH1Reader(root)
+                seal = reader.payload()
+                by_legacy = {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
+                if _seal_cache is not None:
+                    _seal_cache["reader"] = reader
+                    _seal_cache["seal"] = seal
+                    _seal_cache["by_legacy"] = by_legacy
             if seal is not None:
                 selected = reader.select(parts[1]).relative_to(reader.root).as_posix()
-                entry = next((e for e in seal["plan"]["files"] if e["legacy_path"] == selected), None)
+                entry = by_legacy.get(selected)
                 if entry is not None:
                     return max(100, entry["logical_bytes"] // 128)
                 return 1000
@@ -346,18 +360,16 @@ class CohortWorkerPool:
         n = len(items)
         w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
-        weighted = sorted(
-            items,
-            key=lambda entry: _estimate_weight(root, entry[1], settings.timeframe),
-            reverse=True,
-        )
+        seal_cache: dict[str, Any] = {}
+        weights = {entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache) for entry in items}
+        weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
         shards: list[list[tuple[int, dict[str, Any], dict[str, Any], bool]]] = [[] for _ in range(w)]
         shard_loads = [0] * w
         owner_of: dict[int, int] = {}
         for entry in weighted:
             s_idx = min(range(w), key=lambda k: shard_loads[k])
             shards[s_idx].append(entry)
-            shard_loads[s_idx] += _estimate_weight(root, entry[1], settings.timeframe)
+            shard_loads[s_idx] += weights[entry[0]]
             owner_of[entry[0]] = s_idx
         for shard in shards:
             shard.sort(key=lambda entry: entry[0])
@@ -423,11 +435,48 @@ class CohortWorkerPool:
         total_members: int,
         check_cancelled,
     ) -> dict[str, Any]:
-        """Two-phase Canary + Fan-Out with guaranteed canonical minimum-index failure reason."""
+        """Adaptive Canary / Single-Roundtrip Fan-Out with guaranteed canonical minimum-index failure reason."""
         cohort_id = cohort_state["cohort_id"]
         slots = cohort_state["slots"]
         owner_of = cohort_state["owner_of"]
         shards = cohort_state["shards"]
+        use_canary = bool(cohort_state.get("canary_active"))
+
+        if not use_canary:
+            # Optimistic single-roundtrip fan-out across all active shards simultaneously.
+            active_slots = sorted(set(owner_of.values()))
+            futs = [
+                slots[s_idx].submit(
+                    _worker_eval_indices, cohort_id, point_by_strategy, None, None
+                )
+                for s_idx in active_slots
+            ]
+            all_scores: list[tuple[int, float, bool]] = []
+            min_fail = None
+            for sub_fail, sub_scores in _await_futures(futs, check_cancelled):
+                if sub_fail is not None:
+                    if min_fail is None or sub_fail[0] < min_fail[0]:
+                        min_fail = sub_fail
+                all_scores.extend(sub_scores)
+            if min_fail is not None:
+                canary_box[0] = min_fail[0]
+                cohort_state["canary_active"] = True
+                return {
+                    "utility": None,
+                    "rank_score": None,
+                    "reason": f"{min_fail[1]}: {min_fail[2]}",
+                }
+            all_scores.sort(key=lambda item: item[0])
+            ordered_scores = [item[1] for item in all_scores]
+            exposed = any(item[2] for item in all_scores)
+            score = fmean(ordered_scores)
+            return {
+                "rank_score": score,
+                "by_window_pp": ordered_scores,
+                "utility": score if exposed else None,
+                **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
+            }
+
         canary = canary_box[0]
 
         # Phase 1: probe the canary window first (1 IPC round-trip).
@@ -465,9 +514,12 @@ class CohortWorkerPool:
                 "reason": f"{best_fail[1]}: {best_fail[2]}",
             }
 
+        # Canary passed on this point; switch back to single-roundtrip fan-out for subsequent passing trials.
+        cohort_state["canary_active"] = False
+
         # Phase 2: canary passed; evaluate all remaining windows across active shards.
         if total_members == 1:
-            idx, score, exp = canary_scores[0]
+            _idx, score, exp = canary_scores[0]
             return {
                 "rank_score": score,
                 "by_window_pp": [score],
@@ -483,7 +535,7 @@ class CohortWorkerPool:
             for s_idx in active_slots
             if any(entry[0] != canary for entry in shards[s_idx])
         ]
-        all_scores: list[tuple[int, float, bool]] = list(canary_scores)
+        all_scores = list(canary_scores)
         min_fail = None
         for sub_fail, sub_scores in _await_futures(futs, check_cancelled):
             if sub_fail is not None:
@@ -492,6 +544,7 @@ class CohortWorkerPool:
             all_scores.extend(sub_scores)
         if min_fail is not None:
             canary_box[0] = min_fail[0]
+            cohort_state["canary_active"] = True
             return {
                 "utility": None,
                 "rank_score": None,
@@ -611,11 +664,9 @@ class CohortWorkerPool:
         n = len(items)
         w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
-        weighted = sorted(
-            items,
-            key=lambda entry: _estimate_weight(root, entry[1], settings.timeframe),
-            reverse=True,
-        )
+        seal_cache: dict[str, Any] = {}
+        weights = {entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache) for entry in items}
+        weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
         # Split into up to 2 micro-batches per worker for larger sets so progress updates smoothly.
         batches = min(n, w * 2) if n >= w * 2 else w
         shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [[] for _ in range(batches)]
@@ -623,7 +674,7 @@ class CohortWorkerPool:
         for entry in weighted:
             s_idx = min(range(batches), key=lambda k: shard_loads[k])
             shards[s_idx].append(entry)
-            shard_loads[s_idx] += _estimate_weight(root, entry[1], settings.timeframe)
+            shard_loads[s_idx] += weights[entry[0]]
         root_str = str(root.resolve())
         futs = []
         fut_weights: dict[Any, int] = {}

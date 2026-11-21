@@ -15,6 +15,7 @@ from moex_spread_lab.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.screener_app import (
     HISTORICAL_PERPETUAL_PAIRS,
     HISTORY_WINDOWS,
+    PAIRS,
     ScreenerError,
     ScreenerInputs,
     ScreenerStore,
@@ -398,7 +399,7 @@ class ScreenerAppTests(unittest.TestCase):
         connection.request("POST", "/api/screen", screen_payload, headers)
         screen_response = connection.getresponse()
         self.assertEqual(screen_response.status, 200)
-        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), 110)
+        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), len(PAIRS))
         self.assertEqual(
             len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1
         )

@@ -51,6 +51,7 @@ def load_fastcore() -> Any:
                         str(c_path),
                         "-o",
                         str(tmp_so),
+                        "-lm",
                     ]
                     if os.uname().sysname == "Darwin":
                         cmd.extend(["-undefined", "dynamic_lookup"])

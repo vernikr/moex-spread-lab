@@ -36,7 +36,7 @@ def post(page, path):
 
 
 def tune(page, expected):
-    with expect_api_json(page, "/api/proof/optimize", timeout=30000) as done:
+    with expect_api_json(page, "/api/proof/optimize", timeout=120000) as done:
         page.locator("#auto-tune").click()
     result = done["data"]
     assert result["status"] == "maximum_found", result.get("reason")

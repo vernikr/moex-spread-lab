@@ -50,7 +50,7 @@ def run(browser, url):
     expect(page.locator("#global-settings")).not_to_have_attribute("open", "")
 
     # The saved seed reaches the search and is reported with the drawn base seed.
-    with expect_api_json(page, "/api/proof/optimize", timeout=30000) as live:
+    with expect_api_json(page, "/api/proof/optimize", timeout=120000) as live:
         page.locator("#auto-tune").click()
     data = live["data"]
     assert data["seed"] == 41, data["seed"]

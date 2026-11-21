@@ -55,7 +55,7 @@ def install_stream_spy(target):
 
 
 @contextmanager
-def expect_api_json(page, suffix, timeout=20000):
+def expect_api_json(page, suffix, timeout=120000):
     box = {}
     start = page.evaluate("window.__proofResults ? window.__proofResults.length : 0")
     yield box

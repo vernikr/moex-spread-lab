@@ -1,0 +1,44 @@
+{
+  "module_id": "moex-spread-lab.proof",
+  "release": "0.9.0",
+  "contract_version": "msl-proof.v1",
+  "kind": "proof",
+  "capabilities": [
+    "execution_proof",
+    "cohort_optimization",
+    "offline_pair_audit"
+  ],
+  "inputs": [
+    "iss-candles.v1",
+    "benchmark-lineage.v1"
+  ],
+  "outputs": [
+    "execution-proof.v1",
+    "proof-search.v4"
+  ],
+  "dependencies": [
+    "moex-spread-lab.core",
+    "moex-spread-lab.data",
+    "moex-spread-lab.accounting",
+    "moex-spread-lab.strategies"
+  ],
+  "owner": "project-proof",
+  "resource_profile": {
+    "network": "explicit_intake_only",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "configured_seed_or_explicit_random_seed"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "active"
+  }
+}

@@ -1,0 +1,104 @@
+"""Compact, read-only simulation results for the visible window table.
+
+No optimization, cohort pruning, saved trials or changes to per-window parameters.
+Every row is measured by the exact same continuous proof/evaluation as its chart.
+"""
+
+from __future__ import annotations
+
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from .service import _benchmark_marks
+from .proof_kernel import StudyWindow, _identity, _validate, compact_result
+from .proof_pool import _estimate_weight, get_worker_pool
+from moex_spread_lab.core.w0 import W0Error
+
+MAX_WINDOW_REQUESTS = 128
+_DEFAULT_STUDY_WINDOW = StudyWindow
+
+
+def window_summaries(
+    service, request, *, check_cancelled=lambda: None, on_progress=None
+):
+    if not isinstance(request, dict) or request.keys() != {"requests"}:
+        raise W0Error("Для таблицы нужен список requests.")
+    requests = request["requests"]
+    if not isinstance(requests, list) or not 1 <= len(requests) <= MAX_WINDOW_REQUESTS:
+        raise W0Error(f"В таблице допустимо 1–{MAX_WINDOW_REQUESTS} окон за запрос.")
+    identities, seen = [], set()
+    for item in requests:
+        if not isinstance(item, dict) or "targets" in item:
+            raise W0Error("Строка таблицы должна описывать одно окно, не группу.")
+        target = _identity(item)
+        key = tuple(sorted(target.items()))
+        if key in seen:
+            raise W0Error("Окно таблицы указано дважды.")
+        seen.add(key)
+        identities.append(target)
+    total_windows = len(requests)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "windows",
+                "done": 0,
+                "total": total_windows,
+                "percent": 4.0,
+                "label": f"Окна: 0/{total_windows}",
+            }
+        )
+    settings = ResearchSettings.load(service.root)
+    benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
+    calendar = service._calendar or CalendarData(service.root)
+    if StudyWindow is _DEFAULT_STUDY_WINDOW and type(calendar) is CalendarData:
+        pool = get_worker_pool(service)
+        est = sum(_estimate_weight(service.root, t, settings.timeframe) for t in identities)
+        if pool.should_use(len(requests), est):
+            items = list(enumerate(zip(requests, identities)))
+            payload = [(idx, item, target) for idx, (item, target) in items]
+            rows = pool.window_summaries(
+                service.root,
+                settings,
+                benchmark,
+                payload,
+                check_cancelled,
+                on_progress=(
+                    None
+                    if on_progress is None
+                    else lambda done, total: on_progress(
+                        {
+                            "stage": "windows",
+                            "done": done,
+                            "total": total,
+                            "percent": round(4.0 + 94.0 * (done / max(total, 1)), 1),
+                            "label": f"Окна: {done}/{total}",
+                        }
+                    )
+                ),
+            )
+            return {**settings.metadata(), "rows": rows}
+    rows = []
+    for idx, (item, target) in enumerate(zip(requests, identities), start=1):
+        check_cancelled()
+        try:
+            _validate(item)
+            case = StudyWindow(service, item, settings, benchmark, calendar)
+            result = compact_result(case.report(case.seed))
+        except (W0Error, OSError) as exc:
+            result = {
+                "status": "unavailable",
+                "trades": None,
+                "annualized_excess_pp": None,
+                "reason": str(exc),
+            }
+        rows.append({"target": target, **result})
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "windows",
+                    "done": idx,
+                    "total": total_windows,
+                    "percent": round(4.0 + 94.0 * (idx / max(total_windows, 1)), 1),
+                    "label": f"Окна: {idx}/{total_windows}",
+                }
+            )
+    return {**settings.metadata(), "rows": rows}

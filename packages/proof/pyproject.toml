@@ -1,0 +1,17 @@
+[project]
+name = "msl-proof"
+version = "0.9.0"
+description = "MOEX Spread Lab execution-proof and cohort optimization"
+requires-python = ">=3.12,<3.13"
+dependencies = ["msl-core", "msl-data", "msl-accounting", "msl-strategies", "optuna>=4.2,<5"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true

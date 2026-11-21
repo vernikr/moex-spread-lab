@@ -5,7 +5,7 @@ Continuous integration runs on every push to `main`, on pull requests, weekly (M
 ## Layout
 
 - `test` matrix, shard `1/2` and `2/2` (ubuntu-latest): the functional suite, split with pytest-split (`least_duration`, `--splits 2`) over committed `.github/test-durations.json`. Each shard runs `pytest -n auto --dist loadfile` on its own runner; grouping is balanced to within ~1 s (≈14 s per shard).
-- `perf-equivalence` (ubuntu-latest): `tests/test_perf_equivalence.py` alone, so the bit-for-bit contract still gates merges without inflating the functional shards.
+- `perf-equivalence` (ubuntu-latest): `packages/proof/tests/test_perf_equivalence.py` alone, so the bit-for-bit contract still gates merges without inflating the functional shards.
 - Every job: `astral-sh/setup-uv` with the uv cache keyed on `uv.lock`; `uv sync --frozen` (the locked `dev` group installs `pytest`, `pytest-subtests`, `pytest-xdist`, `pytest-split`, so CI and local runs are identical); then a hard fail if the C99 `_fastcore` module cannot compile (no silent Python fallback in CI).
 - `concurrency` cancels superseded runs on the same ref.
 - Each job tees `--durations=15` output and uploads it as an artifact (7-day retention): `durations-shard-1`, `durations-shard-2`, `durations-perf-equivalence`.
@@ -33,6 +33,6 @@ git add .github/test-durations.json
 
 ## Diagnostics
 
-- `--durations=15` keeps the slowest offenders visible (`tests/test_perf_equivalence.py`, `tests/test_tuning_screens.py`); CI uploads them per run.
+- `--durations=15` keeps the slowest offenders visible (`packages/proof/tests/test_perf_equivalence.py`, `tests/test_tuning_screens.py`); CI uploads them per run.
 - The reference-equivalence tests honor `MOEX_PROOF_REFERENCE_EVAL=1` and `MOEX_PROOF_DISABLE_C=1`; use them when triaging numeric drift, not in CI.
 - If xdist ever flakes, fall back to the sequential command above and file the ordering dependency as a bug; do not mask it by disabling `perf_equivalence`.

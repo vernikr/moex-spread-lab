@@ -48,7 +48,7 @@ jobs:
         run: >-
           set -o pipefail;
           uv run pytest -q -n auto --dist loadfile
-          --ignore=tests/test_perf_equivalence.py
+          --ignore=packages/proof/tests/test_perf_equivalence.py
           --splits 2 --group ${{ matrix.shard }}
           --durations-path .github/test-durations.json
           --splitting-algorithm least_duration
@@ -89,7 +89,7 @@ jobs:
         run: >-
           set -o pipefail;
           uv run pytest -q -n auto --dist loadfile
-          tests/test_perf_equivalence.py
+          packages/proof/tests/test_perf_equivalence.py
           --durations=15 | tee durations-perf.log
 
       - name: Upload durations report

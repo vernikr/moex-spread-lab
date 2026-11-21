@@ -18,7 +18,7 @@ uv run python -m moex_spread_lab.cli calendar-study --till-date YYYY-MM-DD --out
 
 ## Status and references
 
-Stage 9 is in progress. The proof workbench supersedes the S2 homepage; the S2 compatibility API remains. The [profit audit](docs/development/profit-audit.md) explains why historical proxies do not establish an edge. Shared-capital basket search (S4), deployment and live execution are not delivered. The [EPUB-derived screener proposal](docs/research/reuse/СКРИНЕР_epub.md) is a product hypothesis.
+Stage 9 is in progress. The proof runtime is in `packages/proof` (`moex_spread_lab.proof_runtime`); legacy proof imports remain compatibility aliases. Phase 4 CLI decomposition and registry-driven search are still in progress. The proof workbench supersedes the S2 homepage; the S2 compatibility API remains. The [profit audit](docs/development/profit-audit.md) explains why historical proxies do not establish an edge. Shared-capital basket search (S4), deployment and live execution are not delivered. The [EPUB-derived screener proposal](docs/research/reuse/СКРИНЕР_epub.md) is a product hypothesis.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)

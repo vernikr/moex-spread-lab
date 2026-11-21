@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib.metadata import entry_points
 from collections import Counter
 from functools import partial
 from pathlib import Path
@@ -73,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--apply", action="store_true", help="create a verified archive and remove its source caches")
     archive_parser.add_argument("--format", choices=("summary", "json"), default="summary")
 
-    h1_archive = subparsers.add_parser("data-h1-archive", help="archive/apply exact sealed H1 sources with restore, evidence and 80% gain gates")
+    h1_archive = subparsers.add_parser("data-h1-archive", help="archive/apply exact sealed H1 sources with restore, evidence and 80%% gain gates")
     h1_archive.add_argument("--root", type=Path, default=Path.cwd())
     h1_archive.add_argument("--plan", type=Path, required=True)
     h1_archive.add_argument("--archive", type=Path)
@@ -342,12 +343,18 @@ def build_parser() -> argparse.ArgumentParser:
     screener_run_parser.add_argument("--entry-z", type=float, default=2.0)
     screener_run_parser.add_argument("--exit-z", type=float, default=0.5)
     screener_run_parser.add_argument("--output", type=Path, required=True)
+    # Third-party command providers add subcommands without modifying this file.
+    # Existing commands remain here until their package-local migration is complete.
+    for entry in sorted(entry_points(group="moex_spread_lab.cli"), key=lambda ep: ep.name):
+        entry.load()(subparsers)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     try:
+        if hasattr(args, "_msl_cli_handler"):
+            return args._msl_cli_handler(args)
         if args.command == "replay":
             result = replay(args.manifest, args.fixture)
             write_json(args.output, result)
@@ -996,7 +1003,7 @@ def main() -> int:
             print(json.dumps({"run_id": result["run_id"], "status": result["status"], "output": str(args.output)}, sort_keys=True))
             return 0
         if args.command == "audit-pairs":
-            from .audit import audit_pairs
+            from moex_spread_lab.proof_runtime.audit import audit_pairs
             from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
             result = audit_pairs(ScreenerInputs(args.root.resolve()))

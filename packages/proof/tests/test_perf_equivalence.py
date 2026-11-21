@@ -1187,7 +1187,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                         self.assertGreaterEqual(ev["total"], ev["done"])
                     self.assertEqual(_canon(streamed), _canon(plain))
 
-                ui_html = (Path(__file__).resolve().parents[1] / "src/moex_spread_lab/proof_ui.html").read_text(encoding="utf-8")
+                ui_html = (Path(__file__).resolve().parents[3] / "src/moex_spread_lab/proof_ui.html").read_text(encoding="utf-8")
                 self.assertNotIn("render-progress-run", ui_html)
                 self.assertIn('aria-valuemin="0"', ui_html)
                 self.assertIn('aria-valuemax="100"', ui_html)

@@ -31,7 +31,7 @@ Before choosing tools, the current repository (`57` Python source files / `20,23
 | **Type annotation gaps** | `184 / 581` functions (`31.7%`) lack full parameter or return annotations; zero static type checker in CI | `cli.py`, `screener_app.py`, legacy `s3_reference.py`, `dict[str, Any]` payloads across proof boundaries | Agents must open 3–6 upstream/downstream files to infer dict keys and nullable fields instead of trusting signatures. |
 | **Temporal (change) coupling in `git`** | Strong cross-layer co-change clusters across 120 commits | `position_sizing.py <-> proof.py` (`89%`), `proof_batch.py <-> proof_search.py` (`82%`), `proof_search.py <-> proof_ui.html` (`81%`), `proof.py <-> screener_app.py` (`65%`), plus dual-implementation parity between `_fastcore.c` and `analytics.py` / `calendar_spreads.py` / `position_sizing.py` / `s3_reference.py` | Agents editing one side of a coupled pair risk leaving the twin out of sync unless coupling is surfaced or eliminated by Phase 2–5 plugin boundaries. |
 | **Cross-file duplication** | Low (`1` exact 12-line clone pair: `bar_types.py <-> data_lake.py`; intentional C/Python mirrors covered by `test_perf_equivalence.py`) | Transitional shims and `bar_types.py` extraction | Low today, but high risk during Phases 2–5 extraction if copy-paste is not gated. |
-| **Existing guardrails already strong** | 6-layer AST DAG & zero-cycle check (`tests/test_architecture_dag.py`), bit-for-bit C/Python parity (`tests/test_perf_equivalence.py`), `cli secret-scan` | N/A | **Keep as authoritative** — do not replace working zero-dependency project gates with weaker generic tools. |
+| **Existing guardrails already strong** | 6-layer AST DAG & zero-cycle check (`tests/test_architecture_dag.py`), bit-for-bit C/Python parity (`packages/proof/tests/test_perf_equivalence.py`), `cli secret-scan` | N/A | **Keep as authoritative** — do not replace working zero-dependency project gates with weaker generic tools. |
 
 ---
 
@@ -256,7 +256,7 @@ Because `_fastcore.c` is compiled dynamically via `sysconfig.get_path("include")
        value: '8'
    ```
 3. **Compiler warning hardening in `_fastcore_loader.py` (when C health gate is enabled):**
-   Add `MOEX_FASTCORE_SANITIZE=1` support in `_fastcore_loader.py` (test-only env flag, never active by default) that compiles a separate `_fastcore_asan<ext>` binary with `-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -ffp-contract=off` so CI can run `tests/test_perf_equivalence.py` under ASan/UBSan without touching the production `.so` cache.
+   Add `MOEX_FASTCORE_SANITIZE=1` support in `_fastcore_loader.py` (test-only env flag, never active by default) that compiles a separate `_fastcore_asan<ext>` binary with `-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -ffp-contract=off` so CI can run `packages/proof/tests/test_perf_equivalence.py` under ASan/UBSan without touching the production `.so` cache.
 
 ### 6.3 Custom Repo-Native Gate: `scripts/code_health_gate.py`
 
@@ -269,7 +269,7 @@ A fast (`<0.4 s`), zero-dependency Python script executed in CI and locally that
    - **Rule B:** Any legacy file listed in `config/code-health-baseline.json` fails if its current `LOC` exceeds `baseline_loc` (strict non-increase ratchet) and suggests `--update-baseline` when `LOC` drops by `>= 10%` so wins are locked in automatically.
 2. **Explicit C99 ↔ Python Fallback Coupling Check:**
    - Every function registered in `FastCoreMethods` inside `packages/core/src/moex_spread_lab/core/_fastcore.c` has a pure-Python twin (`compute_rolling_z`, `calendar_sample_z`, `calendar_zscore_scan`, `calendar_convergence_scan`, `clean_obj`, `mean_reversion_scan`, `size_proof_metrics`).
-   - Checks that every exported method name in `FastCoreMethods` is referenced in `tests/test_perf_equivalence.py`, preventing an agent from adding a new C fast-path function without a bit-for-bit Python equivalence test!
+   - Checks that every exported method name in `FastCoreMethods` is referenced in `packages/proof/tests/test_perf_equivalence.py`, preventing an agent from adding a new C fast-path function without a bit-for-bit Python equivalence test!
 3. **Blind `except Exception:` Guard on Financial/Accounting Layers:**
    - Verifies zero unannotated `except Exception:` blocks inside `packages/core` (except `_fastcore_loader.py` optional-build fallback), `packages/accounting`, and `packages/data/lake` (`h1_seal.py`), protecting `G6/G8/G9` fail-closed semantics.
 
@@ -321,7 +321,7 @@ Implementation is organized into **five small, non-disruptive PRs** aligned with
 
 1. Add `ruff`, `basedpyright`, `complexipy`, `lizard`, and `vulture` to `[dependency-groups].dev` and run `uv lock && uv sync --frozen`.
 2. Configure `[tool.ruff]`, `[tool.basedpyright]`, `[tool.complexipy]`, and `[tool.vulture]` in `pyproject.toml`.
-   - Fix safe zero-semantic lint issues (`F401` unused imports, `I001` import sorting) **only** in a dedicated style-only commit verified against `tests/test_perf_equivalence.py` and `config/run-manifest.json`. Do **not** run mass auto-rewrites across numerical expressions.
+   - Fix safe zero-semantic lint issues (`F401` unused imports, `I001` import sorting) **only** in a dedicated style-only commit verified against `packages/proof/tests/test_perf_equivalence.py` and `config/run-manifest.json`. Do **not** run mass auto-rewrites across numerical expressions.
 3. Generate initial `.basedpyright/baseline.json` for legacy `src/moex_spread_lab/*` while ensuring `packages/core/src` passes `strict` mode with **zero** errors (adding missing annotations to `packages/core` if any).
 4. Implement `scripts/code_health_gate.py` and generate `config/code-health-baseline.json` recording exact current LOC and cognitive-complexity ceilings for existing legacy offenders (`>450` LOC files and `>15` complexity functions).
 5. Add a single CLI convenience entrypoint or Makefile/script (`scripts/check_health.sh`) that runs Tier 1 end-to-end in `<8 s`.
@@ -329,7 +329,7 @@ Implementation is organized into **five small, non-disruptive PRs** aligned with
 **Acceptance Gate:**
 - `scripts/check_health.sh` finishes in `<8 s` with exit code `0`.
 - Introducing a synthetic 20-complexity function or growing `proof.py` by 10 LOC fails `check_health.sh` deterministically.
-- `uv run pytest -q -n auto --dist loadfile` and `tests/test_perf_equivalence.py` pass 100%.
+- `uv run pytest -q -n auto --dist loadfile` and `packages/proof/tests/test_perf_equivalence.py` pass 100%.
 
 ---
 
@@ -341,8 +341,8 @@ Implementation is organized into **five small, non-disruptive PRs** aligned with
 2. Implement `scripts/gen_compile_commands.py` and `.clang-tidy`.
 3. Run `clang-tidy` on `_fastcore.c`:
    - Fix any genuine `clang-analyzer` / `bugprone` findings immediately.
-   - Refactor `fast_size_proof_metrics` (`378` LOC) into 3–4 focused `static inline` C helpers (`parse_trade_specs`, `step_open_position`, `try_open_candidate`, `emit_ledger_row`) **or** add a scoped `NOLINTNEXTLINE(readability-function-size, readability-function-cognitive-complexity)` comment tracked for cleanup, verifying 0-ULP parity via `tests/test_perf_equivalence.py`.
-4. Add optional `MOEX_FASTCORE_SANITIZE=1` compilation path in `_fastcore_loader.py` (separate `.so` suffix so production cache is untouched) and verify `MOEX_FASTCORE_SANITIZE=1 uv run pytest tests/test_perf_equivalence.py` passes with zero ASan/UBSan reports on Linux and macOS.
+   - Refactor `fast_size_proof_metrics` (`378` LOC) into 3–4 focused `static inline` C helpers (`parse_trade_specs`, `step_open_position`, `try_open_candidate`, `emit_ledger_row`) **or** add a scoped `NOLINTNEXTLINE(readability-function-size, readability-function-cognitive-complexity)` comment tracked for cleanup, verifying 0-ULP parity via `packages/proof/tests/test_perf_equivalence.py`.
+4. Add optional `MOEX_FASTCORE_SANITIZE=1` compilation path in `_fastcore_loader.py` (separate `.so` suffix so production cache is untouched) and verify `MOEX_FASTCORE_SANITIZE=1 uv run pytest packages/proof/tests/test_perf_equivalence.py` passes with zero ASan/UBSan reports on Linux and macOS.
 
 **Acceptance Gate:**
 - `clang-tidy` reports `0` errors on `_fastcore.c`.

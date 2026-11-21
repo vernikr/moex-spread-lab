@@ -8,6 +8,7 @@ members = [
     "msl-accounting",
     "msl-core",
     "msl-data",
+    "msl-proof",
     "msl-strategies",
 ]
 
@@ -151,6 +152,7 @@ dependencies = [
     { name = "msl-accounting" },
     { name = "msl-core" },
     { name = "msl-data" },
+    { name = "msl-proof" },
     { name = "msl-strategies" },
     { name = "openpyxl" },
     { name = "optuna" },
@@ -173,6 +175,7 @@ requires-dist = [
     { name = "msl-accounting", editable = "packages/accounting" },
     { name = "msl-core", editable = "packages/core" },
     { name = "msl-data", editable = "packages/data" },
+    { name = "msl-proof", editable = "packages/proof" },
     { name = "msl-strategies", editable = "packages/strategies" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "optuna", specifier = ">=4.2,<5" },
@@ -229,6 +232,27 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "pyarrow", specifier = ">=18,<20" },
     { name = "zstandard", specifier = ">=0.23,<1" },
+]
+
+[[package]]
+name = "msl-proof"
+version = "0.9.0"
+source = { editable = "packages/proof" }
+dependencies = [
+    { name = "msl-accounting" },
+    { name = "msl-core" },
+    { name = "msl-data" },
+    { name = "msl-strategies" },
+    { name = "optuna" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "msl-accounting", editable = "packages/accounting" },
+    { name = "msl-core", editable = "packages/core" },
+    { name = "msl-data", editable = "packages/data" },
+    { name = "msl-strategies", editable = "packages/strategies" },
+    { name = "optuna", specifier = ">=4.2,<5" },
 ]
 
 [[package]]

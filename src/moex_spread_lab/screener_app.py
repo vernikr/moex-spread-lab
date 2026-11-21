@@ -32,8 +32,8 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings,
     pair_price_inputs,
 )
-from .proof import ProofService
-from .proof_pool import get_worker_pool
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_pool import get_worker_pool
 from .timeframes import DEFAULT_TIMEFRAME, get_timeframe, timeframe_options
 from .universe import (
     EXTRA_PAIRS,
@@ -371,7 +371,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                         raise ScreenerError("выбор должен быть объектом")
                     stream = self.headers.get("X-Progress-Stream") == "1"
                     search = path == "/api/proof/optimize"
-                    from .proof_search import research_run
+                    from moex_spread_lab.proof_runtime.proof_search import research_run
 
                     diagnostics = selection.pop("include_plateau", False) is True
                     stream_started = False
@@ -390,8 +390,8 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                         return None
 
                     if path in {"/api/proof/windows", "/api/proof/plateau"}:
-                        from .proof_batch import checked_plateau
-                        from .proof_windows import window_summaries
+                        from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+                        from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 
                         if path == "/api/proof/windows":
                             lock, read = store.proof_windows_lock, window_summaries
@@ -453,7 +453,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                     result = build_result(store.inputs, selection)
                     store.save(result)
                 else:
-                    from .screener_search import optimize, screen_table
+                    from moex_spread_lab.proof_runtime.screener_search import optimize, screen_table
 
                     active_timeframe = get_timeframe(
                         read_settings(store.inputs.root)["timeframe"]

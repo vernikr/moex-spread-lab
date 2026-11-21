@@ -385,7 +385,7 @@ Once this structure is in place, parallel agent work follows four mechanical rul
 
 ### Invariants Across Every Phase (Non-Negotiable)
 
-1. **Bit-for-bit numerical and hash parity:** `tests/test_perf_equivalence.py` and all functional tests must pass after *every single phase* without altering `run_id`, `config_hash` (`config/run-manifest.json`), reconciliation tolerances, or Stage-9 accounting semantics (`docs/development/execution-proof.md`).
+1. **Bit-for-bit numerical and hash parity:** `packages/proof/tests/test_perf_equivalence.py` and all functional tests must pass after *every single phase* without altering `run_id`, `config_hash` (`config/run-manifest.json`), reconciliation tolerances, or Stage-9 accounting semantics (`docs/development/execution-proof.md`).
 2. **One phase = one small, reviewable PR/commit series:** Never combine code refactoring/logic changes with `git mv` bulk file relocations in the same commit (preserving `git log --follow` blame history).
 3. **Backward-compatible CLI & HTTP contracts:** `uv run python -m moex_spread_lab.cli ...` and all `/api/*` endpoints remain 100% compatible throughout and after migration.
 4. **No live/broker scope creep:** Do not alter risk limits (`docs/risk/pilot-policy.md`), research screen defaults, or loopback-only network rules.
@@ -471,7 +471,7 @@ uv run pytest -q -n auto --dist loadfile
 **Verification Gate:**
 ```sh
 uv run pytest packages/strategies/tests -q
-uv run pytest tests/test_perf_equivalence.py -q
+uv run pytest packages/proof/tests/test_perf_equivalence.py -q
 ```
 
 ---
@@ -479,6 +479,8 @@ uv run pytest tests/test_perf_equivalence.py -q
 ### Phase 4 — Extract Layer 3 (`packages/proof`) & CLI Plugin Dispatch
 
 **Objective:** Move the proof orchestrator, cohort Optuna optimizer, plateau profiler, and worker pool into `packages/proof`, driven purely by the `StrategyPlugin` registry, and replace the monolithic `cli.py` with entry-point discovery.
+
+**In progress (2026-11-21):** The proof runtime and its tests are extracted into `packages/proof` as `msl-proof`. The Python namespace is `moex_spread_lab.proof_runtime` to preserve the existing `moex_spread_lab.proof` module and monkey-patch identity through compatibility aliases. The screener dataset itself remains in `msl-strategies`, where Phase 3 placed it. CLI entry-point discovery is available for additional commands, but built-in CLI commands remain in the umbrella CLI and strategy search is not yet fully registry-driven. A provider registered under `moex_spread_lab.cli` is a callable accepting the `argparse` subparsers object; it must register its commands and set `_msl_cli_handler` to a callable accepting the parsed namespace and returning an exit code. Providers load in entry-point name order, duplicate commands are rejected by argparse, and `W0Error` retains the existing exit code 2. Installed providers execute trusted code; this is not a sandbox. The top-level `--help` formatting error caused by an unescaped percent sign was fixed. The remaining Phase 4 instructions and verification gate are not yet complete.
 
 **Instructions:**
 1. Create `packages/proof` (`msl-proof`) and `git mv` `proof.py` (`service.py`), `proof_windows.py`, `proof_batch.py`, `proof_search.py`, `proof_strategy_search.py`, `proof_pool.py`, `screener.py`, `screener_search.py`, and `audit.py`.

@@ -134,6 +134,16 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "screener": "strategies",
     "pair_screener": "strategies",
     # L3: proof
+    "proof_runtime": "proof",
+    "proof_runtime.service": "proof",
+    "proof_runtime.proof_kernel": "proof",
+    "proof_runtime.proof_windows": "proof",
+    "proof_runtime.proof_search": "proof",
+    "proof_runtime.proof_batch": "proof",
+    "proof_runtime.proof_strategy_search": "proof",
+    "proof_runtime.proof_pool": "proof",
+    "proof_runtime.screener_search": "proof",
+    "proof_runtime.audit": "proof",
     "audit": "proof",
     "screener_search": "proof",
     "proof": "proof",
@@ -344,8 +354,8 @@ class ArchitectureDagTests(unittest.TestCase):
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         modules = _discover_modules()
         detailed_edges = _build_import_graph(modules)
-        package_prefixes = ("core.", "data.", "accounting.", "strategies.")
-        package_roots = {"core", "data", "accounting", "strategies"}
+        package_prefixes = ("core.", "data.", "accounting.", "strategies.", "proof_runtime.")
+        package_roots = {"core", "data", "accounting", "strategies", "proof_runtime"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             if src in package_roots or src.startswith(package_prefixes):

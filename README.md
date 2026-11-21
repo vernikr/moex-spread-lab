@@ -58,3 +58,4 @@ Stage 9 is in progress. The proof workbench supersedes the S2 homepage; the S2 c
 - [Workflow/research blockers](docs/blockers/b02-research-and-workflow.md)
 - [CI and fast test runs](docs/development/ci.md)
 - [Remote agent testing and benchmarking design](docs/development/remote-agent-testing.md)
+- [Modular architecture and multi-agent workspace plan](docs/development/modular-architecture-plan.md)

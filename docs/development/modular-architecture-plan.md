@@ -1,0 +1,551 @@
+# Modular Architecture & Multi-Agent Workspace Plan
+
+Status: **Proposal & Migration Blueprint** (2026-11-21). No runtime code or directory moves are executed in this turn.
+
+## 1. Executive Summary & Architectural Verdict
+
+**Goal:** Restructure `moex-spread-lab` so multiple coding agents can work concurrently in isolated branches (`git worktree` / remote agent sandboxes) and merge back into `main` with near-zero textual or semantic conflicts.
+
+### Assessment of the Proposed Approach
+
+1. **Co-locating code, `tests/`, `docs/`, `fixtures/`, and `manifest.json` per bounded module — Strongly Recommended.**
+   When Agent A implements a new strategy and Agent B modifies data-lake archival, co-location guarantees their diffs touch completely disjoint directory subtrees. Neither agent edits a shared `tests/` listing, a monolithic `cli.py`, or a central `README` index.
+2. **Putting every module directly at the repository root (`/core`, `/data`, `/strategies`, …) — Suboptimal; use a single `/packages/` container instead.**
+   In Python repositories, root-level domain folders collide with repository infrastructure (`config/`, `docs/`, `fixtures/`, `reports/`, `data/`, `data-lake/`, `.github/`) and confuse build backends, `pytest` rootdir discovery, and `.gitignore` rules. The Python packaging standard (**`uv` workspaces**, PEP 621 multi-package monorepo — the exact Python analog of Rust Cargo `crates/*` or TypeScript `packages/*`) places all self-contained modules under `packages/<module>/` while keeping project-wide governance, Stage 1–8 records, and the root `uv.lock` at the repository root.
+3. **Subfolders per concrete strategy (`strategies/pair_mean_reversion/`, `strategies/funding_carry/`, …) — Strongly Recommended, with plugin auto-discovery.**
+   Subfolders eliminate conflicts *only* if adding or editing a strategy does not require touching central `if/elif` dispatchers. Today, adding one strategy requires editing 7 shared files (`screener_app.py`, `proof.py`, `proof_batch.py`, `proof_strategy_search.py`, `proof_signals.py`, `calendar_spreads.py`, `proof_ui.html`). Pairing strategy subfolders with a declarative `StrategyPlugin` protocol + `importlib.metadata` entry points reduces cross-branch touchpoints to **zero shared files**.
+
+---
+
+## 2. Diagnosis of Current Coupling & Merge Hotspots
+
+Static AST import analysis of `src/moex_spread_lab/` (45 files, ~20.4k LOC) reveals why parallel agent branches currently collide:
+
+### 2.1 Cyclic Dependency Clusters (Strongly Connected Components)
+
+Today the flat `src/moex_spread_lab` namespace contains **11 mutual 2-file cycles** and **two large strongly connected components (SCCs)**:
+
+- **SCC-1 (Data & H1 Seal, 3 files):** `data_lake` ↔ `h1_seal` ↔ `h1_migration`.
+- **SCC-2 (Proof, Sizing, Strategies & HTTP UI, 12 files):**
+  `calendar_spreads`, `position_sizing`, `proof`, `proof_batch`, `proof_funding`, `proof_pool`, `proof_search`, `proof_strategy_search`, `proof_windows`, `s3_reference`, `screener_app`, `screener_search`.
+
+ Concrete inversions causing SCC-2:
+- Domain engines (`calendar_spreads.py`, `s3_reference.py`, `proof.py`, `proof_funding.py`) import constants and data loaders (`INITIAL_CAPITAL`, `MIN_DAILY_VOLUME`, `HISTORY_WINDOWS`, `PAIRS`, `pair_price_inputs`) upward from the HTTP server module `screener_app.py`.
+- `position_sizing.py` imports `_cost_totals` and `_run_id` back from `proof.py`.
+- `proof.py` imports `CohortWorkerPool` from `proof_pool.py` while `proof_pool.py` imports `proof.py`.
+
+### 2.2 Six Shared Merge-Conflict Magnets
+
+| Hotspot file | LOC | Why parallel branches collide on it |
+|---|---:|---|
+| `src/moex_spread_lab/cli.py` | 1,055 | Single `build_parser()` and `main()` importing 26 internal modules; every new command edits both top imports and the dispatch table. |
+| `src/moex_spread_lab/proof.py` | 1,580 | Combines catalog assembly, pair/calendar adapters, ledger accounting, benchmark marking, and payload hashing in one file. |
+| `src/moex_spread_lab/calendar_spreads.py` | 1,545 | Mixes MOEX contract chains/specs, ISS downloads, H1 liquidity gates, RUONIA convergence, and Z-score mean reversion. |
+| `src/moex_spread_lab/proof_ui.html` | 1,176 | Inline CSS + DOM + hardcoded strategy forms (`#pair-controls`, `#calendar-controls`, `STRATEGY_RU`) in one single-file HTML asset. |
+| `src/moex_spread_lab/screener_app.py` | 1,018 | Mixes pair universe registry, candle normalization, legacy S2 routes, `/api/proof/*` routes, settings persistence, and HTTP server lifecycle. |
+| `.github/test-durations.json` | ~180 | Committed flat timing file touched whenever tests are added, renamed, or reweighted across branches. |
+
+---
+
+## 3. Target Architecture: Conventional `uv` Workspace + PEP 420 Namespace
+
+### 3.1 Core Design Decisions
+
+1. **`uv` Workspace Monorepo (`packages/*`):**
+   Each bounded domain is a first-class workspace member with its own `pyproject.toml`, `src/`, `tests/`, `docs/`, `fixtures/`, and `manifest.json`, unified by **one** root `uv.lock` and **one** shared `.venv`.
+2. **PEP 420 Implicit Namespace Package (`moex_spread_lab.<domain>`):**
+   Every package exposes `src/moex_spread_lab/<domain>/...` (with **no** `src/moex_spread_lab/__init__.py` inside individual workspace members). Clean domain imports (`from moex_spread_lab.core.w0 import ...`, `from moex_spread_lab.strategies.funding_carry import ...`) work seamlessly across editable installs without colliding.
+3. **Compatibility Facade Root Package (`moex-spread-lab`):**
+   The root umbrella package depends on all workspace members, preserves `uv run python -m moex_spread_lab.cli ...`, and keeps thin re-export shims during migration so existing scripts, Stage-9 run manifests, and external callers never break abruptly.
+4. **Strict Acyclic Layering (DAG) Enforced in CI:**
+   Dependencies flow strictly downward (`Layer 0 -> Layer 1 -> Layer 2 -> Layer 3 -> Layer 4`). Upward and lateral cross-strategy imports are mechanically blocked by `import-linter` (or an AST DAG test with zero external dependencies).
+5. **Plugin Registries via Python `entry_points` (`importlib.metadata`):**
+   - CLI subcommands register under `[project.entry-points."moex_spread_lab.cli"]`.
+   - Strategy implementations register under `[project.entry-points."moex_spread_lab.strategies"]`.
+   - UI strategy parameter controls render dynamically from each strategy's JSON parameter schema instead of hardcoded HTML `<div id="pair-controls">` blocks.
+
+### 3.2 Target Repository Directory Layout
+
+```text
+/home/user/webapp/
+├── pyproject.toml                  # Root umbrella package + [tool.uv.workspace] members = ["packages/*"]
+├── uv.lock                         # Single locked environment for all workspace packages
+├── AGENTS.md                       # Global working rules & module boundary rules
+├── README.md                       # High-level overview & links
+├── config/                         # Frozen run manifests & benchmark suites (run-manifest.json)
+├── docs/                           # Cross-cutting governance ONLY:
+│   ├── decisions.md                #   User decision register (A-01..A-14, BR-10, etc.)
+│   ├── process.md                  #   Stage gates
+│   ├── blockers/                   #   b01, b02
+│   ├── inputs/                     #   Brief, redacted server spec, tariff PDFs
+│   ├── risk/                       #   Provisional pilot risk policy
+│   ├── stages/                     #   01-unpacking .. 08-planning (historical stage records)
+│   ├── research/                   #   Standalone R01-R15 prompts & received reports
+│   └── development/                #   Cross-cutting architecture, CI & migration guides
+├── fixtures/                       # Frozen cross-wave replay fixtures (w0, w1-w7)
+├── reports/                        # Committed baseline replay outputs
+│
+├── packages/                       # === MODULAR WORKSPACE (1 folder = 1 bounded context) ===
+│   │
+│   ├── core/                       # [Layer 0] Kernel, hashing, fastcore C99, domain contracts/protocols
+│   │   ├── pyproject.toml          #   name = "msl-core"
+│   │   ├── manifest.json           #   Stage-5 module contract manifest
+│   │   ├── docs/
+│   │   ├── fixtures/
+│   │   ├── src/moex_spread_lab/core/
+│   │   │   ├── __init__.py
+│   │   │   ├── w0.py               #   Canonical JSON, SHA-256, HashedJSONCache, secret scanner
+│   │   │   ├── timeframes.py       #   TimeframeSpec registry (1d, 1h)
+│   │   │   ├── settings.py         #   ResearchSettings, EvaluationSplit, global constants (MIN_DAILY_VOLUME, INITIAL_CAPITAL)
+│   │   │   ├── contracts.py        #   Typed dataclasses/Protocols: StrategyPlugin, BarSeries, CostProfile, ProofTarget
+│   │   │   ├── _fastcore.c         #   C99 hot-loop accelerator
+│   │   │   └── _fastcore_loader.py #   Atomic clang builder & pure-Python fallback loader
+│   │   └── tests/
+│   │       ├── test_w0.py
+│   │       └── test_evaluation_periods.py
+│   │
+│   ├── data/                       # [Layer 1] Market data intake, Parquet lake, H1 seal, universes & benchmark
+│   │   ├── pyproject.toml          #   name = "msl-data" (depends: msl-core)
+│   │   ├── manifest.json
+│   │   ├── docs/                   #   data-lifecycle.md, storage-policy, historical-pair-intake.md
+│   │   ├── fixtures/
+│   │   ├── src/moex_spread_lab/data/
+│   │   │   ├── __init__.py
+│   │   │   ├── cli.py              #   Entry-point CLI plugin: data-*, iss-*, benchmark-*, storage-*
+│   │   │   ├── iss/                #   Submodule: MOEX ISS HTTP client, W1 catalog, EOD history fetch
+│   │   │   ├── lake/               #   Submodule: MarketDataStore, ParquetBarStore, data_refresh, h1_seal, h1_migration
+│   │   │   ├── retention/          #   Submodule: data_inventory, data_retention, data_archive_candidates, h1_archive, storage_policy
+│   │   │   ├── universe/           #   Submodule: pair registry (PAIRS, ASSETS, contract chains, historical-contracts)
+│   │   │   └── benchmark/          #   Submodule: LQDT/VTBM/RUSFAR/RUONIA lineage & mark lookup
+│   │   └── tests/
+│   │       ├── test_iss.py
+│   │       ├── test_data_lake.py
+│   │       ├── test_h1_seal.py
+│   │       ├── test_benchmark.py
+│   │       └── ...
+│   │
+│   ├── accounting/                 # [Layer 1] Tariffs, VTB account risk, causal sizing, matched LQDT ledger
+│   │   ├── pyproject.toml          #   name = "msl-accounting" (depends: msl-core)
+│   │   ├── manifest.json
+│   │   ├── docs/                   #   execution-ledger.md, vtb-account-risk-profile.md
+│   │   ├── src/moex_spread_lab/accounting/
+│   │   │   ├── __init__.py
+│   │   │   ├── cli.py              #   Entry-point CLI plugin: vtb-risk-check, ledger/artifact commands
+│   │   │   ├── costs.py            #   MOEX taker tariff + slippage profiles + cost_totals reconciliation
+│   │   │   ├── account_risk.py     #   VTB EBS/KPUR margin & stress-buffer gates
+│   │   │   ├── portfolio.py        #   Matched LQDT wealth overlay V(t), B(t), X(t), H(t), D(t)
+│   │   │   ├── position_sizing.py  #   Causal max_affordable whole-contract sizing
+│   │   │   ├── ledger.py           #   W4/W5 append-only execution ledger
+│   │   │   └── artifacts.py        #   run_artifacts, run_artifact_import, validation
+│   │   └── tests/
+│   │       ├── test_position_sizing.py
+│   │       ├── test_execution_accounting.py
+│   │       ├── test_run_artifacts.py
+│   │       └── ...
+│   │
+│   ├── strategies/                 # [Layer 2] Pluggable strategy families (1 subfolder = 1 isolated strategy)
+│   │   ├── pyproject.toml          #   name = "msl-strategies" (depends: msl-core, msl-data, msl-accounting)
+│   │   ├── manifest.json
+│   │   ├── docs/
+│   │   ├── src/moex_spread_lab/strategies/
+│   │   │   ├── __init__.py         #   Plugin discovery registry via entry_points / local subpackages
+│   │   │   ├── base.py             #   StrategySpec, ParameterField, SignalSeries, EntryBand builders
+│   │   │   ├── pair_mean_reversion/#   Submodule: ordinary pair rolling Z-score MR + signed funding integration
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── plugin.py       #     Declares schema, compatibility, signals, entry bands
+│   │   │   │   ├── engine.py       #     Core analytics & rolling Z
+│   │   │   │   └── docs/
+│   │   │   ├── funding_carry/      #   Submodule: H2/H3 perpetual SWAPRATE carry & midpoint resolver
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── plugin.py
+│   │   │   │   ├── engine.py       #     carry.py + proof_funding.py + funding_recheck.py
+│   │   │   │   └── docs/
+│   │   │   ├── calendar_zscore/    #   Submodule: native & H1-proxy calendar Z-score mean reversion
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── plugin.py
+│   │   │   │   └── engine.py
+│   │   │   ├── calendar_ruonia/    #   Submodule: implied rate convergence to RUONIA + dividend adjustments
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── plugin.py
+│   │   │   │   └── engine.py
+│   │   │   └── s3_reference/       #   Submodule: audited S3 SBRF historical reference reproduction
+│   │   │       ├── __init__.py
+│   │   │       └── engine.py
+│   │   └── tests/
+│   │       ├── contract/           #   Shared conformance suite run automatically against EVERY registered strategy
+│   │       │   └── test_strategy_conformance.py
+│   │       ├── pair_mean_reversion/
+│   │       ├── funding_carry/
+│   │       ├── calendar_zscore/
+│   │       └── calendar_ruonia/
+│   │
+│   ├── proof/                      # [Layer 3] Execution-proof engine, Optuna cohort search, plateau & worker pool
+│   │   ├── pyproject.toml          #   name = "msl-proof" (depends: msl-core, msl-data, msl-accounting, msl-strategies)
+│   │   ├── manifest.json
+│   │   ├── docs/                   #   execution-proof.md, performance-optimization.md
+│   │   ├── src/moex_spread_lab/proof/
+│   │   │   ├── __init__.py
+│   │   │   ├── cli.py              #   Entry-point CLI plugin: proof-*, audit, pair-screen, calendar-study
+│   │   │   ├── service.py          #   ProofService orchestration & payload assembly (execution-proof.v1)
+│   │   │   ├── windows.py          #   StudyWindow & read-only window_summaries
+│   │   │   ├── batch.py            #   Fixed-cohort evaluator & preflight compatibility
+│   │   │   ├── search.py           #   Single-family Optuna TPE + 1D neighbor plateau lamps
+│   │   │   ├── strategy_search.py  #   Cross-family common-strategy selector
+│   │   │   ├── pool.py             #   Sticky-sharded spawn worker pool
+│   │   │   ├── legacy_s2.py        #   S1/S2 compatibility table & grid search (screener.py, screener_search.py)
+│   │   │   └── audit.py            #   Independent P&L recomputation audit
+│   │   └── tests/
+│   │       ├── fixtures.py
+│   │       ├── test_execution_proof.py
+│   │       ├── test_proof_batch.py
+│   │       ├── test_proof_search.py
+│   │       ├── test_strategy_search.py
+│   │       └── test_perf_equivalence.py
+│   │
+│   └── web/                        # [Layer 4] Loopback HTTP API, static UI assets (ES modules) & browser smoke suites
+│       ├── pyproject.toml          #   name = "msl-web" (depends: msl-core, msl-proof)
+│       ├── manifest.json
+│       ├── docs/                   #   screener-s1.md, screener-s2.md, remote-agent-testing.md
+│       ├── src/moex_spread_lab/web/
+│       │   ├── __init__.py
+│       │   ├── cli.py              #   Entry-point CLI plugin: `screener` server command
+│       │   ├── server.py           #   ThreadingHTTPServer, loopback Host/Origin guards, lock registry
+│       │   ├── routes_proof.py     #   /api/proof/* JSON & NDJSON streaming handlers
+│       │   ├── routes_settings.py  #   /api/settings, /api/timeframes, /api/strategies
+│       │   ├── routes_legacy.py    #   /api/screen, /api/run, /api/optimize (S2 compatibility)
+│       │   ├── static/             #   Modular frontend assets (zero build step, native ES modules!)
+│       │   │   ├── index.html      #     Minimal structural markup (<180 lines)
+│       │   │   ├── css/
+│       │   │   │   ├── layout.css
+│       │   │   │   ├── picker.css
+│       │   │   │   ├── charts.css
+│       │   │   │   └── ledger.css
+│       │   │   └── js/
+│       │   │       ├── app.js
+│       │   │       ├── state.js
+│       │   │       ├── api.js
+│       │   │       ├── picker.js
+│       │   │       ├── strategy-form.js  # Schema-driven parameter inputs + plateau lamps
+│       │   │       ├── charts.js
+│       │   │       ├── ledger.js
+│       │   │       └── settings-modal.js
+│       │   └── vendor/             #   Same-origin Lightweight Charts 5.3.0 + Apache-2.0 license
+│       └── tests/
+│           ├── test_http_routes.py
+│           └── browser/            #   Playwright Chromium smoke suites (*_smoke.py)
+│
+└── src/moex_spread_lab/            # Thin root umbrella & backward-compatibility shim layer
+    ├── cli.py                      # Discovers `moex_spread_lab.cli` entry points (<70 LOC)
+    └── ...                         # Deprecated re-export shims during transition window
+```
+
+---
+
+## 4. Strict Dependency DAG & Anti-Conflict Mechanics
+
+### 4.1 Allowed Import Graph (Strictly Acyclic)
+
+```text
+                    +-------------------+
+                    |      msl-web      |  Layer 4: HTTP loopback & ES-module UI
+                    +---------+---------+
+                              |
+                              v
+                    +-------------------+
+                    |     msl-proof     |  Layer 3: Cohort replay, Optuna search, worker pool
+                    +---------+---------+
+                              |
+                              v
+                    +-------------------+
+                    |  msl-strategies   |  Layer 2: Independent strategy plugins (isolated subdirs)
+                    +----+---------+----+
+                         |         |
+              +----------+         +----------+
+              v                               v
+    +-------------------+           +-------------------+
+    |     msl-data      |           |  msl-accounting   |  Layer 1: Market lake/ISS vs Risk/Ledger/Sizing
+    +---------+---------+           +---------+---------+
+              |                               |
+              +---------------+---------------+
+                              v
+                    +-------------------+
+                    |     msl-core      |  Layer 0: W0 hashing, settings, fastcore C99, Protocols
+                    +-------------------+
+```
+
+**Hard Architectural Rules (enforced automatically in CI):**
+1. **`msl-core` imports nothing** outside Python stdlib (plus clang runtime build for `_fastcore.c`).
+2. **`msl-data` and `msl-accounting` are siblings** — neither imports the other. Both depend only on `msl-core`.
+3. **Strategy isolation rule:** Inside `packages/strategies/src/moex_spread_lab/strategies/<strategy_a>/`, importing `<strategy_b>` is forbidden. Shared math helpers belong in `strategies/base.py` or `msl-core`.
+4. **Future Basket / Live Modules:** When Stage-9 **S4 (Shared-Capital Basket)** or gated **Execution / Notification adapters** are built later, they drop cleanly into `packages/basket/` (Layer 3) and `packages/execution/` or `packages/notifications/` without modifying existing strategy or accounting packages.
+
+### 4.2 Eliminating Central Registration Bottlenecks
+
+#### A. Strategy Plugin Contract (`StrategyPlugin`)
+Instead of `if strategy == "funding_only": ... elif strategy == "zscore_mean_reversion": ...` scattered across 7 files, every subfolder in `packages/strategies/` exports one declarative plugin object:
+
+```python
+@dataclass(frozen=True)
+class ParameterSpec:
+    name: str
+    label_ru: str
+    kind: Literal["int", "float"]
+    default: int | float
+    min_value: int | float
+    max_value: int | float
+    step: int | float
+    tunable: bool = True
+    lamp_steps: tuple[int, ...] = (-2, -1, 1, 2)
+
+class StrategyPlugin(Protocol):
+    strategy_id: str                       # e.g. "funding_only"
+    family_id: str                         # e.g. "mean_reversion" (unifies pair & calendar MR adapters!)
+    label_ru: str
+    supported_universes: frozenset[str]    # {"pair_screen"} or {"calendar_native"}
+    supported_fills: tuple[str, ...]       # ("next_open", "next_close", "reference_same_bar") or ("same_day_settlement",)
+    requires_daily_bars: bool
+
+    def parameter_schema(self, context: InstrumentContext) -> tuple[ParameterSpec, ...]: ...
+    def validate_parameters(self, raw: Mapping[str, Any], context: InstrumentContext) -> dict[str, Any]: ...
+    def check_compatibility(self, window: WindowSnapshot, settings: ResearchSettings) -> CompatibilityVerdict: ...
+    def evaluate_intents(self, window: WindowSnapshot, params: Mapping[str, Any], fill: str) -> StrategyIntentRun: ...
+    def compute_entry_bands(self, series: list[dict], params: Mapping[str, Any], fill: str) -> list[EntryBandPoint]: ...
+```
+
+**Why this makes parallel agent work conflict-free:**
+- Agent A creates `packages/strategies/src/moex_spread_lab/strategies/kalman_spread/plugin.py` and registers it in `packages/strategies/pyproject.toml` (or auto-discovers `*/plugin.py` via `pkgutil.iter_modules` — **zero** central file edits!).
+- `msl-proof` discovers the new strategy automatically for `/api/proof/run`, `/api/proof/optimize`, `/api/proof/plateau`, and `/api/proof/windows`.
+- `msl-web` serves `/api/strategies` from the plugin's `parameter_schema()`, and `strategy-form.js` renders the controls and stability lamps automatically without editing HTML.
+
+#### B. CLI Subcommand Discovery (`cli.py` -> Entry Points)
+Root `cli.py` shrinks from 1,055 lines to ~60 lines:
+- Scans `importlib.metadata.entry_points(group="moex_spread_lab.cli")` sorted deterministically by command name.
+- Each package (`msl-data`, `msl-accounting`, `msl-proof`, `msl-web`) registers only its own subcommands in its own `cli.py`.
+- Two agents adding CLI commands in different packages never touch the same file.
+
+#### C. Modular Static UI Without Adding Node/Bundler Complexity
+`proof_ui.html` (1,176 lines) is split into native browser ES modules (`<script type="module" src="/static/js/app.js">`) and split CSSstylesheets served same-origin by `msl-web`:
+- Preserves the **zero Node.js / zero bundler / offline same-origin** constraint (Lightweight Charts 5.3.0 stays vendored at `/vendor/lightweight-charts.standalone.production.js`).
+- An agent fixing chart tooltips edits `static/js/charts.js`; an agent improving the period table edits `static/js/picker.js`; an agent styling the settings modal edits `static/css/layout.css` + `static/js/settings-modal.js`. Merge conflicts in UI work drop by >85%.
+
+#### D. Conflict-Free CI Test Sharding
+- Replace the monolithic `.github/test-durations.json` with per-package test execution (`uv run pytest packages/<pkg>/tests`) on PRs, plus full workspace verification (`uv run pytest`) where `pytest` discovers `testpaths = ["packages/*/tests", "tests"]`.
+- If duration-based splitting is kept, generate or partition durations per package (`packages/<pkg>/.test-durations.json`) so adding tests in `strategies` never conflicts with test duration updates in `data`.
+
+---
+
+## 5. Multi-Agent Parallel Workflow Rules (Post-Migration)
+
+Once this structure is in place, parallel agent work follows four mechanical rules:
+
+1. **One Task = One Package Scope (Default):**
+   Task prompts assign explicit package ownership (e.g., *"Scope: `packages/strategies/src/moex_spread_lab/strategies/funding_carry/` and its `tests/` only"*).
+2. ** Isolated `git worktree` per Agent:**
+   Each agent works in its own branch/worktree sharing read-only `data/` and `data-lake/` symlinks (aligned with `docs/development/remote-agent-testing.md`), running fast local checks in <3 seconds via `uv run --package msl-strategies pytest packages/strategies/tests`.
+3. **Contract-First Cross-Module Changes:**
+   If a feature genuinely spans layers (e.g., adding a new field to `WindowSnapshot` in `msl-core` consumed by `msl-strategies` and `msl-web`), merge the tiny, additive `msl-core` contract PR **first**, then fan out parallel implementation branches to `msl-data`, `msl-strategies`, and `msl-web`.
+4. **Automated Boundary Gate in CI:**
+   CI runs `dag-check` + `conformance-check` + `secret-scan` before `pytest`. Any accidental upward import or cross-strategy import fails in <1 second with a clear architectural error.
+
+---
+
+## 6. File-by-File Mapping (Current -> Target)
+
+| Current path (`src/moex_spread_lab/...`) | Target workspace location (`packages/...`) | Notes on decoupling |
+|---|---|---|
+| `w0.py` | `packages/core/.../core/w0.py` | Unchanged; zero internal dependencies. |
+| `timeframes.py` | `packages/core/.../core/timeframes.py` | Unchanged; zero internal dependencies. |
+| `evaluation_periods.py` | `packages/core/.../core/settings.py` | Absorbs `INITIAL_CAPITAL` & `MIN_DAILY_VOLUME` from `screener_app.py` to break SCC-2. |
+| `_fastcore.c`, `_fastcore_loader.py` | `packages/core/.../core/_fastcore*` | Precompiled and verified by `msl-core` build/test step. |
+| *(new)* | `packages/core/.../core/contracts.py` | `StrategyPlugin`, `ParameterSpec`, `_run_id` helper (breaks `position_sizing` ↔ `proof` cycle). |
+| `iss.py` | `packages/data/.../data/iss/catalog.py` | Also hosts shared `_fetch_json` / `fetch_history` (currently inside `carry.py`). |
+| `data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py` | `packages/data/.../data/lake/` | Internalize `SealedH1Reader` hook via a clean `SealPolicy` interface inside `lake/` (breaks SCC-1). |
+| `data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `storage_policy.py` | `packages/data/.../data/retention/` | Pure data-lifecycle operations + CLI plugin. |
+| `benchmark.py` | `packages/data/.../data/benchmark/lineage.py` | Also provides `_benchmark_marks` lookup currently duplicated in `proof.py` / `carry.py`. |
+| *(extracted from `screener_app.py`, `screener.py`, `calendar_spreads.py`)* | `packages/data/.../data/universe/` | `PAIRS`, `ASSETS`, `HISTORY_WINDOWS`, `contract_chain`, `pair_price_inputs`, `CalendarData` raw loader. Breaks all upward imports into `screener_app`! |
+| `costs.py` | `packages/accounting/.../accounting/costs.py` | Absorbs `_cost_totals` from `proof.py`. |
+| `account_risk.py` | `packages/accounting/.../accounting/account_risk.py` | Uses `msl-core` + `costs.py` instead of importing `analytics.py`. |
+| `portfolio.py` | `packages/accounting/.../accounting/portfolio.py` | Pure matched-LQDT overlay math. |
+| `position_sizing.py` | `packages/accounting/.../accounting/position_sizing.py` | Depends only on `msl-core` + `costs` + `account_risk` (zero dependency on `proof`). |
+| `ledger.py`, `run_artifacts.py`, `run_artifact_import.py`, `validation.py`, `research.py` | `packages/accounting/.../accounting/` | W1–W7 offline ledger, run artifacts, and chronological validation gates. |
+| `analytics.py`, `proof_signals.py` (pair MR part) | `packages/strategies/.../strategies/pair_mean_reversion/` | Wrapped in `StrategyPlugin`. |
+| `carry.py`, `proof_funding.py`, `funding_recheck.py`, `funding_screen.py` | `packages/strategies/.../strategies/funding_carry/` | Wrapped in `StrategyPlugin`; raw ISS history fetcher moved down to `msl-data`. |
+| `calendar_spreads.py` (Z-score MR part) | `packages/strategies/.../strategies/calendar_zscore/` | Wrapped in `StrategyPlugin`. |
+| `calendar_spreads.py` (RUONIA convergence part) | `packages/strategies/.../strategies/calendar_ruonia/` | Wrapped in `StrategyPlugin`. |
+| `s3_reference.py` | `packages/strategies/.../strategies/s3_reference/` | Audited reference backtest module. |
+| `proof.py`, `proof_windows.py`, `proof_batch.py`, `proof_search.py`, `proof_strategy_search.py`, `proof_pool.py` | `packages/proof/.../proof/` | Generic over `StrategyPlugin` registry; no hardcoded strategy conditionals. |
+| `screener.py`, `screener_search.py`, `audit.py` | `packages/proof/.../proof/` | S1/S2 compatibility evaluation and independent P&L audit. |
+| `screener_app.py` (HTTP server & routes only) | `packages/web/.../web/` | Thin HTTP transport layer over `msl-proof` and `msl-core`. |
+| `proof_ui.html`, `vendor/*` | `packages/web/.../web/static/` & `vendor/` | Split into modular HTML/CSS/ES-modules; same-origin vendored Lightweight Charts preserved. |
+| `cli.py` | `src/moex_spread_lab/cli.py` + `packages/*/cli.py` | Entry-point dispatcher + domain CLI plugins. |
+
+---
+
+## 7. Step-by-Step Migration Plan & Execution Instructions
+
+### Invariants Across Every Phase (Non-Negotiable)
+
+1. **Bit-for-bit numerical and hash parity:** `tests/test_perf_equivalence.py` and all functional tests must pass after *every single phase* without altering `run_id`, `config_hash` (`config/run-manifest.json`), reconciliation tolerances, or Stage-9 accounting semantics (`docs/development/execution-proof.md`).
+2. **One phase = one small, reviewable PR/commit series:** Never combine code refactoring/logic changes with `git mv` bulk file relocations in the same commit (preserving `git log --follow` blame history).
+3. **Backward-compatible CLI & HTTP contracts:** `uv run python -m moex_spread_lab.cli ...` and all `/api/*` endpoints remain 100% compatible throughout and after migration.
+4. **No live/broker scope creep:** Do not alter risk limits (`docs/risk/pilot-policy.md`), research screen defaults, or loopback-only network rules.
+
+---
+
+### Phase 0 — Cycle Breaking & Constant Extraction (In-Place Preparation)
+
+**Objective:** Eliminate the 11 mutual import cycles *before* moving any files, so every module already obeys the target DAG while still living in `src/moex_spread_lab/`.
+
+**Instructions:**
+1. Extract shared constants (`INITIAL_CAPITAL`, `MIN_DAILY_VOLUME`) from `screener_app.py` into `evaluation_periods.py` (future `msl-core`).
+2. Extract universe definitions and pure data loaders (`PAIRS`, `EXTRA_PAIRS`, `HISTORICAL_PERPETUAL_PAIRS`, `HISTORY_WINDOWS`, `pair_price_inputs`, `_session_volumes`, `_positive_leg_volume_dates`) from `screener_app.py` into a new pure-data module `universe.py` (future `msl-data`).
+3. Move `_cost_totals` into `costs.py` and `_run_id` into `w0.py` so `position_sizing.py` no longer imports `proof.py`.
+4. Move generic ISS EOD history pagination (`fetch_history`, `_history_url`, `HISTORY_SCHEMA`) from `carry.py` into `iss.py` so `calendar_spreads.py` does not import `carry.py`.
+5. Decouple `data_lake.py` ↔ `h1_seal.py` by injecting seal-check callbacks or extracting seal manifest types into a leaf module `h1_types.py`.
+6. Add `tests/test_architecture_dag.py` (pure AST test, ~60 LOC) asserting zero import cycles between future layer groups.
+
+**Verification Gate:**
+```sh
+uv run pytest -q -n auto --dist loadfile
+```
+
+---
+
+### Phase 1 — Bootstrap `uv` Workspace & Extract Layer 0 (`packages/core`)
+
+**Objective:** Activate `[tool.uv.workspace]` and move `core` primitives with backward-compatible re-exports.
+
+**Instructions:**
+1. Create `packages/core/pyproject.toml` (`name = "msl-core"`, Hatchling or Setuptools PEP 420 package-dir `src`) and `packages/core/manifest.json`.
+2. Update root `pyproject.toml`:
+   ```toml
+   [tool.uv.workspace]
+   members = ["packages/*"]
+
+   [tool.uv.sources]
+   msl-core = { workspace = true }
+   ```
+3. `git mv` `w0.py`, `timeframes.py`, `evaluation_periods.py` (as `settings.py` + alias), `_fastcore.c`, and `_fastcore_loader.py` into `packages/core/src/moex_spread_lab/core/`.
+4. Leave 3-line re-export shims in `src/moex_spread_lab/{w0,timeframes,evaluation_periods,_fastcore_loader}.py` (`from moex_spread_lab.core.w0 import *`) so zero existing imports break.
+5. `git mv` `tests/test_w0.py` and `tests/test_evaluation_periods.py` into `packages/core/tests/`.
+6. Update `.github/workflows/ci.yml` fastcore precompile check to `from moex_spread_lab.core._fastcore_loader import load_fastcore` (keeping shim working as well) and run `uv lock` (verifying zero external dependency version drift).
+
+**Verification Gate:**
+```sh
+uv sync --frozen
+uv run python -c "from moex_spread_lab.core._fastcore_loader import load_fastcore; assert load_fastcore() is not None"
+uv run pytest -q -n auto --dist loadfile
+```
+
+---
+
+### Phase 2 — Extract Layer 1 Siblings (`packages/data` and `packages/accounting`)
+
+**Objective:** Separate market data storage/intake from financial accounting/risk/sizing into independent parallel packages.
+
+**Instructions:**
+1. **Create `packages/data` (`msl-data`):**
+   - `git mv` ISS intake (`iss.py`), Parquet lake & H1 seal (`data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py`), retention/archival (`data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `storage_policy.py`), `benchmark.py`, and `universe.py` into `packages/data/src/moex_spread_lab/data/{iss,lake,retention,benchmark,universe}/`.
+   - Co-locate `test_iss.py`, `test_data_*.py`, `test_h1_*.py`, `test_storage_policy.py`, `test_store_cutover.py`, `test_benchmark.py` into `packages/data/tests/`.
+   - Co-locate `data-lifecycle.md`, `storage-policy-*.md`, `h1-*.md`, `historical-pair-intake.md`, `benchmark-lineage.md` into `packages/data/docs/` (updating links in root `README.md`).
+2. **Create `packages/accounting` (`msl-accounting`):**
+   - `git mv` `costs.py`, `account_risk.py`, `portfolio.py`, `position_sizing.py`, `ledger.py`, `run_artifacts.py`, `run_artifact_import.py`, `validation.py`, `research.py` into `packages/accounting/src/moex_spread_lab/accounting/`.
+   - Co-locate corresponding unit tests into `packages/accounting/tests/` and module docs into `packages/accounting/docs/`.
+3. Keep thin re-export shims in `src/moex_spread_lab/` until Phase 6.
+4. Enforce in `test_architecture_dag.py` that `moex_spread_lab.data` and `moex_spread_lab.accounting` never import each other or any Layer 2–4 module.
+
+**Verification Gate:**
+```sh
+uv sync --frozen
+uv run pytest packages/core/tests packages/data/tests packages/accounting/tests -q
+uv run pytest -q -n auto --dist loadfile
+```
+
+---
+
+### Phase 3 — Extract Layer 2 (`packages/strategies`) with Strategy Subfolders & Plugin Protocol
+
+**Objective:** Isolate every trading strategy into its own self-contained subfolder with conformance tests so multiple agents can build strategies concurrently with zero shared file edits.
+
+**Instructions:**
+1. Define `StrategyPlugin`, `ParameterSpec`, and `StrategyRegistry` in `packages/core/.../contracts.py` and `packages/strategies/.../strategies/base.py`.
+2. Create `packages/strategies` (`msl-strategies`) with dedicated subfolders:
+   - `strategies/pair_mean_reversion/` (`analytics.py` + pair MR entry bands from `proof_signals.py`).
+   - `strategies/funding_carry/` (`carry.py` + `proof_funding.py` + `funding_recheck.py` + `funding_screen.py`).
+   - `strategies/calendar_zscore/` (Z-score MR logic extracted from `calendar_spreads.py` + calendar MR bands from `proof_signals.py`).
+   - `strategies/calendar_ruonia/` (RUONIA convergence & dividend logic extracted from `calendar_spreads.py` + RUONIA bands from `proof_signals.py`).
+   - `strategies/s3_reference/` (`s3_reference.py`).
+3. Implement auto-discovery in `moex_spread_lab.strategies.discover_strategies()` using `pkgutil.iter_modules` + `[project.entry-points."moex_spread_lab.strategies"]`.
+4. Add `packages/strategies/tests/contract/test_strategy_conformance.py` — a parameterized test suite that automatically runs against **every** discovered strategy plugin, checking:
+   - Determinism (identical inputs + seed -> byte-identical intents);
+   - Causality (truncating future bars does not alter past signals or entry bands);
+   - Fail-closed behavior on missing data, zero volume, and unknown costs;
+   - Valid `ParameterSpec` bounds and default values.
+
+**Verification Gate:**
+```sh
+uv run pytest packages/strategies/tests -q
+uv run pytest tests/test_perf_equivalence.py -q
+```
+
+---
+
+### Phase 4 — Extract Layer 3 (`packages/proof`) & CLI Plugin Dispatch
+
+**Objective:** Move the proof orchestrator, cohort Optuna optimizer, plateau profiler, and worker pool into `packages/proof`, driven purely by the `StrategyPlugin` registry, and replace the monolithic `cli.py` with entry-point discovery.
+
+**Instructions:**
+1. Create `packages/proof` (`msl-proof`) and `git mv` `proof.py` (`service.py`), `proof_windows.py`, `proof_batch.py`, `proof_search.py`, `proof_strategy_search.py`, `proof_pool.py`, `screener.py`, `screener_search.py`, and `audit.py`.
+2. Refactor `strategy_search.py` and `batch.py` to query `discover_strategies()` instead of hardcoded strategy tuples, while preserving exact family ordering, seed derivation, trial counts (`TRIALS_PER_STRATEGY = 80`), and `run_id` payload canonicalization.
+3. Split `src/moex_spread_lab/cli.py` into package-local `cli.py` files (`msl-data`, `msl-accounting`, `msl-proof`, `msl-web`) registered via `[project.entry-points."moex_spread_lab.cli"]`. Keep `moex_spread_lab.cli:main` as the thin 60-line loader so every existing CLI command (`screener`, `calendar-study`, `replay`, `secret-scan`, `data-refresh`, etc.) retains identical flags and exit codes.
+4. Move proof & optimization tests (including `test_perf_equivalence.py`) to `packages/proof/tests/`.
+
+**Verification Gate:**
+```sh
+uv run python -m moex_spread_lab.cli --help
+uv run python -m moex_spread_lab.cli validate-manifest --manifest config/run-manifest.json
+uv run python -m moex_spread_lab.cli secret-scan --tracked-only
+uv run pytest -q -n auto --dist loadfile
+```
+
+---
+
+### Phase 5 — Extract Layer 4 (`packages/web`) & Modularize Frontend Assets
+
+**Objective:** Isolate the loopback HTTP server, decompose `proof_ui.html` into clean ES modules/CSS, and drive strategy form controls from `/api/strategies` schema metadata.
+
+**Instructions:**
+1. Create `packages/web` (`msl-web`) and split `screener_app.py` HTTP handlers into `server.py`, `routes_proof.py`, `routes_settings.py`, and `routes_legacy.py`.
+2. Add `GET /api/strategies` returning registered `StrategyPlugin` schemas, labels, supported universes, and supported fills.
+3. Split `proof_ui.html` into `static/index.html`, `static/css/*.css`, and `static/js/*.js` (native ES modules, served same-origin with strict `Content-Type` and loopback `Host`/`Origin` checks). Keep `/vendor/lightweight-charts.standalone.production.js` and its license notice intact.
+4. Update `static/js/strategy-form.js` to render parameter inputs and plateau lamps dynamically from `/api/strategies` while preserving existing DOM `id` / `data-*` / `aria-*` attributes used by the 10 Playwright smoke suites.
+5. Move `test_screener_app.py` and `tests/browser/*_smoke.py` into `packages/web/tests/`.
+
+**Verification Gate:**
+```sh
+uv run pytest packages/web/tests/test_http_routes.py -q
+# Run all 10 Playwright Chromium smoke suites:
+for f in packages/web/tests/browser/*_smoke.py; do
+  uv run --with playwright python "$f"
+done
+```
+
+---
+
+### Phase 6 — Cleanup Shims, CI Path-Aware Optimization & Governance Update
+
+**Objective:** Finalize workspace hygiene, update CI workflows, and document agent ownership rules.
+
+**Instructions:**
+1. Migrate remaining internal imports off the root `src/moex_spread_lab/*.py` shims; retain only public entry points (`cli.py`, `__init__.py`) or explicitly documented compatibility aliases.
+2. Update `.github/workflows/ci.yml`, `ci-macos.yml`, and `browser-smoke.yml`:
+   - Add a fast `architecture-gate` step (<2 s): verifies acyclic package DAG, strategy conformance discovery, `validate-manifest`, and `secret-scan --tracked-only`.
+   - Configure `pytest` `testpaths = ["packages/core/tests", "packages/data/tests", "packages/accounting/tests", "packages/strategies/tests", "packages/proof/tests", "packages/web/tests"]` and per-package duration files (or dynamic xdist loadfile scheduling without a single conflict-prone JSON).
+3. Update `AGENTS.md`, `README.md`, and `docs/stages/05-architecture.md` with the new package map and per-package agent scoping rules.
+
+**Final Acceptance Checklist:**
+- [ ] Zero cyclic imports across the entire repository (`test_architecture_dag.py` green).
+- [ ] Adding a dummy strategy folder in `packages/strategies/.../dummy_strategy/` makes it appear in `/api/strategies`, Optuna search, and UI controls **with zero edits to any existing tracked file**.
+- [ ] `uv run pytest -q -n auto --dist loadfile` passes 100% of unit, integration, and `test_perf_equivalence.py` bit-for-bit checks.
+- [ ] All 10 Playwright smoke tests pass headless.
+- [ ] `config/run-manifest.json` and `reports/w0/replay.json` hashes match pre-migration values byte-for-byte.

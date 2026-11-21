@@ -50,7 +50,7 @@ def fixture():
              "benchmark_source_kind": "observed"} for i, d in enumerate(DAYS)]
     window = WindowSnapshot(universe="pair_screen", pair="N/F", near="N", far="F", rows=rows, contracts=contracts)
     rates = {d: .2 for d in DAYS}
-    evidence = FundingWindow(FundingTimeline("TEST", rates, DAYS), DAYS)
+    evidence = FundingWindow(FundingTimeline("N", rates, DAYS), DAYS)
     return window, evidence, rates
 
 
@@ -92,7 +92,7 @@ def test_plugin_fictional_fill_and_missing_evidence_fail_before_sizing():
     window, evidence, _ = fixture()
     with pytest.raises(W0Error):
         pipeline(window, evidence, PairPlugin("long_spread", False, bad_price=True), "next_open")
-    missing = FundingWindow(FundingTimeline("TEST", {d: None for d in DAYS}, DAYS), DAYS)
+    missing = FundingWindow(FundingTimeline("N", {d: None for d in DAYS}, DAYS), DAYS)
     with pytest.raises(W0Error):
         pipeline(window, missing, PairPlugin("long_spread", False), "next_open")
 
@@ -146,7 +146,7 @@ def test_journal_only_bar_does_not_revalue_or_receive_funding():
     rows[2].update(near_volume=0, near_close=90000)
     window = replace(window, rows=rows)
     days = [d for d in DAYS if d != DAYS[2]]
-    evidence = FundingWindow(FundingTimeline("TEST", dict.fromkeys(days, .2), days), days)
+    evidence = FundingWindow(FundingTimeline("N", dict.fromkeys(days, .2), days), days)
 
     class AcrossGap(PairPlugin):
         def evaluate_intents(self, snap, params, fill):
@@ -185,3 +185,30 @@ def test_prefix_hides_future_rows_and_extra_snapshot_data_and_identity():
                                     {**dict.fromkeys(DAYS, 1.0), DAYS[-1]: 999}, ResearchSettings(), through=DAYS[3])
     assert first == second
     assert [r["date"] for r in first["series"]] == DAYS[:4]
+
+
+def test_dated_pair_without_funding_does_not_invent_zero_rate():
+    from dataclasses import replace
+    window, _, _ = fixture()
+    contracts = {"GLZ6": {**window.contracts["N"], "secid": "GLZ6"},
+                 "GLH7": {**window.contracts["F"], "secid": "GLH7"}}
+    dated = replace(window, pair="GLZ6/GLH7", near="GLZ6", far="GLH7", contracts=contracts)
+    result = size_daily_pair_plugin(PairPlugin("long_spread", False), dated, {}, "next_open", None,
+                                    dict.fromkeys(DAYS, 1.0), ResearchSettings())
+    assert result["provenance"]["funding_applicability"] == "no_perpetual_leg"
+    assert all(row["funding_rub"] is None and row["funding_contracts"] == 0 for row in result["series"])
+    assert result["summary"]["ledger_reconciliation_rub"] == 0
+    wrong_funding = FundingWindow(FundingTimeline("GLZ6", dict.fromkeys(DAYS, .2), DAYS), DAYS)
+    with pytest.raises(W0Error, match="неприменима"):
+        size_daily_pair_plugin(PairPlugin("long_spread", False), dated, {}, "next_open", wrong_funding,
+                               dict.fromkeys(DAYS, 1.0), ResearchSettings())
+    with pytest.raises(W0Error):
+        size_daily_pair_plugin(PairPlugin("long_spread", False), replace(dated, pair="CNYRUBF/CRZ6"), {}, "next_open", None,
+                               dict.fromkeys(DAYS, 1.0), ResearchSettings())
+
+
+def test_funding_history_must_match_near_contract():
+    window, _, _ = fixture()
+    other = FundingWindow(FundingTimeline("OTHER", dict.fromkeys(DAYS, .2), DAYS), DAYS)
+    with pytest.raises(W0Error, match="ближней"):
+        pipeline(window, other, PairPlugin("long_spread", True), "next_open")

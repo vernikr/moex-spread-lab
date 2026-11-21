@@ -58,8 +58,9 @@ legacy mean-reversion engine at the accepted quantity. It also checks that plugi
 claims about economic results do not affect the output or run ID. This internal
 composition does not expose a new public proof route, resolve intraday funding,
 perform proof catalog/volume/capital screens, support
-fixed-size requests or establish arbitrary plugin causality. It requires explicit
-daily perpetual funding evidence and cannot infer zero funding for dated pairs.
+fixed-size requests or establish arbitrary plugin causality. For a perpetual pair it requires daily funding evidence tied to the near leg.
+Funding may be absent only for a pair and legs confirmed as non-perpetual by the
+research registry; this produces no rate or payment, not fabricated zero rates.
 
 The internal daily composition also keeps zero-volume/missing-volume bars in the
 account journal without mark-to-market or funding. Plugins see only eligible bars,
@@ -68,3 +69,9 @@ evaluation and run-ID generation. Auxiliary snapshot funding, benchmark, carry a
 extra objects are not passed to the price plugin. Funding cutoffs are still resolved
 by `FundingWindow`. This supports prefix replay but does not yet wire the full
 cohort/holdout orchestration or public proof dispatch.
+
+A parity test also loads the same offline synthetic exchange fixture as the real
+`ProofService`, adapts the built-in mean-reversion strategy to explicit signal
+dates, and compares trades and ledger against the native automatic-sizing proof
+for all three fills, with and without a training/holdout split. This is stronger
+than the small synthetic replay but still does not register a public plugin route.

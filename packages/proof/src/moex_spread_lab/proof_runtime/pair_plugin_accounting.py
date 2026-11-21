@@ -25,8 +25,8 @@ def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchma
     Zero-volume rows stay in the journal without revaluation or funding. Only the
     eligible prefix reaches the plugin; no later bars or benchmark marks are used.
     Inputs are not mutated; plugin-supplied money fields are ignored.
-    Requires daily funding evidence, so pairs with no funding require a separate
-    explicit accounting contract rather than an invented zero-rate window.
+    Perpetual funding evidence must match the near contract. Missing evidence is
+    allowed only for registry-confirmed pairs of non-perpetual contracts.
     """
     if (not isinstance(window, WindowSnapshot) or window.timeframe != "1d"
             or not isinstance(settings, ResearchSettings) or settings.timeframe != "1d"
@@ -93,10 +93,29 @@ def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchma
         raise W0Error("Нет достоверных цен или параметров обеих ног пары.") from None
     if any(not math.isfinite(t[event]["spread_fill"]) for t in trades for event in ("entry", "exit")):
         raise W0Error("Переполнение цены исполнения пары.")
-    eligible_rows = [row for row in rows if row["volume_eligible"]]
-    prepared = attach_daily_unit_funding(eligible_rows, trades, funding_window, through=through, near_lot_size=lot)
-    by_date = {row["date"]: row for row in prepared["series"]}
-    journal = [by_date.get(row["date"], {**row, "funding_rub": None, "funding_contracts": 0}) for row in rows]
+    if funding_window is None:
+        # Only known dated-contract pairs may omit rates; a missing perpetual
+        # funding source must not silently become zero.
+        from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+        declared = _pair(window.pair)
+        if (declared["near"] != window.near or declared["far"] != window.far
+                or declared["family"] not in {"dated_calendar_same_asset", "cross_contract_same_expiry"}):
+            raise W0Error("Для вечного фьючерса требуется история фондирования.")
+        prepared = {"provenance": {"funding_applicability": "no_perpetual_leg"}}
+        journal = [{**row, "funding_rub": None, "funding_contracts": 0} for row in rows]
+    else:
+        from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
+        from moex_spread_lab.core.universe import PAIRS
+        declared = next((p for p in PAIRS if p["pair_id"] == window.pair), None)
+        if declared is not None and (declared["near"] != window.near or declared["far"] != window.far
+                                     or declared["family"] != "perpetual_quarterly_same_asset"):
+            raise W0Error("История фондирования неприменима к этой паре.")
+        if not isinstance(funding_window, FundingWindow) or funding_window.book.secid != window.near:
+            raise W0Error("История фондирования не соответствует ближней ноге пары.")
+        eligible_rows = [row for row in rows if row["volume_eligible"]]
+        prepared = attach_daily_unit_funding(eligible_rows, trades, funding_window, through=through, near_lot_size=lot)
+        by_date = {row["date"]: row for row in prepared["series"]}
+        journal = [by_date.get(row["date"], {**row, "funding_rub": None, "funding_contracts": 0}) for row in rows]
     marks = {row["date"]: benchmark_marks[row["date"]] for row in rows}
     selection = {"universe": window.universe, "pair": window.pair, "strategy": plugin.strategy_id,
                  "timeframe": "1d", "fill": fill, "parameters": validated}

@@ -430,9 +430,11 @@ function bindSettings(){const dlg=$('global-settings'),n=$('validation-percent')
  $('validation-range').addEventListener('input',e=>{n.value=Number(e.target.valueAsNumber.toFixed(1));previewSplit()});n.addEventListener('input',previewSplit);
  $('settings-form').addEventListener('submit',async e=>{e.preventDefault();if(savingSettings||!n.reportValidity()||!slip.reportValidity()||!capital.reportValidity()||!fill.reportValidity()||!seed.reportValidity())return;
   ++settingRevision;savingSettings=true;submit.disabled=$('cancel-settings').disabled=true;$('settings-error').textContent='';cancelSearch();invalidateProof();
-  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:selectedTimeframe,price_fill:fill.value,random_seed:seed.valueAsNumber});setPreferences(x);dlg.close();
-   try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}if(catalog){await refreshCatalog();void show()}
+  let saved=false;
+  try{const x=await api('/api/settings',{validation_percent:n.valueAsNumber,allow_failed_volume:$('allow-failed-volume').checked,allow_failed_capital:$('allow-failed-capital').checked,slippage_ticks:slip.valueAsNumber,initial_capital_rub:capital.valueAsNumber,timeframe:selectedTimeframe,price_fill:fill.value,random_seed:seed.valueAsNumber});setPreferences(x);dlg.close();saved=true;
+   try{localStorage.setItem(settingsEventKey,JSON.stringify([Date.now(),settingsKey()]))}catch(_){}
   }catch(err){$('settings-error').textContent=err.message}finally{submit.disabled=$('cancel-settings').disabled=false;savingSettings=false}
+  if(saved&&catalog){try{await refreshCatalog();void show()}catch(err){console.error(err)}}
  });
  window.addEventListener('storage',e=>{if(e.key===settingsEventKey)void refreshGlobalSettings()});
  document.addEventListener('visibilitychange',()=>{if(catalog&&!document.hidden)void refreshGlobalSettings()});

@@ -43,7 +43,11 @@ def run(browser, url):
     expect(page.locator("#settings-badge")).to_contain_text("41")
     page.locator("#open-settings").click()
     expect(page.locator("#global-seed")).to_have_value("41")
+    # The save must release the form before the background catalog refresh,
+    # otherwise Escape/backdrop stay blocked for the whole refresh.
+    expect(page.locator("#apply-settings")).to_be_enabled(timeout=20000)
     page.keyboard.press("Escape")
+    expect(page.locator("#global-settings")).not_to_have_attribute("open", "")
 
     # The saved seed reaches the search and is reported with the drawn base seed.
     with expect_api_json(page, "/api/proof/optimize", timeout=30000) as live:

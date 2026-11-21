@@ -12,17 +12,10 @@ from .account_risk import assess_vtb_pair
 from .analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
 from .data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
 from .timeframes import get_timeframe, timeframe_for_interval
+from .universe import SCREEN_PAIRS
 from .w0 import W0Error, read_hashed_json
 
 SCREEN_SCHEMA = "pair-screen.v1"
-SCREEN_PAIRS = (
-    {"pair_id": "GLDRUBF/GLZ6", "near": "GLDRUBF", "far": "GLZ6", "family": "perpetual_quarterly_same_asset"},
-    {"pair_id": "IMOEXF/MMZ6", "near": "IMOEXF", "far": "MMZ6", "family": "perpetual_quarterly_same_asset"},
-    {"pair_id": "GAZPF/GZZ6", "near": "GAZPF", "far": "GZZ6", "family": "perpetual_quarterly_same_asset"},
-    {"pair_id": "SBERF/SRZ6", "near": "SBERF", "far": "SRZ6", "family": "perpetual_quarterly_same_asset"},
-    {"pair_id": "RGBIF/RBZ6", "near": "RGBIF", "far": "RBZ6", "family": "perpetual_quarterly_same_asset"},
-    {"pair_id": "USDRUBF/SiZ6", "near": "USDRUBF", "far": "SiZ6", "family": "perpetual_quarterly_same_asset"},
-)
 
 
 class ScreenError(W0Error):

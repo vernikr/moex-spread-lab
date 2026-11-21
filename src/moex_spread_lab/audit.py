@@ -11,8 +11,9 @@ from typing import Any
 from .analytics import run_mean_reversion_baseline
 from .costs import tariff_profile
 from .data_lake import BarSeries
+from .pair_screener import ScreenerInputs
 from .screener import _normalized_series
-from .screener_app import MIN_DAILY_VOLUME, PAIRS, ScreenerInputs
+from .universe import MIN_DAILY_VOLUME, PAIRS
 from .w0 import W0Error
 
 SLIPPAGE_GRID = (0.0, 1.0, 2.0)

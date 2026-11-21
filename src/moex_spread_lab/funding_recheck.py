@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 
 from .carry import fetch_history
 from .proof_funding import published_rates, read_supplement, supplement_path
-from .screener_app import PERPETUAL_HISTORY_STARTS
+from .universe import PERPETUAL_HISTORY_STARTS
 from .w0 import W0Error
 
 

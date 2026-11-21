@@ -353,29 +353,28 @@ Once this structure is in place, parallel agent work follows four mechanical rul
 
 | Current path (`src/moex_spread_lab/...`) | Target workspace location (`packages/...`) | Notes on decoupling |
 |---|---|---|
-| `w0.py` | `packages/core/.../core/w0.py` | Unchanged; zero internal dependencies. |
+| `w0.py` | `packages/core/.../core/w0.py` | Absorbs `load_contracts` & `_run_id` (breaks `account_risk`/`carry` -> `analytics` and `position_sizing` -> `proof`). |
 | `timeframes.py` | `packages/core/.../core/timeframes.py` | Unchanged; zero internal dependencies. |
-| `evaluation_periods.py` | `packages/core/.../core/settings.py` | Absorbs `INITIAL_CAPITAL` & `MIN_DAILY_VOLUME` from `screener_app.py` to break SCC-2. |
+| `evaluation_periods.py` | `packages/core/.../core/settings.py` | Absorbs `INITIAL_CAPITAL`, `MIN_DAILY_VOLUME`, and `MAX_QUANTITY`. |
+| `universe.py` | `packages/core/.../core/universe.py` | Shared pair/universe registries (`PAIRS`, `SCREEN_PAIRS`, `EXTRA_PAIRS`, `HISTORY_WINDOWS`, `STRATEGIES`, `PAIR_UNIVERSE`, `CALENDAR_UNIVERSE`); zero external dependencies. |
 | `_fastcore.c`, `_fastcore_loader.py` | `packages/core/.../core/_fastcore*` | Precompiled and verified by `msl-core` build/test step. |
-| *(new)* | `packages/core/.../core/contracts.py` | `StrategyPlugin`, `ParameterSpec`, `_run_id` helper (breaks `position_sizing` ↔ `proof` cycle). |
-| `iss.py` | `packages/data/.../data/iss/catalog.py` | Also hosts shared `_fetch_json` / `fetch_history` (currently inside `carry.py`). |
-| `data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py` | `packages/data/.../data/lake/` | Internalize `SealedH1Reader` hook via a clean `SealPolicy` interface inside `lake/` (breaks SCC-1). |
-| `data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `storage_policy.py` | `packages/data/.../data/retention/` | Pure data-lifecycle operations + CLI plugin. |
+| *(future Phase 3)* | `packages/core/.../core/contracts.py` | `StrategyPlugin`, `ParameterSpec` protocol contracts. |
+| `iss.py` | `packages/data/.../data/iss/catalog.py` | Hosts shared `fetch_history`, `_history_url`, `HISTORY_SCHEMA`, and `IssHistoryError` (extracted from `carry.py`). |
+| `bar_types.py`, `data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py` | `packages/data/.../data/lake/` | `bar_types.py` holds `BarSeries`, `DataLakeError`, `SealedH1Reader`, and seal read/write guards so `bar_types` -> `data_lake` -> `h1_migration` -> `h1_seal` is strictly acyclic. |
+| `data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `run_artifacts.py`, `storage_policy.py` | `packages/data/.../data/retention/` | Pure data-lifecycle & Parquet run-artifact storage operations (`run_artifacts.py` depends only on `w0` + `pyarrow`, keeping `storage_policy` inside `msl-data`). |
 | `benchmark.py` | `packages/data/.../data/benchmark/lineage.py` | Also provides `_benchmark_marks` lookup currently duplicated in `proof.py` / `carry.py`. |
-| *(extracted from `screener_app.py`, `screener.py`, `calendar_spreads.py`)* | `packages/data/.../data/universe/` | `PAIRS`, `ASSETS`, `HISTORY_WINDOWS`, `contract_chain`, `pair_price_inputs`, `CalendarData` raw loader. Breaks all upward imports into `screener_app`! |
 | `costs.py` | `packages/accounting/.../accounting/costs.py` | Absorbs `_cost_totals` from `proof.py`. |
-| `account_risk.py` | `packages/accounting/.../accounting/account_risk.py` | Uses `msl-core` + `costs.py` instead of importing `analytics.py`. |
+| `account_risk.py` | `packages/accounting/.../accounting/account_risk.py` | Uses `msl-core` (`w0.load_contracts`) instead of importing `analytics.py`. |
 | `portfolio.py` | `packages/accounting/.../accounting/portfolio.py` | Pure matched-LQDT overlay math. |
 | `position_sizing.py` | `packages/accounting/.../accounting/position_sizing.py` | Depends only on `msl-core` + `costs` + `account_risk` (zero dependency on `proof`). |
-| `ledger.py`, `run_artifacts.py`, `run_artifact_import.py`, `validation.py`, `research.py` | `packages/accounting/.../accounting/` | W1–W7 offline ledger, run artifacts, and chronological validation gates. |
-| `analytics.py`, `proof_signals.py` (pair MR part) | `packages/strategies/.../strategies/pair_mean_reversion/` | Wrapped in `StrategyPlugin`. |
-| `carry.py`, `proof_funding.py`, `funding_recheck.py`, `funding_screen.py` | `packages/strategies/.../strategies/funding_carry/` | Wrapped in `StrategyPlugin`; raw ISS history fetcher moved down to `msl-data`. |
-| `calendar_spreads.py` (Z-score MR part) | `packages/strategies/.../strategies/calendar_zscore/` | Wrapped in `StrategyPlugin`. |
-| `calendar_spreads.py` (RUONIA convergence part) | `packages/strategies/.../strategies/calendar_ruonia/` | Wrapped in `StrategyPlugin`. |
+| `analytics.py`, `proof_signals.py` (pair MR part), `ledger.py`, `validation.py`, `run_artifact_import.py`, `research.py` | `packages/strategies/.../strategies/` | Strategy evaluation, W1–W7 offline ledger/validation gates, and legacy baseline artifact importer; wrapped in `StrategyPlugin` in Phase 3. |
+| `carry.py`, `proof_funding.py`, `funding_recheck.py`, `funding_screen.py` | `packages/strategies/.../strategies/funding_carry/` | Wrapped in `StrategyPlugin`; raw ISS history fetcher moved down to `msl-data` (`iss.py`). |
+| `calendar_spreads.py` (Z-score MR & RUONIA parts) | `packages/strategies/.../strategies/calendar_*` | Split into `calendar_zscore/` and `calendar_ruonia/` `StrategyPlugin` subpackages in Phase 3. |
 | `s3_reference.py` | `packages/strategies/.../strategies/s3_reference/` | Audited reference backtest module. |
-| `proof.py`, `proof_windows.py`, `proof_batch.py`, `proof_search.py`, `proof_strategy_search.py`, `proof_pool.py` | `packages/proof/.../proof/` | Generic over `StrategyPlugin` registry; no hardcoded strategy conditionals. |
-| `screener.py`, `screener_search.py`, `audit.py` | `packages/proof/.../proof/` | S1/S2 compatibility evaluation and independent P&L audit. |
-| `screener_app.py` (HTTP server & routes only) | `packages/web/.../web/` | Thin HTTP transport layer over `msl-proof` and `msl-core`. |
+| `screener.py`, `pair_screener.py` | `packages/strategies/.../strategies/pair_screener/` | Offline pair-screener domain logic (`ScreenerInputs`, `pair_price_inputs`, `catalog`, `build_result`) extracted from `screener_app.py`. |
+| `proof.py`, `proof_kernel.py`, `proof_pool.py`, `proof_windows.py`, `proof_batch.py`, `proof_strategy_search.py`, `proof_search.py` | `packages/proof/.../proof/` | `proof_kernel.py` isolates `StudyWindow`, `Landscape`, `_tune`, `_measure` so `proof` -> `proof_kernel` -> `proof_pool` -> `proof_windows`/`proof_batch` -> `proof_strategy_search` -> `proof_search` has zero intra-layer cycles. |
+| `screener_search.py`, `audit.py` | `packages/proof/.../proof/` | S1/S2 compatibility evaluation and independent P&L audit. |
+| `screener_app.py` (HTTP server & routes only) | `packages/web/.../web/` | Thin HTTP transport layer over `msl-proof`, `pair_screener`, and `msl-core` (retaining backward-compatible re-exports until Phase 6). |
 | `proof_ui.html`, `vendor/*` | `packages/web/.../web/static/` & `vendor/` | Split into modular HTML/CSS/ES-modules; same-origin vendored Lightweight Charts preserved. |
 | `cli.py` | `src/moex_spread_lab/cli.py` + `packages/*/cli.py` | Entry-point dispatcher + domain CLI plugins. |
 
@@ -392,17 +391,17 @@ Once this structure is in place, parallel agent work follows four mechanical rul
 
 ---
 
-### Phase 0 — Cycle Breaking & Constant Extraction (In-Place Preparation)
+### Phase 0 — Cycle Breaking & Constant Extraction (In-Place Preparation) — **Completed**
 
-**Objective:** Eliminate the 11 mutual import cycles *before* moving any files, so every module already obeys the target DAG while still living in `src/moex_spread_lab/`.
+**Objective:** Eliminate all 11 mutual import cycles and cross-layer upward imports *before* moving any files, so every module already obeys a strict module-level and layer-level DAG (max SCC size = 1, including lazy imports) while still living in `src/moex_spread_lab/`.
 
-**Instructions:**
-1. Extract shared constants (`INITIAL_CAPITAL`, `MIN_DAILY_VOLUME`) from `screener_app.py` into `evaluation_periods.py` (future `msl-core`).
-2. Extract universe definitions and pure data loaders (`PAIRS`, `EXTRA_PAIRS`, `HISTORICAL_PERPETUAL_PAIRS`, `HISTORY_WINDOWS`, `pair_price_inputs`, `_session_volumes`, `_positive_leg_volume_dates`) from `screener_app.py` into a new pure-data module `universe.py` (future `msl-data`).
-3. Move `_cost_totals` into `costs.py` and `_run_id` into `w0.py` so `position_sizing.py` no longer imports `proof.py`.
-4. Move generic ISS EOD history pagination (`fetch_history`, `_history_url`, `HISTORY_SCHEMA`) from `carry.py` into `iss.py` so `calendar_spreads.py` does not import `carry.py`.
-5. Decouple `data_lake.py` ↔ `h1_seal.py` by injecting seal-check callbacks or extracting seal manifest types into a leaf module `h1_types.py`.
-6. Add `tests/test_architecture_dag.py` (pure AST test, ~60 LOC) asserting zero import cycles between future layer groups.
+**Completed Implementation:**
+1. Extracted shared constants (`INITIAL_CAPITAL`, `MIN_DAILY_VOLUME`, `MAX_QUANTITY`) into `evaluation_periods.py` and pure universe registries (`PAIRS`, `SCREEN_PAIRS`, `EXTRA_PAIRS`, `HISTORICAL_PERPETUAL_PAIRS`, `HISTORY_WINDOWS`, `STRATEGIES`, `PAIR_UNIVERSE`, `CALENDAR_UNIVERSE`) into `universe.py` (L0 `core`), plus `load_contracts` and `_run_id` into `w0.py` (L0 `core`).
+2. Extracted offline pair-screener domain logic (`ScreenerInputs`, `ScreenerError`, `_session_volumes`, `_positive_leg_volume_dates`, `pair_price_inputs`, `catalog`, `build_result`) from `screener_app.py` (L4 `web`) into `pair_screener.py` (L2 `strategies`), keeping backward-compatible re-exports and mock seams in `screener_app.py`.
+3. Moved `_cost_totals` into `costs.py` (L1b `accounting`) and `_run_id` into `w0.py` so `position_sizing.py` no longer imports `proof.py`; kept `run_artifacts.py` in L1a `data` (`w0` + `pyarrow` storage) so `storage_policy.py` stays strictly inside L1a `data`.
+4. Moved generic ISS EOD history pagination (`fetch_history`, `_history_url`, `HISTORY_SCHEMA`, `IssHistoryError`) from `carry.py` into `iss.py` (L1a `data`, with `CarryError(IssHistoryError)` preserved in `carry.py`) so `calendar_spreads.py` and `proof_funding.py` depend on `iss.py` rather than `carry.py`/`screener_app.py`.
+5. Decoupled `data_lake.py` ↔ `h1_seal.py` ↔ `h1_migration.py` via `bar_types.py` (L1a `data`, hosting `BarSeries`, `DataLakeError`, `SealedH1Reader`, and seal table guards) and decoupled the L3 `proof_*` SCC via `proof_kernel.py` (`StudyWindow`, `Landscape`, `_tune`, `_measure`) + `proof_pool.get_worker_pool`, achieving **zero** cycles across all 47 modules.
+6. Added `tests/test_architecture_dag.py` enforcing explicit layer membership for every module in `src/moex_spread_lab/`, zero import cycles (max SCC size = 1 including function-level imports), and strict 6-layer DAG boundaries (`core` -> `data` | `accounting` -> `strategies` -> `proof` -> `web` -> `cli`).
 
 **Verification Gate:**
 ```sh

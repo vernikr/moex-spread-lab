@@ -15,6 +15,8 @@ from functools import cache
 from pathlib import Path
 
 from .evaluation_periods import EvaluationSplit
+from .iss import fetch_history
+from .universe import HISTORY_WINDOWS, PAIRS
 from .w0 import W0Error
 
 FX_PERPETUALS = frozenset({"CNYRUBF", "EURRUBF", "USDRUBF"})
@@ -275,28 +277,82 @@ class FundingTimeline:
         }
 
 
+def _default_offline_only(*_args, **_kwargs):
+    raise OSError(
+        "local screener does not download data; run the documented intake first"
+    )
+
+
+def _default_history_source(inputs, pair_id, secid):
+    start, end = HISTORY_WINDOWS[pair_id]
+    return fetch_history(
+        secid,
+        start,
+        end,
+        cache_dir=inputs.history_cache(pair_id),
+        delay_seconds=0,
+        opener=_default_offline_only,
+    )
+
+
+def _default_positive_volume_dates(inputs, pair):
+    legs = {}
+    for secid in (pair["near"], pair["far"]):
+        try:
+            series = inputs.bars(pair["pair_id"], secid, columns=("begin", "volume"))
+        except W0Error:
+            return set()
+        vols = {}
+        invalid = set()
+        for row in series.rows:
+            begin = row.get("begin")
+            if not isinstance(begin, str) or len(begin) < 10:
+                continue
+            day = begin[:10]
+            value = row.get("volume")
+            if value is None or isinstance(value, bool):
+                invalid.add(day)
+                continue
+            number = float(value)
+            if not math.isfinite(number) or number < 0:
+                invalid.add(day)
+                continue
+            vols[day] = float(vols.get(day) or 0.0) + number
+        for day in invalid:
+            vols[day] = None
+        legs[secid] = vols
+    return {
+        day
+        for day in set(legs[pair["near"]]) & set(legs[pair["far"]])
+        if all(
+            legs[secid].get(day) is not None and float(legs[secid][day]) > 0
+            for secid in (pair["near"], pair["far"])
+        )
+    }
+
+
 class ProofFunding:
     """Request-local snapshot, shared across maturities of the same perpetual in the catalog."""
 
-    def __init__(self, inputs):
+    def __init__(self, inputs, *, history_fn=None, positive_volume_dates_fn=None):
         self.inputs = inputs
+        self._history_fn = history_fn or _default_history_source
+        self._positive_volume_dates_fn = (
+            positive_volume_dates_fn or _default_positive_volume_dates
+        )
         self._sources = {}
         self._timelines = {}
         self._market_dates = None
 
     def source(self, pair_id, secid):
-        from .screener_app import HISTORY_WINDOWS, _history_source
-
         first, last = HISTORY_WINDOWS[pair_id]
         directory = self.inputs.history_cache(pair_id)
         key = directory, secid, first, last
         if key not in self._sources:
-            self._sources[key] = _history_source(self.inputs, pair_id, secid)
+            self._sources[key] = self._history_fn(self.inputs, pair_id, secid)
         return self._sources[key]
 
     def timeline(self, pair):
-        from .screener_app import HISTORY_WINDOWS
-
         pid, near = pair["pair_id"], pair["near"]
         start, end = HISTORY_WINDOWS[pid]
         key = self.inputs.history_cache(pid), near, start, end
@@ -331,8 +387,6 @@ class ProofFunding:
         return self._timelines[key]
 
     def market_dates(self):
-        from .screener_app import HISTORY_WINDOWS, PAIRS, _history_source
-
         if self._market_dates is None:
             dates, seen = set(), set()
             for p in PAIRS:
@@ -348,7 +402,7 @@ class ProofFunding:
                         continue
                     seen.add(key)
                     try:
-                        source = self._sources.get(key) or _history_source(
+                        source = self._sources.get(key) or self._history_fn(
                             self.inputs, pid, secid
                         )
                         dates.update(
@@ -415,12 +469,10 @@ class ProofFunding:
         ).no_clearing_dates
 
     def carry_window(self, pair, share):
-        from .screener_app import _positive_leg_volume_dates
-
         book = self.timeline(pair)
         omitted = {
             d
-            for d in _positive_leg_volume_dates(self.inputs, pair)
+            for d in self._positive_volume_dates_fn(self.inputs, pair)
             if d in book.marks and book.marks[d].kind == "no_clearing"
         }
         return FundingWindow(book, self.settlement_days(pair), share, omitted=omitted)

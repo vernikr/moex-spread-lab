@@ -9,30 +9,12 @@ from __future__ import annotations
 from .calendar_spreads import CalendarData
 from .evaluation_periods import ResearchSettings
 from .proof import _benchmark_marks
-from .proof_batch import _identity
-from .proof_search import StudyWindow, _validate
+from .proof_kernel import StudyWindow, _identity, _validate, compact_result
+from .proof_pool import _estimate_weight, get_worker_pool
 from .w0 import W0Error
 
 MAX_WINDOW_REQUESTS = 128
 _DEFAULT_STUDY_WINDOW = StudyWindow
-
-
-def compact_result(proof):
-    summary = proof["summary"]
-    return {
-        "status": "measured",
-        "selection": proof["selection"],
-        "run_id": proof["run_id"],
-        "trades": summary["trades"],
-        "closed_trades": summary["closed_trades"],
-        "open_positions": summary["open_positions"],
-        "annualized_excess_pp": proof["evaluation"]["result"].get(
-            "annualized_excess_pp"
-        ),
-        "evaluation": proof["evaluation"],
-        "window": proof["window"],
-        "execution_reference": proof.get("execution_reference", False),
-    }
 
 
 def window_summaries(
@@ -68,9 +50,7 @@ def window_summaries(
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
     if StudyWindow is _DEFAULT_STUDY_WINDOW and type(calendar) is CalendarData:
-        from .proof_pool import _estimate_weight
-
-        pool = service.worker_pool()
+        pool = get_worker_pool(service)
         est = sum(_estimate_weight(service.root, t, settings.timeframe) for t in identities)
         if pool.should_use(len(requests), est):
             items = list(enumerate(zip(requests, identities)))

@@ -14,7 +14,7 @@ from typing import Any
 
 from ._fastcore_loader import load_fastcore
 from .costs import side_cost, tariff_profile
-from .screener_app import MIN_DAILY_VOLUME
+from .evaluation_periods import MIN_DAILY_VOLUME
 from .w0 import W0Error
 
 REFERENCE_ROUND_TRIP_COST = 4 * 5.5 + 2 * 2.0

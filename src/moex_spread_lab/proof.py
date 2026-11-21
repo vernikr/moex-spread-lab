@@ -22,8 +22,17 @@ from typing import Any
 from .account_risk import assess_vtb_pair
 from .analytics import compute_rolling_z, run_mean_reversion_baseline
 from .carry import build_carry_strategy, build_carry_study
-from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, side_cost, tariff_profile
+from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, _cost_totals, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
+from .pair_screener import (
+    ScreenerInputs,
+    _pair,
+    _parameters,
+    _session_volumes,
+    catalog as _pair_catalog,
+    execution_settings,
+    pair_price_inputs,
+)
 from .position_sizing import AUTO_SIZING, automatic, size_proof
 from .proof_funding import FundingWindow, ProofFunding
 from .proof_signals import (
@@ -33,11 +42,15 @@ from .proof_signals import (
     pair_fill,
 )
 from .timeframes import get_timeframe, timeframe_options
-from .w0 import W0Error, _HashedJSONCache, read_hashed_json
+from .universe import (
+    CALENDAR_UNIVERSE,
+    MIN_DAILY_VOLUME,
+    PAIR_UNIVERSE,
+    STRATEGIES,
+)
+from .w0 import W0Error, _HashedJSONCache, _run_id, read_hashed_json
 
 PROOF_SCHEMA = "execution-proof.v1"
-PAIR_UNIVERSE = "pair_screen"
-CALENDAR_UNIVERSE = "calendar_native"
 FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"})
 _BENCHMARK_MARKS_CACHE = _HashedJSONCache(32)
 _INSTRUMENTS_CACHE = _HashedJSONCache(32)
@@ -124,16 +137,6 @@ def _positive_pair_volume(row: dict[str, Any]) -> bool:
     return all(value is not None and float(value) > 0 for value in (row.get("near_volume"), row.get("far_volume")))
 
 
-def _cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
-    totals = {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0}
-    for trade in trades:
-        for side in ("entry", "exit"):
-            for key, value in (trade[side].get("costs") or {}).items():
-                if key in totals:
-                    totals[key] += float(value)
-    return {key: round(value, 2) for key, value in totals.items()}
-
-
 def _events(trades: list[dict[str, Any]]) -> dict[str, str]:
     events: dict[str, list[str]] = {}
     for trade in trades:
@@ -148,11 +151,6 @@ def _result(net_rub: float) -> str:
     if net_rub < 0:
         return "loss"
     return "flat"
-
-
-def _run_id(identity: dict[str, Any]) -> str:
-    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _rel_pct(value: Any, base: Any) -> float | None:
@@ -226,11 +224,12 @@ def _days_held(entry_date: str, exit_date: str) -> int | float | None:
 class ProofService:
     """Single entry point for /api/proof/*; dispatches on the `universe` field."""
 
-    def __init__(self, root: Path, calendar=None):
+    def __init__(self, root: Path, calendar=None, *, pool_factory=None):
         self.root = Path(root).resolve()
         self._calendar = calendar
         self._inputs = None
         self._pool = None
+        self._pool_factory = pool_factory
 
     @property
     def calendar_data(self):
@@ -243,16 +242,16 @@ class ProofService:
     @property
     def screener_inputs(self):
         if self._inputs is None:
-            from . import screener_app
-
-            self._inputs = screener_app.ScreenerInputs(self.root)
+            self._inputs = ScreenerInputs(self.root)
         return self._inputs
 
     def worker_pool(self):
         if self._pool is None:
-            from .proof_pool import CohortWorkerPool
-
-            self._pool = CohortWorkerPool()
+            if self._pool_factory is None:
+                raise W0Error(
+                    "CohortWorkerPool factory is not configured; call proof_pool.get_worker_pool(service)."
+                )
+            self._pool = self._pool_factory(self)
         return self._pool
 
     def close(self) -> None:
@@ -263,8 +262,6 @@ class ProofService:
     # ------------------------------------------------------------------ catalog
 
     def catalog(self) -> dict[str, Any]:
-        from . import screener_app
-
         settings = ResearchSettings.load(self.root)
         spec = get_timeframe(settings.timeframe)
         try:
@@ -276,13 +273,13 @@ class ProofService:
         except (W0Error, OSError) as exc:
             calendar = {
                 "till": None,
-                "min_daily_volume": screener_app.MIN_DAILY_VOLUME,
+                "min_daily_volume": MIN_DAILY_VOLUME,
                 "strategies": [],
                 "fills": [],
                 "assets": [],
                 "error": str(exc),
             }
-        pair = screener_app.catalog(
+        pair = _pair_catalog(
             self.screener_inputs,
             initial_capital=settings.initial_capital_rub,
             timeframe=settings.timeframe,
@@ -536,19 +533,17 @@ class ProofService:
     # ----------------------------------------------------------- pair adapter
 
     def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings, *, sizing_intents=False) -> Callable[..., dict[str, Any]]:
-        from . import screener_app
-
-        pair = screener_app._pair(selection.get("pair"))
+        pair = _pair(selection.get("pair"))
         near, far = pair["near"], pair["far"]
         strategy = selection.get("strategy")
-        if not isinstance(strategy, str) or strategy not in screener_app.STRATEGIES:
+        if not isinstance(strategy, str) or strategy not in STRATEGIES:
             raise W0Error("неизвестная стратегия")
         inputs = self.screener_inputs
         funding = ProofFunding(inputs)
         timeframe = get_timeframe(settings.timeframe)
         if not timeframe.supports_pair_proof:
             raise W0Error(f"{timeframe.label}: pair-proof не поддерживается.")
-        entry = screener_app.catalog(
+        entry = _pair_catalog(
             inputs, registry=(pair,), funding=funding,
             initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe,
         )["pairs"][0]
@@ -565,7 +560,7 @@ class ProofService:
                 raise W0Error("пара не проходит стресс-экран рабочего капитала")
             return risk
 
-        risk_for(screener_app.execution_settings(selection)["quantity"])
+        risk_for(execution_settings(selection)["quantity"])
         instruments = _load_instruments(inputs.contracts)
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
         dates, prices = _benchmark_marks(inputs.benchmark)
@@ -591,9 +586,9 @@ class ProofService:
         }
 
         def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
-            execution = {**screener_app.execution_settings(request), "sizing_intents": sizing_intents,
+            execution = {**execution_settings(request), "sizing_intents": sizing_intents,
                          "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill), "initial_capital_rub": settings.initial_capital_rub}
-            params = screener_app._parameters(request, strategy)
+            params = _parameters(request, strategy)
             return engine(inputs, pair, execution, params, terms, dates, prices,
                           risk_for(execution["quantity"]), prepared, through,
                           metrics_only=metrics_only, pair_cache=pair_cache)
@@ -601,8 +596,6 @@ class ProofService:
         return replay
 
     def _price_inputs(self, inputs, pair, funding, validation_percent, timeframe="1d"):
-        from .screener_app import pair_price_inputs
-
         series, book = pair_price_inputs(inputs, pair, funding, timeframe=timeframe)
         analysis_rows = [row for row in series["rows"] if _positive_pair_volume(row)]
         if len(analysis_rows) < 2:
@@ -751,8 +744,6 @@ class ProofService:
             meta_cache = pair_cache["window_meta"] if pair_cache is not None else None
             window_meta = meta_cache.get(through) if meta_cache is not None else None
             if window_meta is None:
-                from .screener_app import MIN_DAILY_VOLUME, _session_volumes
-
                 if "sessions" not in pair_cache:
                     pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
                 sessions = pair_cache["sessions"]
@@ -832,7 +823,6 @@ class ProofService:
                 )
             )
 
-        from .screener_app import _session_volumes
         if pair_cache is not None:
             if "sessions" not in pair_cache:
                 pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
@@ -887,8 +877,6 @@ class ProofService:
 
         ledger = self._price_ledger(series_rows, trades, near_mult, far_mult, quantity)
         if metrics_only:
-            from .screener_app import MIN_DAILY_VOLUME
-
             volumes = [
                 min(row.get("near_session_volume", row.get("near_volume")), row.get("far_session_volume", row.get("far_volume")))
                 for row in series_rows
@@ -984,8 +972,6 @@ class ProofService:
         self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
         *, metrics_only: bool = False, pair_cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        from .screener_app import MIN_DAILY_VOLUME
-
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
         study, near_source, far_source, window, source_hashes = prepared
@@ -1452,8 +1438,6 @@ class ProofService:
         notes: list[str],
         risk: dict[str, Any],
     ) -> dict[str, Any]:
-        from .screener_app import MIN_DAILY_VOLUME
-
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         closed = [trade for trade in trades if not trade["open_at_end"]]
         gross = sum(trade["gross_rub"] for trade in trades)

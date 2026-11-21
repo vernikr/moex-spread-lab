@@ -8,12 +8,14 @@ import optuna
 
 from .carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
-from .proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, _benchmark_marks, _run_id
-from .proof_search import (
+from .proof import _benchmark_marks
+from .proof_kernel import (
     STRATEGY_AXES,
+    TRIALS,
     Axis,
     Landscape,
     StudyWindow,
+    _identity,
     _lamps,
     _ordered,
     _tune,
@@ -21,7 +23,9 @@ from .proof_search import (
     execution_axes,
     resolve_seed,
 )
-from .w0 import W0Error
+from .proof_pool import _estimate_weight, get_worker_pool
+from .universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE, STRATEGIES
+from .w0 import W0Error, _run_id
 
 MAX_TARGETS = 1024
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -39,18 +43,6 @@ def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
         ):
             kwargs["on_progress"] = on_progress
     return fn(*args, **kwargs)
-
-
-def _identity(request):
-    u = request.get("universe", CALENDAR_UNIVERSE)
-    t = {"universe": u, "pair": request.get("pair")}
-    if u == CALENDAR_UNIVERSE:
-        t["asset"] = request.get("asset")
-    if u not in (PAIR_UNIVERSE, CALENDAR_UNIVERSE) or not all(
-        isinstance(v, str) and 0 < len(v) <= 80 for v in t.values()
-    ):
-        raise W0Error("Некорректный идентификатор окна.")
-    return t
 
 
 def _translate(params, strategy):
@@ -107,7 +99,6 @@ def _targets(request):
 
 def _active_seed(request, active):
     from .calendar_spreads import ASSETS, ZSCORE_OPTIONS
-    from .screener_app import STRATEGIES
 
     if active in STRATEGIES:
         defaults = STRATEGIES[active]["parameters"]
@@ -341,13 +332,12 @@ class _RemoteCohort(_Cohort):
 
 def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
     from .calendar_spreads import CalendarData
-    from .proof_pool import _estimate_weight
 
     if StudyWindow is not _DEFAULT_STUDY_WINDOW:
         return False
     if type(calendar) is not CalendarData:
         return False
-    pool = service.worker_pool()
+    pool = get_worker_pool(service)
     est = sum(_estimate_weight(service.root, t, timeframe) for _, t, _ in valid_specs)
     return pool.should_use(len(valid_specs), est)
 
@@ -378,7 +368,7 @@ def _prepare_cohort(
             early_rejected[idx] = {"target": target, "reason": str(exc)}
 
     if _can_use_pool(service, calendar, valid_specs, settings.timeframe):
-        pool = service.worker_pool()
+        pool = get_worker_pool(service)
         items = [(idx, target, native, checked) for idx, target, native in valid_specs]
         cohort_state = pool.init_cohort(
             service.root,
@@ -731,7 +721,6 @@ def batch_search(service, request, settings, benchmark, check_cancelled, *, on_p
         return group
     try:
         axes, seed, members, land = group.axes, group.seed, group.members, group.land
-        from .proof_search import TRIALS
 
         best, trials, attempts = _call_with_optional_progress(
             _tune,

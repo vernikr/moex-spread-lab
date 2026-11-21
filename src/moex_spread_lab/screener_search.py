@@ -11,9 +11,7 @@ from itertools import product
 from typing import Any
 
 from .evaluation_periods import EvaluationSplit, read_settings
-from .screener_app import (
-    PAIRS,
-    STRATEGIES,
+from .pair_screener import (
     ScreenerError,
     ScreenerInputs,
     _parameters,
@@ -21,6 +19,7 @@ from .screener_app import (
     catalog,
     execution_settings,
 )
+from .universe import PAIRS, STRATEGIES
 from .w0 import W0Error
 
 INITIAL_CAPITAL = 30_000.0

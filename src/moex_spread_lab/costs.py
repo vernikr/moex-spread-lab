@@ -62,3 +62,13 @@ def side_cost(
         if not native_spread or position == 0:
             slippage += profile["slippage_ticks"] * contract["tick_value"] * quantity
     return {"exchange_clearing": exchange, "broker": 0.0, "slippage": slippage}
+
+
+def _cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
+    totals = {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0}
+    for trade in trades:
+        for side in ("entry", "exit"):
+            for key, value in (trade[side].get("costs") or {}).items():
+                if key in totals:
+                    totals[key] += float(value)
+    return {key: round(value, 2) for key, value in totals.items()}

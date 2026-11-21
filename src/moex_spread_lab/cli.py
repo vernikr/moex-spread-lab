@@ -979,7 +979,7 @@ def main() -> int:
             serve(ScreenerInputs(args.root.resolve()), args.port)
             return 0
         if args.command == "screener-run":
-            from .screener_app import ScreenerInputs, build_result
+            from .pair_screener import ScreenerInputs, build_result
 
             parameters = {"lookback": args.lookback}
             if args.strategy == "mean_reversion":
@@ -993,7 +993,7 @@ def main() -> int:
             return 0
         if args.command == "audit-pairs":
             from .audit import audit_pairs
-            from .screener_app import ScreenerInputs
+            from .pair_screener import ScreenerInputs
 
             result = audit_pairs(ScreenerInputs(args.root.resolve()))
             write_json(args.output, result)

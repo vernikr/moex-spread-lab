@@ -16,9 +16,10 @@ from typing import Any
 
 from ._fastcore_loader import load_fastcore
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
-from .carry import CarryError, fetch_history
 from .costs import TAKER_RATE_PERCENT, tariff_profile
 from .data_lake import DataLakeError, MarketDataStore
+from .evaluation_periods import INITIAL_CAPITAL, MIN_DAILY_VOLUME
+from .iss import IssHistoryError, fetch_history
 from .s3_reference import (
     FILLS,
     account_trades,
@@ -26,7 +27,6 @@ from .s3_reference import (
     read_benchmark,
     strategy_runner,
 )
-from .screener_app import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 from .w0 import W0Error
 
 QUARTER_CODES = "HMUZ"
@@ -124,7 +124,7 @@ def fetch_inputs(
         try:
             source = fetch_history(secid, HISTORY_FROM, till_date, cache_dir=cache_dir, delay_seconds=delay_seconds,
                                    fields=HISTORY_FIELDS, **extra)
-        except CarryError:
+        except IssHistoryError:
             return secid, None
         return secid, {row["TRADEDATE"]: row for row in source["rows"]}
 

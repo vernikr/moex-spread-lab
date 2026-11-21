@@ -17,13 +17,22 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from .bar_types import (
+    LEGACY_CANDLE_SCHEMA,
+    BarSeries,
+    BarStore,
+    DataLakeError,
+    SealedH1Reader,
+    _atomic_write_json,
+    reject_sealed_table_write,
+    verify_archived_record,
+)
 from .w0 import W0Error, canonical_bytes, sha256_file
 
 
 DATA_LAKE_SCHEMA = "market-data-lake.v1"
 BAR_DATASET_SCHEMA = "market-data-bars.v1"
 RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
-LEGACY_CANDLE_SCHEMA = "iss-candles.v1"
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 BAR_SCHEMA = pa.schema((
@@ -46,10 +55,6 @@ SOURCE_SCHEMA = pa.schema((
     pa.field("last_begin", pa.string(), nullable=False),
     pa.field("row_count", pa.int32(), nullable=False),
 ))
-
-
-class DataLakeError(W0Error):
-    """Raised when an on-disk candle dataset cannot pass the data-lake contract."""
 
 
 @dataclass(frozen=True)
@@ -238,23 +243,6 @@ def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
         with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
             temporary = Path(handle.name)
         pq.write_table(table, temporary, compression="zstd", version="2.6")
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
-            temporary = Path(handle.name)
-            temporary.write_text(
-                json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
         os.replace(temporary, path)
         temporary = None
     finally:
@@ -575,7 +563,6 @@ class ParquetBarStore:
     def import_legacy(self, legacy_path: Path, *, replace: bool = False) -> dict[str, Any]:
         series = _read_legacy_series(legacy_path)
         bars_path, sources_path = self._paths(series)
-        from .h1_seal import reject_sealed_table_write
         reject_sealed_table_write(self.root, bars_path)
         if not replace and (bars_path.exists() or sources_path.exists()):
             raise DataLakeError(f"data-lake dataset already exists: {series.dataset_id}; use --replace")
@@ -700,7 +687,6 @@ class ParquetBarStore:
 
     def verify_legacy(self, legacy_path: Path) -> dict[str, Any]:
         if not legacy_path.exists():
-            from .h1_seal import verify_archived_record
             return verify_archived_record(self, legacy_path)
         series = _read_legacy_series(legacy_path)
         record = self._record(series.secid, series.timeframe)
@@ -774,7 +760,6 @@ class ParquetBarStore:
         for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
             dataset_id = str(record.get("dataset_id"))
             if force:
-                from .h1_seal import reject_sealed_table_write
                 reject_sealed_table_write(self.root, self._record_path(record["bars_path"]))
             if not force:
                 results.append({"dataset_id": dataset_id, "status": "already_compact"})
@@ -886,7 +871,6 @@ class MarketDataStore:
         self.root = root.resolve()
         self.parquet = ParquetBarStore(self.root, lake_root)
         self.legacy = LegacyJsonBarStore()
-        from .h1_seal import SealedH1Reader
         self.sealed_h1 = SealedH1Reader(self.root)
         self._cache: dict[tuple[Any, ...], BarSeries] = {}
         self._sha_cache: dict[tuple[str, int, int], str] = {}

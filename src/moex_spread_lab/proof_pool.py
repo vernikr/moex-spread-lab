@@ -14,9 +14,17 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+from .bar_types import SealedH1Reader
 from .carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
-from .proof_search import STRATEGY_AXES, StudyWindow, _ordered
+from .proof_kernel import (
+    STRATEGY_AXES,
+    StudyWindow,
+    _ordered,
+    _validate,
+    compact_result,
+)
+from .universe import CALENDAR_UNIVERSE
 from .w0 import W0Error
 
 MIN_POOL_WINDOWS = 3
@@ -60,8 +68,6 @@ def _worker_init_cohort(
     items: list[tuple[int, dict[str, Any], dict[str, Any], bool]],
 ) -> list[tuple[int, str, dict[str, Any]]]:
     """Initialize assigned StudyWindows inside the worker and keep them sticky."""
-    from .proof import CALENDAR_UNIVERSE
-
     svc = _worker_service(root_str)
     calendar = svc._calendar
     bucket = _WORKER_COHORTS.setdefault(cohort_id, {})
@@ -245,9 +251,6 @@ def _worker_window_summaries(
     benchmark: tuple[list[str], dict[str, float]],
     items: list[tuple[int, dict[str, Any], dict[str, Any]]],
 ) -> list[tuple[int, dict[str, Any]]]:
-    from .proof_search import _validate
-    from .proof_windows import compact_result
-
     svc = _worker_service(root_str)
     calendar = svc._calendar
     rows: list[tuple[int, dict[str, Any]]] = []
@@ -277,7 +280,6 @@ def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str, *, _seal_
                 seal = _seal_cache["seal"]
                 by_legacy = _seal_cache["by_legacy"]
             else:
-                from .h1_seal import SealedH1Reader
                 reader = SealedH1Reader(root)
                 seal = reader.payload()
                 by_legacy = {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
@@ -715,3 +717,9 @@ def _shutdown_weak(ref: weakref.ref[CohortWorkerPool]) -> None:
     pool = ref()
     if pool is not None:
         pool.shutdown(wait_for=False)
+
+
+def get_worker_pool(service: Any) -> CohortWorkerPool:
+    if service._pool is None:
+        service._pool = CohortWorkerPool()
+    return service._pool

@@ -11,7 +11,6 @@ from __future__ import annotations
 import optuna
 
 from .calendar_spreads import CalendarData
-from .proof import CALENDAR_UNIVERSE, _run_id
 from .proof_batch import (
     _call_with_optional_progress,
     _cohort_result,
@@ -19,8 +18,10 @@ from .proof_batch import (
     _targets,
     _translate,
 )
-from .proof_search import _tune, resolve_seed
+from .proof_kernel import _tune, resolve_seed
 from .timeframes import get_timeframe
+from .universe import CALENDAR_UNIVERSE
+from .w0 import _run_id
 
 TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")

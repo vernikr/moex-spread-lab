@@ -16,15 +16,21 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from .account_risk import assess_vtb_pair
-from .analytics import load_contracts
 from .costs import side_cost, tariff_profile
+from .iss import (
+    HISTORY_FIELDS,
+    HISTORY_PAGE_SIZE,
+    HISTORY_SCHEMA,
+    IssHistoryError,
+    _HISTORY_JSON_CACHE,
+    _history_url,
+    fetch_history as _iss_fetch_history,
+)
 from .portfolio import lqdt_overlay_values
-from .w0 import W0Error, _HashedJSONCache, read_hashed_json
+from .w0 import W0Error, _HashedJSONCache, load_contracts, read_hashed_json
 
 CARRY_SCHEMA = "carry-study.v1"
-HISTORY_SCHEMA = "iss-history.v1"
 STRATEGY_SCHEMA = "carry-strategy.v1"
-HISTORY_PAGE_SIZE = 100
 FUNDING_REGIMES = (
     {
         "id": "cnyrubf-k1-003-k2-035",
@@ -41,13 +47,9 @@ FUNDING_REGIMES = (
         "source": "MOEX notice n96856 and perpetual-futures page",
     },
 )
-HISTORY_FIELDS = (
-    "BOARDID", "TRADEDATE", "SECID", "CLOSE", "SETTLEPRICE", "SWAPRATE",
-    "OPENPOSITION", "VALUE", "VOLUME", "WAPRICE", "NUMTRADES", "ASSETCODE",
-)
 
 
-class CarryError(W0Error):
+class CarryError(IssHistoryError):
     """Raised when EOD carry inputs fail the funding-aware study contract."""
 
 
@@ -69,40 +71,6 @@ def _funding_regime(date_key: str, regimes: tuple[dict[str, Any], ...]) -> dict[
     return regime
 
 
-def _fetch_json(url: str, *, timeout: float = 30.0, opener: Callable[..., Any] = urlopen) -> tuple[dict[str, Any], str]:
-    try:
-        with opener(url, timeout=timeout) as response:
-            raw = response.read()
-    except OSError as exc:
-        raise CarryError(f"history request failed: {url}: {exc}") from exc
-    try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CarryError(f"history response is not JSON: {url}") from exc
-    if not isinstance(value, dict):
-        raise CarryError(f"history response is not an object: {url}")
-    return value, hashlib.sha256(raw).hexdigest()
-
-
-def _rows(block: Any, name: str) -> list[dict[str, Any]]:
-    if not isinstance(block, dict) or not isinstance(block.get("columns"), list) or not isinstance(block.get("data"), list):
-        raise CarryError(f"malformed ISS block: {name}")
-    return [dict(zip(block["columns"], values)) for values in block["data"] if isinstance(values, list)]
-
-
-def _history_url(secid: str, from_date: str, till_date: str, start: int, fields: tuple[str, ...] = HISTORY_FIELDS) -> str:
-    query = urlencode({
-        "iss.meta": "off",
-        "from": from_date,
-        "till": till_date,
-        "start": start,
-        "limit": HISTORY_PAGE_SIZE,
-        "history.columns": ",".join(fields),
-    })
-    return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
-
-
-_HISTORY_JSON_CACHE = _HashedJSONCache(4096)
 _BENCHMARK_PARSED_CACHE = _HashedJSONCache(64)
 
 
@@ -118,78 +86,18 @@ def fetch_history(
     fields: tuple[str, ...] = HISTORY_FIELDS,
     allow_empty: bool = False,
 ) -> dict[str, Any]:
-    if not secid or delay_seconds < 0:
-        raise CarryError("invalid history arguments")
-    all_rows: list[dict[str, Any]] = []
-    hashes: list[str] = []
-    page = 0
-    total: int | None = None
-    while total is None or len(all_rows) < total:
-        start = page * HISTORY_PAGE_SIZE
-        url = _history_url(secid, from_date, till_date, start, fields)
-        cache_path = cache_dir / f"{secid}-{from_date}-{till_date}-{start}.json" if cache_dir else None
-        payload = None
-        raw_hash = None
-        if cache_path:
-            try:
-                resolved = cache_path.resolve()
-                stat = resolved.stat()
-                cache_key = (str(resolved), stat.st_mtime_ns, stat.st_size)
-                cached = _HISTORY_JSON_CACHE.get(cache_key)
-                if cached is None:
-                    cached_obj = json.loads(resolved.read_text(encoding="utf-8"))
-                    if isinstance(cached_obj, dict):
-                        _HISTORY_JSON_CACHE.put(cache_key, (cached_obj, ""))
-                        cached = (cached_obj, "")
-                if cached is not None and cached[0].get("url") == url:
-                    payload = cached[0].get("payload")
-                    raw_hash = cached[0].get("raw_response_sha256")
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                payload = None
-        if payload is None:
-            if delay_seconds:
-                time.sleep(delay_seconds)
-            payload, raw_hash = _fetch_json(url, timeout=timeout, opener=opener)
-            if cache_path:
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(json.dumps({
-                    "url": url,
-                    "payload": payload,
-                    "raw_response_sha256": raw_hash,
-                }, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-        block_rows = _rows(payload.get("history"), "history")
-        cursor_rows = _rows(payload.get("history.cursor"), "history.cursor") if payload.get("history.cursor") else []
-        if cursor_rows and cursor_rows[0].get("TOTAL") is not None:
-            total = int(cursor_rows[0]["TOTAL"])
-        if not block_rows:
-            if allow_empty and page == 0:
-                hashes.append(raw_hash or "")
-            break
-        all_rows.extend(block_rows)
-        hashes.append(raw_hash or "")
-        page += 1
-        if len(block_rows) < HISTORY_PAGE_SIZE:
-            break
-    if total is not None and len(all_rows) < total:
-        raise CarryError(f"Неполная история ISS {secid}: получено строк {len(all_rows)} из {total}.")
-    deduped = {row.get("TRADEDATE"): row for row in all_rows if row.get("TRADEDATE")}
-    rows = [deduped[key] for key in sorted(deduped)]
-    if not rows and (not allow_empty or all_rows):
-        raise CarryError(f"empty EOD history for {secid}")
-    return {
-        "schema_version": HISTORY_SCHEMA,
-        "secid": secid,
-        "from": from_date,
-        "till": till_date,
-        "row_count": len(rows),
-        "page_count": page,
-        "rows": rows,
-        "source": {
-            "endpoint": "MOEX ISS futures history",
-            "raw_response_sha256": hashes,
-            "rights_status": "accepted_project_assumption_personal_use",
-        },
-    }
+    return _iss_fetch_history(
+        secid,
+        from_date,
+        till_date,
+        cache_dir=cache_dir,
+        delay_seconds=delay_seconds,
+        timeout=timeout,
+        opener=opener,
+        fields=fields,
+        allow_empty=allow_empty,
+        error=CarryError,
+    )
 
 
 def _normalize_history(source: dict[str, Any], secid: str) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:

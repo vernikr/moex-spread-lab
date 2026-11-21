@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -125,6 +126,103 @@ def write_json(path: Path, value: Any) -> None:
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _run_id(identity: dict[str, Any]) -> str:
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _validate_contract_number(
+    value: Any, field: str, *, error: type[W0Error] = W0Error, positive: bool = False
+) -> float:
+    if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise error(f"{field} must be a finite number")
+    number = float(value)
+    if positive and number <= 0:
+        raise error(f"{field} must be positive")
+    return number
+
+
+def load_contracts(
+    path: Path,
+    near: str,
+    far: str,
+    *,
+    error: type[W0Error] = W0Error,
+) -> tuple[dict[str, Any], str]:
+    payload, digest = read_hashed_json(path, error=error)
+    instruments = {
+        row.get("secid"): row
+        for row in payload.get("instruments", [])
+        if isinstance(row, dict)
+    }
+    historical_path = Path(path).parent / "historical-contracts.json"
+    if historical_path.is_file():
+        historical, historical_digest = read_hashed_json(historical_path, error=error)
+        instruments.update(
+            {
+                row.get("secid"): row
+                for row in historical.get("instruments", [])
+                if isinstance(row, dict)
+            }
+        )
+        digest = hashlib.sha256(
+            f"{digest}:{historical_digest}".encode("ascii")
+        ).hexdigest()
+    selected = {}
+    for secid in (near, far):
+        instrument = instruments.get(secid)
+        if instrument is None:
+            raise error(f"contract is missing from intake: {secid}")
+        for field in (
+            "lot_size",
+            "tick_size",
+            "tick_value",
+            "initial_margin",
+            "source_vintage",
+        ):
+            if field not in instrument:
+                raise error(f"contract {secid} is missing {field}")
+        selected[secid] = {
+            "secid": secid,
+            "stable_id": instrument.get("stable_id"),
+            "board": instrument.get("board"),
+            "expiry": instrument.get("expiry"),
+            "lot_size": int(
+                _validate_contract_number(
+                    instrument["lot_size"],
+                    f"{secid}.lot_size",
+                    error=error,
+                    positive=True,
+                )
+            ),
+            "tick_size": _validate_contract_number(
+                instrument["tick_size"],
+                f"{secid}.tick_size",
+                error=error,
+                positive=True,
+            ),
+            "tick_value": _validate_contract_number(
+                instrument["tick_value"],
+                f"{secid}.tick_value",
+                error=error,
+                positive=True,
+            ),
+            "initial_margin": _validate_contract_number(
+                instrument["initial_margin"],
+                f"{secid}.initial_margin",
+                error=error,
+                positive=True,
+            ),
+            "source_vintage": instrument["source_vintage"],
+            "tariff_group": instrument.get("tariff_group"),
+            "historical_evidence": instrument.get("historical_evidence", False),
+            "historical_specification_basis": instrument.get(
+                "historical_specification_basis"
+            ),
+        }
+    return selected, digest
 
 
 def manifest_config_hash(manifest: dict[str, Any]) -> str:

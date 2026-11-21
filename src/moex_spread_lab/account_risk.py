@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable
 
-from .analytics import load_contracts
-from .w0 import W0Error
+from .w0 import W0Error, load_contracts
 
 
 ACCOUNT_RISK_SCHEMA = "vtb-account-risk.v1"

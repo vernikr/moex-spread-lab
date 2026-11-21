@@ -12,7 +12,7 @@ from typing import Any
 
 from .costs import COST_COMPONENTS, COST_SCHEMA, side_cost
 from .portfolio import lqdt_overlay_values
-from .w0 import W0Error, read_hashed_json
+from .w0 import W0Error, load_contracts as _load_w0_contracts, read_hashed_json
 
 ANALYTICS_SCHEMA = "analytical-baseline.v1"
 REQUIRED_COST_COMPONENTS = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
@@ -156,36 +156,7 @@ def _date_key(value: Any, field: str) -> str:
 
 
 def load_contracts(path: Path, near: str, far: str) -> tuple[dict[str, Any], str]:
-    payload, digest = read_hashed_json(path, error=AnalyticsError)
-    instruments = {row.get("secid"): row for row in payload.get("instruments", []) if isinstance(row, dict)}
-    historical_path = Path(path).parent / "historical-contracts.json"
-    if historical_path.is_file():
-        historical, historical_digest = read_hashed_json(historical_path, error=AnalyticsError)
-        instruments.update({row.get("secid"): row for row in historical.get("instruments", []) if isinstance(row, dict)})
-        digest = hashlib.sha256(f"{digest}:{historical_digest}".encode("ascii")).hexdigest()
-    selected = {}
-    for secid in (near, far):
-        instrument = instruments.get(secid)
-        if instrument is None:
-            raise AnalyticsError(f"contract is missing from intake: {secid}")
-        for field in ("lot_size", "tick_size", "tick_value", "initial_margin", "source_vintage"):
-            if field not in instrument:
-                raise AnalyticsError(f"contract {secid} is missing {field}")
-        selected[secid] = {
-            "secid": secid,
-            "stable_id": instrument.get("stable_id"),
-            "board": instrument.get("board"),
-            "expiry": instrument.get("expiry"),
-            "lot_size": int(_number(instrument["lot_size"], f"{secid}.lot_size", positive=True)),
-            "tick_size": _number(instrument["tick_size"], f"{secid}.tick_size", positive=True),
-            "tick_value": _number(instrument["tick_value"], f"{secid}.tick_value", positive=True),
-            "initial_margin": _number(instrument["initial_margin"], f"{secid}.initial_margin", positive=True),
-            "source_vintage": instrument["source_vintage"],
-            "tariff_group": instrument.get("tariff_group"),
-            "historical_evidence": instrument.get("historical_evidence", False),
-            "historical_specification_basis": instrument.get("historical_specification_basis"),
-        }
-    return selected, digest
+    return _load_w0_contracts(path, near, far, error=AnalyticsError)
 
 
 def _load_candles(path: Path, secid: str, interval: int) -> tuple[dict[str, dict[str, Any]], str]:

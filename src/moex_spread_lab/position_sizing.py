@@ -12,8 +12,8 @@ from array import array
 from copy import deepcopy
 
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
-from .costs import side_cost, tariff_profile
-from .w0 import W0Error
+from .costs import _cost_totals, side_cost, tariff_profile
+from .w0 import W0Error, _run_id
 
 AUTO_SIZING = "max_affordable"
 SIZING_POLICY = "max-affordable.v1"
@@ -385,8 +385,6 @@ def size_proof(
     Presentation (series mutation, sizing/summary/notes/run_id) and the input copy
     are skipped; ephemeral training units may be mutated in place.
     """
-    from .proof import _cost_totals, _run_id
-
     initial = _positive(settings.initial_capital_rub, "начальный капитал")
     proof = (
         {**unit, "selection": dict(unit["selection"])}

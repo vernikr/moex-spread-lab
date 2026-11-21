@@ -732,15 +732,15 @@ class CalendarData:
             "source_hashes": source_hashes,
         }
 
-    def _intraday_windows_for(self, asset: str) -> list[dict[str, Any]]:
-        if asset not in self._h1_windows:
+    def _intraday_windows_for(self, asset: str, *, allow_fetch: bool = True) -> list[dict[str, Any]]:
+        if asset not in self._h1_windows or allow_fetch:
             data = self._load()
             if asset not in ASSETS or asset not in data["terms"]:
                 self._h1_windows[asset] = []
             else:
                 windows = []
                 for daily_window in data["windows"].get(asset, []):
-                    window = self._intraday_window(asset, daily_window, data)
+                    window = self._intraday_window(asset, daily_window, data, allow_fetch=allow_fetch)
                     if window is not None:
                         windows.append(window)
                 self._h1_windows[asset] = windows

@@ -165,8 +165,9 @@ tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}tr.
         <div class="sidegrid" id="pair-params">
           <div class="control mr-only"><label for="entry">Вход · z</label><span class="number-shell"><input id="entry" data-axis="entry_z" type="number" min="0.5" max="5" step="0.1" value="2.0"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
           <div class="control mr-only"><label for="exit">Выход · z</label><span class="number-shell"><input id="exit" data-axis="exit_z" type="number" min="0" max="4" step="0.1" value="0.5"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
-          <div class="control"><label for="lookback">Окно · набл.</label><span class="number-shell"><input id="lookback" data-axis="lookback" type="number" min="5" max="80" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
+          <div class="control pair-native-only"><label for="lookback">Окно · набл.</label><span class="number-shell"><input id="lookback" data-axis="lookback" type="number" min="5" max="80" step="1" value="20"><button type="button" class="plateau-dot" aria-label="Устойчивость: нет оценки"></button></span></div>
         </div>
+        <div class="sidegrid" id="pair-plugin-params"></div>
       </div>
       <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
         <div class="control"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div>
@@ -497,6 +498,9 @@ initColumnResizers();
 function switchTab(which){for(const [id,w] of [['tab-charts','charts'],['tab-table','table']])$(id).classList.toggle('active',w===which);$('tabpage-charts').classList.toggle('hidden',which!=='charts');$('tabpage-table').classList.toggle('hidden',which!=='table');if(which==='charts')void fitChartsToVisibleArea()}
 function pairAvailability(id){return (catalog.pair_screen?.pairs||[]).find(p=>p.id===id)||null}
 function researchStrategies(p){return preferences.validation_percent||preferences.allow_failed_volume?p?.proof_strategies:p?.strategies}
+function pairPlugin(name){return (catalog.pair_screen?.proof_plugins||[]).find(p=>p.id===name)}
+function pairStrategyAvailable(p,name,proof=false){const plugin=pairPlugin(name),entries=proof?p?.proof_strategies:researchStrategies(p);return plugin?!!(plugin.timeframe_supported&&entries?.mean_reversion):!!entries?.[name]}
+function strategyLabel(name){return STRATEGY_RU[name]||pairPlugin(name)?.label||name}
 function pairUnavailable(p,name){return p?.proof_strategies?.[name]?'не пройдена проверка на объём':(p?.data_reasons?.[name]||'нет локальных данных')}
 function pairIsAvailable(p){return !!(p?.strategies?.mean_reversion||p?.strategies?.funding_only)}
 function pairHasLocalData(p){return !!(p?.proof_strategies?.mean_reversion||p?.proof_strategies?.funding_only||pairIsAvailable(p))}
@@ -510,6 +514,7 @@ function currentPair(){return leaves.get(leafId)?.target.pair||''}
 function addLeaf(b,target,meta,enabled=true){const key=targetKey(target),period=meta.from&&meta.to?`${meta.from} — ${meta.to}`:'Нет локальной истории';const leaf={key,branch:b.key,target,meta,period,from:meta.from,to:meta.to,observations:meta.observations,enabled};leaves.set(key,leaf);b.children.push(leaf)}
 function buildPicker(){
  branches.clear();leaves.clear();
+ const gs=$('group-strategy'),current=gs.value;gs.querySelectorAll('[data-plugin]').forEach(n=>n.remove());for(const p of catalog.pair_screen?.proof_plugins||[]){const o=el('option','',p.label);o.value=p.id;o.dataset.plugin='true';o.disabled=!p.timeframe_supported;gs.append(o)}if([...gs.options].some(o=>o.value===current&&!o.disabled))gs.value=current;
  const create=(kind,id,family,title,asset=null)=>{const b={key:kind+'|'+id,kind,id,family,title,asset,children:[]};branches.set(b.key,b);return b};
  for(const p of catalog.pair_screen?.pairs||[]){const key='pair_screen|'+p.near,b=branches.get(key)||create('pair_screen',p.near,FAMILY_RU[p.family]||p.family,p.near);
   addLeaf(b,{universe:'pair_screen',pair:p.id},p,pairHasLocalData(p))}
@@ -524,7 +529,7 @@ const windowReadings=new Map();let windowReadVersion=0,windowReadTimer=null,wind
 function proofPlanKey(req){const fill=req.fill||(req.strategy==='funding_only'?'same_day_settlement':preferences.price_fill);return JSON.stringify([targetKey(req),req.strategy,fill,req.sizing,Object.entries(req.parameters||{}).sort(),settingsKey()])}
 function defaultLeafRequest(l){const cal=l.target.universe==='calendar_native',tf=cal?{timeframe:preferences.timeframe}:{},name=activeStrategyName(),saved=formStates.get(formKey(l.key,name)),fill=name==='funding_only'?'same_day_settlement':preferences.price_fill;if(saved)return {...l.target,...tf,strategy:saved.strategy,parameters:saved.parameters,sizing:'max_affordable',fill};
  const parameters=cal?(name==='zscore_mean_reversion'?{entry_z:Number($('centry').defaultValue),exit_z:Number($('cexit').defaultValue),window:branches.get(l.branch)?.asset?.monthly?7:20}:{threshold_pp:Number($('cthreshold').defaultValue)}):
-  {lookback:Number($('lookback').defaultValue),...(name==='mean_reversion'?{entry_z:Number($('entry').defaultValue),exit_z:Number($('exit').defaultValue)}:{})};
+  (pairPlugin(name)?Object.fromEntries(pairPlugin(name).parameters.map(p=>[p.name,p.default])):{lookback:Number($('lookback').defaultValue),...(name==='mean_reversion'?{entry_z:Number($('entry').defaultValue),exit_z:Number($('exit').defaultValue)}:{})});
  return {...l.target,...tf,strategy:name,parameters,sizing:'max_affordable',fill}}
 function leafPlan(l){return commonPlan(l.key===leafId?currentRequest():defaultLeafRequest(l),l.target,l.key)}
 function gateIndicator(ok,text){const n=el('span','window-gate '+(ok==null?'unknown':ok?'pass':'fail'),ok==null?'—':ok?'✓':'×');n.dataset.state=ok==null?'unknown':ok?'pass':'fail';n.title=text;n.setAttribute('role','img');n.setAttribute('aria-label',text);n.tabIndex=0;return n}
@@ -548,7 +553,7 @@ function paintWindowReadings(){for(const row of $('window-list').querySelectorAl
  row.dataset.reading=reading?.status||(!l.enabled?'missing':'pending');count.textContent=reading?.trades==null?'—':String(reading.trades);rate.textContent=reading?.annualized_excess_pp==null?'—':signed(reading.annualized_excess_pp);
  rate.className='window-number '+(reading?.execution_reference?'warn':cls(reading?.annualized_excess_pp));const e=reading?.evaluation,period=e?.periods?.[e.result_basis],reason=reading?.reason||e?.result?.reason||(!l.enabled?'Нужна загрузка локальных данных.':'Выполняется расчёт для этих параметров.');
  const cash=e?.account_checks,cashNote=cash?.cash_shortfall_rows?`Дефицит свободных средств: ${cash.cash_shortfall_rows} сесс.; впервые ${cash.first_cash_shortfall_date}; минимум ${fmt(cash.minimum_free_cash_rub,2)} ₽. Входы могли пройти раньше, но годовая оценка такого счёта недопустима.`:'';
- const settings=`${STRATEGY_RU[plan.req.strategy]||plan.req.strategy} · ${FILL_RU[plan.req.fill]||plan.req.fill||'справочное закрытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'} · капитал ${fmt(e?.initial_capital_rub??preferences.initial_capital_rub,2)} ₽`;
+ const settings=`${strategyLabel(plan.req.strategy)} · ${FILL_RU[plan.req.fill]||plan.req.fill||'справочное закрытие'} · ${JSON.stringify(plan.req.parameters)} · ${plan.common?'общие параметры':'параметры окна'} · капитал ${fmt(e?.initial_capital_rub??preferences.initial_capital_rub,2)} ₽`;
  count.title=reading?.trades==null?reason:`Вся симуляция: ${reading.trades} входов; ${reading.closed_trades} закрыто, ${reading.open_positions} открыто на конце. ${settings}`;
  rate.title=[reading?.status==='measured'&&reading.annualized_excess_pp==null?'Годовая оценка недоступна.':'',cashNote,reading?.execution_reference?'Справочный same-bar результат, не исполнимая доходность.':'',reading?.annualized_excess_pp==null?reason:`${signed(reading.annualized_excess_pp)} п.п./год сверх LQDT · ${e.result_basis==='validation'?'проверка':'обучение'}: ${period.join(' — ')}.`,e?.result?.reason||'',settings].filter((text,i,items)=>text&&items.indexOf(text)===i).join(' ');
  rate.tabIndex=0;rate.setAttribute('aria-label',rate.title);row.dataset.rateState=reading?.annualized_excess_pp!=null?'measured':reading?.status==='measured'?'unavailable':reading?.status||(!l.enabled?'missing':'pending');
@@ -601,10 +606,11 @@ function openLeaf(key,preferred='',run=true){leafId=key;const want=mappedStrateg
  const branch=branches.get(branchId);if(branch)branch.lastPair=currentPair();restoreForm();
  markOpened();refreshChecks();if(run)scheduleShow(0)}
 function applyToForm(selection){const settings={...selection.parameters};for(const n of activeInputs())if(Object.hasOwn(settings,n.dataset.axis))n.value=settings[n.dataset.axis]}
-function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=researchStrategies(p)?.[name],o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!p?.proof_strategies?.[name]&&pairHasLocalData(p);s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));$('lookback').value=meta[s.value]?.parameters.lookback||20;syncPairHint()}
+function pluginField(spec,prefix,point,onChange){const box=el('div','control'),label=el('label','',spec.label_ru),shell=el('span','number-shell'),input=document.createElement('input'),lamp=el('button','plateau-dot');input.id=prefix+spec.name;input.dataset.axis=spec.name;input.type='number';input.min=spec.min_value;input.max=spec.max_value;input.step=spec.step;input.defaultValue=spec.default;input.value=point?.[spec.name]??spec.default;label.htmlFor=input.id;lamp.type='button';lamp.setAttribute('aria-label','Устойчивость: нет оценки');shell.append(input,lamp);box.append(label,shell);onChange(input);return box}
+function fillStrategy(preferred){const p=pairAvailability(currentPair()),s=$('strategy'),prev=preferred||s.value;s.replaceChildren();const meta=catalog.pair_screen.strategies;for(const [name,m] of Object.entries(meta)){const ok=pairStrategyAvailable(p,name),o=el('option','',`${m.label}${ok?'':' · '+pairUnavailable(p,name)}`);o.value=name;o.disabled=!pairStrategyAvailable(p,name,true)&&pairHasLocalData(p);s.append(o)}for(const m of catalog.pair_screen.proof_plugins||[]){const ok=pairStrategyAvailable(p,m.id),o=el('option','',`${m.label}${ok?'':m.timeframe_supported?' · '+pairUnavailable(p,'mean_reversion'):' · интервал не поддерживается'}`);o.value=m.id;o.disabled=!m.timeframe_supported||(!pairStrategyAvailable(p,m.id,true)&&pairHasLocalData(p));s.append(o)}s.value=[...s.options].find(o=>!o.disabled&&o.value===prev)?.value||[...s.options].find(o=>!o.disabled)?.value||s.options[0]?.value||'';const plugin=pairPlugin(s.value),isMR=s.value==='mean_reversion';document.querySelectorAll('.mr-only').forEach(n=>n.classList.toggle('hidden',!isMR));document.querySelectorAll('.pair-native-only').forEach(n=>n.classList.toggle('hidden',!!plugin));$('lookback').value=meta[s.value]?.parameters.lookback||20;const root=$('pair-plugin-params');for(const input of root.querySelectorAll('input')){const i=numericInputs.indexOf(input);if(i>=0)numericInputs.splice(i,1)}root.replaceChildren(...(plugin?.parameters||[]).map(spec=>pluginField(spec,'plugin-',null,input=>{numericInputs.push(input);bindFocusInput(input)})));syncPairHint()}
 function fillCalendarStrategies(preferred){const a=currentAsset(),s=$('cstrategy');s.replaceChildren();for(const name of catalog.strategies||[]){if(name==='convergence_to_ruonia'&&!a?.convergence)continue;const o=el('option','',STRATEGY_RU[name]||name);o.value=name;s.append(o)}if([...s.options].some(o=>o.value===preferred))s.value=preferred;$('clookback').value=a?.monthly?7:20;syncCalendarParams()}
-function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.data_reasons?.[$('strategy').value]||CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.max_pair_margin_rub!=null?fmt(p.max_pair_margin_rub/preferences.initial_capital_rub*100,2)+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
-function pairRequest(){const strategy=$('strategy').value,parameters=strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,fill:strategy==='funding_only'?'same_day_settlement':preferences.price_fill,sizing:'max_affordable',parameters}}
+function syncPairHint(){const p=pairAvailability(currentPair());$('pair-hint').textContent=p?`${p.data_reasons?.[pairPlugin($('strategy').value)?'mean_reversion':$('strategy').value]||CATSTATUS_RU[p.status]||p.status.replaceAll('_',' ')} · маржа ≈ ${p.max_pair_margin_rub!=null?fmt(p.max_pair_margin_rub/preferences.initial_capital_rub*100,2)+'% капитала':'—'}${p.expiry?' · экспирация дальней ноги '+p.expiry:''}`:''}
+function pairRequest(){const strategy=$('strategy').value,parameters=pairPlugin(strategy)?Object.fromEntries([...$('pair-plugin-params').querySelectorAll('input')].map(n=>[n.dataset.axis,n.valueAsNumber])):strategy==='mean_reversion'?{lookback:Number($('lookback').value),entry_z:Number($('entry').value),exit_z:Number($('exit').value)}:{lookback:Number($('lookback').value)};return{universe:'pair_screen',pair:currentPair(),strategy,fill:strategy==='funding_only'?'same_day_settlement':preferences.price_fill,sizing:'max_affordable',parameters}}
 function syncCalendarParams(){const z=$('cstrategy').value==='zscore_mean_reversion';document.querySelectorAll('#calendar-params .z-only').forEach(n=>n.classList.toggle('hidden',!z));document.querySelectorAll('#calendar-params .c-only').forEach(n=>n.classList.toggle('hidden',z));const label=document.querySelector('label[for=clookback]');if(label)label.textContent=preferences.timeframe==='1h'?'Окно · баров':'Окно · дней'}
 function calendarRequest(){const z=$('cstrategy').value==='zscore_mean_reversion',root=selectedRoot();return{universe:'calendar_native',timeframe:preferences.timeframe,asset:root.id,pair:currentPair(),strategy:$('cstrategy').value,fill:preferences.price_fill,sizing:'max_affordable',parameters:z?{entry_z:Number($('centry').value),exit_z:Number($('cexit').value),window:Number($('clookback').value)}:{threshold_pp:Number($('cthreshold').value)}}}
 function priceFillOptions(sel){const prev=sel.value;sel.replaceChildren();for(const [value,label] of [['reference_same_bar','Справочное закрытие (тот же бар)'],['next_open','Следующее открытие (прокси исполнения)'],['next_close','Следующее закрытие']]){const o=el('option','',label);o.value=value;sel.append(o)}sel.value=[...sel.options].some(o=>o.value===prev)?prev:'reference_same_bar'}
@@ -612,7 +618,7 @@ function priceFillOptions(sel){const prev=sel.value;sel.replaceChildren();for(co
 const numericInputs=[...$('focus-editor').querySelectorAll('.number-shell input')];
 const activeInputs=()=>numericInputs.filter(n=>!n.closest('.hidden'));
 const currentRequest=()=>universe==='pair_screen'?pairRequest():calendarRequest();
-const hasSelection=()=>!!leafId&&(universe==='calendar_native'||!!researchStrategies(pairAvailability(currentPair()))?.[activeStrategyName()]);
+const hasSelection=()=>!!leafId&&(universe==='calendar_native'||pairStrategyAvailable(pairAvailability(currentPair()),activeStrategyName()));
 let proofController=null,openLamp=null,searchController=null,searchVersion=0,searchUsesChecks=false;
 function cancelSearch(){if(!tuning)return;searchVersion++;searchController?.abort();searchController=null;tuning=false;finishReview(false);setSearchProgress(false);tuneButton()}
 function tuneState(message,ok=false){const n=$('tune-state');n.textContent=message;n.classList.toggle('ok',ok)}
@@ -660,12 +666,12 @@ let profileKey='',profileVersion=0,profileTimer=null,profileController=null,char
 function translateParams(params,strategy){const p={...params};if(strategy==='mean_reversion'&&'window' in p){p.lookback=p.window;delete p.window}if(strategy==='zscore_mean_reversion'&&'lookback' in p){p.window=p.lookback;delete p.lookback}return p}
 function sharedRequest(){const parameters=Object.fromEntries(sharedInputs().map(n=>[n.dataset.axis,n.valueAsNumber]));return {strategy:sharedStrategy,parameters,sizing:'max_affordable',fill:sharedStrategy==='funding_only'?'same_day_settlement':preferences.price_fill}}
 function pointError(inputs){const n=inputs.find(n=>n.value===''||!n.validity.valid);if(n)return `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`;
- const entry=inputs.find(n=>n.dataset.axis==='entry_z'),exit=inputs.find(n=>n.dataset.axis==='exit_z');return entry&&exit&&exit.valueAsNumber>=entry.valueAsNumber?'Порог выхода должен быть ниже порога входа.':''}
+ const entry=inputs.find(n=>n.dataset.axis==='entry_z'),exit=inputs.find(n=>n.dataset.axis==='exit_z');return isMR(sharedStrategy)&&entry&&exit&&exit.valueAsNumber>=entry.valueAsNumber?'Порог выхода должен быть ниже порога входа.':''}
 function groupField(id,point){const copy=$(id).closest('.control').cloneNode(true),input=copy.querySelector('input'),k=input.dataset.axis;copy.className='control';input.id='group-'+k;copy.querySelector('label').htmlFor=input.id;
  input.value=point[k]??input.defaultValue;copy.querySelector('button').removeAttribute('aria-describedby');bindLamp(input);input.addEventListener('input',()=>sharedEdited(220));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sharedEdited(0)}});return copy}
 function renderSharedEditor(req){hidePlateauTip();sharedStrategy=req.strategy;if(isMR(req.strategy))sharedMR=req.strategy;$('group-strategy').value=isMR(req.strategy)?'mr':req.strategy;
  const ids={mean_reversion:['entry','exit','lookback'],zscore_mean_reversion:['centry','cexit','clookback'],funding_only:['lookback'],convergence_to_ruonia:['cthreshold']}[req.strategy];
- const point={...req.parameters};$('group-params').replaceChildren(...ids.map(id=>groupField(id,point)));
+ const point={...req.parameters},plugin=pairPlugin(req.strategy);$('group-params').replaceChildren(...(plugin?plugin.parameters.map(spec=>pluginField(spec,'group-',point,input=>{bindLamp(input);input.addEventListener('input',()=>sharedEdited(220));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sharedEdited(0)}})})):(ids||[]).map(id=>groupField(id,point))));
 }
 function changeSharedStrategy(){const old=sharedRequest();if(!pointError(sharedInputs()))sharedDrafts.set(sharedStrategy,old);
  const chosen=$('group-strategy').value,name=chosen==='mr'?sharedMR:chosen;
@@ -699,7 +705,7 @@ function syncEditorScope(){const on=checked.size>0;$('focus-editor').hidden=on;$
 function sharedEdited(delay){cancelSearch();clearGroup();tuneState('');refreshGroupProfile(delay);syncChartScope(delay)}
 function commonPlan(own,target,key){let req=own,common=false;
  if(target&&sharedStrategy&&checked.has(key)&&!pointError(sharedInputs())){const g=sharedRequest(),cal=target.universe==='calendar_native',name=isMR(g.strategy)?(cal?'zscore_mean_reversion':'mean_reversion'):g.strategy,p=translateParams(g.parameters,name);
-  const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&branches.get('calendar_native|'+target.asset)?.asset?.convergence)):!!researchStrategies(pairAvailability(target.pair))?.[name];
+  const supported=cal?(name==='zscore_mean_reversion'||(name==='convergence_to_ruonia'&&branches.get('calendar_native|'+target.asset)?.asset?.convergence)):pairStrategyAvailable(pairAvailability(target.pair),name);
   if(supported&&!(name==='mean_reversion'&&(p.lookback<5||p.lookback>80))&&!(name==='zscore_mean_reversion'&&(p.window<3||p.window>60||p.exit_z<0.1))){req={...target,strategy:name,parameters:p,sizing:'max_affordable',fill:name==='funding_only'?'same_day_settlement':preferences.price_fill};common=true}}
  return {req,common,key:proofPlanKey(req)}}
 function chartPlan(){const target=leaves.get(leafId)?.target,plan=commonPlan(currentRequest(),target,leafId),note=$('chart-selection-scope');note.hidden=!checked.size;note.textContent=`График и журнал: ${target?.pair||'—'} · ${plan.common?'общие параметры':'параметры окна'}`;return plan}
@@ -725,17 +731,17 @@ function emptyProof(message){
 function clearGroup(){$('batch-result').hidden=true;$('batch-result').replaceChildren()}
 function pp(v){return v==null?'нет оценки':`${signed(v)} п.п./год`}
 function displayGroup(result){const g=result.group;if(!g)return;const root=$('batch-result');root.hidden=false;root.replaceChildren();const label=g.result_basis==='validation'?'проверка':'обучение';
- const heading=el('summary','',`Последний подбор${result.selected_strategy?' · '+STRATEGY_RU[result.selected_strategy]:''}${g.execution_reference?' · справочно':''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
+ const heading=el('summary','',`Последний подбор${result.selected_strategy?' · '+strategyLabel(result.selected_strategy):''}${g.execution_reference?' · справочно':''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`);root.append(heading);
  if(g.execution_reference)root.append(el('div','result-warning','Справочный same-bar подбор: закрытие сигнального бара уже известно. Все оценки группы — ориентир, не проверка исполнимой доходности.'));
  root.append(el('div','group-note',`Среднее на обучении: ${pp(g.training_mean_pp)}. Вес каждого окна одинаков. Это независимые расчёты, не доходность портфеля. График относится к открытому окну; при отметках светофор относится ко всей группе. Годовые ставки пересчитаны по фактическим датам, в том числе для неполного года.`));
- if(result.strategy_search)root.append(el('div','group-note',result.strategy_search.alternatives.map(a=>`${STRATEGY_RU[a.strategy]}: ${a.trial_count} испытаний · ${a.training_best_pp==null?'нет допустимого результата':pp(a.training_best_pp)}`).join(' · ')));
- if(result.selected_parameters)root.append(el('div','group-note','Общие параметры · '+Object.entries(result.selected_parameters).map(([k,v])=>`${PARAM_RU[k]}: ${fmt(v,Number.isInteger(v)?0:1)}`).join(' · ')));
+ if(result.strategy_search)root.append(el('div','group-note',result.strategy_search.alternatives.map(a=>`${strategyLabel(a.strategy)}: ${a.trial_count} испытаний · ${a.training_best_pp==null?'нет допустимого результата':pp(a.training_best_pp)}`).join(' · ')));
+ if(result.selected_parameters)root.append(el('div','group-note','Общие параметры · '+Object.entries(result.selected_parameters).map(([k,v])=>`${PARAM_RU[k]||pairPlugin(result.selected_strategy)?.parameters.find(p=>p.name===k)?.label_ru||k}: ${fmt(v,Number.isInteger(v)?0:1)}`).join(' · ')));
  const table=el('table');table.append(th(['Окно','Обучение, п.п./год','Результат, п.п./год','Расчётный период']));for(const r of g.members){const tr=el('tr'),e=r.evaluation,range=e?.periods?.[e.result_basis];
   for(const text of [(r.target.universe==='calendar_native'?'Календарь · ':'Пара · ')+r.target.pair,r.training_annualized_excess_pp==null?'—':signed(r.training_annualized_excess_pp),e?.result.annualized_excess_pp==null?'—':signed(e.result.annualized_excess_pp),range?range.join(' — ')+(e.result.calendar_days?' · '+e.result.calendar_days+' кал. дн.':''):'—'])tr.append(el('td','',text));table.append(tr)}root.append(table);
- if(result.plateau){root.append(el('div','group-note','Устойчивость на обучении: '+Object.entries(result.plateau.fields).map(([k,v])=>`${PARAM_RU[k]}: ${v.score==null?'нет оценки':fmt(v.score,0)+'/100'}`).join(' · ')+'. Не влияет на выбор максимума.'))}}
+ if(result.plateau){root.append(el('div','group-note','Устойчивость на обучении: '+Object.entries(result.plateau.fields).map(([k,v])=>`${PARAM_RU[k]||k}: ${v.score==null?'нет оценки':fmt(v.score,0)+'/100'}`).join(' · ')+'. Не влияет на выбор максимума.'))}}
 const PARAM_RU={lookback:'Окно',window:'Окно',entry_z:'Вход z',exit_z:'Выход z',threshold_pp:'Порог RUONIA'};
 function reviewExclusions(result){const d=$('compatibility'),rows=$('compatibility-list');rows.replaceChildren();for(const x of result.excluded)rows.append(el('li','',`${x.target.pair} — ${x.reason}`));
- $('compatibility-message').textContent=(result.strategy_search?`Ни одна из сравниваемых стратегий не может учесть ${result.excluded.length} из ${checked.size} отмеченных окон. `:`Для стратегии «${STRATEGY_RU[sharedStrategy||activeStrategyName()]}» при этих условиях исполнения не подходят ${result.excluded.length} из ${checked.size} отмеченных окон. `)+(result.remaining_count?`После снятия отметок в подборе останется ${result.remaining_count}.`:'Совместимых окон не останется. Подбор не запустится.');
+ $('compatibility-message').textContent=(result.strategy_search?`Ни одна из сравниваемых стратегий не может учесть ${result.excluded.length} из ${checked.size} отмеченных окон. `:`Для стратегии «${strategyLabel(sharedStrategy||activeStrategyName())}» при этих условиях исполнения не подходят ${result.excluded.length} из ${checked.size} отмеченных окон. `)+(result.remaining_count?`После снятия отметок в подборе останется ${result.remaining_count}.`:'Совместимых окон не останется. Подбор не запустится.');
  $('compatibility-yes').textContent=result.remaining_count?'Снять отметки и продолжить':'Снять отметки';d.showModal();return new Promise(resolve=>{resolveCompatibility=resolve})}
 function finishReview(yes){if(!$('compatibility').open)return;$('compatibility').close();const resolve=resolveCompatibility;resolveCompatibility=null;resolve?.(yes)}
 function invalidForm(){const n=activeInputs().find(n=>n.value===''||!n.validity.valid);return n?`Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`:''}
@@ -790,14 +796,15 @@ function bindLamp(input){
  shell.addEventListener('focusin',()=>showPlateauTip(lamp));shell.addEventListener('focusout',hidePlateauTip);
  lamp.addEventListener('click',()=>showPlateauTip(lamp));
 }
+const dirtyInputs=new WeakSet();
+function bindFocusInput(input){
+ bindLamp(input);
+ input.addEventListener('input',()=>{rememberForm();clearGroup();dirtyInputs.add(input);invalidateProof();paintPlateaus(null,'Значение изменено. Нажмите Enter или покиньте поле для пересчёта.')});
+ input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();dirtyInputs.delete(input);scheduleShow(0)}});
+ input.addEventListener('blur',()=>{if(dirtyInputs.delete(input))scheduleShow(140)});
+}
 function bindParameterAutoRun(){
- const dirty=new Set();
- for(const input of numericInputs){
-  bindLamp(input);
-  input.addEventListener('input',()=>{rememberForm();clearGroup();dirty.add(input);invalidateProof();paintPlateaus(null,'Значение изменено. Нажмите Enter или покиньте поле для пересчёта.')});
-  input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();dirty.delete(input);scheduleShow(0)}});
-  input.addEventListener('blur',()=>{if(dirty.delete(input))scheduleShow(140)});
- }
+ for(const input of numericInputs)bindFocusInput(input);
  document.addEventListener('keydown',e=>{if(e.key==='Escape')hidePlateauTip()});
  window.addEventListener('resize',hidePlateauTip);$('col-norm').addEventListener('scroll',hidePlateauTip);
 }

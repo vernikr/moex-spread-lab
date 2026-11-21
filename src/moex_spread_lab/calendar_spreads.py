@@ -432,10 +432,10 @@ class CalendarData:
         except Exception:
             return False
 
-    def _read_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
+    def _read_h1_candles(self, secid: str, *, allow_fetch: bool = True) -> tuple[dict[str, Any] | None, str | None]:
         path = self.bar_store.select_h1(secid)
         if not self.bar_store.source_available(path):
-            if not self._fetch_h1_candles(secid, path):
+            if not allow_fetch or not self._fetch_h1_candles(secid, path):
                 return None, "no_local_h1_file"
         try:
             source = self.bar_store.read(path, columns=("begin", "open", "close", "volume"))
@@ -486,10 +486,10 @@ class CalendarData:
         key = days[index]
         return key, values.get(key)
 
-    def _intraday_window(self, asset: str, daily_window: dict[str, Any], data: dict[str, Any]) -> dict[str, Any] | None:
+    def _intraday_window(self, asset: str, daily_window: dict[str, Any], data: dict[str, Any], *, allow_fetch: bool = True) -> dict[str, Any] | None:
         near, far = daily_window["near"], daily_window["far"]
-        near_source, near_error = self._read_h1_candles(near)
-        far_source, far_error = self._read_h1_candles(far)
+        near_source, near_error = self._read_h1_candles(near, allow_fetch=allow_fetch)
+        far_source, far_error = self._read_h1_candles(far, allow_fetch=allow_fetch)
         if near_source is None or far_source is None:
             return None
 
@@ -507,7 +507,7 @@ class CalendarData:
             return None
 
         native_id = spread_id(near, far)
-        native_source, native_error = self._read_h1_candles(native_id)
+        native_source, native_error = self._read_h1_candles(native_id, allow_fetch=allow_fetch)
         native_rows = native_source["rows"] if native_source else {}
         native_common = [stamp for stamp in common if stamp in native_rows]
         if len(native_common) >= MIN_H1_CALENDAR_OBSERVATIONS:
@@ -763,7 +763,7 @@ class CalendarData:
             assets = []
             all_windows = []
             for asset in ASSETS:
-                windows = self._intraday_windows_for(asset)
+                windows = self._intraday_windows_for(asset, allow_fetch=False)
                 all_windows.extend(windows)
                 if not windows:
                     continue

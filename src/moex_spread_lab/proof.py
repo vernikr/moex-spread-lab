@@ -20,27 +20,9 @@ from pathlib import Path
 from typing import Any
 
 from .account_risk import assess_vtb_pair
-from .analytics import compute_rolling_z, run_mean_reversion_baseline
-from .carry import build_carry_strategy, build_carry_study
 from .costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, _cost_totals, side_cost, tariff_profile
 from .evaluation_periods import STRICT_SCREENS, ResearchSettings
-from .pair_screener import (
-    ScreenerInputs,
-    _pair,
-    _parameters,
-    _session_volumes,
-    catalog as _pair_catalog,
-    execution_settings,
-    pair_price_inputs,
-)
 from .position_sizing import AUTO_SIZING, automatic, size_proof
-from .proof_funding import FundingWindow, ProofFunding
-from .proof_signals import (
-    PRICE_FILLS,
-    REFERENCE_WARNING,
-    attach_entry_levels,
-    pair_fill,
-)
 from .timeframes import get_timeframe, timeframe_options
 from .universe import (
     CALENDAR_UNIVERSE,
@@ -49,6 +31,27 @@ from .universe import (
     STRATEGIES,
 )
 from .w0 import W0Error, _HashedJSONCache, _run_id, read_hashed_json
+from moex_spread_lab.strategies import (
+    PRICE_FILLS,
+    REFERENCE_WARNING,
+    attach_entry_levels,
+    pair_fill,
+)
+from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, build_carry_study
+from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow, ProofFunding
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+    compute_rolling_z,
+    run_mean_reversion_baseline,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    ScreenerInputs,
+    _pair,
+    _parameters,
+    _session_volumes,
+    catalog as _pair_catalog,
+    execution_settings,
+    pair_price_inputs,
+)
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"})
@@ -234,7 +237,7 @@ class ProofService:
     @property
     def calendar_data(self):
         if self._calendar is None:
-            from .calendar_spreads import CalendarData
+            from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
             self._calendar = CalendarData(self.root)
         return self._calendar

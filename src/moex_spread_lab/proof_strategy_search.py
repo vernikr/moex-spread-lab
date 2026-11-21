@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import optuna
 
-from .calendar_spreads import CalendarData
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from .proof_batch import (
     _call_with_optional_progress,
     _cohort_result,

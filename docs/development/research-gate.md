@@ -64,12 +64,12 @@ Parameter optimization of this baseline, M1 promotion of this high-turnover rule
 
 ## Reproducible artifacts
 
-- [Analytical baseline](analytical-baseline.md)
+- [Analytical baseline](../../packages/strategies/docs/analytical-baseline.md)
 - [Execution ledger](../../packages/accounting/docs/execution-ledger.md)
 - [W7 validation](../../packages/accounting/docs/w7-validation.md)
 - [Pilot policy](../risk/pilot-policy.md)
 - [Account and risk blockers](../blockers/b01-account-and-risk.md)
 - [VTB EBS/KПУР account-risk screen](../../packages/accounting/docs/vtb-account-risk-check.md)
-- [Flagship futures-pair screen](pair-screen.md)
-- [Funding-aware flagship-pair screen](funding-screen.md)
+- [Flagship futures-pair screen](../../packages/strategies/docs/pair-screen.md)
+- [Funding-aware flagship-pair screen](../../packages/strategies/docs/funding-screen.md)
 - [Workflow and research blockers](../blockers/b02-research-and-workflow.md)

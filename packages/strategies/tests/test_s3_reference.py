@@ -5,7 +5,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from moex_spread_lab.s3_reference import REFERENCE_ROUND_TRIP_COST, run_s3
+from moex_spread_lab.strategies.s3_reference.engine import REFERENCE_ROUND_TRIP_COST, run_s3
 
 
 def _reference(root: Path, *, artifact_volume: int) -> Path:

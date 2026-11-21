@@ -1,0 +1,67 @@
+"""Unified engine exports for H2/H3 perpetual SWAPRATE funding carry."""
+
+from .carry import (
+    CARRY_SCHEMA,
+    FUNDING_REGIMES,
+    STRATEGY_SCHEMA,
+    CarryError,
+    CarryStrategyError,
+    build_carry_strategy,
+    build_carry_study,
+    fetch_history,
+)
+from .funding_recheck import recheck
+from .funding_screen import (
+    FUNDING_SCREEN_PAIRS,
+    FUNDING_SCREEN_SCHEMA,
+    FundingScreenError,
+    screen_funding_pairs,
+)
+from .proof_funding import (
+    DSVD_NOTICE,
+    FX_NEW_REGIME,
+    FX_PERPETUALS,
+    LAUNCH_PERPETUALS,
+    MAX_GAP,
+    NO_CLEARING,
+    POLICY,
+    FundingEvidence,
+    FundingTimeline,
+    FundingWindow,
+    ProofFunding,
+    finite_rate,
+    published_rates,
+    read_supplement,
+    supplement_path,
+)
+
+__all__ = [
+    "CARRY_SCHEMA",
+    "CarryError",
+    "CarryStrategyError",
+    "DSVD_NOTICE",
+    "FUNDING_REGIMES",
+    "FUNDING_SCREEN_PAIRS",
+    "FUNDING_SCREEN_SCHEMA",
+    "FX_NEW_REGIME",
+    "FX_PERPETUALS",
+    "FundingEvidence",
+    "FundingScreenError",
+    "FundingTimeline",
+    "FundingWindow",
+    "LAUNCH_PERPETUALS",
+    "MAX_GAP",
+    "NO_CLEARING",
+    "POLICY",
+    "ProofFunding",
+    "STRATEGY_SCHEMA",
+    "build_carry_strategy",
+    "build_carry_study",
+    "fetch_history",
+    "finite_rate",
+    "published_rates",
+    "read_supplement",
+    "recheck",
+    "screen_funding_pairs",
+    "supplement_path",
+]

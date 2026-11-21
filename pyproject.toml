@@ -9,6 +9,7 @@ dependencies = [
     "msl-accounting",
     "msl-core",
     "msl-data",
+    "msl-strategies",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
     "pyarrow>=18,<20",
@@ -32,6 +33,7 @@ members = ["packages/*"]
 msl-accounting = { workspace = true }
 msl-core = { workspace = true }
 msl-data = { workspace = true }
+msl-strategies = { workspace = true }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -48,15 +50,18 @@ pythonpath = [
     "packages/core/src",
     "packages/data/src",
     "packages/accounting/src",
+    "packages/strategies/src",
     "src",
     "packages/data/tests",
     "packages/accounting/tests",
+    "packages/strategies/tests",
     "tests",
 ]
 testpaths = [
     "packages/core/tests",
     "packages/data/tests",
     "packages/accounting/tests",
+    "packages/strategies/tests",
     "tests",
 ]
 

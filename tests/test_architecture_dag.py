@@ -29,6 +29,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     # L0: packages/core (`msl-core`)
     "core": "core",
     "core._fastcore_loader": "core",
+    "core.contracts": "core",
     "core.evaluation_periods": "core",
     "core.settings": "core",
     "core.timeframes": "core",
@@ -93,7 +94,35 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "run_artifact_import": "accounting",
     "validation": "accounting",
     "research": "accounting",
-    # L2: strategies
+    # L2: packages/strategies (`msl-strategies`)
+    "strategies": "strategies",
+    "strategies.base": "strategies",
+    "strategies.signals": "strategies",
+    "strategies.pair_mean_reversion": "strategies",
+    "strategies.pair_mean_reversion.analytics": "strategies",
+    "strategies.pair_mean_reversion.engine": "strategies",
+    "strategies.pair_mean_reversion.plugin": "strategies",
+    "strategies.funding_carry": "strategies",
+    "strategies.funding_carry.carry": "strategies",
+    "strategies.funding_carry.proof_funding": "strategies",
+    "strategies.funding_carry.funding_recheck": "strategies",
+    "strategies.funding_carry.funding_screen": "strategies",
+    "strategies.funding_carry.engine": "strategies",
+    "strategies.funding_carry.plugin": "strategies",
+    "strategies.calendar_zscore": "strategies",
+    "strategies.calendar_zscore.engine": "strategies",
+    "strategies.calendar_zscore.plugin": "strategies",
+    "strategies.calendar_ruonia": "strategies",
+    "strategies.calendar_ruonia.engine": "strategies",
+    "strategies.calendar_ruonia.plugin": "strategies",
+    "strategies.s3_reference": "strategies",
+    "strategies.s3_reference.engine": "strategies",
+    "strategies.calendar": "strategies",
+    "strategies.calendar.calendar_spreads": "strategies",
+    "strategies.pair_screener": "strategies",
+    "strategies.pair_screener.screener": "strategies",
+    "strategies.pair_screener.pair_screener": "strategies",
+    # L2 backward-compatibility shims in src/moex_spread_lab/
     "analytics": "strategies",
     "carry": "strategies",
     "funding_screen": "strategies",
@@ -315,8 +344,8 @@ class ArchitectureDagTests(unittest.TestCase):
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         modules = _discover_modules()
         detailed_edges = _build_import_graph(modules)
-        package_prefixes = ("core.", "data.", "accounting.")
-        package_roots = {"core", "data", "accounting"}
+        package_prefixes = ("core.", "data.", "accounting.", "strategies.")
+        package_roots = {"core", "data", "accounting", "strategies"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             if src in package_roots or src.startswith(package_prefixes):
@@ -327,6 +356,42 @@ class ArchitectureDagTests(unittest.TestCase):
             violations,
             [],
             "Extracted workspace packages must not import root umbrella modules:\n  "
+            + "\n  ".join(violations),
+        )
+
+    def test_strategy_plugin_subfolders_are_strictly_isolated(self) -> None:
+        """Each strategy plugin subfolder may import only core/data/accounting, strategies.base, and itself."""
+        modules = _discover_modules()
+        detailed_edges = _build_import_graph(modules)
+        plugin_folders = {
+            "pair_mean_reversion",
+            "funding_carry",
+            "calendar_zscore",
+            "calendar_ruonia",
+            "s3_reference",
+        }
+        violations: list[str] = []
+        for src, targets in sorted(detailed_edges.items()):
+            if not src.startswith("strategies."):
+                continue
+            parts = src.split(".")
+            if len(parts) < 2 or parts[1] not in plugin_folders:
+                continue
+            own_subpkg = f"strategies.{parts[1]}"
+            for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
+                if dst.startswith(("core", "data", "accounting")):
+                    continue
+                if dst in {"strategies", "strategies.base"}:
+                    continue
+                if dst == own_subpkg or dst.startswith(f"{own_subpkg}."):
+                    continue
+                violations.append(
+                    f"{src}:{lineno} -> {dst} (cross-strategy subfolder import forbidden)"
+                )
+        self.assertEqual(
+            violations,
+            [],
+            "Strategy plugin subfolders must never import sibling strategy subfolders:\n  "
             + "\n  ".join(violations),
         )
 

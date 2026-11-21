@@ -1,0 +1,54 @@
+{
+  "module_id": "moex-spread-lab.strategies",
+  "release": "0.9.0",
+  "contract_version": "msl-strategies.v1",
+  "kind": "strategies",
+  "capabilities": [
+    "strategy_plugin_registry",
+    "pair_mean_reversion",
+    "funding_carry",
+    "calendar_zscore",
+    "calendar_ruonia",
+    "s3_reference_reproduction",
+    "calendar_spreads_dataset",
+    "offline_pair_screener"
+  ],
+  "inputs": [
+    "iss-intake.v1",
+    "iss-candles.v1",
+    "iss-history.v1",
+    "benchmark-lineage.v1"
+  ],
+  "outputs": [
+    "analytical-baseline.v1",
+    "carry-study.v1",
+    "carry-strategy.v1",
+    "calendar-study.v1",
+    "calendar-proof.v1",
+    "s3-sbrf-reference.v2"
+  ],
+  "dependencies": [
+    "moex-spread-lab.core",
+    "moex-spread-lab.data",
+    "moex-spread-lab.accounting"
+  ],
+  "owner": "project-strategies",
+  "resource_profile": {
+    "network": "explicit_intake_only",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "active"
+  }
+}

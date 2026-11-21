@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from proof_fixtures import fixture
 
-from moex_spread_lab import calendar_spreads
+from moex_spread_lab.strategies.calendar import calendar_spreads
 from moex_spread_lab.evaluation_periods import EvaluationSplit, save_settings
 from moex_spread_lab.proof import ProofService
 from moex_spread_lab.proof_batch import MAX_TARGETS, _targets

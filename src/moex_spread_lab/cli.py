@@ -775,7 +775,11 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "analytical-baseline":
-            from .analytics import build_series, get_cost_scenario, run_mean_reversion_baseline
+            from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+                build_series,
+                get_cost_scenario,
+                run_mean_reversion_baseline,
+            )
 
             series = build_series(
                 args.near_candles,
@@ -867,7 +871,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "carry-study":
-            from .carry import build_carry_study, fetch_history
+            from moex_spread_lab.strategies.funding_carry.carry import build_carry_study, fetch_history
 
             near_source, far_source = (
                 fetch_history(secid, args.from_date, args.till_date, cache_dir=args.cache_dir,
@@ -896,7 +900,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "carry-strategy":
-            from .carry import build_carry_strategy
+            from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy
 
             try:
                 carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
@@ -956,7 +960,7 @@ def main() -> int:
             }, ensure_ascii=False, sort_keys=True))
             return 0
         if args.command == "pair-screen":
-            from .screener import screen_pairs
+            from moex_spread_lab.strategies.pair_screener.screener import screen_pairs
 
             result = screen_pairs(
                 args.candles_dir,
@@ -979,7 +983,7 @@ def main() -> int:
             serve(ScreenerInputs(args.root.resolve()), args.port)
             return 0
         if args.command == "screener-run":
-            from .pair_screener import ScreenerInputs, build_result
+            from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, build_result
 
             parameters = {"lookback": args.lookback}
             if args.strategy == "mean_reversion":
@@ -993,14 +997,14 @@ def main() -> int:
             return 0
         if args.command == "audit-pairs":
             from .audit import audit_pairs
-            from .pair_screener import ScreenerInputs
+            from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
             result = audit_pairs(ScreenerInputs(args.root.resolve()))
             write_json(args.output, result)
             print(json.dumps({**result["summary"], "output": str(args.output)}, sort_keys=True))
             return 0
         if args.command == "calendar-study":
-            from .calendar_spreads import ASSETS, run_calendar_study
+            from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS, run_calendar_study
 
             root = args.root.resolve()
             result = run_calendar_study(
@@ -1015,7 +1019,7 @@ def main() -> int:
                         "net_rub", "excess_over_lqdt_on_margin_rub", "excess_pp_per_year_on_allocation")}}, sort_keys=True))
             return 0
         if args.command == "s3-reference":
-            from .s3_reference import run_s3
+            from moex_spread_lab.strategies.s3_reference.engine import run_s3
 
             result = run_s3(args.reference_dir, args.benchmark)
             write_json(args.output, result)
@@ -1023,7 +1027,7 @@ def main() -> int:
                 print(json.dumps({key: variant[key] for key in ("strategy", "variant", "cost_model", "trades", "gross_rub", "net_rub", "excess_over_lqdt_on_margin_rub")}, sort_keys=True))
             return 0
         if args.command == "funding-screen":
-            from .funding_screen import screen_funding_pairs
+            from moex_spread_lab.strategies.funding_carry.funding_screen import screen_funding_pairs
 
             result = screen_funding_pairs(
                 contracts_path=args.contracts,

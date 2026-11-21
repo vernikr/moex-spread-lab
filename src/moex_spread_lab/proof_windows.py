@@ -6,7 +6,7 @@ Every row is measured by the exact same continuous proof/evaluation as its chart
 
 from __future__ import annotations
 
-from .calendar_spreads import CalendarData
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from .evaluation_periods import ResearchSettings
 from .proof import _benchmark_marks
 from .proof_kernel import StudyWindow, _identity, _validate, compact_result

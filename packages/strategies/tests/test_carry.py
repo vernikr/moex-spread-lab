@@ -3,8 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
-from moex_spread_lab.carry import CarryStrategyError, _transaction_cost_profile, build_carry_strategy, build_carry_study
+from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
+from moex_spread_lab.strategies.funding_carry.carry import (
+    CarryStrategyError,
+    _transaction_cost_profile,
+    build_carry_strategy,
+    build_carry_study,
+)
 
 
 def source(secid, rows):

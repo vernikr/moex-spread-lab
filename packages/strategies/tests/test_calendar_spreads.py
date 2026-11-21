@@ -1,8 +1,13 @@
 import unittest
 from datetime import date, timedelta
 
-from moex_spread_lab.calendar_spreads import build_windows, contract_chain, _positive_spread_volume_rows, _stress_ok
-from moex_spread_lab.costs import side_cost, tariff_profile
+from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.strategies.calendar.calendar_spreads import (
+    _positive_spread_volume_rows,
+    _stress_ok,
+    build_windows,
+    contract_chain,
+)
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
 RUONIA = (["2022-01-01"], {"2022-01-01": 0.15})

@@ -27,7 +27,7 @@ uv run python -m moex_spread_lab.cli screener-run \
   --output data/analytics/screener-check.json
 ```
 
-The first launch needs the locally ignored `data/benchmark/lqdt-lineage.json`, `data/w1/current-intake.json` and daily pair candles in `data/w1/candles/` or `data/w1/candles-screen/`. The funding rule also requires cached FORTS EOD history in `data/carry-history-cache/` or `data/carry-screen-history-cache/`. Recreate those inputs using the documented commands in [the baseline](analytical-baseline.md), [pair screen](pair-screen.md) and [funding screen](funding-screen.md). Do not commit the downloaded datasets or saved runs.
+The first launch needs the locally ignored `data/benchmark/lqdt-lineage.json`, `data/w1/current-intake.json` and daily pair candles in `data/w1/candles/` or `data/w1/candles-screen/`. The funding rule also requires cached FORTS EOD history in `data/carry-history-cache/` or `data/carry-screen-history-cache/`. Recreate those inputs using the documented commands in [the baseline](../../packages/strategies/docs/analytical-baseline.md), [pair screen](../../packages/strategies/docs/pair-screen.md) and [funding screen](../../packages/strategies/docs/funding-screen.md). Do not commit the downloaded datasets or saved runs.
 
 ## Interpretation and limits
 

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.screener import screen_pairs
+from moex_spread_lab.strategies.pair_screener.screener import screen_pairs
 
 
 class ScreenerTests(unittest.TestCase):

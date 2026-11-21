@@ -453,24 +453,20 @@ uv run pytest -q -n auto --dist loadfile
 
 ---
 
-### Phase 3 — Extract Layer 2 (`packages/strategies`) with Strategy Subfolders & Plugin Protocol
+### Phase 3 — Extract Layer 2 (`packages/strategies`) with Strategy Subfolders & Plugin Protocol — **Completed**
 
 **Objective:** Isolate every trading strategy into its own self-contained subfolder with conformance tests so multiple agents can build strategies concurrently with zero shared file edits.
 
-**Instructions:**
-1. Define `StrategyPlugin`, `ParameterSpec`, and `StrategyRegistry` in `packages/core/.../contracts.py` and `packages/strategies/.../strategies/base.py`.
-2. Create `packages/strategies` (`msl-strategies`) with dedicated subfolders:
-   - `strategies/pair_mean_reversion/` (`analytics.py` + pair MR entry bands from `proof_signals.py`).
-   - `strategies/funding_carry/` (`carry.py` + `proof_funding.py` + `funding_recheck.py` + `funding_screen.py`).
-   - `strategies/calendar_zscore/` (Z-score MR logic extracted from `calendar_spreads.py` + calendar MR bands from `proof_signals.py`).
-   - `strategies/calendar_ruonia/` (RUONIA convergence & dividend logic extracted from `calendar_spreads.py` + RUONIA bands from `proof_signals.py`).
-   - `strategies/s3_reference/` (`s3_reference.py`).
-3. Implement auto-discovery in `moex_spread_lab.strategies.discover_strategies()` using `pkgutil.iter_modules` + `[project.entry-points."moex_spread_lab.strategies"]`.
-4. Add `packages/strategies/tests/contract/test_strategy_conformance.py` — a parameterized test suite that automatically runs against **every** discovered strategy plugin, checking:
-   - Determinism (identical inputs + seed -> byte-identical intents);
-   - Causality (truncating future bars does not alter past signals or entry bands);
-   - Fail-closed behavior on missing data, zero volume, and unknown costs;
-   - Valid `ParameterSpec` bounds and default values.
+**Completed Work:**
+1. Defined `StrategyPlugin` (`@runtime_checkable` Protocol), `ParameterSpec`, `InstrumentContext`, `CompatibilityVerdict`, `EntryBandPoint`, `WindowSnapshot`, and `StrategyIntentRun` in `packages/core/src/moex_spread_lab/core/contracts.py`, plus `StrategyRegistry` and `discover_strategies()` in `packages/strategies/src/moex_spread_lab/strategies/base.py`.
+2. Created `packages/strategies` (`msl-strategies`) with isolated strategy plugin subfolders (`{__init__,engine,plugin}.py` with zero cross-subfolder imports enforced by `test_architecture_dag.py`):
+   - `strategies/pair_mean_reversion/` (`analytics.py`, `engine.py`, `plugin.py` — `mean_reversion`).
+   - `strategies/funding_carry/` (`carry.py`, `proof_funding.py`, `funding_recheck.py`, `funding_screen.py`, `engine.py`, `plugin.py` — `funding_only`).
+   - `strategies/calendar_zscore/` (`engine.py`, `plugin.py` — `zscore_mean_reversion`).
+   - `strategies/calendar_ruonia/` (`engine.py`, `plugin.py` — `convergence_to_ruonia`).
+   - Plus non-plugin Layer 2 dataset/reference modules: `strategies/s3_reference/`, `strategies/calendar/calendar_spreads.py`, `strategies/pair_screener/{screener,pair_screener}.py`, and plugin-dispatched `strategies/signals.py`.
+3. Implemented auto-discovery in `moex_spread_lab.strategies.discover_strategies()` using `pkgutil.iter_modules` + `[project.entry-points."moex_spread_lab.strategies"]`, wired `proof_kernel.STRATEGY_AXES` and `signals.attach_entry_levels` to the registry, updated Layer 3–5 callers to import `msl-strategies` directly, and added backward-compatible shims in `src/moex_spread_lab/`.
+4. Added `packages/core/tests/test_contracts.py` and `packages/strategies/tests/contract/test_strategy_conformance.py` — verifying auto-discovery, synthetic drop-in plugin folders with zero core edits, determinism, truncation causality (zero lookahead on entry bands and closed intents), fail-closed compatibility/parameter checks, and `test_architecture_dag.py` subfolder isolation.
 
 **Verification Gate:**
 ```sh

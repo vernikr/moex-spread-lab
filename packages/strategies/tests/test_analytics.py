@@ -3,9 +3,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.analytics import build_daily_series, build_series, get_cost_scenario, load_contracts, run_mean_reversion_baseline
-from moex_spread_lab.costs import side_cost, tariff_profile
-from moex_spread_lab.ledger import build_ledger
+from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.accounting.ledger import build_ledger
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+    build_daily_series,
+    build_series,
+    get_cost_scenario,
+    load_contracts,
+    run_mean_reversion_baseline,
+)
 
 
 class HistoricalTariffGroupTests(unittest.TestCase):

@@ -1,0 +1,27 @@
+[project]
+name = "msl-strategies"
+version = "0.9.0"
+description = "MOEX Spread Lab Layer 2 strategies: isolated pluggable strategy families, discovery registry, and screener/calendar datasets"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "msl-accounting",
+    "msl-core",
+    "msl-data",
+]
+
+[project.entry-points."moex_spread_lab.strategies"]
+mean_reversion = "moex_spread_lab.strategies.pair_mean_reversion.plugin:PLUGIN"
+funding_only = "moex_spread_lab.strategies.funding_carry.plugin:PLUGIN"
+zscore_mean_reversion = "moex_spread_lab.strategies.calendar_zscore.plugin:PLUGIN"
+convergence_to_ruonia = "moex_spread_lab.strategies.calendar_ruonia.plugin:PLUGIN"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true

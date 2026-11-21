@@ -15,7 +15,7 @@ from statistics import fmean
 from typing import Any
 
 from .bar_types import SealedH1Reader
-from .carry import CarryStrategyError
+from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
 from .proof_kernel import (
     STRATEGY_AXES,
@@ -51,7 +51,7 @@ def configured_workers() -> int:
 def _worker_service(root_str: str):
     svc = _WORKER_SERVICES.get(root_str)
     if svc is None:
-        from .calendar_spreads import CalendarData
+        from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
         from .proof import ProofService
 
         root = Path(root_str).resolve()

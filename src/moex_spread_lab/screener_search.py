@@ -11,7 +11,7 @@ from itertools import product
 from typing import Any
 
 from .evaluation_periods import EvaluationSplit, read_settings
-from .pair_screener import (
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
     ScreenerInputs,
     _parameters,

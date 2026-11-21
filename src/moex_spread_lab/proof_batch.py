@@ -6,7 +6,7 @@ from statistics import fmean
 
 import optuna
 
-from .carry import CarryStrategyError
+from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 from .evaluation_periods import ResearchSettings
 from .proof import _benchmark_marks
 from .proof_kernel import (
@@ -55,7 +55,7 @@ def _translate(params, strategy):
 
 
 def _native_request(active, target, *, default_price_fill="reference_same_bar"):
-    from .calendar_spreads import ASSETS
+    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
     strategy = active.get("strategy", "zscore_mean_reversion")
     calendar = target["universe"] == CALENDAR_UNIVERSE
@@ -98,7 +98,7 @@ def _targets(request):
 
 
 def _active_seed(request, active):
-    from .calendar_spreads import ASSETS, ZSCORE_OPTIONS
+    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS, ZSCORE_OPTIONS
 
     if active in STRATEGIES:
         defaults = STRATEGIES[active]["parameters"]
@@ -331,7 +331,7 @@ class _RemoteCohort(_Cohort):
 
 
 def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
-    from .calendar_spreads import CalendarData
+    from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
     if StudyWindow is not _DEFAULT_STUDY_WINDOW:
         return False
@@ -345,7 +345,7 @@ def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
 def _prepare_cohort(
     service, request, settings, benchmark, check_cancelled, *, calendar=None, on_progress=None
 ):
-    from .calendar_spreads import CalendarData
+    from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
     targets = _targets(request)
     checked = bool(request.get("targets"))

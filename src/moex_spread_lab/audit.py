@@ -8,11 +8,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .analytics import run_mean_reversion_baseline
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 from .costs import tariff_profile
 from .data_lake import BarSeries
-from .pair_screener import ScreenerInputs
-from .screener import _normalized_series
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
 from .universe import MIN_DAILY_VOLUME, PAIRS
 from .w0 import W0Error
 

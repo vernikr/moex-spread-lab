@@ -83,21 +83,26 @@ class Axis:
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
 
 
+def _strategy_axes() -> dict[str, dict[str, Axis]]:
+    from moex_spread_lab.strategies import discover_strategies
+
+    registry = discover_strategies()
+    return {
+        plugin.strategy_id: {
+            spec.name: Axis(
+                int(spec.min_value) if spec.kind == "int" else spec.min_value,
+                int(spec.max_value) if spec.kind == "int" else spec.max_value,
+                int(spec.step) if spec.kind == "int" else spec.step,
+            )
+            for spec in plugin.parameter_schema()
+            if spec.tunable
+        }
+        for plugin in registry.values()
+    }
+
+
 ENTRY = Axis(0.5, 5, 0.1)
-STRATEGY_AXES = {
-    "mean_reversion": {
-        "lookback": Axis(5, 80, 1),
-        "entry_z": ENTRY,
-        "exit_z": Axis(0, 4, 0.1),
-    },
-    "funding_only": {"lookback": Axis(5, 80, 1)},
-    "zscore_mean_reversion": {
-        "window": Axis(3, 60, 1),
-        "entry_z": ENTRY,
-        "exit_z": Axis(0.1, 4, 0.1),
-    },
-    "convergence_to_ruonia": {"threshold_pp": Axis(0.1, 10, 0.1)},
-}
+STRATEGY_AXES = _strategy_axes()
 # Fixed-size API/CLI compatibility only. The workbench uses automatic sizing and
 # one immutable global slippage preference, so neither is an optimization axis.
 EXECUTION_AXES = {"quantity": Axis(1, 50, 1), "slippage_ticks": Axis(0, 10, 0.5)}

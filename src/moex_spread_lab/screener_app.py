@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from .carry import fetch_history
+from moex_spread_lab.strategies.funding_carry.carry import fetch_history
 from .evaluation_periods import read_settings, save_settings
-from .pair_screener import (
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
     _CANDLE_SUMMARY_CACHE,
     ScreenerError,
     ScreenerInputs,
@@ -152,7 +152,7 @@ class ScreenerStore:
     @property
     def calendar(self) -> Any:
         if self._calendar is None:
-            from .calendar_spreads import CalendarData
+            from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
             self._calendar = CalendarData(self.inputs.root)
         return self._calendar

@@ -69,7 +69,7 @@ zero expired artifacts and no planned deletions. No GC apply was performed.
   catalogs and all five stable result fingerprints/run identities matched its
   pre-archive baseline: pair-screen result, daily pair proof, hourly pair proof,
   funding proof and hourly native calendar proof. See the
-  [package-A evidence](data-archive-2026-11-21.md) for selections and identities.
+  [package-A evidence](../../data/docs/data-archive-2026-11-21.md) for selections and identities.
 - `data-verify` reported **4 verified datasets**.
 - No active H1 candle files, screened-priority inputs, benchmark lineage or
   funding/calendar caches were changed. H1 **analytical reports** in the table

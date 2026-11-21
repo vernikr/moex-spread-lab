@@ -44,7 +44,7 @@ The following pair-search slice adds a bounded, declared parameter grid, a trial
 
 ## Delivered W0–W7 foundation
 
-See [W0](../development/w0.md), the [offline pipeline and replay command](../development/w1-w7.md) and the [analytical validation](../development/w7-validation.md). Fixtures verify mechanics, not live readiness. Production-facing acceptance still requires the following evidence:
+See [W0](../development/w0.md), the [offline pipeline and replay command](../../packages/accounting/docs/w1-w7.md) and the [analytical validation](../../packages/accounting/docs/w7-validation.md). Fixtures verify mechanics, not live readiness. Production-facing acceptance still requires the following evidence:
 
 | Wave | Gate |
 |---|---|

@@ -1,0 +1,48 @@
+{
+  "module_id": "moex-spread-lab.data",
+  "release": "0.9.0",
+  "contract_version": "msl-data.v1",
+  "kind": "data",
+  "capabilities": [
+    "iss_intake",
+    "parquet_bar_lake",
+    "h1_seal",
+    "data_retention_and_archival",
+    "storage_policy",
+    "benchmark_lineage",
+    "universe_registry"
+  ],
+  "inputs": [
+    "iss-intake.v1",
+    "w1-candles.v1"
+  ],
+  "outputs": [
+    "data-inventory.v1",
+    "storage-budget.v1",
+    "archive-catalog.v1",
+    "h1-seal.v1",
+    "benchmark-lineage.v1"
+  ],
+  "dependencies": [
+    "moex-spread-lab.core"
+  ],
+  "owner": "project-data",
+  "resource_profile": {
+    "network": "explicit_intake_only",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "none"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "active"
+  }
+}

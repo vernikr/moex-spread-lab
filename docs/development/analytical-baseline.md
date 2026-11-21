@@ -104,7 +104,7 @@ The runner now supports complete profiles with separate components. The values b
 | base | RUB 1.00 | RUB 1.00 | RUB 1.00 | 1.0 tick | RUB 0.50/leg-day | RUB 1.00 |
 | stress | RUB 2.00 | RUB 2.00 | RUB 2.00 | 2.0 ticks | RUB 1.00/leg-day | RUB 2.00 |
 
-The current VTB tariff document establishes the broker-fee component through 2026-12-31. The separate [VTB account risk profile](vtb-account-risk-profile.md) records the public margin, collateral and liquidation mechanics plus labelled working assumptions for EBS and КПУР; individual coefficients, offsets and account reconciliation remain outside this baseline. Exchange, slippage, funding and exit profiles remain sensitivity branches.
+The current VTB tariff document establishes the broker-fee component through 2026-12-31. The separate [VTB account risk profile](../../packages/accounting/docs/vtb-account-risk-profile.md) records the public margin, collateral and liquidation mechanics plus labelled working assumptions for EBS and КПУР; individual coefficients, offsets and account reconciliation remain outside this baseline. Exchange, slippage, funding and exit profiles remain sensitivity branches.
 
 | Timeframe | Scenario | Trades | Gross P&L, RUB | Modeled costs, RUB | Final `X`, RUB |
 |---|---|---:|---:|---:|---:|

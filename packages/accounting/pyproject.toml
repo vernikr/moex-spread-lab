@@ -1,0 +1,20 @@
+[project]
+name = "msl-accounting"
+version = "0.9.0"
+description = "MOEX Spread Lab Layer 1 accounting: tariffs, VTB account risk, causal sizing, ledger, validation, and run artifacts"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "msl-core",
+    "pyarrow>=18,<20",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true

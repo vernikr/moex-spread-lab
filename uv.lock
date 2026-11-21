@@ -5,7 +5,9 @@ requires-python = "==3.12.*"
 [manifest]
 members = [
     "moex-spread-lab",
+    "msl-accounting",
     "msl-core",
+    "msl-data",
 ]
 
 [[package]]
@@ -145,7 +147,9 @@ source = { editable = "." }
 dependencies = [
     { name = "certifi" },
     { name = "duckdb" },
+    { name = "msl-accounting" },
     { name = "msl-core" },
+    { name = "msl-data" },
     { name = "openpyxl" },
     { name = "optuna" },
     { name = "pyarrow" },
@@ -164,7 +168,9 @@ dev = [
 requires-dist = [
     { name = "certifi", specifier = ">=2024" },
     { name = "duckdb", specifier = ">=1.2,<2" },
+    { name = "msl-accounting", editable = "packages/accounting" },
     { name = "msl-core", editable = "packages/core" },
+    { name = "msl-data", editable = "packages/data" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
     { name = "optuna", specifier = ">=4.2,<5" },
     { name = "pyarrow", specifier = ">=18,<20" },
@@ -180,9 +186,47 @@ dev = [
 ]
 
 [[package]]
+name = "msl-accounting"
+version = "0.9.0"
+source = { editable = "packages/accounting" }
+dependencies = [
+    { name = "msl-core" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "msl-core", editable = "packages/core" },
+    { name = "pyarrow", specifier = ">=18,<20" },
+]
+
+[[package]]
 name = "msl-core"
 version = "0.9.0"
 source = { editable = "packages/core" }
+
+[[package]]
+name = "msl-data"
+version = "0.9.0"
+source = { editable = "packages/data" }
+dependencies = [
+    { name = "certifi" },
+    { name = "duckdb" },
+    { name = "msl-core" },
+    { name = "openpyxl" },
+    { name = "pyarrow" },
+    { name = "zstandard" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "certifi", specifier = ">=2024" },
+    { name = "duckdb", specifier = ">=1.2,<2" },
+    { name = "msl-core", editable = "packages/core" },
+    { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "pyarrow", specifier = ">=18,<20" },
+    { name = "zstandard", specifier = ">=0.23,<1" },
+]
 
 [[package]]
 name = "numpy"

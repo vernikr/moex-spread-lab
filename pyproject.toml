@@ -6,7 +6,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "certifi>=2024",
     "duckdb>=1.2,<2",
+    "msl-accounting",
     "msl-core",
+    "msl-data",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
     "pyarrow>=18,<20",
@@ -27,7 +29,9 @@ package = true
 members = ["packages/*"]
 
 [tool.uv.sources]
+msl-accounting = { workspace = true }
 msl-core = { workspace = true }
+msl-data = { workspace = true }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -40,8 +44,21 @@ namespaces = true
 moex_spread_lab = ["*.html", "vendor/*.js", "vendor/LICENSE.*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["packages/core/src", "src"]
-testpaths = ["packages/core/tests", "tests"]
+pythonpath = [
+    "packages/core/src",
+    "packages/data/src",
+    "packages/accounting/src",
+    "src",
+    "packages/data/tests",
+    "packages/accounting/tests",
+    "tests",
+]
+testpaths = [
+    "packages/core/tests",
+    "packages/data/tests",
+    "packages/accounting/tests",
+    "tests",
+]
 
 [dependency-groups]
 dev = [

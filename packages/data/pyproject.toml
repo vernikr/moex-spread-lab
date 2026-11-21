@@ -1,0 +1,24 @@
+[project]
+name = "msl-data"
+version = "0.9.0"
+description = "MOEX Spread Lab Layer 1 data: ISS intake, Parquet lake, H1 seal, retention, universe, and benchmark lineage"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "certifi>=2024",
+    "duckdb>=1.2,<2",
+    "msl-core",
+    "openpyxl>=3.1,<4",
+    "pyarrow>=18,<20",
+    "zstandard>=0.23,<1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true

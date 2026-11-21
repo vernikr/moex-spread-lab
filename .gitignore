@@ -25,9 +25,9 @@ build/
 coverage/
 *.log
 *.sqlite*
-data/
-data-lake/
-artifacts/
+/data/
+/data-lake/
+/artifacts/
 .DS_Store
 
 # Local archive operation lock

@@ -32,6 +32,33 @@ def test_budget_partition_and_limit(tmp_path):
     assert all(p.read_bytes() == b for p, b in before.items())
 
 
+def test_budget_run_details_ttl_matches_gc_run_artifacts_dry_run(tmp_path):
+    from moex_spread_lab.accounting.run_artifacts import (
+        gc_run_artifacts,
+        pin_run_artifact,
+        publish_baseline_artifact,
+    )
+
+    baseline = {
+        "schema_version": "analytical-baseline.v1",
+        "parameters": {"decision_delay_bars": 1},
+        "summary": {"final_X": 0.0, "trade_count": 0},
+        "daily": [{"date": "2026-01-01", "timestamp": "2026-01-01 00:00:00"}],
+        "trades": [],
+    }
+    runs_root = tmp_path / "data/analytics/runs"
+    publish_baseline_artifact(runs_root / "expired", baseline, retention_days=0, pin=False)
+    publish_baseline_artifact(runs_root / "retained", baseline, retention_days=30, pin=False)
+    publish_baseline_artifact(runs_root / "pinned", baseline, retention_days=0, pin=True)
+    pin_run_artifact(runs_root / "pinned", pinned=True)
+
+    budget = storage_budget(tmp_path)
+    expected = gc_run_artifacts(runs_root, dry_run=True)
+    assert budget["ttl_dry_run"]["run_details"] == expected
+    assert expected["expired_artifact_count"] == 1
+    assert expected["retained_artifact_count"] == 2
+
+
 def test_budget_rejects_links_overlap_negative(tmp_path):
     with pytest.raises(W0Error): storage_budget(tmp_path, tmp_path)
     with pytest.raises(W0Error): storage_budget(tmp_path, max_allocated_bytes=-1)

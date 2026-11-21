@@ -361,13 +361,14 @@ Once this structure is in place, parallel agent work follows four mechanical rul
 | *(future Phase 3)* | `packages/core/.../core/contracts.py` | `StrategyPlugin`, `ParameterSpec` protocol contracts. |
 | `iss.py` | `packages/data/.../data/iss/catalog.py` | Hosts shared `fetch_history`, `_history_url`, `HISTORY_SCHEMA`, and `IssHistoryError` (extracted from `carry.py`). |
 | `bar_types.py`, `data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py` | `packages/data/.../data/lake/` | `bar_types.py` holds `BarSeries`, `DataLakeError`, `SealedH1Reader`, and seal read/write guards so `bar_types` -> `data_lake` -> `h1_migration` -> `h1_seal` is strictly acyclic. |
-| `data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `run_artifacts.py`, `storage_policy.py` | `packages/data/.../data/retention/` | Pure data-lifecycle & Parquet run-artifact storage operations (`run_artifacts.py` depends only on `w0` + `pyarrow`, keeping `storage_policy` inside `msl-data`). |
+| `data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `storage_policy.py` | `packages/data/.../data/retention/` | Pure data-lifecycle & read-only storage budget operations (`storage_policy.py` inspects run-artifact manifests directly so `msl-data` never imports `msl-accounting`). |
 | `benchmark.py` | `packages/data/.../data/benchmark/lineage.py` | Also provides `_benchmark_marks` lookup currently duplicated in `proof.py` / `carry.py`. |
 | `costs.py` | `packages/accounting/.../accounting/costs.py` | Absorbs `_cost_totals` from `proof.py`. |
 | `account_risk.py` | `packages/accounting/.../accounting/account_risk.py` | Uses `msl-core` (`w0.load_contracts`) instead of importing `analytics.py`. |
 | `portfolio.py` | `packages/accounting/.../accounting/portfolio.py` | Pure matched-LQDT overlay math. |
 | `position_sizing.py` | `packages/accounting/.../accounting/position_sizing.py` | Depends only on `msl-core` + `costs` + `account_risk` (zero dependency on `proof`). |
-| `analytics.py`, `proof_signals.py` (pair MR part), `ledger.py`, `validation.py`, `run_artifact_import.py`, `research.py` | `packages/strategies/.../strategies/` | Strategy evaluation, W1–W7 offline ledger/validation gates, and legacy baseline artifact importer; wrapped in `StrategyPlugin` in Phase 3. |
+| `ledger.py`, `validation.py`, `run_artifacts.py`, `run_artifact_import.py`, `research.py` | `packages/accounting/.../accounting/` | W4/W5 execution ledger, W7 chronological validation, Parquet run-artifact storage & legacy importer, and W1–W7 offline research waves (`run_artifacts` -> `ledger`/`validation` -> `run_artifact_import` strictly acyclic). |
+| `analytics.py`, `proof_signals.py` (pair MR part) | `packages/strategies/.../strategies/` | Strategy evaluation & entry-band math; wrapped in `StrategyPlugin` in Phase 3. |
 | `carry.py`, `proof_funding.py`, `funding_recheck.py`, `funding_screen.py` | `packages/strategies/.../strategies/funding_carry/` | Wrapped in `StrategyPlugin`; raw ISS history fetcher moved down to `msl-data` (`iss.py`). |
 | `calendar_spreads.py` (Z-score MR & RUONIA parts) | `packages/strategies/.../strategies/calendar_*` | Split into `calendar_zscore/` and `calendar_ruonia/` `StrategyPlugin` subpackages in Phase 3. |
 | `s3_reference.py` | `packages/strategies/.../strategies/s3_reference/` | Audited reference backtest module. |
@@ -431,20 +432,17 @@ uv run pytest -q -n auto --dist loadfile
 
 ---
 
-### Phase 2 — Extract Layer 1 Siblings (`packages/data` and `packages/accounting`)
+### Phase 2 — Extract Layer 1 Siblings (`packages/data` and `packages/accounting`) — **Completed**
 
 **Objective:** Separate market data storage/intake from financial accounting/risk/sizing into independent parallel packages.
 
-**Instructions:**
-1. **Create `packages/data` (`msl-data`):**
-   - `git mv` ISS intake (`iss.py`), Parquet lake & H1 seal (`data_lake.py`, `data_refresh.py`, `h1_migration.py`, `h1_seal.py`), retention/archival (`data_inventory.py`, `data_retention.py`, `data_archive_candidates.py`, `h1_archive.py`, `storage_policy.py`), `benchmark.py`, and `universe.py` into `packages/data/src/moex_spread_lab/data/{iss,lake,retention,benchmark,universe}/`.
-   - Co-locate `test_iss.py`, `test_data_*.py`, `test_h1_*.py`, `test_storage_policy.py`, `test_store_cutover.py`, `test_benchmark.py` into `packages/data/tests/`.
-   - Co-locate `data-lifecycle.md`, `storage-policy-*.md`, `h1-*.md`, `historical-pair-intake.md`, `benchmark-lineage.md` into `packages/data/docs/` (updating links in root `README.md`).
-2. **Create `packages/accounting` (`msl-accounting`):**
-   - `git mv` `costs.py`, `account_risk.py`, `portfolio.py`, `position_sizing.py`, `ledger.py`, `run_artifacts.py`, `run_artifact_import.py`, `validation.py`, `research.py` into `packages/accounting/src/moex_spread_lab/accounting/`.
-   - Co-locate corresponding unit tests into `packages/accounting/tests/` and module docs into `packages/accounting/docs/`.
-3. Keep thin re-export shims in `src/moex_spread_lab/` until Phase 6.
-4. Enforce in `test_architecture_dag.py` that `moex_spread_lab.data` and `moex_spread_lab.accounting` never import each other or any Layer 2–4 module.
+**Completed Implementation:**
+1. Created `packages/data` (`msl-data`, depending on `msl-core`, `duckdb`, `pyarrow`, `zstandard`, `openpyxl`, `certifi`) with `packages/data/manifest.json` and moved ISS intake (`data/iss/catalog.py`), Parquet lake & H1 seal (`data/lake/{bar_types,data_lake,data_refresh,h1_migration,h1_seal}.py`), retention/archival (`data/retention/{data_inventory,data_retention,data_archive_candidates,h1_archive,storage_policy}.py`), `data/benchmark/lineage.py`, and `data/universe/__init__.py` (re-exporting `msl-core` universe definitions).
+2. Decoupled `storage_policy.py` read-only TTL reporting (`_dry_run_gc_run_artifacts`) from `run_artifacts.py` (verified bit-for-bit against `gc_run_artifacts(..., dry_run=True)` in `test_storage_policy.py`) so `msl-data` and `msl-accounting` have **zero** cross-sibling imports.
+3. Co-located 12 data test suites into `packages/data/tests/` and 9 data lifecycle/intake/lineage docs into `packages/data/docs/`.
+4. Created `packages/accounting` (`msl-accounting`, depending only on `msl-core` and `pyarrow`) with `packages/accounting/manifest.json` and moved `costs.py`, `account_risk.py`, `portfolio.py`, `position_sizing.py`, `ledger.py`, `run_artifacts.py`, `run_artifact_import.py`, `validation.py`, and `research.py` into `packages/accounting/src/moex_spread_lab/accounting/`.
+5. Co-located 5 accounting/sizing/ledger/artifact/validation test suites into `packages/accounting/tests/` and 6 accounting/risk/validation docs into `packages/accounting/docs/` (updating cross-references in `README.md` and `docs/`, while keeping `account_risk.py` runtime `working_profile` provenance string unchanged).
+6. Added backward-compatible shims in `src/moex_spread_lab/` (including `sys.modules` identity aliasing where tests patch module-level symbols) and extended `tests/test_architecture_dag.py` to enforce strict sibling isolation (`msl-data` ⊥ `msl-accounting`) and forbid umbrella imports from `core`, `data`, and `accounting`.
 
 **Verification Gate:**
 ```sh

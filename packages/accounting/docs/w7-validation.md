@@ -2,7 +2,7 @@
 
 Date: 2026-11-03
 
-**Historical reproduction only.** This fixed experiment and its `validate-analytics` CLI retain their original protocol. The current interactive screener uses [revised BR-10](../stages/04-requirements.md); it does not inherit this split.
+**Historical reproduction only.** This fixed experiment and its `validate-analytics` CLI retain their original protocol. The current interactive screener uses [revised BR-10](../../../docs/stages/04-requirements.md); it does not inherit this split.
 
 ## Method
 
@@ -38,7 +38,7 @@ The report verdict is **`inconclusive_no_pass`**. Chronological split, sealed co
 
 The result is not a live-trading recommendation and does not authorize funding, broker access or deployment.
 
-The resulting promotion decision is recorded in the [Stage-9 research gate](research-gate.md): do not promote this baseline configuration to an executable or funded pilot. The pair itself remains conditionally admitted for offline research; this run does not test or reject every other strategy hypothesis.
+The resulting promotion decision is recorded in the [Stage-9 research gate](../../../docs/development/research-gate.md): do not promote this baseline configuration to an executable or funded pilot. The pair itself remains conditionally admitted for offline research; this run does not test or reject every other strategy hypothesis.
 
 ## Reproduce
 

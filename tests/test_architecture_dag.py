@@ -40,7 +40,26 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "timeframes": "core",
     "evaluation_periods": "core",
     "universe": "core",
-    # L1a: data
+    # L1a: packages/data (`msl-data`)
+    "data": "data",
+    "data.iss": "data",
+    "data.iss.catalog": "data",
+    "data.lake": "data",
+    "data.lake.bar_types": "data",
+    "data.lake.data_lake": "data",
+    "data.lake.data_refresh": "data",
+    "data.lake.h1_migration": "data",
+    "data.lake.h1_seal": "data",
+    "data.retention": "data",
+    "data.retention.data_inventory": "data",
+    "data.retention.data_retention": "data",
+    "data.retention.data_archive_candidates": "data",
+    "data.retention.h1_archive": "data",
+    "data.retention.storage_policy": "data",
+    "data.benchmark": "data",
+    "data.benchmark.lineage": "data",
+    "data.universe": "data",
+    # L1a backward-compatibility shims in src/moex_spread_lab/
     "bar_types": "data",
     "data_lake": "data",
     "h1_migration": "data",
@@ -52,18 +71,30 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "data_retention": "data",
     "data_archive_candidates": "data",
     "data_refresh": "data",
-    "run_artifacts": "data",
     "storage_policy": "data",
-    # L1b: accounting
+    # L1b: packages/accounting (`msl-accounting`)
+    "accounting": "accounting",
+    "accounting.costs": "accounting",
+    "accounting.portfolio": "accounting",
+    "accounting.account_risk": "accounting",
+    "accounting.position_sizing": "accounting",
+    "accounting.ledger": "accounting",
+    "accounting.run_artifacts": "accounting",
+    "accounting.run_artifact_import": "accounting",
+    "accounting.validation": "accounting",
+    "accounting.research": "accounting",
+    # L1b backward-compatibility shims in src/moex_spread_lab/
     "costs": "accounting",
     "portfolio": "accounting",
     "account_risk": "accounting",
     "position_sizing": "accounting",
+    "ledger": "accounting",
+    "run_artifacts": "accounting",
+    "run_artifact_import": "accounting",
+    "validation": "accounting",
+    "research": "accounting",
     # L2: strategies
     "analytics": "strategies",
-    "ledger": "strategies",
-    "validation": "strategies",
-    "run_artifact_import": "strategies",
     "carry": "strategies",
     "funding_screen": "strategies",
     "funding_recheck": "strategies",
@@ -73,7 +104,6 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "s3_reference": "strategies",
     "screener": "strategies",
     "pair_screener": "strategies",
-    "research": "strategies",
     # L3: proof
     "audit": "proof",
     "screener_search": "proof",
@@ -285,8 +315,8 @@ class ArchitectureDagTests(unittest.TestCase):
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         modules = _discover_modules()
         detailed_edges = _build_import_graph(modules)
-        package_prefixes = ("core.",)
-        package_roots = {"core"}
+        package_prefixes = ("core.", "data.", "accounting.")
+        package_roots = {"core", "data", "accounting"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             if src in package_roots or src.startswith(package_prefixes):
@@ -297,6 +327,28 @@ class ArchitectureDagTests(unittest.TestCase):
             violations,
             [],
             "Extracted workspace packages must not import root umbrella modules:\n  "
+            + "\n  ".join(violations),
+        )
+
+    def test_data_and_accounting_siblings_are_strictly_isolated(self) -> None:
+        modules = _discover_modules()
+        detailed_edges = _build_import_graph(modules)
+        violations: list[str] = []
+        for src, targets in sorted(detailed_edges.items()):
+            if src == "data" or src.startswith("data."):
+                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
+                    dst_layer = LAYER_ASSIGNMENTS[dst]
+                    if dst_layer not in {"core", "data"}:
+                        violations.append(f"{src}:{lineno} (data) -> {dst} ({dst_layer})")
+            elif src == "accounting" or src.startswith("accounting."):
+                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
+                    dst_layer = LAYER_ASSIGNMENTS[dst]
+                    if dst_layer not in {"core", "accounting"}:
+                        violations.append(f"{src}:{lineno} (accounting) -> {dst} ({dst_layer})")
+        self.assertEqual(
+            violations,
+            [],
+            "Layer 1 siblings msl-data and msl-accounting must never import each other or higher layers:\n  "
             + "\n  ".join(violations),
         )
 

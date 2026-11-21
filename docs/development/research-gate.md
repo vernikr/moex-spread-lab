@@ -39,7 +39,7 @@ The promotion gate remains closed because:
 2. account-applicable exchange, clearing, slippage, funding and exit costs are not evidenced for the historical window; the user's VTB broker commission is now evidenced as zero through 2026-12-31;
 3. current contract parameters are a fallback, not dated historical specifications;
 4. the ledger is a candle-close proxy projection, not an account valuation based on actual orders;
-5. account collateral, individual coefficients, margin-offset and LQDT attribution reconciliation remain unresolved; EBS and КПУР are now user-confirmed and documented in the [VTB account risk profile](vtb-account-risk-profile.md).
+5. account collateral, individual coefficients, margin-offset and LQDT attribution reconciliation remain unresolved; EBS and КПУР are now user-confirmed and documented in the [VTB account risk profile](../../packages/accounting/docs/vtb-account-risk-profile.md).
 
 The separate [contract-history audit](contract-history-audit.md) adds an important scope distinction: the draft price-only baseline is not a complete historical carry test. The pair remains eligible for a separately specified funding-aware hypothesis, subject to its own evidence and validation gates.
 
@@ -65,11 +65,11 @@ Parameter optimization of this baseline, M1 promotion of this high-turnover rule
 ## Reproducible artifacts
 
 - [Analytical baseline](analytical-baseline.md)
-- [Execution ledger](execution-ledger.md)
-- [W7 validation](w7-validation.md)
+- [Execution ledger](../../packages/accounting/docs/execution-ledger.md)
+- [W7 validation](../../packages/accounting/docs/w7-validation.md)
 - [Pilot policy](../risk/pilot-policy.md)
 - [Account and risk blockers](../blockers/b01-account-and-risk.md)
-- [VTB EBS/KПУР account-risk screen](vtb-account-risk-check.md)
+- [VTB EBS/KПУР account-risk screen](../../packages/accounting/docs/vtb-account-risk-check.md)
 - [Flagship futures-pair screen](pair-screen.md)
 - [Funding-aware flagship-pair screen](funding-screen.md)
 - [Workflow and research blockers](../blockers/b02-research-and-workflow.md)

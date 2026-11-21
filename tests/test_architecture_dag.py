@@ -97,6 +97,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     # L2: packages/strategies (`msl-strategies`)
     "strategies": "strategies",
     "strategies.base": "strategies",
+    "strategies.conformance": "strategies",
     "strategies.signals": "strategies",
     "strategies.pair_mean_reversion": "strategies",
     "strategies.pair_mean_reversion.analytics": "strategies",

@@ -21,5 +21,9 @@ A trade must span at least two bars. Invalid output fails closed.
 Opt-in is not certification. Python plugins execute trusted code; event checks do
 not prove a signal was computed without future information. Every plugin needs its
 own determinism, truncation/causality, compatibility and accounting regression
-tests. This is offline research only, not trading authorization. Browser strategy
+tests. `moex_spread_lab.strategies.conformance.assert_causal_conformance` is a
+reusable test helper: provide a plugin-owned aligned window and chart fixture,
+parameters and multiple cutoffs; it tests every declared fill. Core tests retain
+fixtures for built-ins and do not automatically certify external plugins.
+Discovery rejects duplicate strategy IDs instead of silently replacing a plugin. This is offline research only, not trading authorization. Browser strategy
 forms/catalog discovery remain Phase 5 work.

@@ -326,7 +326,7 @@ class StrategyPluginConformanceTests(unittest.TestCase):
 
     def test_auto_discovers_all_builtin_strategy_plugins(self) -> None:
         registry = discover_strategies()
-        self.assertEqual(set(registry.ids()), EXPECTED_BUILTINS)
+        self.assertTrue(EXPECTED_BUILTINS <= set(registry.ids()))
         for plugin in registry.values():
             self.assertIsInstance(plugin, StrategyPlugin)
             self.assertTrue(plugin.label_ru)
@@ -391,7 +391,8 @@ PLUGIN = SyntheticPlugin()
 
     def test_parameter_specs_and_fail_closed_validation(self) -> None:
         registry = discover_strategies()
-        for strategy_id, plugin in registry.items():
+        for strategy_id in sorted(EXPECTED_BUILTINS):
+            plugin = registry.get(strategy_id)
             with self.subTest(strategy=strategy_id):
                 schema = plugin.parameter_schema()
                 validated = plugin.validate_parameters({})
@@ -406,7 +407,8 @@ PLUGIN = SyntheticPlugin()
 
     def test_determinism_across_repeated_evaluations(self) -> None:
         registry = discover_strategies()
-        for strategy_id, plugin in registry.items():
+        for strategy_id in sorted(EXPECTED_BUILTINS):
+            plugin = registry.get(strategy_id)
             snap, series, params = self._fixture_for(strategy_id)
             for fill in plugin.supported_fills:
                 with self.subTest(strategy=strategy_id, fill=fill):
@@ -423,7 +425,8 @@ PLUGIN = SyntheticPlugin()
     def test_truncation_causality_no_lookahead(self) -> None:
         """Truncating future bars must never alter causal entry bands or already-closed intents."""
         registry = discover_strategies()
-        for strategy_id, plugin in registry.items():
+        for strategy_id in sorted(EXPECTED_BUILTINS):
+            plugin = registry.get(strategy_id)
             snap, series, params = self._fixture_for(strategy_id)
             fill = plugin.supported_fills[0]
             full_run = plugin.evaluate_intents(snap, params, fill)
@@ -478,7 +481,8 @@ PLUGIN = SyntheticPlugin()
                 )
             ).compatible
         )
-        for plugin in registry.values():
+        for strategy_id in sorted(EXPECTED_BUILTINS):
+            plugin = registry.get(strategy_id)
             with self.assertRaises(W0Error):
                 plugin.evaluate_intents(
                     WindowSnapshot(universe="unknown_universe", pair="X"),
@@ -515,3 +519,25 @@ def test_calendar_intent_adapter_matches_existing_engines():
                 expected = convergence_trades(list(window.rows), delay=delay, fill=quote,
                                               threshold=normalized["threshold_pp"], close_at_end=True)
             assert actual == expected
+
+
+def test_reusable_conformance_helper_on_calendar_builtins():
+    from moex_spread_lab.strategies.conformance import assert_causal_conformance
+
+    window, series = _calendar_fixture()
+    for sid, params in (("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
+                        ("convergence_to_ruonia", {"threshold_pp": 1.0})):
+        assert_causal_conformance(discover_strategies().get(sid), window, series, params,
+                                  cutoffs=(14, 20, 26))
+
+
+def test_reusable_conformance_helper_on_pair_builtins(tmp_path):
+    from moex_spread_lab.strategies.conformance import assert_causal_conformance
+
+    registry = discover_strategies()
+    pair, pair_series = _pair_mean_reversion_fixture()
+    assert_causal_conformance(registry.get("mean_reversion"), pair, pair_series,
+                              {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5}, cutoffs=(14, 20, 26))
+    funding, funding_series = _funding_carry_fixture(tmp_path)
+    assert_causal_conformance(registry.get("funding_only"), funding, funding_series,
+                              {"lookback": 5}, cutoffs=(14, 20, 26))

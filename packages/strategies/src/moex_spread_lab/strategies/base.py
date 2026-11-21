@@ -231,6 +231,16 @@ def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegist
     strategies_dir = Path(__file__).resolve().parent
 
     discovered: dict[str, StrategyPlugin] = {}
+
+    def register(plugin: StrategyPlugin) -> None:
+        strategy_id = plugin.strategy_id
+        if not isinstance(strategy_id, str) or not strategy_id.strip():
+            raise W0Error("Стратегия должна иметь непустой строковый идентификатор.")
+        previous = discovered.get(strategy_id)
+        if previous is not None and previous is not plugin:
+            raise W0Error(f"Повторяющийся идентификатор стратегии: {strategy_id}")
+        discovered[strategy_id] = plugin
+
     search_paths = [str(strategies_dir), *(str(p) for p in extra_paths)]
     for finder, name, ispkg in sorted(pkgutil.iter_modules(search_paths), key=lambda item: item[1]):
         if not ispkg or name.startswith("_") or name in _NON_PLUGIN_SUBPACKAGES:
@@ -259,17 +269,16 @@ def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegist
             raise
         plugin = getattr(mod, "PLUGIN", None)
         if isinstance(plugin, StrategyPlugin):
-            discovered[plugin.strategy_id] = plugin
+            register(plugin)
 
     for ep in sorted(
         importlib.metadata.entry_points(group="moex_spread_lab.strategies"),
         key=lambda item: item.name,
     ):
-        if ep.name in discovered:
-            continue
         loaded = ep.load()
-        if isinstance(loaded, StrategyPlugin):
-            discovered[loaded.strategy_id] = loaded
+        if not isinstance(loaded, StrategyPlugin):
+            raise W0Error(f"Точка входа стратегии {ep.name} не реализует StrategyPlugin.")
+        register(loaded)
 
     return StrategyRegistry(discovered)
 

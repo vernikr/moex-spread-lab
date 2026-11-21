@@ -291,9 +291,9 @@ class ProofService:
         # screener's fixed strategy controls. Availability is per timeframe; pair
         # data/volume/contract compatibility remains a proof-time decision.
         from moex_spread_lab.strategies import discover_strategies
-        from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids
+        from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids, carry_proof_plugin_ids
         registry = discover_strategies()
-        adapted = daily_pair_proof_plugin_ids(registry)
+        adapted = daily_pair_proof_plugin_ids(registry) | carry_proof_plugin_ids(registry)
         pair["proof_plugins"] = [
             {"id": p.strategy_id, "family_id": p.family_id, "label": p.label_ru,
              "adapter": p.proof_adapter, "supported_fills": list(p.supported_fills),
@@ -346,7 +346,9 @@ class ProofService:
 
         def intent_request(request):
             strategy = request.get("strategy", "zscore_mean_reversion")
-            default_fill = "same_day_settlement" if strategy == "funding_only" else settings.price_fill
+            selected_plugin = registry.get(strategy) if isinstance(strategy, str) and strategy in registry else None
+            default_fill = ("same_day_settlement" if selected_plugin is not None
+                            and selected_plugin.supported_fills == ("same_day_settlement",) else settings.price_fill)
             return {
                 **request,
                 "quantity": 1,
@@ -367,6 +369,10 @@ class ProofService:
             metrics_only: bool = False,
             scalar_summary: tuple[str, str] | None = None,
         ):
+            from moex_spread_lab.strategies.base import carry_proof_plugin_ids
+            if (strategy in carry_proof_plugin_ids(registry)
+                    and (not isinstance(request, dict) or not automatic(request) or request.get("quantity") is not None)):
+                raise W0Error("Запрос не соответствует подготовленному автоматическому размеру carry.")
             unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
             if unit.get("schema_version") == "calendar-proof.v1":
                 if through is None:
@@ -428,7 +434,12 @@ class ProofService:
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == PAIR_UNIVERSE:
-            return self._prepare_pair(selection, settings, sizing_intents=sizing_intents)
+            from moex_spread_lab.strategies import discover_strategies
+            from moex_spread_lab.strategies.base import carry_proof_plugin_ids
+            registry = discover_strategies()
+            strategy = selection.get("strategy")
+            plugin = registry.get(strategy) if isinstance(strategy, str) and strategy in carry_proof_plugin_ids(registry) else None
+            return self._prepare_pair(selection, settings, sizing_intents=sizing_intents, carry_plugin=plugin)
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
         spec = get_timeframe(settings.timeframe)
@@ -560,12 +571,13 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings, *, sizing_intents=False) -> Callable[..., dict[str, Any]]:
+    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings, *, sizing_intents=False, carry_plugin=None) -> Callable[..., dict[str, Any]]:
         pair = _pair(selection.get("pair"))
         near, far = pair["near"], pair["far"]
         strategy = selection.get("strategy")
-        if not isinstance(strategy, str) or strategy not in STRATEGIES:
+        if not isinstance(strategy, str) or (strategy not in STRATEGIES and carry_plugin is None):
             raise W0Error("неизвестная стратегия")
+        screen_strategy = "funding_only" if carry_plugin is not None else strategy
         inputs = self.screener_inputs
         funding = ProofFunding(inputs)
         timeframe = get_timeframe(settings.timeframe)
@@ -575,10 +587,10 @@ class ProofService:
             inputs, registry=(pair,), funding=funding,
             initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe,
         )["pairs"][0]
-        if not entry["proof_strategies"].get(strategy):
-            raise W0Error(entry["data_reasons"][strategy])
+        if not entry["proof_strategies"].get(screen_strategy):
+            raise W0Error(entry["data_reasons"][screen_strategy])
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
-        if not (settings.validation_percent or settings.allow_failed_volume) and not entry["strategies"].get(strategy):
+        if not (settings.validation_percent or settings.allow_failed_volume) and not entry["strategies"].get(screen_strategy):
             raise W0Error("Не пройдено правило ликвидности пары.")
 
         @cache
@@ -611,15 +623,36 @@ class ProofService:
             "series": {},
             "window_meta": {},
             "funding_through": {},
+            "carry_plugin": carry_plugin,
         }
 
         def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
             execution = {**execution_settings(request), "sizing_intents": sizing_intents,
                          "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill), "initial_capital_rub": settings.initial_capital_rub}
-            params = _parameters(request, strategy)
-            return engine(inputs, pair, execution, params, terms, dates, prices,
-                          risk_for(execution["quantity"]), prepared, through,
-                          metrics_only=metrics_only, pair_cache=pair_cache)
+            if (request.get("strategy") != strategy or request.get("pair") != pair["pair_id"]
+                    or request.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
+                    or (carry_plugin is not None and automatic(request) != sizing_intents)):
+                raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
+            if carry_plugin is None:
+                params = _parameters(request, strategy)
+            else:
+                from copy import deepcopy
+                from moex_spread_lab.core.contracts import InstrumentContext
+                from moex_spread_lab.strategies.base import validate_parameter_map
+                context = InstrumentContext(universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe)
+                schema = carry_plugin.parameter_schema(context)
+                clean = validate_parameter_map(request.get("parameters", {}), schema)
+                params = validate_parameter_map(carry_plugin.validate_parameters(deepcopy(clean), context), schema)
+                if params != clean or any(not spec.contains(params[spec.name]) for spec in schema):
+                    raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
+            result = engine(inputs, pair, execution, params, terms, dates, prices,
+                            risk_for(execution["quantity"]), prepared, through,
+                            metrics_only=metrics_only, pair_cache=pair_cache)
+            if carry_plugin is not None:
+                result["accounting_policy"] = "carry_settlement.v1"
+                if not metrics_only and abs(result["summary"]["ledger_reconciliation_rub"]) > 0.02:
+                    raise W0Error("Учёт carry-плагина не согласован с журналом сделок.")
+            return result
 
         return replay
 
@@ -1228,20 +1261,50 @@ class ProofService:
             if ft_cache is not None:
                 ft_cache[through] = (study, evidence, study_by_date, ref_near, ref_far, window_meta)
 
-        report = build_carry_strategy(
-            study,
-            inputs.benchmark,
-            inputs.contracts,
-            transaction_cost_scenario="tariff",
-            warmup_observations=int(params["lookback"]),
-            strategy_variant="funding_only",
-            initial_capital=execution["initial_capital_rub"],
-            quantity=quantity,
-            execution_delay_rows=0,
-            cash_in_lqdt=True,
-            slippage_ticks=slippage,
-            metrics_only=metrics_only,
-        )
+        carry_plugin = pair_cache.get("carry_plugin") if pair_cache is not None else None
+        strategy_name = carry_plugin.strategy_id if carry_plugin is not None else "funding_only"
+        if carry_plugin is None:
+            report = build_carry_strategy(
+                study,
+                inputs.benchmark,
+                inputs.contracts,
+                transaction_cost_scenario="tariff",
+                warmup_observations=int(params["lookback"]),
+                strategy_variant="funding_only",
+                initial_capital=execution["initial_capital_rub"],
+                quantity=quantity,
+                execution_delay_rows=0,
+                cash_in_lqdt=True,
+                slippage_ticks=slippage,
+                metrics_only=metrics_only,
+            )
+        else:
+            from moex_spread_lab.core.contracts import WindowSnapshot
+            from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
+            from .carry_intent_accounting import replay_carry_intents
+
+            snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair_id, near=near, far=far,
+                timeframe="1d", carry_study=study, contracts=terms, benchmark=inputs.benchmark,
+                initial_capital_rub=execution["initial_capital_rub"], slippage_ticks=slippage,
+                extra={"contracts_path": inputs.contracts, "transaction_cost_scenario": "tariff"})
+            from copy import deepcopy
+            verdict = carry_plugin.check_compatibility(deepcopy(snapshot))
+            if not verdict.compatible:
+                raise W0Error(verdict.reason or "Несовместимое окно carry.")
+            intents = carry_settlement_intents(carry_plugin, snapshot, params)
+            leg_contracts = _load_contracts_for_side_cost(inputs.contracts, near, far)
+            costs = side_cost(tariff_profile(slippage), [(leg_contracts[near], ref_near),
+                               (leg_contracts[far], ref_far)], 1)
+            fee = round(sum(costs.values()), 8)
+            full = {} if metrics_only else {"initial_capital": execution["initial_capital_rub"],
+                "margin_per_pair": float(terms[near].get("initial_margin") or 0) + float(terms[far].get("initial_margin") or 0),
+                "benchmark": benchmark_prices}
+            report = replay_carry_intents(study, intents, quantity=quantity, side_cost=fee,
+                far_expiry=leg_contracts[far].get("expiry"), **full)
+            if metrics_only:
+                for row in report["daily"]:
+                    row.pop("near_volume", None)
+                    row.pop("far_volume", None)
         near_mult = _point_value(terms[near], fallback=1.0)
         far_mult = _point_value(terms[far], fallback=near_mult)
         margin_pair = (float(terms[near].get("initial_margin") or 0.0) + float(terms[far].get("initial_margin") or 0.0)) * quantity
@@ -1290,7 +1353,7 @@ class ProofService:
                 "selection": {
                     "universe": PAIR_UNIVERSE,
                     "pair": pair_id,
-                    "strategy": "funding_only",
+                    "strategy": strategy_name,
                     "timeframe": "1d",
                     "fill": "same_day_settlement",
                     "quantity": quantity,
@@ -1372,7 +1435,7 @@ class ProofService:
                 "selection": {
                     "universe": PAIR_UNIVERSE,
                     "pair": pair_id,
-                    "strategy": "funding_only",
+                    "strategy": strategy_name,
                     "timeframe": "1d",
                     "fill": "same_day_settlement",
                     "quantity": quantity,
@@ -1432,7 +1495,7 @@ class ProofService:
         ledger = self._funding_ledger(report["daily"], trades)
         return self._pair_payload(
             pair=pair,
-            strategy="funding_only",
+            strategy=strategy_name,
             fill_label="same_day_settlement",
             quantity=quantity,
             slippage=slippage,
@@ -1451,7 +1514,9 @@ class ProofService:
             },
             notes=[
                 *evidence.notes(),
-                "Сигнал фондирования использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня.",
+                ("Сигнал встроенной стратегии использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня."
+                 if carry_plugin is None else
+                 "Сигналы предоставлены доверенным carry-плагином: их причинность должна проверяться отдельно. Исполнение — расчёт в тот же день; обычный выход теряет фондирование этого дня."),
                 "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего перпетуала. Базовый источник — итог клиринга ISS; оценки помечены отдельно. Это не брокерская выписка.",
                 *(["Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; источник исходных ставок — ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."] if near == "GLDRUBF" else []),
                 *(

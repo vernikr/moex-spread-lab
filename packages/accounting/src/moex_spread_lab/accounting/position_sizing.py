@@ -284,7 +284,7 @@ def _size_proof_fast_c(
         float(initial),
         not settings.allow_failed_capital,
         terms.native_order,
-        strategy_name == "funding_only",
+        strategy_name == "funding_only" or proof.get("accounting_policy") == "carry_settlement.v1",
         has_funding,
         use_scalar,
         start_idx,
@@ -470,7 +470,7 @@ def size_proof(
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and strategy_name == "funding_only"
+                        and (strategy_name == "funding_only" or proof.get("accounting_policy") == "carry_settlement.v1")
                         else scaled(unit_costs, t["quantity"])
                     )
                     fee = sum(t["exit"]["costs"].values())
@@ -562,7 +562,7 @@ def size_proof(
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and strategy_name == "funding_only"
+                        and (strategy_name == "funding_only" or proof.get("accounting_policy") == "carry_settlement.v1")
                         else scaled(exit_costs, q)
                     )
                     cost += sum(t["exit"]["costs"].values())

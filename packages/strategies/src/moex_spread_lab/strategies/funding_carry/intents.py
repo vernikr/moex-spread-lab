@@ -1,7 +1,6 @@
 """Fail-closed validation of funding-carry strategy intents.
 
-This validates decisions only. It neither implements carry accounting nor enables
-third-party carry plugins in proof or search.
+This validates decisions only; proof separately owns evidence and accounting.
 """
 from __future__ import annotations
 
@@ -20,7 +19,7 @@ def carry_settlement_intents(plugin, window: WindowSnapshot, params: dict) -> li
 
     Prices, funding, costs and P&L supplied by the plugin are ignored. The caller
     still must resolve funding evidence and enforce expiry/assignment and account
-    constraints; this boundary is deliberately not a complete proof adapter.
+    constraints; this function is only one part of the proof adapter.
     """
     if (not isinstance(window, WindowSnapshot) or window.universe != PAIR_UNIVERSE
             or window.timeframe != "1d" or "same_day_settlement" not in plugin.supported_fills
@@ -69,7 +68,11 @@ def carry_settlement_intents(plugin, window: WindowSnapshot, params: dict) -> li
                 value = rows[i].get(leg)
                 if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                     raise W0Error("Недостаточные данные объёмов для carry-сделки.")
+        entry_reason = item.get("entry_reason")
+        if entry_reason is not None and (not isinstance(entry_reason, str) or not entry_reason):
+            raise W0Error("Некорректная причина входа carry.")
         trades.append({"side": "short_spread", "entry_date": days[entry], "exit_date": days[exit_],
-                       "signal_date": days[signal], "reason": reason, "open_at_end": terminal})
+                       "signal_date": days[signal], "reason": reason, "open_at_end": terminal,
+                       **({"entry_reason": entry_reason} if entry_reason is not None else {})})
         previous_exit = exit_
     return trades

@@ -93,13 +93,15 @@ class FundingCarryPlugin:
             metrics_only=True,
         )
         last_date = report["daily"][-1]["date"]
+        reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report["signals"]}
         intents = tuple(
             {
                 "side": "short_spread",
                 "entry_date": row["entry_execution_date"],
                 "exit_date": row["exit_execution_date"] or last_date,
                 "signal_date": row["entry_decision_date"],
-                "reason": row.get("exit_reason") or row["status"],
+                "reason": reasons.get((row.get("exit_decision_date"), "exit")) or row["status"],
+                "entry_reason": reasons.get((row["entry_decision_date"], "entry")),
                 "open_at_end": row["status"] == "open_at_data_end_no_executable_exit",
             }
             for row in report["trades"]

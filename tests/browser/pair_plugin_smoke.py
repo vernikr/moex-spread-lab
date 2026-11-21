@@ -31,11 +31,18 @@ class Demo(PairMeanReversionPlugin):
         return replace(run, strategy_id=self.strategy_id, parameters=params,
             intents=tuple({**item, "signal": {"kind":"z", "date":days[days.index(item["entry_date"][:10])-delay], "value":item["entry_signal_z"]}} for item in run.intents))
 PLUGIN = Demo()
+from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
+class DemoCarry(FundingCarryPlugin):
+    strategy_id = "demo_ui_carry"
+    family_id = "demo_ui_carry"
+    label_ru = "Демо carry"
+    proof_adapter = "carry_settlement_intents.v1"
+CARRY = DemoCarry()
 ''')
         dist = path / "demo_ui-1.0.dist-info"
         dist.mkdir()
         (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-ui\nVersion: 1.0\n")
-        (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_ui = demo_pair_ui:PLUGIN\n")
+        (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_ui = demo_pair_ui:PLUGIN\ndemo_ui_carry = demo_pair_ui:CARRY\n")
         env = {**os.environ, "MSL_PLUGIN_SMOKE_CHILD": "1", "MOEX_PROOF_WORKERS": "1", "MOEX_OFFLINE_ONLY": "1",
                "PYTHONPATH": os.pathsep.join([str(path), str(Path(__file__).resolve().parents[1]),
                     str(Path(__file__).resolve().parents[2] / "packages/proof/tests"), os.environ.get("PYTHONPATH", "")])}
@@ -84,6 +91,14 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
             page.locator("#auto-tune").click()
         alternatives = done["data"]["strategy_search"]["alternatives"]
         assert next(row for row in alternatives if row["strategy"] == "demo_ui_pair")["trial_count"] == 80
+        page.locator("#strategy").select_option("demo_ui_carry")
+        page.wait_for_function("() => payload?.selection?.strategy === 'demo_ui_carry'", timeout=30000)
+        assert page.evaluate("payload.selection.fill") == "same_day_settlement"
+        expect(page.locator("#plugin-lookback")).to_have_value("20")
+        page.locator('tr[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
+        expect(page.locator("#group-strategy")).to_have_value("demo_ui_carry")
+        assert page.evaluate("sharedRequest().fill") == "same_day_settlement"
+        expect(page.locator("#group-lookback")).to_be_visible()
         assert not errors, errors
         print("Drop-in pair plugin catalog, actual proof, parameter editing and cohort controls: OK")
     finally:

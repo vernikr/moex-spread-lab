@@ -130,3 +130,8 @@ The workbench has resizable, persisted columns, synchronized chart panes and a d
 
 - **Настройки → Исполнение** (`price_fill`, default `reference_same_bar` — «Справочное закрытие (тот же бар)») is now a project-wide research preference alongside capital, timeframe, validation split, slippage and screening tolerances (`GET/POST /api/settings`). Older `research-settings.json` files without `price_fill` receive `reference_same_bar` on read without rewriting; funding-carry remains on its mandatory `same_day_settlement`.
 - Removed the per-panel execution selectors from the strategy column, replaced the timeframe `<select>` in the settings modal with a segmented control (`role="radiogroup"`), removed the introductory and screen-checkbox helper paragraphs, cleared the `"Применён лучший из проверенных вариантов..."` status banner on successful Optuna runs, made the modal footer sticky, and added backdrop-click closing alongside `Esc`.
+
+
+### Registered funding-carry strategies
+
+A distinct pair-only, daily strategy can explicitly opt into `carry_settlement_intents.v1` with `same_day_settlement` and a non-empty, entirely tunable numeric schema. The proof boundary validates event chronology, pair/volume/expiry and assignment constraints, and independently computes funding, settlement cash flows, fees, benchmark and sizing from evidence; plugin-supplied money is discarded. Forced terminal marks are not executable exits, and normal exits lose exit-day funding. Training and full-window replays use their own evidence cutoff. Installed code is trusted: an intent boundary cannot prove a plugin used only data available at each signal, so strategy conformance and causal truncation tests remain mandatory. See `packages/strategies/docs/carry-intent-boundary.md`.

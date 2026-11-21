@@ -245,6 +245,22 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and counts[p.family_id] == 1
     )
 
+def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
+    """Opt in unique, daily short-near settlement-intent carry families."""
+    from moex_spread_lab.core.universe import PAIR_UNIVERSE
+
+    plugins = registry.values()
+    counts: dict[str, int] = {}
+    for plugin in plugins:
+        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
+    return frozenset(p.strategy_id for p in plugins
+        if getattr(p, "proof_adapter", None) == "carry_settlement_intents.v1"
+        and p.supported_universes == frozenset({PAIR_UNIVERSE})
+        and p.supported_fills == ("same_day_settlement",)
+        and p.requires_daily_bars is True and counts[p.family_id] == 1
+        and bool(p.parameter_schema()) and all(spec.tunable for spec in p.parameter_schema()))
+
+
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
     """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points."""
     strategies_dir = Path(__file__).resolve().parent

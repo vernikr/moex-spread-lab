@@ -85,3 +85,27 @@ def test_hourly_pair_adapter_requires_explicit_hourly_capability():
     assert base.daily_pair_proof_plugin_ids(registry) == {"hourly_pair"}
     plugin.requires_daily_bars = True
     assert not base.daily_pair_proof_plugin_ids(registry)
+
+
+def test_carry_proof_adapter_requires_unique_daily_pair_settlement_family():
+    from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
+    from moex_spread_lab.strategies import base
+
+    class Good(FundingCarryPlugin):
+        strategy_id = "custom_carry"
+        family_id = "custom_carry"
+        proof_adapter = "carry_settlement_intents.v1"
+
+    good = Good()
+    assert base.carry_proof_plugin_ids(base.StrategyRegistry({good.strategy_id: good})) == {"custom_carry"}
+    for attr, value in (("requires_daily_bars", False), ("supported_fills", ("next_close",)),
+                        ("supported_universes", frozenset({"calendar_native"})), ("proof_adapter", None)):
+        bad = Good(); setattr(bad, attr, value)
+        assert not base.carry_proof_plugin_ids(base.StrategyRegistry({bad.strategy_id: bad}))
+    from dataclasses import replace
+    class FixedAxis(Good):
+        def parameter_schema(self, context=None):
+            return tuple(replace(spec, tunable=False) for spec in super().parameter_schema(context))
+    assert not base.carry_proof_plugin_ids(base.StrategyRegistry({"fixed": FixedAxis()}))
+    duplicate = Good(); duplicate.strategy_id = "other_carry"
+    assert not base.carry_proof_plugin_ids(base.StrategyRegistry({good.strategy_id: good, duplicate.strategy_id: duplicate}))

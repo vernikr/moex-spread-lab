@@ -784,26 +784,56 @@ class CalendarData:
         if timeframe != "1d":
             raise W0Error("unsupported calendar timeframe")
         data = self._load()
+        base_assets = [
+            {
+                "asset": asset, "name": ASSETS[asset]["name"], "group": ASSETS[asset]["group"],
+                "monthly": bool(ASSETS[asset].get("monthly")),
+                "convergence": bool(ASSETS[asset].get("convergence")),
+                "windows": [
+                    {"pair": w["pair"], "from": w["first_date"], "to": w["last_date"], "observations": len(w["rows"]),
+                     "min_spread_volume": w["min_spread_volume"], "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
+                     "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"], initial_capital=initial_capital)}
+                    for w in windows
+                ],
+            }
+            for asset, windows in data["windows"].items() if windows
+        ]
+        histories = data.get("histories", {})
+        for spec in (*CROSS_EXPIRY_PAIRS, *SYNTHETIC_TRIANGLE_PAIRS):
+            legs = spec.get("legs") or (spec["near"], spec["far"])
+            windows = []
+            for code in ("H6", "M6", "U6", "Z6"):
+                secids = [f"{leg}{code}" for leg in legs]
+                if all(histories.get(s) for s in secids):
+                    common = sorted(set.intersection(*(set(histories[s]) for s in secids)))
+                    if len(common) >= 22:
+                        pair_label = f"{secids[0]}+{secids[1]}/{secids[2]}" if len(secids) == 3 else f"{secids[0]}/{secids[1]}"
+                        windows.append({
+                            "pair": pair_label,
+                            "from": common[0],
+                            "to": common[-1],
+                            "observations": len(common),
+                            "min_spread_volume": MIN_DAILY_VOLUME,
+                            "tradable_every_day": True,
+                            "max_pair_margin_rub": 0.0,
+                            "passes_capital_screen": True,
+                        })
+            if windows:
+                base_assets.append({
+                    "asset": spec["pair_id"],
+                    "name": spec["name"],
+                    "group": spec["family"],
+                    "monthly": False,
+                    "convergence": False,
+                    "windows": windows,
+                })
         return {
             "till": data["till"],
             "timeframe": "1d",
             "min_daily_volume": MIN_DAILY_VOLUME,
             "strategies": STRATEGIES,
             "fills": FILL_LABELS,
-            "assets": [
-                {
-                    "asset": asset, "name": ASSETS[asset]["name"], "group": ASSETS[asset]["group"],
-                    "monthly": bool(ASSETS[asset].get("monthly")),
-                    "convergence": bool(ASSETS[asset].get("convergence")),
-                    "windows": [
-                        {"pair": w["pair"], "from": w["first_date"], "to": w["last_date"], "observations": len(w["rows"]),
-                         "min_spread_volume": w["min_spread_volume"], "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
-                         "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"], initial_capital=initial_capital)}
-                        for w in windows
-                    ],
-                }
-                for asset, windows in data["windows"].items() if windows
-            ],
+            "assets": base_assets,
         }
 
     def window(self, asset: str, pair: str, timeframe: str = "1d") -> dict[str, Any]:

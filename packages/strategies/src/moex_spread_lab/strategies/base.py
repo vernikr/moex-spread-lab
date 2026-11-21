@@ -228,7 +228,7 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
 
 
 def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
-    """Opt in a distinct pair-only daily price strategy, never funding carry."""
+    """Opt in a distinct pair-only price strategy, never funding carry."""
     from moex_spread_lab.core.universe import PAIR_UNIVERSE
 
     plugins = registry.values()
@@ -237,9 +237,9 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
     return frozenset(
         p.strategy_id for p in plugins
-        if getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1"
+        if ((getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1" and p.requires_daily_bars is True)
+            or (getattr(p, "proof_adapter", None) == "pair_price_intents.v1" and p.requires_daily_bars is False))
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
-        and p.requires_daily_bars is True
         and len(p.supported_fills) == len(PRICE_FILLS)
         and set(p.supported_fills) == set(PRICE_FILLS)
         and counts[p.family_id] == 1

@@ -24,11 +24,24 @@ class Demo(PairMeanReversionPlugin):
             "date": days[days.index(item["entry_date"][:10]) - delay],
             "value": item["entry_signal_z"]}} for item in run.intents))
 PLUGIN = Demo()
+class HourlyDemo(Demo):
+    strategy_id = "demo_pair_hourly"
+    family_id = "demo_pair_hourly"
+    proof_adapter = "pair_price_intents.v1"
+    requires_daily_bars = False
+    def evaluate_intents(self, window, params, fill):
+        run = PairMeanReversionPlugin.evaluate_intents(self, window, params, fill)
+        days = [row["date"] for row in window.rows]
+        delay = 0 if fill == "reference_same_bar" else 1
+        return replace(run, intents=tuple({**item, "signal": {"kind": "z",
+            "date": days[days.index(item["entry_date"][:10] if window.timeframe == "1d" else item["entry_date"][:19].replace(" ", "T")) - delay],
+            "value": item["entry_signal_z"]}} for item in run.intents))
+HOURLY = HourlyDemo()
 ''')
     dist = plugin_dir / "demo_pair-1.0.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-pair\nVersion: 1.0\n")
-    (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_pair = demo_pair:PLUGIN\n")
+    (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_pair = demo_pair:PLUGIN\ndemo_pair_hourly = demo_pair:HOURLY\n")
     root = Path(__file__).resolve().parents[3]
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(plugin_dir), str(root / "tests"), str(root / "packages/proof/tests"), str(root / "packages/accounting/tests"), env.get("PYTHONPATH", "")])
@@ -148,6 +161,52 @@ assert serial["selected_parameters"] is not None, serial
 assert serial["selected_parameters"] == parallel["selected_parameters"], (serial, parallel)
 assert serial["run_id"] == parallel["run_id"], (serial["run_id"], parallel["run_id"])
 parallel_service.close()
+
+# Hourly bars use prior daily LQDT and exclude daily funding, as native proof does.
+import math
+from test_execution_proof import _near_close, _far_close
+for secid, close_fn in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
+    path = root / "data/w1/candles" / (secid + "_1d.json")
+    daily = json.loads(path.read_text())
+    hourly = []
+    for i, day_row in enumerate(daily["rows"]):
+        for j, hour in enumerate((9, 10, 11, 12)):
+            close = close_fn(i) + .28 * math.sin(i * .65 + j * 1.1 + (secid == "CRZ6"))
+            hourly.append({"begin": day_row["begin"][:10] + f" {hour:02}:00:00", "open": close-.025,
+                "high": close+.04, "low": close-.04, "close": close, "volume": 200,
+                "price_proxy_kind": "candle_close"})
+    (path.parent / (secid + "_1h.json")).write_text(json.dumps({"schema_version": "iss-candles.v1",
+        "secid": secid, "interval": 60, "timeframe": "1h", "rows": hourly}))
+save_settings(root, {"timeframe": "1h", "validation_percent": 20, "random_seed": 41})
+h1 = ProofService(root)
+for fill in ("next_open", "next_close", "reference_same_bar"):
+    for auto in (False, True):
+        base = {**request(), "fill": fill}
+        if auto:
+            base.pop("quantity")
+            base["sizing"] = "max_affordable"
+        custom = {**base, "strategy": "demo_pair_hourly"}
+        actual = research_run(h1, custom, optimize=False, include_plateau=False)
+        expected = research_run(h1, base, optimize=False, include_plateau=False)
+        assert actual["trades"] == expected["trades"], (fill, auto, actual["trades"], expected["trades"])
+        assert actual["ledger"] == expected["ledger"], (fill, auto, next(((a,e) for a,e in zip(actual["ledger"], expected["ledger"]) if a != e), None))
+        assert actual["summary"] == expected["summary"], (fill, auto, actual["summary"], expected["summary"])
+        assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
+        assert actual["provenance"]["funding_applicability"] == "intraday_not_included"
+        cutoff = actual["evaluation"]["periods"]["training"][-1]
+        settings = ResearchSettings(timeframe="1h", validation_percent=20)
+        a = h1.prepare(custom, settings=settings)(custom, through=cutoff)
+        e = h1.prepare(base, settings=settings)(base, through=cutoff)
+        assert a["trades"] == e["trades"] and a["ledger"] == e["ledger"]
+        day_cutoff = cutoff[:10]
+        a_day = h1.prepare(custom, settings=settings)(custom, through=day_cutoff)
+        e_day = h1.prepare(base, settings=settings)(base, through=day_cutoff)
+        assert a_day["trades"] == e_day["trades"] and a_day["ledger"] == e_day["ledger"]
+h1_search = research_run(h1, {**custom, "optimize_strategy": True}, optimize=True)
+h1_row = next(row for row in h1_search["strategy_search"]["alternatives"] if row["strategy"] == "demo_pair_hourly")
+assert h1_row["trial_count"] == 80, h1_row
+assert all(row["strategy"] != "demo_pair" for row in h1_search["strategy_search"]["alternatives"])
+h1.close()
 '''
     result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "root")],
                             env=env, capture_output=True, text=True, timeout=180)

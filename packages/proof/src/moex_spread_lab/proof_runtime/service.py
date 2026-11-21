@@ -609,20 +609,21 @@ class ProofService:
         return replay
 
     def _prepare_daily_pair_plugin(self, selection, settings, plugin):
-        """Restricted daily pair-plugin route using the existing screens and funded account."""
+        """Pair-plugin route using the existing screens and funded account."""
         from moex_spread_lab.core.contracts import WindowSnapshot
         from .pair_plugin_accounting import prepare_daily_pair_unit, size_daily_pair_plugin
 
-        if selection.get("universe") != PAIR_UNIVERSE or settings.timeframe != "1d":
-            raise W0Error("Парный плагин поддерживает только дневные окна пар.")
+        if (selection.get("universe") != PAIR_UNIVERSE or settings.timeframe not in ("1d", "1h")
+                or (settings.timeframe == "1h" and plugin.requires_daily_bars)):
+            raise W0Error("Парный плагин не поддерживает выбранное окно или интервал.")
         pair = _pair(selection.get("pair"))
         # Native pair preflight owns data, funding, liquidity and capital screens.
         native_selection = {**selection, "strategy": "mean_reversion", "parameters": {}}
         native = self.prepare(native_selection, settings=settings)
         inputs = self.screener_inputs
         series, _, funding_window, provenance = self._price_inputs(
-            inputs, pair, ProofFunding(inputs), settings.validation_percent, "1d")
-        snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair["pair_id"],
+            inputs, pair, ProofFunding(inputs), settings.validation_percent, settings.timeframe)
+        snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe,
             near=pair["near"], far=pair["far"], rows=series["rows"], contracts=series["contracts"])
         marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
         dates, prices = _benchmark_marks(inputs.benchmark)
@@ -676,6 +677,7 @@ class ProofService:
                 enriched_trades.append(full_trade)
             if abs(actual["summary"]["ledger_reconciliation_rub"]) > 0.02:
                 raise W0Error("Учёт плагина не согласован с журналом сделок.")
+            actual["summary"]["fx_point_value_drift_rub"] = None
             template.update(selection=actual["selection"], series=enriched_rows, trades=enriched_trades,
                             ledger=actual["ledger"], summary=actual["summary"], sizing=actual["sizing"],
                             skipped_entries=actual["skipped_entries"])

@@ -69,3 +69,19 @@ def test_daily_pair_adapter_opt_in_rejects_ambiguous_or_unsupported_plugins():
     duplicate = Demo()
     duplicate.strategy_id = "another"
     assert not base.daily_pair_proof_plugin_ids(base.StrategyRegistry({good.strategy_id: good, duplicate.strategy_id: duplicate}))
+
+
+def test_hourly_pair_adapter_requires_explicit_hourly_capability():
+    from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
+
+    class Demo(PairMeanReversionPlugin):
+        strategy_id = "hourly_pair"
+        family_id = "hourly_family"
+        proof_adapter = "pair_price_intents.v1"
+        requires_daily_bars = False
+
+    plugin = Demo()
+    registry = base.StrategyRegistry({plugin.strategy_id: plugin})
+    assert base.daily_pair_proof_plugin_ids(registry) == {"hourly_pair"}
+    plugin.requires_daily_bars = True
+    assert not base.daily_pair_proof_plugin_ids(registry)

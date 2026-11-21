@@ -1,15 +1,15 @@
-"""Experimental, isolated daily pair-plugin accounting composition.
+"""Validated pair-plugin unit intents and funded sizing for proof replays.
 
-This is not a proof route: catalog, fixed-size execution, price provenance,
-capital/volume screens, full holdout orchestration and hourly bars
-still require integration. Only trusted offline inputs are accepted.
+Daily perpetual windows require near-leg funding evidence; hourly windows follow
+native proof policy and explicitly exclude daily funding, not interpolate it.
+Only trusted offline inputs are accepted.
 """
 from __future__ import annotations
 
 import math
 from copy import deepcopy
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime
 
 from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
@@ -25,23 +25,30 @@ def prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchm
     Zero-volume rows stay in the journal without revaluation or funding. Only the
     eligible prefix reaches the plugin; no later bars or benchmark marks are used.
     Inputs are not mutated; plugin-supplied money fields are ignored.
-    Perpetual funding evidence must match the near contract. Missing evidence is
-    allowed only for registry-confirmed pairs of non-perpetual contracts.
+    Daily perpetual funding evidence must match the near contract. Missing daily
+    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
+    prices follow native proof and omit funding rather than invent clearing times.
     """
-    if (not isinstance(window, WindowSnapshot) or window.timeframe != "1d"
-            or not isinstance(settings, ResearchSettings) or settings.timeframe != "1d"
+    if (not isinstance(window, WindowSnapshot) or window.timeframe not in ("1d", "1h")
+            or not isinstance(settings, ResearchSettings) or settings.timeframe != window.timeframe
             or not isinstance(params, dict) or not window.near or not window.far
             or window.near == window.far or not isinstance(benchmark_marks, Mapping)
             or not window.rows or any(not isinstance(row, Mapping) for row in window.rows)):
         raise W0Error("Для расчёта требуется корректное дневное окно пары.")
     try:
         dates = [row["date"] for row in window.rows]
-        if (any(not isinstance(day, str) or date.fromisoformat(day).isoformat() != day for day in dates)
+        def valid_key(key, daily):
+            if not isinstance(key, str):
+                return False
+            if daily:
+                return len(key) == 10 and date.fromisoformat(key).isoformat() == key
+            return (len(key) == 19 and datetime.fromisoformat(key).isoformat(timespec="seconds") == key)
+        if (any(not valid_key(day, window.timeframe == "1d") for day in dates)
                 or dates != sorted(set(dates))
-                or (through is not None and (not isinstance(through, str)
-                    or date.fromisoformat(through).isoformat() != through))):
+                or (through is not None and not valid_key(through, len(through) == 10))):
             raise ValueError
-        prefix = [row for row in window.rows if through is None or row["date"] <= through]
+        prefix = [row for row in window.rows if through is None or
+                  (row["date"][:10] if len(through) == 10 else row["date"]) <= through]
         def eligible(row):
             values = [row.get("near_volume"), row.get("far_volume")]
             if any(v is not None and (type(v) not in (int, float) or not math.isfinite(v) or v < 0) for v in values):
@@ -55,7 +62,7 @@ def prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchm
     # Do not hand a plugin the original snapshot: benchmark/funding/extra fields
     # may contain future observations or unvalidated external data.
     analysis_window = WindowSnapshot(
-        universe=window.universe, pair=window.pair, timeframe="1d", asset=window.asset,
+        universe=window.universe, pair=window.pair, timeframe=window.timeframe, asset=window.asset,
         rows=deepcopy(analysis_rows), contracts=deepcopy(window.contracts),
         near=window.near, far=window.far,
         initial_capital_rub=settings.initial_capital_rub, slippage_ticks=settings.slippage_ticks,
@@ -95,7 +102,16 @@ def prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchm
         raise W0Error("Нет достоверных цен или параметров обеих ног пары.") from None
     if any(not math.isfinite(t[event]["spread_fill"]) for t in trades for event in ("entry", "exit")):
         raise W0Error("Переполнение цены исполнения пары.")
-    if funding_window is None:
+    if window.timeframe == "1h":
+        if funding_window is not None:
+            raise W0Error("Дневную ставку нельзя применять к каждому часовому бару.")
+        from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+        declared = _pair(window.pair)
+        if declared["near"] != window.near or declared["far"] != window.far:
+            raise W0Error("Идентификатор пары не совпадает с ногами.")
+        prepared = {"provenance": {"funding_applicability": "intraday_not_included"}}
+        journal = [{**row, "funding_rub": None, "funding_contracts": 0} for row in rows]
+    elif funding_window is None:
         # Only known dated-contract pairs may omit rates; a missing perpetual
         # funding source must not silently become zero.
         from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
@@ -120,7 +136,7 @@ def prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchm
         journal = [by_date.get(row["date"], {**row, "funding_rub": None, "funding_contracts": 0}) for row in rows]
     marks = {row["date"]: benchmark_marks[row["date"]] for row in rows}
     selection = {"universe": window.universe, "pair": window.pair, "strategy": plugin.strategy_id,
-                 "timeframe": "1d", "fill": fill, "parameters": validated}
+                 "timeframe": window.timeframe, "fill": fill, "parameters": validated}
     try:
         identity = _run_id({"selection": selection, "series": journal, "trades": trades,
                             "contracts": window.contracts, "benchmark_marks": marks,

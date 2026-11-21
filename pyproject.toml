@@ -24,3 +24,10 @@ moex_spread_lab = ["*.html", "vendor/*.js", "vendor/LICENSE.*"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<10",
+    "pytest-subtests>=0.14,<1",
+    "pytest-xdist>=3.6,<4",
+]

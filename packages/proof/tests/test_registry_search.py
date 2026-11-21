@@ -42,3 +42,25 @@ def test_discovered_plugin_without_accounting_adapter_is_never_searched():
 def test_seed_defaults_come_from_contextual_plugin_schema():
     assert proof_batch._active_seed({"asset": "BR"}, "zscore_mean_reversion")["window"] != proof_batch._active_seed({"asset": "SR"}, "zscore_mean_reversion")["window"]
     assert proof_batch._active_seed({}, "funding_only")["lookback"] == 20
+
+
+def test_calendar_proof_opt_in_is_narrow_and_unambiguous():
+    from moex_spread_lab.strategies.base import calendar_proof_plugin_ids
+    from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
+
+    class NewCalendar(CalendarZscorePlugin):
+        strategy_id = "new_calendar"
+        family_id = "new_calendar"
+        proof_adapter = "calendar_price_intents.v1"
+
+    plugin = NewCalendar()
+    existing = search.STRATEGY_REGISTRY.as_dict()
+    assert calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin})) == {"new_calendar"}
+    plugin.family_id = "mean_reversion"
+    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))
+    plugin.family_id = "new_calendar"
+    plugin.supported_universes = frozenset({PAIR_UNIVERSE, CALENDAR_UNIVERSE})
+    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))
+    plugin.supported_universes = frozenset({CALENDAR_UNIVERSE})
+    plugin.supported_fills = ("next_open",)
+    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))

@@ -119,6 +119,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "strategies.s3_reference.engine": "strategies",
     "strategies.calendar": "strategies",
     "strategies.calendar.calendar_spreads": "strategies",
+    "strategies.calendar.intents": "strategies",
     "strategies.pair_screener": "strategies",
     "strategies.pair_screener.screener": "strategies",
     "strategies.pair_screener.pair_screener": "strategies",

@@ -489,3 +489,29 @@ PLUGIN = SyntheticPlugin()
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_calendar_intent_adapter_matches_existing_engines():
+    from moex_spread_lab.strategies.base import PRICE_FILLS, ZSCORE_CALENDAR_OPTIONS
+    from moex_spread_lab.strategies.calendar.intents import calendar_intent_trades
+    from moex_spread_lab.strategies.calendar_ruonia.engine import convergence_trades
+    from moex_spread_lab.strategies.calendar_zscore.engine import zscore_trades
+
+    window, _ = _calendar_fixture()
+    registry = discover_strategies()
+    for sid, params in (
+        ("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
+        ("convergence_to_ruonia", {"threshold_pp": 1.0}),
+    ):
+        plugin = registry.get(sid)
+        normalized = plugin.validate_parameters(params)
+        for fill, (delay, quote) in PRICE_FILLS.items():
+            actual = calendar_intent_trades(plugin, window, normalized, fill)
+            if sid == "zscore_mean_reversion":
+                options = {**ZSCORE_CALENDAR_OPTIONS["quarterly"], **normalized}
+                expected = zscore_trades(list(window.rows), delay=delay, fill=quote,
+                                         skip_dividend_windows=False, close_at_end=True, **options)
+            else:
+                expected = convergence_trades(list(window.rows), delay=delay, fill=quote,
+                                              threshold=normalized["threshold_pp"], close_at_end=True)
+            assert actual == expected

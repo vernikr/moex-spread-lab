@@ -9,6 +9,7 @@ import os
 import re
 import time
 from bisect import bisect_left, bisect_right
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -21,7 +22,10 @@ from moex_spread_lab.core.settings import EvaluationSplit, INITIAL_CAPITAL, MIN_
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.iss.catalog import IssHistoryError, fetch_history
 from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore
-from ..base import ZSCORE_CALENDAR_OPTIONS
+from ..base import ZSCORE_CALENDAR_OPTIONS, calendar_proof_plugin_ids, discover_strategies
+from .intents import calendar_intent_trades
+from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from ..calendar_ruonia.engine import (
     DIVIDEND_SHARES_PER_CONTRACT,
     QUARTER_DAYS,
@@ -1262,7 +1266,9 @@ class CalendarData:
         timeframe = timeframe or selection.get("timeframe", "1d")
         strategy, fill_label = selection.get("strategy", "zscore_mean_reversion"), selection.get("fill", "next_open")
         quantity, slippage = selection.get("quantity", 1), selection.get("slippage_ticks", 1.0)
-        if not isinstance(asset, str) or asset not in ASSETS or strategy not in STRATEGIES or fill_label not in FILL_LABELS:
+        registry = discover_strategies()
+        generic = strategy in calendar_proof_plugin_ids(registry)
+        if not isinstance(asset, str) or asset not in ASSETS or (strategy not in STRATEGIES and not generic) or fill_label not in FILL_LABELS:
             if not cached_till_date(self.cache):
                 raise W0Error("calendar history is not cached; run calendar-study first")
             raise W0Error("unknown asset, strategy or fill rule")
@@ -1286,12 +1292,31 @@ class CalendarData:
         delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
         options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
         params = selection.get("parameters", {})
-        if not isinstance(params, dict) or set(params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
+        if not isinstance(params, dict):
             raise W0Error("unknown strategy parameter")
-        for key in ("entry_z", "exit_z", "window"):
-            if key in params:
-                options[key] = params[key]
-        threshold = float(params.get("threshold_pp", 1.0))
+        plugin_params = None
+        if generic:
+            context = InstrumentContext(universe=CALENDAR_UNIVERSE, pair=pair, asset=asset,
+                                        timeframe=timeframe, monthly=bool(ASSETS[asset].get("monthly")),
+                                        convergence=bool(ASSETS[asset].get("convergence")))
+            plugin = registry.get(strategy)
+            if plugin.requires_daily_bars and timeframe != "1d":
+                raise W0Error("Плагин поддерживает только дневные данные.")
+            schema = plugin.parameter_schema(context)
+            names = [spec.name for spec in schema]
+            if len(names) != len(set(names)) or not any(spec.tunable for spec in schema) or set(params) - set(names):
+                raise W0Error("Некорректная схема параметров плагина.")
+            plugin_params = plugin.validate_parameters(dict(params), context)
+            if (not isinstance(plugin_params, dict) or set(plugin_params) != set(names)
+                    or any(not spec.contains(plugin_params[spec.name]) for spec in schema)):
+                raise W0Error("Некорректные параметры плагина.")
+        else:
+            if set(params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
+                raise W0Error("unknown strategy parameter")
+            for key in ("entry_z", "exit_z", "window"):
+                if key in params:
+                    options[key] = params[key]
+        threshold = float(params.get("threshold_pp", 1.0)) if not generic else 1.0
         if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
                    for value in (*options.values(), threshold)):
             raise W0Error("strategy parameters must be positive finite numbers")
@@ -1299,7 +1324,7 @@ class CalendarData:
         profile = {**tariff_profile(float(slippage)), "tariff_group": ASSETS[asset]["group"]}
         z_cache = _cache.setdefault("z", {}) if _cache is not None else None
         z_cache_key = (through, fill, quantity)
-        runner = _calendar_strategy_runner(strategy, delay=delay, fill=fill, close_at_end=True, skip_dividend_windows_in_zscore=False,
+        runner = None if generic else _calendar_strategy_runner(strategy, delay=delay, fill=fill, close_at_end=True, skip_dividend_windows_in_zscore=False,
                                  threshold=threshold, zscore_options=options, z_cache=z_cache, z_cache_key=z_cache_key)
         if timeframe == "1h":
             h1_cache = _cache.setdefault("h1", {}) if _cache is not None else None
@@ -1341,8 +1366,24 @@ class CalendarData:
                     raise W0Error("fewer than two positive-volume calendar-spread observations")
                 if elig_cache is not None:
                     elig_cache[through] = analysis_rows
-        per_pair = {pair: runner(analysis_rows)}
         native_order = window.get("native_spread_order", True)
+        if generic:
+            snapshot = WindowSnapshot(
+                universe=CALENDAR_UNIVERSE, pair=pair, asset=asset, timeframe=timeframe,
+                rows=tuple(analysis_rows), near=window.get("near", ""), far=window.get("far", ""),
+                initial_capital_rub=initial_capital, slippage_ticks=float(slippage),
+                native_spread_order=native_order,
+                extra={"monthly": bool(ASSETS[asset].get("monthly")),
+                       "convergence": bool(ASSETS[asset].get("convergence")),
+                       "tradable_every_session": window.get("tradable_every_session", True)},
+            )
+            plugin = registry.get(strategy)
+            verdict = plugin.check_compatibility(deepcopy(snapshot))
+            if not verdict.compatible:
+                raise W0Error(verdict.reason or "Плагин несовместим с выбранным окном.")
+            per_pair = {pair: calendar_intent_trades(plugin, snapshot, plugin_params, fill_label)}
+        else:
+            per_pair = {pair: runner(analysis_rows)}
         if metrics_only and sizing_intents:
             account = {"trade_list": [
                 {"direction": item["direction"], "signal": item["signal"], "reason": item["reason"],
@@ -1361,6 +1402,8 @@ class CalendarData:
             metrics_only=metrics_only, sizing_intents=sizing_intents,
             series_cache=series_cache, series_key=series_key,
         )
+        if generic:
+            payload["selection"]["parameters"] = plugin_params
         price_source = window.get("price_source", "native_daily_spread")
         payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
         if metrics_only:

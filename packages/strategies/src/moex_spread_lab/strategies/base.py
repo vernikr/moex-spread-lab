@@ -204,6 +204,28 @@ class StrategyRegistry:
         return dict(self._plugins)
 
 
+def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
+    """Opt in only unambiguous calendar price-intent plugins to generic proof.
+
+    Plugins remain trusted code; this declaration is not a substitute for causal
+    conformance tests. Pair/funding intents have different accounting semantics.
+    """
+    from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
+
+    plugins = registry.values()
+    counts: dict[str, int] = {}
+    for plugin in plugins:
+        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
+    return frozenset(
+        p.strategy_id for p in plugins
+        if getattr(p, "proof_adapter", None) == "calendar_price_intents.v1"
+        and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
+        and len(p.supported_fills) == len(PRICE_FILLS)
+        and set(p.supported_fills) == set(PRICE_FILLS)
+        and counts[p.family_id] == 1
+    )
+
+
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
     """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points."""
     strategies_dir = Path(__file__).resolve().parent
@@ -269,6 +291,7 @@ __all__ = [
     "WindowSnapshot",
     "ZSCORE_CALENDAR_OPTIONS",
     "calendar_price",
+    "calendar_proof_plugin_ids",
     "calendar_row_buffers",
     "discover_strategies",
     "elapsed_calendar_days",

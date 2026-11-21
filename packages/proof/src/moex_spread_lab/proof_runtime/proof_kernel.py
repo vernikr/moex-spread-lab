@@ -84,14 +84,15 @@ class Axis:
 
 
 from moex_spread_lab.strategies import discover_strategies
+from moex_spread_lab.strategies.base import calendar_proof_plugin_ids
 
 
-# The current accounting adapters support only these strategy implementations.
+# Built-in engines plus explicitly declared, narrowly scoped calendar intents.
 # Discovery alone must never route an unimplemented plugin into another engine.
+STRATEGY_REGISTRY = discover_strategies()
 PROOF_ADAPTER_IDS = frozenset({
     "mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"
-})
-STRATEGY_REGISTRY = discover_strategies()
+}) | calendar_proof_plugin_ids(STRATEGY_REGISTRY)
 
 
 def _strategy_axes() -> dict[str, dict[str, Axis]]:

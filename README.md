@@ -18,7 +18,7 @@ uv run python -m moex_spread_lab.cli calendar-study --till-date YYYY-MM-DD --out
 
 ## Status and references
 
-Stage 9 is in progress. The proof runtime is in `packages/proof` (`moex_spread_lab.proof_runtime`); legacy proof imports remain compatibility aliases. CLI commands are registered by package-local entry points; the web command remains in the umbrella pending Phase 5. Strategy search uses registry metadata but accepts only the four existing proof adapters; generic plugin replay remains unfinished. The proof workbench supersedes the S2 homepage; the S2 compatibility API remains. The [profit audit](docs/development/profit-audit.md) explains why historical proxies do not establish an edge. Shared-capital basket search (S4), deployment and live execution are not delivered. The [EPUB-derived screener proposal](docs/research/reuse/СКРИНЕР_epub.md) is a product hypothesis.
+Stage 9 is in progress. The proof runtime is in `packages/proof` (`moex_spread_lab.proof_runtime`); legacy proof imports remain compatibility aliases. CLI commands are registered by package-local entry points; the web command remains in the umbrella pending Phase 5. Strategy search uses registry metadata and supports opt-in calendar price-intent plugins through the existing proof accounting; generic pair/funding plugin replay remains unfinished. The proof workbench supersedes the S2 homepage; the S2 compatibility API remains. The [profit audit](docs/development/profit-audit.md) explains why historical proxies do not establish an edge. Shared-capital basket search (S4), deployment and live execution are not delivered. The [EPUB-derived screener proposal](docs/research/reuse/СКРИНЕР_epub.md) is a product hypothesis.
 
 - **[Research pack: what to run first](docs/research/README.md)**
 - [Focused research intake and architecture direction](docs/research/accepted/2026-10-26-critical-gates.md)
@@ -59,4 +59,5 @@ Stage 9 is in progress. The proof runtime is in `packages/proof` (`moex_spread_l
 - [CI and fast test runs](docs/development/ci.md)
 - [Remote agent testing and benchmarking design](docs/development/remote-agent-testing.md)
 - [Modular architecture and multi-agent workspace plan](docs/development/modular-architecture-plan.md)
+- [Calendar proof plugin contract](packages/strategies/docs/calendar-proof-plugins.md)
 - [Automated code health and AI-readability plan](docs/development/code-health-plan.md)

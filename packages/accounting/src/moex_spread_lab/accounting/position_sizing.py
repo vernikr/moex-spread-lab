@@ -684,7 +684,7 @@ def size_proof(
         slippage_ticks=settings.slippage_ticks,
         initial_capital_rub=initial,
     )
-    if terms.native:
+    if terms.native and proof["selection"]["strategy"] in {"zscore_mean_reversion", "convergence_to_ruonia"}:
         editable = (
             {"entry_z", "exit_z", "window"}
             if proof["selection"]["strategy"] == "zscore_mean_reversion"

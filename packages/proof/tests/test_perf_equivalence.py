@@ -1187,12 +1187,20 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                         self.assertGreaterEqual(ev["total"], ev["done"])
                     self.assertEqual(_canon(streamed), _canon(plain))
 
-                ui_html = (Path(__file__).resolve().parents[3] / "src/moex_spread_lab/proof_ui.html").read_text(encoding="utf-8")
-                self.assertNotIn("render-progress-run", ui_html)
-                self.assertIn('aria-valuemin="0"', ui_html)
-                self.assertIn('aria-valuemax="100"', ui_html)
-                self.assertIn("apiStream", ui_html)
-                self.assertIn("progress-pill", ui_html)
+                static_dir = (
+                    Path(__file__).resolve().parents[3]
+                    / "packages/web/src/moex_spread_lab/web/static"
+                )
+                ui_bundle = "\n".join(
+                    p.read_text(encoding="utf-8")
+                    for p in sorted(static_dir.rglob("*"))
+                    if p.is_file()
+                )
+                self.assertNotIn("render-progress-run", ui_bundle)
+                self.assertIn('aria-valuemin="0"', ui_bundle)
+                self.assertIn('aria-valuemax="100"', ui_bundle)
+                self.assertIn("apiStream", ui_bundle)
+                self.assertIn("progress-pill", ui_bundle)
             finally:
                 server.shutdown()
                 server.server_close()

@@ -1,0 +1,37 @@
+.tablepage{height:100%;display:flex;flex-direction:column;min-height:0}
+.table-head{padding:7px 12px 2px}
+.table-head h3{margin:0 0 2px;font-size:13px}
+.table-head p{margin:0 0 6px;color:#8da1b4;font-size:9.5px;max-width:1100px;line-height:1.5}
+.tablewrap{flex:1;overflow:auto;min-height:0;padding:0 6px 6px}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:10.5px}
+th{position:sticky;top:0;background:#16293a;color:#a9bccb;text-align:left;font-weight:650;padding:6px 8px;border-bottom:1px solid #2f4659;white-space:nowrap;z-index:2}
+td{padding:5px 8px;border-bottom:1px solid #1f3142;white-space:nowrap;vertical-align:top}
+td small{display:block;color:#7e93a6;margin-top:1px;font-size:9px}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.fill td{cursor:pointer}
+tr.entry td{background:#142b3a}
+tr.exit td{background:#241f16}
+tr.sel td{background:#183246!important}
+tr.fill:hover td{background:#192e40}
+.badge{display:inline-block;border-radius:6px;padding:2px 7px;font-size:9.5px;font-weight:750;letter-spacing:.04em}
+.badge.entry{background:#123a52;color:#8ec9f0;border:1px solid #2a5a7d}
+.badge.exit{background:#3a2a12;color:#f0c98e;border:1px solid #6a5a2c}
+.badge.open{background:#3a2312;color:#f0b2a9;border:1px solid #7a4540}
+tr.card td{background:#0d1723 !important;padding:0}
+.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:10px 14px}
+.cardgroup{background:#111d2a;border:1px solid #233648;border-radius:10px;padding:9px 11px;font-size:10.5px;line-height:1.6}
+.cardgroup h4{margin:0 0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:#8aa0b3}
+.cardgroup .k{color:#8aa0b3}
+.cardgroup b{color:#e8f0f7}
+.win-chip{color:#78e0b4;font-weight:750}
+.loss-chip{color:#f0928a;font-weight:750}
+.flat-chip{color:#a9bccb;font-weight:750}
+tr.totals td{background:#16293a;font-weight:750;border-top:2px solid #2f4659}
+tr.recon td{background:#111d2a;font-size:10px;color:#a9bccb}
+tr.recon.ok b{color:#78e0b4}
+tr.recon.warn b{color:#e7bd82}
+tr.note td{background:#2a1f12;color:#e7c98e;font-size:10px}
+.notes{flex:0 0 auto;color:#8da1b4;font-size:9.5px;line-height:1.5;padding:8px 12px;border-top:1px solid #223142}
+.empty{color:#8da1b4;padding:26px;text-align:center;font-size:12px}
+.validation-start td{border-top:2px dashed #d5a562}
+.validation-tag{color:#f1c98f;font-size:9px;font-weight:650}

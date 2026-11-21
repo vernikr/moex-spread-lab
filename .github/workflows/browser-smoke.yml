@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: "33 5 * * 3"  # weekly, Wednesday 05:33 UTC
 
-# Playwright Chromium suites over synthetic data (tests/browser/*_smoke.py).
+# Playwright Chromium suites over synthetic data (packages/web/tests/browser/*_smoke.py).
 # Kept out of per-push CI on purpose: they are slower and flakier than the
 # pytest suite. Verified headless on Linux; nine-to-ten suites run in ~2 min.
 
@@ -15,6 +15,7 @@ permissions:
 env:
   UV_COMPILE_BYTECODE: "1"
   UV_LINK_MODE: copy
+  MOEX_OFFLINE_ONLY: "1"
 
 jobs:
   browser-smoke:
@@ -41,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd tests/browser
+          cd packages/web/tests/browser
           for f in *_smoke.py; do
             echo "=== $f"
             uv run --with playwright --project "$GITHUB_WORKSPACE" python "$f"

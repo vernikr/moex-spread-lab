@@ -1,0 +1,46 @@
+{
+  "module_id": "moex-spread-lab.web",
+  "release": "0.9.0",
+  "contract_version": "msl-web.v1",
+  "kind": "web",
+  "capabilities": [
+    "loopback_http_server",
+    "execution_proof_ui",
+    "strategy_schema_api",
+    "ndjson_progress_streaming"
+  ],
+  "inputs": [
+    "execution-proof.v1",
+    "proof-search.v4"
+  ],
+  "outputs": [
+    "strategy-registry.v1",
+    "execution-proof.v1",
+    "proof-search.v4"
+  ],
+  "dependencies": [
+    "moex-spread-lab.core",
+    "moex-spread-lab.data",
+    "moex-spread-lab.strategies",
+    "moex-spread-lab.proof"
+  ],
+  "owner": "project-web",
+  "resource_profile": {
+    "network": "loopback_only_127_0_0_1",
+    "runtime": "single-process-threaded",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "delegated_to_proof_runtime"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "active"
+  }
+}

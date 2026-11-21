@@ -11,6 +11,7 @@ dependencies = [
     "msl-data",
     "msl-strategies",
     "msl-proof",
+    "msl-web",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
     "pyarrow>=18,<20",
@@ -19,9 +20,6 @@ dependencies = [
 
 [project.scripts]
 moex-spread-lab = "moex_spread_lab.cli:main"
-
-[project.entry-points."moex_spread_lab.cli"]
-web = "moex_spread_lab.cli_web:register"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -39,6 +37,7 @@ msl-core = { workspace = true }
 msl-data = { workspace = true }
 msl-strategies = { workspace = true }
 msl-proof = { workspace = true }
+msl-web = { workspace = true }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -47,9 +46,6 @@ package-dir = {"" = "src"}
 where = ["src"]
 namespaces = true
 
-[tool.setuptools.package-data]
-moex_spread_lab = ["*.html", "vendor/*.js", "vendor/LICENSE.*"]
-
 [tool.pytest.ini_options]
 pythonpath = [
     "packages/core/src",
@@ -57,11 +53,13 @@ pythonpath = [
     "packages/accounting/src",
     "packages/strategies/src",
     "packages/proof/src",
+    "packages/web/src",
     "src",
     "packages/data/tests",
     "packages/accounting/tests",
     "packages/strategies/tests",
     "packages/proof/tests",
+    "packages/web/tests",
     "tests",
 ]
 testpaths = [
@@ -70,6 +68,7 @@ testpaths = [
     "packages/accounting/tests",
     "packages/strategies/tests",
     "packages/proof/tests",
+    "packages/web/tests",
     "tests",
 ]
 

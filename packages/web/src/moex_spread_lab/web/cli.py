@@ -16,7 +16,7 @@ def register(subparsers):
 
 def run(args):
     if args.command == "screener":
-        from moex_spread_lab.screener_app import ScreenerInputs, serve
+        from .server import ScreenerInputs, serve
 
         serve(ScreenerInputs(args.root.resolve()), args.port)
         return 0

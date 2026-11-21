@@ -1,8 +1,9 @@
 """Optional real-browser regression; uses synthetic data, never workstation inputs.
 
-After installing Chromium for Playwright: uv run --with playwright python tests/browser/period_settings_smoke.py
+After installing Chromium for Playwright: uv run --with playwright python packages/web/tests/browser/period_settings_smoke.py
 """
 
+import os
 import re
 import sys
 import tempfile
@@ -11,11 +12,15 @@ from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+os.environ.setdefault("MOEX_OFFLINE_ONLY", "1")
+
 from playwright.sync_api import expect, sync_playwright
 
 from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
+sys.path.insert(0, str(_REPO_ROOT / "tests"))
 from proof_fixtures import fixture
 
 _STREAM_SPY = """

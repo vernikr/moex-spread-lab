@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOEX Spread Lab · Доказательство исполнения</title>
+<link rel="stylesheet" href="/static/css/layout.css">
+<link rel="stylesheet" href="/static/css/picker.css">
+<link rel="stylesheet" href="/static/css/charts.css">
+<link rel="stylesheet" href="/static/css/ledger.css">
+</head>
+<body>
+<div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ожидание" aria-hidden="true"><span id="render-progress-bar" aria-hidden="true"></span></div>
+<div class="app">
+  <header class="top">
+    <div class="brand"><div class="mark">M</div><div><div class="eyebrow">Исследовательская среда</div><h1>MOEX Spread Lab</h1></div></div>
+    <div class="nav-links">
+      <span id="progress-pill" class="progress-pill" hidden aria-live="polite"></span>
+      <button class="ghost settings-trigger" id="open-settings" type="button" disabled aria-haspopup="dialog" aria-controls="global-settings">Настройки <small id="settings-badge">Проверка: —</small></button>
+      <button class="ghost" id="toggle-summary" type="button" aria-expanded="false" aria-controls="summary-block">Показать сводку</button>
+    </div>
+  </header>
+
+  <dialog class="settings-dialog" id="global-settings" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <div class="settings-body">
+        <div class="eyebrow">Глобальные настройки</div><h2 id="settings-title">Настройки расчёта</h2>
+        <label for="global-capital">Размер капитала · ₽</label>
+        <div class="settings-value"><input id="global-capital" type="number" min="0.01" max="1000000000" step="0.01" required autofocus title="Одинаковый стартовый капитал независимого расчёта каждого окна. Не подбирается Optuna."><span>на каждое окно</span></div>
+        <span class="settings-label" id="global-timeframe-label">Таймфрейм свечей</span>
+        <div class="settings-value"><div id="global-timeframe" class="segmented" role="radiogroup" aria-labelledby="global-timeframe-label" aria-describedby="timeframe-help"></div></div>
+        <p id="timeframe-help">Интервал применяется к свечам, pair-proof и графикам. Календарь на 1h использует нативный spread H1, если он доступен; иначе явно помеченный far − near proxy по синхронным H1 ногам. Дневные цены не подставляются.</p>
+        <label for="global-fill">Исполнение</label>
+        <div class="settings-value"><select id="global-fill" required aria-describedby="fill-help"></select></div>
+        <p id="fill-help">Для ценовых стратегий (возврат к среднему и сходимость к RUONIA). Стратегия фондирования всегда использует расчётную цену в тот же день.</p>
+        <label for="validation-percent">Доля истории для проверки</label>
+        <div class="settings-value"><input id="validation-percent" type="number" min="0" max="50" step="any" required aria-describedby="split-preview"><span>%</span><input id="validation-range" type="range" min="0" max="50" step="any" aria-label="Доля проверки в процентах"></div>
+        <p id="split-preview" aria-live="polite"></p>
+        <label for="global-slippage">Проскальзывание · тики</label>
+        <div class="settings-value"><input id="global-slippage" type="number" min="0" max="10" step="0.5" required aria-describedby="slippage-help"><span>на исполнение</span></div>
+        <p id="slippage-help">Общее для всех стратегий и окон. Для биржевого календарного спреда — по одному разу на входе и на выходе, для обычной пары — по каждой ноге. Добавляется к комиссии.</p>
+        <label for="global-seed">Сид случайности</label>
+        <div class="settings-value"><input id="global-seed" type="number" min="0" max="2147483647" step="1" required aria-describedby="seed-help"><span>0 — новый при каждом запуске</span></div>
+        <p id="seed-help">От него считаются все случайные величины проекта: подбор параметров Optuna. Ненулевое значение делает каждый запуск воспроизводимым — тот же сид даёт тот же результат. При 0 каждый запуск берёт новый сид, и повторный запуск может дать другой результат.</p>
+        <fieldset class="screen-options">
+          <legend>При подборе параметров позволять учитывать спреды, не прошедшие проверку:</legend>
+          <label><input id="allow-failed-volume" type="checkbox" checked> на объём</label>
+          <label><input id="allow-failed-capital" type="checkbox" checked> на капитал</label>
+        </fieldset>
+      </div>
+      <div class="settings-footer">
+        <span class="settings-error" role="alert" id="settings-error"></span>
+        <div class="settings-actions"><button type="button" class="ghost" id="cancel-settings">Отмена</button><button type="submit" class="ghost apply" id="apply-settings">Применить</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="compatibility" class="settings-dialog review" aria-labelledby="compatibility-title" aria-describedby="compatibility-message">
+    <div class="dialog-scroll">
+      <div class="settings-body"><div class="eyebrow">Совместимость выбора</div><h2 id="compatibility-title">Снять несовместимые отметки?</h2><p id="compatibility-message"></p><ul id="compatibility-list"></ul></div>
+      <div class="settings-footer"><div class="settings-actions"><button type="button" class="ghost" id="compatibility-no" autofocus>Отмена</button><button type="button" class="ghost apply" id="compatibility-yes">Снять отметки и продолжить</button></div></div>
+    </div>
+  </dialog>
+
+  <div class="layout" id="layout">
+    <aside class="panel side" id="col-selection">
+      <div id="selection-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
+        <div id="selection-lists" class="selection-lists">
+          <section class="pick-panel" aria-labelledby="asset-label"><h2 id="asset-label">Тип пары / основной актив</h2><label class="pick-all"><input type="checkbox" class="pick-check" id="all-assets" aria-label="Все активы">Все</label><div id="main-asset" class="pick-list" role="group" aria-labelledby="asset-label"></div></section>
+          <section class="pick-panel" aria-labelledby="window-label"><h2 id="window-label">Исторические пары</h2><label class="pick-all"><input type="checkbox" class="pick-check" id="all-windows" aria-label="Все окна открытого актива">Все</label><div id="window-list" class="pick-list" role="group" aria-labelledby="window-label"></div></section>
+        </div>
+      </div>
+      <div class="status" id="status" role="status"></div>
+    </aside>
+
+    <div class="column-resizer" id="resize-selection" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки выбора пары" aria-valuemin="220" aria-valuemax="560" aria-valuenow="296" tabindex="0"></div>
+
+    <aside class="panel side" id="col-norm">
+      <div class="side-title">Нормализация</div>
+      <select id="norm" class="listbox" size="14">
+        <optgroup label="Уровень">
+          <option value="raw">Сырой · % от дальней ноги</option>
+          <option value="expanding">Остаток к нарастающему среднему</option>
+        </optgroup>
+        <optgroup label="Возврат к среднему · в единицах цены">
+          <option value="rm20">Остаток к скользящему среднему · 20 набл.</option>
+          <option value="rm60">Остаток к скользящему среднему · 60 набл.</option>
+          <option value="ema10">Остаток к EMA · полураспад 10</option>
+          <option value="ols20">Детренд по скользящему OLS · 20 набл.</option>
+          <option value="ols60">Детренд по скользящему OLS · 60 набл.</option>
+          <option value="ou60">Остаток ОУ · AR(1) · 60 набл.</option>
+        </optgroup>
+        <optgroup label="В единицах волатильности (σ)">
+          <option value="rz20">Скользящий z-скор · 20 набл.</option>
+          <option value="ewma10">EWMA z · полураспад 10</option>
+          <option value="mad20">Робастный z · медиана/MAD · 20 набл.</option>
+          <option value="garch" selected>GARCH(1,1) z · трейлинг</option>
+          <option value="kalman">z инновации Калмана · локальный уровень</option>
+        </optgroup>
+        <optgroup label="Ограниченные">
+          <option value="stoch20">Стохастик · 20 набл. (0–100)</option>
+        </optgroup>
+      </select>
+      <div class="norm-hint" id="norm-hint"></div>
+      <section id="strategy-form" class="strategy-block" aria-label="Стратегия и параметры">
+        <div id="focus-editor">
+          <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+            <div class="hint" id="pair-hint"></div>
+            <div class="control"><label for="strategy">Стратегия</label><select id="strategy"></select></div>
+            <div class="sidegrid" id="pair-params"></div>
+            <div class="sidegrid" id="pair-plugin-params"></div>
+          </div>
+          <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+            <div class="control"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div>
+            <div class="sidegrid" id="calendar-params"></div>
+          </div>
+        </div>
+        <section id="cohort-editor" aria-labelledby="group-heading" hidden>
+          <div class="group-cap"><b id="group-heading">Параметры и светофор группы</b></div>
+          <div class="control"><label for="group-strategy">Общая стратегия</label><select id="group-strategy"></select></div>
+          <div class="sidegrid" id="group-params"></div>
+          <div id="group-profile-state" class="tune-help" role="status" aria-live="polite"></div>
+        </section>
+        <div class="tune-tool">
+          <button class="tune-button" id="auto-tune" type="button" disabled><span id="tune-label">Подобрать стратегию и параметры</span><small>Optuna</small></button>
+          <div class="tune-state" id="tune-state" role="status"></div>
+        </div>
+      </section>
+    </aside>
+
+    <div class="column-resizer" id="resize-norm" role="separator" aria-orientation="vertical" aria-label="Изменить ширину колонки нормализации" aria-valuemin="190" aria-valuemax="480" aria-valuenow="262" tabindex="0"></div>
+
+    <main class="main">
+      <details id="batch-result" class="batch-result" hidden></details>
+      <div id="chart-selection-scope" class="group-note" hidden></div>
+      <section id="period-result" class="result-strip" hidden aria-label="Результат расчётного периода" aria-live="polite"></section>
+      <section class="summary-block hidden" id="summary-block" aria-label="Сводка расчёта">
+        <div class="evidence" id="evidence">
+          <span>run_id <code id="ev-runid">—</code></span>
+          <button class="ghost" id="copy-runid">Копировать run_id</button>
+          <button class="ghost" id="download-csv">Скачать CSV</button>
+          <span id="ev-period"></span>
+          <span id="ev-selection"></span>
+          <span id="ev-role" class="price-role"></span>
+          <span id="ev-provenance" title=""></span>
+          <span id="ev-recon"></span>
+        </div>
+        <div id="flags" class="flags"></div>
+        <div class="history-label">Сводка исполнения за всю историю</div>
+        <div id="tiles" class="tiles"></div>
+      </section>
+
+      <div class="panel maintabs">
+        <div class="tabbar">
+          <button class="tab active" id="tab-charts" role="tab">Графики</button>
+          <button class="tab" id="tab-table" role="tab">Таблица</button>
+          <div class="tab-spacer"></div><span class="history-label" id="chart-scope">Вся история</span>
+        </div>
+        <div class="tabpage" id="tabpage-charts">
+          <div id="charts">
+            <div class="empty" id="charts-empty">Выберите пару или календарное окно: разбор запустится автоматически. Параметры пересчитываются по Enter или при потере фокуса.</div>
+            <div class="tip" id="tip"></div>
+          </div>
+        </div>
+        <div class="tabpage hidden" id="tabpage-table">
+          <div class="tablepage">
+            <div class="table-head">
+              <div class="eyebrow">Единый журнал · одна таблица</div>
+              <h3>Журнал исполнения · вся история</h3>
+            </div>
+            <div class="tablewrap" id="ledger-table"><div class="empty">Запуска ещё не было.</div><div class="notes" id="notes"></div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div id="plateau-tip" class="plateau-tip" role="tooltip" hidden></div>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

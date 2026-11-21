@@ -160,7 +160,13 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "proof_batch": "proof",
     "proof_strategy_search": "proof",
     "proof_search": "proof",
-    # L4: web
+    # L4: packages/web (`msl-web`) + umbrella shim
+    "web": "web",
+    "web.store": "web",
+    "web.server": "web",
+    "web.routes_proof": "web",
+    "web.routes_settings": "web",
+    "web.routes_legacy": "web",
     "screener_app": "web",
     # L5: cli
     "core.cli": "cli",
@@ -168,6 +174,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "accounting.cli": "cli",
     "strategies.cli": "cli",
     "proof_runtime.cli": "cli",
+    "web.cli": "cli",
     "cli_web": "cli",
     "cli": "cli",
 }
@@ -367,8 +374,8 @@ class ArchitectureDagTests(unittest.TestCase):
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         modules = _discover_modules()
         detailed_edges = _build_import_graph(modules)
-        package_prefixes = ("core.", "data.", "accounting.", "strategies.", "proof_runtime.")
-        package_roots = {"core", "data", "accounting", "strategies", "proof_runtime"}
+        package_prefixes = ("core.", "data.", "accounting.", "strategies.", "proof_runtime.", "web.")
+        package_roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             if src in package_roots or src.startswith(package_prefixes):
@@ -381,6 +388,28 @@ class ArchitectureDagTests(unittest.TestCase):
             "Extracted workspace packages must not import root umbrella modules:\n  "
             + "\n  ".join(violations),
         )
+
+    def test_frontend_es_module_import_dag_is_acyclic(self) -> None:
+        import re
+
+        js_dir = PACKAGES_DIR / "web" / "src" / "moex_spread_lab" / "web" / "static" / "js"
+        js_files = sorted(js_dir.glob("*.js"))
+        self.assertGreaterEqual(len(js_files), 9)
+        known = {p.name for p in js_files}
+        adjacency: dict[str, set[str]] = {name: set() for name in known}
+        import_re = re.compile(r"""(?:from|import)\s+['"]([^'"]+)['"]""")
+        for path in js_files:
+            src = path.read_text(encoding="utf-8")
+            for target in import_re.findall(src):
+                self.assertTrue(
+                    target.startswith("./") and target.endswith(".js"),
+                    f"{path.name} must use relative ./foo.js imports, got {target!r}",
+                )
+                dep = target.removeprefix("./")
+                self.assertIn(dep, known, f"{path.name} imports missing ES module {dep!r}")
+                adjacency[path.name].add(dep)
+        cycles = [scc for scc in _tarjan_sccs(adjacency) if len(scc) > 1]
+        self.assertEqual(cycles, [], f"Frontend ES module import cycles detected: {cycles}")
 
     def test_strategy_plugin_subfolders_are_strictly_isolated(self) -> None:
         """Each strategy plugin subfolder may import only core/data/accounting, strategies.base, and itself."""

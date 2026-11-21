@@ -1,0 +1,30 @@
+[project]
+name = "msl-web"
+version = "0.9.0"
+description = "MOEX Spread Lab loopback HTTP screener, execution-proof routes, and modular static web UI"
+requires-python = ">=3.12,<3.13"
+dependencies = ["msl-core", "msl-data", "msl-strategies", "msl-proof"]
+
+[project.entry-points."moex_spread_lab.cli"]
+web = "moex_spread_lab.web.cli:register"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"moex_spread_lab.web" = [
+    "static/*.html",
+    "static/css/*.css",
+    "static/js/*.js",
+    "vendor/*.js",
+    "vendor/LICENSE.*",
+    "vendor/*.md",
+]

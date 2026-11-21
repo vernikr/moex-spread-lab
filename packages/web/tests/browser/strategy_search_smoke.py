@@ -14,7 +14,9 @@ from pathlib import Path
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import funding_winner, rising_calendar, two_calendar_windows
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packages/proof/tests"))
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(_REPO_ROOT / "packages" / "accounting" / "tests"))
+sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
 from test_global_capital import PAIR
 
 from moex_spread_lab.proof import ProofService

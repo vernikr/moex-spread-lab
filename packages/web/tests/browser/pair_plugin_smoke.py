@@ -38,14 +38,27 @@ class DemoCarry(FundingCarryPlugin):
     label_ru = "Демо carry"
     proof_adapter = "carry_settlement_intents.v1"
 CARRY = DemoCarry()
+from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
+class DemoCalendar(CalendarZscorePlugin):
+    strategy_id = "demo_ui_calendar"
+    family_id = "demo_ui_calendar"
+    label_ru = "Демо календарь"
+    proof_adapter = "calendar_price_intents.v1"
+    def parameter_schema(self, context=None):
+        return super().parameter_schema(context) + (ParameterSpec("cal_extra", "Шаг календаря", "int", 4, 1, 8, 1),)
+    def evaluate_intents(self, window, params, fill):
+        base = {k:v for k,v in params.items() if k != "cal_extra"}
+        run = CalendarZscorePlugin().evaluate_intents(window, base, fill)
+        return replace(run, strategy_id=self.strategy_id, parameters=params)
+CALENDAR = DemoCalendar()
 ''')
         dist = path / "demo_ui-1.0.dist-info"
         dist.mkdir()
         (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-ui\nVersion: 1.0\n")
-        (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_ui = demo_pair_ui:PLUGIN\ndemo_ui_carry = demo_pair_ui:CARRY\n")
+        (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_ui = demo_pair_ui:PLUGIN\ndemo_ui_carry = demo_pair_ui:CARRY\ndemo_ui_cal = demo_pair_ui:CALENDAR\n")
         env = {**os.environ, "MSL_PLUGIN_SMOKE_CHILD": "1", "MOEX_PROOF_WORKERS": "1", "MOEX_OFFLINE_ONLY": "1",
-               "PYTHONPATH": os.pathsep.join([str(path), str(Path(__file__).resolve().parents[1]),
-                    str(Path(__file__).resolve().parents[2] / "packages/proof/tests"), os.environ.get("PYTHONPATH", "")])}
+               "PYTHONPATH": os.pathsep.join([str(path), str(Path(__file__).resolve().parents[4] / "tests"),
+                    str(Path(__file__).resolve().parents[4] / "packages/proof/tests"), os.environ.get("PYTHONPATH", "")])}
         raise SystemExit(subprocess.call([sys.executable, __file__], env=env))
 
 import threading
@@ -99,8 +112,25 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
         expect(page.locator("#group-strategy")).to_have_value("demo_ui_carry")
         assert page.evaluate("sharedRequest().fill") == "same_day_settlement"
         expect(page.locator("#group-lookback")).to_be_visible()
+
+        cal_page = browser.new_page(viewport={"width":1450,"height":950})
+        install_stream_spy(cal_page)
+        cal_page.on("pageerror", lambda e: errors.append(str(e)))
+        cal_page.goto(f"http://127.0.0.1:{server.server_port}/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
+        ready(cal_page, "training")
+        expect(cal_page.locator('#cstrategy option[value="demo_ui_calendar"]')).to_be_enabled()
+        cal_page.locator("#cstrategy").select_option("demo_ui_calendar")
+        cal_page.wait_for_function("() => payload?.selection?.strategy === 'demo_ui_calendar'", timeout=30000)
+        expect(cal_page.locator("#cplugin-cal_extra")).to_have_value("4")
+        expect(cal_page.locator("#centry")).to_have_count(0)
+        cal_page.locator("#cplugin-cal_extra").fill("6")
+        cal_page.locator("#cplugin-cal_extra").press("Enter")
+        cal_page.wait_for_function("() => payload?.selection?.parameters?.cal_extra === 6", timeout=30000)
+        cal_page.locator('tr[data-leaf="calendar_native|SR|SRH3/SRM3"] input').check()
+        expect(cal_page.locator("#group-strategy")).to_have_value("demo_ui_calendar")
+        expect(cal_page.locator("#group-cal_extra")).to_have_value("6")
         assert not errors, errors
-        print("Drop-in pair plugin catalog, actual proof, parameter editing and cohort controls: OK")
+        print("Drop-in pair, carry, and calendar plugin catalog, actual proof, parameter editing and cohort controls: OK")
     finally:
         browser.close()
         server.shutdown()

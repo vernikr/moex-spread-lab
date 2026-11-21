@@ -158,8 +158,14 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertNotIn(zero_day, _positive_leg_volume_dates(self.inputs, pair))
 
     def test_proof_ui_function_declarations_are_unique(self):
-        ui = Path(__file__).parents[1] / "src/moex_spread_lab/proof_ui.html"
-        declarations = re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", ui.read_text())
+        js_dir = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web/static/js"
+        js_files = sorted(js_dir.glob("*.js"))
+        self.assertGreaterEqual(len(js_files), 9)
+        declarations = []
+        for path in js_files:
+            declarations.extend(
+                re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", path.read_text(encoding="utf-8"))
+            )
         self.assertEqual(len(declarations), len(set(declarations)))
 
     def test_pair_registry_has_two_level_base_and_historical_gold_options(self):

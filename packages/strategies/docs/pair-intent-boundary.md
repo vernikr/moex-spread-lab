@@ -34,3 +34,11 @@ exit/re-entry (even though the price boundary currently permits it), pending an
 explicit cross-engine event-order contract. It does not calculate P&L, tariffs,
 capital or summary metrics. Parity tests cover long/short, open/close fills,
 quantity scaling and normal versus terminal exit against the existing baseline.
+
+`replay_daily_pair_funding` resolves the existing `FundingWindow` before replay.
+It requires an exact match to daily analysis keys, honors prefix and training
+cutoffs, rejects unresolved evidence and carries the existing provenance. Published
+zero, an interpolated rate, and a confirmed no-clearing day remain distinguishable;
+only the last explicitly has no payment without having a numerical rate. Hourly
+bars are rejected: resolving the exchange clearing-to-bar mapping remains open.
+The resulting daily funding rows are not yet connected to ledger or sizing.

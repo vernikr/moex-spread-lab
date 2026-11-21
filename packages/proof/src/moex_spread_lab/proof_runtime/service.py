@@ -287,6 +287,21 @@ class ProofService:
             initial_capital=settings.initial_capital_rub,
             timeframe=settings.timeframe,
         )
+        # Expose only explicitly adapted plugins without changing the legacy
+        # screener's fixed strategy controls. Availability is per timeframe; pair
+        # data/volume/contract compatibility remains a proof-time decision.
+        from moex_spread_lab.strategies import discover_strategies
+        from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids
+        registry = discover_strategies()
+        adapted = daily_pair_proof_plugin_ids(registry)
+        pair["proof_plugins"] = [
+            {"id": p.strategy_id, "family_id": p.family_id, "label": p.label_ru,
+             "adapter": p.proof_adapter, "supported_fills": list(p.supported_fills),
+             "requires_daily_bars": p.requires_daily_bars,
+             "timeframe_supported": settings.timeframe == "1d" or not p.requires_daily_bars,
+             "parameters": [spec.to_dict() for spec in p.parameter_schema()]}
+            for p in registry if p.strategy_id in adapted
+        ]
         return {
             **calendar,
             "initial_capital_rub": settings.initial_capital_rub,

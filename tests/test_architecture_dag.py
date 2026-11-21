@@ -110,6 +110,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "strategies.funding_carry.funding_screen": "strategies",
     "strategies.funding_carry.engine": "strategies",
     "strategies.funding_carry.plugin": "strategies",
+    "strategies.funding_carry.intents": "strategies",
     "strategies.calendar_zscore": "strategies",
     "strategies.calendar_zscore.engine": "strategies",
     "strategies.calendar_zscore.plugin": "strategies",

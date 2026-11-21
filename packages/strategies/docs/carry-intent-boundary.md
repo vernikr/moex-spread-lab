@@ -1,0 +1,5 @@
+# Funding-carry intent boundary
+
+`carry_settlement_intents` is an internal validation building block, **not a proof or search adapter**. Third-party carry strategies are not enabled by it. It checks daily settlement dates, prices, direction, chronological entry/exit and signal, position overlap, and executable-leg volumes; it drops plugin-supplied financial claims. An open terminal mark may lack executable volume. It runs the plugin on a copy of its input.
+
+This check cannot prove that a plugin's signal uses only past data. Before a public adapter can be enabled, proof must independently enforce causal funding inputs and cutoff, pair identity and expiry, funding evidence, and reproduce native settlement accounting, tariff, benchmark and position sizing for fixed and automatic quantities. Real proof and search parity tests are required. In particular, ordinary settlement exits do not receive exit-day funding, whereas a terminal open mark does. Strategy-provided P&L must never be trusted.

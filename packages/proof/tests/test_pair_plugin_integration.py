@@ -73,6 +73,10 @@ path.write_text(json.dumps(contracts))
 save_settings(root, {"random_seed": 41, "validation_percent": 20})
 assert "demo_pair" in STRATEGY_AXES
 service = ProofService(root)
+plugins = service.catalog()["pair_screen"]["proof_plugins"]
+assert [p["id"] for p in plugins] == ["demo_pair", "demo_pair_hourly"]
+assert all(p["timeframe_supported"] for p in plugins)
+assert all({s["name"] for s in p["parameters"]} == {"lookback", "entry_z", "exit_z"} for p in plugins)
 from moex_spread_lab.core.settings import ResearchSettings
 for fill in ("next_open", "next_close", "reference_same_bar"):
     base = {**request(), "sizing": "max_affordable", "fill": fill}
@@ -179,6 +183,9 @@ for secid, close_fn in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
         "secid": secid, "interval": 60, "timeframe": "1h", "rows": hourly}))
 save_settings(root, {"timeframe": "1h", "validation_percent": 20, "random_seed": 41})
 h1 = ProofService(root)
+h1_plugins = {p["id"]: p for p in h1.catalog()["pair_screen"]["proof_plugins"]}
+assert not h1_plugins["demo_pair"]["timeframe_supported"]
+assert h1_plugins["demo_pair_hourly"]["timeframe_supported"]
 for fill in ("next_open", "next_close", "reference_same_bar"):
     for auto in (False, True):
         base = {**request(), "fill": fill}

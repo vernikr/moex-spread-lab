@@ -124,6 +124,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "strategies.pair_screener": "strategies",
     "strategies.pair_screener.screener": "strategies",
     "strategies.pair_screener.pair_screener": "strategies",
+    "strategies.pair_screener.intents": "strategies",
     # L2 backward-compatibility shims in src/moex_spread_lab/
     "analytics": "strategies",
     "carry": "strategies",

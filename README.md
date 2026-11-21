@@ -60,4 +60,5 @@ Stage 9 is in progress. The proof runtime is in `packages/proof` (`moex_spread_l
 - [Remote agent testing and benchmarking design](docs/development/remote-agent-testing.md)
 - [Modular architecture and multi-agent workspace plan](docs/development/modular-architecture-plan.md)
 - [Calendar proof plugin contract](packages/strategies/docs/calendar-proof-plugins.md)
+- [Pair intent boundary and remaining accounting work](packages/strategies/docs/pair-intent-boundary.md)
 - [Automated code health and AI-readability plan](docs/development/code-health-plan.md)

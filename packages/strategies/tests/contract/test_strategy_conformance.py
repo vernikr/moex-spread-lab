@@ -541,3 +541,42 @@ def test_reusable_conformance_helper_on_pair_builtins(tmp_path):
     funding, funding_series = _funding_carry_fixture(tmp_path)
     assert_causal_conformance(registry.get("funding_only"), funding, funding_series,
                               {"lookback": 5}, cutoffs=(14, 20, 26))
+
+
+def test_pair_intent_boundary_reproduces_legacy_price_intents():
+    """The legacy plugin's timing is made explicit without changing its output."""
+    from dataclasses import replace
+    from moex_spread_lab.strategies.base import PRICE_FILLS
+    from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
+
+    window, _ = _pair_mean_reversion_fixture()
+    original = discover_strategies().get("mean_reversion")
+    params = {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5}
+
+    class WithExplicitSignal:
+        strategy_id = original.strategy_id
+        supported_fills = original.supported_fills
+
+        def evaluate_intents(self, snapshot, params, fill):
+            result = original.evaluate_intents(snapshot, params, fill)
+            delay = PRICE_FILLS[fill][0]
+            days = [str(row["date"])[:10] for row in snapshot.rows]
+            enriched = []
+            for item in result.intents:
+                i = days.index(item["entry_date"][:10])
+                enriched.append({**item, "signal": {"date": days[i - delay], "kind": "z", "value": item["entry_signal_z"]}})
+            return replace(result, intents=tuple(enriched))
+
+    for fill in original.supported_fills:
+        expected = original.evaluate_intents(window, params, fill).intents
+        actual = pair_price_intent_trades(WithExplicitSignal(), window, params, fill)
+        assert len(actual) == len(expected) > 0
+        for got, old in zip(actual, expected, strict=True):
+            assert got["entry"]["date"] == old["entry_date"][:10]
+            assert got["exit"]["date"] == old["exit_date"][:10]
+            assert got["entry"]["near_price"] == old["entry_near_fill"]
+            assert got["entry"]["far_price"] == old["entry_far_fill"]
+            assert got["exit"]["near_price"] == old["exit_near_fill"]
+            assert got["exit"]["far_price"] == old["exit_far_fill"]
+            assert got["exit_reason"] == old["reason"]
+            assert got["open_at_end"] == (old["reason"] == "end_of_sample")

@@ -36,7 +36,7 @@ ASSETS: dict[str, dict[str, Any]] = {
     "RN": {"group": "stock", "name": "ROSN"},
     "SP": {"group": "stock", "name": "SBPR"},
     "MG": {"group": "stock", "name": "MGNT"},
-    "YN": {"group": "stock", "name": "YDEX"},
+    "YD": {"group": "stock", "name": "YDEX"},
     "AL": {"group": "stock", "name": "ALRS"},
     "TN": {"group": "stock", "name": "TATN"},
     "SG": {"group": "stock", "name": "SNGP"},

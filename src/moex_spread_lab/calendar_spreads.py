@@ -400,10 +400,43 @@ class CalendarData:
         number = float(value)
         return number if math.isfinite(number) else None
 
+    def _fetch_h1_candles(self, secid: str, path: Path) -> bool:
+        import os
+        import urllib.request
+        if os.environ.get("MOEX_OFFLINE_ONLY") == "1":
+            return False
+        if not hasattr(self, "_h1_fetch_attempted"):
+            self._h1_fetch_attempted: set[str] = set()
+        if secid in self._h1_fetch_attempted:
+            return False
+        self._h1_fetch_attempted.add(secid)
+        try:
+            url = f"https://iss.moex.com/iss/engines/futures/markets/forts/securities/{secid}/candles.json?interval=60&from={HISTORY_FROM}&iss.meta=off"
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            candles = payload.get("candles", {})
+            cols = candles.get("columns", [])
+            data = candles.get("data", [])
+            if not cols or not data:
+                return False
+            rows = [dict(zip(cols, row)) for row in data]
+            target = path if path.suffix == ".json" else self.root / "data/w1/candles/1h" / f"{secid}.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps({
+                "schema_version": "iss-candles.v1",
+                "secid": secid,
+                "interval": 60,
+                "rows": rows,
+            }, ensure_ascii=False), encoding="utf-8")
+            return self.bar_store.source_available(self.bar_store.select_h1(secid))
+        except Exception:
+            return False
+
     def _read_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
         path = self.bar_store.select_h1(secid)
         if not self.bar_store.source_available(path):
-            return None, "no_local_h1_file"
+            if not self._fetch_h1_candles(secid, path):
+                return None, "no_local_h1_file"
         try:
             source = self.bar_store.read(path, columns=("begin", "open", "close", "volume"))
             fingerprint = source.cache_key

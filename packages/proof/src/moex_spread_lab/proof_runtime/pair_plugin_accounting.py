@@ -19,7 +19,7 @@ from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_t
 from .pair_funding_replay import attach_daily_unit_funding
 
 
-def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchmark_marks, settings, *, through=None):
+def prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchmark_marks, settings, *, through=None):
     """Validate decisions and size them against resolved funding and one account.
 
     Zero-volume rows stay in the journal without revaluation or funding. Only the
@@ -131,4 +131,9 @@ def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchma
             "instrument": {"near": window.near, "far": window.far}, "contract": {},
             "window": {}, "series": journal, "trades": trades,
             "provenance": prepared["provenance"], "summary": {}, "notes": []}
+    return unit, marks
+
+
+def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchmark_marks, settings, *, through=None):
+    unit, marks = prepare_daily_pair_unit(plugin, window, params, fill, funding_window, benchmark_marks, settings, through=through)
     return size_proof(unit, marks, settings, window.contracts)

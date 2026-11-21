@@ -319,9 +319,9 @@ class ProofService:
         registry = discover_strategies()
         strategy = selection.get("strategy")
         if isinstance(strategy, str) and strategy in daily_pair_proof_plugin_ids(registry):
-            if not automatic(selection):
-                raise W0Error("Парный плагин пока поддерживает только автоматический размер позиции.")
-            if selection.get("quantity") is not None:
+            if selection.get("sizing") not in (None, AUTO_SIZING):
+                raise W0Error("Неизвестный режим расчёта размера позиции.")
+            if automatic(selection) and selection.get("quantity") is not None:
                 raise W0Error("При автоматическом размере количество не задаётся вручную.")
             return self._prepare_daily_pair_plugin(selection, settings, registry.get(strategy))
         if selection.get("sizing") not in (None, AUTO_SIZING):
@@ -611,7 +611,7 @@ class ProofService:
     def _prepare_daily_pair_plugin(self, selection, settings, plugin):
         """Restricted daily pair-plugin route using the existing screens and funded account."""
         from moex_spread_lab.core.contracts import WindowSnapshot
-        from .pair_plugin_accounting import size_daily_pair_plugin
+        from .pair_plugin_accounting import prepare_daily_pair_unit, size_daily_pair_plugin
 
         if selection.get("universe") != PAIR_UNIVERSE or settings.timeframe != "1d":
             raise W0Error("Парный плагин поддерживает только дневные окна пар.")
@@ -630,16 +630,26 @@ class ProofService:
         def replay(request, through=None, *, metrics_only=False, scalar_summary=None):
             if (not isinstance(request, dict) or request.get("strategy") != plugin.strategy_id
                     or request.get("universe") != PAIR_UNIVERSE or request.get("pair") != pair["pair_id"]
-                    or not automatic(request) or request.get("quantity") is not None):
+                    or automatic(request) != automatic(selection)
+                    or (automatic(request) and request.get("quantity") is not None)):
                 raise W0Error("Запрос не соответствует подготовленному окну плагина.")
             fill = pair_fill(request, plugin.strategy_id, default_price_fill=settings.price_fill)
             params = request.get("parameters", {})
-            actual = size_daily_pair_plugin(plugin, snapshot, params, fill, funding_window,
-                                            marks, settings, through=through)
+            if automatic(request):
+                actual = size_daily_pair_plugin(plugin, snapshot, params, fill, funding_window,
+                                                marks, settings, through=through)
+            else:
+                execution = execution_settings(request)
+                unit, _ = prepare_daily_pair_unit(plugin, snapshot, params, fill, funding_window,
+                                                  marks, settings, through=through)
+                actual = None
             # The native proof supplies trusted market/chart/screen metadata only;
             # never retain its decisions, ledger or indicator values.
             template_request = {**request, "strategy": "mean_reversion", "parameters": {}, "fill": fill}
             template = native(template_request, through=through)
+            if actual is None:
+                return self._fixed_daily_pair_plugin_payload(template, unit, series, pair,
+                    execution, dates, prices, provenance)
             by_date = {row["date"]: row for row in template["series"]}
             enriched_rows = []
             for row in actual["series"]:
@@ -664,6 +674,8 @@ class ProofService:
                 if "sizing" in trade:
                     full_trade["sizing"] = trade["sizing"]
                 enriched_trades.append(full_trade)
+            if abs(actual["summary"]["ledger_reconciliation_rub"]) > 0.02:
+                raise W0Error("Учёт плагина не согласован с журналом сделок.")
             template.update(selection=actual["selection"], series=enriched_rows, trades=enriched_trades,
                             ledger=actual["ledger"], summary=actual["summary"], sizing=actual["sizing"],
                             skipped_entries=actual["skipped_entries"])
@@ -679,6 +691,118 @@ class ProofService:
                                            "sizing": template["sizing"], "provenance": template["provenance"]})
             return template
         return replay
+
+    def _fixed_daily_pair_plugin_payload(self, template, unit, series, pair, execution,
+                                         benchmark_dates, benchmark_prices, provenance):
+        """Recompute fixed-quantity fills, cash flows and journal from unit intents."""
+        from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+
+        quantity, slippage = execution["quantity"], execution["slippage_ticks"]
+        near, far = pair["near"], pair["far"]
+        contracts = [series["contracts"][near], series["contracts"][far]]
+        near_mult, far_mult = (_point_value(c) for c in contracts)
+        margin = sum(float(c["initial_margin"]) for c in contracts) * quantity
+        originals = {r["date"]: r for r in template["series"]}
+        rows = []
+        for raw in unit["series"]:
+            amount = raw["funding_rub"]
+            if amount is not None and not math.isfinite(amount * quantity):
+                raise W0Error("Переполнение суммы фондирования.")
+            rows.append({**originals[raw["date"]], **raw,
+                         "funding_rub": round(amount * quantity, 8) if amount is not None else None,
+                         "funding_contracts": quantity * raw["funding_contracts"], "signal_z": None})
+        by_date = {r["date"]: r for r in rows}
+        trades = []
+        for number, intent in enumerate(unit["trades"], 1):
+            blocks = {}
+            for event in ("entry", "exit"):
+                fill = intent[event]
+                costs = side_cost(tariff_profile(slippage), list(zip(contracts, (fill["near_price"], fill["far_price"]))), quantity)
+                if any(not math.isfinite(v) or v < 0 for v in costs.values()):
+                    raise W0Error("Некорректные издержки пары.")
+                costs = {k: round(v, 8) for k, v in costs.items()}
+                blocks[event] = self._fill_block(fill["date"], fill["spread_fill"], fill["near_price"],
+                    fill["far_price"], by_date, costs, far_value=fill["far_price"] * far_mult)
+            funding = sum(float(r["funding_rub"] or 0) for r in rows
+                          if intent["entry"]["date"] <= r["date"] <= intent["exit"]["date"])
+            direction = 1 if intent["side"] == "long_spread" else -1
+            entry, exit_ = intent["entry"], intent["exit"]
+            gross = direction * quantity * ((exit_["near_price"] - entry["near_price"]) * near_mult
+                    - (exit_["far_price"] - entry["far_price"]) * far_mult) + funding
+            cost = sum(sum(blocks[event]["costs"].values()) for event in ("entry", "exit"))
+            if not all(math.isfinite(v) for v in (gross, cost, funding, gross - cost)):
+                raise W0Error("Переполнение расчёта сделки.")
+            trades.append(self._trade_block(number=number, side=intent["side"], quantity=quantity,
+                signal=intent["signal"], entry=blocks["entry"], exit=blocks["exit"],
+                exit_reason=intent["exit_reason"], margin_pair=margin, gross_rub=gross,
+                costs_rub=cost, net_rub=gross-cost, benchmark_dates=benchmark_dates,
+                benchmark_prices=benchmark_prices, open_at_end=intent["open_at_end"],
+                funding_rub=funding if series["provenance"].get("near_funding_history_sha256") or provenance else None))
+        ledger = self._price_ledger(rows, trades, near_mult, far_mult, quantity)
+        for row, led in zip(rows, ledger, strict=True):
+            row["margin_rub"] = round(margin, 2) if led["position"] else 0.0
+        capital = template["initial_capital_rub"]
+        marks = [_mark(benchmark_dates, benchmark_prices, r.get("benchmark_mark_date") or r["date"]) for r in rows]
+        # Keep sub-kopeck precision for the account curve; ledger presentation is
+        # rounded to kopecks and must not be used to calculate risk drawdown.
+        entries = {t["entry"]["date"]: t for t in trades}
+        exits = {t["exit"]["date"]: t for t in trades}
+        unit_by_date = {r["date"]: r for r in unit["series"]}
+        position = None
+        cumulative = 0.0
+        precise_pnl = []
+        for row in rows:
+            day = row["date"]
+            change = fee = 0.0
+            if row["volume_eligible"] and position is not None:
+                closing = exits.get(day)
+                near_px, far_px = ((closing["exit"]["near_price"], closing["exit"]["far_price"])
+                                   if closing else (row["near"], row["far"]))
+                change += position["sign"] * quantity * ((near_px-position["near"]) * near_mult
+                                                          - (far_px-position["far"]) * far_mult)
+                if closing:
+                    fee += sum(closing["exit"]["costs"].values())
+                    position = None
+                else:
+                    position.update(near=near_px, far=far_px)
+            opening = entries.get(day) if row["volume_eligible"] else None
+            if opening:
+                sign = 1 if opening["side"] == "long_spread" else -1
+                enter = opening["entry"]
+                fee += sum(enter["costs"].values())
+                change += sign * quantity * ((row["near"]-enter["near_price"]) * near_mult
+                                              - (row["far"]-enter["far_price"]) * far_mult)
+                position = {"sign": sign, "near": row["near"], "far": row["far"]}
+            cumulative += change - fee + float(unit_by_date[day]["funding_rub"] or 0) * quantity
+            precise_pnl.append(round(capital + cumulative, 8) - capital)
+        values, _ = lqdt_overlay_values(capital, precise_pnl,
+                                        [margin if r["position"] else 0.0 for r in ledger], marks)
+        peak = drawdown = 0.0
+        for value, mark in zip(values, marks, strict=True):
+            excess = round(round(value, 8) - round(capital * mark / marks[0], 8), 8)
+            peak = max(peak, excess)
+            drawdown = max(drawdown, peak - excess)
+        closed = [t for t in trades if not t["open_at_end"]]
+        gross, costs, net = (sum(t[k] for t in trades) for k in ("gross_rub", "costs_rub", "net_rub"))
+        hurdle = sum(t["lqdt_on_margin_rub"] for t in trades)
+        template["selection"].update(strategy=unit["selection"]["strategy"], parameters=unit["selection"]["parameters"])
+        template.update(series=rows, trades=trades, ledger=ledger)
+        template["summary"].update(trades=len(trades), closed_trades=len(closed), open_positions=len(trades)-len(closed),
+            winners=sum(t["net_rub"] > 0 for t in closed), gross_rub=round(gross, 2), costs_rub=round(costs, 2),
+            net_rub=round(net, 2), cost_totals=_cost_totals(trades), lqdt_on_margin_rub=round(hurdle, 2),
+            excess_over_lqdt_rub=round(net-hurdle, 2), max_excess_drawdown_rub=round(drawdown, 2),
+            ledger_reconciliation_rub=round(net-(ledger[-1]["cumulative_net_rub"] if ledger else 0), 2))
+        if abs(template["summary"]["ledger_reconciliation_rub"]) > 0.02:
+            raise W0Error("Учёт плагина не согласован с журналом сделок.")
+        template["provenance"].update({**provenance, **unit["provenance"]})
+        template["notes"] = [n for n in template["notes"] if not n.startswith("Открытая на конец выборки позиция отмечается")]
+        if any(t["open_at_end"] for t in trades):
+            template["notes"].append("Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.")
+        template["notes"].append("Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно.")
+        attach_entry_levels(template)
+        template["run_id"] = _run_id({"selection": template["selection"], "series": rows,
+                                      "trades": trades, "ledger": ledger, "provenance": template["provenance"]})
+        return template
 
     def _price_inputs(self, inputs, pair, funding, validation_percent, timeframe="1d"):
         series, book = pair_price_inputs(inputs, pair, funding, timeframe=timeframe)

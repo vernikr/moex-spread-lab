@@ -36,7 +36,7 @@ PLUGIN = Demo()
     code = '''
 import sys
 from pathlib import Path
-from funding_fixtures import PAIR, fixture, request
+from funding_fixtures import PAIR, WEEKEND_PAIR, fixture, request, weekend
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.service import ProofService
@@ -44,9 +44,23 @@ from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_kernel import STRATEGY_AXES
 root = Path(sys.argv[1])
 fixture(root)
+weekend(root)
+# Add one registered dated pair, with synthetic copies of the same bars.
+import json
+path = root / "data/w1/current-intake.json"
+contracts = json.loads(path.read_text())
+for old, new in (("CNYRUBF", "GLZ6"), ("CRZ6", "GLH7")):
+    original = next(c for c in contracts["instruments"] if c["secid"] == old)
+    contracts["instruments"].append({**original, "secid": new, "stable_id": new})
+    source = root / "data/w1/candles" / (old + "_1d.json")
+    bars = json.loads(source.read_text())
+    bars["secid"] = new
+    (source.parent / (new + "_1d.json")).write_text(json.dumps(bars))
+path.write_text(json.dumps(contracts))
 save_settings(root, {"random_seed": 41, "validation_percent": 20})
 assert "demo_pair" in STRATEGY_AXES
 service = ProofService(root)
+from moex_spread_lab.core.settings import ResearchSettings
 for fill in ("next_open", "next_close", "reference_same_bar"):
     base = {**request(), "sizing": "max_affordable", "fill": fill}
     base.pop("quantity")
@@ -58,12 +72,42 @@ for fill in ("next_open", "next_close", "reference_same_bar"):
     assert actual["ledger"] == expected["ledger"], (fill, next(((a,e) for a,e in zip(actual["ledger"],expected["ledger"]) if a != e), None))
     assert actual["summary"]["ledger_reconciliation_rub"] == 0
     assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
-try:
-    service.prepare({**request(), "strategy": "demo_pair"})
-except W0Error:
-    pass
-else:
-    raise AssertionError("fixed quantity must fail closed")
+for fill in ("next_open", "next_close", "reference_same_bar"):
+    base = {**request(), "fill": fill}
+    fixed = {**base, "strategy": "demo_pair"}
+    actual = research_run(service, fixed, optimize=False, include_plateau=False)
+    expected = research_run(service, base, optimize=False, include_plateau=False)
+    assert actual["trades"] == expected["trades"], (fill, actual["trades"], expected["trades"])
+    assert actual["ledger"] == expected["ledger"], (fill, actual["ledger"], expected["ledger"])
+    assert actual["summary"] == expected["summary"], (fill, actual["summary"], expected["summary"])
+    assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
+    cutoff = actual["evaluation"]["periods"]["training"][-1]
+    actual_prefix = service.prepare(fixed, settings=ResearchSettings(validation_percent=20))(fixed, through=cutoff)
+    expected_prefix = service.prepare(base, settings=ResearchSettings(validation_percent=20))(base, through=cutoff)
+    assert actual_prefix["trades"] == expected_prefix["trades"]
+    assert actual_prefix["ledger"] == expected_prefix["ledger"]
+    assert actual_prefix["summary"] == expected_prefix["summary"]
+for fill in ("next_open", "next_close", "reference_same_bar"):
+    weekend_request = {**request(pair=WEEKEND_PAIR), "fill": fill}
+    actual_weekend = research_run(service, {**weekend_request, "strategy": "demo_pair"}, optimize=False, include_plateau=False)
+    expected_weekend = research_run(service, weekend_request, optimize=False, include_plateau=False)
+    assert actual_weekend["trades"] == expected_weekend["trades"]
+    assert actual_weekend["ledger"] == expected_weekend["ledger"]
+    assert actual_weekend["summary"] == expected_weekend["summary"]
+    dated = {**request(pair="GLZ6/GLH7"), "fill": fill}
+    actual = research_run(service, {**dated, "strategy": "demo_pair"}, optimize=False, include_plateau=False)
+    expected = research_run(service, dated, optimize=False, include_plateau=False)
+    assert actual["trades"] == expected["trades"]
+    assert actual["ledger"] == expected["ledger"]
+    assert actual["summary"] == expected["summary"]
+for qty in (1, 3):
+    for slip in (0.0, 2.5):
+        base = {**request(), "fill": "next_open", "quantity": qty, "slippage_ticks": slip}
+        actual = research_run(service, {**base, "strategy": "demo_pair"}, optimize=False, include_plateau=False)
+        expected = research_run(service, base, optimize=False, include_plateau=False)
+        assert actual["trades"] == expected["trades"]
+        assert actual["ledger"] == expected["ledger"]
+        assert actual["summary"] == expected["summary"]
 try:
     service.prepare({**candidate, "quantity": 2})
 except W0Error:
@@ -87,6 +131,23 @@ else:
 search = research_run(service, {**candidate, "optimize_strategy": True}, optimize=True)
 row = next(item for item in search["strategy_search"]["alternatives"] if item["strategy"] == "demo_pair")
 assert row["trial_count"] == 80, row
+
+# Force the same two-window cohort through local and worker-process paths.
+import os
+cohort = {**candidate, "targets": [{"universe": "pair_screen", "pair": PAIR},
+                                   {"universe": "pair_screen", "pair": WEEKEND_PAIR},
+                                   {"universe": "pair_screen", "pair": "GLZ6/GLH7"}]}
+os.environ["MOEX_PROOF_WORKERS"] = "1"
+serial = research_run(ProofService(root), cohort, optimize=True)
+os.environ["MOEX_PROOF_WORKERS"] = "2"
+os.environ["MOEX_PROOF_FORCE_POOL"] = "1"
+parallel_service = ProofService(root)
+parallel = research_run(parallel_service, cohort, optimize=True)
+assert len(parallel_service._pool._worker_slots) == 2
+assert serial["selected_parameters"] is not None, serial
+assert serial["selected_parameters"] == parallel["selected_parameters"], (serial, parallel)
+assert serial["run_id"] == parallel["run_id"], (serial["run_id"], parallel["run_id"])
+parallel_service.close()
 '''
     result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "root")],
                             env=env, capture_output=True, text=True, timeout=180)

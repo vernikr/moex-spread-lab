@@ -4,7 +4,7 @@ A trusted installed `StrategyPlugin` may opt in with
 `proof_adapter = "daily_pair_price_intents.v1"`, a unique `family_id`, exactly
 `{"pair_screen"}`, `requires_daily_bars = True`, and all three price fills.
 Discovery alone does not enable an adapter. The supported proof/search path is
-**daily and `sizing=max_affordable` only**; fixed quantity and hourly requests
+**daily only**, with automatic or fixed-quantity sizing; hourly requests
 fail closed. Funding-only plugins are not supported by this contract. Plugin
 code is trusted, not sandboxed, and conformance tests cannot prove causality.
 
@@ -29,8 +29,9 @@ funded account sets quantity and computes tariffs, capital, ledger and summary;
 search retains the same family order, seed derivation and 80-trial budget.
 
 The drop-in integration test compares trades, ledger and holdout evaluation with
-the native mean-reversion proof for all fills and exercises cohort search. Further
-coverage is required for fixed-size and hourly pair plugins, generic funding-carry
-plugins, and multi-worker end-to-end parity. The pair catalog and web UI are not
+the native mean-reversion proof for all fills, fixed and automatic sizing, and
+training cutoffs; it exercises search and verifies identical run IDs and parameters
+across serial and two-worker three-window cohorts. Hourly pair plugins and generic
+funding-carry plugins remain unsupported. The pair catalog and web UI are not
 yet dynamically extended by this adapter; API proof and search requests can use
 its registered strategy ID.

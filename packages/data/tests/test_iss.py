@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from moex_spread_lab.iss import analyze_candle_pair, fetch_candle_series, normalize_candle_borders, normalize_candles, normalize_iss_intake
+from moex_spread_lab.data.iss.catalog import analyze_candle_pair, fetch_candle_series, normalize_candle_borders, normalize_candles, normalize_iss_intake
 
 
 def payload():

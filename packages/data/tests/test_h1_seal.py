@@ -3,11 +3,11 @@ from unittest.mock import patch
 
 import pytest
 import test_store_cutover as fixtures
-from moex_spread_lab.h1_migration import write_h1_plan, stage_h1
-from moex_spread_lab.h1_seal import activate_h1, verify_sealed_h1, deactivate_h1
-from moex_spread_lab.data_lake import MarketDataStore, DataLakeError
-from moex_spread_lab.screener_app import ScreenerInputs
-from moex_spread_lab.calendar_spreads import CalendarData
+from moex_spread_lab.data.lake.h1_migration import write_h1_plan, stage_h1
+from moex_spread_lab.data.lake.h1_seal import activate_h1, verify_sealed_h1, deactivate_h1
+from moex_spread_lab.data.lake.data_lake import MarketDataStore, DataLakeError
+from moex_spread_lab.web.server import ScreenerInputs
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.cli import main
 
 

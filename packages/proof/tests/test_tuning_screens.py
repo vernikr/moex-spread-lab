@@ -9,16 +9,16 @@ from unittest.mock import patch
 from proof_fixtures import screen_failures
 from test_proof_batch import ACTIVE, C, P
 
-from moex_spread_lab.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     ResearchSettings,
     read_settings,
     save_settings,
     settings_path,
 )
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_batch import checked_plateau
-from moex_spread_lab.proof_search import TRIALS, _tune, research_run
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.proof_runtime.proof_search import TRIALS, _tune, research_run
+from moex_spread_lab.core.w0 import W0Error
 
 
 class TuningScreenTests(unittest.TestCase):
@@ -160,7 +160,7 @@ class TuningScreenTests(unittest.TestCase):
             return _tune(*args, **kwargs)
 
         with patch(
-            "moex_spread_lab.proof_batch._tune", side_effect=change_while_running
+            "moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change_while_running
         ):
             r = research_run(svc, req, optimize=True)
         for e in [r["group"], *[m["evaluation"] for m in r["group"]["members"]]]:

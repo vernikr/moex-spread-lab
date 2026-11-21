@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.data_lake import DataLakeError, ParquetBarStore
+from moex_spread_lab.data.lake.data_lake import DataLakeError, ParquetBarStore
 
 
 class DataLakeTests(unittest.TestCase):

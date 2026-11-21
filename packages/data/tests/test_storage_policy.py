@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 import zstandard as zstd
 
-from moex_spread_lab.storage_policy import storage_budget, archive_catalog, publish_report
-from moex_spread_lab.w0 import W0Error, canonical_bytes, sha256_bytes, sha256_file
+from moex_spread_lab.data.retention.storage_policy import storage_budget, archive_catalog, publish_report
+from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_bytes, sha256_file
 
 
 def test_budget_empty_read_only(tmp_path):

@@ -4,8 +4,8 @@ import json
 
 from test_execution_proof import _build_root
 
-from moex_spread_lab.carry import _history_url
-from moex_spread_lab.screener_app import HISTORY_WINDOWS, ScreenerInputs
+from moex_spread_lab.strategies.funding_carry.carry import _history_url
+from moex_spread_lab.web.server import HISTORY_WINDOWS, ScreenerInputs
 
 PAIR = "CNYRUBF/CRZ6"
 WEEKEND_PAIR = "GAZPF/GZH6"
@@ -52,7 +52,7 @@ def fixture(root):
 
 def weekend(root):
     """Clone CNY-shaped synthetic prices under a launch-weekend perpetual; no weekend EOD or LQDT."""
-    from moex_spread_lab.proof_funding import NO_CLEARING
+    from moex_spread_lab.strategies.funding_carry.proof_funding import NO_CLEARING
 
     src = ScreenerInputs(root)
     near, far = WEEKEND_PAIR.split("/")

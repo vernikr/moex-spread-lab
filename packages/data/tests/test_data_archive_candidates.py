@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import zstandard as zstd
 
-from moex_spread_lab.data_archive_candidates import execute, verify_archive, _fingerprint
-from moex_spread_lab.data_retention import DataRetentionError
-from moex_spread_lab.w0 import canonical_bytes
+from moex_spread_lab.data.retention.data_archive_candidates import execute, verify_archive, _fingerprint
+from moex_spread_lab.data.retention.data_retention import DataRetentionError
+from moex_spread_lab.core.w0 import canonical_bytes
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ def test_no_apply_without_receipt(setup):
 
 
 def test_publication_race_never_overwrites(setup, monkeypatch):
-    import moex_spread_lab.data_archive_candidates as module
+    import moex_spread_lab.data.retention.data_archive_candidates as module
     root, path, archive = setup
     result = plan(setup)
     original = module.verify_archive
@@ -174,7 +174,7 @@ def test_publication_race_never_overwrites(setup, monkeypatch):
 
 
 def test_source_changed_during_archive_is_not_published(setup, monkeypatch):
-    import moex_spread_lab.data_archive_candidates as module
+    import moex_spread_lab.data.retention.data_archive_candidates as module
     root, path, archive = setup
     result = plan(setup)
     original = module.verify_archive

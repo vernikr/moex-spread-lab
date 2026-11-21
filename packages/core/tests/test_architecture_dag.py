@@ -18,10 +18,12 @@ and ``src/moex_spread_lab/`` using AST inspection (including function-level / la
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
+import re
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
@@ -285,6 +287,12 @@ def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, in
     return edges
 
 
+@lru_cache(maxsize=1)
+def _workspace_analysis() -> tuple[dict[str, Path], dict[str, set[tuple[str, int]]]]:
+    modules = _discover_modules()
+    return modules, _build_import_graph(modules)
+
+
 def _tarjan_sccs(adjacency: dict[str, set[str]]) -> list[list[str]]:
     index = 0
     indices: dict[str, int] = {}
@@ -324,7 +332,7 @@ def _tarjan_sccs(adjacency: dict[str, set[str]]) -> list[list[str]]:
 
 class ArchitectureDagTests(unittest.TestCase):
     def test_every_package_module_has_explicit_layer_assignment(self) -> None:
-        modules = _discover_modules()
+        modules, _ = _workspace_analysis()
         unclassified = sorted(set(modules) - set(LAYER_ASSIGNMENTS))
         stale = sorted(set(LAYER_ASSIGNMENTS) - set(modules))
         self.assertEqual(
@@ -339,8 +347,7 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
-        modules = _discover_modules()
-        detailed_edges = _build_import_graph(modules)
+        modules, detailed_edges = _workspace_analysis()
         adjacency = {
             src: {dst for dst, _ in targets}
             for src, targets in detailed_edges.items()
@@ -353,8 +360,7 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_strict_six_layer_dependency_dag(self) -> None:
-        modules = _discover_modules()
-        detailed_edges = _build_import_graph(modules)
+        modules, detailed_edges = _workspace_analysis()
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             src_layer = LAYER_ASSIGNMENTS[src]
@@ -372,8 +378,7 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
-        modules = _discover_modules()
-        detailed_edges = _build_import_graph(modules)
+        modules, detailed_edges = _workspace_analysis()
         package_prefixes = ("core.", "data.", "accounting.", "strategies.", "proof_runtime.", "web.")
         package_roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
         violations: list[str] = []
@@ -413,8 +418,7 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_strategy_plugin_subfolders_are_strictly_isolated(self) -> None:
         """Each strategy plugin subfolder may import only core/data/accounting, strategies.base, and itself."""
-        modules = _discover_modules()
-        detailed_edges = _build_import_graph(modules)
+        modules, detailed_edges = _workspace_analysis()
         plugin_folders = {
             "pair_mean_reversion",
             "funding_carry",
@@ -448,8 +452,7 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_data_and_accounting_siblings_are_strictly_isolated(self) -> None:
-        modules = _discover_modules()
-        detailed_edges = _build_import_graph(modules)
+        modules, detailed_edges = _workspace_analysis()
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
             if src == "data" or src.startswith("data."):
@@ -467,6 +470,44 @@ class ArchitectureDagTests(unittest.TestCase):
             [],
             "Layer 1 siblings msl-data and msl-accounting must never import each other or higher layers:\n  "
             + "\n  ".join(violations),
+        )
+
+    def test_workspace_code_and_tests_do_not_import_compatibility_shims(self) -> None:
+        """Internal packages/tests use canonical package paths; root modules are public shims only."""
+        shim_names = {
+            path.stem
+            for path in UMBRELLA_DIR.glob("*.py")
+            if path.name not in {"__init__.py", "cli.py"}
+        }
+        candidates = [
+            *sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab/**/*.py")),
+            *sorted(PACKAGES_DIR.glob("*/tests/**/*.py")),
+            *sorted((REPO_ROOT / "tests").glob("*.py")),
+        ]
+        violations: list[str] = []
+        legacy_path = re.compile(r"\bmoex_spread_lab\.([A-Za-z_]\w*)\b")
+        for path in candidates:
+            source = path.read_text(encoding="utf-8")
+            for match in legacy_path.finditer(source):
+                if match.group(1) in shim_names:
+                    line = source[:match.start()].count(chr(10)) + 1
+                    violations.append(f"{path.relative_to(REPO_ROOT)}:{line} -> {match.group(0)}")
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "moex_spread_lab":
+                    for alias in node.names:
+                        if alias.name in shim_names:
+                            violations.append(
+                                f"{path.relative_to(REPO_ROOT)}:{node.lineno} -> "
+                                f"from moex_spread_lab import {alias.name}"
+                            )
+        self.assertEqual(
+            violations,
+            [],
+            "Workspace internals must import canonical package modules, not root compatibility shims:"
+            + chr(10)
+            + "  "
+            + chr(10).join(violations),
         )
 
 

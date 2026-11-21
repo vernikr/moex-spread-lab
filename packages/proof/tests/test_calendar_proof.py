@@ -8,11 +8,11 @@ from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from moex_spread_lab.calendar_spreads import CalendarData, HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.carry import _history_url
-from moex_spread_lab.evaluation_periods import ResearchSettings
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData, HISTORY_FIELDS, HISTORY_FROM
+from moex_spread_lab.strategies.funding_carry.carry import _history_url
+from moex_spread_lab.core.settings import ResearchSettings
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 TILL = "2023-06-15"
 
@@ -316,7 +316,7 @@ class CalendarProofTests(unittest.TestCase):
         connection.close()
 
     def test_service_calendar_payload_adds_instrument_provenance_and_run_id(self):
-        from moex_spread_lab.proof import ProofService
+        from moex_spread_lab.proof_runtime.service import ProofService
 
         proof = ProofService(self.root).proof({"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3",
                                                "strategy": "zscore_mean_reversion", "fill": "next_open",

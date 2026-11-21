@@ -66,7 +66,7 @@ from http.server import ThreadingHTTPServer
 from playwright.sync_api import expect, sync_playwright
 from period_settings_smoke import ready, install_stream_spy, expect_api_json
 from proof_fixtures import funding_winner
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
     root = Path(tmp)

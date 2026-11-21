@@ -11,8 +11,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from moex_spread_lab.carry import HISTORY_FIELDS, _history_url
-from moex_spread_lab.screener_app import (
+from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from moex_spread_lab.web.server import (
     HISTORICAL_PERPETUAL_PAIRS,
     HISTORY_WINDOWS,
     PAIRS,
@@ -25,7 +25,7 @@ from moex_spread_lab.screener_app import (
     catalog,
     make_handler,
 )
-from moex_spread_lab.screener_search import screen_table
+from moex_spread_lab.proof_runtime.screener_search import screen_table
 
 
 class ScreenerAppTests(unittest.TestCase):
@@ -220,7 +220,7 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
 
     def test_legacy_manual_run_and_table_use_the_same_global_share(self):
-        from moex_spread_lab.evaluation_periods import save_settings
+        from moex_spread_lab.core.settings import save_settings
 
         save_settings(self.root, {"validation_percent": 20})
         selection = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
@@ -321,7 +321,7 @@ class ScreenerAppTests(unittest.TestCase):
         cache.mkdir(parents=True, exist_ok=True)
         for secid in ("CNYRUBF", "CRZ6"):
             (cache / f"{secid}-2025-06-17-2026-10-27-0.json").write_text("{}")
-        with patch("moex_spread_lab.screener_app.fetch_history", side_effect=history):
+        with patch("moex_spread_lab.web.server.fetch_history", side_effect=history):
             result = build_result(
                 self.inputs,
                 {
@@ -449,7 +449,7 @@ class ScreenerAppTests(unittest.TestCase):
         response.read()
         connection.close()
         with self.assertRaises(OSError):
-            from moex_spread_lab.screener_app import _offline_only
+            from moex_spread_lab.web.server import _offline_only
 
             _offline_only("https://iss.moex.com/")
 

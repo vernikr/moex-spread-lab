@@ -19,9 +19,9 @@ sys.path.insert(0, str(_REPO_ROOT / "packages" / "accounting" / "tests"))
 sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
 from test_global_capital import PAIR
 
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_search import research_run
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 PAIR_URL = "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
 CAL_URL = "/proof?universe=calendar_native&asset=SR&pair=SRM3%2FSRU3&strategy=zscore_mean_reversion"

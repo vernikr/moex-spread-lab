@@ -8,10 +8,10 @@ from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from moex_spread_lab.carry import HISTORY_FIELDS, _history_url
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 START, END = "2025-06-17", "2026-10-27"
 
@@ -93,7 +93,7 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertIn("assets", catalog)
 
     def test_hourly_pair_proof_uses_unique_timestamps_and_prior_daily_benchmark(self):
-        from moex_spread_lab.evaluation_periods import ResearchSettings, save_settings
+        from moex_spread_lab.core.settings import ResearchSettings, save_settings
 
         for secid, close_fn in (("CNYRUBF", _near_close), ("CRZ6", _far_close)):
             daily = json.loads((self.root / f"data/w1/candles/{secid}_1d.json").read_text())
@@ -136,7 +136,7 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertTrue(all(row["benchmark_mark_date"] < row["session_date"] for row in result["series"]))
         self.assertEqual(result["window"]["min_leg_volume"], 800)
         self.assertEqual(result["selection"]["timeframe"], "1h")
-        from moex_spread_lab.proof_search import research_run
+        from moex_spread_lab.proof_runtime.proof_search import research_run
         evaluated = research_run(self.proof, selection, optimize=False, include_plateau=False)
         self.assertIsNotNone(evaluated["evaluation"]["periods"]["validation"])
         self.assertGreater(evaluated["evaluation"]["observations"]["validation"], 0)

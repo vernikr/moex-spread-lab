@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.data_inventory import build_data_inventory
-from moex_spread_lab.data_retention import (
+from moex_spread_lab.data.retention.data_inventory import build_data_inventory
+from moex_spread_lab.data.retention.data_retention import (
     DATA_ARCHIVE_SCHEMA,
     DataRetentionError,
     archive_rebuildable_caches,

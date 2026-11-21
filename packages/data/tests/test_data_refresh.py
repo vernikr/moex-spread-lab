@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.data_lake import ParquetBarStore, RawResponseArchive
-from moex_spread_lab.data_refresh import DataRefreshError, RefreshTarget, refresh_candle_datasets
+from moex_spread_lab.data.lake.data_lake import ParquetBarStore, RawResponseArchive
+from moex_spread_lab.data.lake.data_refresh import DataRefreshError, RefreshTarget, refresh_candle_datasets
 
 
 ASSUMPTION = "user_A-06_candle_is_usable_medium_term_price_proxy"

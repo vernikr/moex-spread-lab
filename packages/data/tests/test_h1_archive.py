@@ -3,10 +3,10 @@ from unittest.mock import patch
 
 import pytest
 from test_h1_seal import prepared
-from moex_spread_lab.h1_archive import execute
-from moex_spread_lab.h1_seal import activate_h1, SealedH1Reader
-from moex_spread_lab.data_lake import ParquetBarStore, DataLakeError
-from moex_spread_lab.w0 import canonical_bytes, sha256_bytes
+from moex_spread_lab.data.retention.h1_archive import execute
+from moex_spread_lab.data.lake.h1_seal import activate_h1, SealedH1Reader
+from moex_spread_lab.data.lake.data_lake import ParquetBarStore, DataLakeError
+from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
 
 
 @pytest.fixture
@@ -27,19 +27,19 @@ def _prepare(case):
     root,intake,screen,candidate,evidence,archive,ap=case
     execute(root,ap,'dry-run',archive=archive,evidence=evidence)
     # Fixture roots are not git checkouts; tiny synthetic rows cannot amortize DuckDB overhead.
-    with patch('moex_spread_lab.data_archive_candidates.subprocess.check_output',return_value='a'*40), patch('moex_spread_lab.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
+    with patch('moex_spread_lab.data.retention.data_archive_candidates.subprocess.check_output',return_value='a'*40), patch('moex_spread_lab.data.retention.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
         return execute(root,ap,'archive-only')
 
 
 def test_archive_restore_then_explicit_apply_and_missing_json_maintenance(archive_case):
     root,intake,screen,candidate,evidence,archive,ap=archive_case
-    from moex_spread_lab.proof_pool import _estimate_weight
+    from moex_spread_lab.proof_runtime.proof_pool import _estimate_weight
     target={'universe':'pair_screen','pair':'FAR/NEAR'}
     expected_weight=_estimate_weight(root,target,'1h')
     receipt=_prepare(archive_case)
     assert receipt['restore_verified_files']==2
     assert intake.exists() and screen.exists()
-    with patch('moex_spread_lab.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
+    with patch('moex_spread_lab.data.retention.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
         result=execute(root,ap,'apply')
     assert result['status']=='applied' and len(result['deleted'])==2
     assert not intake.exists() and not screen.exists()
@@ -66,7 +66,7 @@ def test_stale_or_corrupt_inputs_delete_nothing(archive_case,fault):
 def test_gain_gate_refuses_small_source_and_existing_destination(archive_case):
     root,intake,screen,candidate,evidence,archive,ap=archive_case
     execute(root,ap,'dry-run',archive=archive,evidence=evidence)
-    with patch('moex_spread_lab.data_archive_candidates.subprocess.check_output',return_value='a'*40):
+    with patch('moex_spread_lab.data.retention.data_archive_candidates.subprocess.check_output',return_value='a'*40):
         with pytest.raises(DataLakeError,match='80%'): execute(root,ap,'archive-only')
         with pytest.raises(ValueError,match='exists'): execute(root,ap,'archive-only')
     assert intake.exists() and screen.exists()
@@ -77,7 +77,7 @@ def test_failed_evidence_and_sealed_refresh_refused(archive_case):
     root,intake,screen,candidate,evidence,archive,ap=archive_case
     value=json.loads(evidence.read_text());value['checks']['performance']='failed';evidence.write_text(json.dumps(value))
     with pytest.raises(DataLakeError,match='evidence'): execute(root,ap,'dry-run',archive=archive,evidence=evidence)
-    from moex_spread_lab.data_refresh import refresh_candle_datasets, RefreshTarget, DataRefreshError
+    from moex_spread_lab.data.lake.data_refresh import refresh_candle_datasets, RefreshTarget, DataRefreshError
     with pytest.raises(DataRefreshError,match='deactivate'):
         refresh_candle_datasets(root=root,targets=[RefreshTarget('NEAR',60)],till_date='2026-11-21')
 
@@ -86,7 +86,7 @@ def test_retry_requires_full_restore_and_preserves_prior_journal(archive_case):
     root,intake,screen,candidate,evidence,archive,ap=archive_case
     originals={p:p.read_bytes() for p in (intake,screen)}
     _prepare(archive_case)
-    with patch('moex_spread_lab.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
+    with patch('moex_spread_lab.data.retention.h1_archive._gain',return_value={'net_gain_fraction':0.9}):
         execute(root,ap,'apply')
         with pytest.raises(DataLakeError): execute(root,ap,'apply',retry_restored=True)
         for p,raw in originals.items():

@@ -391,3 +391,25 @@ Architecture is ready for stack selection when a small fixture can:
 - validated ladder thresholds, quantities, stress multipliers and risk limits.
 
 Stage 6 selected the conditional baseline in [the stack and data-source artifact](06-stack-and-data.md) within these boundaries. Stage 7 revised the price/event provenance boundary in [the reuse analysis](07-reuse-analysis.md). Broker evidence and implementation measurements may revise this architecture through explicit decision records.
+
+## Implemented package map and multi-agent ownership (Phase 6, 2026-11-21)
+
+The migration blueprint is now realized as a six-member `uv` workspace. Package boundaries follow the dependency DAG above; this implementation remains one local Python process and does not add broker, deployment, or public-service authority.
+
+| Layer | Workspace member | Owns |
+|---:|---|---|
+| 0 | `packages/core` (`msl-core`) | Contracts, settings, hashing, timeframes, universe constants and C99 fastcore |
+| 1a | `packages/data` (`msl-data`) | ISS intake, Parquet/H1 lake lifecycle, retention and benchmark lineage |
+| 1b | `packages/accounting` (`msl-accounting`) | Tariffs, account-risk checks, sizing, ledger, artifacts and validation |
+| 2 | `packages/strategies` (`msl-strategies`) | Strategy registry, isolated plugins, pair/calendar datasets and signal adapters |
+| 3 | `packages/proof` (`msl-proof`) | Proof service, accounting adapters, cohort search, workers and audit |
+| 4 | `packages/web` (`msl-web`) | Loopback HTTP transport/routes and modular same-origin static UI |
+| 5 | Root umbrella + package CLI entry points | Stable `moex_spread_lab.cli` entry point and deterministic provider dispatch |
+
+### Agent scope and compatibility rules
+
+- Default task ownership is one `packages/<member>/` subtree, including its code, tests, docs, fixtures and manifest. A cross-package contract change is additive and tested first; dependent packages then consume that contract. `data` and `accounting` remain sibling layers and must not import one another.
+- New strategy work belongs in its own `packages/strategies/src/moex_spread_lab/strategies/<strategy>/` directory and package-local tests. Discovery and the conformance suite are shared gates, not per-strategy switchboards.
+- `src/moex_spread_lab/__init__.py` and `cli.py` are the public root entry points. Other root modules are temporary backward-compatibility shims; their module docstrings name the canonical `moex_spread_lab.<domain>` import. Workspace source/tests use canonical package paths; root compatibility shims are reserved for external consumers.
+- Pytest collection is package-scoped (`packages/{core,data,accounting,strategies,proof,web}/tests`). Root `tests/` contains shared synthetic fixtures. CI runs a fast global architecture/plugin/manifest/secret gate and then package jobs with dynamic xdist `loadfile` scheduling; there is no shared test-duration registry to serialize agent edits.
+- A package-focused run is `uv run pytest packages/<member>/tests -q`; the global gate is `uv run python scripts/architecture_gate.py`; the full suite remains `uv run pytest -q -n auto --dist loadfile`.

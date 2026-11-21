@@ -17,14 +17,14 @@ from proof_fixtures import (
 from test_global_capital import FLAT, PAIR, TARGETS
 from test_position_sizing import unit_proof
 
-from moex_spread_lab.evaluation_periods import ResearchSettings, save_settings
-from moex_spread_lab.position_sizing import size_proof
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_search import _measure, _tune, _validate, research_run
-from moex_spread_lab.proof_strategy_search import TRIALS_PER_STRATEGY
-from moex_spread_lab.proof_windows import compact_result
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
+from moex_spread_lab.accounting.position_sizing import size_proof
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_search import _measure, _tune, _validate, research_run
+from moex_spread_lab.proof_runtime.proof_strategy_search import TRIALS_PER_STRATEGY
+from moex_spread_lab.proof_runtime.proof_windows import compact_result
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 
 class StrategyChoiceTests(unittest.TestCase):
@@ -174,7 +174,7 @@ class StrategyChoiceTests(unittest.TestCase):
             ],
         }
         with patch(
-            "moex_spread_lab.proof_strategy_search._tune",
+            "moex_spread_lab.proof_runtime.proof_strategy_search._tune",
             side_effect=AssertionError("no trials before confirmation"),
         ):
             r = self.search(req)
@@ -185,7 +185,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertIsNone(r["selected_strategy"])
 
     def test_different_strategy_failures_cannot_shrink_the_denominator(self):
-        import moex_spread_lab.proof_strategy_search as module
+        import moex_spread_lab.proof_runtime.proof_strategy_search as module
 
         # Deliberately disjoint per-family failures. Neither is universally bad.
         def prepare(service, request, settings, benchmark, cancelled, **kwargs):
@@ -226,7 +226,7 @@ class StrategyChoiceTests(unittest.TestCase):
 
         req = {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}}
         before = json.loads(json.dumps(req))
-        with patch("moex_spread_lab.proof_search._measure", side_effect=fail):
+        with patch("moex_spread_lab.proof_runtime.proof_search._measure", side_effect=fail):
             r = self.search(req)
         self.assertEqual(r["status"], "no_admissible_candidate")
         self.assertEqual(r["trial_count"], 2 * TRIALS_PER_STRATEGY)
@@ -235,7 +235,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertEqual(req, before)
 
     def test_cross_family_tie_retains_current_and_only_winner_gets_a_report(self):
-        from moex_spread_lab import proof_search
+        from moex_spread_lab.proof_runtime import proof_search
 
         reports = []
         original_report = proof_search.StudyWindow.report
@@ -349,7 +349,7 @@ class StrategyChoiceTests(unittest.TestCase):
             seen.append(1)
             return _tune(*args, **kwargs)
 
-        with patch("moex_spread_lab.proof_strategy_search._tune", side_effect=change):
+        with patch("moex_spread_lab.proof_runtime.proof_strategy_search._tune", side_effect=change):
             r = self.search()
         self.assertEqual(len(seen), 2)
         for member in r["group"]["members"]:
@@ -420,8 +420,8 @@ class StrategyChoiceTests(unittest.TestCase):
 
 class DashEvidenceTests(unittest.TestCase):
     def test_entered_trade_can_later_have_an_unfundable_mark_never_a_zero_rate(self):
-        from moex_spread_lab.evaluation_periods import EvaluationSplit
-        from moex_spread_lab.proof_search import StudyWindow
+        from moex_spread_lab.core.settings import EvaluationSplit
+        from moex_spread_lab.proof_runtime.proof_search import StudyWindow
 
         proof, marks, contracts = unit_proof(
             near=(50000, 48000, 48000, 48000), entries=((0, 3),)

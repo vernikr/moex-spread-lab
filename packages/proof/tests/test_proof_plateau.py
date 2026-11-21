@@ -13,12 +13,12 @@ from unittest.mock import patch
 from proof_fixtures import fixture
 from test_proof_batch import ACTIVE, C, P
 
-from moex_spread_lab.evaluation_periods import save_settings
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_batch import checked_plateau
-from moex_spread_lab.proof_search import research_run
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.core.settings import save_settings
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 
 class CheckedPlateauTests(unittest.TestCase):
@@ -54,11 +54,11 @@ class CheckedPlateauTests(unittest.TestCase):
         # Probes must not start a study, evaluate the holdout or write a trial log.
         with (
             patch(
-                "moex_spread_lab.proof_batch._tune",
+                "moex_spread_lab.proof_runtime.proof_batch._tune",
                 side_effect=AssertionError("not a search"),
             ),
             patch(
-                "moex_spread_lab.proof_search.StudyWindow.report",
+                "moex_spread_lab.proof_runtime.proof_search.StudyWindow.report",
                 side_effect=AssertionError("not a validation report"),
             ),
         ):

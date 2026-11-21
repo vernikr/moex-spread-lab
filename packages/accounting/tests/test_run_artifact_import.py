@@ -6,9 +6,9 @@ import pytest
 
 from test_run_artifacts import make_baseline
 from moex_spread_lab.cli import main
-from moex_spread_lab.run_artifact_import import import_baseline_artifact, _publish_new_directory
-from moex_spread_lab.run_artifacts import RunArtifactError, load_run_artifact, verify_run_artifact
-from moex_spread_lab.w0 import sha256_file
+from moex_spread_lab.accounting.run_artifact_import import import_baseline_artifact, _publish_new_directory
+from moex_spread_lab.accounting.run_artifacts import RunArtifactError, load_run_artifact, verify_run_artifact
+from moex_spread_lab.core.w0 import sha256_file
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ def test_existing_target_never_replaced(legacy,kind):
 
 
 def test_source_mutation_and_publication_race(legacy):
-    import moex_spread_lab.run_artifact_import as module
+    import moex_spread_lab.accounting.run_artifact_import as module
     original = module._consumer_checks
     output = legacy.parent/'run'
     def mutate(*args):
@@ -97,7 +97,7 @@ def test_source_mutation_and_publication_race(legacy):
 
 
 def test_consumer_mismatch_never_publishes(legacy):
-    with patch('moex_spread_lab.run_artifact_import._consumer_checks',side_effect=[{'x':'old'},{'x':'new'}]):
+    with patch('moex_spread_lab.accounting.run_artifact_import._consumer_checks',side_effect=[{'x':'old'},{'x':'new'}]):
         with pytest.raises(RunArtifactError,match='consumer results differ'):
             import_baseline_artifact(legacy,legacy.parent/'run')
     assert not (legacy.parent/'run').exists()

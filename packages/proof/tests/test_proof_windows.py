@@ -14,14 +14,14 @@ from unittest.mock import patch
 
 from proof_fixtures import two_calendar_windows
 
-from moex_spread_lab.analytics import AnalyticsError, run_mean_reversion_baseline
-from moex_spread_lab.evaluation_periods import save_settings, settings_path
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_search import StudyWindow, research_run
-from moex_spread_lab.proof_signals import attach_entry_levels, pair_fill
-from moex_spread_lab.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import AnalyticsError, run_mean_reversion_baseline
+from moex_spread_lab.core.settings import save_settings, settings_path
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_search import StudyWindow, research_run
+from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
+from moex_spread_lab.proof_runtime.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 PAIR = {
     "universe": "pair_screen",
@@ -315,7 +315,7 @@ class WindowSummaryTests(FixtureCase):
             save_settings(self.root, {"slippage_ticks": 4})
             return StudyWindow(*args)
 
-        with patch("moex_spread_lab.proof_windows.StudyWindow", side_effect=changed):
+        with patch("moex_spread_lab.proof_runtime.proof_windows.StudyWindow", side_effect=changed):
             result = window_summaries(self.service, {"requests": [PAIR, CAL]})
         self.assertEqual(result["slippage_ticks"], 1)
         self.assertTrue(

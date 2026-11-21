@@ -1,6 +1,6 @@
 # Modular Architecture & Multi-Agent Workspace Plan
 
-Status: **Proposal & Migration Blueprint** (2026-11-21). No runtime code or directory moves are executed in this turn.
+Status: **Migration blueprint; Phases 0–6 implemented** (2026-11-21). Runtime changes and package moves are tracked under each completed phase; final verification is recorded in Phase 6 below.
 
 ## 1. Executive Summary & Architectural Verdict
 
@@ -43,7 +43,7 @@ Today the flat `src/moex_spread_lab` namespace contains **11 mutual 2-file cycle
 | `src/moex_spread_lab/calendar_spreads.py` | 1,545 | Mixes MOEX contract chains/specs, ISS downloads, H1 liquidity gates, RUONIA convergence, and Z-score mean reversion. |
 | `src/moex_spread_lab/proof_ui.html` | 1,176 | Inline CSS + DOM + hardcoded strategy forms (`#pair-controls`, `#calendar-controls`, `STRATEGY_RU`) in one single-file HTML asset. |
 | `src/moex_spread_lab/screener_app.py` | 1,018 | Mixes pair universe registry, candle normalization, legacy S2 routes, `/api/proof/*` routes, settings persistence, and HTTP server lifecycle. |
-| `.github/test-durations.json` | ~180 | Committed flat timing file touched whenever tests are added, renamed, or reweighted across branches. |
+| `.github/test-durations.json` (historical; removed in Phase 6) | ~180 | Former flat timing file touched whenever tests were added, renamed, or reweighted across branches. |
 
 ---
 
@@ -329,8 +329,8 @@ Root `cli.py` shrinks from 1,055 lines to ~60 lines:
 - An agent fixing chart tooltips edits `static/js/charts.js`; an agent improving the period table edits `static/js/picker.js`; an agent styling the settings modal edits `static/css/layout.css` + `static/js/settings-modal.js`. Merge conflicts in UI work drop by >85%.
 
 #### D. Conflict-Free CI Test Sharding
-- Replace the monolithic `.github/test-durations.json` with per-package test execution (`uv run pytest packages/<pkg>/tests`) on PRs, plus full workspace verification (`uv run pytest`) where `pytest` discovers `testpaths = ["packages/*/tests", "tests"]`.
-- If duration-based splitting is kept, generate or partition durations per package (`packages/<pkg>/.test-durations.json`) so adding tests in `strategies` never conflicts with test duration updates in `data`.
+- Pytest collection is package-only: `packages/{core,data,accounting,strategies,proof,web}/tests`; root `tests/` contains shared synthetic fixtures, not collected tests.
+- CI uses a package matrix (`uv run pytest packages/<pkg>/tests -n auto --dist loadfile`) and uploads runtime reports as artifacts. The shared `.github/test-durations.json` was removed in Phase 6; no package-owned duration file is needed.
 
 ---
 
@@ -508,13 +508,13 @@ uv run pytest -q -n auto --dist loadfile
 1. Create `packages/web` (`msl-web`) and split `screener_app.py` HTTP handlers into `server.py`, `routes_proof.py`, `routes_settings.py`, and `routes_legacy.py`.
 2. Add `GET /api/strategies` returning registered `StrategyPlugin` schemas, labels, supported universes, and supported fills.
 3. Split `proof_ui.html` into `static/index.html`, `static/css/*.css`, and `static/js/*.js` (native ES modules, served same-origin with strict `Content-Type` and loopback `Host`/`Origin` checks). Keep `/vendor/lightweight-charts.standalone.production.js` and its license notice intact.
-4. Update `static/js/strategy-form.js` to render parameter inputs and plateau lamps dynamically from `/api/strategies` while preserving existing DOM `id` / `data-*` / `aria-*` attributes used by the 10 Playwright smoke suites.
+4. Update `static/js/strategy-form.js` to render parameter inputs and plateau lamps dynamically from `/api/strategies` while preserving existing DOM `id` / `data-*` / `aria-*` attributes used by the 11 Playwright smoke suites.
 5. Move `test_screener_app.py` and `tests/browser/*_smoke.py` into `packages/web/tests/`.
 
 **Verification Gate:**
 ```sh
 uv run pytest packages/web/tests/test_http_routes.py -q
-# Run all 10 Playwright Chromium smoke suites:
+# Run all 11 Playwright Chromium smoke suites:
 for f in packages/web/tests/browser/*_smoke.py; do
   uv run --with playwright python "$f"
 done
@@ -526,16 +526,22 @@ done
 
 **Objective:** Finalize workspace hygiene, update CI workflows, and document agent ownership rules.
 
-**Instructions:**
-1. Migrate remaining internal imports off the root `src/moex_spread_lab/*.py` shims; retain only public entry points (`cli.py`, `__init__.py`) or explicitly documented compatibility aliases.
-2. Update `.github/workflows/ci.yml`, `ci-macos.yml`, and `browser-smoke.yml`:
-   - Add a fast `architecture-gate` step (<2 s): verifies acyclic package DAG, strategy conformance discovery, `validate-manifest`, and `secret-scan --tracked-only`.
-   - Configure `pytest` `testpaths = ["packages/core/tests", "packages/data/tests", "packages/accounting/tests", "packages/strategies/tests", "packages/proof/tests", "packages/web/tests"]` and per-package duration files (or dynamic xdist loadfile scheduling without a single conflict-prone JSON).
-3. Update `AGENTS.md`, `README.md`, and `docs/stages/05-architecture.md` with the new package map and per-package agent scoping rules.
+**Completed (2026-11-21):**
+1. Migrated package code, package tests, browser smoke scripts, and shared test helpers from root compatibility imports to their canonical `moex_spread_lab.<domain>` modules. Added an architecture regression check that forbids internal root-shim imports; retained documented root shims for external compatibility, with each shim docstring naming its canonical target. The only public root entry points are `cli.py` and `__init__.py`.
+2. Moved the remaining top-level test suites into `packages/core/tests` and `packages/proof/tests`. Root `tests/` now contains shared synthetic fixtures only. Pytest collection is restricted to the six package test directories. Removed `.github/test-durations.json` and the unused `pytest-split` dependency; CI runs package-specific matrix jobs with dynamic xdist `loadfile` scheduling instead.
+3. Added `scripts/architecture_gate.py`, which reuses the DAG suite, checks built-in and synthetic folder-based plugin discovery, and invokes `validate-manifest` and `secret-scan --tracked-only`. It is run by the main, macOS, and scheduled browser workflows; the measured staged-tree gate was 1.26 seconds.
+4. Updated `AGENTS.md`, `README.md`, `docs/stages/05-architecture.md`, and `docs/development/ci.md` with the implemented package map, package-level agent scoping, compatibility policy, and CI commands. The six-package matrix is the chosen path-aware scheduling mechanism; no per-package duration JSON was needed.
+
+**Verification:**
+- `uv sync --frozen` and `uv lock --check` passed.
+- `uv run python scripts/architecture_gate.py` — all 10 checks passed in 1.06 seconds; manifest validation succeeded and the tracked-file secret scan found no findings.
+- `uv run pytest -q -n auto --dist loadfile` — **492 passed, 232 subtests passed** in 72.37 seconds, including the bit-for-bit proof equivalence suite.
+- All **11** Playwright Chromium smoke suites passed headless over synthetic offline data.
+- `config/run-manifest.json` and `reports/w0/replay.json` are byte-for-byte unchanged from the Phase 0 baseline commit `33a688c`.
 
 **Final Acceptance Checklist:**
-- [ ] Zero cyclic imports across the entire repository (`test_architecture_dag.py` green).
-- [ ] Adding a dummy strategy folder in `packages/strategies/.../dummy_strategy/` makes it appear in `/api/strategies`, Optuna search, and UI controls **with zero edits to any existing tracked file**.
-- [ ] `uv run pytest -q -n auto --dist loadfile` passes 100% of unit, integration, and `test_perf_equivalence.py` bit-for-bit checks.
-- [ ] All 10 Playwright smoke tests pass headless.
-- [ ] `config/run-manifest.json` and `reports/w0/replay.json` hashes match pre-migration values byte-for-byte.
+- [x] Zero cyclic imports and cross-layer violations; no workspace source/tests import root compatibility shims.
+- [x] Synthetic strategy-folder discovery works without edits to a central switchboard; the temporary pair/carry/calendar plugin integration passes catalog/API, proof/Optuna and UI-control smoke coverage.
+- [x] `uv run pytest -q -n auto --dist loadfile` passes unit, integration, and `test_perf_equivalence.py` bit-for-bit checks.
+- [x] All 11 Playwright smoke tests pass headless.
+- [x] `config/run-manifest.json` and `reports/w0/replay.json` hashes match the Phase 0 baseline byte-for-byte.

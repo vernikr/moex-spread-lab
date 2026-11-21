@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from moex_spread_lab import cli
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error
 
 
 class EntryPoint:

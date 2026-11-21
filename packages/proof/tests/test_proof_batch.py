@@ -13,12 +13,12 @@ from unittest.mock import patch
 from proof_fixtures import fixture
 
 from moex_spread_lab.strategies.calendar import calendar_spreads
-from moex_spread_lab.evaluation_periods import EvaluationSplit, save_settings
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_batch import MAX_TARGETS, _targets
-from moex_spread_lab.proof_search import TRIALS, _annualized_returns, research_run
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.core.settings import EvaluationSplit, save_settings
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_batch import MAX_TARGETS, _targets
+from moex_spread_lab.proof_runtime.proof_search import TRIALS, _annualized_returns, research_run
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 P = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6"}
 C = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}
@@ -229,7 +229,7 @@ class CohortTests(unittest.TestCase):
         self.assertGreater(g["group"]["training_mean_pp"], 0)
 
     def test_failed_member_prunes_the_whole_proposal_not_the_denominator(self):
-        from moex_spread_lab import proof_search
+        from moex_spread_lab.proof_runtime import proof_search
 
         original = proof_search._measure
 
@@ -264,7 +264,7 @@ class CohortTests(unittest.TestCase):
         self.assertEqual(single, self.search())
         self.assertEqual(single, self.search(targets=[P]))
         with patch(
-            "moex_spread_lab.proof_batch._tune",
+            "moex_spread_lab.proof_runtime.proof_batch._tune",
             side_effect=AssertionError("no pre-confirmation search"),
         ):
             for req, targets, excluded in [

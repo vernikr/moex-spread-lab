@@ -7,20 +7,20 @@ from unittest.mock import Mock
 
 from funding_fixtures import PAIR, WEEKEND_PAIR, change, fixture, page, request, weekend
 
-from moex_spread_lab.carry import fetch_history
-from moex_spread_lab.evaluation_periods import save_settings
-from moex_spread_lab.funding_recheck import recheck
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_batch import checked_plateau
-from moex_spread_lab.proof_funding import (
+from moex_spread_lab.strategies.funding_carry.carry import fetch_history
+from moex_spread_lab.core.settings import save_settings
+from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.strategies.funding_carry.proof_funding import (
     NO_CLEARING,
     FundingTimeline,
     published_rates,
     supplement_path,
 )
-from moex_spread_lab.proof_search import research_run
-from moex_spread_lab.screener_app import ScreenerInputs, _pair, build_result, catalog
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.web.server import ScreenerInputs, _pair, build_result, catalog
+from moex_spread_lab.core.w0 import W0Error
 
 
 class FundingPolicyTests(unittest.TestCase):

@@ -1,9 +1,9 @@
 import unittest
 
-from moex_spread_lab.analytics import run_mean_reversion_baseline
-from moex_spread_lab.costs import side_cost, tariff_profile
-from moex_spread_lab.portfolio import lqdt_overlay_values
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
+from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+from moex_spread_lab.core.w0 import W0Error
 
 CONTRACT = {"secid": "SBERF", "lot_size": 100, "tick_value": 1.0, "tick_size": 0.01, "initial_margin": 1000.0}
 

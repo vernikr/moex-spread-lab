@@ -4,8 +4,8 @@ from unittest.mock import patch
 import pytest
 
 import test_store_cutover as fixtures
-from moex_spread_lab.data_lake import DataLakeError, ParquetBarStore, MarketDataStore
-from moex_spread_lab.h1_migration import build_h1_plan, write_h1_plan, stage_h1, verify_h1_stage
+from moex_spread_lab.data.lake.data_lake import DataLakeError, ParquetBarStore, MarketDataStore
+from moex_spread_lab.data.lake.h1_migration import build_h1_plan, write_h1_plan, stage_h1, verify_h1_stage
 from moex_spread_lab.cli import main
 
 

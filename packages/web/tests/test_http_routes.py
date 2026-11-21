@@ -13,7 +13,7 @@ import threading
 import unittest
 from unittest import mock
 
-import moex_spread_lab.screener_app as screener_app
+import moex_spread_lab.web.server as screener_app
 from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin

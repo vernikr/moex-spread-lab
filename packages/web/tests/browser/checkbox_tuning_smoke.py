@@ -15,7 +15,7 @@ from period_settings_smoke import (
 )
 from playwright.sync_api import expect, sync_playwright
 
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 PAIR = "pair_screen||CNYRUBF/CRZ6"
 CAL = "calendar_native|SR|SRH3/SRM3"

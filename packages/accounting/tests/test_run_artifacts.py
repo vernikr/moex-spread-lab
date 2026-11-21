@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.analytics import run_mean_reversion_baseline
-from moex_spread_lab.ledger import build_ledger
-from moex_spread_lab.run_artifacts import (
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
+from moex_spread_lab.accounting.ledger import build_ledger
+from moex_spread_lab.accounting.run_artifacts import (
     RunArtifactError,
     gc_run_artifacts,
     load_run_artifact,
@@ -14,7 +14,7 @@ from moex_spread_lab.run_artifacts import (
     verify_run_artifact,
     write_legacy_json,
 )
-from moex_spread_lab.validation import build_validation
+from moex_spread_lab.accounting.validation import build_validation
 
 
 def make_baseline():

@@ -15,14 +15,14 @@ from unittest.mock import patch
 
 from proof_fixtures import fixture, funding_winner
 
-from moex_spread_lab.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.carry import _history_url, fetch_history
-from moex_spread_lab.evaluation_periods import ResearchSettings, save_settings
-from moex_spread_lab.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService, reference_eval
-from moex_spread_lab.proof_batch import checked_plateau
-from moex_spread_lab.proof_search import research_run
-from moex_spread_lab.proof_windows import window_summaries
+from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
+from moex_spread_lab.strategies.funding_carry.carry import _history_url, fetch_history
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
+from moex_spread_lab.proof_runtime.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService, reference_eval
+from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 
 TILL = "2023-06-15"
 
@@ -919,9 +919,9 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                     svc.close()
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):
-        from moex_spread_lab._fastcore_loader import load_fastcore
-        from moex_spread_lab.analytics import compute_rolling_z, run_mean_reversion_baseline
-        from moex_spread_lab.proof import _clean
+        from moex_spread_lab.core._fastcore_loader import load_fastcore
+        from moex_spread_lab.strategies.pair_mean_reversion.analytics import compute_rolling_z, run_mean_reversion_baseline
+        from moex_spread_lab.proof_runtime.service import _clean
 
         fc = load_fastcore()
         self.assertIsNotNone(fc, "_fastcore extension should build and load when compiler is available")
@@ -1077,7 +1077,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         import threading
         import urllib.request
         from http.server import ThreadingHTTPServer
-        from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+        from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

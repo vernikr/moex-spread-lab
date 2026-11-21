@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.calendar_spreads import CalendarData
-from moex_spread_lab.data_lake import LegacyJsonBarStore, MarketDataStore, ParquetBarStore
-from moex_spread_lab.screener import _normalized_series
-from moex_spread_lab.screener_app import ScreenerInputs
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+from moex_spread_lab.data.lake.data_lake import LegacyJsonBarStore, MarketDataStore, ParquetBarStore
+from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
+from moex_spread_lab.web.server import ScreenerInputs
 
 
 class StoreCutoverTests(unittest.TestCase):

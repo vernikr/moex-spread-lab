@@ -135,8 +135,8 @@ weekend(root)
 # Add a second launch-perpetual window, using the same synthetic observations.
 import json
 from funding_fixtures import page
-from moex_spread_lab.screener_app import HISTORY_WINDOWS, ScreenerInputs
-from moex_spread_lab.carry import _history_url
+from moex_spread_lab.web.server import HISTORY_WINDOWS, ScreenerInputs
+from moex_spread_lab.strategies.funding_carry.carry import _history_url
 src = ScreenerInputs(root)
 third = "SBERF/SRZ6"
 contracts = json.loads(src.contracts.read_text())

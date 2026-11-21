@@ -10,7 +10,7 @@ from moex_spread_lab.core.w0 import (
     normalize_fixture,
     scan_secrets,
 )
-from moex_spread_lab.research import run_research_pipeline
+from moex_spread_lab.accounting.research import run_research_pipeline
 
 
 ROOT = Path(__file__).resolve().parents[3]

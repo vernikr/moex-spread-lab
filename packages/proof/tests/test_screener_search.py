@@ -3,9 +3,9 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from moex_spread_lab.evaluation_periods import save_settings
-from moex_spread_lab.screener_app import ScreenerError, ScreenerInputs
-from moex_spread_lab.screener_search import optimize
+from moex_spread_lab.core.settings import save_settings
+from moex_spread_lab.web.server import ScreenerError, ScreenerInputs
+from moex_spread_lab.proof_runtime.screener_search import optimize
 
 
 class SearchTests(unittest.TestCase):

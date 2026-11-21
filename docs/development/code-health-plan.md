@@ -142,13 +142,14 @@ dev = [
     "complexipy>=4.0,<6",
     "lizard>=1.17,<2",
     "pytest>=8.3,<10",
-    "pytest-split>=0.9,<1",
     "pytest-subtests>=0.14,<1",
     "pytest-xdist>=3.6,<4",
     "ruff>=0.9,<1",
     "vulture>=2.14,<3",
 ]
 ```
+
+Test scheduling follows the Phase 6 configuration: package-matrix CI jobs use `pytest-xdist --dist loadfile`; no shared test-duration registry is used.
 
 Tool sections in root `pyproject.toml`:
 ```toml

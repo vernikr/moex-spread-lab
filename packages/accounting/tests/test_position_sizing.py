@@ -11,17 +11,17 @@ from unittest.mock import patch
 
 from proof_fixtures import fixture
 
-from moex_spread_lab.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     ResearchSettings,
     read_settings,
     save_settings,
     settings_path,
 )
-from moex_spread_lab.position_sizing import AUTO_SIZING, maximum_quantity, size_proof
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_batch import checked_plateau
-from moex_spread_lab.proof_search import _tune, research_run
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, maximum_quantity, size_proof
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.proof_runtime.proof_search import _tune, research_run
+from moex_spread_lab.core.w0 import W0Error
 
 
 def unit_proof(
@@ -490,7 +490,7 @@ class SizingIntegrationTests(unittest.TestCase):
             save_settings(self.root, {"slippage_ticks": 4})
             return _tune(*args, **kwargs)
 
-        with patch("moex_spread_lab.proof_batch._tune", side_effect=change):
+        with patch("moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change):
             result = research_run(
                 self.svc,
                 {

@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 from openpyxl import Workbook
 
-from moex_spread_lab.benchmark import (
+from moex_spread_lab.data.benchmark.lineage import (
     adjust_vtbm_split,
     build_lineage,
     fetch_cbr_ruonia_rates,
@@ -43,9 +43,9 @@ class BenchmarkTests(unittest.TestCase):
                     "--cache-dir", directory, "--output", str(output)]
             with (
                 patch("sys.argv", argv), redirect_stdout(StringIO()),
-                patch("moex_spread_lab.benchmark.fetch_moex_history") as moex,
-                patch("moex_spread_lab.benchmark.fetch_rusfar_rates") as rusfar,
-                patch("moex_spread_lab.benchmark.fetch_cbr_ruonia_rates",
+                patch("moex_spread_lab.data.benchmark.lineage.fetch_moex_history") as moex,
+                patch("moex_spread_lab.data.benchmark.lineage.fetch_rusfar_rates") as rusfar,
+                patch("moex_spread_lab.data.benchmark.lineage.fetch_cbr_ruonia_rates",
                       return_value={**ruonia, "status": "available", "rows": rates}) as cbr,
             ):
                 self.assertEqual(main(), 0)
@@ -95,7 +95,7 @@ class BenchmarkTests(unittest.TestCase):
             rows = [["TQTF", f"2020-01-{index + 1:02d}", 1.0 + index, 1.0 + index, 1.0 + index] for index in range(100)] if start == 0 else []
             return {"history": {"columns": columns, "data": rows}}, f"hash-{start}"
 
-        with patch("moex_spread_lab.benchmark._request_json", side_effect=response):
+        with patch("moex_spread_lab.data.benchmark.lineage._request_json", side_effect=response):
             result = fetch_moex_history("VTBM", "2020-01-01", "2020-12-31", delay_seconds=0)
 
         self.assertEqual(calls, [0, 100])
@@ -104,7 +104,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_cbr_ruonia_html_rows_are_normalized(self):
         html = "<td>11.01.2010</td><td class='x'>6,25</td>"
-        with patch("moex_spread_lab.benchmark._request_text", return_value=(html, "cbr-hash")):
+        with patch("moex_spread_lab.data.benchmark.lineage._request_text", return_value=(html, "cbr-hash")):
             result = fetch_cbr_ruonia_rates("2010-01-01", "2010-12-31", delay_seconds=0)
 
         self.assertEqual(result["status"], "available")
@@ -118,8 +118,8 @@ class BenchmarkTests(unittest.TestCase):
         sheet.append([datetime(2010, 1, 11), 2.98])
         stream = BytesIO()
         workbook.save(stream)
-        with patch("moex_spread_lab.benchmark._request_text", return_value=("", "html-hash")), patch(
-            "moex_spread_lab.benchmark._request_bytes",
+        with patch("moex_spread_lab.data.benchmark.lineage._request_text", return_value=("", "html-hash")), patch(
+            "moex_spread_lab.data.benchmark.lineage._request_bytes",
             return_value=(stream.getvalue(), "xlsx-hash", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         ):
             result = fetch_cbr_ruonia_rates("2010-01-01", "2010-12-31", delay_seconds=0)

@@ -9,14 +9,14 @@ from pathlib import Path
 from test_calendar_proof import _build_root as calendar_fixture
 from test_execution_proof import _build_root as pair_fixture
 
-from moex_spread_lab.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     EvaluationSplit,
     ResearchSettings,
     read_settings,
     save_settings,
 )
-from moex_spread_lab.proof import ProofService
-from moex_spread_lab.proof_search import (
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.proof_search import (
     EXECUTION_AXES,
     GREEN,
     STRATEGY_AXES,
@@ -28,8 +28,8 @@ from moex_spread_lab.proof_search import (
     _tune,
     research_run,
 )
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.core.w0 import W0Error
 
 PAIR = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
 CALENDAR = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}

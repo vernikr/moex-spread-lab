@@ -16,7 +16,7 @@ os.environ.setdefault("MOEX_OFFLINE_ONLY", "1")
 
 from playwright.sync_api import expect, sync_playwright
 
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))

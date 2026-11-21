@@ -60,8 +60,10 @@ pythonpath = [
     "packages/strategies/tests",
     "packages/proof/tests",
     "packages/web/tests",
+    "packages/core/tests",
     "tests",
 ]
+# Test discovery is package-scoped; root tests/ contains shared synthetic fixtures only.
 testpaths = [
     "packages/core/tests",
     "packages/data/tests",
@@ -69,7 +71,6 @@ testpaths = [
     "packages/strategies/tests",
     "packages/proof/tests",
     "packages/web/tests",
-    "tests",
 ]
 
 [dependency-groups]
@@ -77,5 +78,4 @@ dev = [
     "pytest>=8.3,<10",
     "pytest-subtests>=0.14,<1",
     "pytest-xdist>=3.6,<4",
-    "pytest-split>=0.9,<1",
 ]

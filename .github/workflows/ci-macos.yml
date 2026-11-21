@@ -39,5 +39,8 @@ jobs:
           uv run python -c "from moex_spread_lab.core._fastcore_loader import load_fastcore;
           import sys; sys.exit(0 if load_fastcore() is not None else 1)"
 
-      - name: Run full test suite
+      - name: Verify package DAG, plugin discovery, manifest, and tracked-file secrets
+        run: uv run python scripts/architecture_gate.py
+
+      - name: Run full package-scoped test suite
         run: uv run pytest -q -n auto --dist loadfile --durations=15

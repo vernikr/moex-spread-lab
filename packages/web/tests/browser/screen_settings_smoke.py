@@ -10,7 +10,7 @@ from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 from proof_fixtures import screen_failures
 
-from moex_spread_lab.screener_app import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 
 def run(browser, url):

@@ -17,14 +17,35 @@ env:
   UV_LINK_MODE: copy
 
 jobs:
-  test:
-    name: pytest shard ${{ matrix.shard }}/2 (ubuntu-latest)
+  architecture-gate:
+    name: architecture-gate (<2s)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment (incl. dev group)
+        run: uv sync --frozen
+
+      - name: Verify package DAG, plugin discovery, manifest, and tracked-file secrets
+        run: uv run python scripts/architecture_gate.py
+
+  package-tests:
+    name: pytest ${{ matrix.package }} (ubuntu-latest)
+    needs: architecture-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        package: [core, data, accounting, strategies, proof, web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,27 +64,24 @@ jobs:
           uv run python -c "from moex_spread_lab.core._fastcore_loader import load_fastcore;
           import sys; sys.exit(0 if load_fastcore() is not None else 1)"
 
-      - name: Run tests (shard ${{ matrix.shard }}/2)
+      - name: Run package tests with dynamic xdist loadfile scheduling
         shell: bash
-        run: >-
-          set -o pipefail;
-          uv run pytest -q -n auto --dist loadfile
-          --ignore=packages/proof/tests/test_perf_equivalence.py
-          --splits 2 --group ${{ matrix.shard }}
-          --durations-path .github/test-durations.json
-          --splitting-algorithm least_duration
-          --durations=15 | tee durations-shard-${{ matrix.shard }}.log
+        run: |
+          set -euo pipefail
+          uv run pytest -q -n auto --dist loadfile "packages/${{ matrix.package }}/tests" --durations=15 \
+            | tee "durations-${{ matrix.package }}.log"
 
-      - name: Upload durations report
+      - name: Upload package duration report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: durations-shard-${{ matrix.shard }}
-          path: durations-shard-${{ matrix.shard }}.log
+          name: durations-${{ matrix.package }}
+          path: durations-${{ matrix.package }}.log
           retention-days: 7
 
   perf-equivalence:
     name: perf equivalence (ubuntu-latest)
+    needs: architecture-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -92,7 +110,7 @@ jobs:
           packages/proof/tests/test_perf_equivalence.py
           --durations=15 | tee durations-perf.log
 
-      - name: Upload durations report
+      - name: Upload duration report
         if: always()
         uses: actions/upload-artifact@v4
         with:

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.data_inventory import DATA_INVENTORY_SCHEMA, build_data_inventory
+from moex_spread_lab.data.retention.data_inventory import DATA_INVENTORY_SCHEMA, build_data_inventory
 
 
 class DataInventoryTests(unittest.TestCase):

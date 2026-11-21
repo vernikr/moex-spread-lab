@@ -35,6 +35,11 @@ ASSETS: dict[str, dict[str, Any]] = {
     "LK": {"group": "stock", "name": "LKOH"},
     "RN": {"group": "stock", "name": "ROSN"},
     "SP": {"group": "stock", "name": "SBPR"},
+    "MG": {"group": "stock", "name": "MGNT"},
+    "YN": {"group": "stock", "name": "YDEX"},
+    "AL": {"group": "stock", "name": "ALRS"},
+    "TN": {"group": "stock", "name": "TATN"},
+    "SG": {"group": "stock", "name": "SNGP"},
     "MM": {"group": "index", "name": "MXI (mini IMOEX)"},
     "MX": {"group": "index", "name": "MIX (IMOEX)"},
     "RI": {"group": "index", "fx": "usd", "name": "RTS"},
@@ -53,6 +58,24 @@ ASSETS: dict[str, dict[str, Any]] = {
     "WT": {"group": "commodity", "fx": "usd", "monthly": True, "name": "WTI"},
 }
 FX_SOURCE = {"usd": "Si", "cny": "CR"}
+CROSS_EXPIRY_PAIRS: tuple[dict[str, str], ...] = (
+    {"pair_id": "MX/MM", "near": "MX", "far": "MM", "family": "cross_contract_same_expiry", "name": "MIX vs MXI"},
+    {"pair_id": "GD/GN", "near": "GD", "far": "GN", "family": "cross_contract_same_expiry", "name": "GOLD vs GOLDM"},
+)
+SYNTHETIC_TRIANGLE_PAIRS: tuple[dict[str, Any], ...] = (
+    {
+        "pair_id": "Si+Eu/ED",
+        "legs": ("Si", "Eu", "ED"),
+        "family": "synthetic_triangle_same_expiry",
+        "name": "USD/RUB + EUR/RUB vs EUR/USD",
+    },
+    {
+        "pair_id": "Si+CR/UC",
+        "legs": ("Si", "CR", "UC"),
+        "family": "synthetic_triangle_same_expiry",
+        "name": "USD/RUB + CNY/RUB vs USD/CNY",
+    },
+)
 EXIT_BUFFER_DAYS = 2
 QUARTER_DAYS = 91
 HISTORY_FROM = "2022-06-01"

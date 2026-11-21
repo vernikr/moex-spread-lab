@@ -67,6 +67,18 @@ EXTRA_PAIRS = (
         "far": "CRH7",
         "family": "dated_calendar_same_asset",
     },
+    {
+        "pair_id": "MXZ6/MMZ6",
+        "near": "MXZ6",
+        "far": "MMZ6",
+        "family": "cross_contract_same_expiry",
+    },
+    {
+        "pair_id": "GDZ6/GNZ6",
+        "near": "GDZ6",
+        "far": "GNZ6",
+        "family": "cross_contract_same_expiry",
+    },
 )
 PERPETUAL_HISTORY_STARTS = {
     "CNYRUBF": "2022-04-26", "GLDRUBF": "2023-07-11", "IMOEXF": "2023-11-14",

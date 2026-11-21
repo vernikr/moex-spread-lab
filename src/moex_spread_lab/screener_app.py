@@ -772,6 +772,17 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             except (BrokenPipeError, ConnectionResetError):
                 pass  # The browser superseded this run with a newer selection.
 
+        def _drain_body(self, size: int) -> None:
+            # Loopback clients otherwise see a connection reset instead of the
+            # 400: kernels RST sockets closed with unread received data (most
+            # visible on macOS). Drain the declared body first, bounded.
+            remaining = max(0, min(size, 64 * 1024 * 1024))
+            while remaining > 0:
+                chunk = self.rfile.read(min(65536, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+
         def _json(self, status: int, value: Any) -> None:
             self._send(
                 status,
@@ -868,6 +879,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
                 size = int(self.headers.get("Content-Length", "0"))
                 limit = 192 * 1024 if path in {"/api/proof/optimize", "/api/proof/plateau", "/api/proof/windows"} else 8192
                 if not 0 < size <= limit:
+                    self._drain_body(size)
                     raise ScreenerError(f"размер запроса должен быть 1–{limit} байт")
                 selection = json.loads(self.rfile.read(size))
                 if path == "/api/settings":

@@ -21,3 +21,16 @@ and worker-process determinism. Do not enable plugins in the registry merely
 because this boundary passes. The tests compare the boundary with legacy pair
 mean-reversion intent output and explicitly reject malformed trades; they do not
 certify arbitrary strategy logic or prevent hidden lookahead in trusted code.
+
+## Funding replay preparation
+
+`proof_runtime.pair_funding_replay.replay_pair_funding` is an isolated internal
+primitive, not wired to proof. It reproduces baseline ordering: funding includes
+entry bars and terminal marks, but excludes executable exit bars. Missing rates
+while a position is held produce `None`, not zero. The caller must independently
+resolve clearing evidence and map it to unique exact bar keys; daily rates are
+not implicitly projected to intraday bars. The primitive rejects same-bar
+exit/re-entry (even though the price boundary currently permits it), pending an
+explicit cross-engine event-order contract. It does not calculate P&L, tariffs,
+capital or summary metrics. Parity tests cover long/short, open/close fills,
+quantity scaling and normal versus terminal exit against the existing baseline.

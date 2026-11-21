@@ -226,6 +226,25 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     )
 
 
+
+def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
+    """Opt in a distinct pair-only daily price strategy, never funding carry."""
+    from moex_spread_lab.core.universe import PAIR_UNIVERSE
+
+    plugins = registry.values()
+    counts = {}
+    for plugin in plugins:
+        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
+    return frozenset(
+        p.strategy_id for p in plugins
+        if getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1"
+        and p.supported_universes == frozenset({PAIR_UNIVERSE})
+        and p.requires_daily_bars is True
+        and len(p.supported_fills) == len(PRICE_FILLS)
+        and set(p.supported_fills) == set(PRICE_FILLS)
+        and counts[p.family_id] == 1
+    )
+
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
     """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points."""
     strategies_dir = Path(__file__).resolve().parent

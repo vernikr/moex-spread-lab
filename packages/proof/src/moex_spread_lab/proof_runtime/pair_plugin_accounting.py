@@ -86,7 +86,9 @@ def size_daily_pair_plugin(plugin, window, params, fill, funding_window, benchma
             if not math.isfinite(spread) or not math.isfinite(near_open * multipliers[0] - far_open * multipliers[1]):
                 raise ValueError
             positive(benchmark_marks[raw["date"]])
-            rows.append({"date": raw["date"], "near": near, "far": far,
+            rows.append({"date": raw["date"], "timestamp": raw.get("timestamp", raw["date"]),
+                         "session_date": raw.get("session_date", raw["date"]),
+                         "benchmark_mark_date": raw.get("benchmark_mark_date"), "near": near, "far": far,
                          "near_open": near_open, "far_open": far_open,
                          "spread": round(spread, 8), "volume_eligible": eligible(raw)})
     except (TypeError, KeyError, ValueError, OverflowError, ZeroDivisionError):

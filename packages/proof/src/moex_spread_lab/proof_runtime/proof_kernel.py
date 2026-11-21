@@ -84,7 +84,7 @@ class Axis:
 
 
 from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.base import calendar_proof_plugin_ids
+from moex_spread_lab.strategies.base import calendar_proof_plugin_ids, daily_pair_proof_plugin_ids
 
 
 # Built-in engines plus explicitly declared, narrowly scoped calendar intents.
@@ -92,7 +92,7 @@ from moex_spread_lab.strategies.base import calendar_proof_plugin_ids
 STRATEGY_REGISTRY = discover_strategies()
 PROOF_ADAPTER_IDS = frozenset({
     "mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"
-}) | calendar_proof_plugin_ids(STRATEGY_REGISTRY)
+}) | calendar_proof_plugin_ids(STRATEGY_REGISTRY) | daily_pair_proof_plugin_ids(STRATEGY_REGISTRY)
 
 
 def _strategy_axes() -> dict[str, dict[str, Axis]]:

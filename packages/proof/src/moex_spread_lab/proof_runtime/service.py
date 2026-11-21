@@ -314,6 +314,16 @@ class ProofService:
     def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
             raise W0Error("выбор должен быть объектом")
+        from moex_spread_lab.strategies import discover_strategies
+        from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids
+        registry = discover_strategies()
+        strategy = selection.get("strategy")
+        if isinstance(strategy, str) and strategy in daily_pair_proof_plugin_ids(registry):
+            if not automatic(selection):
+                raise W0Error("Парный плагин пока поддерживает только автоматический размер позиции.")
+            if selection.get("quantity") is not None:
+                raise W0Error("При автоматическом размере количество не задаётся вручную.")
+            return self._prepare_daily_pair_plugin(selection, settings, registry.get(strategy))
         if selection.get("sizing") not in (None, AUTO_SIZING):
             raise W0Error("Неизвестный режим расчёта размера позиции.")
         if not automatic(selection):
@@ -596,6 +606,78 @@ class ProofService:
                           risk_for(execution["quantity"]), prepared, through,
                           metrics_only=metrics_only, pair_cache=pair_cache)
 
+        return replay
+
+    def _prepare_daily_pair_plugin(self, selection, settings, plugin):
+        """Restricted daily pair-plugin route using the existing screens and funded account."""
+        from moex_spread_lab.core.contracts import WindowSnapshot
+        from .pair_plugin_accounting import size_daily_pair_plugin
+
+        if selection.get("universe") != PAIR_UNIVERSE or settings.timeframe != "1d":
+            raise W0Error("Парный плагин поддерживает только дневные окна пар.")
+        pair = _pair(selection.get("pair"))
+        # Native pair preflight owns data, funding, liquidity and capital screens.
+        native_selection = {**selection, "strategy": "mean_reversion", "parameters": {}}
+        native = self.prepare(native_selection, settings=settings)
+        inputs = self.screener_inputs
+        series, _, funding_window, provenance = self._price_inputs(
+            inputs, pair, ProofFunding(inputs), settings.validation_percent, "1d")
+        snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair["pair_id"],
+            near=pair["near"], far=pair["far"], rows=series["rows"], contracts=series["contracts"])
+        marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
+        dates, prices = _benchmark_marks(inputs.benchmark)
+
+        def replay(request, through=None, *, metrics_only=False, scalar_summary=None):
+            if (not isinstance(request, dict) or request.get("strategy") != plugin.strategy_id
+                    or request.get("universe") != PAIR_UNIVERSE or request.get("pair") != pair["pair_id"]
+                    or not automatic(request) or request.get("quantity") is not None):
+                raise W0Error("Запрос не соответствует подготовленному окну плагина.")
+            fill = pair_fill(request, plugin.strategy_id, default_price_fill=settings.price_fill)
+            params = request.get("parameters", {})
+            actual = size_daily_pair_plugin(plugin, snapshot, params, fill, funding_window,
+                                            marks, settings, through=through)
+            # The native proof supplies trusted market/chart/screen metadata only;
+            # never retain its decisions, ledger or indicator values.
+            template_request = {**request, "strategy": "mean_reversion", "parameters": {}, "fill": fill}
+            template = native(template_request, through=through)
+            by_date = {row["date"]: row for row in template["series"]}
+            enriched_rows = []
+            for row in actual["series"]:
+                base = by_date[row["date"]]
+                enriched_rows.append({**base, **row, "signal_z": None})
+            template["series"] = enriched_rows
+            indexed = {row["date"]: row for row in enriched_rows}
+            far_mult = _point_value(series["contracts"][pair["far"]])
+            enriched_trades = []
+            for trade in actual["trades"]:
+                blocks = {}
+                for event in ("entry", "exit"):
+                    raw = trade[event]
+                    blocks[event] = self._fill_block(raw["date"], raw["spread_fill"], raw["near_price"],
+                        raw["far_price"], indexed, raw["costs"], far_value=raw["far_price"] * far_mult)
+                    blocks[event]["margin_rub"] = raw.get("margin_rub")
+                full_trade = self._trade_block(number=trade["number"], side=trade["side"], quantity=trade["quantity"],
+                    signal=trade["signal"], entry=blocks["entry"], exit=blocks["exit"], exit_reason=trade["exit_reason"],
+                    margin_pair=trade["margin_rub"], gross_rub=trade["gross_rub"], costs_rub=trade["costs_rub"],
+                    net_rub=trade["net_rub"], benchmark_dates=dates, benchmark_prices=prices,
+                    open_at_end=trade["open_at_end"], funding_rub=trade.get("funding_rub"))
+                if "sizing" in trade:
+                    full_trade["sizing"] = trade["sizing"]
+                enriched_trades.append(full_trade)
+            template.update(selection=actual["selection"], series=enriched_rows, trades=enriched_trades,
+                            ledger=actual["ledger"], summary=actual["summary"], sizing=actual["sizing"],
+                            skipped_entries=actual["skipped_entries"])
+            template["provenance"].update({**provenance, **actual["provenance"]})
+            template["notes"] = [note for note in template["notes"]
+                if not note.startswith("Открытая на конец выборки позиция отмечается")]
+            if any(trade["open_at_end"] for trade in enriched_trades):
+                template["notes"].append("Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.")
+            template["notes"].append("Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно.")
+            attach_entry_levels(template)
+            template["run_id"] = _run_id({"selection": template["selection"], "series": template["series"],
+                                           "trades": template["trades"], "ledger": template["ledger"],
+                                           "sizing": template["sizing"], "provenance": template["provenance"]})
+            return template
         return replay
 
     def _price_inputs(self, inputs, pair, funding, validation_percent, timeframe="1d"):

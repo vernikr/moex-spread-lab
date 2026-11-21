@@ -1,77 +1,36 @@
-# Pair price-intent validation boundary (not wired to proof)
+# Daily pair proof plugins
 
-`pair_screener.intents.pair_price_intent_trades` validates a trusted plugin's
-unit-sized price intents against an already synchronized, positive-volume pair
-window. This is a preparation step, **not** a proof accounting adapter and not a
-registration mechanism: new pair/funding plugins remain excluded from proof search.
+A trusted installed `StrategyPlugin` may opt in with
+`proof_adapter = "daily_pair_price_intents.v1"`, a unique `family_id`, exactly
+`{"pair_screen"}`, `requires_daily_bars = True`, and all three price fills.
+Discovery alone does not enable an adapter. The supported proof/search path is
+**daily and `sizing=max_affordable` only**; fixed quantity and hourly requests
+fail closed. Funding-only plugins are not supported by this contract. Plugin
+code is trusted, not sandboxed, and conformance tests cannot prove causality.
 
-The pair convention is near minus far in RUB; `long_spread` means long near and
-short far. Each intent declares the side, `entry_date`, `exit_date`, a signal with
-`date`, `kind`, numeric `value`, both near/far fills at entry and exit, and `reason`.
-The boundary checks chronology, signal delay, nonoverlap, volumes, eligibility and
-both legs' prices. It derives spread fills from the market prices and contract
-point values. It isolates mutable plugin inputs and ignores plugin P&L, cost and
-funding claims. For `end_of_sample`, the final close is a non-executable mark,
-including under `next_open`; it is not an actual exit.
+The plugin receives a copy of the synchronized positive-volume analysis prefix;
+auxiliary funding, benchmark, carry and extra snapshot objects are withheld.
+Each unit intent specifies `side`, entry/exit dates, near/far entry and exit
+fills, a `signal` mapping (`date`, `kind`, numeric `value`), and `reason`.
+`long_spread` is long near and short far; spread prices are RUB-normalized.
+The boundary checks both leg prices against market proxies, volume, eligibility,
+causal event order and overlap. Plugin-supplied P&L, cost, quantity and funding
+claims are ignored. `end_of_sample` uses the final close as a non-executable mark,
+including for `next_open`. Same-bar exit/re-entry is currently rejected.
 
-Integration still requires proven handling of settlement-time funding, missing
-funding evidence, fixed-quantity and automatic sizing, tariffs, train/holdout
-cutoffs, event and ledger reconciliation, all fill modes, daily and intraday data,
-and worker-process determinism. Do not enable plugins in the registry merely
-because this boundary passes. The tests compare the boundary with legacy pair
-mean-reversion intent output and explicitly reject malformed trades; they do not
-certify arbitrary strategy logic or prevent hidden lookahead in trusted code.
+The proof route uses the existing pair-data, liquidity, capital and evidence
+screens. For perpetuals, the near-leg `FundingWindow` must resolve every analysis
+session through the applicable training cutoff. A published zero, estimated rate
+and confirmed no-clearing day remain distinct. Unknown rates never become zero;
+for registry-confirmed dated pairs funding is not applicable. Funding applies to
+accepted exposure at entry and terminal marks, not an ordinary exit before
+clearing. Journal-only bars do not revalue positions or generate funding. The
+funded account sets quantity and computes tariffs, capital, ledger and summary;
+search retains the same family order, seed derivation and 80-trial budget.
 
-## Funding replay preparation
-
-`proof_runtime.pair_funding_replay.replay_pair_funding` is an isolated internal
-primitive, not wired to proof. It reproduces baseline ordering: funding includes
-entry bars and terminal marks, but excludes executable exit bars. Missing rates
-while a position is held produce `None`, not zero. The caller must independently
-resolve clearing evidence and map it to unique exact bar keys; daily rates are
-not implicitly projected to intraday bars. The primitive rejects same-bar
-exit/re-entry (even though the price boundary currently permits it), pending an
-explicit cross-engine event-order contract. It does not calculate P&L, tariffs,
-capital or summary metrics. Parity tests cover long/short, open/close fills,
-quantity scaling and normal versus terminal exit against the existing baseline.
-
-`replay_daily_pair_funding` resolves the existing `FundingWindow` before replay.
-It requires an exact match to daily analysis keys, honors prefix and training
-cutoffs, rejects unresolved evidence and carries the existing provenance. Published
-zero, an interpolated rate, and a confirmed no-clearing day remain distinguishable;
-only the last explicitly has no payment without having a numerical rate. Hourly
-bars are rejected: resolving the exchange clearing-to-bar mapping remains open.
-The resulting daily funding rows are not yet connected to ledger or sizing.
-
-The experimental `attach_daily_unit_funding` prepares unit-quantity funding
-fields for `size_proof` without mutating source rows. It accepts only the exact
-eligible daily window, never journal-only extras. Tests exercise the existing
-sizing engine with accepted and unaffordable intents, both directions and terminal
-versus executable exit; funding scales only to accepted quantities. This is an
-isolated integration test, not end-to-end plugin accounting or registry support.
-
-The internal `proof_runtime.pair_plugin_accounting.size_daily_pair_plugin` composes the price boundary,
-daily funding evidence, unit-funding preparation and existing funded sizing. For
-both sides, all three price fills and both terminal/ordinary exits it compares
-trade gross, funding, costs, net, daily funding and final account value with the
-legacy mean-reversion engine at the accepted quantity. It also checks that plugin
-claims about economic results do not affect the output or run ID. This internal
-composition does not expose a new public proof route, resolve intraday funding,
-perform proof catalog/volume/capital screens, support
-fixed-size requests or establish arbitrary plugin causality. For a perpetual pair it requires daily funding evidence tied to the near leg.
-Funding may be absent only for a pair and legs confirmed as non-perpetual by the
-research registry; this produces no rate or payment, not fabricated zero rates.
-
-The internal daily composition also keeps zero-volume/missing-volume bars in the
-account journal without mark-to-market or funding. Plugins see only eligible bars,
-and an explicit `through` cutoff truncates bars and benchmark inputs before plugin
-evaluation and run-ID generation. Auxiliary snapshot funding, benchmark, carry and
-extra objects are not passed to the price plugin. Funding cutoffs are still resolved
-by `FundingWindow`. This supports prefix replay but does not yet wire the full
-cohort/holdout orchestration or public proof dispatch.
-
-A parity test also loads the same offline synthetic exchange fixture as the real
-`ProofService`, adapts the built-in mean-reversion strategy to explicit signal
-dates, and compares trades and ledger against the native automatic-sizing proof
-for all three fills, with and without a training/holdout split. This is stronger
-than the small synthetic replay but still does not register a public plugin route.
+The drop-in integration test compares trades, ledger and holdout evaluation with
+the native mean-reversion proof for all fills and exercises cohort search. Further
+coverage is required for fixed-size and hourly pair plugins, generic funding-carry
+plugins, and multi-worker end-to-end parity. The pair catalog and web UI are not
+yet dynamically extended by this adapter; API proof and search requests can use
+its registered strategy ID.

@@ -47,3 +47,25 @@ def test_registered_entry_point_must_implement_protocol():
     with patch.object(base.importlib.metadata, "entry_points", return_value=[*original, EntryPoint("invalid", object())]):
         with pytest.raises(W0Error, match="не реализует StrategyPlugin"):
             base.discover_strategies()
+
+
+def test_daily_pair_adapter_opt_in_rejects_ambiguous_or_unsupported_plugins():
+    from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
+
+    class Demo(PairMeanReversionPlugin):
+        strategy_id = "custom_pair"
+        family_id = "custom_family"
+        proof_adapter = "daily_pair_price_intents.v1"
+        requires_daily_bars = True
+
+    good = Demo()
+    assert base.daily_pair_proof_plugin_ids(base.StrategyRegistry({good.strategy_id: good})) == {"custom_pair"}
+    for attr, value in (("requires_daily_bars", False), ("supported_fills", ("next_open",)),
+                        ("supported_universes", frozenset({"pair_screen", "calendar_native"})),
+                        ("proof_adapter", "other")):
+        bad = Demo()
+        setattr(bad, attr, value)
+        assert not base.daily_pair_proof_plugin_ids(base.StrategyRegistry({bad.strategy_id: bad}))
+    duplicate = Demo()
+    duplicate.strategy_id = "another"
+    assert not base.daily_pair_proof_plugin_ids(base.StrategyRegistry({good.strategy_id: good, duplicate.strategy_id: duplicate}))

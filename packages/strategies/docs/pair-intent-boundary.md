@@ -50,11 +50,13 @@ sizing engine with accepted and unaffordable intents, both directions and termin
 versus executable exit; funding scales only to accepted quantities. This is an
 isolated integration test, not end-to-end plugin accounting or registry support.
 
-A separate synthetic end-to-end characterization composes the price boundary,
+The internal `proof_runtime.pair_plugin_accounting.size_daily_pair_plugin` composes the price boundary,
 daily funding evidence, unit-funding preparation and existing funded sizing. For
 both sides, all three price fills and both terminal/ordinary exits it compares
 trade gross, funding, costs, net, daily funding and final account value with the
 legacy mean-reversion engine at the accepted quantity. It also checks that plugin
-claims about economic results do not affect the output or run ID. This test-only
+claims about economic results do not affect the output or run ID. This internal
 composition does not expose a new public proof route, resolve intraday funding,
-cover journal-only rows or establish arbitrary plugin causality.
+cover journal-only rows, perform proof catalog/volume/capital screens, support
+fixed-size requests or establish arbitrary plugin causality. It requires explicit
+daily perpetual funding evidence and cannot infer zero funding for dated pairs.

@@ -4,14 +4,12 @@ from copy import deepcopy
 import pytest
 
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.accounting.position_sizing import size_proof
-from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
+from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot, CompatibilityVerdict
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.pair_funding_replay import attach_daily_unit_funding
+from moex_spread_lab.proof_runtime.pair_plugin_accounting import size_daily_pair_plugin
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
-from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 
 DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
 
@@ -19,6 +17,12 @@ DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
 class PairPlugin:
     strategy_id = "pair_test_plugin"
     supported_fills = ("next_open", "next_close", "reference_same_bar")
+
+    def validate_parameters(self, params, context):
+        return dict(params)
+
+    def check_compatibility(self, window, settings):
+        return CompatibilityVerdict(True)
 
     def __init__(self, side, terminal, bad_price=False):
         self.side, self.terminal, self.bad_price = side, terminal, bad_price
@@ -51,16 +55,8 @@ def fixture():
 
 
 def pipeline(window, evidence, plugin, fill):
-    trades = pair_price_intent_trades(plugin, window, {}, fill)
-    series = [{"date": r["date"], "near": r["near_close"], "far": r["far_close"],
-               "spread": r["near_close"] - r["far_close"], "near_open": r["near_open"],
-               "far_open": r["far_open"], "volume_eligible": True} for r in window.rows]
-    series = attach_daily_unit_funding(series, trades, evidence, near_lot_size=10)["series"]
-    unit = {"run_id": "pipeline-test", "universe": "pair_screen", "selection": {"universe": "pair_screen",
-            "strategy": plugin.strategy_id, "parameters": {}, "fill": fill}, "instrument": {"near": window.near, "far": window.far},
-            "contract": {}, "window": {"passes_capital_screen": True}, "series": series,
-            "trades": trades, "summary": {}, "notes": []}
-    return size_proof(unit, dict.fromkeys(DAYS, 1.0), ResearchSettings(), window.contracts)
+    return size_daily_pair_plugin(plugin, window, {}, fill, evidence,
+                                  dict.fromkeys(DAYS, 1.0), ResearchSettings())
 
 
 @pytest.mark.parametrize("fill", ["next_open", "next_close", "reference_same_bar"])
@@ -115,3 +111,29 @@ def test_plugin_economic_claims_do_not_change_result_or_run_id():
     first = pipeline(window, evidence, PairPlugin("long_spread", True), "next_open")
     second = pipeline(window, evidence, FalseClaims("long_spread", True), "next_open")
     assert first == second
+
+
+def test_accounting_rejects_unsafe_inputs_and_no_funding_inference():
+    from dataclasses import replace
+    window, evidence, _ = fixture()
+    plugin = PairPlugin("long_spread", False)
+    settings = ResearchSettings()
+    for changed in (replace(window, timeframe="1h"), replace(window, far="N"),
+                    replace(window, rows=[{**r, "near_close": float("nan")} for r in window.rows])):
+        with pytest.raises(W0Error):
+            size_daily_pair_plugin(plugin, changed, {}, "next_open", evidence, dict.fromkeys(DAYS, 1.0), settings)
+    with pytest.raises(W0Error):
+        size_daily_pair_plugin(plugin, window, {}, "next_open", None, dict.fromkeys(DAYS, 1.0), settings)
+    with pytest.raises(W0Error):
+        size_daily_pair_plugin(plugin, window, {}, "next_open", evidence, {}, settings)
+
+
+def test_incompatible_plugin_is_rejected_before_intent_evaluation():
+    class Incompatible(PairPlugin):
+        def check_compatibility(self, window, settings):
+            return CompatibilityVerdict(False, "not compatible")
+        def evaluate_intents(self, *args):
+            raise AssertionError("incompatible plugin must not be called")
+    window, evidence, _ = fixture()
+    with pytest.raises(W0Error, match="not compatible"):
+        pipeline(window, evidence, Incompatible("long_spread", False), "next_open")

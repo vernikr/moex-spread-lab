@@ -140,6 +140,7 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     "proof_runtime": "proof",
     "proof_runtime.service": "proof",
     "proof_runtime.pair_funding_replay": "proof",
+    "proof_runtime.pair_plugin_accounting": "proof",
     "proof_runtime.proof_kernel": "proof",
     "proof_runtime.proof_windows": "proof",
     "proof_runtime.proof_search": "proof",

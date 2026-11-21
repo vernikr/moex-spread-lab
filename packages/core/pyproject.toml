@@ -5,6 +5,9 @@ description = "MOEX Spread Lab Layer 0 core: W0 hashing, timeframes, settings, u
 requires-python = ">=3.12,<3.13"
 dependencies = []
 
+[project.entry-points."moex_spread_lab.cli"]
+core = "moex_spread_lab.core.cli:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

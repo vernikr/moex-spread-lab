@@ -83,10 +83,19 @@ class Axis:
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
 
 
-def _strategy_axes() -> dict[str, dict[str, Axis]]:
-    from moex_spread_lab.strategies import discover_strategies
+from moex_spread_lab.strategies import discover_strategies
 
-    registry = discover_strategies()
+
+# The current accounting adapters support only these strategy implementations.
+# Discovery alone must never route an unimplemented plugin into another engine.
+PROOF_ADAPTER_IDS = frozenset({
+    "mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"
+})
+STRATEGY_REGISTRY = discover_strategies()
+
+
+def _strategy_axes() -> dict[str, dict[str, Axis]]:
+    registry = STRATEGY_REGISTRY
     return {
         plugin.strategy_id: {
             spec.name: Axis(
@@ -98,6 +107,7 @@ def _strategy_axes() -> dict[str, dict[str, Axis]]:
             if spec.tunable
         }
         for plugin in registry.values()
+        if plugin.strategy_id in PROOF_ADAPTER_IDS
     }
 
 

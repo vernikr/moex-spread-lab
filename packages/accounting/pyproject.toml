@@ -8,6 +8,9 @@ dependencies = [
     "pyarrow>=18,<20",
 ]
 
+[project.entry-points."moex_spread_lab.cli"]
+accounting = "moex_spread_lab.accounting.cli:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

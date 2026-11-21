@@ -18,51 +18,54 @@ from .proof_batch import (
     _targets,
     _translate,
 )
-from .proof_kernel import _tune, resolve_seed
+from .proof_kernel import PROOF_ADAPTER_IDS, STRATEGY_REGISTRY, _tune, resolve_seed
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import _run_id
 
 TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
-MR = ("mean_reversion", "zscore_mean_reversion")
-
-
 def _families(request, targets, timeframe):
+    """Choose one compatible adapter per registered family, in registry order.
+
+    A mixed cohort uses the active editor's universe when possible; otherwise
+    it uses the pair adapter, preserving the historic seed and payload ordering.
+    The proof-engine allowlist is intentional: a strategy plugin alone does not
+    yet provide the accounting adapter required to replay it safely.
+    """
     active = request.get("strategy", "zscore_mean_reversion")
-    native = active in ("zscore_mean_reversion", "convergence_to_ruonia")
-    # The MR adapters are one strategy family, not two competing choices.
-    kinds = {t["universe"] for t in targets}
-    price = (
-        "zscore_mean_reversion"
+    active_plugin = STRATEGY_REGISTRY.get(active) if active in STRATEGY_REGISTRY else None
+    kinds = {target["universe"] for target in targets}
+    preferred = (
+        CALENDAR_UNIVERSE
         if kinds == {CALENDAR_UNIVERSE}
-        else "mean_reversion"
-        if CALENDAR_UNIVERSE not in kinds
-        else "zscore_mean_reversion"
-        if native
-        else "mean_reversion"
+        or (len(kinds) > 1 and active_plugin is not None
+            and CALENDAR_UNIVERSE in active_plugin.supported_universes)
+        else next((u for u in sorted(kinds) if u != CALENDAR_UNIVERSE), CALENDAR_UNIVERSE)
     )
-    others = (
-        ["convergence_to_ruonia"]
-        if kinds == {CALENDAR_UNIVERSE}
-        else ["funding_only"]
-        if CALENDAR_UNIVERSE not in kinds
-        else []
-    )
-    families = [price, *others]
-    # A family the timeframe cannot execute is skipped upfront instead of being
-    # prepared and excluded per trial. If no family remains, the existing
-    # no-common-strategy semantics apply unchanged.
-    supported = []
-    for name in families:
-        if name == "funding_only" and not timeframe.supports_funding_strategy:
+    grouped = {}
+    for plugin in STRATEGY_REGISTRY:
+        if plugin.strategy_id not in PROOF_ADAPTER_IDS:
             continue
-        supported.append(name)
-    return supported
+        if plugin.requires_daily_bars and not timeframe.supports_funding_strategy:
+            continue
+        grouped.setdefault(plugin.family_id, []).append(plugin)
+    result = []
+    for plugins in grouped.values():
+        covered = set().union(*(p.supported_universes for p in plugins))
+        if not kinds <= covered:
+            continue
+        match = next((p for p in plugins if preferred in p.supported_universes), None)
+        if match is not None:
+            result.append(match.strategy_id)
+    return result
 
 
 def _same_family(a, b):
-    return a == b or (a in MR and b in MR)
+    if a == b:
+        return True
+    return (a in STRATEGY_REGISTRY and b in STRATEGY_REGISTRY
+            and STRATEGY_REGISTRY.get(a).family_id == STRATEGY_REGISTRY.get(b).family_id)
 
 
 def _candidate_request(request, strategy, targets, price_fill):
@@ -71,6 +74,8 @@ def _candidate_request(request, strategy, targets, price_fill):
         if _same_family(strategy, request.get("strategy"))
         else {}
     )
+    plugin = STRATEGY_REGISTRY.get(strategy)
+    fill = price_fill if price_fill in plugin.supported_fills else plugin.supported_fills[0]
     return {
         **{
             k: v
@@ -79,18 +84,13 @@ def _candidate_request(request, strategy, targets, price_fill):
         },
         "strategy": strategy,
         "parameters": params,
-        "fill": "same_day_settlement" if strategy == "funding_only" else price_fill,
+        "fill": fill,
         # Preflight each family on *all* members, even for a focused single window.
         "targets": targets,
     }
 
 
-_STRATEGY_LABELS = {
-    "mean_reversion": "возврат к среднему",
-    "zscore_mean_reversion": "возврат к среднему",
-    "funding_only": "фондирование",
-    "convergence_to_ruonia": "сходимость к RUONIA",
-}
+_STRATEGY_LABELS = {p.strategy_id: p.short_label_ru for p in STRATEGY_REGISTRY}
 
 
 def strategy_search(

@@ -15,6 +15,9 @@ funding_only = "moex_spread_lab.strategies.funding_carry.plugin:PLUGIN"
 zscore_mean_reversion = "moex_spread_lab.strategies.calendar_zscore.plugin:PLUGIN"
 convergence_to_ruonia = "moex_spread_lab.strategies.calendar_ruonia.plugin:PLUGIN"
 
+[project.entry-points."moex_spread_lab.cli"]
+strategies = "moex_spread_lab.strategies.cli:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

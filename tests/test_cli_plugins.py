@@ -47,6 +47,25 @@ def test_duplicate_command_is_rejected():
     def register(subparsers):
         subparsers.add_parser("replay")
 
-    with patch.object(cli, "entry_points", return_value=[EntryPoint("duplicate", register)]):
+    builtins = list(cli.entry_points(group="moex_spread_lab.cli"))
+    with patch.object(cli, "entry_points", return_value=[*builtins, EntryPoint("duplicate", register)]):
         with pytest.raises(argparse.ArgumentError, match="conflicting subparser"):
             cli.build_parser()
+
+
+def test_existing_command_help_is_byte_identical():
+    import hashlib
+    import json
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    baseline = json.loads((Path(__file__).parent / "cli_help_hashes.json").read_text())
+    for command, expected in baseline.items():
+        result = subprocess.run(
+            [sys.executable, "-m", "moex_spread_lab.cli", command, "--help"],
+            capture_output=True,
+            check=True,
+        )
+        assert hashlib.sha256(result.stdout).hexdigest() == expected, command
+        assert not result.stderr, command

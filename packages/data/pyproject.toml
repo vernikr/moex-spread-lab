@@ -12,6 +12,9 @@ dependencies = [
     "zstandard>=0.23,<1",
 ]
 
+[project.entry-points."moex_spread_lab.cli"]
+data = "moex_spread_lab.data.cli:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

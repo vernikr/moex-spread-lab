@@ -11,6 +11,7 @@ from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from .service import _benchmark_marks
 from .proof_kernel import (
     STRATEGY_AXES,
+    STRATEGY_REGISTRY,
     TRIALS,
     Axis,
     Landscape,
@@ -24,7 +25,8 @@ from .proof_kernel import (
     resolve_seed,
 )
 from .proof_pool import _estimate_weight, get_worker_pool
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE, STRATEGIES
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
+from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.w0 import W0Error, _run_id
 
 MAX_TARGETS = 1024
@@ -58,13 +60,14 @@ def _native_request(active, target, *, default_price_fill="reference_same_bar"):
     from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
     strategy = active.get("strategy", "zscore_mean_reversion")
-    calendar = target["universe"] == CALENDAR_UNIVERSE
-    if strategy in ("mean_reversion", "zscore_mean_reversion"):
-        strategy = "zscore_mean_reversion" if calendar else "mean_reversion"
-    elif (calendar and strategy == "funding_only") or (
-        not calendar and strategy == "convergence_to_ruonia"
-    ):
+    if strategy not in STRATEGY_AXES:
+        raise W0Error("Неизвестная стратегия подбора")
+    plugin = STRATEGY_REGISTRY.get(strategy)
+    adapters = [p for p in STRATEGY_REGISTRY if p.strategy_id in STRATEGY_AXES
+                and p.family_id == plugin.family_id and target["universe"] in p.supported_universes]
+    if not adapters:
         raise W0Error("Выбранная стратегия неприменима к этому типу пары.")
+    strategy = adapters[0].strategy_id
     if strategy == "convergence_to_ruonia" and not ASSETS.get(target["asset"], {}).get(
         "convergence"
     ):
@@ -98,23 +101,16 @@ def _targets(request):
 
 
 def _active_seed(request, active):
-    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS, ZSCORE_OPTIONS
+    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
-    if active in STRATEGIES:
-        defaults = STRATEGIES[active]["parameters"]
-    elif active == "zscore_mean_reversion":
-        freq = (
-            "monthly"
-            if ASSETS.get(request.get("asset"), {}).get("monthly")
-            else "quarterly"
-        )
-        defaults = {
-            "entry_z": 1.5,
-            "exit_z": 0.5,
-            "window": ZSCORE_OPTIONS[freq]["window"],
-        }
-    else:
-        defaults = {"threshold_pp": 1.0}
+    context = InstrumentContext(
+        universe=request.get("universe", CALENDAR_UNIVERSE),
+        pair=request.get("pair", ""),
+        asset=request.get("asset"),
+        monthly=bool(ASSETS.get(request.get("asset"), {}).get("monthly")),
+    )
+    defaults = {spec.name: spec.default for spec in STRATEGY_REGISTRY.get(active).parameter_schema(context)
+                if spec.tunable}
     return {
         **defaults,
         **request.get("parameters", {}),

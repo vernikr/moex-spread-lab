@@ -20,6 +20,9 @@ dependencies = [
 [project.scripts]
 moex-spread-lab = "moex_spread_lab.cli:main"
 
+[project.entry-points."moex_spread_lab.cli"]
+web = "moex_spread_lab.cli_web:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

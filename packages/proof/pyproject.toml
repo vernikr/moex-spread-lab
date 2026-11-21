@@ -5,6 +5,9 @@ description = "MOEX Spread Lab execution-proof and cohort optimization"
 requires-python = ">=3.12,<3.13"
 dependencies = ["msl-core", "msl-data", "msl-accounting", "msl-strategies", "optuna>=4.2,<5"]
 
+[project.entry-points."moex_spread_lab.cli"]
+proof = "moex_spread_lab.proof_runtime.cli:register"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

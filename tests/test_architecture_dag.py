@@ -156,6 +156,12 @@ LAYER_ASSIGNMENTS: dict[str, str] = {
     # L4: web
     "screener_app": "web",
     # L5: cli
+    "core.cli": "cli",
+    "data.cli": "cli",
+    "accounting.cli": "cli",
+    "strategies.cli": "cli",
+    "proof_runtime.cli": "cli",
+    "cli_web": "cli",
     "cli": "cli",
 }
 

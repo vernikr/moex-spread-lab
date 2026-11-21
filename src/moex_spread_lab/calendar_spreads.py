@@ -364,7 +364,7 @@ class CalendarData:
             till = cached_till_date(self.cache)
             if till is None:
                 raise W0Error("calendar history is not cached; run calendar-study first")
-            histories = fetch_inputs(self.cache, tuple(ASSETS), till, delay_seconds=0, opener=_offline)
+            histories = fetch_inputs(self.cache, tuple(ASSETS), till, delay_seconds=0.05, opener=None)
             terms = _terms(self.root / "data/w1/current-intake.json", tuple(ASSETS))
             ruonia = _ruonia(self.root / "data/benchmark-cache/CBR_RUONIA.json")
             factors = _fx_factors(histories)

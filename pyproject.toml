@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "certifi>=2024",
     "duckdb>=1.2,<2",
+    "msl-core",
     "openpyxl>=3.1,<4",
     "optuna>=4.2,<5",
     "pyarrow>=18,<20",
@@ -15,15 +16,32 @@ dependencies = [
 [project.scripts]
 moex-spread-lab = "moex_spread_lab.cli:main"
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [tool.uv]
 package = true
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+msl-core = { workspace = true }
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
 
 [tool.setuptools.package-data]
 moex_spread_lab = ["*.html", "vendor/*.js", "vendor/LICENSE.*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+pythonpath = ["packages/core/src", "src"]
+testpaths = ["packages/core/tests", "tests"]
 
 [dependency-groups]
 dev = [

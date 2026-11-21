@@ -410,24 +410,17 @@ uv run pytest -q -n auto --dist loadfile
 
 ---
 
-### Phase 1 — Bootstrap `uv` Workspace & Extract Layer 0 (`packages/core`)
+### Phase 1 — Bootstrap `uv` Workspace & Extract Layer 0 (`packages/core`) — **Completed**
 
-**Objective:** Activate `[tool.uv.workspace]` and move `core` primitives with backward-compatible re-exports.
+**Objective:** Activate `[tool.uv.workspace]` and move `core` primitives (`msl-core`) with backward-compatible re-export shims.
 
-**Instructions:**
-1. Create `packages/core/pyproject.toml` (`name = "msl-core"`, Hatchling or Setuptools PEP 420 package-dir `src`) and `packages/core/manifest.json`.
-2. Update root `pyproject.toml`:
-   ```toml
-   [tool.uv.workspace]
-   members = ["packages/*"]
-
-   [tool.uv.sources]
-   msl-core = { workspace = true }
-   ```
-3. `git mv` `w0.py`, `timeframes.py`, `evaluation_periods.py` (as `settings.py` + alias), `_fastcore.c`, and `_fastcore_loader.py` into `packages/core/src/moex_spread_lab/core/`.
-4. Leave 3-line re-export shims in `src/moex_spread_lab/{w0,timeframes,evaluation_periods,_fastcore_loader}.py` (`from moex_spread_lab.core.w0 import *`) so zero existing imports break.
-5. `git mv` `tests/test_w0.py` and `tests/test_evaluation_periods.py` into `packages/core/tests/`.
-6. Update `.github/workflows/ci.yml` fastcore precompile check to `from moex_spread_lab.core._fastcore_loader import load_fastcore` (keeping shim working as well) and run `uv lock` (verifying zero external dependency version drift).
+**Completed Implementation:**
+1. Created `packages/core/pyproject.toml` (`name = "msl-core"`, Setuptools PEP 420 namespace package under `src/moex_spread_lab/core`) and `packages/core/manifest.json`.
+2. Activated `[tool.uv.workspace]` (`members = ["packages/*"]`) and `msl-core = { workspace = true }` in root `pyproject.toml`, enabled `pkgutil.extend_path` in `src/moex_spread_lab/__init__.py` so `moex_spread_lab.*` spans workspace distributions cleanly, and updated `uv.lock` with zero external dependency version drift.
+3. Moved `w0.py`, `timeframes.py`, `evaluation_periods.py` (`settings.py` + `evaluation_periods.py` alias), `universe.py`, `_fastcore.c`, and `_fastcore_loader.py` into `packages/core/src/moex_spread_lab/core/` via `git mv`.
+4. Added backward-compatible re-export shims in `src/moex_spread_lab/{w0,timeframes,evaluation_periods,universe,_fastcore_loader}.py` so every existing `moex_spread_lab.*` import continues to work unchanged.
+5. Moved `tests/test_w0.py` and `tests/test_evaluation_periods.py` into `packages/core/tests/` (`testpaths = ["packages/core/tests", "tests"]`).
+6. Updated `.github/workflows/ci.yml` and `.github/workflows/ci-macos.yml` C99 fastcore precompile checks to `moex_spread_lab.core._fastcore_loader`, and extended `tests/test_architecture_dag.py` to scan `packages/*/src/moex_spread_lab` and forbid extracted packages from importing umbrella shims.
 
 **Verification Gate:**
 ```sh

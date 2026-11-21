@@ -36,7 +36,7 @@ jobs:
 
       - name: Precompile and verify C99 fastcore
         run: >-
-          uv run python -c "from moex_spread_lab._fastcore_loader import load_fastcore;
+          uv run python -c "from moex_spread_lab.core._fastcore_loader import load_fastcore;
           import sys; sys.exit(0 if load_fastcore() is not None else 1)"
 
       - name: Run full test suite

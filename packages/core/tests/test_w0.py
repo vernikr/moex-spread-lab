@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.w0 import (
+from moex_spread_lab.core.w0 import (
     W0Error,
     canonical_bytes,
     manifest_config_hash,
@@ -13,7 +13,7 @@ from moex_spread_lab.w0 import (
 from moex_spread_lab.research import run_research_pipeline
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 class W0Tests(unittest.TestCase):

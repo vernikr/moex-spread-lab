@@ -2,14 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     EvaluationSplit,
     ResearchSettings,
     read_settings,
     save_settings,
     settings_path,
 )
-from moex_spread_lab.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error
 
 
 class GlobalPeriodTests(unittest.TestCase):

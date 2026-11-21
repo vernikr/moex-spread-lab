@@ -1,0 +1,20 @@
+[project]
+name = "msl-core"
+version = "0.9.0"
+description = "MOEX Spread Lab Layer 0 core: W0 hashing, timeframes, settings, universe, and C99 fastcore"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"moex_spread_lab.core" = ["*.c"]

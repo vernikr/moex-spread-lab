@@ -1,11 +1,12 @@
-"""Architectural DAG and 6-layer dependency boundary tests (Phase 0 guardrails).
+"""Architectural DAG and 6-layer dependency boundary tests (Phase 0 & Phase 1+ guardrails).
 
-Enforces two static invariants across every Python module in ``src/moex_spread_lab/``
-using AST inspection (including function-level / lazy imports):
+Enforces static invariants across every Python module in both ``packages/*/src/moex_spread_lab/``
+and ``src/moex_spread_lab/`` using AST inspection (including function-level / lazy imports):
 
-1. Zero internal import cycles (Tarjan max strongly-connected-component size == 1).
-2. Strict 6-layer dependency DAG compliance matching ``docs/development/modular-architecture-plan.md``:
-   - L0 ``core``       -> (stdlib / C extension only; no higher layers)
+1. Explicit layer assignment for every module across the workspace.
+2. Zero internal import cycles (Tarjan max strongly-connected-component size == 1).
+3. Strict 6-layer dependency DAG compliance matching ``docs/development/modular-architecture-plan.md``:
+   - L0 ``core``       -> ``core`` only (stdlib / C extension only; never imports umbrella shims)
    - L1a ``data``      -> ``core``, ``data``
    - L1b ``accounting``-> ``core``, ``accounting``  (disjoint sibling of ``data``)
    - L2 ``strategies`` -> ``core``, ``data``, ``accounting``, ``strategies``
@@ -20,10 +21,20 @@ import ast
 import unittest
 from pathlib import Path
 
-PACKAGE_DIR = Path(__file__).resolve().parents[1] / "src" / "moex_spread_lab"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
+PACKAGES_DIR = REPO_ROOT / "packages"
 
 LAYER_ASSIGNMENTS: dict[str, str] = {
-    # L0: core
+    # L0: packages/core (`msl-core`)
+    "core": "core",
+    "core._fastcore_loader": "core",
+    "core.evaluation_periods": "core",
+    "core.settings": "core",
+    "core.timeframes": "core",
+    "core.universe": "core",
+    "core.w0": "core",
+    # L0 backward-compatibility shims in src/moex_spread_lab/
     "_fastcore_loader": "core",
     "w0": "core",
     "timeframes": "core",
@@ -90,44 +101,98 @@ ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {
 }
 
 
+def _module_key(pkg_root: Path, file_path: Path) -> str | None:
+    rel = file_path.relative_to(pkg_root)
+    parts = list(rel.with_suffix("").parts)
+    if parts == ["__init__"]:
+        return None
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
 def _discover_modules() -> dict[str, Path]:
-    return {
-        path.stem: path
-        for path in sorted(PACKAGE_DIR.glob("*.py"))
-        if path.stem != "__init__"
-    }
+    discovered: dict[str, Path] = {}
+    roots = [UMBRELLA_DIR]
+    if PACKAGES_DIR.is_dir():
+        roots.extend(
+            sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab"))
+        )
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            key = _module_key(root, path)
+            if key is not None:
+                discovered[key] = path
+    return discovered
+
+
+def _resolve_internal_target(
+    current_key: str,
+    is_package_init: bool,
+    level: int,
+    module: str | None,
+    alias_name: str | None,
+    known_modules: set[str],
+) -> set[str]:
+    results: set[str] = set()
+    if level == 0:
+        full = module or alias_name or ""
+        if not full.startswith("moex_spread_lab."):
+            return results
+        rel = full.removeprefix("moex_spread_lab.")
+        candidates = [rel]
+        if alias_name and module:
+            candidates.insert(0, f"{rel}.{alias_name}")
+    else:
+        parts = current_key.split(".") if is_package_init else current_key.split(".")[:-1]
+        up = level - 1
+        if up > len(parts):
+            return results
+        base_parts = parts[: len(parts) - up] if up else parts
+        prefix = ".".join(base_parts)
+        if module:
+            rel = f"{prefix}.{module}" if prefix else module
+            candidates = [rel]
+            if alias_name and alias_name != "*":
+                candidates.insert(0, f"{rel}.{alias_name}")
+        elif alias_name and alias_name != "*":
+            rel = f"{prefix}.{alias_name}" if prefix else alias_name
+            candidates = [rel]
+        else:
+            candidates = [prefix] if prefix else []
+
+    for cand in candidates:
+        probe = cand
+        while probe:
+            if probe in known_modules and probe != current_key:
+                results.add(probe)
+                break
+            if "." not in probe:
+                break
+            probe = probe.rsplit(".", 1)[0]
+    return results
 
 
 def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, int]]]:
-    """Return ``{module_name: {(imported_module, lineno), ...}}`` including lazy imports."""
+    """Return ``{module_key: {(imported_key, lineno), ...}}`` including lazy imports."""
+    known = set(modules)
     edges: dict[str, set[tuple[str, int]]] = {name: set() for name in modules}
     for name, path in modules.items():
+        is_pkg_init = path.name == "__init__.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                if node.level == 1:
-                    if node.module:
-                        target = node.module.split(".", 1)[0]
-                        if target in modules and target != name:
-                            edges[name].add((target, node.lineno))
-                    else:
-                        for alias in node.names:
-                            if alias.name in modules and alias.name != name:
-                                edges[name].add((alias.name, node.lineno))
-                elif (
-                    node.level == 0
-                    and node.module
-                    and node.module.startswith("moex_spread_lab.")
-                ):
-                    target = node.module.split(".", 2)[1]
-                    if target in modules and target != name:
+                for alias in node.names:
+                    for target in _resolve_internal_target(
+                        name, is_pkg_init, node.level, node.module, alias.name, known
+                    ):
                         edges[name].add((target, node.lineno))
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name.startswith("moex_spread_lab."):
-                        target = alias.name.split(".", 2)[1]
-                        if target in modules and target != name:
-                            edges[name].add((target, node.lineno))
+                    for target in _resolve_internal_target(
+                        name, is_pkg_init, 0, None, alias.name, known
+                    ):
+                        edges[name].add((target, node.lineno))
     return edges
 
 
@@ -176,7 +241,7 @@ class ArchitectureDagTests(unittest.TestCase):
         self.assertEqual(
             unclassified,
             [],
-            f"New modules in src/moex_spread_lab/ must declare a layer in LAYER_ASSIGNMENTS: {unclassified}",
+            f"New modules in workspace must declare a layer in LAYER_ASSIGNMENTS: {unclassified}",
         )
         self.assertEqual(
             stale,
@@ -209,12 +274,30 @@ class ArchitectureDagTests(unittest.TestCase):
                 dst_layer = LAYER_ASSIGNMENTS[dst]
                 if dst_layer not in allowed:
                     violations.append(
-                        f"{src}.py:{lineno} ({src_layer}) -> {dst}.py ({dst_layer})"
+                        f"{src}:{lineno} ({src_layer}) -> {dst} ({dst_layer})"
                     )
         self.assertEqual(
             violations,
             [],
             "Cross-layer dependency DAG violations:\n  " + "\n  ".join(violations),
+        )
+
+    def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
+        modules = _discover_modules()
+        detailed_edges = _build_import_graph(modules)
+        package_prefixes = ("core.",)
+        package_roots = {"core"}
+        violations: list[str] = []
+        for src, targets in sorted(detailed_edges.items()):
+            if src in package_roots or src.startswith(package_prefixes):
+                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
+                    if dst not in package_roots and not dst.startswith(package_prefixes):
+                        violations.append(f"{src}:{lineno} -> {dst} (umbrella import forbidden)")
+        self.assertEqual(
+            violations,
+            [],
+            "Extracted workspace packages must not import root umbrella modules:\n  "
+            + "\n  ".join(violations),
         )
 
 

@@ -1,0 +1,44 @@
+{
+  "module_id": "moex-spread-lab.core",
+  "release": "0.9.0",
+  "contract_version": "msl-core.v1",
+  "kind": "core",
+  "capabilities": [
+    "canonical_hash",
+    "hashed_json_cache",
+    "manifest_validation",
+    "secret_scan",
+    "timeframe_registry",
+    "research_settings",
+    "universe_registry",
+    "c99_fastcore_accelerator"
+  ],
+  "inputs": [
+    "run-manifest.v1",
+    "w0.fixture.v1",
+    "iss-intake.v1"
+  ],
+  "outputs": [
+    "w0.replay.v1"
+  ],
+  "dependencies": [],
+  "owner": "project-core",
+  "resource_profile": {
+    "network": "disabled",
+    "runtime": "single-process",
+    "storage": "caller-selected"
+  },
+  "rights_provenance": {
+    "data_rights": "private_research_assumption_A-05",
+    "credentials": "none",
+    "redistribution": "disabled"
+  },
+  "determinism": {
+    "required": true,
+    "randomness": "explicit_seed_only"
+  },
+  "health": {
+    "supported_python": ">=3.12,<3.13",
+    "status": "active"
+  }
+}

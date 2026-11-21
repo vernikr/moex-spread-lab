@@ -400,15 +400,42 @@ class CalendarData:
         number = float(value)
         return number if math.isfinite(number) else None
 
-    def _fetch_h1_candles(self, secid: str, path: Path) -> bool:
+    def _fetch_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
+        import hashlib
         import os
         import urllib.request
+        target = self.root / "data/w1/candles/1h" / f"{secid}_1h.json"
+        if target.exists():
+            try:
+                raw = target.read_bytes()
+                payload = json.loads(raw.decode("utf-8"))
+                rows = {}
+                for source_row in payload.get("rows", []):
+                    ts = self._candle_timestamp(source_row.get("begin"))
+                    close = self._number(source_row.get("close"))
+                    if ts is None or close is None:
+                        continue
+                    rows[ts] = {
+                        "begin": ts,
+                        "open": self._number(source_row.get("open")),
+                        "close": close,
+                        "volume": self._number(source_row.get("volume")),
+                    }
+                if rows:
+                    return ({
+                        "secid": secid,
+                        "path": str(target),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "rows": rows,
+                    }, None)
+            except Exception:
+                pass
         if os.environ.get("MOEX_OFFLINE_ONLY") == "1":
-            return False
+            return None, "no_local_h1_file"
         if not hasattr(self, "_h1_fetch_attempted"):
             self._h1_fetch_attempted: set[str] = set()
         if secid in self._h1_fetch_attempted:
-            return False
+            return None, "no_local_h1_file"
         self._h1_fetch_attempted.add(secid)
         try:
             url = f"https://iss.moex.com/iss/engines/futures/markets/forts/securities/{secid}/candles.json?interval=60&from={HISTORY_FROM}&iss.meta=off"
@@ -418,25 +445,48 @@ class CalendarData:
             cols = candles.get("columns", [])
             data = candles.get("data", [])
             if not cols or not data:
-                return False
-            rows = [dict(zip(cols, row)) for row in data]
-            target = path if path.suffix == ".json" else self.root / "data/w1/candles/1h" / f"{secid}.json"
+                return None, "no_local_h1_file"
+            raw_rows = [dict(zip(cols, row)) for row in data]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(json.dumps({
+            encoded = json.dumps({
                 "schema_version": "iss-candles.v1",
                 "secid": secid,
                 "interval": 60,
+                "rows": raw_rows,
+            }, ensure_ascii=False).encode("utf-8")
+            target.write_bytes(encoded)
+            rows = {}
+            for source_row in raw_rows:
+                ts = self._candle_timestamp(source_row.get("begin"))
+                close = self._number(source_row.get("close"))
+                if ts is None or close is None:
+                    continue
+                rows[ts] = {
+                    "begin": ts,
+                    "open": self._number(source_row.get("open")),
+                    "close": close,
+                    "volume": self._number(source_row.get("volume")),
+                }
+            if not rows:
+                return None, "no_valid_h1_rows"
+            return ({
+                "secid": secid,
+                "path": str(target),
+                "sha256": hashlib.sha256(encoded).hexdigest(),
                 "rows": rows,
-            }, ensure_ascii=False), encoding="utf-8")
-            return self.bar_store.source_available(self.bar_store.select_h1(secid))
+            }, None)
         except Exception:
-            return False
+            return None, "no_local_h1_file"
 
     def _read_h1_candles(self, secid: str, *, allow_fetch: bool = True) -> tuple[dict[str, Any] | None, str | None]:
         path = self.bar_store.select_h1(secid)
         if not self.bar_store.source_available(path):
-            if not allow_fetch or not self._fetch_h1_candles(secid, path):
-                return None, "no_local_h1_file"
+            if allow_fetch:
+                return self._fetch_h1_candles(secid)
+            local_fallback = self.root / "data/w1/candles/1h" / f"{secid}_1h.json"
+            if local_fallback.exists():
+                return self._fetch_h1_candles(secid)
+            return None, "no_local_h1_file"
         try:
             source = self.bar_store.read(path, columns=("begin", "open", "close", "volume"))
             fingerprint = source.cache_key

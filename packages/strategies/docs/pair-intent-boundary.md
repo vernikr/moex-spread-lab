@@ -42,3 +42,10 @@ zero, an interpolated rate, and a confirmed no-clearing day remain distinguishab
 only the last explicitly has no payment without having a numerical rate. Hourly
 bars are rejected: resolving the exchange clearing-to-bar mapping remains open.
 The resulting daily funding rows are not yet connected to ledger or sizing.
+
+The experimental `attach_daily_unit_funding` prepares unit-quantity funding
+fields for `size_proof` without mutating source rows. It accepts only the exact
+eligible daily window, never journal-only extras. Tests exercise the existing
+sizing engine with accepted and unaffordable intents, both directions and terminal
+versus executable exit; funding scales only to accepted quantities. This is an
+isolated integration test, not end-to-end plugin accounting or registry support.

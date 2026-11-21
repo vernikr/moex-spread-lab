@@ -112,3 +112,32 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
         row["rate_kind"] = evidence.marks[row["date"]].kind
         row["rate"] = evidence.marks[row["date"]].value
     return {"daily": rows, "provenance": deepcopy(evidence.provenance)}
+
+
+def attach_daily_unit_funding(series, trades, window, *, through=None, near_lot_size):
+    """Prepare isolated unit funding fields for the existing funded sizing replay.
+
+    This consumes only the eligible daily analysis series. It intentionally rejects
+    journal-only extras and is not a complete proof or an enabled plugin adapter.
+    Quantity is fixed at one here; the sizing engine applies accepted quantities.
+    """
+    from copy import deepcopy
+
+    if not isinstance(series, (list, tuple)) or any(not isinstance(row, Mapping) for row in series):
+        raise W0Error("Некорректные строки анализа для фондирования.")
+    if any(row.get("volume_eligible", True) is not True for row in series):
+        raise W0Error("В расчёт фондирования допускаются только подходящие бары анализа.")
+    dates = [row.get("date") for row in series]
+    replay = replay_daily_pair_funding(dates, trades, window, through=through,
+                                       near_lot_size=near_lot_size, quantity=1)
+    rows = []
+    for row, funding in zip(series, replay["daily"], strict=True):
+        if funding["funding_rub"] is None:
+            raise W0Error("Неполные данные фондирования нельзя передать в учёт.")
+        # There is no contract count on an explicitly non-clearing session.
+        held = bool(funding["position_at_clearing"])
+        rows.append({**deepcopy(row), "funding_rub": funding["funding_rub"],
+                     "funding_contracts": int(held and funding["funding_status"] == "applied"),
+                     "funding_rate_kind": funding["rate_kind"],
+                     "funding_swaprate_rub_per_unit": funding["rate"]})
+    return {"series": rows, "provenance": replay["provenance"]}

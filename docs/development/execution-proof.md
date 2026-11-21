@@ -30,7 +30,7 @@ Search chooses one common strategy and one common vector, never separate per-win
 
 Compatibility: calls omitting `optimize_strategy` or passing `false` retain the 40-trial active-family `proof-search.v3` path. Optional `price_fill` records the fixed price convention when the draft is funding carry; the UI retains the last price-fill draft (default next-open). It is never searched. Non-optimization proof and live-plateau endpoints retain explicit strategy/vector semantics.
 
-Optional Chromium regressions (synthetic data): install Chromium with `uv run --with playwright python -m playwright install chromium`, then run each `tests/browser/*_smoke.py` with `uv run --with playwright python` (nine suites).
+Optional Chromium regressions (synthetic data): install Chromium with `uv run --with playwright python -m playwright install chromium`, then run each `tests/browser/*_smoke.py` with `uv run --with playwright python` (ten suites; also run weekly by `.github/workflows/browser-smoke.yml`).
 
 ## Window table, signal lines and reference fills (2026-11-18)
 

@@ -1,0 +1,43 @@
+name: CI (macOS, opt-in)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 2"  # weekly, Tuesday 05:41 UTC
+
+# Opt-in only: macOS runner minutes bill at a 10x multiplier on private
+# repositories. Runs the full suite (including bit-for-bit equivalence tests)
+# to catch clang/path-specific drift in the C99 fastcore and path handling.
+
+permissions:
+  contents: read
+
+env:
+  UV_COMPILE_BYTECODE: "1"
+  UV_LINK_MODE: copy
+
+jobs:
+  test-macos:
+    name: pytest (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment (incl. dev group)
+        run: uv sync --frozen
+
+      - name: Precompile and verify C99 fastcore
+        run: >-
+          uv run python -c "from moex_spread_lab._fastcore_loader import load_fastcore;
+          import sys; sys.exit(0 if load_fastcore() is not None else 1)"
+
+      - name: Run full test suite
+        run: uv run pytest -q -n auto --dist loadfile --durations=15

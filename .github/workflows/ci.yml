@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"  # weekly, Monday 04:17 UTC
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -15,7 +18,52 @@ env:
 
 jobs:
   test:
-    name: pytest (ubuntu-latest)
+    name: pytest shard ${{ matrix.shard }}/2 (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment (incl. dev group)
+        run: uv sync --frozen
+
+      - name: Precompile and verify C99 fastcore
+        run: >-
+          uv run python -c "from moex_spread_lab._fastcore_loader import load_fastcore;
+          import sys; sys.exit(0 if load_fastcore() is not None else 1)"
+
+      - name: Run tests (shard ${{ matrix.shard }}/2)
+        shell: bash
+        run: >-
+          set -o pipefail;
+          uv run pytest -q -n auto --dist loadfile
+          --ignore=tests/test_perf_equivalence.py
+          --splits 2 --group ${{ matrix.shard }}
+          --durations-path .github/test-durations.json
+          --splitting-algorithm least_duration
+          --durations=15 | tee durations-shard-${{ matrix.shard }}.log
+
+      - name: Upload durations report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: durations-shard-${{ matrix.shard }}
+          path: durations-shard-${{ matrix.shard }}.log
+          retention-days: 7
+
+  perf-equivalence:
+    name: perf equivalence (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -31,5 +79,23 @@ jobs:
       - name: Sync locked environment (incl. dev group)
         run: uv sync --frozen
 
-      - name: Run tests in parallel
-        run: uv run pytest -q -n auto --dist loadfile --durations=15
+      - name: Precompile and verify C99 fastcore
+        run: >-
+          uv run python -c "from moex_spread_lab._fastcore_loader import load_fastcore;
+          import sys; sys.exit(0 if load_fastcore() is not None else 1)"
+
+      - name: Run bit-for-bit equivalence tests
+        shell: bash
+        run: >-
+          set -o pipefail;
+          uv run pytest -q -n auto --dist loadfile
+          tests/test_perf_equivalence.py
+          --durations=15 | tee durations-perf.log
+
+      - name: Upload durations report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: durations-perf-equivalence
+          path: durations-perf.log
+          retention-days: 7

@@ -1,0 +1,48 @@
+name: Browser smoke (scheduled)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "33 5 * * 3"  # weekly, Wednesday 05:33 UTC
+
+# Playwright Chromium suites over synthetic data (tests/browser/*_smoke.py).
+# Kept out of per-push CI on purpose: they are slower and flakier than the
+# pytest suite. Verified headless on Linux; nine-to-ten suites run in ~2 min.
+
+permissions:
+  contents: read
+
+env:
+  UV_COMPILE_BYTECODE: "1"
+  UV_LINK_MODE: copy
+
+jobs:
+  browser-smoke:
+    name: Playwright smoke suites (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --frozen
+
+      - name: Install Chromium for Playwright
+        run: uv run --with playwright python -m playwright install --with-deps chromium
+
+      - name: Run every browser smoke suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tests/browser
+          for f in *_smoke.py; do
+            echo "=== $f"
+            uv run --with playwright --project "$GITHUB_WORKSPACE" python "$f"
+          done

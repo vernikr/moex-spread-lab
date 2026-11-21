@@ -137,3 +137,51 @@ def test_incompatible_plugin_is_rejected_before_intent_evaluation():
     window, evidence, _ = fixture()
     with pytest.raises(W0Error, match="not compatible"):
         pipeline(window, evidence, Incompatible("long_spread", False), "next_open")
+
+
+def test_journal_only_bar_does_not_revalue_or_receive_funding():
+    from dataclasses import replace
+    window, _, _ = fixture()
+    rows = deepcopy(window.rows)
+    rows[2].update(near_volume=0, near_close=90000)
+    window = replace(window, rows=rows)
+    days = [d for d in DAYS if d != DAYS[2]]
+    evidence = FundingWindow(FundingTimeline("TEST", dict.fromkeys(days, .2), days), days)
+
+    class AcrossGap(PairPlugin):
+        def evaluate_intents(self, snap, params, fill):
+            assert [r["date"] for r in snap.rows] == days
+            a, b = snap.rows[1], snap.rows[3]
+            item = {"side": "long_spread", "entry_date": a["date"], "exit_date": b["date"],
+                    "entry_near_fill": a["near_open"], "entry_far_fill": a["far_open"],
+                    "exit_near_fill": b["near_open"], "exit_far_fill": b["far_open"],
+                    "reason": "exit", "signal": {"date": days[0], "kind": "x", "value": 1}}
+            return StrategyIntentRun(self.strategy_id, fill, params, (item,))
+    result = pipeline(window, evidence, AcrossGap("long_spread", False), "next_open")
+    journal = result["ledger"][2]
+    assert result["series"][2]["volume_eligible"] is False
+    assert journal["mark_pnl_rub"] == 0 and journal["funding_rub"] is None
+    assert journal["posted_margin_rub"] == result["ledger"][1]["posted_margin_rub"]
+    assert result["summary"]["ledger_reconciliation_rub"] == 0
+
+
+def test_prefix_hides_future_rows_and_extra_snapshot_data_and_identity():
+    from dataclasses import replace
+    window, evidence, _ = fixture()
+    window = replace(window, funding_swaprates={DAYS[-1]: 123}, benchmark={"future": 2},
+                     carry_study={"future": 3}, extra={"future": 4})
+    class PrefixPlugin(PairPlugin):
+        def evaluate_intents(self, snap, params, fill):
+            assert [r["date"] for r in snap.rows] == DAYS[:4]
+            assert snap.funding_swaprates is None and snap.carry_study is None
+            assert snap.benchmark is None and not snap.extra
+            return StrategyIntentRun(self.strategy_id, fill, params, ())
+    plugin = PrefixPlugin("long_spread", False)
+    first = size_daily_pair_plugin(plugin, window, {}, "next_open", evidence,
+                                   dict.fromkeys(DAYS, 1.0), ResearchSettings(), through=DAYS[3])
+    altered = deepcopy(window.rows)
+    altered[-1]["near_close"] = 123456
+    second = size_daily_pair_plugin(plugin, replace(window, rows=altered), {}, "next_open", evidence,
+                                    {**dict.fromkeys(DAYS, 1.0), DAYS[-1]: 999}, ResearchSettings(), through=DAYS[3])
+    assert first == second
+    assert [r["date"] for r in first["series"]] == DAYS[:4]

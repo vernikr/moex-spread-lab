@@ -57,6 +57,14 @@ trade gross, funding, costs, net, daily funding and final account value with the
 legacy mean-reversion engine at the accepted quantity. It also checks that plugin
 claims about economic results do not affect the output or run ID. This internal
 composition does not expose a new public proof route, resolve intraday funding,
-cover journal-only rows, perform proof catalog/volume/capital screens, support
+perform proof catalog/volume/capital screens, support
 fixed-size requests or establish arbitrary plugin causality. It requires explicit
 daily perpetual funding evidence and cannot infer zero funding for dated pairs.
+
+The internal daily composition also keeps zero-volume/missing-volume bars in the
+account journal without mark-to-market or funding. Plugins see only eligible bars,
+and an explicit `through` cutoff truncates bars and benchmark inputs before plugin
+evaluation and run-ID generation. Auxiliary snapshot funding, benchmark, carry and
+extra objects are not passed to the price plugin. Funding cutoffs are still resolved
+by `FundingWindow`. This supports prefix replay but does not yet wire the full
+cohort/holdout orchestration or public proof dispatch.

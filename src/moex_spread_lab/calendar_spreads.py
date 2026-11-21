@@ -438,7 +438,7 @@ class CalendarData:
             return None, "no_local_h1_file"
         self._h1_fetch_attempted.add(secid)
         try:
-            url = f"https://iss.moex.com/iss/engines/futures/markets/forts/securities/{secid}/candles.json?interval=60&from={HISTORY_FROM}&iss.meta=off"
+            url = f"https://iss.moex.com/iss/engines/futures/markets/forts/securities/{secid}/candles.json?interval=60&from=2026-06-01&iss.meta=off"
             with urllib.request.urlopen(url, timeout=5) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
             candles = payload.get("candles", {})

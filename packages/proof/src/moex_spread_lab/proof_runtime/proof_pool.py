@@ -23,15 +23,14 @@ from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 from .proof_kernel import (
     STRATEGY_AXES,
     StudyWindow,
-    _validate,
-    compact_result,
 )
+from .worker_metrics import submit_worker, unwrap_worker_result
+from .worker_window import _worker_service, _worker_window_summaries
 
 MIN_POOL_WINDOWS = 3
 MIN_POOL_BARS = 1500
 POLL_INTERVAL_SECONDS = 0.05
 
-_WORKER_SERVICES: dict[str, Any] = {}
 _WORKER_COHORTS: dict[str, dict[int, tuple[dict[str, Any], StudyWindow]]] = {}
 
 
@@ -46,19 +45,6 @@ def configured_workers() -> int:
     if sys.platform == "darwin" and cpu > 4:
         return max(2, min(6, cpu // 2))
     return max(1, min(8, cpu))
-
-
-def _worker_service(root_str: str):
-    svc = _WORKER_SERVICES.get(root_str)
-    if svc is None:
-        from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-
-        from .service import ProofService
-
-        root = Path(root_str).resolve()
-        svc = ProofService(root, calendar=CalendarData(root))
-        _WORKER_SERVICES[root_str] = svc
-    return svc
 
 
 def _worker_init_cohort(
@@ -246,31 +232,6 @@ def _worker_report_cohort(
     return rows
 
 
-def _worker_window_summaries(
-    root_str: str,
-    settings: ResearchSettings,
-    benchmark: tuple[list[str], dict[str, float]],
-    items: list[tuple[int, dict[str, Any], dict[str, Any]]],
-) -> list[tuple[int, dict[str, Any]]]:
-    svc = _worker_service(root_str)
-    calendar = svc._calendar
-    rows: list[tuple[int, dict[str, Any]]] = []
-    for idx, item, target in items:
-        try:
-            _validate(item)
-            case = StudyWindow(svc, item, settings, benchmark, calendar)
-            result = compact_result(case.report(case.seed))
-        except (W0Error, OSError) as exc:
-            result = {
-                "status": "unavailable",
-                "trades": None,
-                "annualized_excess_pp": None,
-                "reason": str(exc),
-            }
-        rows.append((idx, {"target": target, **result}))
-    return rows
-
-
 def _estimate_weight(
     root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None
 ) -> int:
@@ -320,7 +281,7 @@ def _await_futures(futures, check_cancelled, on_done=None):
         if on_done is not None and done:
             for fut in done:
                 on_done(fut)
-    return [fut.result() for fut in futures]
+    return [unwrap_worker_result(fut.result()) for fut in futures]
 
 
 class CohortWorkerPool:
@@ -390,8 +351,14 @@ class CohortWorkerPool:
         fut_weights: dict[Any, int] = {}
         for s_idx, shard in enumerate(shards):
             if shard:
-                fut = slots[s_idx].submit(
-                    _worker_init_cohort, cohort_id, root_str, settings, benchmark, shard
+                fut = submit_worker(
+                    slots[s_idx],
+                    _worker_init_cohort,
+                    cohort_id,
+                    root_str,
+                    settings,
+                    benchmark,
+                    shard,
                 )
                 futures.append(fut)
                 fut_weights[fut] = len(shard)
@@ -458,7 +425,9 @@ class CohortWorkerPool:
             # Optimistic single-roundtrip fan-out across all active shards simultaneously.
             active_slots = sorted(set(owner_of.values()))
             futs = [
-                slots[s_idx].submit(_worker_eval_indices, cohort_id, point_by_strategy, None, None)
+                submit_worker(
+                    slots[s_idx], _worker_eval_indices, cohort_id, point_by_strategy, None, None
+                )
                 for s_idx in active_slots
             ]
             all_scores: list[tuple[int, float, bool]] = []
@@ -492,7 +461,11 @@ class CohortWorkerPool:
         # Phase 1: probe the canary window first (1 IPC round-trip).
         canary_slot = slots[owner_of[canary]]
         fail, canary_scores = _await_futures(
-            [canary_slot.submit(_worker_eval_indices, cohort_id, point_by_strategy, [canary])],
+            [
+                submit_worker(
+                    canary_slot, _worker_eval_indices, cohort_id, point_by_strategy, [canary]
+                )
+            ],
             check_cancelled,
         )[0]
         if fail is not None:
@@ -505,7 +478,8 @@ class CohortWorkerPool:
             # A lower canonical index may also fail on this point; inspect only < canary.
             earlier_slots = sorted({owner_of[i] for i in range(canary)})
             sub_futs = [
-                slots[s_idx].submit(
+                submit_worker(
+                    slots[s_idx],
                     _worker_eval_indices,
                     cohort_id,
                     point_by_strategy,
@@ -539,7 +513,9 @@ class CohortWorkerPool:
 
         active_slots = sorted(set(owner_of.values()))
         futs = [
-            slots[s_idx].submit(_worker_eval_indices, cohort_id, point_by_strategy, None, canary)
+            submit_worker(
+                slots[s_idx], _worker_eval_indices, cohort_id, point_by_strategy, None, canary
+            )
             for s_idx in active_slots
             if any(entry[0] != canary for entry in shards[s_idx])
         ]
@@ -583,7 +559,7 @@ class CohortWorkerPool:
         slots = cohort_state["slots"]
         active_slots = sorted(set(cohort_state["owner_of"].values()))
         futs = [
-            slots[s_idx].submit(_worker_eval_plateau_batch, cohort_id, points)
+            submit_worker(slots[s_idx], _worker_eval_plateau_batch, cohort_id, points)
             for s_idx in active_slots
         ]
         total_slots = len(futs)
@@ -643,8 +619,13 @@ class CohortWorkerPool:
         futs = []
         fut_weights: dict[Any, int] = {}
         for s_idx in active_slots:
-            fut = slots[s_idx].submit(
-                _worker_report_cohort, cohort_id, point_by_strategy, best_is_none, settings
+            fut = submit_worker(
+                slots[s_idx],
+                _worker_report_cohort,
+                cohort_id,
+                point_by_strategy,
+                best_is_none,
+                settings,
             )
             futs.append(fut)
             fut_weights[fut] = len(shards[s_idx])
@@ -697,8 +678,8 @@ class CohortWorkerPool:
         fut_weights: dict[Any, int] = {}
         for b_idx, shard in enumerate(shards):
             if shard:
-                fut = slots[b_idx % w].submit(
-                    _worker_window_summaries, root_str, settings, benchmark, shard
+                fut = submit_worker(
+                    slots[b_idx % w], _worker_window_summaries, root_str, settings, benchmark, shard
                 )
                 futs.append(fut)
                 fut_weights[fut] = len(shard)

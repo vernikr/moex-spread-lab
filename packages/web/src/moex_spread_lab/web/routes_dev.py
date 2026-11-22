@@ -27,6 +27,7 @@ from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_pool import configured_workers
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
+from moex_spread_lab.proof_runtime.worker_metrics import collect_worker_metrics
 
 from .dev_pool_metrics import pool_snapshot
 
@@ -219,7 +220,11 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         profiler.enable()
     result: Any = None
     try:
-        with collect_cache_metrics() as cache_metrics, collect_phase_metrics() as phase_metrics:
+        with (
+            collect_cache_metrics() as cache_metrics,
+            collect_phase_metrics() as phase_metrics,
+            collect_worker_metrics() as worker_metrics,
+        ):
             for _ in range(repeat):
                 started = time.perf_counter()
                 clock = PhaseClock()
@@ -234,6 +239,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     telemetry: dict[str, Any] = {
         "wall_ms": durations,
         "cache_metrics_main_thread": cache_metrics,
+        "worker_task_metrics": worker_metrics.snapshot(),
         "pool": pool_snapshot(store, resources=True),
         "progress_phase_ms": phases,
         "operation_phase_ms": {name: round(ms, 2) for name, ms in phase_metrics.items()},

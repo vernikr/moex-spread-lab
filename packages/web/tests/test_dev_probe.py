@@ -192,3 +192,41 @@ def test_worker_resource_sampling_is_labeled_and_handles_process_exit(monkeypatc
         "complete": False,
     }
     assert resources.worker_resources(set())["complete"] is True
+
+
+def test_pool_probe_worker_metrics_and_exact_windows_parity(server, monkeypatch):
+    monkeypatch.setenv("MOEX_PROOF_FORCE_POOL", "1")
+    monkeypatch.setenv("MOEX_PROOF_WORKERS", "2")
+    port, root = server
+    common = {"universe": "calendar_native", "asset": "SR", "strategy": "zscore_mean_reversion"}
+    requests = [
+        {**common, "pair": "SRH3/SRM3"},
+        {**common, "pair": "SRM3/SRU3"},
+        {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"},
+    ]
+    payload = {"requests": requests}
+    analytics = root / "data/analytics"
+    before = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
+    status, raw = request(port, "POST", "/api/proof/windows", payload)
+    assert status == 200, raw
+    normal = json.loads(raw)
+    status, raw = request(
+        port,
+        "POST",
+        "/api/dev/probe",
+        {
+            "action": "windows",
+            "payload": payload,
+            "response_mode": "full",
+            "repeat": 2,
+        },
+    )
+    assert status == 200, raw
+    probe = json.loads(raw)
+    assert probe["result"] == normal
+    workers = probe["telemetry"]["worker_task_metrics"]
+    assert workers["tasks"] >= 4 and workers["workers"] == 2
+    assert sum(workers["cache"].values()) > 0
+    assert workers["cpu_user_ms"] >= 0 and workers["cpu_sys_ms"] >= 0
+    after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
+    assert after == before

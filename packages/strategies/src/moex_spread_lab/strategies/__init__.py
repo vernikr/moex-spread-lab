@@ -1,16 +1,19 @@
 """MOEX Spread Lab Layer 2 strategies: plugin discovery registry and isolated strategy subpackages."""
 
-from .base import (
-    PRICE_FILLS,
-    REFERENCE_WARNING,
+from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
     EntryBandPoint,
     InstrumentContext,
     ParameterSpec,
     StrategyIntentRun,
     StrategyPlugin,
-    StrategyRegistry,
     WindowSnapshot,
+)
+
+from .base import (
+    PRICE_FILLS,
+    REFERENCE_WARNING,
+    StrategyRegistry,
     discover_strategies,
 )
 from .signals import attach_entry_levels, pair_fill

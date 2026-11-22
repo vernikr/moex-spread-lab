@@ -1,11 +1,4 @@
-"""Architectural DAG and 6-layer dependency boundary tests (Phase 0 & Phase 1+ guardrails).
-
-Enforces static invariants across ``packages/*/src/moex_spread_lab/`` and ``src/moex_spread_lab/``:
-- Explicit layer assignment for every module across the workspace.
-- Zero internal import cycles (Tarjan max strongly-connected-component size == 1).
-- Strict 6-layer dependency DAG compliance: L0 ``core`` -> L1a ``data`` / L1b ``accounting`` ->
-  L2 ``strategies`` -> L3 ``proof`` -> L4 ``web`` -> L5 ``cli``.
-"""
+"""Architectural DAG and 6-layer dependency boundary tests."""
 
 from __future__ import annotations
 
@@ -19,85 +12,87 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
+
+def _expand(spec: str) -> list[str]:
+    out: list[str] = []
+    for token in spec.split():
+        if "{" in token:
+            prefix, rest = token.split("{", 1)
+            body = rest.rstrip("}")
+            out.extend(
+                f"{prefix}{item}" if item else prefix.rstrip(".") for item in body.split(",")
+            )
+        else:
+            out.append(token)
+    return out
+
+
 _LAYER_SPECS: dict[str, str] = {
-    "core": "core core._fastcore_loader core.contracts core.evaluation_periods core.settings core.timeframes core.universe core.w0 _fastcore_loader w0 timeframes evaluation_periods universe",
+    "core": (
+        "core.{,_fastcore_loader,contracts,evaluation_periods,settings,timeframes,universe,w0} "
+        "_fastcore_loader w0 timeframes evaluation_periods universe"
+    ),
     "data": (
-        "data data.cli_parsers data.cli_storage_handlers data.iss data.iss.catalog data.iss.iss_candles "
-        "data.iss.iss_coverage data.iss.iss_history data.iss.iss_http data.iss.iss_snapshot data.lake "
-        "data.lake.bar_types data.lake.data_lake data.lake.data_refresh data.lake.h1_migration data.lake.h1_seal "
-        "data.lake.legacy_series data.lake.market_store data.lake.parquet_catalog data.lake.parquet_store "
-        "data.lake.raw_archive data.lake.refresh_merge data.retention data.retention.data_inventory "
-        "data.retention.data_retention data.retention.data_archive_candidates data.retention.h1_archive "
-        "data.retention.inventory_policy data.retention.storage_policy data.benchmark data.benchmark.lineage "
-        "data.benchmark.lineage_math data.benchmark.ruonia_xlsx data.universe bar_types data_lake h1_migration h1_seal h1_archive iss "
-        "benchmark data_inventory data_retention data_archive_candidates data_refresh storage_policy"
+        "data.{,cli_parsers,cli_storage_handlers,universe} "
+        "data.iss.{,catalog,iss_candles,iss_coverage,iss_history,iss_http,iss_snapshot} "
+        "data.lake.{,bar_types,data_lake,data_refresh,h1_migration,h1_seal,legacy_series,market_store,parquet_catalog,parquet_store,raw_archive,refresh_merge} "
+        "data.retention.{,data_inventory,data_retention,data_archive_candidates,h1_archive,inventory_policy,storage_policy} "
+        "data.benchmark.{,lineage,lineage_math,ruonia_xlsx} "
+        "bar_types data_lake h1_migration h1_seal h1_archive iss benchmark data_inventory data_retention data_archive_candidates data_refresh storage_policy"
     ),
     "accounting": (
-        "accounting accounting.costs accounting.portfolio accounting.account_risk accounting.position_sizing "
-        "accounting.sizing_fast accounting.sizing_replay accounting.sizing_report accounting.sizing_terms "
-        "accounting.ledger accounting.run_artifacts accounting.run_artifact_import accounting.run_artifact_store "
-        "accounting.validation accounting.research accounting.research_intake accounting.research_simulation "
+        "accounting.{,costs,portfolio,account_risk,position_sizing,sizing_fast,sizing_replay,sizing_report,sizing_terms,ledger,run_artifacts,run_artifact_import,run_artifact_store,validation,research,research_intake,research_simulation} "
         "costs portfolio account_risk position_sizing ledger run_artifacts run_artifact_import validation research"
     ),
     "strategies": (
-        "strategies strategies.base strategies.conformance strategies.signals strategies.pair_mean_reversion "
-        "strategies.pair_mean_reversion.analytics strategies.pair_mean_reversion.engine "
-        "strategies.pair_mean_reversion.plugin strategies.funding_carry strategies.funding_carry.carry "
-        "strategies.funding_carry.proof_funding strategies.funding_carry.funding_recheck "
-        "strategies.funding_carry.funding_screen strategies.funding_carry.engine strategies.funding_carry.plugin "
-        "strategies.funding_carry.intents strategies.calendar_zscore strategies.calendar_zscore.engine "
-        "strategies.calendar_zscore.plugin strategies.calendar_ruonia strategies.calendar_ruonia.engine "
-        "strategies.calendar_ruonia.plugin strategies.s3_reference strategies.s3_reference.engine "
-        "strategies.calendar strategies.calendar.calendar_spreads strategies.calendar.intents "
-        "strategies.pair_screener strategies.pair_screener.screener strategies.pair_screener.pair_screener "
-        "strategies.pair_screener.intents analytics carry funding_screen funding_recheck proof_funding "
-        "proof_signals calendar_spreads s3_reference screener pair_screener"
+        "strategies.{,base,registry,calendar_eval,cli_parsers,conformance,signals} "
+        "strategies.pair_mean_reversion.{,analytics,costs_helper,series_builder,fast_scan,baseline_runner,report_builder,engine,plugin} "
+        "strategies.funding_carry.{,carry,study,strategy_costs,strategy_report,strategy_runner,timeline,proof_funding,funding_recheck,funding_screen,engine,plugin,intents} "
+        "strategies.calendar_zscore.{,engine,plugin} strategies.calendar_ruonia.{,engine,plugin} "
+        "strategies.s3_reference.{,engine} "
+        "strategies.calendar.{,calendar_spreads,contracts,data_cache,study,h1_candles,h1_windows,proof_ledger,proof_payload,catalog_builder,proof_runner,intents} "
+        "strategies.pair_screener.{,normalization,screener,pair_screener,inputs,catalog,result_builder,runner,intents} "
+        "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
     "proof": (
-        "proof_runtime proof_runtime.service proof_runtime.pair_funding_replay "
-        "proof_runtime.pair_plugin_accounting proof_runtime.carry_intent_accounting proof_runtime.proof_kernel "
-        "proof_runtime.proof_windows proof_runtime.proof_search proof_runtime.proof_batch "
-        "proof_runtime.proof_strategy_search proof_runtime.proof_pool proof_runtime.screener_search "
-        "proof_runtime.audit audit screener_search proof proof_kernel proof_pool proof_windows proof_batch "
-        "proof_strategy_search proof_search"
+        "proof_runtime.{,service,pair_funding_replay,pair_plugin_accounting,carry_intent_accounting,proof_kernel,proof_windows,proof_search,proof_batch,proof_strategy_search,proof_pool,screener_search,audit} "
+        "audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search"
     ),
-    "web": "web web.store web.server web.routes_proof web.routes_settings web.routes_legacy screener_app",
+    "web": "web.{,store,server,routes_proof,routes_settings,routes_legacy} screener_app",
     "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
 }
 LAYER_ASSIGNMENTS: dict[str, str] = {
-    module: layer for layer, spec in _LAYER_SPECS.items() for module in spec.split()
+    module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
 }
 
+_LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "cli")
 ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {
     "core": frozenset({"core"}),
     "data": frozenset({"core", "data"}),
     "accounting": frozenset({"core", "accounting"}),
-    "strategies": frozenset({"core", "data", "accounting", "strategies"}),
-    "proof": frozenset({"core", "data", "accounting", "strategies", "proof"}),
-    "web": frozenset({"core", "data", "accounting", "strategies", "proof", "web"}),
-    "cli": frozenset({"core", "data", "accounting", "strategies", "proof", "web", "cli"}),
+    "strategies": frozenset(_LAYERS_ORDER[:4]),
+    "proof": frozenset(_LAYERS_ORDER[:5]),
+    "web": frozenset(_LAYERS_ORDER[:6]),
+    "cli": frozenset(_LAYERS_ORDER),
 }
 
 
 def _module_key(pkg_root: Path, file_path: Path) -> str | None:
-    rel = file_path.relative_to(pkg_root)
-    parts = list(rel.with_suffix("").parts)
+    parts = list(file_path.relative_to(pkg_root).with_suffix("").parts)
     if parts == ["__init__"]:
         return None
-    if parts[-1] == "__init__":
-        parts = parts[:-1]
-    return ".".join(parts)
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
 def _discover_modules() -> dict[str, Path]:
     discovered: dict[str, Path] = {}
-    roots = [UMBRELLA_DIR]
-    if PACKAGES_DIR.is_dir():
-        roots.extend(sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab")))
+    roots = [
+        UMBRELLA_DIR,
+        *(sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab")) if PACKAGES_DIR.is_dir() else ()),
+    ]
     for root in roots:
         for path in sorted(root.rglob("*.py")):
-            key = _module_key(root, path)
-            if key is not None:
+            if (key := _module_key(root, path)) is not None:
                 discovered[key] = path
     return discovered
 
@@ -116,29 +111,24 @@ def _resolve_internal_target(
         if not full.startswith("moex_spread_lab."):
             return results
         rel = full.removeprefix("moex_spread_lab.")
-        candidates = [rel]
-        if alias_name and module:
-            candidates.insert(0, f"{rel}.{alias_name}")
+        candidates = [f"{rel}.{alias_name}", rel] if (alias_name and module) else [rel]
     else:
         parts = current_key.split(".") if is_package_init else current_key.split(".")[:-1]
         up = level - 1
         if up > len(parts):
             return results
-        base_parts = parts[: len(parts) - up] if up else parts
-        prefix = ".".join(base_parts)
+        prefix = ".".join(parts[: len(parts) - up] if up else parts)
         if module:
             rel = f"{prefix}.{module}" if prefix else module
-            candidates = [rel]
-            if alias_name and alias_name != "*":
-                candidates.insert(0, f"{rel}.{alias_name}")
+            candidates = (
+                [f"{rel}.{alias_name}", rel] if (alias_name and alias_name != "*") else [rel]
+            )
         elif alias_name and alias_name != "*":
-            rel = f"{prefix}.{alias_name}" if prefix else alias_name
-            candidates = [rel]
+            candidates = [f"{prefix}.{alias_name}" if prefix else alias_name]
         else:
             candidates = [prefix] if prefix else []
 
-    for cand in candidates:
-        probe = cand
+    for probe in candidates:
         while probe:
             if probe in known_modules and probe != current_key:
                 results.add(probe)
@@ -153,21 +143,19 @@ def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, in
     known = set(modules)
     edges: dict[str, set[tuple[str, int]]] = {name: set() for name in modules}
     for name, path in modules.items():
-        is_pkg_init = path.name == "__init__.py"
+        is_init = path.name == "__init__.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
-                    for target in _resolve_internal_target(
-                        name, is_pkg_init, node.level, node.module, alias.name, known
+                    for tgt in _resolve_internal_target(
+                        name, is_init, node.level, node.module, alias.name, known
                     ):
-                        edges[name].add((target, node.lineno))
+                        edges[name].add((tgt, node.lineno))
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    for target in _resolve_internal_target(
-                        name, is_pkg_init, 0, None, alias.name, known
-                    ):
-                        edges[name].add((target, node.lineno))
+                    for tgt in _resolve_internal_target(name, is_init, 0, None, alias.name, known):
+                        edges[name].add((tgt, node.lineno))
     return edges
 
 
@@ -178,7 +166,7 @@ def _workspace_analysis() -> tuple[dict[str, Path], dict[str, set[tuple[str, int
 
 
 def _tarjan_sccs(adjacency: dict[str, set[str]]) -> list[list[str]]:
-    index = 0
+    idx = 0
     indices: dict[str, int] = {}
     lowlink: dict[str, int] = {}
     stack: list[str] = []
@@ -186,31 +174,30 @@ def _tarjan_sccs(adjacency: dict[str, set[str]]) -> list[list[str]]:
     sccs: list[list[str]] = []
 
     def strongconnect(node: str) -> None:
-        nonlocal index
-        indices[node] = index
-        lowlink[node] = index
-        index += 1
+        nonlocal idx
+        indices[node] = lowlink[node] = idx
+        idx += 1
         stack.append(node)
         on_stack.add(node)
-        for neighbour in sorted(adjacency[node]):
-            if neighbour not in indices:
-                strongconnect(neighbour)
-                lowlink[node] = min(lowlink[node], lowlink[neighbour])
-            elif neighbour in on_stack:
-                lowlink[node] = min(lowlink[node], indices[neighbour])
+        for nb in sorted(adjacency[node]):
+            if nb not in indices:
+                strongconnect(nb)
+                lowlink[node] = min(lowlink[node], lowlink[nb])
+            elif nb in on_stack:
+                lowlink[node] = min(lowlink[node], indices[nb])
         if lowlink[node] == indices[node]:
-            component: list[str] = []
+            comp: list[str] = []
             while True:
                 member = stack.pop()
                 on_stack.remove(member)
-                component.append(member)
+                comp.append(member)
                 if member == node:
                     break
-            sccs.append(sorted(component))
+            sccs.append(sorted(comp))
 
-    for module_name in sorted(adjacency):
-        if module_name not in indices:
-            strongconnect(module_name)
+    for mod in sorted(adjacency):
+        if mod not in indices:
+            strongconnect(mod)
     return sccs
 
 
@@ -219,65 +206,40 @@ class ArchitectureDagTests(unittest.TestCase):
         modules, _ = _workspace_analysis()
         unclassified = sorted(set(modules) - set(LAYER_ASSIGNMENTS))
         stale = sorted(set(LAYER_ASSIGNMENTS) - set(modules))
-        self.assertEqual(
-            unclassified,
-            [],
-            f"New modules in workspace must declare a layer in LAYER_ASSIGNMENTS: {unclassified}",
-        )
-        self.assertEqual(
-            stale,
-            [],
-            f"Removed modules still listed in LAYER_ASSIGNMENTS: {stale}",
-        )
+        self.assertEqual(unclassified, [], f"Unclassified modules: {unclassified}")
+        self.assertEqual(stale, [], f"Removed modules still in LAYER_ASSIGNMENTS: {stale}")
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
-        modules, detailed_edges = _workspace_analysis()
+        _, detailed_edges = _workspace_analysis()
         adjacency = {src: {dst for dst, _ in targets} for src, targets in detailed_edges.items()}
         cycles = [scc for scc in _tarjan_sccs(adjacency) if len(scc) > 1]
-        self.assertEqual(
-            cycles,
-            [],
-            f"Internal import cycles detected (even lazy imports must remain acyclic): {cycles}",
-        )
+        self.assertEqual(cycles, [], f"Internal import cycles detected: {cycles}")
 
     def test_strict_six_layer_dependency_dag(self) -> None:
-        modules, detailed_edges = _workspace_analysis()
-        violations: list[str] = []
-        for src, targets in sorted(detailed_edges.items()):
-            src_layer = LAYER_ASSIGNMENTS[src]
-            allowed = ALLOWED_LAYER_TARGETS[src_layer]
-            for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-                dst_layer = LAYER_ASSIGNMENTS[dst]
-                if dst_layer not in allowed:
-                    violations.append(f"{src}:{lineno} ({src_layer}) -> {dst} ({dst_layer})")
+        _, detailed_edges = _workspace_analysis()
+        violations = [
+            f"{src}:{lineno} ({LAYER_ASSIGNMENTS[src]}) -> {dst} ({LAYER_ASSIGNMENTS[dst]})"
+            for src, targets in sorted(detailed_edges.items())
+            for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
+            if LAYER_ASSIGNMENTS[dst] not in ALLOWED_LAYER_TARGETS[LAYER_ASSIGNMENTS[src]]
+        ]
         self.assertEqual(
-            violations,
-            [],
-            "Cross-layer dependency DAG violations:\n  " + "\n  ".join(violations),
+            violations, [], "Cross-layer DAG violations:\n  " + "\n  ".join(violations)
         )
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
-        modules, detailed_edges = _workspace_analysis()
-        package_prefixes = (
-            "core.",
-            "data.",
-            "accounting.",
-            "strategies.",
-            "proof_runtime.",
-            "web.",
-        )
-        package_roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
-        violations: list[str] = []
-        for src, targets in sorted(detailed_edges.items()):
-            if src in package_roots or src.startswith(package_prefixes):
-                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-                    if dst not in package_roots and not dst.startswith(package_prefixes):
-                        violations.append(f"{src}:{lineno} -> {dst} (umbrella import forbidden)")
+        _, detailed_edges = _workspace_analysis()
+        roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
+        prefixes = tuple(f"{r}." for r in roots)
+        violations = [
+            f"{src}:{lineno} -> {dst} (umbrella import forbidden)"
+            for src, targets in sorted(detailed_edges.items())
+            if src in roots or src.startswith(prefixes)
+            for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
+            if dst not in roots and not dst.startswith(prefixes)
+        ]
         self.assertEqual(
-            violations,
-            [],
-            "Extracted workspace packages must not import root umbrella modules:\n  "
-            + "\n  ".join(violations),
+            violations, [], "Umbrella imports forbidden:\n  " + "\n  ".join(violations)
         )
 
     def test_frontend_es_module_import_dag_is_acyclic(self) -> None:
@@ -288,80 +250,60 @@ class ArchitectureDagTests(unittest.TestCase):
         adjacency: dict[str, set[str]] = {name: set() for name in known}
         import_re = re.compile(r"""(?:from|import)\s+['"]([^'"]+)['"]""")
         for path in js_files:
-            src = path.read_text(encoding="utf-8")
-            for target in import_re.findall(src):
-                self.assertTrue(
-                    target.startswith("./") and target.endswith(".js"),
-                    f"{path.name} must use relative ./foo.js imports, got {target!r}",
-                )
+            for target in import_re.findall(path.read_text(encoding="utf-8")):
+                self.assertTrue(target.startswith("./") and target.endswith(".js"))
                 dep = target.removeprefix("./")
-                self.assertIn(dep, known, f"{path.name} imports missing ES module {dep!r}")
+                self.assertIn(dep, known)
                 adjacency[path.name].add(dep)
         cycles = [scc for scc in _tarjan_sccs(adjacency) if len(scc) > 1]
-        self.assertEqual(cycles, [], f"Frontend ES module import cycles detected: {cycles}")
+        self.assertEqual(cycles, [], f"Frontend ES module import cycles: {cycles}")
 
     def test_strategy_plugin_subfolders_are_strictly_isolated(self) -> None:
-        """Each strategy plugin subfolder may import only core/data/accounting, strategies.base, and itself."""
-        modules, detailed_edges = _workspace_analysis()
-        plugin_folders = {
+        _, detailed_edges = _workspace_analysis()
+        plugins = {
             "pair_mean_reversion",
             "funding_carry",
             "calendar_zscore",
             "calendar_ruonia",
             "s3_reference",
         }
+        shared = {"strategies", "strategies.base", "strategies.calendar_eval"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
-            if not src.startswith("strategies."):
-                continue
             parts = src.split(".")
-            if len(parts) < 2 or parts[1] not in plugin_folders:
+            if parts[0] != "strategies" or len(parts) < 2 or parts[1] not in plugins:
                 continue
-            own_subpkg = f"strategies.{parts[1]}"
+            own = f"strategies.{parts[1]}"
             for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-                if dst.startswith(("core", "data", "accounting")):
+                if (
+                    dst.startswith(("core", "data", "accounting", f"{own}."))
+                    or dst in shared
+                    or dst == own
+                ):
                     continue
-                if dst in {"strategies", "strategies.base"}:
-                    continue
-                if dst == own_subpkg or dst.startswith(f"{own_subpkg}."):
-                    continue
-                violations.append(
-                    f"{src}:{lineno} -> {dst} (cross-strategy subfolder import forbidden)"
-                )
+                violations.append(f"{src}:{lineno} -> {dst}")
         self.assertEqual(
-            violations,
-            [],
-            "Strategy plugin subfolders must never import sibling strategy subfolders:\n  "
-            + "\n  ".join(violations),
+            violations, [], "Cross-strategy subfolder imports:\n  " + "\n  ".join(violations)
         )
 
     def test_data_and_accounting_siblings_are_strictly_isolated(self) -> None:
-        modules, detailed_edges = _workspace_analysis()
+        _, detailed_edges = _workspace_analysis()
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
-            if src == "data" or src.startswith("data."):
-                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-                    dst_layer = LAYER_ASSIGNMENTS[dst]
-                    if dst_layer not in {"core", "data"}:
-                        violations.append(f"{src}:{lineno} (data) -> {dst} ({dst_layer})")
-            elif src == "accounting" or src.startswith("accounting."):
-                for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-                    dst_layer = LAYER_ASSIGNMENTS[dst]
-                    if dst_layer not in {"core", "accounting"}:
-                        violations.append(f"{src}:{lineno} (accounting) -> {dst} ({dst_layer})")
+            for pkg in ("data", "accounting"):
+                if src == pkg or src.startswith(f"{pkg}."):
+                    for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
+                        if LAYER_ASSIGNMENTS[dst] not in {"core", pkg}:
+                            violations.append(
+                                f"{src}:{lineno} ({pkg}) -> {dst} ({LAYER_ASSIGNMENTS[dst]})"
+                            )
         self.assertEqual(
-            violations,
-            [],
-            "Layer 1 siblings msl-data and msl-accounting must never import each other or higher layers:\n  "
-            + "\n  ".join(violations),
+            violations, [], "Sibling Layer 1 isolation broken:\n  " + "\n  ".join(violations)
         )
 
     def test_workspace_code_and_tests_do_not_import_compatibility_shims(self) -> None:
-        """Internal packages/tests use canonical package paths; root modules are public shims only."""
         shim_names = {
-            path.stem
-            for path in UMBRELLA_DIR.glob("*.py")
-            if path.name not in {"__init__.py", "cli.py"}
+            p.stem for p in UMBRELLA_DIR.glob("*.py") if p.name not in {"__init__.py", "cli.py"}
         }
         candidates = [
             *sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab/**/*.py")),
@@ -372,24 +314,20 @@ class ArchitectureDagTests(unittest.TestCase):
         legacy_path = re.compile(r"\bmoex_spread_lab\.([A-Za-z_]\w*)\b")
         for path in candidates:
             source = path.read_text(encoding="utf-8")
+            rel = path.relative_to(REPO_ROOT)
             for match in legacy_path.finditer(source):
                 if match.group(1) in shim_names:
-                    line = source[: match.start()].count(chr(10)) + 1
-                    violations.append(f"{path.relative_to(REPO_ROOT)}:{line} -> {match.group(0)}")
-            tree = ast.parse(source, filename=str(path))
-            for node in ast.walk(tree):
+                    line = source[: match.start()].count("\n") + 1
+                    violations.append(f"{rel}:{line} -> {match.group(0)}")
+            for node in ast.walk(ast.parse(source, filename=str(path))):
                 if isinstance(node, ast.ImportFrom) and node.module == "moex_spread_lab":
                     for alias in node.names:
                         if alias.name in shim_names:
                             violations.append(
-                                f"{path.relative_to(REPO_ROOT)}:{node.lineno} -> "
-                                f"from moex_spread_lab import {alias.name}"
+                                f"{rel}:{node.lineno} -> from moex_spread_lab import {alias.name}"
                             )
         self.assertEqual(
-            violations,
-            [],
-            "Workspace internals must import canonical package modules, not root compatibility shims:\n  "
-            + "\n  ".join(violations),
+            violations, [], "Root shim imports forbidden:\n  " + "\n  ".join(violations)
         )
 
 

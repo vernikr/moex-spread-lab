@@ -10,7 +10,29 @@ from moex_spread_lab.core.universe import PERPETUAL_HISTORY_STARTS
 from moex_spread_lab.core.w0 import W0Error
 
 from .carry import fetch_history
-from .proof_funding import published_rates, read_supplement, supplement_path
+from .timeline import DSVD_NOTICE, published_rates, read_supplement, supplement_path
+
+
+def format_evidence_notes(provenance: dict[str, object]) -> list[str]:
+    notes: list[str] = []
+    if days := provenance.get("funding_estimated_dates"):
+        assert isinstance(days, list)
+        notes.append(
+            f"Расчётных ставок: {len(days)}. Для серии из 1–3 пропущенных расчётных сессий на каждый день взято одно среднее двух соседних ставок. Это оценка платежа, не публикация MOEX; для сигнала она доступна только после публикации правой границы."
+        )
+    if days := provenance.get("funding_no_clearing_dates"):
+        assert isinstance(days, list)
+        notes.append(
+            "Без отдельного клиринга: "
+            + ", ".join(days)
+            + ". Дополнительная сессия входит в следующий торговый день. Отдельного платежа нет; расчётная цена не подставляется. MOEX: "
+            + DSVD_NOTICE
+        )
+    if provenance.get("funding_recheck_pages"):
+        notes.append(
+            "Для пропусков использована также отдельная повторная выгрузка MOEX ISS; исходный кэш сохранён."
+        )
+    return notes
 
 
 def recheck(root, secid, first, last, *, apply=False, fetch=fetch_history):

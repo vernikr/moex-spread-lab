@@ -13,11 +13,16 @@ from moex_spread_lab.core.contracts import (
     StrategyIntentRun,
     WindowSnapshot,
 )
-from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from ..base import PRICE_FILLS, ZSCORE_CALENDAR_OPTIONS, validate_parameter_map
+from ..base import (
+    PRICE_FILLS,
+    ZSCORE_CALENDAR_OPTIONS,
+    check_calendar_liquidity,
+    validate_parameter_map,
+)
 from .engine import compute_calendar_zscore_entry_bands, zscore_trades
 
 
@@ -52,32 +57,8 @@ class CalendarZscorePlugin:
     ) -> CompatibilityVerdict:
         if window.universe not in self.supported_universes:
             return CompatibilityVerdict(False, "Выбранная стратегия неприменима к этому типу пары.")
-        if window.timeframe == "1h":
-            eligible = [
-                r for r in window.rows if r.get("volume_eligible", (r.get("min_volume") or 0) > 0)
-            ]
-            if len(eligible) < 2:
-                return CompatibilityVerdict(
-                    False, "fewer than two causally liquidity-eligible hourly observations"
-                )
-            if settings is not None and not settings.allow_failed_volume:
-                if not window.extra.get("tradable_every_session", True):
-                    return CompatibilityVerdict(
-                        False, "Не пройдено правило ликвидности на обучении."
-                    )
-        else:
-            eligible = [r for r in window.rows if (r.get("min_volume") or 0) > 0]
-            if len(eligible) < 2:
-                return CompatibilityVerdict(
-                    False, "fewer than two positive-volume calendar-spread observations"
-                )
-            if settings is not None and not settings.allow_failed_volume:
-                min_vol = min(float(r["min_volume"]) for r in eligible)
-                if min_vol < MIN_DAILY_VOLUME:
-                    return CompatibilityVerdict(
-                        False, "Не пройдено правило ликвидности на обучении."
-                    )
-        return CompatibilityVerdict(True)
+        verdict, _ = check_calendar_liquidity(window, settings)
+        return verdict if verdict is not None else CompatibilityVerdict(True)
 
     def evaluate_intents(
         self, window: WindowSnapshot, params: Mapping[str, Any], fill: str

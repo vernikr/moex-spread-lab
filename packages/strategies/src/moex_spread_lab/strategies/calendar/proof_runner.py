@@ -1,0 +1,275 @@
+"""Calendar-spread proof execution and parameter/liquidity validation."""
+
+from __future__ import annotations
+
+import math
+from copy import deepcopy
+from typing import Any
+
+from moex_spread_lab.accounting.costs import tariff_profile
+from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
+from moex_spread_lab.core.settings import INITIAL_CAPITAL
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
+from moex_spread_lab.core.w0 import W0Error
+
+from ..base import StrategyRegistry
+from ..calendar_eval import FILLS, account_trades, strategy_runner
+from .catalog_builder import build_1d_catalog, build_h1_catalog, enrich_proof_window_and_notes
+from .contracts import ASSETS, _positive_spread_volume_rows, _zscore_options
+from .intents import calendar_intent_trades
+from .proof_payload import build_proof_payload
+
+
+def _validate_plugin_params(
+    asset: str,
+    pair: str,
+    timeframe: str,
+    strategy: str,
+    raw_params: dict[str, Any],
+    registry: StrategyRegistry,
+) -> dict[str, Any]:
+    context = InstrumentContext(
+        universe=CALENDAR_UNIVERSE,
+        pair=pair,
+        asset=asset,
+        timeframe=timeframe,
+        monthly=bool(ASSETS[asset].get("monthly")),
+        convergence=bool(ASSETS[asset].get("convergence")),
+    )
+    plugin = registry.get(strategy)
+    if plugin.requires_daily_bars and timeframe != "1d":
+        raise W0Error("Плагин поддерживает только дневные данные.")
+    schema = plugin.parameter_schema(context)
+    names = [spec.name for spec in schema]
+    if (
+        len(names) != len(set(names))
+        or not any(spec.tunable for spec in schema)
+        or set(raw_params) - set(names)
+    ):
+        raise W0Error("Некорректная схема параметров плагина.")
+    plugin_params = plugin.validate_parameters(dict(raw_params), context)
+    if (
+        not isinstance(plugin_params, dict)
+        or set(plugin_params) != set(names)
+        or any(not spec.contains(plugin_params[spec.name]) for spec in schema)
+    ):
+        raise W0Error("Некорректные параметры плагина.")
+    return plugin_params
+
+
+def _validate_proof_params(
+    asset: str,
+    pair: str,
+    timeframe: str,
+    strategy: str,
+    raw_params: Any,
+    generic: bool,
+    registry: StrategyRegistry,
+) -> tuple[dict[str, Any], float, dict[str, Any] | None]:
+    if not isinstance(raw_params, dict):
+        raise W0Error("unknown strategy parameter")
+    options: dict[str, Any] = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
+    if generic:
+        plugin_params = _validate_plugin_params(
+            asset, pair, timeframe, strategy, raw_params, registry
+        )
+        options["window"] = int(options["window"])
+        return options, 1.0, plugin_params
+    if set(raw_params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
+        raise W0Error("unknown strategy parameter")
+    for key in ("entry_z", "exit_z", "window"):
+        if key in raw_params:
+            options[key] = raw_params[key]
+    threshold = float(raw_params.get("threshold_pp", 1.0))
+    if not all(
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+        for value in (*options.values(), threshold)
+    ):
+        raise W0Error("strategy parameters must be positive finite numbers")
+    options["window"] = int(options["window"])
+    return options, threshold, None
+
+
+def _build_h1_eligible_rows(
+    window: dict[str, Any], fill: str, quantity: int
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    is_open = fill == "open"
+    gate = float(window["liquidity_gate"])
+    h1_rows: list[dict[str, Any]] = []
+    for src in window["rows"]:
+        row = dict(src)
+        close_ok = bool(row.get("volume_eligible"))
+        fill_ok = (
+            float(row.get("liquidity_cumulative_before", 0.0)) >= gate
+            and float(row.get("prior_bar_volume", 0.0)) >= quantity
+            if is_open
+            else close_ok and float(row.get("min_volume", 0.0)) >= quantity
+        )
+        row["signal_eligible"] = close_ok
+        row["entry_eligible"] = bool(fill_ok)
+        row["exit_eligible"] = bool(fill_ok)
+        h1_rows.append(row)
+    if sum(bool(r["signal_eligible"]) for r in h1_rows) < 2:
+        raise W0Error("fewer than two causally liquidity-eligible hourly observations")
+    return {**window, "rows": h1_rows}, h1_rows
+
+
+def _prepare_analysis_rows(
+    window: dict[str, Any],
+    timeframe: str,
+    fill: str,
+    quantity: int,
+    through: str | None,
+    cache: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if timeframe == "1h":
+        h1_cache = cache.setdefault("h1", {}) if cache is not None else None
+        h1_key = (through, fill, quantity)
+        if h1_cache is not None and h1_key in h1_cache:
+            return h1_cache[h1_key]
+        res = _build_h1_eligible_rows(window, fill, quantity)
+        if h1_cache is not None:
+            h1_cache[h1_key] = res
+        return res
+    elig_cache = cache.setdefault("daily_eligible", {}) if cache is not None else None
+    if elig_cache is not None and through in elig_cache:
+        return window, elig_cache[through]
+    analysis_rows = _positive_spread_volume_rows(window["rows"])
+    if len(analysis_rows) < 2:
+        raise W0Error("fewer than two positive-volume calendar-spread observations")
+    if elig_cache is not None:
+        elig_cache[through] = analysis_rows
+    return window, analysis_rows
+
+
+def execute_calendar_proof(
+    data: dict[str, Any],
+    window: dict[str, Any],
+    req: dict[str, Any],
+) -> dict[str, Any]:
+    asset: str = req["asset"]
+    pair: str = req["pair"]
+    timeframe: str = req["timeframe"]
+    strategy: str = req["strategy"]
+    fill_label: str = req["fill_label"]
+    quantity: int = req["quantity"]
+    slippage: float = req["slippage"]
+    generic: bool = req["generic"]
+    registry: StrategyRegistry = req["registry"]
+    through: str | None = req.get("through")
+    initial_capital: float = req.get("initial_capital", INITIAL_CAPITAL)
+    metrics_only: bool = bool(req.get("metrics_only", False))
+    sizing_intents: bool = bool(req.get("sizing_intents", False))
+    cache: dict[str, Any] | None = req.get("cache")
+
+    delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
+    options, threshold, plugin_params = _validate_proof_params(
+        asset, pair, timeframe, strategy, req["raw_params"], generic, registry
+    )
+    profile = {**tariff_profile(slippage), "tariff_group": ASSETS[asset]["group"]}
+    z_cache = cache.setdefault("z", {}) if cache is not None else None
+    z_cache_key = (through, fill, quantity)
+    window, analysis_rows = _prepare_analysis_rows(
+        window, timeframe, fill, quantity, through, cache
+    )
+    native_order = bool(window.get("native_spread_order", True))
+    if generic:
+        assert plugin_params is not None
+        snapshot = WindowSnapshot(
+            universe=CALENDAR_UNIVERSE,
+            pair=pair,
+            asset=asset,
+            timeframe=timeframe,
+            rows=tuple(analysis_rows),
+            near=window.get("near", ""),
+            far=window.get("far", ""),
+            initial_capital_rub=initial_capital,
+            slippage_ticks=slippage,
+            native_spread_order=native_order,
+            extra={
+                "monthly": bool(ASSETS[asset].get("monthly")),
+                "convergence": bool(ASSETS[asset].get("convergence")),
+                "tradable_every_session": window.get("tradable_every_session", True),
+            },
+        )
+        plugin = registry.get(strategy)
+        verdict = plugin.check_compatibility(deepcopy(snapshot))
+        if not verdict.compatible:
+            raise W0Error(verdict.reason or "Плагин несовместим с выбранным окном.")
+        per_pair = {pair: calendar_intent_trades(plugin, snapshot, plugin_params, fill_label)}
+    else:
+        runner = strategy_runner(
+            strategy,
+            delay=delay,
+            fill=fill,
+            close_at_end=True,
+            skip_dividend_windows_in_zscore=False,
+            threshold=threshold,
+            zscore_options=options,
+            z_cache=z_cache,
+            z_cache_key=z_cache_key,
+        )
+        per_pair = {pair: runner(analysis_rows)}
+    if metrics_only and sizing_intents:
+        account: dict[str, Any] = {
+            "trade_list": [
+                {
+                    "direction": item["direction"],
+                    "signal": item["signal"],
+                    "reason": item["reason"],
+                    "entry_row": item["entry"],
+                    "exit_row": item["exit"],
+                }
+                for item in per_pair[pair]
+            ]
+        }
+    else:
+        account = account_trades(
+            "proof",
+            per_pair,
+            data["benchmark"],
+            profile,
+            native_spread=native_order,
+            quantity=quantity,
+            benchmark_dates=data["benchmark_dates"],
+        )
+    series_cache = cache.setdefault("series", {}) if (cache is not None and metrics_only) else None
+    series_key = (through, fill, quantity) if timeframe == "1h" else (through,)
+    payload = build_proof_payload(
+        window,
+        account,
+        {
+            "asset": asset,
+            "strategy": strategy,
+            "fill_label": fill_label,
+            "options": options,
+            "threshold": threshold,
+            "quantity": quantity,
+            "slippage": slippage,
+            "terms": data["terms"][asset],
+            "initial_capital": initial_capital,
+        },
+        metrics_only=metrics_only,
+        sizing_intents=sizing_intents,
+        series_cache=series_cache,
+        series_key=series_key,
+    )
+    if generic:
+        payload["selection"]["parameters"] = plugin_params
+    price_source = window.get("price_source", "native_daily_spread")
+    payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
+    if metrics_only:
+        payload["window"].update({"timeframe": timeframe, "price_source": price_source})
+        return payload
+    enrich_proof_window_and_notes(payload, window, timeframe, price_source)
+    return payload
+
+
+__all__ = [
+    "build_1d_catalog",
+    "build_h1_catalog",
+    "execute_calendar_proof",
+]

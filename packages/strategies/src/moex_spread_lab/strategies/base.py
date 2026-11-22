@@ -1,17 +1,16 @@
-"""Shared strategy math, fill helpers, and StrategyRegistry discovery for ``msl-strategies``."""
+"""Shared strategy math, fill helpers, and calendar buffer/scan utilities."""
 
 from __future__ import annotations
 
 import importlib
-import importlib.metadata
+import importlib.metadata as _importlib_metadata  # noqa: F401
 import math
-import pkgutil
 from array import array
 from collections.abc import Mapping
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
     EntryBandPoint,
@@ -21,7 +20,16 @@ from moex_spread_lab.core.contracts import (
     StrategyPlugin,
     WindowSnapshot,
 )
+from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
+
+from .registry import (
+    StrategyRegistry,
+    calendar_proof_plugin_ids,
+    carry_proof_plugin_ids,
+    daily_pair_proof_plugin_ids,
+    discover_strategies,
+)
 
 PRICE_FILLS: dict[str, tuple[int, str]] = {
     "next_open": (1, "open"),
@@ -76,10 +84,9 @@ def make_calendar_trade(
     direction: int,
     fill: str,
     reason: str,
-    signal_kind: str,
-    signal_row: Mapping[str, Any],
-    signal_value: float,
+    signal_info: tuple[str, Mapping[str, Any], float],
 ) -> dict[str, Any]:
+    signal_kind, signal_row, signal_value = signal_info
     return {
         "entry": entry,
         "exit": exit_row,
@@ -96,7 +103,7 @@ def elapsed_calendar_days(start: str, end: str) -> float:
         left = datetime.fromisoformat(str(start).replace("Z", ""))
         right = datetime.fromisoformat(str(end).replace("Z", ""))
         return (right - left).total_seconds() / 86400
-    return (date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days
+    return float((date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days)
 
 
 def row_ts_days(raw_date: Any) -> float:
@@ -106,12 +113,17 @@ def row_ts_days(raw_date: Any) -> float:
     return float((date.fromisoformat(s[:10]) - _EPOCH_DATE).days)
 
 
-def calendar_row_buffers(rows: Any, *, z_cache: dict | None = None, z_cache_key: Any = None):
+def calendar_row_buffers(
+    rows: list[dict[str, Any]],
+    *,
+    z_cache: dict[Any, Any] | None = None,
+    z_cache_key: Any = None,
+) -> tuple[Any, ...]:
     """Build typed C-contiguous column arrays for fast calendar strategy scans."""
     cache_key = (
         ("_cols", z_cache_key) if (z_cache is not None and z_cache_key is not None) else None
     )
-    if cache_key is not None and cache_key in z_cache:
+    if cache_key is not None and z_cache is not None and cache_key in z_cache:
         return z_cache[cache_key]
     n = len(rows)
     spreads = array("d", (float(r["spread"]) for r in rows))
@@ -127,9 +139,54 @@ def calendar_row_buffers(rows: Any, *, z_cache: dict | None = None, z_cache_key:
         acc += sig_el[idx]
         elig_pref[idx + 1] = acc
     cols = (spreads, dev_pp, ts_days, dte, sig_el, ent_el, ext_el, elig_pref)
-    if cache_key is not None:
+    if cache_key is not None and z_cache is not None:
         z_cache[cache_key] = cols
     return cols
+
+
+def check_calendar_liquidity(
+    window: WindowSnapshot, settings: ResearchSettings | None
+) -> tuple[CompatibilityVerdict | None, list[dict[str, Any]]]:
+    """Shared 1h/1d calendar window liquidity check for calendar plugins."""
+    if window.timeframe == "1h":
+        eligible = [
+            r for r in window.rows if r.get("volume_eligible", (r.get("min_volume") or 0) > 0)
+        ]
+        if len(eligible) < 2:
+            return (
+                CompatibilityVerdict(
+                    False, "fewer than two causally liquidity-eligible hourly observations"
+                ),
+                [],
+            )
+        if (
+            settings is not None
+            and not settings.allow_failed_volume
+            and not window.extra.get("tradable_every_session", True)
+        ):
+            return (
+                CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении."),
+                [],
+            )
+        return None, eligible
+    eligible = [r for r in window.rows if (r.get("min_volume") or 0) > 0]
+    if len(eligible) < 2:
+        return (
+            CompatibilityVerdict(
+                False, "fewer than two positive-volume calendar-spread observations"
+            ),
+            [],
+        )
+    if (
+        settings is not None
+        and not settings.allow_failed_volume
+        and min(float(r["min_volume"]) for r in eligible) < MIN_DAILY_VOLUME
+    ):
+        return (
+            CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении."),
+            [],
+        )
+    return None, eligible
 
 
 def validate_parameter_map(
@@ -142,8 +199,7 @@ def validate_parameter_map(
     if not isinstance(raw, Mapping):
         raise W0Error("Переданы параметры другой стратегии")
     by_name = {spec.name: spec for spec in schema}
-    unknown = set(raw.keys()) - set(by_name.keys())
-    if unknown:
+    if set(raw.keys()) - set(by_name.keys()):
         raise W0Error("Переданы параметры другой стратегии")
     resolved: dict[str, Any] = {spec.name: spec.default for spec in schema}
     for name, value in raw.items():
@@ -151,191 +207,27 @@ def validate_parameter_map(
         if not spec.contains(value):
             raise W0Error(f"{name}: допустимый диапазон {spec.min_value}–{spec.max_value}")
         resolved[name] = int(value) if spec.kind == "int" else float(value)
-    if "entry_z" in resolved and "exit_z" in resolved and resolved["exit_z"] >= resolved["entry_z"]:
+    if (
+        "entry_z" in resolved
+        and "exit_z" in resolved
+        and float(resolved["exit_z"]) >= float(resolved["entry_z"])
+    ):
         raise W0Error("Порог выхода должен быть ниже порога входа")
     return resolved
 
 
-_NON_PLUGIN_SUBPACKAGES = frozenset({"calendar", "pair_screener", "s3_reference"})
-_CANONICAL_ORDER = (
-    "mean_reversion",
-    "funding_only",
-    "zscore_mean_reversion",
-    "convergence_to_ruonia",
-)
-
-
-class StrategyRegistry:
-    """Deterministic registry of discovered ``StrategyPlugin`` implementations."""
-
-    def __init__(self, plugins: Mapping[str, StrategyPlugin]) -> None:
-        order_index = {sid: idx for idx, sid in enumerate(_CANONICAL_ORDER)}
-        ordered_ids = sorted(
-            plugins.keys(),
-            key=lambda sid: (order_index.get(sid, len(_CANONICAL_ORDER)), sid),
-        )
-        self._plugins: dict[str, StrategyPlugin] = {sid: plugins[sid] for sid in ordered_ids}
-
-    def __contains__(self, strategy_id: object) -> bool:
-        return strategy_id in self._plugins
-
-    def __iter__(self):
-        return iter(self._plugins.values())
-
-    def __len__(self) -> int:
-        return len(self._plugins)
-
-    def ids(self) -> tuple[str, ...]:
-        return tuple(self._plugins.keys())
-
-    def values(self) -> tuple[StrategyPlugin, ...]:
-        return tuple(self._plugins.values())
-
-    def items(self) -> tuple[tuple[str, StrategyPlugin], ...]:
-        return tuple(self._plugins.items())
-
-    def get(self, strategy_id: str) -> StrategyPlugin:
-        try:
-            return self._plugins[strategy_id]
-        except KeyError as exc:
-            raise W0Error(f"Неизвестная стратегия: {strategy_id}") from exc
-
-    def for_universe(self, universe: str) -> tuple[StrategyPlugin, ...]:
-        return tuple(p for p in self._plugins.values() if universe in p.supported_universes)
-
-    def as_dict(self) -> dict[str, StrategyPlugin]:
-        return dict(self._plugins)
-
-
-def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
-    """Opt in only unambiguous calendar price-intent plugins to generic proof.
-
-    Plugins remain trusted code; this declaration is not a substitute for causal
-    conformance tests. Pair/funding intents have different accounting semantics.
-    """
-    from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-
-    plugins = registry.values()
-    counts: dict[str, int] = {}
-    for plugin in plugins:
-        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
-    return frozenset(
-        p.strategy_id
-        for p in plugins
-        if getattr(p, "proof_adapter", None) == "calendar_price_intents.v1"
-        and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
-        and len(p.supported_fills) == len(PRICE_FILLS)
-        and set(p.supported_fills) == set(PRICE_FILLS)
-        and counts[p.family_id] == 1
-    )
-
-
-def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
-    """Opt in a distinct pair-only price strategy, never funding carry."""
-    from moex_spread_lab.core.universe import PAIR_UNIVERSE
-
-    plugins = registry.values()
-    counts = {}
-    for plugin in plugins:
-        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
-    return frozenset(
-        p.strategy_id
-        for p in plugins
-        if (
-            (
-                getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1"
-                and p.requires_daily_bars is True
-            )
-            or (
-                getattr(p, "proof_adapter", None) == "pair_price_intents.v1"
-                and p.requires_daily_bars is False
-            )
-        )
-        and p.supported_universes == frozenset({PAIR_UNIVERSE})
-        and len(p.supported_fills) == len(PRICE_FILLS)
-        and set(p.supported_fills) == set(PRICE_FILLS)
-        and counts[p.family_id] == 1
-    )
-
-
-def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
-    """Opt in unique, daily short-near settlement-intent carry families."""
-    from moex_spread_lab.core.universe import PAIR_UNIVERSE
-
-    plugins = registry.values()
-    counts: dict[str, int] = {}
-    for plugin in plugins:
-        counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
-    return frozenset(
-        p.strategy_id
-        for p in plugins
-        if getattr(p, "proof_adapter", None) == "carry_settlement_intents.v1"
-        and p.supported_universes == frozenset({PAIR_UNIVERSE})
-        and p.supported_fills == ("same_day_settlement",)
-        and p.requires_daily_bars is True
-        and counts[p.family_id] == 1
-        and bool(p.parameter_schema())
-        and all(spec.tunable for spec in p.parameter_schema())
-    )
-
-
-def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
-    """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points."""
-    strategies_dir = Path(__file__).resolve().parent
-
-    discovered: dict[str, StrategyPlugin] = {}
-
-    def register(plugin: StrategyPlugin) -> None:
-        strategy_id = plugin.strategy_id
-        if not isinstance(strategy_id, str) or not strategy_id.strip():
-            raise W0Error("Стратегия должна иметь непустой строковый идентификатор.")
-        previous = discovered.get(strategy_id)
-        if previous is not None and previous is not plugin:
-            raise W0Error(f"Повторяющийся идентификатор стратегии: {strategy_id}")
-        discovered[strategy_id] = plugin
-
-    search_paths = [str(strategies_dir), *(str(p) for p in extra_paths)]
-    for finder, name, ispkg in sorted(pkgutil.iter_modules(search_paths), key=lambda item: item[1]):
-        if not ispkg or name.startswith("_") or name in _NON_PLUGIN_SUBPACKAGES:
-            continue
-        mod_name = f"moex_spread_lab.strategies.{name}.plugin"
-        try:
-            if extra_paths and not (strategies_dir / name).is_dir():
-                plugin_file = None
-                for extra_dir in extra_paths:
-                    cand = Path(extra_dir) / name / "plugin.py"
-                    if cand.is_file():
-                        plugin_file = cand
-                        break
-                if plugin_file is None:
-                    continue
-                spec = importlib.util.spec_from_file_location(
-                    f"_ext_strategy_{name}_plugin", plugin_file
-                )
-                if spec is None or spec.loader is None:
-                    continue
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-            else:
-                mod = importlib.import_module(mod_name)
-        except ModuleNotFoundError as exc:
-            if exc.name == mod_name or exc.name == f"{name}.plugin":
-                continue
-            raise
-        plugin = getattr(mod, "PLUGIN", None)
-        if isinstance(plugin, StrategyPlugin):
-            register(plugin)
-
-    for ep in sorted(
-        importlib.metadata.entry_points(group="moex_spread_lab.strategies"),
-        key=lambda item: item.name,
-    ):
-        loaded = ep.load()
-        if not isinstance(loaded, StrategyPlugin):
-            raise W0Error(f"Точка входа стратегии {ep.name} не реализует StrategyPlugin.")
-        register(loaded)
-
-    return StrategyRegistry(discovered)
+def clean_nonfinite_json(value: Any) -> Any:
+    """Replace non-finite floats with None (C99 fastcore + pure-Python fallback)."""
+    fc = load_fastcore()
+    if fc is not None:
+        return fc.clean_obj(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {k: clean_nonfinite_json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [clean_nonfinite_json(v) for v in value]
+    return value
 
 
 __all__ = [
@@ -357,8 +249,13 @@ __all__ = [
     "calendar_price",
     "calendar_proof_plugin_ids",
     "calendar_row_buffers",
+    "carry_proof_plugin_ids",
+    "check_calendar_liquidity",
+    "clean_nonfinite_json",
+    "daily_pair_proof_plugin_ids",
     "discover_strategies",
     "elapsed_calendar_days",
+    "importlib",
     "make_calendar_trade",
     "population_rolling_stats",
     "row_ts_days",

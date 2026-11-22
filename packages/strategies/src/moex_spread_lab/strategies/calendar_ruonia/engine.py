@@ -24,6 +24,7 @@ SBER_EX_DATES: tuple[tuple[date, float], ...] = (
     (date(2026, 7, 18), 37.64),
 )
 DIVIDEND_SHARES_PER_CONTRACT = 100
+_CONVERGENCE_EXTRA_OPTS = frozenset({"exit_days", "close_at_end", "z_cache", "z_cache_key"})
 
 
 def window_dividend_rub(asset: str, expiry_date: date) -> float:
@@ -55,18 +56,81 @@ def implied_ruonia_deviation_pp(
     return (implied - ruonia_rate) * 100
 
 
+def _convergence_trades_py(
+    rows: list[dict[str, Any]],
+    *,
+    threshold: float,
+    delay: int,
+    fill: str,
+    exit_days: int,
+    close_at_end: bool,
+) -> list[dict[str, Any]]:
+    position = 0
+    entry: dict[str, Any] | None = None
+    signal_row: dict[str, Any] | None = None
+    trades: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if (
+            position
+            and entry is not None
+            and signal_row is not None
+            and row.get("exit_eligible", True)
+            and row["days_to_near_expiry"] <= exit_days
+        ):
+            trades.append(
+                make_calendar_trade(
+                    entry,
+                    row,
+                    position,
+                    fill,
+                    "near_expiry_buffer",
+                    ("dev_pp", signal_row, float(signal_row["dev_pp"])),
+                )
+            )
+            position = 0
+        signal = rows[index - delay] if index >= delay else None
+        if (
+            not position
+            and signal is not None
+            and signal.get("signal_eligible", True)
+            and row.get("entry_eligible", True)
+            and row["days_to_near_expiry"] > exit_days
+            and not math.isnan(float(signal["dev_pp"]))
+            and abs(float(signal["dev_pp"])) >= threshold
+        ):
+            position = -1 if float(signal["dev_pp"]) > 0 else 1
+            entry = row
+            signal_row = signal
+    if position and close_at_end and entry is not None and signal_row is not None:
+        trades.append(
+            make_calendar_trade(
+                entry,
+                rows[-1],
+                position,
+                fill,
+                "end_of_window",
+                ("dev_pp", signal_row, float(signal_row["dev_pp"])),
+            )
+        )
+    return trades
+
+
 def convergence_trades(
     rows: list[dict[str, Any]],
     *,
     threshold: float,
     delay: int,
     fill: str,
-    exit_days: int = 2,
-    close_at_end: bool = False,
-    z_cache: dict | None = None,
-    z_cache_key: Any = None,
+    **options: Any,
 ) -> list[dict[str, Any]]:
     """Evaluate RUONIA convergence trades (C99 fastcore + Python fallback)."""
+    unknown = set(options) - _CONVERGENCE_EXTRA_OPTS
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    exit_days = int(options.get("exit_days", 2))
+    close_at_end = bool(options.get("close_at_end", False))
+    z_cache: dict[Any, Any] | None = options.get("z_cache")
+    z_cache_key: Any = options.get("z_cache_key")
     if not rows or rows[0]["dividend_in_window"]:
         return []
     fc = load_fastcore()
@@ -82,8 +146,8 @@ def convergence_trades(
             ext_el,
             float(threshold),
             int(delay),
-            int(exit_days),
-            bool(close_at_end),
+            exit_days,
+            close_at_end,
         )
         return [
             make_calendar_trade(
@@ -92,53 +156,18 @@ def convergence_trades(
                 direction,
                 fill,
                 CALENDAR_EXIT_REASONS[r_code],
-                "dev_pp",
-                rows[s_i],
-                s_val,
+                ("dev_pp", rows[s_i], s_val),
             )
             for e_i, x_i, direction, r_code, s_i, s_val in specs
         ]
-    position, entry, trades, signal_row = 0, None, [], None
-    for index, row in enumerate(rows):
-        if position and row.get("exit_eligible", True) and row["days_to_near_expiry"] <= exit_days:
-            trades.append(
-                make_calendar_trade(
-                    entry,
-                    row,
-                    position,
-                    fill,
-                    "near_expiry_buffer",
-                    "dev_pp",
-                    signal_row,
-                    signal_row["dev_pp"],
-                )
-            )
-            position = 0
-        signal = rows[index - delay] if index >= delay else None
-        if (
-            not position
-            and signal
-            and signal.get("signal_eligible", True)
-            and row.get("entry_eligible", True)
-            and row["days_to_near_expiry"] > exit_days
-            and not math.isnan(signal["dev_pp"])
-            and abs(signal["dev_pp"]) >= threshold
-        ):
-            position, entry, signal_row = (-1 if signal["dev_pp"] > 0 else 1), row, signal
-    if position and close_at_end:
-        trades.append(
-            make_calendar_trade(
-                entry,
-                rows[-1],
-                position,
-                fill,
-                "end_of_window",
-                "dev_pp",
-                signal_row,
-                signal_row["dev_pp"],
-            )
-        )
-    return trades
+    return _convergence_trades_py(
+        rows,
+        threshold=threshold,
+        delay=delay,
+        fill=fill,
+        exit_days=exit_days,
+        close_at_end=close_at_end,
+    )
 
 
 def compute_ruonia_entry_bands(
@@ -149,6 +178,7 @@ def compute_ruonia_entry_bands(
     far_point_value_rub: float = 1.0,
 ) -> list[EntryBandPoint]:
     """Compute causal RUONIA implied-rate threshold bands in raw spread price units."""
+    del fill, far_point_value_rub
     threshold = float(params["threshold_pp"])
     points: list[EntryBandPoint] = []
     for row in series:
@@ -159,10 +189,11 @@ def compute_ruonia_entry_bands(
         dev = row.get("dev_pp")
         scale = row.get("rate_price_per_pp")
         buy_level = sell_level = buy_rel = sell_rel = None
-        if dev is not None and scale is not None and math.isfinite(dev):
+        if dev is not None and scale is not None and math.isfinite(float(dev)):
+            dev_val = float(dev)
             spread = float(row["spread"])
-            buy_level = spread + (-threshold - dev) * float(scale)
-            sell_level = spread + (threshold - dev) * float(scale)
+            buy_level = spread + (-threshold - dev_val) * float(scale)
+            sell_level = spread + (threshold - dev_val) * float(scale)
             far_val = float(row["far"])
             if far_val:
                 buy_rel = buy_level / far_val * 100

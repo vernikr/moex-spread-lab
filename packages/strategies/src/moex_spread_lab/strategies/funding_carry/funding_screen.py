@@ -30,6 +30,122 @@ def _source_dates(source: dict[str, Any]) -> tuple[str, str]:
     return dates[0], dates[-1]
 
 
+def _evaluate_funding_pair(pair: dict[str, str], cfg: dict[str, Any]) -> dict[str, Any]:
+    contracts_path: Path = cfg["contracts_path"]
+    benchmark_path: Path = cfg["benchmark_path"]
+    cache_dir: Path = cfg["cache_dir"]
+    from_date: str = cfg["from_date"]
+    till_date: str = cfg["till_date"]
+    initial_capital: float = cfg["initial_capital"]
+    cost_scenario: str = cfg["cost_scenario"]
+    delay_seconds: float = cfg["delay_seconds"]
+    timeout: float = cfg["timeout"]
+    try:
+        near_source = fetch_history(
+            pair["near"],
+            from_date,
+            till_date,
+            cache_dir=cache_dir,
+            delay_seconds=delay_seconds,
+            timeout=timeout,
+        )
+        far_source = fetch_history(
+            pair["far"],
+            from_date,
+            till_date,
+            cache_dir=cache_dir,
+            delay_seconds=delay_seconds,
+            timeout=timeout,
+        )
+        study = build_carry_study(
+            near_source,
+            far_source,
+            contracts_path,
+            near=pair["near"],
+            far=pair["far"],
+            funding_regimes=(),
+        )
+        strategy = build_carry_strategy(
+            study,
+            benchmark_path,
+            contracts_path,
+            transaction_cost_scenario=cost_scenario,
+            initial_capital=initial_capital,
+            strategy_variant="funding_only",
+        )
+        study_summary = study["summary"]
+        strategy_summary = strategy["summary"]
+        risk = strategy["account_risk"]
+        return {
+            **pair,
+            "status": "evaluated",
+            "price_role": "EOD_SETTLEPRICE_proxy",
+            "funding_role": "near_SWAPRATE_received_by_short_near",
+            "history_window": {
+                "near": _source_dates(near_source),
+                "far": _source_dates(far_source),
+            },
+            "common_row_count": study_summary["common_row_count"],
+            "funding": {
+                "total_received_rub": study_summary["total_funding_received"],
+                "mean_daily_received_rub": study_summary["mean_daily_funding_received"],
+                "positive_rows": study_summary["positive_funding_rows"],
+                "negative_rows": study_summary["negative_funding_rows"],
+                "zero_rows": study_summary["zero_funding_rows"],
+                "cap_check": "not_modelled_for_non_CNY_pairs",
+            },
+            "gross_decomposition": {
+                "basis_pnl_rub": study_summary["total_basis_pnl"],
+                "funding_received_rub": study_summary["total_funding_received"],
+                "gross_carry_pnl_rub": study_summary["total_gross_carry_pnl"],
+            },
+            "funding_only_hypothesis": {
+                "rule_id": f"H3-F1/{pair['pair_id']}",
+                "entry": "mean_previous_20_daily_funding_received > 0",
+                "exit": [
+                    "mean_previous_20_daily_funding_received <= 0",
+                    "date >= far_expiry - 5 calendar days",
+                    "perpetual_execution_window",
+                ],
+                "decision_delay_observations": 1,
+                "cost_scenario": cost_scenario,
+                "closed_trade_count": strategy_summary["closed_trade_count"],
+                "open_trade_count": strategy_summary["open_trade_count"],
+                "gross_pnl_rub": strategy_summary["gross_pnl"],
+                "transaction_costs_rub": strategy_summary["transaction_costs"],
+                "final_X_rub": strategy_summary["final_X"],
+                "max_drawdown_rub": round(max(float(row["D"]) for row in strategy["daily"]), 8),
+                "assignment_window_status": strategy["parameters"]["assignment_window_status"],
+            },
+            "risk": {
+                "pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
+                "current_snapshot_passed": risk["summary"]["current_snapshot_passed"],
+                "all_working_scenarios_passed": risk["summary"]["all_scenarios_passed"],
+                "most_severe_remaining_capital_rub": risk["summary"][
+                    "most_severe_remaining_capital_rub"
+                ],
+            },
+            "decision": (
+                "candidate_for_separate_hypothesis"
+                if strategy_summary["final_X"] > 0 and risk["summary"]["all_scenarios_passed"]
+                else "not_promoted"
+            ),
+            "provenance": {
+                "near_history": near_source.get("source"),
+                "far_history": far_source.get("source"),
+                "study_schema": study["schema_version"],
+                "strategy_schema": strategy["schema_version"],
+            },
+        }
+    except (CarryError, FundingScreenError, OSError, ValueError) as exc:
+        return {
+            **pair,
+            "status": "not_screenable",
+            "decision": "not_screenable",
+            "error": str(exc),
+        }
+
+
 def screen_funding_pairs(
     *,
     contracts_path: Path,
@@ -37,130 +153,32 @@ def screen_funding_pairs(
     cache_dir: Path,
     from_date: str,
     till_date: str,
-    initial_capital: float = 30_000.0,
-    cost_scenario: str = "stress",
-    delay_seconds: float = 0.2,
-    timeout: float = 60.0,
-    pairs: tuple[dict[str, str], ...] = FUNDING_SCREEN_PAIRS,
+    **options: Any,
 ) -> dict[str, Any]:
     """Evaluate one frozen funding-only rule independently for each pair."""
+    allowed = {"initial_capital", "cost_scenario", "delay_seconds", "timeout", "pairs"}
+    unknown = set(options) - allowed
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    initial_capital = float(options.get("initial_capital", 30_000.0))
+    cost_scenario = str(options.get("cost_scenario", "stress"))
+    delay_seconds = float(options.get("delay_seconds", 0.2))
+    timeout = float(options.get("timeout", 60.0))
+    pairs: tuple[dict[str, str], ...] = options.get("pairs", FUNDING_SCREEN_PAIRS)
     if initial_capital <= 0 or delay_seconds < 0 or timeout <= 0:
         raise FundingScreenError("invalid funding screen parameters")
-    candidates: list[dict[str, Any]] = []
-    for pair in pairs:
-        try:
-            near_source = fetch_history(
-                pair["near"],
-                from_date,
-                till_date,
-                cache_dir=cache_dir,
-                delay_seconds=delay_seconds,
-                timeout=timeout,
-            )
-            far_source = fetch_history(
-                pair["far"],
-                from_date,
-                till_date,
-                cache_dir=cache_dir,
-                delay_seconds=delay_seconds,
-                timeout=timeout,
-            )
-            study = build_carry_study(
-                near_source,
-                far_source,
-                contracts_path,
-                near=pair["near"],
-                far=pair["far"],
-                funding_regimes=(),
-            )
-            strategy = build_carry_strategy(
-                study,
-                benchmark_path,
-                contracts_path,
-                transaction_cost_scenario=cost_scenario,
-                initial_capital=initial_capital,
-                strategy_variant="funding_only",
-            )
-            study_summary = study["summary"]
-            strategy_summary = strategy["summary"]
-            risk = strategy["account_risk"]
-            candidates.append(
-                {
-                    **pair,
-                    "status": "evaluated",
-                    "price_role": "EOD_SETTLEPRICE_proxy",
-                    "funding_role": "near_SWAPRATE_received_by_short_near",
-                    "history_window": {
-                        "near": _source_dates(near_source),
-                        "far": _source_dates(far_source),
-                    },
-                    "common_row_count": study_summary["common_row_count"],
-                    "funding": {
-                        "total_received_rub": study_summary["total_funding_received"],
-                        "mean_daily_received_rub": study_summary["mean_daily_funding_received"],
-                        "positive_rows": study_summary["positive_funding_rows"],
-                        "negative_rows": study_summary["negative_funding_rows"],
-                        "zero_rows": study_summary["zero_funding_rows"],
-                        "cap_check": "not_modelled_for_non_CNY_pairs",
-                    },
-                    "gross_decomposition": {
-                        "basis_pnl_rub": study_summary["total_basis_pnl"],
-                        "funding_received_rub": study_summary["total_funding_received"],
-                        "gross_carry_pnl_rub": study_summary["total_gross_carry_pnl"],
-                    },
-                    "funding_only_hypothesis": {
-                        "rule_id": f"H3-F1/{pair['pair_id']}",
-                        "entry": "mean_previous_20_daily_funding_received > 0",
-                        "exit": [
-                            "mean_previous_20_daily_funding_received <= 0",
-                            "date >= far_expiry - 5 calendar days",
-                            "perpetual_execution_window",
-                        ],
-                        "decision_delay_observations": 1,
-                        "cost_scenario": cost_scenario,
-                        "closed_trade_count": strategy_summary["closed_trade_count"],
-                        "open_trade_count": strategy_summary["open_trade_count"],
-                        "gross_pnl_rub": strategy_summary["gross_pnl"],
-                        "transaction_costs_rub": strategy_summary["transaction_costs"],
-                        "final_X_rub": strategy_summary["final_X"],
-                        "max_drawdown_rub": round(
-                            max(float(row["D"]) for row in strategy["daily"]), 8
-                        ),
-                        "assignment_window_status": strategy["parameters"][
-                            "assignment_window_status"
-                        ],
-                    },
-                    "risk": {
-                        "pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
-                        "current_snapshot_passed": risk["summary"]["current_snapshot_passed"],
-                        "all_working_scenarios_passed": risk["summary"]["all_scenarios_passed"],
-                        "most_severe_remaining_capital_rub": risk["summary"][
-                            "most_severe_remaining_capital_rub"
-                        ],
-                    },
-                    "decision": (
-                        "candidate_for_separate_hypothesis"
-                        if strategy_summary["final_X"] > 0
-                        and risk["summary"]["all_scenarios_passed"]
-                        else "not_promoted"
-                    ),
-                    "provenance": {
-                        "near_history": near_source.get("source"),
-                        "far_history": far_source.get("source"),
-                        "study_schema": study["schema_version"],
-                        "strategy_schema": strategy["schema_version"],
-                    },
-                }
-            )
-        except (CarryError, FundingScreenError, OSError, ValueError) as exc:
-            candidates.append(
-                {
-                    **pair,
-                    "status": "not_screenable",
-                    "decision": "not_screenable",
-                    "error": str(exc),
-                }
-            )
+    cfg = {
+        "contracts_path": contracts_path,
+        "benchmark_path": benchmark_path,
+        "cache_dir": cache_dir,
+        "from_date": from_date,
+        "till_date": till_date,
+        "initial_capital": initial_capital,
+        "cost_scenario": cost_scenario,
+        "delay_seconds": delay_seconds,
+        "timeout": timeout,
+    }
+    candidates = [_evaluate_funding_pair(pair, cfg) for pair in pairs]
     candidates.sort(
         key=lambda item: (
             item.get("decision") != "candidate_for_separate_hypothesis",

@@ -4,12 +4,13 @@ import inspect
 from dataclasses import dataclass
 from statistics import fmean
 
-import optuna
+import optuna as optuna
 
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import W0Error, _run_id
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import _run_id as _run_id
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 from .cohort_prepare_helpers import MAX_TARGETS as MAX_TARGETS
@@ -22,6 +23,8 @@ from .cohort_prepare_helpers import (
     _targets,
     _translate,
 )
+from .cohort_reporting import CohortReport, build_cohort_result
+from .cohort_reporting import _unavailable as _unavailable
 from .phase_metrics import measure_phase
 from .proof_kernel import (
     TRIALS,
@@ -618,122 +621,7 @@ def batch_search(
 def _cohort_result(
     request, settings, group, best, trials, attempts, check_cancelled, *, on_progress=None
 ):
-    """Report only a training-selected winner, without running another search."""
-    axes, seed, members, land = group.axes, group.seed, group.members, group.land
-    first = members[0][1]
-    records = [
-        {"trial": i, "parameters": {k: p[k] for k in axes}, **land.measure(p)}
-        for i, p in enumerate(attempts)
-    ]
-    point = best or seed
-    if on_progress is not None:
-        on_progress(
-            {
-                "stage": "report",
-                "done": 0,
-                "total": len(members),
-                "percent": 88.0,
-                "label": f"Финальный расчёт: 0/{len(members)}…",
-            }
-        )
-    rows, any_exec_ref, single = group.report_members(
-        point,
-        best,
-        settings,
-        check_cancelled,
-        on_progress=(
-            None
-            if on_progress is None
-            else lambda done, total: on_progress(
-                {
-                    "stage": "report",
-                    "done": done,
-                    "total": total,
-                    "percent": round(88.0 + 6.0 * (done / max(total, 1)), 1),
-                    "label": f"Финальный расчёт: {done}/{total}",
-                }
-            )
-        ),
+    """Compatibility facade for the final cohort report."""
+    return build_cohort_result(
+        CohortReport(request, settings, group, best, trials, attempts, check_cancelled, on_progress)
     )
-    rates = [r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp") for r in rows]
-    summary = {
-        "member_count": len(rows),
-        "execution_reference": any_exec_ref,
-        "unit": "annualized_excess_pp",
-        "members": rows,
-        **settings.metadata(),
-        "result_basis": "validation" if settings.validation_percent else "training",
-        "training_mean_pp": land.measure(best)["rank_score"] if best else None,
-        "result_mean_pp": fmean(rates) if best and all(v is not None for v in rates) else None,
-    }
-    native_single = len(members) == 1 and first.request["strategy"] == group.active
-    if best or native_single:
-        if on_progress is not None:
-            on_progress(
-                {
-                    "stage": "plateau",
-                    "done": 0,
-                    "total": 1,
-                    "percent": 94.0,
-                    "label": "Расчёт светофора устойчивости…",
-                }
-            )
-        plateau = group.plateau(
-            point,
-            on_progress=(
-                None
-                if on_progress is None
-                else lambda done, total: on_progress(
-                    {
-                        "stage": "plateau",
-                        "done": done,
-                        "total": total,
-                        "percent": round(94.0 + 5.0 * (done / max(total, 1)), 1),
-                        "label": f"Светофор устойчивости: {done}/{total}",
-                    }
-                )
-            ),
-        )
-    else:
-        plateau = None
-    result = {
-        "schema_version": "proof-search.v3",
-        "method": "Optuna TPESampler",
-        "library_version": optuna.__version__,
-        "seed": settings.random_seed,
-        "seed_used": resolve_seed(settings.random_seed),
-        "trial_count": trials,
-        "candidates": records,
-        "selection_basis": "training",
-        "objective": "arithmetic_mean_of_per_window_strategy_CAGR_minus_LQDT_CAGR_pp",
-        "status": "maximum_found" if best else "no_admissible_candidate",
-        "selected_parameters": {k: best[k] for k in axes} if best else None,
-        "selection": {k: v for k, v in request.items() if k != "targets"},
-        "group": summary,
-        "plateau": plateau,
-        "reason": None if best else "Нет допустимого результата сразу для всех выбранных окон.",
-    }
-    if len(rows) == 1 and single:
-        result.update(
-            input_run_id=first.full["run_id"],
-            result_run_id=single["run_id"],
-            evaluation=single["evaluation"],
-        )
-    return {**result, "run_id": _run_id(result)}
-
-
-def _unavailable(case, reason):
-    result = {
-        "schema_version": "proof-search.v3",
-        "method": "Optuna TPESampler",
-        "status": "unavailable",
-        "trial_count": 0,
-        "candidates": [],
-        "selected_parameters": None,
-        "reason": reason,
-        "input_run_id": case.full["run_id"],
-        "selection": case.request,
-        "evaluation": case.report(case.seed)["evaluation"],
-        "plateau": _lamps(case.fit, case.seed, reason),
-    }
-    return {**result, "run_id": _run_id(result)}

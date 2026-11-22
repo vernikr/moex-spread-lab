@@ -258,7 +258,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 - [x] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
 - [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Runner, `--filter`, and CI wiring delivered; <2 min acceptance remains open (189.1 s on 2-vCPU sandbox; CI timing not yet verified).
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).
-- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: detailed internal phase and worker-process cache/CPU/RSS instrumentation, broader end-to-end latency verification, and verified credential rotation after the retired handoff artifacts. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
+- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: worker-process cache and per-request CPU/RSS instrumentation, broader end-to-end latency verification, and verified credential rotation after the retired handoff artifacts. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
 
 ### Projected Impact on Equivalent Future Work
 

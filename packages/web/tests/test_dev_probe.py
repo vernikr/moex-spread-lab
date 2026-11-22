@@ -124,7 +124,12 @@ def test_optimization_matches_saved_route_without_new_history(server):
         {"action": "optimize", "payload": selection, "response_mode": "full"},
     )
     assert status == 200, raw
-    diagnostic = json.loads(raw)["result"]
+    result = json.loads(raw)
+    diagnostic = result["result"]
+    phases = result["telemetry"]["operation_phase_ms"]
+    assert all(
+        phases[key] > 0 for key in ("prepare_cohort", "optuna_trials", "final_report", "plateau")
+    )
     assert diagnostic["run_id"] == normal["run_id"]
     assert diagnostic["selected_parameters"] == normal["selected_parameters"]
     after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}

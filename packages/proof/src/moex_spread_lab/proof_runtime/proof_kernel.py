@@ -6,9 +6,7 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 
 from __future__ import annotations
 
-import hashlib
 import math
-import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property
@@ -25,42 +23,15 @@ from moex_spread_lab.core.evaluation_periods import (
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.w0 import W0Error
 
+from .phase_metrics import measure_phase
+from .proof_seed import SEED as SEED
+from .proof_seed import derive_seed, resolve_seed
 from .service import _mark, _run_id, reference_eval
 
 TRIALS = 40
-SEED = 41
 GREEN = 70
 AMBER = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
-
-
-def resolve_seed(configured: int | None) -> int:
-    """Turn the global seed preference into the base seed of this run.
-
-    A configured seed of 0 means "no fixed seed": every run draws a fresh base
-    seed so repeated runs explore different parameter proposals. Any other value
-    is used verbatim, which makes every random choice of the run reproducible.
-    """
-    if configured is None:
-        return SEED
-    if type(configured) is not int or configured < 0:
-        raise W0Error("Сид должен быть целым неотрицательным числом.")
-    if configured == 0:
-        return secrets.randbelow(2_147_483_647) + 1
-    return configured
-
-
-def derive_seed(base: int, *parts: object) -> int:
-    """Derive a stable child seed from the run's base seed and a label.
-
-    Independent searches inside one run (one per strategy family) must not
-    propose the same parameter sequence, yet they must stay reproducible
-    together: the child seed depends only on the base seed and the label.
-    """
-    digest = hashlib.sha256(
-        "|".join([str(base), *(str(part) for part in parts)]).encode("utf-8")
-    ).digest()
-    return int.from_bytes(digest[:4], "big") or 1
 
 
 @dataclass(frozen=True)
@@ -585,6 +556,7 @@ class Landscape:
         }
 
 
+@measure_phase("optuna_trials")
 def _tune(
     land,
     seed,
@@ -724,6 +696,7 @@ class StudyWindow:
             probe["lookback"] = min(probe["lookback"], len(self.split.training) - 2)
         return _admission(self.proof(probe, training=True), self.settings)
 
+    @measure_phase("final_report")
     def report(self, point):
         p = self.proof(point, training=False)
         measured = _active_measure(p, self.marks, self.split, self.settings)
@@ -750,6 +723,7 @@ class StudyWindow:
         }
 
 
+@measure_phase("plateau")
 def _lamps(land, point, reason=None, *, on_progress=None):
     if reason:
         fields = {

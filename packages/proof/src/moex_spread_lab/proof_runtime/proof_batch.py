@@ -12,6 +12,7 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error, _run_id
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
+from .phase_metrics import measure_phase
 from .proof_kernel import (
     STRATEGY_AXES,
     STRATEGY_REGISTRY,
@@ -28,6 +29,7 @@ from .proof_kernel import (
     resolve_seed,
 )
 from .proof_pool import _estimate_weight, get_worker_pool
+from .remote_cohort_types import _RemoteCase, _RemoteSplit, _TrainingSlice
 from .service import _benchmark_marks
 
 MAX_TARGETS = 1024
@@ -132,42 +134,6 @@ def _active_seed(request, active):
 
 
 @dataclass
-class _TrainingSlice:
-    first: str
-    last: str
-    count: int
-
-    def __len__(self) -> int:
-        return self.count
-
-    def __getitem__(self, idx: int) -> str:
-        if idx == 0:
-            return self.first
-        if idx == -1 or idx == self.count - 1:
-            return self.last
-        raise IndexError(idx)
-
-
-@dataclass
-class _RemoteSplit:
-    training: _TrainingSlice
-
-
-@dataclass
-class _RemoteCase:
-    request: dict
-    strategy_axes: dict
-    execution_axes: dict
-    axes: dict
-    seed: dict
-    split: _RemoteSplit
-    _lamp_warning: str | None
-
-    def lamp_warning(self):
-        return self._lamp_warning
-
-
-@dataclass
 class _Cohort:
     active: str
     axes: dict
@@ -198,6 +164,7 @@ class _Cohort:
             )
         return reason
 
+    @measure_phase("plateau")
     def plateau(self, point, *, on_progress=None):
         # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
         reason = self._plateau_reason(point)
@@ -210,6 +177,7 @@ class _Cohort:
             on_progress=on_progress,
         )
 
+    @measure_phase("final_report")
     def report_members(self, point, best, settings, check_cancelled, on_progress=None):
         rows = []
         single = None
@@ -272,6 +240,7 @@ class _RemoteCohort(_Cohort):
             self.pool.release_cohort(self.cohort_state["cohort_id"], self.cohort_state["owner_of"])
             self.cohort_state = None
 
+    @measure_phase("plateau")
     def plateau(self, point, *, on_progress=None):
         reason = self._plateau_reason(point)
         if not reason:
@@ -311,6 +280,7 @@ class _RemoteCohort(_Cohort):
                     self.land.cache[key] = batch_out[idx]
         return _lamps(self.land, point, reason)
 
+    @measure_phase("final_report")
     def report_members(self, point, best, settings, check_cancelled, on_progress=None):
         point_by_strat = {strat: _translate(point, strat) for strat in self.distinct_strategies}
         results = self.pool.report_cohort(
@@ -339,6 +309,7 @@ def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
     return pool.should_use(len(valid_specs), est)
 
 
+@measure_phase("prepare_cohort")
 def _prepare_cohort(
     service, request, settings, benchmark, check_cancelled, *, calendar=None, on_progress=None
 ):

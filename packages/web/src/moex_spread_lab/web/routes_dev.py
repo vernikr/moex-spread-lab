@@ -22,6 +22,7 @@ from moex_spread_lab.core import _fastcore_loader
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof_runtime.phase_metrics import collect_phase_metrics
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_pool import configured_workers
 from moex_spread_lab.proof_runtime.proof_search import research_run
@@ -218,7 +219,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         profiler.enable()
     result: Any = None
     try:
-        with collect_cache_metrics() as cache_metrics:
+        with collect_cache_metrics() as cache_metrics, collect_phase_metrics() as phase_metrics:
             for _ in range(repeat):
                 started = time.perf_counter()
                 clock = PhaseClock()
@@ -235,6 +236,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         "cache_metrics_main_thread": cache_metrics,
         "pool": pool_snapshot(store, resources=True),
         "progress_phase_ms": phases,
+        "operation_phase_ms": {name: round(ms, 2) for name, ms in phase_metrics.items()},
         "min_ms": min(durations),
         "median_ms": statistics.median(durations),
         "p95_ms": sorted(durations)[math.ceil(len(durations) * 0.95) - 1],

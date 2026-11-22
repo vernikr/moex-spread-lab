@@ -24,6 +24,9 @@ class _CoreCLIArgs(Protocol):
 
 
 def register(subparsers: _SubparserRegistry) -> None:
+    from .remote_cli import register as register_remote
+
+    register_remote(subparsers)
     replay_parser = subparsers.add_parser("replay", help="replay an offline fixture")
     replay_parser.add_argument("--manifest", type=Path, required=True)
     replay_parser.add_argument("--fixture", type=Path, required=True)

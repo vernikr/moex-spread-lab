@@ -29,7 +29,7 @@ def _expand(spec: str) -> list[str]:
 
 _LAYER_SPECS: dict[str, str] = {
     "core": (
-        "core.{,_fastcore_loader,contracts,evaluation_periods,settings,timeframes,universe,w0} "
+        "core.{,_fastcore_loader,contracts,evaluation_periods,remote_cli,settings,timeframes,universe,w0,workstation_remote} "
         "_fastcore_loader w0 timeframes evaluation_periods universe"
     ),
     "data": (
@@ -61,7 +61,6 @@ _LAYER_SPECS: dict[str, str] = {
 LAYER_ASSIGNMENTS: dict[str, str] = {
     module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
 }
-# Modules inherit the layer.
 for _layer, _prefix in (("proof", "proof_runtime"), ("web", "web")):
     _dir = f"{_prefix.split('_')[0]}/src/moex_spread_lab/{_prefix}"
     _mods = (PACKAGES_DIR / _dir).glob("*.py")

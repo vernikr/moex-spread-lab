@@ -1,6 +1,6 @@
 # Remote agent testing and benchmarking via workstation bridge
 
-Status: **Partially implemented**: the macOS launch agent installer is available; the probe API, remote CLI and benchmark phases remain proposals.
+Status: **Partially implemented**: the macOS launch agent installer and remote status/sync are available; the probe API, remote probe/bench and benchmark phases remain proposals.
 
 ## 1. Current capabilities vs actual friction
 
@@ -141,6 +141,10 @@ Add `src/moex_spread_lab/remote_cli.py` wired as `moex-spread-lab remote ...` fo
   Executes a single compact API probe against the workstation server and returns the ~1–2 KB summary JSON to stdout.
 - `moex-spread-lab remote bench --suite cohort_optimize [--repeat 3] [--worktree-patch HEAD]`
   Runs a named benchmark suite on the workstation. With `--worktree-patch`, uploads the current cloud diff into an ephemeral workstation `git worktree` (linked to the real `data/` and `data-lake/`), runs A/B timing + bit-for-bit equivalence against `main` **before** pushing to `main`, and cleans up the worktree in `finally`.
+
+#### Implemented status/sync commands
+
+Set `ARENA_BRIDGE_URL` (HTTPS) and `ARENA_BRIDGE_TOKEN` in the calling environment; optionally set `MOEX_WORKSTATION_ROOT` to the remote checkout path. `uv run moex-spread-lab remote status` reports checkout HEAD/branch, tracked dirtiness, load average, launchd presence and loopback HTTP status; the detailed `/api/dev/health` endpoint is not yet implemented. `uv run moex-spread-lab remote sync` refuses tracked changes, non-main branches and missing launchd service, then fetches and fast-forwards `main`, runs `uv sync --frozen`, checks fastcore and rebuilds it when its C source is newer, and requests a launchd restart. Untracked files are preserved and Git refuses collisions. Re-running sync reconciles dependencies even if a prior attempt failed after the fast-forward. The response reports the restart request, not readiness: run `remote status` afterwards to verify HTTP 200. Failures after a fast-forward do not roll back the checkout. Tokens are never passed as arguments or in URLs; redirects are rejected. These commands do not implement `probe` or `bench` yet.
 
 ### 4.4 Reducing approval friction (Optional Arena Bridge enhancement)
 

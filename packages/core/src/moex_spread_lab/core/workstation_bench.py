@@ -6,6 +6,7 @@ through the benchmark root. The candidate is trusted code, not a security sandbo
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -213,7 +214,29 @@ def _health() -> dict[str, Any]:
     return health
 
 
+@contextmanager
+def benchmark_lock(root: Path) -> Generator[None]:
+    """Reject concurrent benchmark runs on the same workstation checkout."""
+    cache = Path.home() / ".cache/moex-spread-lab/bench-locks"
+    cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+    name = hashlib.sha256(str(root.resolve()).encode()).hexdigest() + ".lock"
+    with (cache / name).open("a", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("another benchmark is running for this checkout") from None
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
+    with benchmark_lock(root):
+        return _benchmark(root, options)
+
+
+def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
     suite, repeat = options["suite"], options.get("repeat", 1)
     if type(repeat) is not int or not 1 <= repeat <= 10:
         raise ValueError("repeat must be between 1 and 10")

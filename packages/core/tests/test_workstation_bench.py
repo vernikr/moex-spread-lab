@@ -142,3 +142,15 @@ def test_seal_copy_rebound_only_after_integrity_validation(tmp_path):
     assert json.loads((lake / "h1-seal.json").read_text()) == seal
     with pytest.raises(RuntimeError, match="invalid source"):
         bench._relocate_copied_seal(root, candidate)
+
+
+def test_concurrent_benchmarks_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with (
+        bench.benchmark_lock(tmp_path),
+        pytest.raises(RuntimeError, match="another benchmark"),
+        bench.benchmark_lock(tmp_path),
+    ):
+        pass
+    with bench.benchmark_lock(tmp_path):
+        pass

@@ -258,7 +258,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 - [x] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
 - [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Runner, `--filter`, and CI wiring delivered; <2 min acceptance remains open (189.1 s on 2-vCPU sandbox; CI timing not yet verified).
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).
-- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: exact per-request worker peak RSS attribution (an optional sampled pool peak is available), broader end-to-end latency verification, and verified credential rotation after the retired handoff artifacts. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
+- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: the Phase 1 introspection details and broader latency verification listed in the acceptance audit below. The Bridge token was rotated; rotation of other potentially exposed credentials is not established. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
 
 ### Projected Impact on Equivalent Future Work
 
@@ -281,3 +281,34 @@ ledger reconciliation on its 1d case, so zero-reconciliation acceptance is
 not established. The initial window and optimize suites are smaller than the
 proposed canonical workloads; see the workstation verification note in
 `remote-agent-testing.md`.
+
+#### P3 acceptance audit after rounding fix (2026-11-22)
+
+- [x] No Actions secret handoff: AGENTS.md prohibits credential-exfiltration
+  workflows; previously listed artifact inventory contained no `bridge-handoff`.
+  The exposed Bridge token was rotated and its predecessor rejected. Other
+  credentials that might have been exposed were not verified as rotated.
+- [x] The named macOS LaunchAgent is installed and loaded; a real restart after
+  a three-worker probe left no old child processes. `remote sync`/`status` and
+  loopback probes were verified against the workstation checkout.
+- [x] Stateless proof verification: ordinary `/api/proof/run` and full dev probe
+  matched exactly for fixed and max-affordable CNY cases. Research settings and
+  the two history files had identical hashes before and after. Typical measured
+  summaries were 1,763 bytes (run) and 1,270 bytes (cohort optimize).
+- [x] Fixed-size rounding was investigated and corrected under the user's chosen
+  policy. The 1d case now reports net 296.31 RUB, zero ledger reconciliation and
+  -0.01 RUB rounding difference versus displayed trade rows. Worktree comparisons
+  covered fixed/automatic sizing at 1d/1h, and C-enabled versus Python-fallback
+  results matched exactly in those four cases. Ledger and trade arrays were not
+  changed. See the rounding note in `remote-agent-testing.md`.
+- [ ] The original Phase 1 introspection proposal is not fully matched: health
+  does not expose a fastcore path or calendar cache count, and the optional
+  cProfile output is top 10, not top 20. Progress and operation timers have
+  different scopes; worker peak RSS is an optional sampled aggregate, not exact
+  per-request attribution. The <2 s latency goal has only been demonstrated on
+  a small warm sample, not as a cold or loaded guarantee.
+- [ ] Phase 2's standalone versioned bench CLI, `http`/`inproc` modes, report
+  files and exact historical perpetual-quarterly workloads remain separate from
+  the explicitly requested P3 phases 1, 3 and 4. The remote bench implementation
+  has useful fixed suites and A/B checks but does not substitute for that full
+  Phase 2 scope. Do not mark those features delivered based on P3 checks.

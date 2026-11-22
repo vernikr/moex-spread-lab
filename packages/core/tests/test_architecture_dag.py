@@ -54,21 +54,18 @@ _LAYER_SPECS: dict[str, str] = {
         "strategies.pair_screener.{,normalization,screener,pair_screener,inputs,catalog,result_builder,runner,intents} "
         "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
-    "proof": (
-        "proof_runtime audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search "
-    ),
-    "web": "web.{,store,server,routes_proof,routes_settings,routes_legacy} screener_app",
+    "proof": "proof_runtime audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search",
+    "web": "web screener_app",
     "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
 }
 LAYER_ASSIGNMENTS: dict[str, str] = {
     module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
 }
-# Everything inside `proof_runtime` is the proof layer by construction.
-LAYER_ASSIGNMENTS |= {
-    f"proof_runtime.{path.stem}": "proof"
-    for path in (PACKAGES_DIR / "proof/src/moex_spread_lab/proof_runtime").glob("*.py")
-    if path.stem != "__init__"
-}
+# Modules inherit their package layer; no entry above.
+for _layer, _prefix in (("proof", "proof_runtime"), ("web", "web")):
+    _dir = f"{_prefix.split('_')[0]}/src/moex_spread_lab/{_prefix}"
+    _mods = (PACKAGES_DIR / _dir).glob("*.py")
+    LAYER_ASSIGNMENTS |= {f"{_prefix}.{m.stem}": _layer for m in _mods if m.stem != "__init__"}
 
 _LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "cli")
 ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {

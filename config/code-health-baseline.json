@@ -75,8 +75,6 @@
     "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_pair_uses_population_deviation_and_calendar_uses_rub_sample_deviation": 16,
     "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_same_bar_and_next_close_work_in_both_universes_and_replay_identically": 16,
     "packages/proof/tests/test_tuning_screens.py::TuningScreenTests::test_all_four_combinations_in_preflight_search_report_and_live_lamps": 36,
-    "packages/web/src/moex_spread_lab/web/routes_proof.py::handle_post_proof": 18,
-    "packages/web/src/moex_spread_lab/web/server.py::make_handler": 42,
     "packages/web/tests/browser/group_lamps_smoke.py::run": 20
   },
   "files": {
@@ -93,7 +91,7 @@
       "baseline_tokens": 3996
     },
     "packages/core/tests/test_architecture_dag.py": {
-      "baseline_loc": 300,
+      "baseline_loc": 297,
       "baseline_tokens": 4202
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": {
@@ -176,10 +174,6 @@
       "baseline_loc": 585,
       "baseline_tokens": 6939
     },
-    "packages/web/src/moex_spread_lab/web/server.py": {
-      "baseline_loc": 337,
-      "baseline_tokens": 3648
-    },
     "packages/web/src/moex_spread_lab/web/static/css/layout.css": {
       "baseline_loc": 143,
       "baseline_tokens": 3611
@@ -189,28 +183,24 @@
       "baseline_tokens": 4086
     },
     "packages/web/src/moex_spread_lab/web/static/js/charts.js": {
-      "baseline_loc": 573,
-      "baseline_tokens": 7495
+      "baseline_loc": 484,
+      "baseline_tokens": 6538
     },
     "packages/web/src/moex_spread_lab/web/static/js/ledger.js": {
-      "baseline_loc": 493,
-      "baseline_tokens": 6645
+      "baseline_loc": 382,
+      "baseline_tokens": 4815
     },
     "packages/web/src/moex_spread_lab/web/static/js/picker.js": {
-      "baseline_loc": 522,
-      "baseline_tokens": 6464
-    },
-    "packages/web/src/moex_spread_lab/web/static/js/state.js": {
-      "baseline_loc": 334,
-      "baseline_tokens": 3622
+      "baseline_loc": 417,
+      "baseline_tokens": 5222
     },
     "packages/web/src/moex_spread_lab/web/static/js/strategy-form.js": {
-      "baseline_loc": 548,
-      "baseline_tokens": 6321
+      "baseline_loc": 472,
+      "baseline_tokens": 4848
     },
     "packages/web/tests/test_http_routes.py": {
       "baseline_loc": 264,
-      "baseline_tokens": 3555
+      "baseline_tokens": 3534
     },
     "packages/web/tests/test_screener_app.py": {
       "baseline_loc": 456,

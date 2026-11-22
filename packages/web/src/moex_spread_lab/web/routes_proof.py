@@ -1,25 +1,18 @@
-"""HTTP route handlers for execution-proof runs, cohort search, and StrategyPlugin registry."""
+"""HTTP route handlers for execution-proof runs, cohort search and window/plateau reports."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
-from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.settings import read_settings
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_kernel import PROOF_ADAPTER_IDS
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.base import (
-    calendar_proof_plugin_ids,
-    carry_proof_plugin_ids,
-    daily_pair_proof_plugin_ids,
-)
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
+
+from .strategy_registry import strategy_registry_payload
 
 PROOF_POST_ROUTES = frozenset(
     {
@@ -52,84 +45,6 @@ _UI_FIELD_ORDER: dict[str, tuple[str, ...]] = {
 }
 
 
-def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
-    """Serialize discovered ``StrategyPlugin`` schemas, fills, universes, and context specs."""
-    registry = discover_strategies()
-    adapted_ids = (
-        set(PROOF_ADAPTER_IDS)
-        | calendar_proof_plugin_ids(registry)
-        | daily_pair_proof_plugin_ids(registry)
-        | carry_proof_plugin_ids(registry)
-    )
-    items: list[dict[str, Any]] = []
-    for plugin in registry:
-        base_specs = [spec.to_dict() for spec in plugin.parameter_schema()]
-        context_params: dict[str, Any] = {}
-        if CALENDAR_UNIVERSE in plugin.supported_universes:
-            context_params[CALENDAR_UNIVERSE] = {
-                tf: {
-                    "quarterly": [
-                        spec.to_dict()
-                        for spec in plugin.parameter_schema(
-                            InstrumentContext(
-                                universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=False
-                            )
-                        )
-                    ],
-                    "monthly": [
-                        spec.to_dict()
-                        for spec in plugin.parameter_schema(
-                            InstrumentContext(
-                                universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=True
-                            )
-                        )
-                    ],
-                }
-                for tf in ("1d", "1h")
-            }
-        if PAIR_UNIVERSE in plugin.supported_universes:
-            context_params[PAIR_UNIVERSE] = {
-                tf: {
-                    "default": [
-                        spec.to_dict()
-                        for spec in plugin.parameter_schema(
-                            InstrumentContext(universe=PAIR_UNIVERSE, timeframe=tf)
-                        )
-                    ]
-                }
-                for tf in ("1d", "1h")
-            }
-        ui_order = list(
-            _UI_FIELD_ORDER.get(
-                plugin.strategy_id,
-                tuple(spec["name"] for spec in base_specs),
-            )
-        )
-        items.append(
-            {
-                "id": plugin.strategy_id,
-                "family_id": plugin.family_id,
-                "label": plugin.label_ru,
-                "short_label": plugin.short_label_ru,
-                "supported_universes": sorted(plugin.supported_universes),
-                "supported_fills": list(plugin.supported_fills),
-                "requires_daily_bars": bool(plugin.requires_daily_bars),
-                "timeframe_supported": timeframe == "1d" or not bool(plugin.requires_daily_bars),
-                "proof_adapter": getattr(plugin, "proof_adapter", None),
-                "proof_enabled": plugin.strategy_id in adapted_ids,
-                "is_builtin": plugin.strategy_id in _BUILTIN_STRATEGY_IDS,
-                "ui_order": ui_order,
-                "parameters": base_specs,
-                "context_parameters": context_params,
-            }
-        )
-    return {
-        "schema_version": "strategy-registry.v1",
-        "timeframe": timeframe,
-        "strategies": items,
-    }
-
-
 def handle_get_proof(path: str, store: Any) -> tuple[bool, Any]:
     """Dispatch GET ``/api/proof/catalog`` and ``/api/strategies``."""
     if path == "/api/proof/catalog":
@@ -141,6 +56,50 @@ def handle_get_proof(path: str, store: Any) -> tuple[bool, Any]:
             tf = DEFAULT_TIMEFRAME
         return True, strategy_registry_payload(timeframe=tf)
     return False, None
+
+
+def _guarded_run(
+    store: Any,
+    lock: Any,
+    read: Callable[..., Any],
+    selection: Any,
+    check_connected: Callable[[], None],
+    send: Callable[[Callable[[Callable[[dict[str, Any]], None] | None], Any]], Any],
+) -> Any:
+    """Run one expensive read behind its store lock, aborting on client cancellation."""
+    while not lock.acquire(timeout=0.15):
+        check_connected()
+    try:
+        check_connected()
+        return send(
+            lambda cb: read(
+                store.proof,
+                selection,
+                check_cancelled=check_connected,
+                on_progress=cb,
+            )
+        )
+    finally:
+        lock.release()
+
+
+def _search_run(
+    store: Any,
+    selection: Any,
+    check_connected: Callable[[], None],
+    on_progress: Callable[[dict[str, Any]], None] | None,
+) -> dict[str, Any]:
+    """Optimize a cohort and persist the winner for the picker."""
+    result = research_run(
+        store.proof,
+        selection,
+        optimize=True,
+        check_cancelled=check_connected,
+        on_progress=on_progress,
+    )
+    if result.get("run_id"):
+        store.save_proof_search(result)
+    return result
 
 
 def handle_post_proof(
@@ -162,8 +121,6 @@ def handle_post_proof(
         return False, False, None
     if not isinstance(selection, dict):
         raise ScreenerError("выбор должен быть объектом")
-
-    search = path == "/api/proof/optimize"
     diagnostics = selection.pop("include_plateau", False) is True
     stream_started = False
 
@@ -181,25 +138,16 @@ def handle_post_proof(
         return None
 
     if path in {"/api/proof/windows", "/api/proof/plateau"}:
-        if path == "/api/proof/windows":
-            lock, read = store.proof_windows_lock, window_summaries
-        else:
-            lock, read = store.proof_profile_lock, checked_plateau
-        while not lock.acquire(timeout=0.15):
-            check_connected()
-        try:
-            check_connected()
-            result = run_and_send(
-                lambda cb: read(
-                    store.proof,
-                    selection,
-                    check_cancelled=check_connected,
-                    on_progress=cb,
-                )
-            )
-        finally:
-            lock.release()
-    elif search:
+        windows = path == "/api/proof/windows"
+        result = _guarded_run(
+            store,
+            store.proof_windows_lock if windows else store.proof_profile_lock,
+            window_summaries if windows else checked_plateau,
+            selection,
+            check_connected,
+            run_and_send,
+        )
+    elif path == "/api/proof/optimize":
         if not store.proof_search_lock.acquire(blocking=False):
             send_json(
                 409,
@@ -207,20 +155,7 @@ def handle_post_proof(
             )
             return True, True, None
         try:
-
-            def _run_search(cb: Callable[[dict[str, Any]], None] | None) -> dict[str, Any]:
-                res = research_run(
-                    store.proof,
-                    selection,
-                    optimize=True,
-                    check_cancelled=check_connected,
-                    on_progress=cb,
-                )
-                if res.get("run_id"):
-                    store.save_proof_search(res)
-                return res
-
-            result = run_and_send(_run_search)
+            result = run_and_send(lambda cb: _search_run(store, selection, check_connected, cb))
         finally:
             store.proof_search_lock.release()
     else:

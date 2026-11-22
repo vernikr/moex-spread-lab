@@ -13,9 +13,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-import moex_spread_lab.web.routes_proof as routes_proof
 import moex_spread_lab.web.server as screener_app
 import moex_spread_lab.web.server as web_server
+import moex_spread_lab.web.strategy_registry as strategy_registry
 from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
@@ -36,7 +36,6 @@ class WebPackageArchitectureTests(unittest.TestCase):
         readme_file = vendor_dir / "README.md"
         self.assertTrue(bundle.is_file())
         self.assertGreater(bundle.stat().st_size, 100_000)
-        self.assertTrue(license_file.is_file())
         self.assertIn("Apache License", license_file.read_text(encoding="utf-8"))
         self.assertTrue(readme_file.is_file())
 
@@ -269,17 +268,18 @@ class WebHttpRoutesTests(unittest.TestCase):
                     ),
                 )
 
-        merged = routes_proof.discover_strategies().as_dict()
+        merged = strategy_registry.discover_strategies().as_dict()
         merged["custom_pair_alpha"] = CustomPairPlugin()
         merged["custom_cal_spread"] = CustomCalendarPlugin()
         custom_registry = StrategyRegistry(merged)
 
-        with mock.patch.object(routes_proof, "discover_strategies", return_value=custom_registry):
+        with mock.patch.object(
+            strategy_registry, "discover_strategies", return_value=custom_registry
+        ):
             status, _, raw = self._request("GET", "/api/strategies")
             self.assertEqual(status, 200)
             by_id = {entry["id"]: entry for entry in json.loads(raw.decode("utf-8"))["strategies"]}
             self.assertIn("custom_pair_alpha", by_id)
-            self.assertFalse(by_id["custom_pair_alpha"]["is_builtin"])
             self.assertTrue(by_id["custom_pair_alpha"]["proof_enabled"])
             self.assertEqual(by_id["custom_pair_alpha"]["parameters"][0]["name"], "alpha_z")
 

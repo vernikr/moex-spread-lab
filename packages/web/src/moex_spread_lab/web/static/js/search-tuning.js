@@ -10,7 +10,7 @@ import {
   status,
   updateProgressChannel,
 } from './dom.js';
-import { th } from './ledger.js';
+import { th } from './ledger-cells.js';
 import { paramLabel, settingsKey, state, strategyLabel, targetKey } from './state.js';
 import {
   activeStrategyName,

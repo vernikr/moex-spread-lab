@@ -177,6 +177,16 @@ The roadmap is organized into **five concrete work packages (`P0`–`P4`)**, ord
 
 **Goal:** Never again spend 35 tool calls or commit temporary `.github/workflows/bridge-handoff.yml` probes to `main` to access the workstation bridge, and eliminate `nohup` process-tree kills on Mac screener restarts.
 
+#### Observed residue (2026-11-22, evidence)
+
+The retired `bridge-tmp` runs (`45004646222`, `45004704247`) left the `bridge-handoff` artifact
+(`prompt.md` + `token.txt`) downloadable for any repo writer until its 24 h expiry; that was the
+only way to recover the bridge token from a cloud session, because org secrets are write-only by
+design. Consequences to enforce: (a) treat any Actions artifact that ever held a credential as
+**burned** and rotate the bridge token after use; (b) never let a handoff workflow upload a token
+again — the URL belongs in an org *variable* and the token is pasted into the prompt or re-derived
+locally; (c) check for and delete stale `bridge-handoff` artifacts after any bridge session.
+
 #### Operational & technical steps:
 1. **Credential delivery protocol (Zero GitHub Actions exfiltration):**
    - **Option A (Recommended for Arena / Cloud Agents):** Keep a single local helper on Mac (`arena-bridge prompt` or an alias `msl-agent-header`) that copies the 2-line runtime header (`ARENA_BRIDGE_URL=https://bridge.vernikr.bond` + ephemeral `ARENA_BRIDGE_TOKEN=...`) into the opening prompt whenever workstation sync is requested, **or** configure `ARENA_BRIDGE_URL` as a non-secret GitHub Org Variable and pass only the short-lived `arena-bridge` session token in the prompt.

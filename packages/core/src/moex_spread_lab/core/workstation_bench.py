@@ -170,7 +170,7 @@ def candidate_server(candidate: Path) -> Generator[int]:
                 process.stdout.close()
 
 
-def _suite(name: str, request: dict[str, Any], repeat: int) -> list[dict[str, Any]]:
+def _suite(name: str, request: dict[str, Any], repeat: int, warmup: int) -> list[dict[str, Any]]:
     pair = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
     calendar = {
         "universe": "calendar_native",
@@ -200,22 +200,42 @@ def _suite(name: str, request: dict[str, Any], repeat: int) -> list[dict[str, An
             "payload": payload,
             "settings_override": {"random_seed": 41, **settings},
             "repeat": repeat,
+            "warmup": warmup,
             "response_mode": "full",
         }
         for action, payload, settings in jobs[name]
     ]
 
 
+def _health() -> dict[str, Any]:
+    with urllib.request.urlopen("http://127.0.0.1:8765/api/dev/health", timeout=5) as response:
+        health: dict[str, Any] = json.load(response)
+    return health
+
+
 def benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
     suite, repeat = options["suite"], options.get("repeat", 1)
     if type(repeat) is not int or not 1 <= repeat <= 10:
         raise ValueError("repeat must be between 1 and 10")
-    jobs = _suite(suite, options.get("request", {}), repeat)
+    warmup = options.get("warmup", 1)
+    if type(warmup) is not int or not 0 <= warmup <= 3:
+        raise ValueError("warmup must be between 0 and 3")
+    jobs = _suite(suite, options.get("request", {}), repeat, warmup)
+    health = _health()
+    if any(health.get("locks", {}).values()):
+        raise RuntimeError("workstation server is busy; benchmark refused")
     revision = options.get("revision")
     if revision and _cmd(root, "git", "rev-parse", "HEAD") != revision:
         raise RuntimeError("workstation HEAD differs from candidate base; run remote sync first")
     baseline = [_post(8765, job) for job in jobs]
-    result: dict[str, Any] = {"suite": suite, "baseline": baseline}
+    result: dict[str, Any] = {
+        "suite": suite,
+        "warmup": warmup,
+        "loadavg_1m": health.get("loadavg_1m"),
+        "baseline_cache_state": "live server (possibly warm)",
+        "candidate_cache_state": "new server",
+        "baseline": baseline,
+    }
     if revision:
         with (
             candidate_worktree(root, revision, options.get("patch", "")) as candidate,
@@ -224,6 +244,12 @@ def benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
             comparison = [_post(port, job) for job in jobs]
         result["candidate"] = comparison
         result["exact_match"] = [a["result"] for a in baseline] == [b["result"] for b in comparison]
+        result["speedup_x"] = [
+            round(a["telemetry"]["median_ms"] / b["telemetry"]["median_ms"], 3)
+            if b["telemetry"]["median_ms"]
+            else None
+            for a, b in zip(baseline, comparison, strict=True)
+        ]
         if not result["exact_match"]:
             raise RuntimeError("candidate benchmark results differ from baseline")
     return result

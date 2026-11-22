@@ -75,6 +75,7 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
         options: dict[str, Any] = {
             "suite": args.suite,
             "repeat": args.repeat,
+            "warmup": args.warmup,
             "request": request_data,
         }
         if args.worktree_patch:
@@ -175,6 +176,9 @@ def register(subparsers: SubparserRegistry) -> None:
         ),
     )
     bench.add_argument("--repeat", type=int, default=1)
+    bench.add_argument(
+        "--warmup", type=int, default=1, help="warm-up calls per workload (default: 1)"
+    )
     bench.add_argument(
         "--json", default="{}", help="custom action/payload/settings_override object"
     )

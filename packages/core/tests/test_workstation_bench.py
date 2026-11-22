@@ -69,6 +69,7 @@ def test_copy_rejects_symlinks(tmp_path):
 
 def test_benchmark_reports_exact_match_and_refuses_drift(tmp_path, monkeypatch):
     monkeypatch.setattr(bench, "_cmd", lambda *_args, **_kwargs: "abc")
+    monkeypatch.setattr(bench, "_health", lambda: {"locks": {}})
 
     @contextmanager
     def worktree(*args):
@@ -81,12 +82,16 @@ def test_benchmark_reports_exact_match_and_refuses_drift(tmp_path, monkeypatch):
     monkeypatch.setattr(bench, "candidate_worktree", worktree)
     monkeypatch.setattr(bench, "candidate_server", server)
     monkeypatch.setattr(
-        bench, "_post", lambda port, payload: {"result": {"run_id": "same"}, "telemetry": {}}
+        bench,
+        "_post",
+        lambda port, payload: {"result": {"run_id": "same"}, "telemetry": {"median_ms": 1}},
     )
     result = bench.benchmark(tmp_path, {"suite": "calendar_proof", "revision": "abc"})
     assert result["exact_match"] is True
     monkeypatch.setattr(
-        bench, "_post", lambda port, payload: {"result": {"run_id": str(port)}, "telemetry": {}}
+        bench,
+        "_post",
+        lambda port, payload: {"result": {"run_id": str(port)}, "telemetry": {"median_ms": 1}},
     )
     with pytest.raises(RuntimeError, match="differ"):
         bench.benchmark(tmp_path, {"suite": "calendar_proof", "revision": "abc"})

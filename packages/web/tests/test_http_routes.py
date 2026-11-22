@@ -198,7 +198,7 @@ class WebHttpRoutesTests(unittest.TestCase):
         self.assertEqual(q_window["default"], 20)
         self.assertEqual(m_window["default"], 7)
 
-        # Switch timeframe to 1h and confirm daily-only strategies report timeframe_supported == False
+        # 1h timeframe: daily-only strategies report timeframe_supported == False
         status, _, _ = self._request(
             "POST",
             "/api/settings",
@@ -268,13 +268,13 @@ class WebHttpRoutesTests(unittest.TestCase):
                     ),
                 )
 
-        merged = strategy_registry.discover_strategies().as_dict()
+        merged = strategy_registry.get_strategy_registry().as_dict()
         merged["custom_pair_alpha"] = CustomPairPlugin()
         merged["custom_cal_spread"] = CustomCalendarPlugin()
         custom_registry = StrategyRegistry(merged)
 
         with mock.patch.object(
-            strategy_registry, "discover_strategies", return_value=custom_registry
+            strategy_registry, "get_strategy_registry", return_value=custom_registry
         ):
             status, _, raw = self._request("GET", "/api/strategies")
             self.assertEqual(status, 200)

@@ -7,12 +7,9 @@ from typing import Any
 from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
-from moex_spread_lab.proof_runtime.proof_kernel import PROOF_ADAPTER_IDS
-from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.base import (
-    calendar_proof_plugin_ids,
-    carry_proof_plugin_ids,
-    daily_pair_proof_plugin_ids,
+from moex_spread_lab.proof_runtime.strategy_catalog import (
+    get_proof_adapter_ids,
+    get_strategy_registry,
 )
 
 _BUILTIN_STRATEGY_IDS = frozenset(
@@ -32,13 +29,8 @@ _UI_FIELD_ORDER: dict[str, tuple[str, ...]] = {
 
 def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     """Serialize discovered ``StrategyPlugin`` schemas, fills, universes, and context specs."""
-    registry = discover_strategies()
-    adapted_ids = (
-        set(PROOF_ADAPTER_IDS)
-        | calendar_proof_plugin_ids(registry)
-        | daily_pair_proof_plugin_ids(registry)
-        | carry_proof_plugin_ids(registry)
-    )
+    registry = get_strategy_registry(refresh=True)
+    adapted_ids = get_proof_adapter_ids(registry)
     items: list[dict[str, Any]] = []
     for plugin in registry:
         base_specs = [spec.to_dict() for spec in plugin.parameter_schema()]

@@ -19,7 +19,6 @@ from .proof_kernel import (
     GREEN,
     MIN_SESSIONS,
     SEED,
-    STRATEGY_AXES,
     TRIALS,
     Axis,
     Landscape,
@@ -43,8 +42,19 @@ from .proof_kernel import (
 )
 from .proof_strategy_search import strategy_search
 from .service import ProofService, _benchmark_marks, _mark, _run_id, reference_eval
+from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
+from .strategy_catalog import get_strategy_axes as get_strategy_axes
+from .strategy_catalog import get_strategy_registry as get_strategy_registry
 
 _set_measure_provider(lambda: _measure)
+
+
+def __getattr__(name: str):
+    """Deprecated aliases kept for out-of-tree readers; use the accessors."""
+    if name == "STRATEGY_AXES":
+        return get_strategy_axes()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AMBER",
@@ -54,7 +64,6 @@ __all__ = [
     "GREEN",
     "MIN_SESSIONS",
     "SEED",
-    "STRATEGY_AXES",
     "TRIALS",
     "Axis",
     "EvaluationSplit",
@@ -80,6 +89,9 @@ __all__ = [
     "compact_result",
     "derive_seed",
     "execution_axes",
+    "get_proof_adapter_ids",
+    "get_strategy_axes",
+    "get_strategy_registry",
     "reference_eval",
     "research_run",
     "resolve_seed",

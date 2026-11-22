@@ -14,8 +14,6 @@ from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 from .phase_metrics import measure_phase
 from .proof_kernel import (
-    STRATEGY_AXES,
-    STRATEGY_REGISTRY,
     TRIALS,
     Axis,
     Landscape,
@@ -31,6 +29,7 @@ from .proof_kernel import (
 from .proof_pool import _estimate_weight, get_worker_pool
 from .remote_cohort_types import _RemoteCase, _RemoteSplit, _TrainingSlice
 from .service import _benchmark_marks
+from .strategy_catalog import get_strategy_axes, resolve_strategy_registry
 
 MAX_TARGETS = 1024
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -56,17 +55,19 @@ def _translate(params, strategy):
     return result
 
 
-def _native_request(active, target, *, default_price_fill="reference_same_bar"):
+def _native_request(active, target, *, default_price_fill="reference_same_bar", registry=None):
     from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
+    registry = resolve_strategy_registry(registry)
+    strategy_axes = get_strategy_axes(registry)
     strategy = active.get("strategy", "zscore_mean_reversion")
-    if strategy not in STRATEGY_AXES:
+    if strategy not in strategy_axes:
         raise W0Error("Неизвестная стратегия подбора")
-    plugin = STRATEGY_REGISTRY.get(strategy)
+    plugin = registry.get(strategy)
     adapters = [
         p
-        for p in STRATEGY_REGISTRY
-        if p.strategy_id in STRATEGY_AXES
+        for p in registry
+        if p.strategy_id in strategy_axes
         and p.family_id == plugin.family_id
         and target["universe"] in p.supported_universes
     ]
@@ -105,7 +106,7 @@ def _targets(request):
     return [unique[k] for k in sorted(unique)]
 
 
-def _active_seed(request, active):
+def _active_seed(request, active, *, registry=None):
     from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
     context = InstrumentContext(
@@ -114,10 +115,9 @@ def _active_seed(request, active):
         asset=request.get("asset"),
         monthly=bool(ASSETS.get(request.get("asset"), {}).get("monthly")),
     )
+    plugin = resolve_strategy_registry(registry).get(active)
     defaults = {
-        spec.name: spec.default
-        for spec in STRATEGY_REGISTRY.get(active).parameter_schema(context)
-        if spec.tunable
+        spec.name: spec.default for spec in plugin.parameter_schema(context) if spec.tunable
     }
     return {
         **defaults,
@@ -311,15 +311,24 @@ def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
 
 @measure_phase("prepare_cohort")
 def _prepare_cohort(
-    service, request, settings, benchmark, check_cancelled, *, calendar=None, on_progress=None
+    service,
+    request,
+    settings,
+    benchmark,
+    check_cancelled,
+    *,
+    calendar=None,
+    on_progress=None,
+    registry=None,
 ):
     from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
     targets = _targets(request)
     checked = bool(request.get("targets"))
     active = request.get("strategy", "zscore_mean_reversion")
-    axes = dict(STRATEGY_AXES[active])
-    seed = _active_seed(request, active)
+    strategy_axes = get_strategy_axes(registry)
+    axes = dict(strategy_axes[active])
+    seed = _active_seed(request, active, registry=registry)
     proposed = {**request, "parameters": {k: seed[k] for k in axes}}
     calendar = calendar if calendar is not None else CalendarData(service.root)
 
@@ -328,7 +337,9 @@ def _prepare_cohort(
     for idx, target in enumerate(targets):
         check_cancelled()
         try:
-            native = _native_request(proposed, target, default_price_fill=settings.price_fill)
+            native = _native_request(
+                proposed, target, default_price_fill=settings.price_fill, registry=registry
+            )
             valid_specs.append((idx, target, native))
         except (W0Error, OSError) as exc:
             if not checked:
@@ -441,10 +452,9 @@ def _prepare_cohort(
                 calendar.check_training_window(
                     target["asset"], target["pair"], native.get("quantity", 1), settings
                 )
-            # Initialization is not a trial. A seed outside another engine's domain or
-            # a long carry warm-up must not make an otherwise compatible window disappear.
+            # Initialization is not a trial; a clamped seed must not drop a window.
             initial = dict(native["parameters"])
-            for name, axis in STRATEGY_AXES[native["strategy"]].items():
+            for name, axis in strategy_axes[native["strategy"]].items():
                 if name in initial:
                     initial[name] = min(axis.high, max(axis.low, initial[name]))
             try:
@@ -532,7 +542,13 @@ def _prepare_cohort(
 
 
 def checked_plateau(
-    service, request, *, settings_override=None, check_cancelled=lambda: None, on_progress=None
+    service,
+    request,
+    *,
+    settings_override=None,
+    check_cancelled=lambda: None,
+    on_progress=None,
+    registry=None,
 ):
     """Read-only probes at one shared point. No focus, Optuna trials, logs or implicit exclusions."""
     request = {
@@ -548,13 +564,14 @@ def checked_plateau(
         )
         if k in request
     }
-    _validate(request)
+    _validate(request, registry=registry)
     if not request.get("targets"):
         raise W0Error("Для группового светофора нужны отмеченные окна.")
     targets = _targets(request)
+    strategy_axes = get_strategy_axes(registry)
     active = request.get("strategy")
-    if active not in STRATEGY_AXES or set(request.get("parameters", {})) != set(
-        STRATEGY_AXES[active]
+    if active not in strategy_axes or set(request.get("parameters", {})) != set(
+        strategy_axes[active]
     ):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
     settings = settings_override or ResearchSettings.load(service.root)
@@ -577,6 +594,7 @@ def checked_plateau(
         benchmark,
         check_cancelled,
         calendar=service._calendar,
+        registry=registry,
         on_progress=(
             None
             if on_progress is None
@@ -640,7 +658,9 @@ def checked_plateau(
         group.close()
 
 
-def batch_search(service, request, settings, benchmark, check_cancelled, *, on_progress=None):
+def batch_search(
+    service, request, settings, benchmark, check_cancelled, *, on_progress=None, registry=None
+):
     targets = _targets(request)
     if on_progress is not None:
         on_progress(

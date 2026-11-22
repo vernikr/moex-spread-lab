@@ -176,13 +176,15 @@ class ProofService:
         # Expose only explicitly adapted plugins without changing the legacy
         # screener's fixed strategy controls. Availability is per timeframe; pair
         # data/volume/contract compatibility remains a proof-time decision.
-        from moex_spread_lab.strategies import discover_strategies
         from moex_spread_lab.strategies.base import (
             carry_proof_plugin_ids,
             daily_pair_proof_plugin_ids,
         )
 
-        registry = discover_strategies()
+        from .strategy_catalog import get_strategy_registry
+
+        # UI discovery surface: refresh sees a plugin installed at runtime.
+        registry = get_strategy_registry(refresh=True)
         adapted = daily_pair_proof_plugin_ids(registry) | carry_proof_plugin_ids(registry)
         pair["proof_plugins"] = [
             {
@@ -229,10 +231,11 @@ class ProofService:
     ) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
             raise W0Error("выбор должен быть объектом")
-        from moex_spread_lab.strategies import discover_strategies
         from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids
 
-        registry = discover_strategies()
+        from .strategy_catalog import get_strategy_registry
+
+        registry = get_strategy_registry()
         strategy = selection.get("strategy")
         if isinstance(strategy, str) and strategy in daily_pair_proof_plugin_ids(registry):
             if selection.get("sizing") not in (None, AUTO_SIZING):
@@ -358,10 +361,11 @@ class ProofService:
             raise W0Error("выбор должен быть объектом")
         universe = selection.get("universe", CALENDAR_UNIVERSE)
         if universe == PAIR_UNIVERSE:
-            from moex_spread_lab.strategies import discover_strategies
             from moex_spread_lab.strategies.base import carry_proof_plugin_ids
 
-            registry = discover_strategies()
+            from .strategy_catalog import get_strategy_registry
+
+            registry = get_strategy_registry()
             strategy = selection.get("strategy")
             plugin = (
                 registry.get(strategy)

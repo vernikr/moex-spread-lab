@@ -7,7 +7,6 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property
 
@@ -34,63 +33,23 @@ AMBER = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
 
 
-@dataclass(frozen=True)
-class Axis:
-    low: float
-    high: float
-    step: float
-
-    def contains(self, value):
-        return (
-            type(value) in (int, float)
-            and self.low <= value <= self.high
-            and math.isfinite(value)
-            and (self.step != 1 or type(value) is int)
-        )
-
-    def suggest(self, trial, name, high):
-        if self.step == 1:
-            return trial.suggest_int(name, self.low, high)
-        return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
-
-
-from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.base import (
-    calendar_proof_plugin_ids,
-    carry_proof_plugin_ids,
-    daily_pair_proof_plugin_ids,
-)
-
-# Built-in engines plus explicitly declared, narrowly scoped intent adapters.
-# Discovery alone must never route an unimplemented plugin into another engine.
-STRATEGY_REGISTRY = discover_strategies()
-PROOF_ADAPTER_IDS = (
-    frozenset({"mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"})
-    | calendar_proof_plugin_ids(STRATEGY_REGISTRY)
-    | daily_pair_proof_plugin_ids(STRATEGY_REGISTRY)
-    | carry_proof_plugin_ids(STRATEGY_REGISTRY)
-)
-
-
-def _strategy_axes() -> dict[str, dict[str, Axis]]:
-    registry = STRATEGY_REGISTRY
-    return {
-        plugin.strategy_id: {
-            spec.name: Axis(
-                int(spec.min_value) if spec.kind == "int" else spec.min_value,
-                int(spec.max_value) if spec.kind == "int" else spec.max_value,
-                int(spec.step) if spec.kind == "int" else spec.step,
-            )
-            for spec in plugin.parameter_schema()
-            if spec.tunable
-        }
-        for plugin in registry.values()
-        if plugin.strategy_id in PROOF_ADAPTER_IDS
-    }
-
+from .axis import Axis
+from .strategy_catalog import get_proof_adapter_ids, get_strategy_axes, get_strategy_registry
 
 ENTRY = Axis(0.5, 5, 0.1)
-STRATEGY_AXES = _strategy_axes()
+
+
+def __getattr__(name: str):
+    """Deprecated module attributes kept for out-of-tree readers; use the accessors."""
+    if name == "STRATEGY_REGISTRY":
+        return get_strategy_registry()
+    if name == "PROOF_ADAPTER_IDS":
+        return get_proof_adapter_ids()
+    if name == "STRATEGY_AXES":
+        return get_strategy_axes()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 # Fixed-size API/CLI compatibility only. The workbench uses automatic sizing and
 # one immutable global slippage preference, so neither is an optimization axis.
 EXECUTION_AXES = {"quantity": Axis(1, 50, 1), "slippage_ticks": Axis(0, 10, 0.5)}
@@ -135,7 +94,7 @@ def compact_result(proof):
     }
 
 
-def _validate(request):
+def _validate(request, *, registry=None):
     if not isinstance(request, dict):
         raise W0Error("Выбор должен быть объектом.")
     if "optimize_strategy" in request and type(request["optimize_strategy"]) is not bool:
@@ -158,10 +117,11 @@ def _validate(request):
     if automatic(request) and request.get("quantity") is not None:
         raise W0Error("При автоматическом размере количество не задаётся вручную.")
     strategy = request.get("strategy", "zscore_mean_reversion")
-    if not isinstance(strategy, str) or strategy not in STRATEGY_AXES:
+    strategy_axes = get_strategy_axes(registry)
+    if not isinstance(strategy, str) or strategy not in strategy_axes:
         raise W0Error("Неизвестная стратегия подбора")
     params = request.get("parameters", {})
-    axes = STRATEGY_AXES[strategy]
+    axes = strategy_axes[strategy]
     if not isinstance(params, dict) or params.keys() - axes.keys():
         raise W0Error("Переданы параметры другой стратегии")
     domains = axes | EXECUTION_AXES
@@ -616,14 +576,16 @@ def _tune(
 class StudyWindow:
     """One independent account, its own dated split, inputs shared by all parameter trials."""
 
-    def __init__(self, service, request, settings: ResearchSettings, benchmark, calendar=None):
+    def __init__(
+        self, service, request, settings: ResearchSettings, benchmark, calendar=None, registry=None
+    ):
         self.request = request
         self.settings = settings
         self.replay = service.prepare(request, calendar=calendar, settings=settings)
         # `full` is a cached_property: the expensive seed proof is built once, on
         # first access, and reused for the report winner instead of per trial.
         selection = self.full["selection"]
-        self.strategy_axes = STRATEGY_AXES[selection["strategy"]]
+        self.strategy_axes = get_strategy_axes(registry)[selection["strategy"]]
         self.execution_axes = execution_axes(selection)
         self.axes = self.strategy_axes | self.execution_axes
         self.seed = {

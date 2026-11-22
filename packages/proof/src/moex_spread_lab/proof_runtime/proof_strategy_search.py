@@ -1,9 +1,8 @@
 """Choose one strategy and one common vector on a fixed cohort's training periods.
 
-Enumerating the small declared strategy family gives each a full TPE budget and
-prevents early pruning from starving a conditional categorical branch. Execution is
-not an optimized axis: price strategies retain the chosen fill; funding carry keeps
-its mandatory same-day-settlement convention (explicit user decision).
+Each declared family gets a full TPE budget, so no categorical branch is starved by
+early pruning. Execution is not optimized: price strategies keep their chosen fill,
+funding carry keeps its mandatory same-day settlement (explicit user decision).
 """
 
 from __future__ import annotations
@@ -22,22 +21,22 @@ from .proof_batch import (
     _targets,
     _translate,
 )
-from .proof_kernel import PROOF_ADAPTER_IDS, STRATEGY_REGISTRY, _tune, resolve_seed
+from .proof_kernel import _tune, resolve_seed
+from .strategy_catalog import get_proof_adapter_ids, resolve_strategy_registry
 
 TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 
 
-def _families(request, targets, timeframe):
-    """Choose one compatible adapter per registered family, in registry order.
+def _families(request, targets, timeframe, registry):
+    """One compatible adapter per registered family, in registry order.
 
-    A mixed cohort uses the active editor's universe when possible; otherwise
-    it uses the pair adapter, preserving the historic seed and payload ordering.
-    The proof-engine allowlist is intentional: a strategy plugin alone does not
-    yet provide the accounting adapter required to replay it safely.
+    The allowlist is intentional: a plugin alone may lack the accounting adapter
+    needed to replay it safely; a mixed cohort prefers the active editor's universe.
     """
+    adapter_ids = get_proof_adapter_ids(registry)
     active = request.get("strategy", "zscore_mean_reversion")
-    active_plugin = STRATEGY_REGISTRY.get(active) if active in STRATEGY_REGISTRY else None
+    active_plugin = registry.get(active) if active in registry else None
     kinds = {target["universe"] for target in targets}
     preferred = (
         CALENDAR_UNIVERSE
@@ -50,8 +49,8 @@ def _families(request, targets, timeframe):
         else next((u for u in sorted(kinds) if u != CALENDAR_UNIVERSE), CALENDAR_UNIVERSE)
     )
     grouped = {}
-    for plugin in STRATEGY_REGISTRY:
-        if plugin.strategy_id not in PROOF_ADAPTER_IDS:
+    for plugin in registry:
+        if plugin.strategy_id not in adapter_ids:
             continue
         if plugin.requires_daily_bars and not timeframe.supports_funding_strategy:
             continue
@@ -67,23 +66,18 @@ def _families(request, targets, timeframe):
     return result
 
 
-def _same_family(a, b):
-    if a == b:
-        return True
-    return (
-        a in STRATEGY_REGISTRY
-        and b in STRATEGY_REGISTRY
-        and STRATEGY_REGISTRY.get(a).family_id == STRATEGY_REGISTRY.get(b).family_id
-    )
+def _same_family(a, b, registry):
+    families = [registry.get(x).family_id for x in (a, b) if x in registry]
+    return a == b or (len(families) == 2 and families[0] == families[1])
 
 
-def _candidate_request(request, strategy, targets, price_fill):
+def _candidate_request(request, strategy, targets, price_fill, registry):
     params = (
         _translate(request.get("parameters", {}), strategy)
-        if _same_family(strategy, request.get("strategy"))
+        if _same_family(strategy, request.get("strategy"), registry)
         else {}
     )
-    plugin = STRATEGY_REGISTRY.get(strategy)
+    plugin = registry.get(strategy)
     fill = price_fill if price_fill in plugin.supported_fills else plugin.supported_fills[0]
     return {
         **{k: v for k, v in request.items() if k not in ("optimize_strategy", "price_fill")},
@@ -95,10 +89,11 @@ def _candidate_request(request, strategy, targets, price_fill):
     }
 
 
-_STRATEGY_LABELS = {p.strategy_id: p.short_label_ru for p in STRATEGY_REGISTRY}
-
-
-def strategy_search(service, request, settings, benchmark, check_cancelled, *, on_progress=None):
+def strategy_search(
+    service, request, settings, benchmark, check_cancelled, *, on_progress=None, registry=None
+):
+    registry = resolve_strategy_registry(registry)
+    labels = {p.strategy_id: p.short_label_ru for p in registry}
     targets = _targets(request)
     spec = get_timeframe(settings.timeframe)
     price_fill = request.get("price_fill") or (
@@ -108,13 +103,13 @@ def strategy_search(service, request, settings, benchmark, check_cancelled, *, o
     calendar = service._calendar or CalendarData(service.root)
     # One base seed per run; each family derives its own child seed from it.
     base_seed = resolve_seed(settings.random_seed)
-    families = _families(request, targets, spec)
+    families = _families(request, targets, spec, registry)
     total_families = max(len(families), 1)
     prepared, alternatives, failures = [], [], []
     for f_idx, name in enumerate(families):
         check_cancelled()
-        proposed = _candidate_request(request, name, targets, price_fill)
-        s_label = _STRATEGY_LABELS.get(name, name)
+        proposed = _candidate_request(request, name, targets, price_fill, registry)
+        s_label = labels.get(name, name)
         if on_progress is not None:
             on_progress(
                 {
@@ -133,6 +128,7 @@ def strategy_search(service, request, settings, benchmark, check_cancelled, *, o
             benchmark,
             check_cancelled,
             calendar=calendar,
+            registry=registry,
             on_progress=(
                 None
                 if on_progress is None
@@ -236,7 +232,7 @@ def strategy_search(service, request, settings, benchmark, check_cancelled, *, o
     try:
         for p_idx, (proposed, group, item) in enumerate(prepared):
             check_cancelled()
-            s_label = _STRATEGY_LABELS.get(group.active, group.active)
+            s_label = labels.get(group.active, group.active)
             best, count, attempts = _call_with_optional_progress(
                 _tune,
                 group.land,
@@ -245,8 +241,7 @@ def strategy_search(service, request, settings, benchmark, check_cancelled, *, o
                 min(len(case.split.training) for _, case in group.members),
                 trials=TRIALS_PER_STRATEGY,
                 random_seed=base_seed,
-                # Each family gets its own derived seed, so two families do not
-                # walk the same parameter sequence inside one run.
+                # Own derived seed per family: two families never share a sequence.
                 seed_label=group.active,
                 on_progress=(
                     None
@@ -289,8 +284,8 @@ def strategy_search(service, request, settings, benchmark, check_cancelled, *, o
                 score > top
                 or (
                     score == top
-                    and _same_family(group.active, active)
-                    and not _same_family(winner[1].active, active)
+                    and _same_family(group.active, active, registry)
+                    and not _same_family(winner[1].active, active, registry)
                 )
             ):
                 winner, top = (proposed, group, best, count, attempts), score

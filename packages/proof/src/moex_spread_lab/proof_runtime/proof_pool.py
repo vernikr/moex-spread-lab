@@ -20,10 +20,8 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.bar_types import SealedH1Reader
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
-from .proof_kernel import (
-    STRATEGY_AXES,
-    StudyWindow,
-)
+from .proof_kernel import StudyWindow
+from .strategy_catalog import get_strategy_axes
 from .worker_metrics import submit_worker, unwrap_worker_result
 from .worker_window import _worker_service, _worker_window_summaries
 
@@ -65,8 +63,10 @@ def _worker_init_cohort(
                 calendar.check_training_window(
                     target["asset"], target["pair"], native.get("quantity", 1), settings
                 )
+            # Worker startup is lazy: discovery happens here, not at import time.
+            strategy_axes = get_strategy_axes()
             initial = dict(native["parameters"])
-            for name, axis in STRATEGY_AXES[native["strategy"]].items():
+            for name, axis in strategy_axes[native["strategy"]].items():
                 if name in initial:
                     initial[name] = min(axis.high, max(axis.low, initial[name]))
             try:

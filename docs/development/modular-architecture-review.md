@@ -11,6 +11,8 @@ Between baseline commit `aed0de1` and `036a8c8` (38 commits), the repository com
 ### Verdict: Strong, Production-Grade Modularization (~85% of Ideal End-State Achieved)
 
 > **Status update (2026-11-22, `71c0411`):** F1 and the frontend half of F6 are done (Phase 4 split `service.py` 2,331 -> 499 LOC, Phase 5 split the frontend to 18 modules). The live, re-measured remainder of this backlog is tracked in [`phase7-backlog.md`](phase7-backlog.md); the tables below are the pre-split snapshot kept for history.
+>
+> **Status update (2026-11-23, P7.1 landed):** F3 and F4 are done — a new strategy is one folder (no manifest, no architecture-test edit) and the import-time registry globals are replaced by the cached accessors in `proof_runtime/strategy_catalog.py`. Contract, evidence and the two small deviations from the plan text are in [`phase7-backlog.md`](phase7-backlog.md#p71-zero-touch-strategy-contract-2026-11-23).
 
 
 The core structural transformation succeeded without breaking numerical determinism, Stage-9 accounting invariants, or external CLI/HTTP compatibility:

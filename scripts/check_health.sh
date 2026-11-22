@@ -24,6 +24,7 @@ run_check basedpyright uv run --no-sync basedpyright
 run_check vulture uv run --no-sync vulture packages src scripts --min-confidence 80
 run_check custom-gate uv run --no-sync python scripts/code_health_gate.py
 run_check architecture uv run --no-sync python scripts/architecture_gate.py
+run_check js-modules uv run --no-sync python scripts/check_js_modules.py
 
 status=0
 for index in "${!pids[@]}"; do

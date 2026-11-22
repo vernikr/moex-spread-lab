@@ -156,6 +156,8 @@ The roadmap is organized into **five concrete work packages (`P0`–`P4`)**, ord
    - Add `run_check js-modules uv run --no-sync python scripts/check_js_modules.py` as check #7 in `scripts/check_health.sh` (runs in parallel with `basedpyright`, adding **`0.0 s`** to the 12–18 s wall-clock gate).
    - Add unit tests proving that removing `$` from `picker.js` or `td` from `ledger.js` fails `check_js_modules.py` in `< 0.2 s`.
 
+**Implementation note:** The dependency-free identifier guard is heuristic, not a full JavaScript scope analyzer. It checks sibling identifiers used as calls or member/index accesses; other undefined names and shadowing cases may escape it. Named imports/exports are checked; other ES module forms are not comprehensively resolved. Node parses every module in one process using `vm.SourceTextModule` (rather than `node --check`, which accepts only one file); syntax checking is explicitly skipped when Node is absent.
+
 **Acceptance Gate:**
 - Injecting any of the 4 Phase-5 regressions (`$` missing in `picker.js`, `state` missing in `ledger-cells.js`, `activeStrategyName` missing in `strategy-plans.js`, `td` missing in `ledger-cells.js`) fails `./scripts/check_health.sh` immediately with file + symbol name.
 
@@ -249,7 +251,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 ## 4. Implementation Checklist & Expected End-State
 
 - [x] **Step 1 (`P0` — Offline `CalendarData` & fast catalog fixture, delivered 2026-11-22):** Make `CalendarData` offline-by-default (`offline: bool = True`), pre-filter `fetch_inputs` by existing cache filenames in offline mode, add `packages/web/tests/browser/_harness.py` (`MOEX_OFFLINE_ONLY="1"` + clean `store.close()`). Verify `/api/proof/catalog` `< 1.0 s` on synthetic fixtures.
-- [ ] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
+- [x] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
 - [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Add single-command sequential/CPU-aware Playwright smoke runner with `--filter` and wire into `.github/workflows/browser-smoke.yml`.
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).
 - [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Deliver Phases 1, 3, and 4 of [`remote-agent-testing.md`](remote-agent-testing.md) so Mac sync and benchmarking take `< 2 s` via `moex-spread-lab remote sync` with zero orphaned processes.

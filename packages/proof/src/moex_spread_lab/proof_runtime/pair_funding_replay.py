@@ -13,44 +13,14 @@ from numbers import Real
 from moex_spread_lab.core.w0 import W0Error
 
 
-def replay_pair_funding(
-    dates: Sequence[str],
-    trades: Sequence[Mapping],
-    rates: Mapping[str, float | None],
-    *,
-    near_lot_size: float,
-    quantity: int,
-    no_clearing_dates: Sequence[str] = (),
-) -> list[dict]:
-    """Return per-bar signed near-leg funding; callers must establish evidence.
+def _finite(value):
+    try:
+        return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
+    except OverflowError:
+        return False
 
-    Dates are unique ordered bar keys, and rates must use those exact keys. This
-    deliberately does not infer an intraday clearing timestamp from a daily rate.
-    Unknown rates produce None on held bars. It computes no P&L, fees or capital.
-    """
 
-    def finite(value):
-        try:
-            return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
-        except OverflowError:
-            return False
-
-    if (
-        not dates
-        or any(not isinstance(day, str) or not day for day in dates)
-        or list(dates) != sorted(set(dates))
-        or not isinstance(rates, Mapping)
-        or not finite(near_lot_size)
-        or near_lot_size <= 0
-        or type(quantity) is not int
-        or quantity <= 0
-    ):
-        raise W0Error("Некорректные входные данные для расчёта фондирования.")
-    index = {day: i for i, day in enumerate(dates)}
-    if any(
-        day not in index or (rate is not None and not finite(rate)) for day, rate in rates.items()
-    ) or any(day not in index or day in rates for day in no_clearing_dates):
-        raise W0Error("Некорректная ставка фондирования или дата.")
+def _positions(dates, trades, index):
     positions = [0] * len(dates)
     last_exit = -1
     for trade in trades:
@@ -73,56 +43,83 @@ def replay_pair_funding(
         for i in range(entry, exit_ + int(terminal)):
             positions[i] = position
         last_exit = exit_
+    return positions
+
+
+def _funding_row(day, position, rates, no_clearing, near_lot_size, quantity):
+    rate = rates.get(day)
+    status = (
+        "no_clearing"
+        if day in no_clearing
+        else "not_held"
+        if not position
+        else "missing_rate"
+        if rate is None
+        else "applied"
+    )
+    try:
+        value = (
+            0.0
+            if day in no_clearing or not position
+            else None
+            if rate is None
+            else -position * rate * near_lot_size * quantity
+        )
+    except OverflowError:
+        raise W0Error("Переполнение расчёта фондирования.") from None
+    if value is not None and not _finite(value):
+        raise W0Error("Переполнение расчёта фондирования.")
+    return {
+        "date": day,
+        "position_at_clearing": position,
+        "funding_rub": value,
+        "funding_status": status,
+    }
+
+
+def replay_pair_funding(
+    dates: Sequence[str],
+    trades: Sequence[Mapping],
+    rates: Mapping[str, float | None],
+    *,
+    near_lot_size: float,
+    quantity: int,
+    no_clearing_dates: Sequence[str] = (),
+) -> list[dict]:
+    """Return per-bar signed near-leg funding; callers must establish evidence.
+
+    Dates are unique ordered bar keys, and rates must use those exact keys. This
+    deliberately does not infer an intraday clearing timestamp from a daily rate.
+    Unknown rates produce None on held bars. It computes no P&L, fees or capital.
+    """
+
+    if (
+        not dates
+        or any(not isinstance(day, str) or not day for day in dates)
+        or list(dates) != sorted(set(dates))
+        or not isinstance(rates, Mapping)
+        or not _finite(near_lot_size)
+        or near_lot_size <= 0
+        or type(quantity) is not int
+        or quantity <= 0
+    ):
+        raise W0Error("Некорректные входные данные для расчёта фондирования.")
+    index = {day: i for i, day in enumerate(dates)}
+    if any(
+        day not in index or (rate is not None and not _finite(rate)) for day, rate in rates.items()
+    ) or any(day not in index or day in rates for day in no_clearing_dates):
+        raise W0Error("Некорректная ставка фондирования или дата.")
+    positions = _positions(dates, trades, index)
     no_clearing = set(no_clearing_dates)
     result = []
     for day, position in zip(dates, positions, strict=True):
-        rate = rates.get(day)
-        status = (
-            "no_clearing"
-            if day in no_clearing
-            else "not_held"
-            if not position
-            else "missing_rate"
-            if rate is None
-            else "applied"
-        )
-        try:
-            value = (
-                0.0
-                if day in no_clearing or not position
-                else None
-                if rate is None
-                else -position * rate * near_lot_size * quantity
-            )
-        except OverflowError:
-            raise W0Error("Переполнение расчёта фондирования.") from None
-        if value is not None and not finite(value):
-            raise W0Error("Переполнение расчёта фондирования.")
-        result.append(
-            {
-                "date": day,
-                "position_at_clearing": position,
-                "funding_rub": value,
-                "funding_status": status,
-            }
-        )
+        result.append(_funding_row(day, position, rates, no_clearing, near_lot_size, quantity))
     return result
 
 
-def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_size, quantity):
-    """Resolve existing funding evidence for daily bars, then replay its payments.
-
-    The window must be constructed from the same positive-volume analysis bars.
-    The existing resolver enforces availability and the train/prefix cutoff; this
-    function never invents intraday clearing times or fills unresolved gaps.
-    """
-    from copy import deepcopy
+def _validate_daily_dates(dates, through):
     from datetime import date
 
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
-
-    if not isinstance(window, FundingWindow) or not dates:
-        raise W0Error("Для дневного расчёта нужны окно и даты фондирования.")
     try:
         if any(
             not isinstance(day, str) or date.fromisoformat(day).isoformat() != day for day in dates
@@ -134,12 +131,9 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
             raise ValueError
     except (ValueError, TypeError):
         raise W0Error("Для дневного фондирования требуются даты YYYY-MM-DD.") from None
-    expected = [day for day in window.days if through is None or day <= through]
-    if list(dates) != expected or len(set(dates)) != len(dates):
-        raise W0Error("Даты баров не совпадают с разрешённым окном фондирования.")
-    evidence = window.resolve(through)
-    if set(evidence.marks) != set(dates):
-        raise W0Error("Неполное покрытие ставок фондирования.")
+
+
+def _resolved_marks(evidence):
     no_clearing = []
     rates = {}
     for day, mark in evidence.marks.items():
@@ -149,6 +143,30 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
             rates[day] = mark.value
         else:
             raise W0Error("Некорректная отметка ставки фондирования.")
+    return rates, no_clearing
+
+
+def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_size, quantity):
+    """Resolve existing funding evidence for daily bars, then replay its payments.
+
+    The window must be constructed from the same positive-volume analysis bars.
+    The existing resolver enforces availability and the train/prefix cutoff; this
+    function never invents intraday clearing times or fills unresolved gaps.
+    """
+    from copy import deepcopy
+
+    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
+
+    if not isinstance(window, FundingWindow) or not dates:
+        raise W0Error("Для дневного расчёта нужны окно и даты фондирования.")
+    _validate_daily_dates(dates, through)
+    expected = [day for day in window.days if through is None or day <= through]
+    if list(dates) != expected or len(set(dates)) != len(dates):
+        raise W0Error("Даты баров не совпадают с разрешённым окном фондирования.")
+    evidence = window.resolve(through)
+    if set(evidence.marks) != set(dates):
+        raise W0Error("Неполное покрытие ставок фондирования.")
+    rates, no_clearing = _resolved_marks(evidence)
     rows = replay_pair_funding(
         dates,
         trades,

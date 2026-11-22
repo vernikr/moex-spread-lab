@@ -112,6 +112,16 @@ packages/proof/src/moex_spread_lab/proof_runtime/
 - `uv run pytest packages/proof/tests -q -n auto --dist loadfile` (including `test_perf_equivalence.py` and `test_fastcore_parity.py`) 100% green with identical `run_id`s.
 - Zero `packages/proof/src/*` entries left in `config/code-health-baseline.json`, `.basedpyright/baseline.json`, and `[tool.ruff.lint.per-file-ignores]`.
 
+**Implementation note (2026-11-23):** The plan's 27-diagnostic estimate covered the
+standard-mode baseline, not the cost of enabling strict. A diagnostic run with strict
+enabled for data, accounting, strategies, and proof and an empty baseline reported
+6,352 errors (3,675 in proof), including 327 namespace-package missing-import
+reports across the workspace. These counts are a point-in-time measurement, not a
+replacement for the acceptance gate. The remaining migration needs explicit typing
+and a verified namespace-resolution strategy; do not hide errors by increasing a
+baseline or disabling strict diagnostics. The original standard-mode proof baseline
+has since been cleared. Continue to preserve proof outputs and compare run IDs.
+
 ---
 
 ### Work Package P7.3 — Unify Built-In Strategies onto the Validated Intent-Adapter Pipeline

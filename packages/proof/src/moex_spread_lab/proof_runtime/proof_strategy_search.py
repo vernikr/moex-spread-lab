@@ -7,6 +7,8 @@ funding carry keeps its mandatory same-day settlement (explicit user decision).
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import optuna
 
 from moex_spread_lab.core.timeframes import get_timeframe
@@ -281,14 +283,14 @@ def strategy_search(
             # On a cross-family exact tie retain the current family, then the first
             # declared family. Holdout, trade count and plateau never break ties.
             if best is not None and (
-                score > top
+                cast(float, score) > top
                 or (
                     score == top
                     and _same_family(group.active, active, registry)
-                    and not _same_family(winner[1].active, active, registry)
+                    and not _same_family(cast(Any, winner)[1].active, active, registry)
                 )
             ):
-                winner, top = (proposed, group, best, count, attempts), score
+                winner, top = (proposed, group, best, count, attempts), cast(float, score)
 
         if winner is None:
             result = {

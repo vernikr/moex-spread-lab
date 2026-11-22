@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from collections.abc import Callable
 from datetime import date
 from itertools import product
@@ -22,23 +21,12 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings,
 )
 
+from .screener_math import _annualized, _require_finite
+
 INITIAL_CAPITAL = 30_000.0
 PLATEAU_RATIO = 0.7
 MIN_COMMON_OBSERVATIONS = 80
 MIN_TABLE_OBSERVATIONS = 60
-
-
-def _annualized(values: list[dict[str, Any]], start: str, end: str) -> float | None:
-    rows = {row["date"]: row for row in values}
-    if start not in rows or end not in rows:
-        return None
-    days = (date.fromisoformat(end) - date.fromisoformat(start)).days
-    first, last = rows[start], rows[end]
-    if days < 30 or min(first["V"], first["B"], last["V"], last["B"]) <= 0:
-        return None
-    strategy = (last["V"] / first["V"]) ** (365 / days) - 1
-    benchmark = (last["B"] / first["B"]) ** (365 / days) - 1
-    return round((strategy - benchmark) * 100, 4)
 
 
 def _projection(result: dict[str, Any]) -> dict[str, Any]:
@@ -287,8 +275,7 @@ def optimize(
                 }
                 pair_reports[pair] = evaluator(inputs, settings, through=train_dates[1])
             train = [_segment(pair_reports[pair]["daily"], *train_dates) for pair in selected]
-            if any(value is None or not math.isfinite(value) for value in train):
-                raise ScreenerError("non-annualizable training window")
+            checked_train = [_require_finite(value) for value in train]
             visible_rows = [
                 row
                 for report in pair_reports.values()
@@ -299,9 +286,9 @@ def optimize(
             worst_shortfall = min(row["X"] for row in visible_rows) / INITIAL_CAPITAL * 100
             trial.update(
                 {
-                    "train_min_excess_pp": round(min(train), 3),
+                    "train_min_excess_pp": round(min(checked_train), 3),
                     "train_by_pair_pp": {
-                        pair: round(value, 3) for pair, value in zip(selected, train)
+                        pair: round(value, 3) for pair, value in zip(selected, checked_train)
                     },
                     "max_excess_drawdown_pct": round(max_dd, 2),
                     "worst_shortfall_pct": round(worst_shortfall, 2),

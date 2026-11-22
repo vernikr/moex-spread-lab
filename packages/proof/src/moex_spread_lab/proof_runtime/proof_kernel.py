@@ -16,10 +16,10 @@ from moex_spread_lab.core.evaluation_periods import (
     ResearchSettings,
 )
 from moex_spread_lab.core.timeframes import get_timeframe
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error, _run_id
 
 from .axis import Axis, _ordered
-from .evaluation import _annualized_returns, _excess_curve, account_checks
+from .evaluation import _annualized_returns, _excess_curve, _missing_exposure, account_checks
 from .landscape import AMBER as AMBER
 from .landscape import GREEN as GREEN
 from .landscape import Landscape as Landscape
@@ -33,7 +33,7 @@ from .request_validation import _identity as _identity
 from .request_validation import _validate as _validate
 from .request_validation import compact_result as compact_result
 from .request_validation import execution_axes
-from .service import _mark, _run_id, reference_eval
+from .service import _mark, reference_eval
 from .strategy_catalog import get_proof_adapter_ids, get_strategy_axes, get_strategy_registry
 from .tuning import TuningOptions, run_tuning
 
@@ -219,23 +219,7 @@ def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
         "excess_rub": round(result_x, 2),
         "rub_per_session": round(rate, 6),
     }
-    missing = [
-        label
-        for label, days in segments
-        if not any(
-            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0] for t in proof["trades"]
-        )
-    ]
-    reasons = []
-    if missing:
-        where = (
-            "ни на обучении, ни на проверке"
-            if len(missing) == 2
-            else f"только {missing[0]}"
-            if split.validation
-            else missing[0]
-        )
-        reasons.append(f"Открытого спреда не было {where}.")
+    missing, reasons = _missing_exposure(proof, segments, split)
     try:
         annual = _annualized_returns(proof, marks, split)
     except W0Error as exc:

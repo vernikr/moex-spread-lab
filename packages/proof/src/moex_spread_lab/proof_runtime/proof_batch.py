@@ -158,13 +158,13 @@ def _prepare_cohort(
         canary_box = [0]
         total_members = len(members)
 
-        def average(point):
+        def mean(point):
             point_by_strat = {strat: _translate(point, strat) for strat in distinct_strategies}
             return pool.eval_point(
                 cohort_state, point_by_strat, canary_box, total_members, check_cancelled
             )
 
-        land = Landscape(axes | execution_axes(request), average)
+        land = Landscape(axes | execution_axes(request), mean)
         return _RemoteCohort(
             active=active,
             axes=axes,

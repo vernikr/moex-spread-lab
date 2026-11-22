@@ -431,7 +431,7 @@ class CohortWorkerPool:
                 pass
 
 
-def _shutdown_weak(ref: weakref.ref[CohortWorkerPool]) -> None:
+def _shutdown_weak(ref: weakref.ReferenceType[Any]) -> None:
     pool = ref()
     if pool is not None:
         pool.shutdown(wait_for=False)

@@ -45,14 +45,11 @@
     "packages/core/tests/test_architecture_dag.py::_resolve_internal_target": 42,
     "packages/core/tests/test_architecture_dag.py::_tarjan_sccs": 18,
     "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
-    "packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py::replay_carry_intents": 73,
-    "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_daily_pair_funding": 20,
-    "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_pair_funding": 36,
+    "packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py::replay_carry_intents": 22,
     "packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py::prepare_daily_pair_unit": 52,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_prepare_cohort": 63,
-    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_measure": 16,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py::strategy_search": 35,
-    "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py::optimize": 40,
+    "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py::optimize": 37,
     "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_prepare_pair": 29,
     "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::prepare": 38,
     "packages/proof/tests/test_global_capital.py::CapitalReplayTests::test_nonzero_annualization_uses_configured_capital_and_continuous_validation": 27,
@@ -85,27 +82,27 @@
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": {
       "baseline_loc": 436,
-      "baseline_tokens": 4568
+      "baseline_tokens": 4566
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": {
-      "baseline_loc": 368,
-      "baseline_tokens": 4420
+      "baseline_loc": 352,
+      "baseline_tokens": 4289
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": {
       "baseline_loc": 402,
-      "baseline_tokens": 4576
+      "baseline_tokens": 4575
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py": {
-      "baseline_loc": 313,
-      "baseline_tokens": 3763
+      "baseline_loc": 311,
+      "baseline_tokens": 3742
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py": {
-      "baseline_loc": 384,
-      "baseline_tokens": 4682
+      "baseline_loc": 372,
+      "baseline_tokens": 4516
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/service.py": {
-      "baseline_loc": 499,
-      "baseline_tokens": 6703
+      "baseline_loc": 498,
+      "baseline_tokens": 6701
     },
     "packages/proof/tests/test_calendar_proof.py": {
       "baseline_loc": 478,

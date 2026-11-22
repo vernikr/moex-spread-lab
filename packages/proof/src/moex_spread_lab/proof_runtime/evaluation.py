@@ -123,3 +123,24 @@ def _annualized_returns(proof, marks, split):
         "calendar_days": round(elapsed_days, 4),
         "cash_shortfall": bool(shortfalls),
     }
+
+
+def _missing_exposure(proof, segments, split):
+    missing = [
+        label
+        for label, days in segments
+        if not any(
+            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0] for t in proof["trades"]
+        )
+    ]
+    reasons = []
+    if missing:
+        where = (
+            "ни на обучении, ни на проверке"
+            if len(missing) == 2
+            else f"только {missing[0]}"
+            if split.validation
+            else missing[0]
+        )
+        reasons.append(f"Открытого спреда не было {where}.")
+    return missing, reasons

@@ -9,7 +9,7 @@ from moex_spread_lab.core.evaluation_periods import (
     EvaluationSplit,
     ResearchSettings,
 )
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error, _run_id
 
 from .proof_batch import batch_search
 from .proof_kernel import (
@@ -41,7 +41,7 @@ from .proof_kernel import (
     resolve_seed,
 )
 from .proof_strategy_search import strategy_search
-from .service import ProofService, _benchmark_marks, _mark, _run_id, reference_eval
+from .service import ProofService, _benchmark_marks, _mark, reference_eval
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .strategy_catalog import get_strategy_registry as get_strategy_registry

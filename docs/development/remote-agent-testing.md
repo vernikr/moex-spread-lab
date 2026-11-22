@@ -225,3 +225,23 @@ contained different absolute checkout paths despite identical run IDs. Only
 root-contained provenance paths are now normalized, not numeric or ledger data.
 
 After root-bound provenance path normalization, the four max-affordable single-proof workloads also matched the isolated worktree results on the Mac, including full ledger data.
+
+### Fixed-size rounding investigation
+
+For the workstation's fixed-size 1d CNYRUBF/CRZ6 case (run ID
+`23fba99706c4def3`), instrumenting the unrounded values produced a sum of
+trade net P&L of 296.309858 RUB and a final unrounded ledger cumulative value
+of 296.309858 RUB. Their difference was zero at the captured precision. The
+sum of **individually rounded** displayed trade net amounts was 296.30 RUB,
+whereas rounding the cumulative ledger once gave 296.31 RUB. The current
+`ledger_reconciliation_rub = -0.01` is therefore a real difference between
+those two displayed totals, not evidence of a missing kopek in the underlying
+unrounded cash flows. `test_ledger_rounding_reconciliation.py` reproduces the
+phenomenon using synthetic 0.004 RUB trade P&Ls. It does not use workstation
+data and deliberately preserves the current accounting semantics.
+
+Making that displayed reconciliation exactly zero requires an explicit rounding
+policy: either aggregate unrounded values and explain the difference from the
+sum of displayed trades, or post visible per-trade rounding adjustments to the
+ledger (which changes the equity curve). Neither should be done silently, and a
+blanket tolerance or a zeroed reconciliation field would hide genuine drift.

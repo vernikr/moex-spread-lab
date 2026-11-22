@@ -6,19 +6,27 @@ from statistics import fmean
 
 import optuna
 
-from moex_spread_lab.core.contracts import InstrumentContext
+from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error, _run_id
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
+from .cohort_prepare_helpers import MAX_TARGETS as MAX_TARGETS
+from .cohort_prepare_helpers import (
+    _active_seed,
+    _confirmation,
+    _filter_training,
+    _intersect_axes,
+    _native_request,
+    _targets,
+    _translate,
+)
 from .phase_metrics import measure_phase
 from .proof_kernel import (
     TRIALS,
-    Axis,
     Landscape,
     StudyWindow,
-    _identity,
     _lamps,
     _ordered,
     _tune,
@@ -26,12 +34,16 @@ from .proof_kernel import (
     execution_axes,
     resolve_seed,
 )
+from .proof_kernel import (
+    Axis as Axis,
+)
 from .proof_pool import _estimate_weight, get_worker_pool
 from .remote_cohort_types import _RemoteCase, _RemoteSplit, _TrainingSlice
+from .request_validation import _identity as _identity
 from .service import _benchmark_marks
-from .strategy_catalog import get_strategy_axes, resolve_strategy_registry
+from .strategy_catalog import get_strategy_axes
+from .strategy_catalog import resolve_strategy_registry as resolve_strategy_registry
 
-MAX_TARGETS = 1024
 _DEFAULT_STUDY_WINDOW = StudyWindow
 
 
@@ -44,93 +56,6 @@ def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
         if any(p.name == "on_progress" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
             kwargs["on_progress"] = on_progress
     return fn(*args, **kwargs)
-
-
-def _translate(params, strategy):
-    result = dict(params)
-    if strategy == "mean_reversion" and "window" in result:
-        result["lookback"] = result.pop("window")
-    if strategy == "zscore_mean_reversion" and "lookback" in result:
-        result["window"] = result.pop("lookback")
-    return result
-
-
-def _native_request(active, target, *, default_price_fill="reference_same_bar", registry=None):
-    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
-
-    registry = resolve_strategy_registry(registry)
-    strategy_axes = get_strategy_axes(registry)
-    strategy = active.get("strategy", "zscore_mean_reversion")
-    if strategy not in strategy_axes:
-        raise W0Error("Неизвестная стратегия подбора")
-    plugin = registry.get(strategy)
-    adapters = [
-        p
-        for p in registry
-        if p.strategy_id in strategy_axes
-        and p.family_id == plugin.family_id
-        and target["universe"] in p.supported_universes
-    ]
-    if not adapters:
-        raise W0Error("Выбранная стратегия неприменима к этому типу пары.")
-    strategy = adapters[0].strategy_id
-    if strategy == "convergence_to_ruonia" and not ASSETS.get(target["asset"], {}).get(
-        "convergence"
-    ):
-        raise W0Error("Для этого актива не предусмотрена стратегия RUONIA.")
-    fill = active.get("fill", default_price_fill)
-    return {
-        **target,
-        "strategy": strategy,
-        **({"fill": fill} if strategy != "funding_only" else {}),
-        **{k: active[k] for k in ("sizing", *execution_axes(active)) if k in active},
-        "parameters": _translate(active.get("parameters", {}), strategy),
-    }
-
-
-def _targets(request):
-    raw = request.get("targets")
-    if "targets" not in request or raw == []:
-        return [_identity(request)]
-    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_TARGETS:
-        raise W0Error(f"Выберите от 1 до {MAX_TARGETS} окон.")
-    unique = {}
-    for item in raw:
-        if not isinstance(item, dict) or item.keys() - {"universe", "asset", "pair"}:
-            raise W0Error("Ожидается список идентификаторов окон.")
-        t = _identity(item)
-        key = t["universe"], t.get("asset", ""), t["pair"]
-        if key in unique:
-            raise W0Error("Окно указано дважды.")
-        unique[key] = t
-    return [unique[k] for k in sorted(unique)]
-
-
-def _active_seed(request, active, *, registry=None):
-    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
-
-    context = InstrumentContext(
-        universe=request.get("universe", CALENDAR_UNIVERSE),
-        pair=request.get("pair", ""),
-        asset=request.get("asset"),
-        monthly=bool(ASSETS.get(request.get("asset"), {}).get("monthly")),
-    )
-    plugin = resolve_strategy_registry(registry).get(active)
-    defaults = {
-        spec.name: spec.default for spec in plugin.parameter_schema(context) if spec.tunable
-    }
-    return {
-        **defaults,
-        **request.get("parameters", {}),
-        **(
-            {
-                "quantity": request.get("quantity", 1),
-                "slippage_ticks": request.get("slippage_ticks", 1.0),
-            }
-            if execution_axes(request)
-            else {}
-        ),
-    }
 
 
 @dataclass
@@ -383,35 +308,11 @@ def _prepare_cohort(
                 _lamp_warning=info["lamp_warning"],
             )
             members.append((target, case))
-            for name, other in _translate(case.strategy_axes, active).items():
-                a = axes[name]
-                axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
-        minimum = max(
-            (a.low + 2 for k, a in axes.items() if k in ("window", "lookback")),
-            default=2,
-        )
-        compatible = []
-        for target, case in members:
-            if len(case.split.training) >= minimum:
-                compatible.append((target, case))
-            else:
-                rejected.append(
-                    {
-                        "target": target,
-                        "reason": f"Для общего окна сигнала нужно не менее {minimum} наблюдений на обучении.",
-                    }
-                )
-        members = compatible
+            _intersect_axes(axes, case.strategy_axes, active)
+        members = _filter_training(members, axes, rejected)
         if rejected:
             pool.release_cohort(cohort_state["cohort_id"], cohort_state["owner_of"])
-            return {
-                "status": "selection_requires_confirmation",
-                **settings.metadata(),
-                "excluded": rejected,
-                "remaining_count": len(members),
-                "trial_count": 0,
-                "selected_parameters": None,
-            }
+            return _confirmation(settings, rejected, members)
 
         distinct_strategies = tuple(dict.fromkeys(case.request["strategy"] for _, case in members))
         canary_box = [0]
@@ -481,40 +382,17 @@ def _prepare_cohort(
                     return _unavailable(case, reason)
                 raise W0Error(reason)
             members.append((target, case))
-            for name, other in _translate(case.strategy_axes, active).items():
-                a = axes[name]
-                axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
+            _intersect_axes(axes, case.strategy_axes, active)
         except (W0Error, OSError) as exc:
             if not checked:
                 raise
             rejected.append({"target": target, "reason": str(exc)})
         if on_progress is not None:
             on_progress(idx + 1, total_targets)
-    # Some individual histories fit the native domain but not its intersection
-    # (e.g. a 5-session calendar combined with a 5-lookback-minimum pair).
-    minimum = max((a.low + 2 for k, a in axes.items() if k in ("window", "lookback")), default=2)
-    compatible = []
-    for target, case in members:
-        if len(case.split.training) >= minimum:
-            compatible.append((target, case))
-        else:
-            rejected.append(
-                {
-                    "target": target,
-                    "reason": f"Для общего окна сигнала нужно не менее {minimum} наблюдений на обучении.",
-                }
-            )
-    members = compatible
+    members = _filter_training(members, axes, rejected)
     if rejected:
-        # Never run against a subset, or change its denominator, without explicit confirmation.
-        return {
-            "status": "selection_requires_confirmation",
-            **settings.metadata(),
-            "excluded": rejected,
-            "remaining_count": len(members),
-            "trial_count": 0,
-            "selected_parameters": None,
-        }
+        # Never change the denominator without explicit confirmation.
+        return _confirmation(settings, rejected, members)
 
     def average(point):
         scores, exposed = [], False

@@ -126,5 +126,6 @@ def test_build_sanitized_env_configures_platform_preload(
     monkeypatch.setattr(run_sanitized_pytest.platform, "system", lambda: "Darwin")
     mac_env = run_sanitized_pytest.build_sanitized_env(rt, supp, {})
     assert mac_env["MOEX_FASTCORE_SANITIZE"] == "1"
+    assert mac_env["MOEX_FASTCORE_ASAN_RUNTIME"] == str(rt)
     assert mac_env["DYLD_INSERT_LIBRARIES"] == str(rt)
     assert "detect_leaks=0" in mac_env["ASAN_OPTIONS"]

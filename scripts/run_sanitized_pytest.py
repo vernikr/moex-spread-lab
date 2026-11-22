@@ -100,6 +100,7 @@ def build_sanitized_env(
     """Construct environment variables for preloading ASan + UBSan into CPython."""
     env = dict(os.environ if base_env is None else base_env)
     env["MOEX_FASTCORE_SANITIZE"] = "1"
+    env["MOEX_FASTCORE_ASAN_RUNTIME"] = str(asan_runtime)
     env.pop("MOEX_PROOF_DISABLE_C", None)
     sysname = platform.system()
     if sysname == "Darwin":
@@ -127,9 +128,16 @@ def main(argv: list[str] | None = None) -> int:
         supp_path = Path(tmp_dir) / "lsan.supp"
         supp_path.write_text(LSAN_SUPPRESSIONS, encoding="utf-8")
         env = build_sanitized_env(asan_runtime, supp_path)
+        bootstrap = (
+            "import os, pytest, sys; "
+            "rt = os.environ.get('MOEX_FASTCORE_ASAN_RUNTIME'); "
+            "os.environ['DYLD_INSERT_LIBRARIES'] = rt if (sys.platform == 'darwin' and rt and not os.environ.get('DYLD_INSERT_LIBRARIES')) else os.environ.get('DYLD_INSERT_LIBRARIES', ''); "
+            "raise SystemExit(pytest.main(sys.argv[1:]))"
+        )
         # Invoke sys.executable directly so macOS SIP cannot strip DYLD_INSERT_LIBRARIES
-        # and Linux LSan inspects only the Python process (not the `uv` launcher).
-        cmd = [sys.executable, "-m", "pytest", *args]
+        # via an intermediate wrapper, and restore DYLD_INSERT_LIBRARIES inside Python
+        # before pytest runs so multiprocessing `spawn` workers also preload ASan.
+        cmd = [sys.executable, "-c", bootstrap, *args]
         proc = subprocess.run(cmd, cwd=ROOT, env=env, check=False)
         return proc.returncode
 

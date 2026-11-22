@@ -154,3 +154,62 @@ def test_concurrent_benchmarks_are_refused(tmp_path, monkeypatch):
         pass
     with bench.benchmark_lock(tmp_path):
         pass
+
+
+def test_curated_single_and_calendar_workloads_match_specification():
+    jobs = bench._suite("single_proof_1d_1h", {}, 1, 0)
+    assert len(jobs) == 4
+    assert {job["payload"]["pair"] for job in jobs} == {"CNYRUBF/CRZ6", "GLDRUBF/GLZ6"}
+    assert {job["settings_override"]["timeframe"] for job in jobs} == {"1d", "1h"}
+    assert all(job["payload"]["sizing"] == "max_affordable" for job in jobs)
+    calendar = bench._suite("calendar_proof", {}, 1, 0)
+    assert {job["payload"]["strategy"] for job in calendar} == {
+        "zscore_mean_reversion",
+        "convergence_to_ruonia",
+    }
+
+
+def test_cohort_workloads_have_ten_distinct_windows_and_strategy_search():
+    windows = bench._suite("window_table_batch", {}, 1, 0)[0]["payload"]["requests"]
+    assert len(windows) == len({r["pair"] for r in windows}) == 10
+    for name in ("cohort_optimize", "ab_fastcore"):
+        job = bench._suite(name, {}, 1, 0)[0]
+        assert job["payload"]["optimize_strategy"] is True
+        assert len(job["payload"]["targets"]) == 10
+        assert job["settings_override"]["random_seed"] == 41
+
+
+def test_fastcore_comparison_uses_isolated_servers_and_fails_on_drift(tmp_path, monkeypatch):
+    monkeypatch.setattr(bench, "_cmd", lambda *_args, **_kwargs: "abc")
+    monkeypatch.setattr(bench, "_health", lambda: {"locks": {}})
+    modes = []
+
+    @contextmanager
+    def worktree(*args):
+        yield tmp_path
+
+    @contextmanager
+    def server(candidate, overrides):
+        modes.append(overrides)
+        yield 8765 + len(modes)
+
+    monkeypatch.setattr(bench, "candidate_worktree", worktree)
+    monkeypatch.setattr(bench, "candidate_server", server)
+    monkeypatch.setattr(
+        bench,
+        "_post",
+        lambda port, payload: {
+            "result": {"sha256": "same"},
+            "telemetry": {"median_ms": port - 8764},
+        },
+    )
+    result = bench.benchmark(tmp_path, {"suite": "ab_fastcore", "revision": "abc"})
+    assert result["exact_match"] and result["speedup_x"] == [1.5]
+    assert [m["MOEX_PROOF_DISABLE_C"] for m in modes] == ["0", "1"]
+    monkeypatch.setattr(
+        bench,
+        "_post",
+        lambda port, payload: {"result": {"sha256": str(port)}, "telemetry": {"median_ms": 1}},
+    )
+    with pytest.raises(RuntimeError, match="differ"):
+        bench.benchmark(tmp_path, {"suite": "ab_fastcore", "revision": "abc"})

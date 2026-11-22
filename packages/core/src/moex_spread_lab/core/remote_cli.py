@@ -45,6 +45,22 @@ def request(url: str, token: str, *, body: dict[str, Any] | None = None) -> dict
     return cast(dict[str, Any], result)
 
 
+def _candidate_options(include_patch: bool) -> dict[str, str]:
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    patch = (
+        subprocess.run(
+            ["git", "diff", "--binary", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout
+        if include_patch
+        else ""
+    )
+    if len(patch.encode()) > 16000:
+        raise ValueError("tracked patch exceeds the 16 KB bridge limit")
+    return {"revision": revision, "patch": patch}
+
+
 def _workstation_command(args: argparse.Namespace, code: str) -> str:
     parts = ["python3", "-c", code, args.remote_command]
     root = os.environ.get("MOEX_WORKSTATION_ROOT")
@@ -78,16 +94,8 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
             "warmup": args.warmup,
             "request": request_data,
         }
-        if args.worktree_patch:
-            revision = subprocess.run(
-                ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-            ).stdout.strip()
-            patch = subprocess.run(
-                ["git", "diff", "--binary", "HEAD"], capture_output=True, text=True, check=True
-            ).stdout
-            if len(patch.encode()) > 16000:
-                raise ValueError("tracked patch exceeds the 16 KB bridge limit")
-            options.update(revision=revision, patch=patch)
+        if args.worktree_patch or args.suite == "ab_fastcore":
+            options.update(_candidate_options(bool(args.worktree_patch)))
         parts.append(json.dumps(options))
     elif root:
         parts.append(root)
@@ -172,6 +180,7 @@ def register(subparsers: SubparserRegistry) -> None:
             "calendar_proof",
             "window_table_batch",
             "cohort_optimize",
+            "ab_fastcore",
             "custom",
         ),
     )

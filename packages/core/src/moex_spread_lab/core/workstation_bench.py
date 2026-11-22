@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .w0 import canonical_bytes, sha256_bytes
+from .workstation_suites import suite as _suite
 
 
 def _cmd(root: Path, *args: str, input_text: str | None = None) -> str:
@@ -129,8 +130,10 @@ def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[Path]
 
 
 @contextmanager
-def candidate_server(candidate: Path) -> Generator[int]:
+def candidate_server(candidate: Path, overrides: dict[str, str] | None = None) -> Generator[int]:
     env = dict(os.environ, MOEX_OFFLINE_ONLY="1")
+    if overrides is not None:
+        env.update(overrides)
     with tempfile.TemporaryFile(mode="w+") as stderr:
         process = subprocess.Popen(
             [
@@ -169,43 +172,6 @@ def candidate_server(candidate: Path) -> Generator[int]:
                     process.wait()
             if process.stdout:
                 process.stdout.close()
-
-
-def _suite(name: str, request: dict[str, Any], repeat: int, warmup: int) -> list[dict[str, Any]]:
-    pair = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
-    calendar = {
-        "universe": "calendar_native",
-        "asset": "SR",
-        "pair": "SRU6/SRZ6",
-        "strategy": "zscore_mean_reversion",
-    }
-    jobs: dict[str, list[tuple[str, dict[str, Any], dict[str, Any]]]] = {
-        "catalog_boot": [("catalog", {}, {"timeframe": tf}) for tf in ("1d", "1h")],
-        "single_proof_1d_1h": [("run", pair, {"timeframe": tf}) for tf in ("1d", "1h")],
-        "calendar_proof": [("run", calendar, {"timeframe": "1d"})],
-        "window_table_batch": [("windows", {"requests": [pair]}, {"timeframe": "1d"})],
-        "cohort_optimize": [("optimize", pair, {"timeframe": "1d", "random_seed": 41})],
-        "custom": [
-            (
-                str(request.get("action", "catalog")),
-                request.get("payload", {}),
-                request.get("settings_override", {}),
-            )
-        ],
-    }
-    if name not in jobs:
-        raise ValueError("unknown benchmark suite")
-    return [
-        {
-            "action": action,
-            "payload": payload,
-            "settings_override": {"random_seed": 41, **settings},
-            "repeat": repeat,
-            "warmup": warmup,
-            "response_mode": "full",
-        }
-        for action, payload, settings in jobs[name]
-    ]
 
 
 def _health() -> dict[str, Any]:
@@ -250,6 +216,10 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
     revision = options.get("revision")
     if revision and _cmd(root, "git", "rev-parse", "HEAD") != revision:
         raise RuntimeError("workstation HEAD differs from candidate base; run remote sync first")
+    if suite == "ab_fastcore":
+        if not revision:
+            raise ValueError("ab_fastcore requires a candidate revision")
+        return _benchmark_fastcore(root, revision, options.get("patch", ""), jobs, health, warmup)
     baseline = [_post(8765, job) for job in jobs]
     result: dict[str, Any] = {
         "suite": suite,
@@ -276,6 +246,46 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
         if not result["exact_match"]:
             raise RuntimeError("candidate benchmark results differ from baseline")
     return result
+
+
+def _benchmark_fastcore(
+    root: Path,
+    revision: str,
+    patch: str,
+    jobs: list[dict[str, Any]],
+    health: dict[str, Any],
+    warmup: int,
+) -> dict[str, Any]:
+    # Both servers use the same isolated copied checkout, never the live daemon.
+    # Explicit worker counts avoid inheriting ambient user settings.
+    with candidate_worktree(root, revision, patch) as candidate:
+        with candidate_server(
+            candidate, {"MOEX_PROOF_DISABLE_C": "0", "MOEX_PROOF_WORKERS": "6"}
+        ) as port:
+            baseline = [_post(port, job) for job in jobs]
+        with candidate_server(
+            candidate, {"MOEX_PROOF_DISABLE_C": "1", "MOEX_PROOF_WORKERS": "1"}
+        ) as port:
+            comparison = [_post(port, job) for job in jobs]
+    exact = [a["result"] for a in baseline] == [b["result"] for b in comparison]
+    if not exact:
+        raise RuntimeError("fastcore A/B benchmark results differ")
+    return {
+        "suite": "ab_fastcore",
+        "warmup": warmup,
+        "loadavg_1m": health.get("loadavg_1m"),
+        "baseline": baseline,
+        "candidate": comparison,
+        "exact_match": exact,
+        "baseline_mode": "C enabled, 6 workers",
+        "candidate_mode": "C disabled, 1 worker",
+        "speedup_x": [
+            round(b["telemetry"]["median_ms"] / a["telemetry"]["median_ms"], 3)
+            if a["telemetry"]["median_ms"]
+            else None
+            for a, b in zip(baseline, comparison, strict=True)
+        ],
+    }
 
 
 def main() -> int:

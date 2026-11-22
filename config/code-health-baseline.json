@@ -49,7 +49,6 @@
     "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_daily_pair_funding": 20,
     "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_pair_funding": 36,
     "packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py::prepare_daily_pair_unit": 52,
-    "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_RemoteCohort::plateau": 19,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_prepare_cohort": 63,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_measure": 16,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py::strategy_search": 35,
@@ -85,8 +84,8 @@
       "baseline_tokens": 4202
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": {
-      "baseline_loc": 585,
-      "baseline_tokens": 6291
+      "baseline_loc": 436,
+      "baseline_tokens": 4568
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": {
       "baseline_loc": 368,

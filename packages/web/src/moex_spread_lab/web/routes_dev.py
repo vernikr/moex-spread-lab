@@ -12,10 +12,13 @@ import resource
 import statistics
 import subprocess
 import sys
+import sysconfig
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core import _fastcore_loader
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
@@ -47,7 +50,9 @@ def health(store: Any, port: int) -> dict[str, Any]:
         "uptime_sec": round(time.monotonic() - _STARTED, 2),
         "started_at": _STARTED_AT,
         "configured_workers": configured_workers(),
-        "fastcore_compiled": "moex_spread_lab.core._fastcore" in sys.modules,
+        "fastcore_compiled": Path(_fastcore_loader.__file__)
+        .with_name("_fastcore" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so"))
+        .is_file(),
         "git_head": git("rev-parse", "HEAD"),
         "git_dirty": None if dirty is None else bool(dirty),
         "python_version": sys.version.split()[0],

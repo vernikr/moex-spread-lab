@@ -107,3 +107,25 @@ def test_discovery_record_is_atomic_and_removed_only_by_owner(tmp_path):
     assert json.loads(path.read_text())["port"] == 5678
     remove_instance(tmp_path, second)
     assert not path.exists()
+
+
+def test_optimization_matches_saved_route_without_new_history(server):
+    port, root = server
+    selection = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
+    status, raw = request(port, "POST", "/api/proof/optimize", selection)
+    assert status == 200, raw
+    normal = json.loads(raw)
+    analytics = root / "data/analytics"
+    before = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
+    status, raw = request(
+        port,
+        "POST",
+        "/api/dev/probe",
+        {"action": "optimize", "payload": selection, "response_mode": "full"},
+    )
+    assert status == 200, raw
+    diagnostic = json.loads(raw)["result"]
+    assert diagnostic["run_id"] == normal["run_id"]
+    assert diagnostic["selected_parameters"] == normal["selected_parameters"]
+    after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
+    assert after == before

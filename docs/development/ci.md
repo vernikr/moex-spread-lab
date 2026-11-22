@@ -34,6 +34,19 @@ uv run pytest -q -n auto --dist loadfile
 
 Use a package-specific path for focused work (for example `packages/strategies/tests`). The full suite uses the six configured `testpaths`; no central duration file needs refreshing or committing. For the sequential reference path, run `uv run pytest -q`.
 
+## Workstation `repowise` MCP setup
+
+Workstation coding agents can query local structural/git-churn hotspots, change-coupled files, and blast radius without touching tracked repo files (`.repowise/` is gitignored):
+
+```sh
+uv tool install repowise
+REPOWISE_SKIP_EDITOR_SETUP=1 REPOWISE_NO_SAVE_KEY=1 \
+  repowise init --no-prose --follow-renames \
+  --no-editor-setup --no-hook --no-claude-md --no-agents --no-codex --no-onboarding
+```
+
+Register `repowise serve --mcp` (with `--path ~/Downloads/projects/moex-spread-lab` or working directory set to the checkout) in user-scoped workstation agent configs (for example Claude Code `claude mcp add --scope user`, Codex `~/.codex/config.toml`, or user-level OpenCode config) so repository files stay clean. Refresh the index after large refactors with `repowise index --no-prose --follow-renames`.
+
 ## Diagnostics
 
 - `--durations=15` keeps slow tests visible in CI artifacts; the bit-for-bit equivalence suite remains isolated in its own job.

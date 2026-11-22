@@ -1,6 +1,6 @@
 # Automated Code Health & AI-Readability Plan
 
-Status: **Step 1 implemented and locally validated** (2026-11-21); Steps 2–5 remain deferred. Development-only tooling and ratchets were added; production runtime dependencies and CI workflows are unchanged.
+Status: **Steps 1, 2, 3, and 5 implemented; Step 4 Layer-1 hotspot burn-down (`data_lake.py` + `position_sizing.py`) completed** (2026-11-22). Tier 1/2 CI gates (`.github/workflows/ci.yml`), the weekly Tier 3 behavioral/duplication digest (`.github/workflows/code-health-weekly.yml`), workstation `repowise` MCP indexing, and the first Step 4 baseline ratchet reduction are active without adding any production runtime dependencies.
 
 ## 1. Objective & Design Constraints
 
@@ -298,7 +298,7 @@ Rather than scheduling risky standalone "refactoring sprints" on untested legacy
 
 | Workspace Migration Phase | Mandatory Code-Health Upgrade Executed in Same PR |
 |---|---|
-| **Phase 2 (`packages/data` & `packages/accounting`)** | Add `"packages/data/src"` and `"packages/accounting/src"` to `basedpyright` `strict` list + Ruff `ANN` enforcement; split `position_sizing.py:size_proof` (`398` LOC, `cog=158`) and `data_lake.py` (`965` LOC) below `400` LOC / `cog <= 15`; delete their entries from `config/code-health-baseline.json` and eliminate the `bar_types.py <-> data_lake.py` clone. |
+| **Phase 2 (`packages/data` & `packages/accounting`)** | **Layer-1 hotspot package completed (2026-11-22):** split `data_lake.py` (`1,126` -> `66` LOC facade + `legacy_series.py`, `raw_archive.py`, `parquet_catalog.py`, `parquet_store.py`, `market_store.py`) and `position_sizing.py` (`744` -> `83` LOC facade + `sizing_terms.py`, `sizing_fast.py`, `sizing_replay.py`, `sizing_report.py`), all `<= 350` LOC / `<= 3,500` tokens / `cog <= 15` with zero Ruff per-file ignores and 100% parameter/return annotations; eliminated the `bar_types.py <-> data_lake.py` duplicate `BarSeries`/`BarStore` clone (`jscpd` down from `2.01%` to `1.89%`); deleted `data_lake.py` and `position_sizing.py` entries from `config/code-health-baseline.json` and `.basedpyright/baseline.json` (`159 -> 147` baselined diagnostics). Remaining Layer-1 legacy modules (`catalog.py`, `data_refresh.py`, `research.py`) continue ratcheting down as touched. |
 | **Phase 3 (`packages/strategies/*`)** | Decompose `calendar_spreads.py` (`1,791` LOC), `analytics.py:run_mean_reversion_baseline` (`cog=178`), and `carry.py:build_carry_strategy` (`cog=143`) into isolated `StrategyPlugin` subpackages (`<= 350` LOC/file, `cog <= 15`, 100% typed `ParameterSpec`/`WindowSnapshot` dataclasses). |
 | **Phase 4 (`packages/proof` & `cli.py`)** | Replace monolithic `cli.py:main` (`1,055` LOC, `cog=343`) with `<70` LOC entry-point loader; split `proof.py` (`1,586` LOC) and `proof_batch.py` (`892` LOC) into typed `service.py` / `windows.py` / `batch.py` modules (`strict` typing enabled). |
 | **Phase 5 (`packages/web` & `proof_ui.html`)** | Decompose `proof_ui.html` (`1,176` LOC, #1 churn magnet with 50 commits) and `screener_app.py:make_handler` (`cog=153`, nesting depth `9`) into route modules (`<= 250` LOC) + native ES modules under `static/js/*.js` (`<= 300` LOC each). |

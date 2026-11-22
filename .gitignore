@@ -14,6 +14,7 @@ uploads/
 __pycache__/
 *.py[cod]
 *.so
+*.dSYM/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
@@ -32,3 +33,9 @@ coverage/
 
 # Local archive operation lock
 .data-archive-candidates.lock
+
+# Generated C compilation database & local code-health tooling
+compile_commands.json
+.repowise/
+reports/code-health/
+

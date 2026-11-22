@@ -8,6 +8,14 @@
 #define STRESS_VM_BUFFER 5000.0
 #define UNCERTAINTY_BUFFER 5000.0
 
+#ifdef MOEX_FASTCORE_SANITIZE
+#define FASTCORE_MALLOC(sz) malloc(sz)
+#define FASTCORE_FREE(ptr) free(ptr)
+#else
+#define FASTCORE_MALLOC(sz) PyMem_Malloc(sz)
+#define FASTCORE_FREE(ptr) PyMem_Free(ptr)
+#endif
+
 static PyObject *k_date = NULL;
 static PyObject *k_cumulative_net_rub = NULL;
 static PyObject *k_account_value_rub = NULL;
@@ -145,7 +153,7 @@ static int get_double_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view
         PyErr_SetString(PyExc_TypeError, "expected double buffer or list of matching length");
         return -1;
     }
-    double *arr = (double *)PyMem_Malloc((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(double));
+    double *arr = (double *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(double));
     if (!arr) {
         PyErr_NoMemory();
         return -1;
@@ -154,7 +162,7 @@ static int get_double_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view
         PyObject *item = PyList_GET_ITEM(obj, i);
         double v = PyFloat_CheckExact(item) ? PyFloat_AS_DOUBLE(item) : PyFloat_AsDouble(item);
         if (v == -1.0 && PyErr_Occurred()) {
-            PyMem_Free(arr);
+            FASTCORE_FREE(arr);
             return -1;
         }
         arr[i] = v;
@@ -183,7 +191,7 @@ static int get_uchar_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
         PyErr_SetString(PyExc_TypeError, "expected byte buffer or list of matching length");
         return -1;
     }
-    unsigned char *arr = (unsigned char *)PyMem_Malloc((size_t)(expected_n > 0 ? expected_n : 1));
+    unsigned char *arr = (unsigned char *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1));
     if (!arr) {
         PyErr_NoMemory();
         return -1;
@@ -191,7 +199,7 @@ static int get_uchar_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
     for (Py_ssize_t i = 0; i < expected_n; i++) {
         int truth = PyObject_IsTrue(PyList_GET_ITEM(obj, i));
         if (truth < 0) {
-            PyMem_Free(arr);
+            FASTCORE_FREE(arr);
             return -1;
         }
         arr[i] = (unsigned char)truth;
@@ -220,7 +228,7 @@ static int get_int32_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
         PyErr_SetString(PyExc_TypeError, "expected int32 buffer or list of matching length");
         return -1;
     }
-    int32_t *arr = (int32_t *)PyMem_Malloc((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(int32_t));
+    int32_t *arr = (int32_t *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(int32_t));
     if (!arr) {
         PyErr_NoMemory();
         return -1;
@@ -228,7 +236,7 @@ static int get_int32_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
     for (Py_ssize_t i = 0; i < expected_n; i++) {
         long v = PyLong_AsLong(PyList_GET_ITEM(obj, i));
         if (v == -1 && PyErr_Occurred()) {
-            PyMem_Free(arr);
+            FASTCORE_FREE(arr);
             return -1;
         }
         arr[i] = (int32_t)v;
@@ -243,7 +251,8 @@ static int get_int32_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
  * (zero subtraction, O(1) per bar regardless of lookback) + branchless positive
  * Neumaier variance pass + zero-copy Py_buffer support.
  */
-static PyObject *fast_compute_rolling_z(PyObject *self, PyObject *args) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 hot loop
+static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *spread_obj;
     Py_ssize_t lookback, delay;
     if (!PyArg_ParseTuple(args, "Onn", &spread_obj, &lookback, &delay)) {
@@ -279,10 +288,10 @@ static PyObject *fast_compute_rolling_z(PyObject *self, PyObject *args) {
         dd_t suf_stack[256];
         dd_t *suf = (lookback + 1 <= 256)
                         ? suf_stack
-                        : (dd_t *)PyMem_Malloc((size_t)(lookback + 1) * sizeof(dd_t));
+                        : (dd_t *)FASTCORE_MALLOC((size_t)(lookback + 1) * sizeof(dd_t));
         if (!suf) {
             if (has_x_view) PyBuffer_Release(&x_view);
-            PyMem_Free(x_owned);
+            FASTCORE_FREE(x_owned);
             Py_DECREF(result);
             return PyErr_NoMemory();
         }
@@ -330,19 +339,19 @@ static PyObject *fast_compute_rolling_z(PyObject *self, PyObject *args) {
             double z = (std > 0.0) ? ((x[signal_index] - mean) / std) : 0.0;
             PyObject *zf = PyFloat_FromDouble(z);
             if (!zf) {
-                if (suf != suf_stack) PyMem_Free(suf);
+                if (suf != suf_stack) FASTCORE_FREE(suf);
                 if (has_x_view) PyBuffer_Release(&x_view);
-                PyMem_Free(x_owned);
+                FASTCORE_FREE(x_owned);
                 Py_DECREF(result);
                 return NULL;
             }
             PyList_SET_ITEM(result, index, zf);
         }
-        if (suf != suf_stack) PyMem_Free(suf);
+        if (suf != suf_stack) FASTCORE_FREE(suf);
     }
 
     if (has_x_view) PyBuffer_Release(&x_view);
-    PyMem_Free(x_owned);
+    FASTCORE_FREE(x_owned);
     return result;
 }
 
@@ -351,7 +360,8 @@ static PyObject *fast_compute_rolling_z(PyObject *self, PyObject *args) {
  * double-double mean + 106-bit sum of squared deviations + Newton-refined sqrt.
  * Returns Python `array('d')` directly for zero-copy reuse in `calendar_zscore_scan`.
  */
-static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size): baselined legacy C99 hot loop
+static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *spread_obj, *elig_obj, *elig_pref_obj;
     Py_ssize_t window;
     int include_current;
@@ -376,9 +386,9 @@ static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
     }
     PyObject *empty_bytes = PyBytes_FromStringAndSize(NULL, n * (Py_ssize_t)sizeof(double));
     if (!empty_bytes) return NULL;
-    double *z_init = (double *)PyBytes_AS_STRING(empty_bytes);
+    char *z_raw = PyBytes_AS_STRING(empty_bytes);
     for (Py_ssize_t i = 0; i < n; i++) {
-        z_init[i] = NAN;
+        memcpy(z_raw + (size_t)i * sizeof(double), &(const double){NAN}, sizeof(double));
     }
     PyObject *out_arr = PyObject_CallFunction(array_cls, "sO", "d", empty_bytes);
     Py_DECREF(empty_bytes);
@@ -407,9 +417,9 @@ static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
         if (has_sp) PyBuffer_Release(&sp_view);
         if (has_el) PyBuffer_Release(&el_view);
         if (has_pr) PyBuffer_Release(&pr_view);
-        PyMem_Free(sp_owned);
-        PyMem_Free(el_owned);
-        PyMem_Free(pr_owned);
+        FASTCORE_FREE(sp_owned);
+        FASTCORE_FREE(el_owned);
+        FASTCORE_FREE(pr_owned);
         PyBuffer_Release(&out_view);
         Py_DECREF(out_arr);
         return NULL;
@@ -425,12 +435,12 @@ static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
     dd_t suf_stack[256];
     dd_t *suf = (window + 1 <= 256)
                     ? suf_stack
-                    : (dd_t *)PyMem_Malloc((size_t)(window + 1) * sizeof(dd_t));
+                    : (dd_t *)FASTCORE_MALLOC((size_t)(window + 1) * sizeof(dd_t));
     if (!suf) {
         if (has_sp) PyBuffer_Release(&sp_view);
         if (has_el) PyBuffer_Release(&el_view);
         if (has_pr) PyBuffer_Release(&pr_view);
-        PyMem_Free(sp_owned); PyMem_Free(el_owned); PyMem_Free(pr_owned);
+        FASTCORE_FREE(sp_owned); FASTCORE_FREE(el_owned); FASTCORE_FREE(pr_owned);
         PyBuffer_Release(&out_view);
         Py_DECREF(out_arr);
         return PyErr_NoMemory();
@@ -490,13 +500,13 @@ static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
         }
     }
 
-    if (suf != suf_stack) PyMem_Free(suf);
+    if (suf != suf_stack) FASTCORE_FREE(suf);
     if (has_sp) PyBuffer_Release(&sp_view);
     if (has_el) PyBuffer_Release(&el_view);
     if (has_pr) PyBuffer_Release(&pr_view);
-    PyMem_Free(sp_owned);
-    PyMem_Free(el_owned);
-    PyMem_Free(pr_owned);
+    FASTCORE_FREE(sp_owned);
+    FASTCORE_FREE(el_owned);
+    FASTCORE_FREE(pr_owned);
     PyBuffer_Release(&out_view);
     return out_arr;
 }
@@ -508,7 +518,8 @@ static PyObject *fast_calendar_sample_z(PyObject *self, PyObject *args) {
  *   2 = near_expiry_buffer, 3 = end_of_window
  * Returns list of (entry_idx, exit_idx, direction, reason_code, signal_idx, signal_val).
  */
-static PyObject *fast_calendar_zscore_scan(PyObject *self, PyObject *args) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 hot loop
+static PyObject *fast_calendar_zscore_scan(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *z_obj, *ts_obj, *dte_obj, *sig_el_obj, *ent_el_obj, *ext_el_obj;
     Py_ssize_t delay;
     double entry_z, exit_z, max_hold_days;
@@ -598,8 +609,8 @@ static PyObject *fast_calendar_zscore_scan(PyObject *self, PyObject *args) {
     if (hse) PyBuffer_Release(&se_v);
     if (hen) PyBuffer_Release(&en_v);
     if (hex) PyBuffer_Release(&ex_v);
-    PyMem_Free(z_ow); PyMem_Free(ts_ow); PyMem_Free(dte_ow);
-    PyMem_Free(se_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow);
+    FASTCORE_FREE(z_ow); FASTCORE_FREE(ts_ow); FASTCORE_FREE(dte_ow);
+    FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
     return trades;
 
 fail:
@@ -609,13 +620,14 @@ fail:
     if (hse) PyBuffer_Release(&se_v);
     if (hen) PyBuffer_Release(&en_v);
     if (hex) PyBuffer_Release(&ex_v);
-    PyMem_Free(z_ow); PyMem_Free(ts_ow); PyMem_Free(dte_ow);
-    PyMem_Free(se_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow);
+    FASTCORE_FREE(z_ow); FASTCORE_FREE(ts_ow); FASTCORE_FREE(dte_ow);
+    FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
     Py_DECREF(trades);
     return NULL;
 }
 
-static PyObject *fast_calendar_convergence_scan(PyObject *self, PyObject *args) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 hot loop
+static PyObject *fast_calendar_convergence_scan(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *dev_obj, *dte_obj, *sig_el_obj, *ent_el_obj, *ext_el_obj;
     double threshold;
     Py_ssize_t delay;
@@ -687,7 +699,7 @@ static PyObject *fast_calendar_convergence_scan(PyObject *self, PyObject *args) 
     if (hse) PyBuffer_Release(&se_v);
     if (hen) PyBuffer_Release(&en_v);
     if (hex) PyBuffer_Release(&ex_v);
-    PyMem_Free(dv_ow); PyMem_Free(dte_ow); PyMem_Free(se_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow);
+    FASTCORE_FREE(dv_ow); FASTCORE_FREE(dte_ow); FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
     return trades;
 
 fail:
@@ -696,145 +708,97 @@ fail:
     if (hse) PyBuffer_Release(&se_v);
     if (hen) PyBuffer_Release(&en_v);
     if (hex) PyBuffer_Release(&ex_v);
-    PyMem_Free(dv_ow); PyMem_Free(dte_ow); PyMem_Free(se_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow);
+    FASTCORE_FREE(dv_ow); FASTCORE_FREE(dte_ow); FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
     Py_DECREF(trades);
     return NULL;
 }
 
 /* ---------------- 4. Recursive clean_obj (proof.py & calendar_spreads.py) ---------------- */
 
+static PyObject *clean_recursive(PyObject *value);
+
+static PyObject *clean_dict_items(PyObject *value, int exact) {
+    PyObject *out = exact ? _PyDict_NewPresized(PyDict_GET_SIZE(value)) : PyDict_New();
+    if (!out) return NULL;
+    PyObject *key, *item;
+    Py_ssize_t pos = 0;
+    while (PyDict_Next(value, &pos, &key, &item)) {
+        PyObject *cleaned = clean_recursive(item);
+        if (!cleaned) {
+            Py_DECREF(out);
+            return NULL;
+        }
+        int rc = PyDict_SetItem(out, key, cleaned);
+        Py_DECREF(cleaned);
+        if (rc < 0) {
+            Py_DECREF(out);
+            return NULL;
+        }
+    }
+    return out;
+}
+
+static PyObject *clean_list_items(PyObject *value, int exact) {
+    Py_ssize_t n = exact ? PyList_GET_SIZE(value) : PyList_Size(value);
+    if (n < 0) return NULL;
+    PyObject *out = PyList_New(n);
+    if (!out) return NULL;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = exact ? PyList_GET_ITEM(value, i) : PyList_GetItem(value, i);
+        PyObject *cleaned = item ? clean_recursive(item) : NULL;
+        if (!cleaned) {
+            Py_DECREF(out);
+            return NULL;
+        }
+        PyList_SET_ITEM(out, i, cleaned);
+    }
+    return out;
+}
+
+static PyObject *clean_tuple_items(PyObject *value, int exact) {
+    Py_ssize_t n = exact ? PyTuple_GET_SIZE(value) : PyTuple_Size(value);
+    if (n < 0) return NULL;
+    PyObject *out = PyTuple_New(n);
+    if (!out) return NULL;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = exact ? PyTuple_GET_ITEM(value, i) : PyTuple_GetItem(value, i);
+        PyObject *cleaned = item ? clean_recursive(item) : NULL;
+        if (!cleaned) {
+            Py_DECREF(out);
+            return NULL;
+        }
+        PyTuple_SET_ITEM(out, i, cleaned);
+    }
+    return out;
+}
+
 static PyObject *clean_recursive(PyObject *value) {
     if (value == Py_None || PyUnicode_CheckExact(value) || PyLong_CheckExact(value) || PyBool_Check(value)) {
         Py_INCREF(value);
         return value;
     }
-    if (PyFloat_CheckExact(value)) {
-        if (!isfinite(PyFloat_AS_DOUBLE(value))) {
-            Py_RETURN_NONE;
-        }
-        Py_INCREF(value);
-        return value;
-    }
     if (PyFloat_Check(value)) {
-        double v = PyFloat_AsDouble(value);
+        double v = PyFloat_CheckExact(value) ? PyFloat_AS_DOUBLE(value) : PyFloat_AsDouble(value);
         if (v == -1.0 && PyErr_Occurred()) return NULL;
-        if (!isfinite(v)) {
-            Py_RETURN_NONE;
-        }
+        if (!isfinite(v)) Py_RETURN_NONE;
         Py_INCREF(value);
         return value;
     }
-    if (PyDict_CheckExact(value)) {
-        PyObject *out = _PyDict_NewPresized(PyDict_GET_SIZE(value));
-        if (!out) return NULL;
-        PyObject *key, *item;
-        Py_ssize_t pos = 0;
-        while (PyDict_Next(value, &pos, &key, &item)) {
-            PyObject *cleaned = clean_recursive(item);
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            if (PyDict_SetItem(out, key, cleaned) < 0) {
-                Py_DECREF(cleaned);
-                Py_DECREF(out);
-                return NULL;
-            }
-            Py_DECREF(cleaned);
-        }
-        return out;
-    }
-    if (PyList_CheckExact(value)) {
-        Py_ssize_t n = PyList_GET_SIZE(value);
-        PyObject *out = PyList_New(n);
-        if (!out) return NULL;
-        for (Py_ssize_t i = 0; i < n; i++) {
-            PyObject *cleaned = clean_recursive(PyList_GET_ITEM(value, i));
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            PyList_SET_ITEM(out, i, cleaned);
-        }
-        return out;
-    }
-    if (PyTuple_CheckExact(value)) {
-        Py_ssize_t n = PyTuple_GET_SIZE(value);
-        PyObject *out = PyTuple_New(n);
-        if (!out) return NULL;
-        for (Py_ssize_t i = 0; i < n; i++) {
-            PyObject *cleaned = clean_recursive(PyTuple_GET_ITEM(value, i));
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            PyTuple_SET_ITEM(out, i, cleaned);
-        }
-        return out;
-    }
-    if (PyDict_Check(value)) {
-        PyObject *out = PyDict_New();
-        if (!out) return NULL;
-        PyObject *key, *item;
-        Py_ssize_t pos = 0;
-        while (PyDict_Next(value, &pos, &key, &item)) {
-            PyObject *cleaned = clean_recursive(item);
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            if (PyDict_SetItem(out, key, cleaned) < 0) {
-                Py_DECREF(cleaned);
-                Py_DECREF(out);
-                return NULL;
-            }
-            Py_DECREF(cleaned);
-        }
-        return out;
-    }
-    if (PyList_Check(value)) {
-        Py_ssize_t n = PyList_Size(value);
-        if (n < 0) return NULL;
-        PyObject *out = PyList_New(n);
-        if (!out) return NULL;
-        for (Py_ssize_t i = 0; i < n; i++) {
-            PyObject *item = PyList_GetItem(value, i);
-            PyObject *cleaned = clean_recursive(item);
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            PyList_SET_ITEM(out, i, cleaned);
-        }
-        return out;
-    }
-    if (PyTuple_Check(value)) {
-        Py_ssize_t n = PyTuple_Size(value);
-        if (n < 0) return NULL;
-        PyObject *out = PyTuple_New(n);
-        if (!out) return NULL;
-        for (Py_ssize_t i = 0; i < n; i++) {
-            PyObject *item = PyTuple_GetItem(value, i);
-            PyObject *cleaned = clean_recursive(item);
-            if (!cleaned) {
-                Py_DECREF(out);
-                return NULL;
-            }
-            PyTuple_SET_ITEM(out, i, cleaned);
-        }
-        return out;
-    }
+    if (PyDict_Check(value)) return clean_dict_items(value, PyDict_CheckExact(value));
+    if (PyList_Check(value)) return clean_list_items(value, PyList_CheckExact(value));
+    if (PyTuple_Check(value)) return clean_tuple_items(value, PyTuple_CheckExact(value));
     Py_INCREF(value);
     return value;
 }
 
-static PyObject *fast_clean_obj(PyObject *self, PyObject *arg) {
+static PyObject *fast_clean_obj(PyObject *Py_UNUSED(self), PyObject *arg) {
     return clean_recursive(arg);
 }
 
 /* ---------------- 5. Pair mean_reversion scan (analytics.py) ---------------- */
 
-static PyObject *fast_mean_reversion_scan(PyObject *self, PyObject *args) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 hot loop
+static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *z_list;
     Py_ssize_t row_count, lookback, delay;
     double entry_z, exit_z;
@@ -967,6 +931,7 @@ typedef struct {
     int has_exit_costs;
 } TradeSpec;
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 helper
 static int calc_max_quantity(
     double budget, double margin, const double uc[3], int stress, int native_spread, Py_ssize_t *out_q
 ) {
@@ -983,20 +948,20 @@ static int calc_max_quantity(
 
     while (q > 0) {
         double f0, f1, f2;
-        if (exact_round2(uc[0] * q, &f0) < 0 || exact_round2(uc[1] * q, &f1) < 0 || exact_round2(uc[2] * q, &f2) < 0) {
+        if (exact_round2(uc[0] * (double)q, &f0) < 0 || exact_round2(uc[1] * (double)q, &f1) < 0 || exact_round2(uc[2] * (double)q, &f2) < 0) {
             return -1;
         }
-        double req = required_margin * q + fixed_reserve + 2.0 * (f0 + f1 + f2);
+        double req = required_margin * (double)q + fixed_reserve + 2.0 * (f0 + f1 + f2);
         if (req <= budget + 1e-9) break;
         q--;
     }
     while (1) {
         Py_ssize_t q1 = q + 1;
         double f0, f1, f2;
-        if (exact_round2(uc[0] * q1, &f0) < 0 || exact_round2(uc[1] * q1, &f1) < 0 || exact_round2(uc[2] * q1, &f2) < 0) {
+        if (exact_round2(uc[0] * (double)q1, &f0) < 0 || exact_round2(uc[1] * (double)q1, &f1) < 0 || exact_round2(uc[2] * (double)q1, &f2) < 0) {
             return -1;
         }
-        double req = required_margin * q1 + fixed_reserve + 2.0 * (f0 + f1 + f2);
+        double req = required_margin * (double)q1 + fixed_reserve + 2.0 * (f0 + f1 + f2);
         if (req > budget + 1e-9) break;
         q = q1;
     }
@@ -1011,7 +976,249 @@ static int parse_double_item(PyObject *obj, double *out) {
     return 0;
 }
 
-static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
+typedef struct { int stress, native_spread, funding_only, paused; double initial; } SizingRules;
+
+typedef struct {
+    Py_ssize_t i;
+    int is_elig, is_exit_elig, unit_funding_contracts;
+    double spread_i, point_i, pos_mark, daily, cost, fill_wealth;
+    TradeSpec *pos_trade, *funding_owner;
+} SizingBarStep;
+
+static int parse_one_trade_spec(PyObject *tup, TradeSpec *sp) {
+    if (!PyTuple_Check(tup) || PyTuple_GET_SIZE(tup) != 15) {
+        PyErr_SetString(PyExc_ValueError, "invalid trade spec tuple");
+        return -1;
+    }
+    memset(sp, 0, sizeof(TradeSpec));
+    sp->orig_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 0));
+    sp->entry_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 1));
+    sp->exit_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 2));
+    sp->sign = (int)PyLong_AsLong(PyTuple_GET_ITEM(tup, 3));
+    sp->open_at_end = PyObject_IsTrue(PyTuple_GET_ITEM(tup, 4));
+    if (PyErr_Occurred()) return -1;
+    if (parse_double_item(PyTuple_GET_ITEM(tup, 5), &sp->entry_spread_fill) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 6), &sp->exit_spread_fill) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 7), &sp->entry_margin) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 8), &sp->ec[0]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 9), &sp->ec[1]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 10), &sp->ec[2]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 11), &sp->xc[0]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 12), &sp->xc[1]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 13), &sp->xc[2]) < 0 ||
+        parse_double_item(PyTuple_GET_ITEM(tup, 14), &sp->exit_point) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int parse_trade_specs(PyObject *specs_lst, Py_ssize_t n_trades, TradeSpec **out_specs) {
+    *out_specs = NULL;
+    if (n_trades <= 0) return 0;
+    TradeSpec *specs = (TradeSpec *)FASTCORE_MALLOC((size_t)n_trades * sizeof(TradeSpec));
+    if (!specs) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    for (Py_ssize_t t = 0; t < n_trades; t++) {
+        if (parse_one_trade_spec(PyList_GET_ITEM(specs_lst, t), &specs[t]) < 0) {
+            FASTCORE_FREE(specs);
+            return -1;
+        }
+    }
+    *out_specs = specs;
+    return 0;
+}
+
+static int extract_row_funding(PyObject *row, double *out_unit_funding, int *out_contracts) {
+    *out_unit_funding = 0.0;
+    *out_contracts = 0;
+    PyObject *uf_obj = PyDict_GetItem(row, k_funding_rub);
+    if (uf_obj && uf_obj != Py_None && parse_double_item(uf_obj, out_unit_funding) < 0) {
+        return -1;
+    }
+    PyObject *uc_obj = PyDict_GetItem(row, k_funding_contracts);
+    if (uc_obj && uc_obj != Py_None) {
+        *out_contracts = (int)PyLong_AsLong(uc_obj);
+        if (*out_contracts == -1 && PyErr_Occurred()) return -1;
+    }
+    return 0;
+}
+
+static int scale_cost_triplet(const double src[3], double qd, double dst[3], double *out_fee) {
+    if (exact_round2(src[0] * qd, &dst[0]) < 0 ||
+        exact_round2(src[1] * qd, &dst[1]) < 0 ||
+        exact_round2(src[2] * qd, &dst[2]) < 0) {
+        return -1;
+    }
+    *out_fee = dst[0] + dst[1] + dst[2];
+    return 0;
+}
+
+static int apply_trade_exit_costs(TradeSpec *tr, double qd, int funding_only, double *out_fee) {
+    *out_fee = 0.0;
+    if (tr->open_at_end && funding_only) {
+        tr->has_exit_costs = 0;
+        return 0;
+    }
+    tr->has_exit_costs = 1;
+    return scale_cost_triplet(tr->xc, qd, tr->exit_scaled, out_fee);
+}
+
+static int append_ssize_item(PyObject *lst, Py_ssize_t val) {
+    PyObject *obj = PyLong_FromSsize_t(val);
+    if (!obj) return -1;
+    int rc = PyList_Append(lst, obj);
+    Py_DECREF(obj);
+    return rc;
+}
+
+static int step_open_position(SizingBarStep *st, int funding_only) {
+    TradeSpec *tr = st->pos_trade;
+    if (tr == NULL) return 0;
+    int exiting = (st->i == tr->exit_idx);
+    int should_exit = exiting && (st->is_exit_elig || tr->open_at_end);
+    int should_mark = should_exit || (st->is_elig && !exiting);
+    if (!should_mark) {
+        st->funding_owner = tr;
+        return 0;
+    }
+    double end_val = should_exit ? tr->exit_spread_fill : st->spread_i;
+    double pt = should_exit ? tr->exit_point : st->point_i;
+    double qd = (double)tr->quantity;
+    double chg = 0.0;
+    if (exact_round2(tr->sign * (end_val - st->pos_mark) * pt * qd, &chg) < 0) return -1;
+    tr->gross_rub += chg;
+    st->pos_mark = end_val;
+    st->daily += chg;
+    if (!should_exit) {
+        st->funding_owner = tr;
+        return 0;
+    }
+    if (st->unit_funding_contracts) st->funding_owner = tr;
+    double fee = 0.0;
+    if (apply_trade_exit_costs(tr, qd, funding_only, &fee) < 0) return -1;
+    if (tr->has_exit_costs) {
+        st->cost += fee;
+        st->fill_wealth += chg - fee;
+    }
+    st->pos_trade = NULL;
+    return 0;
+}
+
+static int try_open_candidate(
+    SizingBarStep *st, TradeSpec *cand, Py_ssize_t cand_idx,
+    const SizingRules *rules, PyObject *accepted_out
+) {
+    if (st->pos_trade != NULL) return 1; /* overlap */
+    double budget = fmax(0.0, fmin(st->fill_wealth, rules->initial));
+    Py_ssize_t q = 0;
+    if (!rules->paused &&
+        calc_max_quantity(budget, cand->entry_margin, cand->ec, rules->stress, rules->native_spread, &q) < 0) {
+        return -1;
+    }
+    if (q <= 0) return 0;
+
+    double qd = (double)q;
+    cand->quantity = q;
+    cand->gross_rub = 0.0;
+    double entry_fee = 0.0;
+    if (exact_round2(cand->entry_margin * qd, &cand->margin_rub) < 0 ||
+        scale_cost_triplet(cand->ec, qd, cand->entry_scaled, &entry_fee) < 0 ||
+        append_ssize_item(accepted_out, cand_idx) < 0) {
+        return -1;
+    }
+    st->cost += entry_fee;
+    st->pos_trade = cand;
+    st->pos_mark = cand->entry_spread_fill;
+    st->funding_owner = cand;
+    int same_day_exit = (cand->exit_idx == st->i);
+    if (st->is_elig) {
+        double end_val = same_day_exit ? cand->exit_spread_fill : st->spread_i;
+        double chg = 0.0;
+        if (exact_round2(cand->sign * (end_val - st->pos_mark) * st->point_i * qd, &chg) < 0) return -1;
+        cand->gross_rub += chg;
+        st->pos_mark = end_val;
+        st->daily += chg;
+    }
+    if (!same_day_exit) return 0;
+    double exit_fee = 0.0;
+    if (apply_trade_exit_costs(cand, qd, rules->funding_only, &exit_fee) < 0) return -1;
+    st->cost += exit_fee;
+    st->pos_trade = NULL;
+    return 0;
+}
+
+static int emit_ledger_row(
+    PyObject *ledger, Py_ssize_t i, PyObject *date_obj,
+    double cumulative, double wealth, int shortfall
+) {
+    PyObject *entry = _PyDict_NewPresized(4);
+    PyObject *cum_obj = PyFloat_FromDouble(cumulative);
+    PyObject *w_obj = PyFloat_FromDouble(wealth);
+    PyObject *sf_obj = shortfall ? Py_True : Py_False;
+    if (!entry || !cum_obj || !w_obj) {
+        Py_XDECREF(entry); Py_XDECREF(cum_obj); Py_XDECREF(w_obj);
+        return -1;
+    }
+    Py_INCREF(sf_obj);
+    int rc = (PyDict_SetItem(entry, k_date, date_obj) < 0 ||
+              PyDict_SetItem(entry, k_cumulative_net_rub, cum_obj) < 0 ||
+              PyDict_SetItem(entry, k_account_value_rub, w_obj) < 0 ||
+              PyDict_SetItem(entry, k_cash_shortfall, sf_obj) < 0)
+                 ? -1
+                 : 0;
+    Py_DECREF(cum_obj); Py_DECREF(w_obj); Py_DECREF(sf_obj);
+    if (rc < 0) {
+        Py_DECREF(entry);
+        return -1;
+    }
+    PyList_SET_ITEM(ledger, i, entry);
+    return 0;
+}
+
+static PyObject *build_accepted_tuples(
+    PyObject *accepted_out, const TradeSpec *specs, int scalar_only
+) {
+    Py_ssize_t n_acc = PyList_GET_SIZE(accepted_out);
+    PyObject *acc_tuples = PyList_New(n_acc);
+    if (!acc_tuples) return NULL;
+    if (n_acc > 0 && specs == NULL) {
+        Py_DECREF(acc_tuples);
+        PyErr_SetString(PyExc_RuntimeError, "accepted trades present without trade specs");
+        return NULL;
+    }
+    for (Py_ssize_t a = 0; a < n_acc; a++) {
+        Py_ssize_t sp_idx = PyLong_AsSsize_t(PyList_GET_ITEM(accepted_out, a));
+        const TradeSpec *sp = &specs[sp_idx];
+        PyObject *tup = NULL;
+        if (scalar_only) {
+            tup = Py_BuildValue("(nn)", sp->entry_idx, sp->exit_idx);
+        } else {
+            double gross_rounded = 0.0;
+            if (exact_round2(sp->gross_rub, &gross_rounded) < 0) {
+                Py_DECREF(acc_tuples);
+                return NULL;
+            }
+            tup = Py_BuildValue(
+                "(nnddddddddi)",
+                sp->orig_idx, sp->quantity, sp->margin_rub, gross_rounded,
+                sp->entry_scaled[0], sp->entry_scaled[1], sp->entry_scaled[2],
+                sp->exit_scaled[0], sp->exit_scaled[1], sp->exit_scaled[2],
+                sp->has_exit_costs
+            );
+        }
+        if (!tup) {
+            Py_DECREF(acc_tuples);
+            return NULL;
+        }
+        PyList_SET_ITEM(acc_tuples, a, tup);
+    }
+    return acc_tuples;
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size): CPython buffer & state orchestration
+static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *args) {
     PyObject *dates_lst;
     PyObject *prices_obj, *spreads_obj, *points_obj, *posted_obj;
     PyObject *elig_obj, *entry_elig_obj, *exit_elig_obj, *rows_lst, *specs_lst;
@@ -1021,17 +1228,9 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
     Py_ssize_t start_idx = 0, end_idx = -1;
 
     if (!PyArg_ParseTuple(
-            args, "O!OOOOOOOO!O!dpppp|pnn",
-            &PyList_Type, &dates_lst,
-            &prices_obj,
-            &spreads_obj,
-            &points_obj,
-            &posted_obj,
-            &elig_obj,
-            &entry_elig_obj,
-            &exit_elig_obj,
-            &PyList_Type, &rows_lst,
-            &PyList_Type, &specs_lst,
+            args, "O!OOOOOOOO!O!dpppp|pnn", &PyList_Type, &dates_lst,
+            &prices_obj, &spreads_obj, &points_obj, &posted_obj, &elig_obj, &entry_elig_obj, &exit_elig_obj,
+            &PyList_Type, &rows_lst, &PyList_Type, &specs_lst,
             &initial, &stress, &native_spread, &funding_only, &has_funding,
             &scalar_only, &start_idx, &end_idx)) {
         return NULL;
@@ -1053,6 +1252,7 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
     TradeSpec *specs = NULL;
     PyObject *ledger = NULL;
     PyObject *accepted_out = NULL;
+    PyObject *ret_obj = NULL;
 
     if (get_double_view(prices_obj, n, &pr_v, &h_pr, &pr_ow, &prices) < 0 ||
         get_double_view(spreads_obj, n, &sp_v, &h_sp, &sp_ow, &spreads) < 0 ||
@@ -1060,43 +1260,9 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
         get_double_view(posted_obj, n, &po_v, &h_po, &po_ow, &posted_units) < 0 ||
         get_uchar_view(elig_obj, n, &el_v, &h_el, &el_ow, &elig) < 0 ||
         get_uchar_view(entry_elig_obj, n, &en_v, &h_en, &en_ow, &entry_elig) < 0 ||
-        get_uchar_view(exit_elig_obj, n, &ex_v, &h_ex, &ex_ow, &exit_elig) < 0) {
+        get_uchar_view(exit_elig_obj, n, &ex_v, &h_ex, &ex_ow, &exit_elig) < 0 ||
+        parse_trade_specs(specs_lst, n_trades, &specs) < 0) {
         goto cleanup;
-    }
-
-    if (n_trades > 0) {
-        specs = (TradeSpec *)PyMem_Malloc((size_t)n_trades * sizeof(TradeSpec));
-        if (!specs) {
-            PyErr_NoMemory();
-            goto cleanup;
-        }
-        for (Py_ssize_t t = 0; t < n_trades; t++) {
-            PyObject *tup = PyList_GET_ITEM(specs_lst, t);
-            if (!PyTuple_Check(tup) || PyTuple_GET_SIZE(tup) != 15) {
-                PyErr_SetString(PyExc_ValueError, "invalid trade spec tuple");
-                goto cleanup;
-            }
-            TradeSpec *sp = &specs[t];
-            memset(sp, 0, sizeof(TradeSpec));
-            sp->orig_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 0));
-            sp->entry_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 1));
-            sp->exit_idx = PyLong_AsSsize_t(PyTuple_GET_ITEM(tup, 2));
-            sp->sign = (int)PyLong_AsLong(PyTuple_GET_ITEM(tup, 3));
-            sp->open_at_end = PyObject_IsTrue(PyTuple_GET_ITEM(tup, 4));
-            if (PyErr_Occurred() ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 5), &sp->entry_spread_fill) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 6), &sp->exit_spread_fill) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 7), &sp->entry_margin) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 8), &sp->ec[0]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 9), &sp->ec[1]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 10), &sp->ec[2]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 11), &sp->xc[0]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 12), &sp->xc[1]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 13), &sp->xc[2]) < 0 ||
-                parse_double_item(PyTuple_GET_ITEM(tup, 14), &sp->exit_point) < 0) {
-                goto cleanup;
-            }
-        }
     }
 
     if (!scalar_only) {
@@ -1108,7 +1274,7 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
 
     double cumulative = 0.0, free_cash = initial, posted = 0.0;
     double wealth = initial, peak = 0.0;
-    int paused = 0;
+    SizingRules rules = {stress, native_spread, funding_only, 0, initial};
     double p0 = (n > 0) ? prices[0] : 1.0;
 
     double end_wealth = initial, end_cum_net = 0.0, end_price = p0;
@@ -1121,63 +1287,21 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
     for (Py_ssize_t i = 0; i < n; i++) {
         double unit_funding = 0.0;
         int unit_funding_contracts = 0;
-        if (has_funding) {
-            PyObject *row = PyList_GET_ITEM(rows_lst, i);
-            PyObject *uf_obj = PyDict_GetItem(row, k_funding_rub);
-            if (uf_obj && uf_obj != Py_None) {
-                if (parse_double_item(uf_obj, &unit_funding) < 0) goto cleanup;
-            }
-            PyObject *uc_obj = PyDict_GetItem(row, k_funding_contracts);
-            if (uc_obj && uc_obj != Py_None) {
-                unit_funding_contracts = (int)PyLong_AsLong(uc_obj);
-                if (unit_funding_contracts == -1 && PyErr_Occurred()) goto cleanup;
-            }
+        if (has_funding &&
+            extract_row_funding(PyList_GET_ITEM(rows_lst, i), &unit_funding, &unit_funding_contracts) < 0) {
+            goto cleanup;
         }
 
         int is_elig = elig[i];
         int is_entry_elig = entry_elig[i];
         int is_exit_elig = exit_elig[i];
-        double daily = 0.0, cost = 0.0;
-        TradeSpec *funding_owner = NULL;
-        double fill_wealth = wealth;
+        SizingBarStep step = {
+            .i = i, .is_elig = is_elig, .is_exit_elig = is_exit_elig, .unit_funding_contracts = unit_funding_contracts,
+            .spread_i = spreads[i], .point_i = points[i], .pos_mark = pos_mark, .fill_wealth = wealth, .pos_trade = pos_trade
+        };
 
-        if (pos_trade != NULL) {
-            int exiting = (i == pos_trade->exit_idx);
-            int should_exit = exiting && (is_exit_elig || pos_trade->open_at_end);
-            if (should_exit || (is_elig && !exiting)) {
-                double end_val = should_exit ? pos_trade->exit_spread_fill : spreads[i];
-                double pt = should_exit ? pos_trade->exit_point : points[i];
-                double chg;
-                if (exact_round2(pos_trade->sign * (end_val - pos_mark) * pt * (double)pos_trade->quantity, &chg) < 0) {
-                    goto cleanup;
-                }
-                pos_trade->gross_rub += chg;
-                pos_mark = end_val;
-                daily += chg;
-                if (should_exit) {
-                    if (unit_funding_contracts) {
-                        funding_owner = pos_trade;
-                    }
-                    if (pos_trade->open_at_end && funding_only) {
-                        pos_trade->has_exit_costs = 0;
-                    } else {
-                        pos_trade->has_exit_costs = 1;
-                        double qd = (double)pos_trade->quantity;
-                        for (int k = 0; k < 3; k++) {
-                            if (exact_round2(pos_trade->xc[k] * qd, &pos_trade->exit_scaled[k]) < 0) {
-                                goto cleanup;
-                            }
-                        }
-                        double fee = pos_trade->exit_scaled[0] + pos_trade->exit_scaled[1] + pos_trade->exit_scaled[2];
-                        cost += fee;
-                        fill_wealth += chg - fee;
-                    }
-                    pos_trade = NULL;
-                }
-            }
-            if (pos_trade != NULL) {
-                funding_owner = pos_trade;
-            }
+        if (step_open_position(&step, funding_only) < 0) {
+            goto cleanup;
         }
 
         while (next_trade_cursor < n_trades && specs[next_trade_cursor].entry_idx < i) {
@@ -1187,88 +1311,31 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
                                    ? &specs[next_trade_cursor]
                                    : NULL;
         if (candidate != NULL && is_entry_elig) {
-            if (pos_trade != NULL) {
-                Py_XDECREF(ledger);
-                Py_DECREF(accepted_out);
-                if (h_pr) PyBuffer_Release(&pr_v);
-                if (h_sp) PyBuffer_Release(&sp_v);
-                if (h_pt) PyBuffer_Release(&pt_v);
-                if (h_po) PyBuffer_Release(&po_v);
-                if (h_el) PyBuffer_Release(&el_v);
-                if (h_en) PyBuffer_Release(&en_v);
-                if (h_ex) PyBuffer_Release(&ex_v);
-                PyMem_Free(pr_ow); PyMem_Free(sp_ow); PyMem_Free(pt_ow); PyMem_Free(po_ow);
-                PyMem_Free(el_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow); PyMem_Free(specs);
-                return Py_BuildValue("(sO)", "overlap", Py_None);
-            }
-            double budget = fill_wealth;
-            if (budget > initial) budget = initial;
-            if (budget < 0.0) budget = 0.0;
-            Py_ssize_t q = 0;
-            if (!paused) {
-                if (calc_max_quantity(budget, candidate->entry_margin, candidate->ec, stress, native_spread, &q) < 0) {
-                    goto cleanup;
-                }
-            }
-            if (q > 0) {
-                candidate->quantity = q;
-                if (exact_round2(candidate->entry_margin * (double)q, &candidate->margin_rub) < 0) goto cleanup;
-                candidate->gross_rub = 0.0;
-                for (int k = 0; k < 3; k++) {
-                    if (exact_round2(candidate->ec[k] * (double)q, &candidate->entry_scaled[k]) < 0) goto cleanup;
-                }
-                double fee = candidate->entry_scaled[0] + candidate->entry_scaled[1] + candidate->entry_scaled[2];
-                cost += fee;
-
-                PyObject *idx_obj = PyLong_FromSsize_t((Py_ssize_t)(next_trade_cursor));
-                if (!idx_obj || PyList_Append(accepted_out, idx_obj) < 0) {
-                    Py_XDECREF(idx_obj);
-                    goto cleanup;
-                }
-                Py_DECREF(idx_obj);
-
-                pos_trade = candidate;
-                pos_mark = candidate->entry_spread_fill;
-                funding_owner = candidate;
-                int same_day_exit = (candidate->exit_idx == i);
-                if (is_elig) {
-                    double end_val = same_day_exit ? candidate->exit_spread_fill : spreads[i];
-                    double chg;
-                    if (exact_round2(candidate->sign * (end_val - pos_mark) * points[i] * (double)q, &chg) < 0) {
-                        goto cleanup;
-                    }
-                    candidate->gross_rub += chg;
-                    pos_mark = end_val;
-                    daily += chg;
-                } else {
-                    pos_mark = candidate->entry_spread_fill;
-                }
-                if (same_day_exit) {
-                    if (candidate->open_at_end && funding_only) {
-                        candidate->has_exit_costs = 0;
-                    } else {
-                        candidate->has_exit_costs = 1;
-                        for (int k = 0; k < 3; k++) {
-                            if (exact_round2(candidate->xc[k] * (double)q, &candidate->exit_scaled[k]) < 0) goto cleanup;
-                        }
-                        cost += candidate->exit_scaled[0] + candidate->exit_scaled[1] + candidate->exit_scaled[2];
-                    }
-                    pos_trade = NULL;
-                }
+            int open_rc = try_open_candidate(&step, candidate, next_trade_cursor, &rules, accepted_out);
+            if (open_rc < 0) goto cleanup;
+            if (open_rc > 0) {
+                ret_obj = Py_BuildValue("(sO)", "overlap", Py_None);
+                goto cleanup;
             }
         }
 
-        Py_ssize_t funding_q = (funding_owner != NULL && unit_funding_contracts) ? funding_owner->quantity : 0;
-        double funding;
+        pos_trade = step.pos_trade;
+        pos_mark = step.pos_mark;
+        Py_ssize_t funding_q = (step.funding_owner != NULL && unit_funding_contracts)
+                                   ? step.funding_owner->quantity
+                                   : 0;
+        double funding = 0.0;
         if (exact_round2(unit_funding * (double)funding_q, &funding) < 0) goto cleanup;
-        if (funding_owner != NULL) {
-            funding_owner->gross_rub += funding;
+        if (step.funding_owner != NULL) {
+            step.funding_owner->gross_rub += funding;
         }
-        if (exact_round2(daily + funding, &daily) < 0) goto cleanup;
-        if (exact_round2(cost, &cost) < 0) goto cleanup;
-        if (exact_round2(cumulative + daily - cost, &cumulative) < 0) goto cleanup;
+        if (exact_round2(step.daily + funding, &step.daily) < 0 ||
+            exact_round2(step.cost, &step.cost) < 0 ||
+            exact_round2(cumulative + step.daily - step.cost, &cumulative) < 0) {
+            goto cleanup;
+        }
         double growth = (i > 0) ? (prices[i] / prices[i - 1]) : 1.0;
-        wealth = free_cash * growth + posted + daily - cost;
+        wealth = free_cash * growth + posted + step.daily - step.cost;
         if (pos_trade == NULL) {
             posted = 0.0;
         } else if (is_elig || is_entry_elig) {
@@ -1278,7 +1345,7 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
         int shortfall = (free_cash < -1e-7);
         double excess = wealth - initial * prices[i] / p0;
         if (excess > peak) peak = excess;
-        paused |= shortfall;
+        rules.paused |= shortfall;
 
         if (scalar_only) {
             if (i >= start_idx && i <= end_idx && shortfall) {
@@ -1289,91 +1356,24 @@ static PyObject *fast_size_proof_metrics(PyObject *self, PyObject *args) {
                 end_cum_net = cumulative;
                 end_price = prices[i];
             }
-        } else {
-            PyObject *entry = _PyDict_NewPresized(4);
-            PyObject *cum_obj = PyFloat_FromDouble(cumulative);
-            PyObject *w_obj = PyFloat_FromDouble(wealth);
-            PyObject *sf_obj = shortfall ? Py_True : Py_False;
-            if (!entry || !cum_obj || !w_obj) {
-                Py_XDECREF(entry); Py_XDECREF(cum_obj); Py_XDECREF(w_obj);
-                goto cleanup;
-            }
-            Py_INCREF(sf_obj);
-            PyObject *date_obj = PyList_GET_ITEM(dates_lst, i);
-            if (PyDict_SetItem(entry, k_date, date_obj) < 0 ||
-                PyDict_SetItem(entry, k_cumulative_net_rub, cum_obj) < 0 ||
-                PyDict_SetItem(entry, k_account_value_rub, w_obj) < 0 ||
-                PyDict_SetItem(entry, k_cash_shortfall, sf_obj) < 0) {
-                Py_DECREF(entry); Py_DECREF(cum_obj); Py_DECREF(w_obj); Py_DECREF(sf_obj);
-                goto cleanup;
-            }
-            Py_DECREF(cum_obj); Py_DECREF(w_obj); Py_DECREF(sf_obj);
-            PyList_SET_ITEM(ledger, i, entry);
+        } else if (emit_ledger_row(ledger, i, PyList_GET_ITEM(dates_lst, i), cumulative, wealth, shortfall) < 0) {
+            goto cleanup;
         }
     }
 
-    Py_ssize_t n_acc = PyList_GET_SIZE(accepted_out);
-    PyObject *acc_tuples = PyList_New(n_acc);
+    PyObject *acc_tuples = build_accepted_tuples(accepted_out, specs, scalar_only);
     if (!acc_tuples) goto cleanup;
-    for (Py_ssize_t a = 0; a < n_acc; a++) {
-        Py_ssize_t sp_idx = PyLong_AsSsize_t(PyList_GET_ITEM(accepted_out, a));
-        TradeSpec *sp = &specs[sp_idx];
-        if (scalar_only) {
-            PyObject *tup = Py_BuildValue("(nn)", sp->entry_idx, sp->exit_idx);
-            if (!tup) {
-                Py_DECREF(acc_tuples);
-                goto cleanup;
-            }
-            PyList_SET_ITEM(acc_tuples, a, tup);
-        } else {
-            double gross_rounded;
-            if (exact_round2(sp->gross_rub, &gross_rounded) < 0) {
-                Py_DECREF(acc_tuples);
-                goto cleanup;
-            }
-            PyObject *tup = Py_BuildValue(
-                "(nnddddddddi)",
-                sp->orig_idx, sp->quantity, sp->margin_rub, gross_rounded,
-                sp->entry_scaled[0], sp->entry_scaled[1], sp->entry_scaled[2],
-                sp->exit_scaled[0], sp->exit_scaled[1], sp->exit_scaled[2],
-                sp->has_exit_costs
-            );
-            if (!tup) {
-                Py_DECREF(acc_tuples);
-                goto cleanup;
-            }
-            PyList_SET_ITEM(acc_tuples, a, tup);
-        }
-    }
-    Py_DECREF(accepted_out);
-    accepted_out = NULL;
-
-    if (h_pr) PyBuffer_Release(&pr_v);
-    if (h_sp) PyBuffer_Release(&sp_v);
-    if (h_pt) PyBuffer_Release(&pt_v);
-    if (h_po) PyBuffer_Release(&po_v);
-    if (h_el) PyBuffer_Release(&el_v);
-    if (h_en) PyBuffer_Release(&en_v);
-    if (h_ex) PyBuffer_Release(&ex_v);
-    PyMem_Free(pr_ow); PyMem_Free(sp_ow); PyMem_Free(pt_ow); PyMem_Free(po_ow);
-    PyMem_Free(el_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow); PyMem_Free(specs);
 
     if (scalar_only) {
         PyObject *summary = Py_BuildValue("(ddddi)", p0, end_price, end_wealth, end_cum_net, any_window_shortfall);
-        if (!summary) {
-            Py_DECREF(acc_tuples);
-            return NULL;
+        if (summary) {
+            ret_obj = PyTuple_Pack(2, summary, acc_tuples);
+            Py_DECREF(summary);
         }
-        PyObject *ok = PyTuple_Pack(2, summary, acc_tuples);
-        Py_DECREF(summary);
-        Py_DECREF(acc_tuples);
-        return ok;
+    } else {
+        ret_obj = PyTuple_Pack(2, ledger, acc_tuples);
     }
-
-    PyObject *ok = PyTuple_Pack(2, ledger, acc_tuples);
-    Py_DECREF(ledger);
     Py_DECREF(acc_tuples);
-    return ok;
 
 cleanup:
     Py_XDECREF(ledger);
@@ -1385,9 +1385,9 @@ cleanup:
     if (h_el) PyBuffer_Release(&el_v);
     if (h_en) PyBuffer_Release(&en_v);
     if (h_ex) PyBuffer_Release(&ex_v);
-    PyMem_Free(pr_ow); PyMem_Free(sp_ow); PyMem_Free(pt_ow); PyMem_Free(po_ow);
-    PyMem_Free(el_ow); PyMem_Free(en_ow); PyMem_Free(ex_ow); PyMem_Free(specs);
-    return NULL;
+    FASTCORE_FREE(pr_ow); FASTCORE_FREE(sp_ow); FASTCORE_FREE(pt_ow); FASTCORE_FREE(po_ow);
+    FASTCORE_FREE(el_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow); FASTCORE_FREE(specs);
+    return ret_obj;
 }
 
 static PyMethodDef FastCoreMethods[] = {
@@ -1406,7 +1406,11 @@ static struct PyModuleDef fastcore_module = {
     "_fastcore",
     "Optional C99 accelerator for exact rolling z-score, calendar scans, payload cleaning, MR scan, and sizing.",
     -1,
-    FastCoreMethods
+    FastCoreMethods,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 PyMODINIT_FUNC PyInit__fastcore(void) {

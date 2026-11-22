@@ -5,11 +5,6 @@
       "baseline_nloc": 35,
       "baseline_parameters": 5
     },
-    "packages/core/src/moex_spread_lab/core/_fastcore.c::clean_recursive": {
-      "baseline_ccn": 39,
-      "baseline_nloc": 124,
-      "baseline_parameters": 1
-    },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_convergence_scan": {
       "baseline_ccn": 38,
       "baseline_nloc": 78,
@@ -36,8 +31,8 @@
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_size_proof_metrics": {
-      "baseline_ccn": 137,
-      "baseline_nloc": 355,
+      "baseline_ccn": 58,
+      "baseline_nloc": 153,
       "baseline_parameters": 2
     }
   },
@@ -53,7 +48,6 @@
     "packages/accounting/src/moex_spread_lab/accounting/run_artifact_import.py::import_baseline_artifact": 20,
     "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py::gc_run_artifacts": 20,
     "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py::verify_run_artifact": 27,
-    "packages/core/src/moex_spread_lab/core/_fastcore_loader.py::load_fastcore": 30,
     "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
     "packages/core/src/moex_spread_lab/core/w0.py::validate_manifest": 28,
     "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_data_and_accounting_siblings_are_strictly_isolated": 20,
@@ -179,8 +173,8 @@
       "baseline_tokens": 6344
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c": {
-      "baseline_loc": 1323,
-      "baseline_tokens": 14753
+      "baseline_loc": 1314,
+      "baseline_tokens": 14623
     },
     "packages/core/src/moex_spread_lab/core/w0.py": {
       "baseline_loc": 320,

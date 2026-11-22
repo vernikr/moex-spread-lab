@@ -255,18 +255,20 @@ The executable gate lives at `scripts/check_health.sh`; `scripts/architecture_ga
 
 ### Step 2 — C99 Static Analysis & Sanitizer Gate (PR 2, ~1–2 hours)
 
-**Scope:** `scripts/gen_compile_commands.py`, `.clang-tidy`, `packages/core/src/moex_spread_lab/core/_fastcore_loader.py`, `packages/core/src/moex_spread_lab/core/_fastcore.c`, `.gitignore`.
+**Status:** Implemented on `main`.
 
-1. Add `compile_commands.json` and `.repowise/` to `.gitignore`.
-2. Implement `scripts/gen_compile_commands.py` and `.clang-tidy`.
-3. Run `clang-tidy` on `_fastcore.c`:
-   - Fix any genuine `clang-analyzer` / `bugprone` findings immediately.
-   - Refactor `fast_size_proof_metrics` (`378` LOC) into 3–4 focused `static inline` C helpers (`parse_trade_specs`, `step_open_position`, `try_open_candidate`, `emit_ledger_row`) **or** add a scoped `NOLINTNEXTLINE(readability-function-size, readability-function-cognitive-complexity)` comment tracked for cleanup, verifying 0-ULP parity via `packages/proof/tests/test_perf_equivalence.py`.
-4. Add optional `MOEX_FASTCORE_SANITIZE=1` compilation path in `_fastcore_loader.py` (separate `.so` suffix so production cache is untouched) and verify `MOEX_FASTCORE_SANITIZE=1 uv run pytest packages/proof/tests/test_perf_equivalence.py` passes with zero ASan/UBSan reports on Linux and macOS.
+**Scope:** `scripts/gen_compile_commands.py`, `scripts/run_sanitized_pytest.py`, `.clang-tidy`, `packages/core/src/moex_spread_lab/core/_fastcore_loader.py`, `packages/core/src/moex_spread_lab/core/_fastcore.c`, `packages/core/tests/test_fastcore_sanitizers.py`, `config/code-health-baseline.json`, `.gitignore`.
+
+1. Added `compile_commands.json`, `.repowise/`, `reports/code-health/`, and `*.dSYM/` to `.gitignore`.
+2. Implemented `scripts/gen_compile_commands.py` (`-std=c99 -O3 -ffp-contract=off -fPIC -Wall -Wextra`) and `.clang-tidy` (`WarningsAsErrors: '*'` across `bugprone-*`, `clang-analyzer-core.*`, `clang-analyzer-unix.Malloc`, `clang-analyzer-security.*`, `performance-*`, `readability-function-cognitive-complexity`, `readability-function-size`, and `readability-misleading-indentation`).
+3. Cleaned `_fastcore.c` to `0` `clang-tidy` errors and `0` `clang -Wall -Wextra -Werror` warnings:
+   - Fixed `clang-analyzer-core.NullDereference` on `specs` when `n_trades <= 0`, `bugprone-narrowing-conversions` in `calc_max_quantity`, `Py_UNUSED(self)` / `PyModuleDef` initializer warnings, and an UndefinedBehaviorSanitizer `PyBytes_AS_STRING` alignment assumption in `fast_calendar_sample_z` (`memcpy` NaN fill).
+   - Decomposed `fast_size_proof_metrics` (`355 -> 153` NLOC, `ccn 137 -> 58`) into `parse_one_trade_spec`, `parse_trade_specs`, `extract_row_funding`, `scale_cost_triplet`, `apply_trade_exit_costs`, `step_open_position`, `try_open_candidate`, `emit_ledger_row`, and `build_accepted_tuples`, and deduplicated `clean_recursive` into `clean_dict_items` / `clean_list_items` / `clean_tuple_items` (removing `clean_recursive` from the C outlier baseline and ratcheting `_fastcore.c` down to `1,314` LOC).
+4. Added `MOEX_FASTCORE_SANITIZE=1` in `_fastcore_loader.py` (separate `_fastcore_asan<EXT_SUFFIX>` binary, `-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -ffp-contract=off`, `FASTCORE_MALLOC`/`FASTCORE_FREE` routing under `-DMOEX_FASTCORE_SANITIZE=1` so LSan sees `_fastcore` allocations rather than CPython's `pymalloc` arenas, plus preloaded-ASan runtime check) and `scripts/run_sanitized_pytest.py` (preloads `clang`'s dynamic ASan runtime on Linux `LD_PRELOAD` with `ASAN_OPTIONS=detect_leaks=1` + targeted CPython/DuckDB/NumPy/Arrow suppressions and macOS `DYLD_INSERT_LIBRARIES`).
 
 **Acceptance Gate:**
-- `clang-tidy` reports `0` errors on `_fastcore.c`.
-- `test_perf_equivalence.py` passes under AddressSanitizer + UndefinedBehaviorSanitizer (`ASAN_OPTIONS=detect_leaks=1`).
+- `clang-tidy` reports `0` errors on `_fastcore.c`; `clang -Wall -Wextra -Werror` reports `0` warnings.
+- `uv run python scripts/run_sanitized_pytest.py -v packages/proof/tests/test_perf_equivalence.py packages/proof/tests/test_fastcore_parity.py` passes (`12 passed`) under AddressSanitizer + UndefinedBehaviorSanitizer (`detect_leaks=1` on Linux, `DYLD_INSERT_LIBRARIES` on macOS) while keeping the production `_fastcore<EXT_SUFFIX>` cache untouched.
 
 ---
 

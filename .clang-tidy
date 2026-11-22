@@ -1,0 +1,29 @@
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-core.*,
+  clang-analyzer-unix.Malloc,
+  clang-analyzer-security.*,
+  performance-*,
+  readability-function-cognitive-complexity,
+  readability-function-size,
+  readability-misleading-indentation
+WarningsAsErrors: >
+  bugprone-*,
+  clang-analyzer-core.*,
+  clang-analyzer-unix.Malloc,
+  clang-analyzer-security.*,
+  performance-*,
+  readability-function-cognitive-complexity,
+  readability-function-size,
+  readability-misleading-indentation
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '20'
+  - key: readability-function-cognitive-complexity.IgnoreMacros
+    value: 'true'
+  - key: readability-function-size.LineThreshold
+    value: '120'
+  - key: readability-function-size.ParameterThreshold
+    value: '8'

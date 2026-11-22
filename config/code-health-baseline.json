@@ -54,7 +54,6 @@
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_prepare_cohort": 79,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_measure": 16,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_tune": 18,
-    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_validate": 18,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::CohortWorkerPool::eval_plateau_batch": 20,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::CohortWorkerPool::eval_point": 41,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::_estimate_weight": 30,
@@ -96,8 +95,8 @@
       "baseline_tokens": 8866
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": {
-      "baseline_loc": 472,
-      "baseline_tokens": 5763
+      "baseline_loc": 402,
+      "baseline_tokens": 4808
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": {
       "baseline_loc": 683,

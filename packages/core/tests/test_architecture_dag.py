@@ -44,14 +44,9 @@ _LAYER_SPECS: dict[str, str] = {
         "accounting.{,costs,portfolio,account_risk,position_sizing,sizing_fast,sizing_replay,sizing_report,sizing_terms,ledger,run_artifacts,run_artifact_import,run_artifact_store,validation,research,research_intake,research_simulation} "
         "costs portfolio account_risk position_sizing ledger run_artifacts run_artifact_import validation research"
     ),
+    # Strategy subfolders are classified from the filesystem below, not listed here.
     "strategies": (
         "strategies.{,base,registry,calendar_eval,cli_parsers,conformance,signals} "
-        "strategies.pair_mean_reversion.{,analytics,costs_helper,series_builder,fast_scan,baseline_runner,report_builder,engine,plugin} "
-        "strategies.funding_carry.{,carry,study,strategy_costs,strategy_report,strategy_runner,timeline,proof_funding,funding_recheck,funding_screen,engine,plugin,intents} "
-        "strategies.calendar_zscore.{,engine,plugin} strategies.calendar_ruonia.{,engine,plugin} "
-        "strategies.s3_reference.{,engine} "
-        "strategies.calendar.{,calendar_spreads,adjacent,contracts,data_cache,loaders,study,h1_candles,h1_windows,proof_ledger,proof_payload,catalog_builder,proof_runner,intents} "
-        "strategies.pair_screener.{,normalization,screener,pair_screener,inputs,catalog,result_builder,runner,intents} "
         "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
     "proof": "proof_runtime audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search",
@@ -96,6 +91,18 @@ def _discover_modules() -> dict[str, Path]:
             if (key := _module_key(root, path)) is not None:
                 discovered[key] = path
     return discovered
+
+
+# A new strategy is a new folder: it is classified and isolation-checked from disk,
+# so two branches adding strategies never edit this file.
+STRATEGIES_SRC = PACKAGES_DIR / "strategies/src/moex_spread_lab/strategies"
+SHARED_STRATEGY_INFRA = frozenset({"calendar", "pair_screener"})
+STRATEGY_SUBPACKAGES = frozenset(
+    path.name for path in STRATEGIES_SRC.glob("*") if path.is_dir() and path.name != "__pycache__"
+)
+LAYER_ASSIGNMENTS |= {
+    key: "strategies" for key in _discover_modules() if key.startswith("strategies.")
+}
 
 
 def _resolve_internal_target(
@@ -257,13 +264,7 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_strategy_plugin_subfolders_are_strictly_isolated(self) -> None:
         _, detailed_edges = _workspace_analysis()
-        plugins = {
-            "pair_mean_reversion",
-            "funding_carry",
-            "calendar_zscore",
-            "calendar_ruonia",
-            "s3_reference",
-        }
+        plugins = STRATEGY_SUBPACKAGES - SHARED_STRATEGY_INFRA
         shared = {"strategies", "strategies.base", "strategies.calendar_eval"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):

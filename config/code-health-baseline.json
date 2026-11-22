@@ -53,7 +53,6 @@
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_cohort_result": 17,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_prepare_cohort": 79,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_annualized_returns": 19,
-    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_lamps": 23,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_measure": 16,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_tune": 18,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_validate": 18,
@@ -98,8 +97,8 @@
       "baseline_tokens": 8866
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": {
-      "baseline_loc": 713,
-      "baseline_tokens": 8792
+      "baseline_loc": 572,
+      "baseline_tokens": 7113
     },
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": {
       "baseline_loc": 683,

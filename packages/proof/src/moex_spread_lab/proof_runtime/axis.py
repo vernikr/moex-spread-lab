@@ -24,3 +24,7 @@ class Axis:
         if self.step == 1:
             return trial.suggest_int(name, self.low, high)
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
+
+
+def _ordered(values):
+    return "exit_z" not in values or "entry_z" not in values or values["exit_z"] < values["entry_z"]

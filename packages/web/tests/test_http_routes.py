@@ -160,6 +160,22 @@ class WebHttpRoutesTests(unittest.TestCase):
             status, _, _ = self._request("GET", path, headers={"Origin": "http://evil.example"})
             self.assertEqual(status, 403, f"Origin check failed on {path}")
 
+    def test_allowed_hosts_env_admits_a_preview_proxy_only(self) -> None:
+        preview = "8742-area1.e2b.app"
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": preview}):
+            status, _, _ = self._request("GET", "/", headers={"Host": preview})
+            self.assertEqual(status, 200)
+            status, _, _ = self._request(
+                "GET", "/", headers={"Host": preview, "Origin": f"https://{preview}"}
+            )
+            self.assertEqual(status, 200)
+            status, _, _ = self._request("GET", "/", headers={"Host": "evil.example:8899"})
+            self.assertEqual(status, 403)
+            status, _, _ = self._request(
+                "GET", "/", headers={"Host": preview, "Origin": "https://evil.example"}
+            )
+            self.assertEqual(status, 403)
+
     def test_api_strategies_returns_canonical_registry_and_respects_timeframe(self) -> None:
         status, headers, raw = self._request("GET", "/api/strategies")
         self.assertEqual(status, 200)

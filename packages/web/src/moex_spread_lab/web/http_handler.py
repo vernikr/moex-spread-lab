@@ -8,6 +8,7 @@ decide *what* to answer.
 from __future__ import annotations
 
 import json
+import os
 import select
 import socket
 from contextlib import suppress
@@ -72,18 +73,33 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         """The bound loopback port; `BaseServer` does not declare it."""
         return getattr(self.server, "server_port", 0)
 
-    def local_request(self) -> bool:
-        host = self.headers.get("Host", "")
+    def trusted_hosts(self) -> set[str]:
+        """Loopback hosts plus any explicitly allow-listed preview/proxy hosts.
+
+        `MSL_ALLOWED_HOSTS` (comma separated) exists for cloud-agent previews that proxy the
+        loopback server under an external hostname; it never relaxes the loopback bind itself.
+        """
         port = self.server_port()
-        return host in {f"127.0.0.1:{port}", f"localhost:{port}"}
+        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        extra = os.environ.get("MSL_ALLOWED_HOSTS", "")
+        hosts.update(part.strip() for part in extra.split(",") if part.strip())
+        return hosts
+
+    def local_request(self) -> bool:
+        return self.headers.get("Host", "") in self.trusted_hosts()
 
     def local_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
         port = self.server_port()
-        return self.headers.get("Origin") in (
-            None,
-            f"http://127.0.0.1:{port}",
-            f"http://localhost:{port}",
-        )
+        allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+        allowed |= {
+            f"https://{host}"
+            for host in self.trusted_hosts()
+            if not host.startswith(("127.0.0.1", "localhost"))
+        }
+        return origin in allowed
 
     def check_connected(self) -> None:
         """Abort an expensive replay after its browser fetch has been cancelled."""

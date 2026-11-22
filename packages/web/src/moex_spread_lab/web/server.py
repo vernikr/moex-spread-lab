@@ -157,12 +157,14 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def serve(inputs: ScreenerInputs, port: int = 8765) -> None:
+def serve(inputs: ScreenerInputs, port: int = 8765, host: str = "127.0.0.1") -> None:
     if not 0 <= port <= 65535:
         raise ScreenerError("порт должен быть в диапазоне 0–65535")
+    if host not in {"127.0.0.1", "0.0.0.0"}:
+        raise ScreenerError("host должен быть 127.0.0.1 или 0.0.0.0")
     store = ScreenerStore(inputs)
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(store))
-    print(f"Local research screener: http://127.0.0.1:{server.server_port}", flush=True)
+    server = ThreadingHTTPServer((host, port), make_handler(store))
+    print(f"Local research screener: http://{host}:{server.server_port}", flush=True)
     try:
         server.serve_forever()
     finally:

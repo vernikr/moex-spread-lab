@@ -17,12 +17,12 @@ from typing import Any
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.lake.bar_types import SealedH1Reader
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
 from .worker_metrics import submit_worker, unwrap_worker_result
+from .worker_weight import _estimate_weight
 from .worker_window import _worker_service, _worker_window_summaries
 
 MIN_POOL_WINDOWS = 3
@@ -230,42 +230,6 @@ def _worker_report_cohort(
                 )
             )
     return rows
-
-
-def _estimate_weight(
-    root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None
-) -> int:
-    if timeframe == "1h" and item.get("universe") == "pair_screen":
-        pair = str(item.get("pair") or "")
-        parts = pair.split("/")
-        if len(parts) == 2:
-            if _seal_cache is not None and "reader" in _seal_cache:
-                reader = _seal_cache["reader"]
-                seal = _seal_cache["seal"]
-                by_legacy = _seal_cache["by_legacy"]
-            else:
-                reader = SealedH1Reader(root)
-                seal = reader.payload()
-                by_legacy = (
-                    {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
-                )
-                if _seal_cache is not None:
-                    _seal_cache["reader"] = reader
-                    _seal_cache["seal"] = seal
-                    _seal_cache["by_legacy"] = by_legacy
-            if seal is not None:
-                selected = reader.select(parts[1]).relative_to(reader.root).as_posix()
-                entry = by_legacy.get(selected)
-                if entry is not None:
-                    return max(100, entry["logical_bytes"] // 128)
-                return 1000
-            for subdir in ("candles-screen", "candles"):
-                p = root / "data/w1" / subdir / f"{parts[1]}_1h.json"
-                try:
-                    return max(100, p.stat().st_size // 128)
-                except OSError:
-                    pass
-    return 1000 if timeframe == "1h" else 200
 
 
 def _await_futures(futures, check_cancelled, on_done=None):

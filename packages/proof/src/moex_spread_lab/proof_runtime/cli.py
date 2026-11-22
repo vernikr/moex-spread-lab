@@ -9,11 +9,13 @@ from moex_spread_lab.core.w0 import write_json
 
 
 def register(subparsers):
-    audit_parser = subparsers.add_parser("audit-pairs", help="independently recompute and audit the screener's price-only control for every local pair")
+    audit_parser = subparsers.add_parser(
+        "audit-pairs",
+        help="independently recompute and audit the screener's price-only control for every local pair",
+    )
     audit_parser.add_argument("--root", type=Path, default=Path.cwd())
     audit_parser.add_argument("--output", type=Path, required=True)
     audit_parser.set_defaults(_msl_cli_handler=run)
-
 
 
 def run(args):

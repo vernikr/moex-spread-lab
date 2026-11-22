@@ -17,10 +17,10 @@ from .server import (
 
 __all__ = [
     "STATIC_DIR",
+    "VENDOR_DIR",
     "ScreenerError",
     "ScreenerInputs",
     "ScreenerStore",
-    "VENDOR_DIR",
     "build_result",
     "catalog",
     "make_handler",

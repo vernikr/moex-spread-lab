@@ -1,4 +1,5 @@
 """Fail-closed validation of externally supplied calendar price intents."""
+
 from copy import deepcopy
 from dataclasses import replace
 
@@ -8,13 +9,26 @@ from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.intents import calendar_intent_trades
 
-
-ROWS = tuple({"date": f"2026-01-0{i}", "spread": float(i), "open_spread": float(i) + .5,
-              "signal_eligible": True, "entry_eligible": True, "exit_eligible": True}
-             for i in range(1, 6))
-TRADE = {"side": "long_spread", "entry_date": ROWS[1]["date"], "exit_date": ROWS[3]["date"],
-         "entry_price": 2.5, "exit_price": 4.5,
-         "signal": {"date": ROWS[0]["date"], "kind": "custom", "value": 1.0}, "reason": "exit"}
+ROWS = tuple(
+    {
+        "date": f"2026-01-0{i}",
+        "spread": float(i),
+        "open_spread": float(i) + 0.5,
+        "signal_eligible": True,
+        "entry_eligible": True,
+        "exit_eligible": True,
+    }
+    for i in range(1, 6)
+)
+TRADE = {
+    "side": "long_spread",
+    "entry_date": ROWS[1]["date"],
+    "exit_date": ROWS[3]["date"],
+    "entry_price": 2.5,
+    "exit_price": 4.5,
+    "signal": {"date": ROWS[0]["date"], "kind": "custom", "value": 1.0},
+    "reason": "exit",
+}
 
 
 class Plugin:
@@ -33,8 +47,12 @@ class Plugin:
 
 
 def run(items, rows=ROWS, **kwargs):
-    return calendar_intent_trades(Plugin(items, **kwargs), WindowSnapshot(
-        universe="calendar_native", pair="A/B", rows=deepcopy(rows)), {"value": 1}, "next_open")
+    return calendar_intent_trades(
+        Plugin(items, **kwargs),
+        WindowSnapshot(universe="calendar_native", pair="A/B", rows=deepcopy(rows)),
+        {"value": 1},
+        "next_open",
+    )
 
 
 def test_valid_intent_rebinds_to_market_rows():
@@ -51,13 +69,21 @@ def test_plugin_mutation_does_not_change_market_data_or_parameters():
     assert rows == ROWS
 
 
-@pytest.mark.parametrize("changes", [
-    {"entry_price": -100}, {"exit_price": float("nan")}, {"entry_date": "missing"},
-    {"side": "unknown"}, {"reason": ""}, {"reason": "end_of_sample"},
-    {"signal": {"date": ROWS[1]["date"], "kind": "x", "value": 1}},
-    {"signal": {"date": ROWS[0]["date"], "kind": "x", "value": float("nan")}},
-    {"reason": "end_of_window"}, {"exit_date": ROWS[1]["date"], "exit_price": 2.5},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"entry_price": -100},
+        {"exit_price": float("nan")},
+        {"entry_date": "missing"},
+        {"side": "unknown"},
+        {"reason": ""},
+        {"reason": "end_of_sample"},
+        {"signal": {"date": ROWS[1]["date"], "kind": "x", "value": 1}},
+        {"signal": {"date": ROWS[0]["date"], "kind": "x", "value": float("nan")}},
+        {"reason": "end_of_window"},
+        {"exit_date": ROWS[1]["date"], "exit_price": 2.5},
+    ],
+)
 def test_invalid_intents_are_rejected(changes):
     with pytest.raises(W0Error):
         run([{**TRADE, **changes}])
@@ -80,7 +106,12 @@ def test_overlap_duplicate_and_ineligible_are_rejected():
 def test_terminal_mark_can_be_ineligible_only_at_last_row():
     rows = deepcopy(ROWS)
     rows[-1]["exit_eligible"] = False
-    terminal = {**TRADE, "exit_date": rows[-1]["date"], "exit_price": 5.5, "reason": "end_of_window"}
+    terminal = {
+        **TRADE,
+        "exit_date": rows[-1]["date"],
+        "exit_price": 5.5,
+        "reason": "end_of_window",
+    }
     assert run([terminal], rows)[0]["reason"] == "end_of_window"
 
 
@@ -93,5 +124,9 @@ def test_nonmonotonic_rows_and_wrong_identity_are_rejected():
             return replace(super().evaluate_intents(window, params, fill), strategy_id="wrong")
 
     with pytest.raises(W0Error):
-        calendar_intent_trades(Wrong([TRADE]), WindowSnapshot(
-            universe="calendar_native", pair="A/B", rows=ROWS), {"value": 1}, "next_open")
+        calendar_intent_trades(
+            Wrong([TRADE]),
+            WindowSnapshot(universe="calendar_native", pair="A/B", rows=ROWS),
+            {"value": 1},
+            "next_open",
+        )

@@ -6,8 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.core.w0 import W0Error, canonical_bytes, load_json, sha256_bytes, sha256_file, validate_manifest
-
+from moex_spread_lab.core.w0 import (
+    W0Error,
+    canonical_bytes,
+    load_json,
+    sha256_bytes,
+    sha256_file,
+    validate_manifest,
+)
 
 RESEARCH_FIXTURE_SCHEMA = "research.fixture.v1"
 RESEARCH_REPORT_SCHEMA = "research.report.v1"
@@ -47,9 +53,24 @@ def load_research_fixture(path: Path) -> dict[str, Any]:
     if _require(fixture, "schema_version", "research fixture") != RESEARCH_FIXTURE_SCHEMA:
         raise ResearchError("unsupported research fixture schema")
     source = _require(fixture, "source", "research fixture")
-    if source.get("rights_status") != "synthetic_test_data" or source.get("network_required") is not False:
-        raise ResearchError("research fixture must declare synthetic_test_data and network_required=false")
-    for section in ("catalog", "prices", "corporate_actions", "contracts", "spread_series", "execution", "portfolio", "strategy", "validation"):
+    if (
+        source.get("rights_status") != "synthetic_test_data"
+        or source.get("network_required") is not False
+    ):
+        raise ResearchError(
+            "research fixture must declare synthetic_test_data and network_required=false"
+        )
+    for section in (
+        "catalog",
+        "prices",
+        "corporate_actions",
+        "contracts",
+        "spread_series",
+        "execution",
+        "portfolio",
+        "strategy",
+        "validation",
+    ):
         _require(fixture, section, "research fixture")
     return fixture
 
@@ -73,13 +94,23 @@ def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
             stable_id = _require(instrument, "stable_id", "catalog instrument")
             if stable_id in instruments:
                 raise ResearchError(f"duplicate stable instrument identity: {stable_id}")
-            for field in ("board", "security", "short_code", "expiry", "lot_size", "tick_size", "settlement_type"):
+            for field in (
+                "board",
+                "security",
+                "short_code",
+                "expiry",
+                "lot_size",
+                "tick_size",
+                "settlement_type",
+            ):
                 _require(instrument, field, f"catalog instrument {stable_id}")
             if not isinstance(instrument["lot_size"], int) or instrument["lot_size"] <= 0:
                 raise ResearchError(f"invalid lot size for {stable_id}")
             _timestamp(instrument["expiry"], f"expiry for {stable_id}")
             if instrument.get("historical_status") == "current_snapshot":
-                raise ResearchError(f"current snapshot cannot stand in for historical evidence: {stable_id}")
+                raise ResearchError(
+                    f"current snapshot cannot stand in for historical evidence: {stable_id}"
+                )
             instruments[stable_id] = instrument
 
     aliases = _require(catalog, "aliases", "catalog")
@@ -92,7 +123,14 @@ def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
         _require(alias, "source_code", "catalog alias")
 
     prices = fixture["prices"]
-    required_roles = {"settlement", "analytical_close", "last_trade_close", "bid", "ask", "live_mark"}
+    required_roles = {
+        "settlement",
+        "analytical_close",
+        "last_trade_close",
+        "bid",
+        "ask",
+        "live_mark",
+    }
     price_rows = 0
     for row in prices:
         stable_id = _require(row, "stable_id", "price row")
@@ -103,7 +141,9 @@ def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
         if row.get("source_vintage") in (None, ""):
             raise ResearchError(f"price row has no source vintage: {stable_id}")
         if required_roles - set(row):
-            raise ResearchError(f"price roles missing for {stable_id}: {sorted(required_roles - set(row))}")
+            raise ResearchError(
+                f"price roles missing for {stable_id}: {sorted(required_roles - set(row))}"
+            )
         if row["bid"] > row["ask"]:
             raise ResearchError(f"bid exceeds ask for {stable_id}")
         price_rows += 1
@@ -114,13 +154,17 @@ def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
         near = _require(candidate, "near_stable_id", "candidate")
         far = _require(candidate, "far_stable_id", "candidate")
         admitted = near in instruments and far in instruments and near != far
-        candidate_results.append({
-            "candidate_id": _require(candidate, "candidate_id", "candidate"),
-            "near_stable_id": near,
-            "far_stable_id": far,
-            "status": "admitted" if admitted else "not_admitted",
-            "reason": "stable identities and contract terms present" if admitted else "missing or repeated stable identity",
-        })
+        candidate_results.append(
+            {
+                "candidate_id": _require(candidate, "candidate_id", "candidate"),
+                "near_stable_id": near,
+                "far_stable_id": far,
+                "status": "admitted" if admitted else "not_admitted",
+                "reason": "stable identities and contract terms present"
+                if admitted
+                else "missing or repeated stable identity",
+            }
+        )
     if not any(result["status"] == "admitted" for result in candidate_results):
         raise ResearchError("catalog has no admitted candidate")
     return {
@@ -151,14 +195,20 @@ def run_w2_corporate_actions(fixture: dict[str, Any]) -> dict[str, Any]:
             _timestamp(available_at, f"available_at for {action_id}")
         if action.get("conflict_status") == "conflict":
             conflicts.append(action_id)
-        signal_eligible = available_at is not None and action.get("conflict_status") == "none" and action.get("source_role") == "primary"
+        signal_eligible = (
+            available_at is not None
+            and action.get("conflict_status") == "none"
+            and action.get("source_role") == "primary"
+        )
         if signal_eligible:
             eligible.append(action_id)
         else:
-            blocked.append({
-                "action_id": action_id,
-                "reason": "missing availability vintage, non-primary source or unresolved conflict",
-            })
+            blocked.append(
+                {
+                    "action_id": action_id,
+                    "reason": "missing availability vintage, non-primary source or unresolved conflict",
+                }
+            )
 
     gap_checks = fixture.get("price_gap_checks", [])
     for check in gap_checks:
@@ -169,7 +219,9 @@ def run_w2_corporate_actions(fixture: dict[str, Any]) -> dict[str, Any]:
         if "action_id" in check:
             raise ResearchError("price gap diagnostic cannot overwrite a factual action")
     if not eligible or not blocked or not conflicts:
-        raise ResearchError("corporate-action fixture must exercise eligible, blocked and conflict paths")
+        raise ResearchError(
+            "corporate-action fixture must exercise eligible, blocked and conflict paths"
+        )
     return {
         "wave": "W2",
         "status": "passed",
@@ -189,7 +241,14 @@ def run_w3_economics(fixture: dict[str, Any]) -> dict[str, Any]:
         if contract_id in contract_ids:
             raise ResearchError(f"duplicate contract terms: {contract_id}")
         contract_ids.add(contract_id)
-        for field in ("lot_size", "tick_size", "multiplier", "settlement_type", "price_unit", "margin_requirement"):
+        for field in (
+            "lot_size",
+            "tick_size",
+            "multiplier",
+            "settlement_type",
+            "price_unit",
+            "margin_requirement",
+        ):
             _require(contract, field, f"contract terms {contract_id}")
         if not isinstance(contract["lot_size"], int) or contract["lot_size"] <= 0:
             raise ResearchError(f"contract lot must be a positive integer: {contract_id}")
@@ -197,12 +256,19 @@ def run_w3_economics(fixture: dict[str, Any]) -> dict[str, Any]:
             _positive_number(contract[field], f"{field} for {contract_id}")
         _timestamp(contract["expiry"], f"contract expiry for {contract_id}")
 
-    cost_profiles = [_require(contract, "cost_profile", f"contract terms {contract['stable_id']}") for contract in contracts]
+    cost_profiles = [
+        _require(contract, "cost_profile", f"contract terms {contract['stable_id']}")
+        for contract in contracts
+    ]
     components = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
     if any(profile.get(component) is None for profile in cost_profiles for component in components):
         raise ResearchError("unknown cost component cannot become zero")
-    cost_per_leg = sum(float(profile[component]) for profile in cost_profiles for component in components) / len(cost_profiles)
-    total_cost = sum(float(profile[component]) for profile in cost_profiles for component in components)
+    cost_per_leg = sum(
+        float(profile[component]) for profile in cost_profiles for component in components
+    ) / len(cost_profiles)
+    total_cost = sum(
+        float(profile[component]) for profile in cost_profiles for component in components
+    )
 
     spreads = fixture["spread_series"]
     if not spreads:
@@ -235,13 +301,27 @@ def run_w4_execution(fixture: dict[str, Any]) -> dict[str, Any]:
     results = []
     for attempt in attempts:
         attempt_id = _require(attempt, "attempt_id", "execution attempt")
-        signal_at = _timestamp(_require(attempt, "signal_at", f"execution {attempt_id}"), f"signal_at {attempt_id}")
-        decision_at = _timestamp(_require(attempt, "decision_at", f"execution {attempt_id}"), f"decision_at {attempt_id}")
+        signal_at = _timestamp(
+            _require(attempt, "signal_at", f"execution {attempt_id}"), f"signal_at {attempt_id}"
+        )
+        decision_at = _timestamp(
+            _require(attempt, "decision_at", f"execution {attempt_id}"), f"decision_at {attempt_id}"
+        )
         if decision_at < signal_at:
             raise ResearchError(f"decision precedes signal: {attempt_id}")
         if attempt.get("midpoint") is not None:
             raise ResearchError(f"midpoint cannot be a fill price: {attempt_id}")
-        required = ("session_open", "quote_age_seconds", "max_quote_age_seconds", "requested_qty", "filled_near_qty", "filled_far_qty", "cost_status", "capital_status", "margin_status")
+        required = (
+            "session_open",
+            "quote_age_seconds",
+            "max_quote_age_seconds",
+            "requested_qty",
+            "filled_near_qty",
+            "filled_far_qty",
+            "cost_status",
+            "capital_status",
+            "margin_status",
+        )
         for field in required:
             _require(attempt, field, f"execution {attempt_id}")
         requested = attempt["requested_qty"]
@@ -249,14 +329,23 @@ def run_w4_execution(fixture: dict[str, Any]) -> dict[str, Any]:
             raise ResearchError(f"requested quantity must be a positive integer: {attempt_id}")
         for field in ("filled_near_qty", "filled_far_qty"):
             if not isinstance(attempt[field], int) or not 0 <= attempt[field] <= requested:
-                raise ResearchError(f"{field} must be an integer between zero and requested quantity: {attempt_id}")
-        if not isinstance(attempt["quote_age_seconds"], (int, float)) or attempt["quote_age_seconds"] < 0:
+                raise ResearchError(
+                    f"{field} must be an integer between zero and requested quantity: {attempt_id}"
+                )
+        if (
+            not isinstance(attempt["quote_age_seconds"], (int, float))
+            or attempt["quote_age_seconds"] < 0
+        ):
             raise ResearchError(f"quote age must be non-negative: {attempt_id}")
         if attempt["session_open"] is not True:
             outcome = "rejected_session"
         elif attempt["quote_age_seconds"] > attempt["max_quote_age_seconds"]:
             outcome = "rejected_stale"
-        elif attempt["cost_status"] != "known" or attempt["capital_status"] != "passed" or attempt["margin_status"] != "passed":
+        elif (
+            attempt["cost_status"] != "known"
+            or attempt["capital_status"] != "passed"
+            or attempt["margin_status"] != "passed"
+        ):
             outcome = "rejected_gate"
         elif attempt["filled_near_qty"] == requested and attempt["filled_far_qty"] == requested:
             outcome = "filled_balanced"
@@ -264,7 +353,14 @@ def run_w4_execution(fixture: dict[str, Any]) -> dict[str, Any]:
             outcome = "partial_unbalanced"
         else:
             outcome = "unfilled_no_quote"
-        results.append({"attempt_id": attempt_id, "lifecycle": attempt["lifecycle"], "scenario": attempt["scenario"], "outcome": outcome})
+        results.append(
+            {
+                "attempt_id": attempt_id,
+                "lifecycle": attempt["lifecycle"],
+                "scenario": attempt["scenario"],
+                "outcome": outcome,
+            }
+        )
     counts: dict[str, int] = {}
     for result in results:
         counts[result["outcome"]] = counts.get(result["outcome"], 0) + 1
@@ -311,15 +407,17 @@ def run_w5_portfolio(fixture: dict[str, Any], execution: dict[str, Any]) -> dict
         excess = strategy - benchmark
         peak = max(peak, excess)
         drawdown = peak - excess
-        rows.append({
-            "event_time": mark["event_time"],
-            "strategy_value": _round(strategy),
-            "benchmark_value": _round(benchmark),
-            "X": _round(excess),
-            "H": _round(peak),
-            "D": _round(drawdown),
-            "cumulative_costs": _round(cumulative_costs),
-        })
+        rows.append(
+            {
+                "event_time": mark["event_time"],
+                "strategy_value": _round(strategy),
+                "benchmark_value": _round(benchmark),
+                "X": _round(excess),
+                "H": _round(peak),
+                "D": _round(drawdown),
+                "cumulative_costs": _round(cumulative_costs),
+            }
+        )
     if rows[0]["X"] != 0:
         raise ResearchError("X(0) must equal zero")
     additional_funding = sum(float(mark.get("additional_funding", 0)) for mark in marks)
@@ -334,7 +432,9 @@ def run_w5_portfolio(fixture: dict[str, Any], execution: dict[str, Any]) -> dict
         if item["outcome"] == "partial_unbalanced":
             unbalanced_attempts += 1
         elif item["outcome"] == "filled_balanced":
-            balanced_position += 1 if item["lifecycle"] == "entry" else -1 if item["lifecycle"] == "exit" else 0
+            balanced_position += (
+                1 if item["lifecycle"] == "entry" else -1 if item["lifecycle"] == "exit" else 0
+            )
     event_types = ["portfolio_open"]
     event_types.extend(f"execution_attempt:{item['outcome']}" for item in execution["attempts"])
     event_types.extend(item["lifecycle"] for item in full_fills)
@@ -360,13 +460,27 @@ def run_w5_portfolio(fixture: dict[str, Any], execution: dict[str, Any]) -> dict
 def run_w6_strategy(fixture: dict[str, Any], portfolio: dict[str, Any]) -> dict[str, Any]:
     strategy = fixture["strategy"]
     config = _require(strategy, "mean_reversion", "strategy")
-    for field in ("lookback", "entry_threshold_ticks", "exit_threshold_ticks", "max_quantity", "aggregate_cap"):
+    for field in (
+        "lookback",
+        "entry_threshold_ticks",
+        "exit_threshold_ticks",
+        "max_quantity",
+        "aggregate_cap",
+    ):
         _require(config, field, "mean-reversion configuration")
-    for field in ("lookback", "entry_threshold_ticks", "exit_threshold_ticks", "max_quantity", "aggregate_cap"):
+    for field in (
+        "lookback",
+        "entry_threshold_ticks",
+        "exit_threshold_ticks",
+        "max_quantity",
+        "aggregate_cap",
+    ):
         if not isinstance(config[field], int) or config[field] <= 0:
             raise ResearchError(f"strategy parameter must be a positive integer: {field}")
     ladder = _require(config, "ladder", "mean-reversion configuration")
-    if not ladder or any(not isinstance(step.get("quantity"), int) or step["quantity"] <= 0 for step in ladder):
+    if not ladder or any(
+        not isinstance(step.get("quantity"), int) or step["quantity"] <= 0 for step in ladder
+    ):
         raise ResearchError("exposure ladder quantities must be positive integers")
     if sum(step["quantity"] for step in ladder) > config["aggregate_cap"]:
         raise ResearchError("exposure ladder exceeds aggregate cap")
@@ -374,28 +488,49 @@ def run_w6_strategy(fixture: dict[str, Any], portfolio: dict[str, Any]) -> dict[
         raise ResearchError("entry sizing cannot use emergency funding")
 
     stress = _require(config, "stress", "mean-reversion configuration")
-    stress_loss = _positive_number(_require(stress, "stressed_incremental_loss", "strategy stress"), "stressed incremental loss")
+    stress_loss = _positive_number(
+        _require(stress, "stressed_incremental_loss", "strategy stress"),
+        "stressed incremental loss",
+    )
     reserve = _positive_number(_require(stress, "reserve", "strategy stress"), "strategy reserve")
-    margin = _positive_number(_require(stress, "initial_margin", "strategy stress"), "initial margin")
+    margin = _positive_number(
+        _require(stress, "initial_margin", "strategy stress"), "initial margin"
+    )
     envelope = float(portfolio["initial_capital"])
     stress_passed = envelope - stress_loss - reserve - margin >= 0
     if not stress_passed:
         raise ResearchError("strategy stress test exceeds the original capital envelope")
 
     signals = []
-    mean = sum(float(row["spread_ticks"]) for row in fixture["spread_series"]) / len(fixture["spread_series"])
+    mean = sum(float(row["spread_ticks"]) for row in fixture["spread_series"]) / len(
+        fixture["spread_series"]
+    )
     for row in fixture["spread_series"]:
         distance = float(row["spread_ticks"]) - mean
         if abs(distance) >= config["entry_threshold_ticks"]:
             signal = "eligible_entry"
         else:
             signal = "no_signal"
-        signals.append({"event_time": row["event_time"], "signal": signal, "distance_from_mean_ticks": round(distance, 4)})
+        signals.append(
+            {
+                "event_time": row["event_time"],
+                "signal": signal,
+                "distance_from_mean_ticks": round(distance, 4),
+            }
+        )
 
     trials = [
         {"trial_id": "no-trade-control", "status": "accepted", "reason": "benchmark control"},
-        {"trial_id": "mean-reversion-v1", "status": "accepted", "reason": "fixed parameters and finite ladder"},
-        {"trial_id": "carry-v1", "status": "rejected", "reason": "reference-rate evidence is not present in synthetic fixture"},
+        {
+            "trial_id": "mean-reversion-v1",
+            "status": "accepted",
+            "reason": "fixed parameters and finite ladder",
+        },
+        {
+            "trial_id": "carry-v1",
+            "status": "rejected",
+            "reason": "reference-rate evidence is not present in synthetic fixture",
+        },
     ]
     return {
         "wave": "W6",
@@ -416,7 +551,9 @@ def run_w6_strategy(fixture: dict[str, Any], portfolio: dict[str, Any]) -> dict[
     }
 
 
-def run_w7_validation(fixture: dict[str, Any], portfolio: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any]:
+def run_w7_validation(
+    fixture: dict[str, Any], portfolio: dict[str, Any], strategy: dict[str, Any]
+) -> dict[str, Any]:
     rows = portfolio["rows"]
     validation = fixture["validation"]
     train_end = validation["train_end"]
@@ -428,8 +565,16 @@ def run_w7_validation(fixture: dict[str, Any], portfolio: dict[str, Any], strate
     base_x = rows[-1]["X"]
     for delay in validation["delay_seconds"]:
         if not isinstance(delay, int) or delay < 0 or delay > 5400:
-            raise ResearchError("delay sensitivity must remain within the declared 0-90 minute range (seconds)")
-        delay_sensitivity.append({"delay_seconds": delay, "result_status": "synthetic_sensitivity_only", "X": base_x - delay * 0.1})
+            raise ResearchError(
+                "delay sensitivity must remain within the declared 0-90 minute range (seconds)"
+            )
+        delay_sensitivity.append(
+            {
+                "delay_seconds": delay,
+                "result_status": "synthetic_sensitivity_only",
+                "X": base_x - delay * 0.1,
+            }
+        )
     sign_flip = [-row["X"] for row in rows]
     null_mean = sum(sign_flip) / len(sign_flip)
     strategy_mean = sum(row["X"] for row in rows) / len(rows)
@@ -449,7 +594,9 @@ def run_w7_validation(fixture: dict[str, Any], portfolio: dict[str, Any], strate
         "null_sign_flip_mean_X": round(null_mean, 8),
         "strategy_mean_X": round(strategy_mean, 8),
         "sample_size_status": sample_size_status,
-        "eligible_signal_count": sum(item["signal"] == "eligible_entry" for item in strategy["signals"]),
+        "eligible_signal_count": sum(
+            item["signal"] == "eligible_entry" for item in strategy["signals"]
+        ),
         "rejected_opportunity_count": 1,
         "result_state": "inconclusive",
         "conclusion_blockers": blockers,

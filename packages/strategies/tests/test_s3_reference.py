@@ -15,22 +15,54 @@ def _reference(root: Path, *, artifact_volume: int) -> Path:
     spreads = [2000 if i == 3 else 1000 for i in range(45)]
     with (processed / "spreads_sbrf.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date", "near", "far", "spread", "dev_ruonia", "days_to_near_exp", "div_window", "go_sum"])
+        writer.writerow(
+            [
+                "date",
+                "near",
+                "far",
+                "spread",
+                "dev_ruonia",
+                "days_to_near_exp",
+                "div_window",
+                "go_sum",
+            ]
+        )
         for index, day in enumerate(days):
-            writer.writerow([day.isoformat(), "SRA", "SRB", spreads[index], 5.0 if index == 3 else 0.0, 46 - index, 0, 10000])
+            writer.writerow(
+                [
+                    day.isoformat(),
+                    "SRA",
+                    "SRB",
+                    spreads[index],
+                    5.0 if index == 3 else 0.0,
+                    46 - index,
+                    0,
+                    10000,
+                ]
+            )
     for secid, offset in (("SRA", 0), ("SRB", 1)):
         with (processed / f"futures_{secid}.csv").open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerow(["begin", "open", "close", "volume"])
             for index, day in enumerate(days):
                 price = 30000 + (spreads[index] if offset else 0)
-                writer.writerow([f"{day.isoformat()} 00:00:00", price, price, artifact_volume if index == 3 else 5000])
+                writer.writerow(
+                    [
+                        f"{day.isoformat()} 00:00:00",
+                        price,
+                        price,
+                        artifact_volume if index == 3 else 5000,
+                    ]
+                )
     return root
 
 
 def _benchmark(root: Path) -> Path:
     path = root / "benchmark.json"
-    rows = [{"date": (date(2026, 1, 1) + timedelta(days=i)).isoformat(), "price": 1.0} for i in range(45)]
+    rows = [
+        {"date": (date(2026, 1, 1) + timedelta(days=i)).isoformat(), "price": 1.0}
+        for i in range(45)
+    ]
     path.write_text(json.dumps({"rows": rows}), encoding="utf-8")
     return path
 
@@ -41,8 +73,10 @@ class S3ReferenceTests(unittest.TestCase):
             root = Path(directory)
             result = run_s3(_reference(root / "ref", artifact_volume=3), _benchmark(root))
         pick = lambda variant, model: next(
-            v for v in result["variants"]
-            if (v["strategy"], v["variant"], v["cost_model"]) == ("convergence_to_ruonia", variant, model)
+            v
+            for v in result["variants"]
+            if (v["strategy"], v["variant"], v["cost_model"])
+            == ("convergence_to_ruonia", variant, model)
         )
         same_bar = pick("reference_same_bar", "reference_flat_round_trip")
         self.assertEqual(same_bar["gross_rub"], 1000)

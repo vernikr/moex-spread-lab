@@ -6,8 +6,9 @@ causality for every possible dataset or verify broker/exchange assumptions.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from moex_spread_lab.core.contracts import StrategyPlugin, WindowSnapshot
 
@@ -50,15 +51,19 @@ def assert_causal_conformance(
         result = plugin.compute_entry_bands(deepcopy(list(rows)), deepcopy(dict(params)), fill)
         if len(result) != len(rows):
             raise AssertionError("entry bands must align with every chart row")
-        if any(str(point.date) != str(row["date"]) for point, row in zip(result, rows, strict=True)):
+        if any(
+            str(point.date) != str(row["date"]) for point, row in zip(result, rows, strict=True)
+        ):
             raise AssertionError("entry band dates do not align with the chart")
         return result
 
     def closed_before(intents, end):
         return [
-            intent for intent in intents
+            intent
+            for intent in intents
             if str(intent["exit_date"]) < end
-            and intent.get("reason") not in _FORCED and not intent.get("open_at_end")
+            and intent.get("reason") not in _FORCED
+            and not intent.get("open_at_end")
         ]
 
     for fill in plugin.supported_fills:

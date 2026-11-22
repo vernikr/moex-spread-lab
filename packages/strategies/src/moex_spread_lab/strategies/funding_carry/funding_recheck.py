@@ -8,17 +8,16 @@ from tempfile import TemporaryDirectory
 
 from moex_spread_lab.core.universe import PERPETUAL_HISTORY_STARTS
 from moex_spread_lab.core.w0 import W0Error
+
 from .carry import fetch_history
 from .proof_funding import published_rates, read_supplement, supplement_path
 
 
 def recheck(root, secid, first, last, *, apply=False, fetch=fetch_history):
-    if secid not in PERPETUAL_HISTORY_STARTS or date.fromisoformat(
-        first
-    ) > date.fromisoformat(last):
-        raise W0Error(
-            "Ожидается известный вечный фьючерс и упорядоченный интервал дат."
-        )
+    if secid not in PERPETUAL_HISTORY_STARTS or date.fromisoformat(first) > date.fromisoformat(
+        last
+    ):
+        raise W0Error("Ожидается известный вечный фьючерс и упорядоченный интервал дат.")
     # No cache_dir: force a fresh ISS request, not a replay of the original pages.
     source = fetch(secid, first, last, cache_dir=None, allow_empty=True)
     rates = published_rates(secid, source["rows"])
@@ -72,9 +71,7 @@ def recheck(root, secid, first, last, *, apply=False, fetch=fetch_history):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("."))
-    parser.add_argument(
-        "--secid", choices=sorted(PERPETUAL_HISTORY_STARTS), required=True
-    )
+    parser.add_argument("--secid", choices=sorted(PERPETUAL_HISTORY_STARTS), required=True)
     parser.add_argument("--from", dest="first", required=True)
     parser.add_argument("--till", required=True)
     parser.add_argument(

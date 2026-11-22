@@ -6,21 +6,20 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from funding_fixtures import PAIR, WEEKEND_PAIR, change, fixture, page, request, weekend
-
-from moex_spread_lab.strategies.funding_carry.carry import fetch_history
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
+from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.strategies.funding_carry.carry import fetch_history
+from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
 from moex_spread_lab.strategies.funding_carry.proof_funding import (
     NO_CLEARING,
     FundingTimeline,
     published_rates,
     supplement_path,
 )
-from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.web.server import ScreenerInputs, _pair, build_result, catalog
-from moex_spread_lab.core.w0 import W0Error
 
 
 class FundingPolicyTests(unittest.TestCase):
@@ -40,9 +39,7 @@ class FundingPolicyTests(unittest.TestCase):
                         self.assertAlmostEqual(m.value, (a + b) / 2)
                         self.assertEqual(m.kind, "midpoint")
                         self.assertEqual((m.left, m.right), (dates[0], dates[n + 1]))
-                        self.assertEqual(
-                            m.series_fields(t.marks)["funding_left_rate"], a
-                        )
+                        self.assertEqual(m.series_fields(t.marks)["funding_left_rate"], a)
 
     def test_sparse_far_does_not_shorten_four_missing_sessions_or_create_endpoints(
         self,
@@ -66,9 +63,7 @@ class FundingPolicyTests(unittest.TestCase):
         ds = (a, d, b)
         with self.assertRaisesRegex(W0Error, "не подтверждён отдельный клиринг"):
             FundingTimeline("X", p, ds).require(ds)
-        self.assertEqual(
-            FundingTimeline("X", p, ds, clearing_days=[d]).require(ds)[d].value, 0
-        )
+        self.assertEqual(FundingTimeline("X", p, ds, clearing_days=[d]).require(ds)[d].value, 0)
         old = {"2022-12-01": 0, "2022-12-02": None, "2022-12-05": 0.25}
         with self.assertRaisesRegex(W0Error, "изменился порядок"):
             FundingTimeline("USDRUBF", old, old).require(old)
@@ -90,15 +85,11 @@ class FundingPolicyTests(unittest.TestCase):
             return io.BytesIO(json.dumps(payload).encode())
 
         def fetch(secid, a, b, **kwargs):
-            return fetch_history(
-                secid, a, b, opener=open_page, delay_seconds=0, **kwargs
-            )
+            return fetch_history(secid, a, b, opener=open_page, delay_seconds=0, **kwargs)
 
         with tempfile.TemporaryDirectory() as tmp:
             r = recheck(Path(tmp), "GAZPF", "2025-08-16", "2025-08-17", fetch=fetch)
-            self.assertEqual(
-                (r["eod_rows"], r["numeric"], r["first_numeric"]), (0, 0, None)
-            )
+            self.assertEqual((r["eod_rows"], r["numeric"], r["first_numeric"]), (0, 0, None))
             self.assertTrue(r["page_hashes"])
             payload["history.cursor"]["data"] = [[1]]
             with self.assertRaisesRegex(W0Error, "Неполная история"):
@@ -124,9 +115,7 @@ class FundingPolicyTests(unittest.TestCase):
         self.assertEqual(m[d].value, -0.02)
         self.assertEqual((m[d].left, m[d].right), (a, b))
         for weekend_date in NO_CLEARING:
-            self.assertEqual(
-                (m[weekend_date].kind, m[weekend_date].value), ("no_clearing", None)
-            )
+            self.assertEqual((m[weekend_date].kind, m[weekend_date].value), ("no_clearing", None))
         with self.assertRaisesRegex(W0Error, "противоречит"):
             FundingTimeline("GAZPF", p | {"2025-08-16": 0.12}, ds)
         with self.assertRaises(W0Error):
@@ -160,9 +149,7 @@ class FundingReplayTests(unittest.TestCase):
             with self.subTest(strategy=strategy):
                 req = request(strategy)
                 r = self.service.proof(req)
-                self.assertAlmostEqual(
-                    r["summary"]["ledger_reconciliation_rub"], 0, delta=0.02
-                )
+                self.assertAlmostEqual(r["summary"]["ledger_reconciliation_rub"], 0, delta=0.02)
                 self.assertEqual(r["provenance"]["funding_estimated_dates"], d[20:23])
                 ledger = {row["date"]: row for row in r["ledger"]}
                 cash = 0
@@ -179,14 +166,10 @@ class FundingReplayTests(unittest.TestCase):
                         (d[19], d[23]),
                     )
                 self.assertGreater(cash, 0)
-                self.assertTrue(
-                    any("Расчётных ставок: 3." in note for note in r["notes"])
-                )
+                self.assertTrue(any("Расчётных ставок: 3." in note for note in r["notes"]))
                 self.assertEqual(self.service.proof(req)["run_id"], r["run_id"])
                 self.assertEqual(
-                    build_result(self.inputs, req)["provenance"][
-                        "funding_estimated_dates"
-                    ],
+                    build_result(self.inputs, req)["provenance"]["funding_estimated_dates"],
                     d[20:23],
                 )
         self.assertEqual(raw, page(self.root, "CNYRUBF").read_bytes())
@@ -196,9 +179,7 @@ class FundingReplayTests(unittest.TestCase):
         day = self.days[20]
         change(self.root, "CNYRUBF", {day: None}, remove=True)
         e = self.entry()
-        self.assertEqual(
-            e["proof_strategies"], {"mean_reversion": True, "funding_only": False}
-        )
+        self.assertEqual(e["proof_strategies"], {"mean_reversion": True, "funding_only": False})
         self.assertIn(day, e["data_reasons"]["funding_only"])
         r = self.service.proof(request())
         self.assertEqual(r["series"][20]["funding_rate_kind"], "midpoint")
@@ -237,17 +218,13 @@ class FundingReplayTests(unittest.TestCase):
                 with self.assertRaisesRegex(W0Error, days[42]):
                     replay(req, through=days[41])
                 self.assertEqual(
-                    replay(req, through=days[42])["provenance"][
-                        "funding_estimated_dates"
-                    ],
+                    replay(req, through=days[42])["provenance"]["funding_estimated_dates"],
                     days[40:42],
                 )
                 save_settings(self.root, {"validation_percent": 25})
                 self.assertTrue(all(self.entry()["proof_strategies"].values()))
                 with self.assertRaisesRegex(W0Error, "за границей периода"):
-                    research_run(
-                        self.service, req, optimize=False, include_plateau=False
-                    )
+                    research_run(self.service, req, optimize=False, include_plateau=False)
                 with self.assertRaisesRegex(W0Error, "за границей периода"):
                     build_result(self.inputs, req)
                 target = {"universe": "pair_screen", "pair": PAIR}
@@ -269,8 +246,7 @@ class FundingReplayTests(unittest.TestCase):
             change(
                 self.root,
                 "CNYRUBF",
-                dict.fromkeys(days, -0.01)
-                | {days[6]: None, days[7]: None, days[8]: right},
+                dict.fromkeys(days, -0.01) | {days[6]: None, days[7]: None, days[8]: right},
             )
             r = self.service.proof(req)
             entries.append([t["entry"]["date"] for t in r["trades"]])
@@ -291,12 +267,8 @@ class FundingReplayTests(unittest.TestCase):
             with self.subTest(strategy=strategy):
                 r = self.service.proof(request(strategy, WEEKEND_PAIR))
                 by = {x["date"]: x for x in r["series"]}
-                self.assertEqual(
-                    set(r["provenance"]["funding_no_clearing_dates"]), NO_CLEARING
-                )
-                self.assertAlmostEqual(
-                    r["summary"]["ledger_reconciliation_rub"], 0, delta=0.02
-                )
+                self.assertEqual(set(r["provenance"]["funding_no_clearing_dates"]), NO_CLEARING)
+                self.assertAlmostEqual(r["summary"]["ledger_reconciliation_rub"], 0, delta=0.02)
                 for day in NO_CLEARING:
                     if strategy == "funding_only":
                         self.assertNotIn(day, by)
@@ -304,16 +276,12 @@ class FundingReplayTests(unittest.TestCase):
                     x = by[day]
                     self.assertIsNone(x["funding_swaprate_rub_per_unit"])
                     self.assertEqual(x["funding_contracts"], 0)
-                    self.assertEqual(
-                        (x["funding_rate_kind"], x["funding_rub"]), ("no_clearing", 0)
-                    )
+                    self.assertEqual((x["funding_rate_kind"], x["funding_rub"]), ("no_clearing", 0))
                     self.assertEqual(x["benchmark_mark_date"], "2025-08-15")
                 monday = by["2025-08-18"]
                 self.assertEqual(monday["funding_swaprate_rub_per_unit"], 0.015)
                 l = next(x for x in r["ledger"] if x["date"] == "2025-08-18")
-                self.assertAlmostEqual(
-                    l["funding_rub"], -l["position"] * 0.015 * 1000 * 2
-                )
+                self.assertAlmostEqual(l["funding_rub"], -l["position"] * 0.015 * 1000 * 2)
 
     def test_offline_replay_prefers_published_or_rechecked_over_estimates_and_never_overwrites_intake(
         self,
@@ -335,9 +303,7 @@ class FundingReplayTests(unittest.TestCase):
         report = recheck(self.root, "CNYRUBF", d[20], d[22], fetch=fetch)
         self.assertEqual((report["numeric"], report["null"]), (2, 1))
         self.assertFalse(supplement_path(self.root, "CNYRUBF").exists())
-        fetch.assert_called_once_with(
-            "CNYRUBF", d[20], d[22], cache_dir=None, allow_empty=True
-        )
+        fetch.assert_called_once_with("CNYRUBF", d[20], d[22], cache_dir=None, allow_empty=True)
         recheck(self.root, "CNYRUBF", d[20], d[22], fetch=fetch, apply=True)
         r = self.service.proof(request())
         before, restored, estimated = r["series"][20:23]

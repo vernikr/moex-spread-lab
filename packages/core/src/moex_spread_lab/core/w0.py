@@ -10,9 +10,9 @@ import re
 import subprocess
 import threading
 from collections import OrderedDict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any, cast
 
 MANIFEST_SCHEMA = "run-manifest.v1"
 FIXTURE_SCHEMA = "w0.fixture.v1"
@@ -56,12 +56,12 @@ def sha256_file(path: Path) -> str:
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise W0Error(f"JSON root must be an object: {path}")
-    return value
+    return cast(dict[str, Any], value)
 
 
 # Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
@@ -73,12 +73,10 @@ _HASHED_JSON_CACHE_CAPACITY = int(os.environ.get("MOEX_HASHED_JSON_CACHE_CAPACIT
 class _HashedJSONCache:
     def __init__(self, capacity: int) -> None:
         self._capacity = max(1, capacity)
-        self._data: "OrderedDict[tuple[str, int, int], tuple[dict[str, Any], str]]" = (
-            OrderedDict()
-        )
+        self._data: OrderedDict[tuple[str, int, int], tuple[dict[str, Any], str]] = OrderedDict()
         self._lock = threading.Lock()
 
-    def get(self, key: tuple[str, int, int]):
+    def get(self, key: tuple[str, int, int]) -> tuple[dict[str, Any], str] | None:
         with self._lock:
             entry = self._data.get(key)
             if entry is not None:
@@ -97,7 +95,10 @@ _HASHED_JSON_CACHE = _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)
 
 
 def read_hashed_json(
-    path: Path, *, error: type[W0Error], label: str = "JSON input",
+    path: Path,
+    *,
+    error: type[W0Error],
+    label: str = "JSON input",
 ) -> tuple[dict[str, Any], str]:
     resolved = path.resolve()
     try:
@@ -110,12 +111,12 @@ def read_hashed_json(
         return cached
     try:
         raw = resolved.read_bytes()
-        value = json.loads(raw.decode("utf-8"))
+        value: Any = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise error(f"cannot read {label} {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise error(f"{label} is not an object: {path}")
-    result = (value, sha256_bytes(raw))
+    result = (cast(dict[str, Any], value), sha256_bytes(raw))
     _HASHED_JSON_CACHE.put(key, result)
     return result
 
@@ -128,7 +129,9 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
-def _run_id(identity: dict[str, Any]) -> str:
+def _run_id(  # pyright: ignore[reportUnusedFunction]  # Cross-package helper used by accounting/proof.
+    identity: dict[str, Any],
+) -> str:
     canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
@@ -144,6 +147,15 @@ def _validate_contract_number(
     return number
 
 
+def _instruments_by_secid(rows: Any) -> dict[Any, dict[str, Any]]:
+    instruments: dict[Any, dict[str, Any]] = {}
+    for row in rows:
+        if isinstance(row, dict):
+            instrument = cast(dict[str, Any], row)
+            instruments[instrument.get("secid")] = instrument
+    return instruments
+
+
 def load_contracts(
     path: Path,
     near: str,
@@ -152,25 +164,13 @@ def load_contracts(
     error: type[W0Error] = W0Error,
 ) -> tuple[dict[str, Any], str]:
     payload, digest = read_hashed_json(path, error=error)
-    instruments = {
-        row.get("secid"): row
-        for row in payload.get("instruments", [])
-        if isinstance(row, dict)
-    }
+    instruments = _instruments_by_secid(payload.get("instruments", []))
     historical_path = Path(path).parent / "historical-contracts.json"
     if historical_path.is_file():
         historical, historical_digest = read_hashed_json(historical_path, error=error)
-        instruments.update(
-            {
-                row.get("secid"): row
-                for row in historical.get("instruments", [])
-                if isinstance(row, dict)
-            }
-        )
-        digest = hashlib.sha256(
-            f"{digest}:{historical_digest}".encode("ascii")
-        ).hexdigest()
-    selected = {}
+        instruments.update(_instruments_by_secid(historical.get("instruments", [])))
+        digest = hashlib.sha256(f"{digest}:{historical_digest}".encode("ascii")).hexdigest()
+    selected: dict[str, Any] = {}
     for secid in (near, far):
         instrument = instruments.get(secid)
         if instrument is None:
@@ -218,9 +218,7 @@ def load_contracts(
             "source_vintage": instrument["source_vintage"],
             "tariff_group": instrument.get("tariff_group"),
             "historical_evidence": instrument.get("historical_evidence", False),
-            "historical_specification_basis": instrument.get(
-                "historical_specification_basis"
-            ),
+            "historical_specification_basis": instrument.get("historical_specification_basis"),
         }
     return selected, digest
 
@@ -267,20 +265,22 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     modules = _require(manifest, "modules", "run manifest")
     if not isinstance(modules, list) or not modules:
         raise W0Error("run manifest must pin at least one module")
-    for module in modules:
-        if not isinstance(module, dict):
+    for module_value in cast(list[object], modules):
+        if not isinstance(module_value, dict):
             raise W0Error("module pin must be an object")
-        module_path = _resolve(root, _require(module, "manifest_path", "module pin"))
+        module = cast(dict[str, Any], module_value)
+        module_path = _resolve(root, cast(str, _require(module, "manifest_path", "module pin")))
         if sha256_file(module_path) != _require(module, "manifest_sha256", "module pin"):
             raise W0Error(f"module manifest hash mismatch: {module_path}")
 
     artifacts = _require(manifest, "artifacts", "run manifest")
     if not isinstance(artifacts, list):
         raise W0Error("artifacts must be a list")
-    for artifact in artifacts:
-        if not isinstance(artifact, dict):
+    for artifact_value in cast(list[object], artifacts):
+        if not isinstance(artifact_value, dict):
             raise W0Error("artifact pin must be an object")
-        artifact_path = _resolve(root, _require(artifact, "path", "artifact pin"))
+        artifact = cast(dict[str, Any], artifact_value)
+        artifact_path = _resolve(root, cast(str, _require(artifact, "path", "artifact pin")))
         if sha256_file(artifact_path) != _require(artifact, "sha256", "artifact pin"):
             raise W0Error(f"artifact hash mismatch: {artifact_path}")
         if not _require(artifact, "rights_status", "artifact pin"):
@@ -289,9 +289,10 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
     requests = _require(manifest, "source_requests", "run manifest")
     if not isinstance(requests, list):
         raise W0Error("source_requests must be a list")
-    for request in requests:
-        if not isinstance(request, dict):
+    for request_value in cast(list[object], requests):
+        if not isinstance(request_value, dict):
             raise W0Error("source request must be an object")
+        request = cast(dict[str, Any], request_value)
         _require(request, "rights_status", "source request")
         if request.get("network_required") is not False:
             raise W0Error("W0 source requests must declare network_required=false")
@@ -305,10 +306,11 @@ def normalize_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
     records = _require(fixture, "records", "fixture")
     if not isinstance(records, list):
         raise W0Error("fixture records must be a list")
-    normalized_records = []
-    for record in records:
-        if not isinstance(record, dict):
+    normalized_records: list[dict[str, Any]] = []
+    for record_value in cast(list[object], records):
+        if not isinstance(record_value, dict):
             raise W0Error("fixture record must be an object")
+        record = cast(dict[str, Any], record_value)
         record_id = _require(record, "record_id", "fixture record")
         normalized_records.append(dict(record, record_id=record_id))
     normalized_records.sort(key=lambda record: record["record_id"])
@@ -361,7 +363,9 @@ def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, st
         for pattern in SECRET_PATTERNS:
             match = pattern.search(content)
             if match:
-                findings.append({"path": str(path.relative_to(root)), "pattern": pattern.pattern.decode()})
+                findings.append(
+                    {"path": str(path.relative_to(root)), "pattern": pattern.pattern.decode()}
+                )
     return findings
 
 

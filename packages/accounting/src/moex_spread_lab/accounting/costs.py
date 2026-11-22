@@ -30,7 +30,11 @@ CONTRACT_GROUP = {
 
 
 def tariff_profile(slippage_ticks: float = 1.0) -> dict[str, Any]:
-    if not isinstance(slippage_ticks, (int, float)) or isinstance(slippage_ticks, bool) or not 0 <= slippage_ticks <= 10:
+    if (
+        not isinstance(slippage_ticks, (int, float))
+        or isinstance(slippage_ticks, bool)
+        or not 0 <= slippage_ticks <= 10
+    ):
         raise W0Error("slippage must be 0–10 ticks per leg and side")
     return {
         "schema_version": COST_SCHEMA,
@@ -45,7 +49,11 @@ def tariff_profile(slippage_ticks: float = 1.0) -> dict[str, Any]:
 
 
 def side_cost(
-    profile: dict[str, Any], legs: list[tuple[dict[str, Any], float]], quantity: int, *, native_spread: bool = False
+    profile: dict[str, Any],
+    legs: list[tuple[dict[str, Any], float]],
+    quantity: int,
+    *,
+    native_spread: bool = False,
 ) -> dict[str, float]:
     """Cost of one entry or exit side across legs; each leg is (contract terms, fill price).
 

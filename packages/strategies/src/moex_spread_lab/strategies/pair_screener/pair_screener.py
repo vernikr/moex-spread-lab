@@ -29,6 +29,7 @@ from moex_spread_lab.core.universe import (
 )
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
+
 from ..funding_carry.carry import build_carry_strategy, build_carry_study, fetch_history
 from ..funding_carry.proof_funding import FundingWindow, ProofFunding
 from ..pair_mean_reversion.analytics import run_mean_reversion_baseline
@@ -92,9 +93,7 @@ class ScreenerInputs:
 
     def history_cache(self, pair_id: str) -> Path:
         folder = (
-            "carry-history-cache"
-            if pair_id == "CNYRUBF/CRZ6"
-            else "carry-screen-history-cache"
+            "carry-history-cache" if pair_id == "CNYRUBF/CRZ6" else "carry-screen-history-cache"
         )
         return self.root / "data" / folder
 
@@ -107,9 +106,7 @@ def _pair(pair_id: Any) -> dict[str, str]:
 
 
 def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
-    raise OSError(
-        "local screener does not download data; run the documented intake first"
-    )
+    raise OSError("local screener does not download data; run the documented intake first")
 
 
 _CANDLE_SUMMARY_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
@@ -154,9 +151,7 @@ def _session_volumes(
     for secid in (pair["near"], pair["far"]):
         try:
             summary = _candle_summary(
-                inputs.bars(
-                    pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume")
-                )
+                inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume"))
             )
         except W0Error:
             return None
@@ -209,9 +204,7 @@ def _pair_history_span(
     for secid in (pair["near"], pair["far"]):
         try:
             summary = _candle_summary(
-                inputs.bars(
-                    pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume")
-                )
+                inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume"))
             )
         except W0Error:
             return None, None, 0, set()
@@ -254,9 +247,7 @@ def _make_proof_funding(
 ):
     return ProofFunding(
         inputs,
-        history_fn=lambda inp, pid, secid: _history_source(
-            inp, pid, secid, fetch_fn=fetch_fn
-        ),
+        history_fn=lambda inp, pid, secid: _history_source(inp, pid, secid, fetch_fn=fetch_fn),
         positive_volume_dates_fn=_positive_leg_volume_dates,
     )
 
@@ -275,9 +266,7 @@ def catalog(
     try:
         instruments = {
             row["secid"]: row
-            for row in json.loads(inputs.contracts.read_text(encoding="utf-8"))[
-                "instruments"
-            ]
+            for row in json.loads(inputs.contracts.read_text(encoding="utf-8"))["instruments"]
             if isinstance(row, dict) and row.get("secid")
         }
     except (OSError, ValueError, KeyError, TypeError):
@@ -285,9 +274,7 @@ def catalog(
     historical_terms = inputs.root / "data/w1/historical-contracts.json"
     if historical_terms.is_file():
         try:
-            rows = json.loads(historical_terms.read_text(encoding="utf-8")).get(
-                "instruments", []
-            )
+            rows = json.loads(historical_terms.read_text(encoding="utf-8")).get("instruments", [])
             instruments.update(
                 {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
             )
@@ -354,14 +341,11 @@ def catalog(
         tradable = volumes is not None and min(volumes.values()) >= MIN_DAILY_VOLUME
         days = (
             pos_days
-            if pair["family"] == "perpetual_quarterly_same_asset"
-            and spec.supports_funding_strategy
+            if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
             else set()
         )
         if spec.supports_funding_strategy:
-            proof_available, reasons = funding.statuses(
-                pair, days, price_files, funding_files
-            )
+            proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
         else:
             missing_price = next(
                 (path for path in price_files if not inputs.bar_store.source_available(path)),
@@ -383,9 +367,7 @@ def catalog(
             )
         if not spec.supports_funding_strategy:
             proof_available["funding_only"] = False
-            reasons["funding_only"] = (
-                f"{spec.label}: carry требует дневных расчётных ставок."
-            )
+            reasons["funding_only"] = f"{spec.label}: carry требует дневных расчётных ставок."
         available = {
             "mean_reversion": tradable and proof_available["mean_reversion"],
             "funding_only": tradable and proof_available["funding_only"],
@@ -453,11 +435,7 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
         raise ScreenerError("неизвестный параметр стратегии")
     values = {**defaults, **provided}
     lookback = values["lookback"]
-    if (
-        isinstance(lookback, bool)
-        or not isinstance(lookback, int)
-        or not 5 <= lookback <= 80
-    ):
+    if isinstance(lookback, bool) or not isinstance(lookback, int) or not 5 <= lookback <= 80:
         raise ScreenerError("lookback должен быть целым числом от 5 до 80 наблюдений")
     if strategy == "mean_reversion":
         for field in ("entry_z", "exit_z"):
@@ -468,10 +446,7 @@ def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | i
                 or not math.isfinite(value)
             ):
                 raise ScreenerError(f"{field} должен быть конечным числом")
-        if (
-            not 0.5 <= values["entry_z"] <= 5
-            or not 0 <= values["exit_z"] < values["entry_z"]
-        ):
+        if not 0.5 <= values["entry_z"] <= 5 or not 0 <= values["exit_z"] < values["entry_z"]:
             raise ScreenerError(
                 "entry должен быть в диапазоне 0.5–5, а exit — неотрицательным и ниже entry"
             )
@@ -491,9 +466,7 @@ def execution_settings(selection: dict[str, Any]) -> dict[str, float | int]:
         or not isinstance(quantity, int)
         or not 1 <= quantity <= MAX_QUANTITY
     ):
-        raise ScreenerError(
-            f"контрактов на ногу должно быть целым числом от 1 до {MAX_QUANTITY}"
-        )
+        raise ScreenerError(f"контрактов на ногу должно быть целым числом от 1 до {MAX_QUANTITY}")
     return {"slippage_ticks": float(slippage), "quantity": quantity}
 
 
@@ -507,8 +480,7 @@ def pair_price_inputs(
     spec = get_timeframe(timeframe)
     book = (
         funding.timeline(pair)
-        if pair["family"] == "perpetual_quarterly_same_asset"
-        and spec.supports_funding_strategy
+        if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
         else None
     )
     series = _normalized_series(
@@ -696,12 +668,8 @@ def build_result(
         provenance = {
             "near_history_hashes": near_source["source"]["raw_response_sha256"],
             "far_history_hashes": far_source["source"]["raw_response_sha256"],
-            "benchmark_sha256": hashlib.sha256(
-                inputs.benchmark.read_bytes()
-            ).hexdigest(),
-            "contracts_sha256": hashlib.sha256(
-                inputs.contracts.read_bytes()
-            ).hexdigest(),
+            "benchmark_sha256": hashlib.sha256(inputs.benchmark.read_bytes()).hexdigest(),
+            "contracts_sha256": hashlib.sha256(inputs.contracts.read_bytes()).hexdigest(),
         }
         price_role = "ISS: расчётная цена на конец дня (прокси)"
         notes = [
@@ -752,9 +720,7 @@ def build_result(
             "open_positions": open_positions,
             "modeled_costs_rub": costs,
             "current_pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
-            "stress_remaining_capital_rub": risk["summary"][
-                "most_severe_remaining_capital_rub"
-            ],
+            "stress_remaining_capital_rub": risk["summary"]["most_severe_remaining_capital_rub"],
         },
         "daily": daily,
         "notes": [
@@ -771,9 +737,7 @@ def build_result(
         "selection": result["selection"],
         "daily": daily,
         "source_hashes": {
-            key: value
-            for key, value in provenance.items()
-            if "sha256" in key or "hashes" in key
+            key: value for key, value in provenance.items() if "sha256" in key or "hashes" in key
         },
     }
     if evidence and evidence.provenance:
@@ -781,9 +745,7 @@ def build_result(
     if through is None:
         split = EvaluationSplit.from_dates((r["date"] for r in daily), share)
         opening = (
-            daily[len(split.training) - 1]
-            if split.validation
-            else {"V": initial, "B": initial}
+            daily[len(split.training) - 1] if split.validation else {"V": initial, "B": initial}
         )
         strategy_change = last["V"] - opening["V"]
         benchmark_change = last["B"] - opening["B"]
@@ -797,8 +759,6 @@ def build_result(
             },
         }
         identity["evaluation"] = result["evaluation"]
-    canonical = json.dumps(
-        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     result["run_id"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     return result

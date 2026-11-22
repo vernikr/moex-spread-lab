@@ -9,6 +9,14 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+from moex_spread_lab.accounting.position_sizing import size_proof
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof_runtime.proof_search import _measure, _tune, _validate, research_run
+from moex_spread_lab.proof_runtime.proof_strategy_search import TRIALS_PER_STRATEGY
+from moex_spread_lab.proof_runtime.proof_windows import compact_result
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from proof_fixtures import (
     funding_winner,
     rising_calendar,
@@ -16,15 +24,6 @@ from proof_fixtures import (
 )
 from test_global_capital import FLAT, PAIR, TARGETS
 from test_position_sizing import unit_proof
-
-from moex_spread_lab.core.settings import ResearchSettings, save_settings
-from moex_spread_lab.accounting.position_sizing import size_proof
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.proof_search import _measure, _tune, _validate, research_run
-from moex_spread_lab.proof_runtime.proof_strategy_search import TRIALS_PER_STRATEGY
-from moex_spread_lab.proof_runtime.proof_windows import compact_result
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.core.w0 import W0Error
 
 
 class StrategyChoiceTests(unittest.TestCase):
@@ -52,9 +51,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertEqual(r["schema_version"], "proof-search.v4")
         self.assertEqual(r["trial_count"], 2 * TRIALS_PER_STRATEGY)
         self.assertEqual(len(r["candidates"]), r["trial_count"])
-        self.assertEqual(
-            [c["trial"] for c in r["candidates"]], list(range(r["trial_count"]))
-        )
+        self.assertEqual([c["trial"] for c in r["candidates"]], list(range(r["trial_count"])))
         self.assertEqual(
             {a["strategy"] for a in r["strategy_search"]["alternatives"]},
             {"mean_reversion", "funding_only"},
@@ -89,14 +86,10 @@ class StrategyChoiceTests(unittest.TestCase):
         row = r["group"]["members"][0]
         self.assertEqual(row["selection"]["strategy"], "funding_only")
         self.assertFalse(r["group"]["execution_reference"])
-        p = research_run(
-            self.service, row["selection"], optimize=False, include_plateau=False
-        )
+        p = research_run(self.service, row["selection"], optimize=False, include_plateau=False)
         self.assertEqual(p["run_id"], row["run_id"])
         self.assertEqual(p["evaluation"], row["evaluation"])
-        self.assertEqual(
-            self.search(fill="reference_same_bar", price_fill="reference_same_bar"), r
-        )
+        self.assertEqual(self.search(fill="reference_same_bar", price_fill="reference_same_bar"), r)
 
     def test_native_convergence_can_replace_mr_instead_of_just_being_enumerated(self):
         rising_calendar(self.root)
@@ -106,9 +99,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertEqual(r["selected_fill"], "next_close")
         self.assertEqual(r["group"]["member_count"], 1)
         self.assertGreater(r["group"]["training_mean_pp"], 0)
-        p = research_run(
-            self.service, r["group"]["members"][0]["selection"], optimize=False
-        )
+        p = research_run(self.service, r["group"]["members"][0]["selection"], optimize=False)
         self.assertGreater(len(p["trades"]), 0)
         self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
 
@@ -134,9 +125,7 @@ class StrategyChoiceTests(unittest.TestCase):
         for record in r["candidates"]:
             if record["rank_score"] is not None:
                 self.assertEqual(len(record["by_window_pp"]), 2)
-                self.assertAlmostEqual(
-                    record["rank_score"], sum(record["by_window_pp"]) / 2
-                )
+                self.assertAlmostEqual(record["rank_score"], sum(record["by_window_pp"]) / 2)
         again = self.search(
             {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}},
             targets=list(reversed(TARGETS)),
@@ -156,9 +145,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertEqual(r["selected_strategy"], "mean_reversion")
         self.assertEqual(r["group"]["member_count"], 1)
         bad = next(
-            a
-            for a in r["strategy_search"]["alternatives"]
-            if a["strategy"] == "funding_only"
+            a for a in r["strategy_search"]["alternatives"] if a["strategy"] == "funding_only"
         )
         self.assertEqual(bad["status"], "incompatible")
         self.assertEqual(bad["trial_count"], 0)
@@ -188,7 +175,7 @@ class StrategyChoiceTests(unittest.TestCase):
         import moex_spread_lab.proof_runtime.proof_strategy_search as module
 
         # Deliberately disjoint per-family failures. Neither is universally bad.
-        def prepare(service, request, settings, benchmark, cancelled, **kwargs):
+        def prepare(service, request, settings, benchmark, _cancelled, **kwargs):
             target = (
                 TARGETS[0]
                 if request["strategy"] == "mean_reversion"
@@ -252,16 +239,12 @@ class StrategyChoiceTests(unittest.TestCase):
             patch.object(proof_search, "_measure", side_effect=flat),
             patch.object(proof_search.StudyWindow, "report", report),
         ):
-            r = self.search(
-                {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}}
-            )
+            r = self.search({**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}})
         self.assertEqual(r["selected_strategy"], "funding_only")
         self.assertEqual(reports, ["funding_only"])
 
     def test_holdout_changes_do_not_choose_a_different_strategy_or_trial_sequence(self):
-        save_settings(
-            self.root, {"validation_percent": 25, "allow_failed_volume": False}
-        )
+        save_settings(self.root, {"validation_percent": 25, "allow_failed_volume": False})
         before = self.search()
         path = self.root / "data/w1/candles/CRZ6_1d.json"
         data = json.loads(path.read_text())
@@ -285,9 +268,7 @@ class StrategyChoiceTests(unittest.TestCase):
             "strategy_search",
         ):
             self.assertEqual(before[key], after[key])
-        self.assertEqual(
-            before["group"]["training_mean_pp"], after["group"]["training_mean_pp"]
-        )
+        self.assertEqual(before["group"]["training_mean_pp"], after["group"]["training_mean_pp"])
         self.assertEqual(after["selected_strategy"], "funding_only")
         self.assertIsNone(after["group"]["result_mean_pp"])
         self.assertEqual(after["group"]["member_count"], 1)
@@ -310,15 +291,11 @@ class StrategyChoiceTests(unittest.TestCase):
             )
             result = self.search(targets=TARGETS)
             excluded = {
-                t["pair"]
-                for t, allow in ((TARGETS[0], volume), (TARGETS[1], capital))
-                if not allow
+                t["pair"] for t, allow in ((TARGETS[0], volume), (TARGETS[1], capital)) if not allow
             }
             if excluded:
                 self.assertEqual(result["status"], "selection_requires_confirmation")
-                self.assertEqual(
-                    {e["target"]["pair"] for e in result["excluded"]}, excluded
-                )
+                self.assertEqual({e["target"]["pair"] for e in result["excluded"]}, excluded)
                 self.assertEqual(result["trial_count"], 0)
                 self.assertEqual(result["remaining_count"], 2 - len(excluded))
             else:
@@ -384,9 +361,7 @@ class StrategyChoiceTests(unittest.TestCase):
             with self.assertRaises(W0Error):
                 self.search(price_fill=value)
         with self.assertRaises(W0Error):
-            research_run(
-                self.service, {**PAIR, "optimize_strategy": True}, optimize=False
-            )
+            research_run(self.service, {**PAIR, "optimize_strategy": True}, optimize=False)
         _validate({**PAIR, "optimize_strategy": False})
 
     def test_http_ui_path_records_every_family_and_only_the_final_selection(self):
@@ -395,9 +370,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        connection = http.client.HTTPConnection(
-            "127.0.0.1", server.server_port, timeout=20
-        )
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=20)
         self.addCleanup(connection.close)
         connection.request(
             "POST",
@@ -409,9 +382,7 @@ class StrategyChoiceTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         result = json.load(response)
         self.assertEqual(result["selected_strategy"], "funding_only")
-        logs = (
-            (self.root / "data/analytics/proof-searches.jsonl").read_text().splitlines()
-        )
+        logs = (self.root / "data/analytics/proof-searches.jsonl").read_text().splitlines()
         self.assertEqual(len(logs), 1)
         logged = json.loads(logs[0])
         self.assertTrue(logged.pop("recorded_at"))
@@ -423,9 +394,7 @@ class DashEvidenceTests(unittest.TestCase):
         from moex_spread_lab.core.settings import EvaluationSplit
         from moex_spread_lab.proof_runtime.proof_search import StudyWindow
 
-        proof, marks, contracts = unit_proof(
-            near=(50000, 48000, 48000, 48000), entries=((0, 3),)
-        )
+        proof, marks, contracts = unit_proof(near=(50000, 48000, 48000, 48000), entries=((0, 3),))
         proof = size_proof(proof, marks, ResearchSettings(), contracts)
         self.assertEqual(len(proof["trades"]), 1)
         self.assertGreater(proof["summary"]["cash_shortfall_rows"], 0)

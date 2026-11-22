@@ -1,14 +1,15 @@
 """A registered daily pair plugin enters proof and Optuna with validated accounting."""
+
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_drop_in_pair_plugin_proof_and_search(tmp_path):
     plugin_dir = tmp_path / "plugin"
     plugin_dir.mkdir()
-    (plugin_dir / "demo_pair.py").write_text('''
+    (plugin_dir / "demo_pair.py").write_text("""
 from dataclasses import replace
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
 class Demo(PairMeanReversionPlugin):
@@ -37,16 +38,26 @@ class HourlyDemo(Demo):
             "date": days[days.index(item["entry_date"][:10] if window.timeframe == "1d" else item["entry_date"][:19].replace(" ", "T")) - delay],
             "value": item["entry_signal_z"]}} for item in run.intents))
 HOURLY = HourlyDemo()
-''')
+""")
     dist = plugin_dir / "demo_pair-1.0.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-pair\nVersion: 1.0\n")
-    (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_pair = demo_pair:PLUGIN\ndemo_pair_hourly = demo_pair:HOURLY\n")
+    (dist / "entry_points.txt").write_text(
+        "[moex_spread_lab.strategies]\ndemo_pair = demo_pair:PLUGIN\ndemo_pair_hourly = demo_pair:HOURLY\n"
+    )
     root = Path(__file__).resolve().parents[3]
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join([str(plugin_dir), str(root / "tests"), str(root / "packages/proof/tests"), str(root / "packages/accounting/tests"), env.get("PYTHONPATH", "")])
+    env["PYTHONPATH"] = os.pathsep.join(
+        [
+            str(plugin_dir),
+            str(root / "tests"),
+            str(root / "packages/proof/tests"),
+            str(root / "packages/accounting/tests"),
+            env.get("PYTHONPATH", ""),
+        ]
+    )
     env["MOEX_PROOF_WORKERS"] = "1"
-    code = '''
+    code = """
 import sys
 from pathlib import Path
 from funding_fixtures import PAIR, WEEKEND_PAIR, fixture, request, weekend
@@ -214,7 +225,12 @@ h1_row = next(row for row in h1_search["strategy_search"]["alternatives"] if row
 assert h1_row["trial_count"] == 80, h1_row
 assert all(row["strategy"] != "demo_pair" for row in h1_search["strategy_search"]["alternatives"])
 h1.close()
-'''
-    result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "root")],
-                            env=env, capture_output=True, text=True, timeout=180)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path / "root")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
     assert result.returncode == 0, result.stdout + result.stderr

@@ -68,9 +68,7 @@ def run(browser, url):
     all_top, all_bottom = page.locator("#all-assets"), page.locator("#all-windows")
     for ls in ("#main-asset", "#window-list"):
         rows = page.locator(ls + " .picker-row")
-        expect(page.locator(ls + " .picker-row input[type=checkbox]")).to_have_count(
-            rows.count()
-        )
+        expect(page.locator(ls + " .picker-row input[type=checkbox]")).to_have_count(rows.count())
     initial = page.locator("#ev-runid").text_content()
     count = len(runs)
     leaf(PAIR).locator("input").check()
@@ -110,17 +108,10 @@ def run(browser, url):
     page.locator("#batch-result summary").click()
     expect(page.locator("#batch-result")).to_contain_text("Общие параметры")
     expect(page.locator("#batch-result")).to_contain_text("SRH3/SRM3")
-    expect(page.locator("#lookback")).to_have_value(
-        str(group["selected_parameters"]["lookback"])
-    )
+    expect(page.locator("#lookback")).to_have_value(str(group["selected_parameters"]["lookback"]))
     open_branch(CAL_B)
-    expect(page.locator("#clookback")).to_have_value(
-        str(group["selected_parameters"]["lookback"])
-    )
-    assert (
-        float(page.locator("#centry").input_value())
-        == group["selected_parameters"]["entry_z"]
-    )
+    expect(page.locator("#clookback")).to_have_value(str(group["selected_parameters"]["lookback"]))
+    assert float(page.locator("#centry").input_value()) == group["selected_parameters"]["entry_z"]
     # Strategy search can replace an incompatible editor strategy with common MR;
     # it must not discard a valid calendar just to keep funding carry.
     open_branch(PAIR_B)
@@ -130,9 +121,7 @@ def run(browser, url):
     assert page.evaluate("checked.size") == 2
     expect(page.locator("#group-strategy")).to_have_value("mr")
     # A universally data-missing window still requires explicit cancel/confirm.
-    missing = page.evaluate(
-        "branches.get('pair_screen|CNYRUBF').children.find(l=>!l.enabled).key"
-    )
+    missing = page.evaluate("branches.get('pair_screen|CNYRUBF').children.find(l=>!l.enabled).key")
     missing_pair = page.evaluate("key=>leaves.get(key).target.pair", missing)
     leaf(missing).locator("input").check()
     review()
@@ -180,15 +169,11 @@ def run(browser, url):
         off["group"]["result_basis"] == "validation"
         and off["group"]["members"][0]["target"]["universe"] == "calendar_native"
     )
-    assert (
-        runs[-1]["pair"] == "CNYRUBF/CRZ6" and runs[-1]["parameters"]["lookback"] == 33
-    )
+    assert runs[-1]["pair"] == "CNYRUBF/CRZ6" and runs[-1]["parameters"]["lookback"] == 33
     with page.expect_response(lambda r: r.url.endswith("/api/proof/run")):
         branch(CAL_B).locator("button").click()
     ready(page, "validation")
-    expect(page.locator("#clookback")).to_have_value(
-        str(off["selected_parameters"]["window"])
-    )
+    expect(page.locator("#clookback")).to_have_value(str(off["selected_parameters"]["window"]))
     # A late response from the previous cohort cannot change inputs or resurrect its summary.
     original = page.locator("#clookback").input_value()
     page.route(
@@ -212,9 +197,7 @@ def run(browser, url):
     all_bottom.check()
     page.set_viewport_size({"width": 400, "height": 850})
     assert page.evaluate("checked.size") == 1
-    assert (
-        page.evaluate("document.documentElement.scrollWidth<=innerWidth") and not errors
-    ), errors
+    assert page.evaluate("document.documentElement.scrollWidth<=innerWidth") and not errors, errors
     page.close()
 
 

@@ -46,7 +46,9 @@ class DataRetentionTests(unittest.TestCase):
             root = Path(directory)
             first = self._write(root, "w1/candles-cache/CRZ6/60/page-000000.json", b'{"rows":[1]}')
             second = self._write(root, "w1/candleborders-cache/CRZ6.json", b'{"borders":[]}')
-            active = self._write(root, "w1/candles/CNYRUBF_1h.json", b'{"timeframe":"1h","rows":[]}')
+            active = self._write(
+                root, "w1/candles/CNYRUBF_1h.json", b'{"timeframe":"1h","rows":[]}'
+            )
             manifest = self._manifest(root)
             archive = root / "archives" / "verified-cache.tar.gz"
             result = archive_rebuildable_caches(root, manifest, archive)
@@ -74,7 +76,9 @@ class DataRetentionTests(unittest.TestCase):
             source.unlink()
             source.symlink_to(external)
             with self.assertRaises(DataRetentionError):
-                plan_rebuildable_cache_archive(root, manifest, root / "archives" / "link-cache.tar.gz")
+                plan_rebuildable_cache_archive(
+                    root, manifest, root / "archives" / "link-cache.tar.gz"
+                )
             self.assertTrue(source.is_symlink())
             self.assertTrue(external.exists())
 

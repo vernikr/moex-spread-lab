@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import optuna
 
+from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
+from moex_spread_lab.core.w0 import _run_id
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+
 from .proof_batch import (
     _call_with_optional_progress,
     _cohort_result,
@@ -19,12 +23,11 @@ from .proof_batch import (
     _translate,
 )
 from .proof_kernel import PROOF_ADAPTER_IDS, STRATEGY_REGISTRY, _tune, resolve_seed
-from moex_spread_lab.core.timeframes import get_timeframe
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import _run_id
 
 TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
+
+
 def _families(request, targets, timeframe):
     """Choose one compatible adapter per registered family, in registry order.
 
@@ -39,8 +42,11 @@ def _families(request, targets, timeframe):
     preferred = (
         CALENDAR_UNIVERSE
         if kinds == {CALENDAR_UNIVERSE}
-        or (len(kinds) > 1 and active_plugin is not None
-            and CALENDAR_UNIVERSE in active_plugin.supported_universes)
+        or (
+            len(kinds) > 1
+            and active_plugin is not None
+            and CALENDAR_UNIVERSE in active_plugin.supported_universes
+        )
         else next((u for u in sorted(kinds) if u != CALENDAR_UNIVERSE), CALENDAR_UNIVERSE)
     )
     grouped = {}
@@ -64,8 +70,11 @@ def _families(request, targets, timeframe):
 def _same_family(a, b):
     if a == b:
         return True
-    return (a in STRATEGY_REGISTRY and b in STRATEGY_REGISTRY
-            and STRATEGY_REGISTRY.get(a).family_id == STRATEGY_REGISTRY.get(b).family_id)
+    return (
+        a in STRATEGY_REGISTRY
+        and b in STRATEGY_REGISTRY
+        and STRATEGY_REGISTRY.get(a).family_id == STRATEGY_REGISTRY.get(b).family_id
+    )
 
 
 def _candidate_request(request, strategy, targets, price_fill):
@@ -77,11 +86,7 @@ def _candidate_request(request, strategy, targets, price_fill):
     plugin = STRATEGY_REGISTRY.get(strategy)
     fill = price_fill if price_fill in plugin.supported_fills else plugin.supported_fills[0]
     return {
-        **{
-            k: v
-            for k, v in request.items()
-            if k not in ("optimize_strategy", "price_fill")
-        },
+        **{k: v for k, v in request.items() if k not in ("optimize_strategy", "price_fill")},
         "strategy": strategy,
         "parameters": params,
         "fill": fill,
@@ -93,9 +98,7 @@ def _candidate_request(request, strategy, targets, price_fill):
 _STRATEGY_LABELS = {p.strategy_id: p.short_label_ru for p in STRATEGY_REGISTRY}
 
 
-def strategy_search(
-    service, request, settings, benchmark, check_cancelled, *, on_progress=None
-):
+def strategy_search(service, request, settings, benchmark, check_cancelled, *, on_progress=None):
     targets = _targets(request)
     spec = get_timeframe(settings.timeframe)
     price_fill = request.get("price_fill") or (
@@ -211,8 +214,7 @@ def strategy_search(
                 excluded.append(
                     {
                         "target": failures[0][key]["target"],
-                        "reason": "Ни одна общая стратегия не проходит: "
-                        + " ".join(messages),
+                        "reason": "Ни одна общая стратегия не проходит: " + " ".join(messages),
                     }
                 )
             return {
@@ -256,8 +258,7 @@ def strategy_search(
                             "total": total_budget,
                             "percent": round(
                                 12.0
-                                + 76.0
-                                * ((pi * TRIALS_PER_STRATEGY + done) / max(total_budget, 1)),
+                                + 76.0 * ((pi * TRIALS_PER_STRATEGY + done) / max(total_budget, 1)),
                                 1,
                             ),
                             "label": f"Optuna ({sl}, {pi + 1}/{total_prepared}): испытание {done}/{total}",

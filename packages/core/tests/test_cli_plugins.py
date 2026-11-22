@@ -35,6 +35,7 @@ def test_plugin_w0_error_keeps_legacy_exit_code(capsys):
     def register(subparsers):
         def fail(args):
             raise W0Error("bad input")
+
         subparsers.add_parser("sample-plugin").set_defaults(_msl_cli_handler=fail)
 
     with patch.object(cli, "entry_points", return_value=[EntryPoint("sample", register)]):
@@ -48,17 +49,21 @@ def test_duplicate_command_is_rejected():
         subparsers.add_parser("replay")
 
     builtins = list(cli.entry_points(group="moex_spread_lab.cli"))
-    with patch.object(cli, "entry_points", return_value=[*builtins, EntryPoint("duplicate", register)]):
-        with pytest.raises(argparse.ArgumentError, match="conflicting subparser"):
-            cli.build_parser()
+    with (
+        patch.object(
+            cli, "entry_points", return_value=[*builtins, EntryPoint("duplicate", register)]
+        ),
+        pytest.raises(argparse.ArgumentError, match="conflicting subparser"),
+    ):
+        cli.build_parser()
 
 
 def test_existing_command_help_is_byte_identical():
     import hashlib
     import json
-    from pathlib import Path
     import subprocess
     import sys
+    from pathlib import Path
 
     baseline = json.loads((Path(__file__).parent / "cli_help_hashes.json").read_text())
     for command, expected in baseline.items():

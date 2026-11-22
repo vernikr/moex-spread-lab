@@ -2,9 +2,9 @@
 
 from .engine import (
     ANALYTICS_SCHEMA,
-    AnalyticsError,
     COST_SCENARIOS,
     REQUIRED_COST_COMPONENTS,
+    AnalyticsError,
     build_daily_series,
     build_series,
     compute_pair_entry_bands,
@@ -17,11 +17,11 @@ from .plugin import PLUGIN, PairMeanReversionPlugin
 
 __all__ = [
     "ANALYTICS_SCHEMA",
-    "AnalyticsError",
     "COST_SCENARIOS",
     "PLUGIN",
-    "PairMeanReversionPlugin",
     "REQUIRED_COST_COMPONENTS",
+    "AnalyticsError",
+    "PairMeanReversionPlugin",
     "build_daily_series",
     "build_series",
     "compute_pair_entry_bands",

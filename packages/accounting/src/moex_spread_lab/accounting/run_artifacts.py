@@ -13,8 +13,13 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from moex_spread_lab.core.w0 import W0Error, canonical_bytes, read_hashed_json, sha256_bytes, sha256_file
-
+from moex_spread_lab.core.w0 import (
+    W0Error,
+    canonical_bytes,
+    read_hashed_json,
+    sha256_bytes,
+    sha256_file,
+)
 
 RUN_ARTIFACT_SCHEMA = "research-run-artifact.v1"
 BASELINE_SCHEMA = "analytical-baseline.v1"
@@ -38,11 +43,15 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
         ) as handle:
             temporary = Path(handle.name)
             temporary.write_text(
-                json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+                json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+                + "\n",
                 encoding="utf-8",
             )
         os.replace(temporary, path)
@@ -94,9 +103,13 @@ def _parse_utc(value: Any, *, label: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _validate_report(report: dict[str, Any]) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+def _validate_report(
+    report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
     if report.get("schema_version") != BASELINE_SCHEMA:
-        raise RunArtifactError("only analytical-baseline.v1 reports can be published as baseline artifacts")
+        raise RunArtifactError(
+            "only analytical-baseline.v1 reports can be published as baseline artifacts"
+        )
     summary = {key: value for key, value in report.items() if key not in _DETAIL_NAMES}
     details: dict[str, list[dict[str, Any]]] = {}
     for name in _DETAIL_NAMES:
@@ -145,11 +158,15 @@ def publish_baseline_artifact(
         }
         artifact_id = sha256_bytes(canonical_bytes(content))
         input_provenance = summary.get("input_provenance")
-        input_hashes = {
-            key: value
-            for key, value in input_provenance.items()
-            if key.endswith("_sha256") and isinstance(value, str)
-        } if isinstance(input_provenance, dict) else {}
+        input_hashes = (
+            {
+                key: value
+                for key, value in input_provenance.items()
+                if key.endswith("_sha256") and isinstance(value, str)
+            }
+            if isinstance(input_provenance, dict)
+            else {}
+        )
         manifest = {
             "schema_version": RUN_ARTIFACT_SCHEMA,
             "artifact_kind": "analytical_baseline",
@@ -167,7 +184,9 @@ def publish_baseline_artifact(
             "retention": {
                 "pinned": bool(pin),
                 "detail_ttl_days": retention_days,
-                "expires_at": None if pin else _timestamp(created_at + timedelta(days=retention_days)),
+                "expires_at": None
+                if pin
+                else _timestamp(created_at + timedelta(days=retention_days)),
                 "detail_status": "available",
             },
         }
@@ -196,7 +215,9 @@ def verify_run_artifact(artifact_dir: Path, *, require_details: bool = True) -> 
     for name in _DETAIL_NAMES:
         record = manifest["details"].get(name)
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
-            raise RunArtifactError(f"run artifact {name} identity metadata is invalid: {artifact_dir}")
+            raise RunArtifactError(
+                f"run artifact {name} identity metadata is invalid: {artifact_dir}"
+            )
         identity_details[name] = record["sha256"]
     identity_content = {
         "result_schema_version": manifest.get("result_schema_version"),
@@ -207,8 +228,13 @@ def verify_run_artifact(artifact_dir: Path, *, require_details: bool = True) -> 
         # Imported source identity and equivalence evidence are integrity-bound.
         identity_content["legacy_import"] = manifest["legacy_import"]
     expected_artifact_id = sha256_bytes(canonical_bytes(identity_content))
-    if manifest.get("artifact_id") != expected_artifact_id or manifest.get("run_id") != expected_artifact_id:
-        raise RunArtifactError(f"run artifact identity differs from manifest contents: {artifact_dir}")
+    if (
+        manifest.get("artifact_id") != expected_artifact_id
+        or manifest.get("run_id") != expected_artifact_id
+    ):
+        raise RunArtifactError(
+            f"run artifact identity differs from manifest contents: {artifact_dir}"
+        )
     summary_file = manifest.get("summary_file")
     if not isinstance(summary_file, str) or Path(summary_file).name != summary_file:
         raise RunArtifactError(f"run artifact summary file is unsafe: {artifact_dir}")
@@ -216,14 +242,18 @@ def verify_run_artifact(artifact_dir: Path, *, require_details: bool = True) -> 
     summary = _read_json(summary_path, label="run artifact summary")
     summary_hash = sha256_file(summary_path)
     if summary_hash != manifest.get("summary_sha256"):
-        raise RunArtifactError(f"run artifact summary SHA-256 differs from manifest: {artifact_dir}")
+        raise RunArtifactError(
+            f"run artifact summary SHA-256 differs from manifest: {artifact_dir}"
+        )
     if summary.get("schema_version") != manifest.get("result_schema_version"):
         raise RunArtifactError(f"run artifact summary schema differs from manifest: {artifact_dir}")
     retention = manifest["retention"]
     detail_status = retention.get("detail_status")
     if detail_status != "available":
         if require_details:
-            raise RunArtifactError(f"run artifact details are unavailable ({detail_status}): {artifact_dir}")
+            raise RunArtifactError(
+                f"run artifact details are unavailable ({detail_status}): {artifact_dir}"
+            )
         return {"manifest": manifest, "summary": summary, "details": {}}
     details: dict[str, list[dict[str, Any]]] = {}
     for name in _DETAIL_NAMES:
@@ -237,10 +267,14 @@ def verify_run_artifact(artifact_dir: Path, *, require_details: bool = True) -> 
         if not path.is_file():
             raise RunArtifactError(f"run artifact {name} file is missing: {path}")
         if sha256_file(path) != record.get("sha256"):
-            raise RunArtifactError(f"run artifact {name} SHA-256 differs from manifest: {artifact_dir}")
+            raise RunArtifactError(
+                f"run artifact {name} SHA-256 differs from manifest: {artifact_dir}"
+            )
         table = pq.ParquetFile(path).read()
         if table.num_rows != record.get("row_count") or table.column_names != record.get("columns"):
-            raise RunArtifactError(f"run artifact {name} table differs from manifest: {artifact_dir}")
+            raise RunArtifactError(
+                f"run artifact {name} table differs from manifest: {artifact_dir}"
+            )
         details[name] = table.to_pylist()
     return {"manifest": manifest, "summary": summary, "details": details}
 
@@ -311,7 +345,9 @@ def gc_run_artifacts(runs_root: Path, *, dry_run: bool = True) -> dict[str, Any]
         for name in _DETAIL_NAMES:
             record = manifest["details"].get(name)
             if not isinstance(record, dict) or not isinstance(record.get("file"), str):
-                raise RunArtifactError(f"run artifact {name} metadata is invalid: {manifest_path.parent}")
+                raise RunArtifactError(
+                    f"run artifact {name} metadata is invalid: {manifest_path.parent}"
+                )
             files.append(manifest_path.parent / record["file"])
         expired.append((manifest_path.parent, manifest, files))
     planned = sorted(
@@ -325,11 +361,13 @@ def gc_run_artifacts(runs_root: Path, *, dry_run: bool = True) -> dict[str, Any]
         for artifact_dir, manifest, files in expired:
             for path in files:
                 path.unlink(missing_ok=True)
-            manifest["retention"].update({
-                "detail_status": "collected",
-                "collected_at": collected_at,
-                "expires_at": manifest["retention"].get("expires_at"),
-            })
+            manifest["retention"].update(
+                {
+                    "detail_status": "collected",
+                    "collected_at": collected_at,
+                    "expires_at": manifest["retention"].get("expires_at"),
+                }
+            )
             _atomic_write_json(artifact_dir / "manifest.json", manifest)
     return {
         "status": "dry_run" if dry_run else "collected",

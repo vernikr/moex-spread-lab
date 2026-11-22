@@ -6,19 +6,19 @@ the current snapshot without treating it as point-in-time historical evidence.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
-import csv
 import time
-from urllib.parse import urlencode
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from urllib.parse import urlencode
 
 from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, write_json
-
 
 ISS_MODULE_SCHEMA = "iss-intake.v1"
 DEFAULT_ISS_BASE_URL = "https://iss.moex.com"
@@ -95,20 +95,28 @@ def _candleborders_url(base_url: str, board: str, secid: str) -> str:
     return f"{root}/iss/engines/futures/markets/forts/boards/{board}/securities/{secid}/candleborders.json?iss.meta=off"
 
 
-def _candles_url(base_url: str, board: str, secid: str, interval: int, from_date: str, till_date: str, start: int) -> str:
+def _candles_url(
+    base_url: str, board: str, secid: str, interval: int, from_date: str, till_date: str, start: int
+) -> str:
     root = base_url.rstrip("/")
-    query = urlencode({
-        "iss.meta": "off",
-        "interval": interval,
-        "from": from_date,
-        "till": till_date,
-        "start": start,
-    })
+    query = urlencode(
+        {
+            "iss.meta": "off",
+            "interval": interval,
+            "from": from_date,
+            "till": till_date,
+            "start": start,
+        }
+    )
     return f"{root}/iss/engines/futures/markets/forts/boards/{board}/securities/{secid}/candles.json?{query}"
 
 
 def _rows(block: Any, name: str) -> list[dict[str, Any]]:
-    if not isinstance(block, dict) or not isinstance(block.get("columns"), list) or not isinstance(block.get("data"), list):
+    if (
+        not isinstance(block, dict)
+        or not isinstance(block.get("columns"), list)
+        or not isinstance(block.get("data"), list)
+    ):
         raise IssIntakeError(f"ISS block is malformed: {name}")
     columns = block["columns"]
     rows = []
@@ -119,7 +127,9 @@ def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     return rows
 
 
-def normalize_candle_borders(payload: dict[str, Any], *, secid: str, url: str, received_at: str, raw_sha256: str) -> dict[str, Any]:
+def normalize_candle_borders(
+    payload: dict[str, Any], *, secid: str, url: str, received_at: str, raw_sha256: str
+) -> dict[str, Any]:
     rows = _rows(payload.get("borders"), "borders")
     intervals = []
     for row in rows:
@@ -128,13 +138,15 @@ def normalize_candle_borders(payload: dict[str, Any], *, secid: str, url: str, r
             raise IssIntakeError(f"invalid candle interval for {secid}: {interval}")
         begin = row.get("begin")
         end = row.get("end")
-        intervals.append({
-            "interval": interval,
-            "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
-            "begin": begin,
-            "end": end,
-            "coverage_status": "borders_available",
-        })
+        intervals.append(
+            {
+                "interval": interval,
+                "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
+                "begin": begin,
+                "end": end,
+                "coverage_status": "borders_available",
+            }
+        )
     intervals.sort(key=lambda item: item["interval"])
     return {
         "secid": secid,
@@ -150,7 +162,15 @@ def normalize_candle_borders(payload: dict[str, Any], *, secid: str, url: str, r
     }
 
 
-def normalize_candles(payload: dict[str, Any], *, secid: str, interval: int, url: str, received_at: str, raw_sha256: str) -> list[dict[str, Any]]:
+def normalize_candles(
+    payload: dict[str, Any],
+    *,
+    secid: str,
+    interval: int,
+    url: str,
+    received_at: str,
+    raw_sha256: str,
+) -> list[dict[str, Any]]:
     rows = _rows(payload.get("candles"), "candles")
     columns = set(payload.get("candles", {}).get("columns", []))
     missing = set(CANDLE_FIELDS) - columns
@@ -165,27 +185,29 @@ def normalize_candles(payload: dict[str, Any], *, secid: str, interval: int, url
         close = row.get("close")
         if close is None:
             raise IssIntakeError(f"candle close missing for {secid}")
-        normalized.append({
-            "secid": secid,
-            "interval": interval,
-            "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
-            "begin": begin,
-            "end": end,
-            "open": row.get("open"),
-            "close": close,
-            "high": row.get("high"),
-            "low": row.get("low"),
-            "value": row.get("value"),
-            "volume": row.get("volume"),
-            "price_proxy": close,
-            "price_proxy_kind": "candle_close",
-            "price_proxy_assumption": "user_A-06_candle_is_usable_medium_term_price_proxy",
-            "source": {
-                "url": url,
-                "received_at": received_at,
-                "raw_response_sha256": raw_sha256,
-            },
-        })
+        normalized.append(
+            {
+                "secid": secid,
+                "interval": interval,
+                "timeframe": CANDLE_INTERVAL_LABELS.get(interval, f"interval_{interval}"),
+                "begin": begin,
+                "end": end,
+                "open": row.get("open"),
+                "close": close,
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "value": row.get("value"),
+                "volume": row.get("volume"),
+                "price_proxy": close,
+                "price_proxy_kind": "candle_close",
+                "price_proxy_assumption": "user_A-06_candle_is_usable_medium_term_price_proxy",
+                "source": {
+                    "url": url,
+                    "received_at": received_at,
+                    "raw_response_sha256": raw_sha256,
+                },
+            }
+        )
     return normalized
 
 
@@ -229,7 +251,10 @@ def fetch_candle_series(
             for attempt in range(retries + 1):
                 try:
                     payload, received_at, raw_sha256, raw = _fetch_json(
-                        url, timeout=timeout, opener=opener, return_raw=True,
+                        url,
+                        timeout=timeout,
+                        opener=opener,
+                        return_raw=True,
                     )
                     if raw_sink is not None:
                         raw_sink(url, raw, received_at, raw_sha256)
@@ -241,17 +266,33 @@ def fetch_candle_series(
                         time.sleep(min(2.0, 0.25 * (attempt + 1)))
             if last_error is not None:
                 raise last_error
-            rows = normalize_candles(payload, secid=secid, interval=interval, url=url, received_at=received_at, raw_sha256=raw_sha256)
+            rows = normalize_candles(
+                payload,
+                secid=secid,
+                interval=interval,
+                url=url,
+                received_at=received_at,
+                raw_sha256=raw_sha256,
+            )
             page_result = {"url": url, "page": page, "start": start, "rows": rows}
             if cache_path:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                cache_path.write_text(
+                    json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
         rows = page_result["rows"]
         if rows and all_rows and rows[0]["begin"] == all_rows[-1]["begin"]:
-            raise IssIntakeError(f"candle pagination did not advance: {secid} interval={interval} start={start}")
+            raise IssIntakeError(
+                f"candle pagination did not advance: {secid} interval={interval} start={start}"
+            )
         all_rows.extend(rows)
         page += 1
-        if not rows or len(rows) < CANDLE_PAGE_SIZE or (max_pages is not None and page >= max_pages):
+        if (
+            not rows
+            or len(rows) < CANDLE_PAGE_SIZE
+            or (max_pages is not None and page >= max_pages)
+        ):
             break
     deduped = {row["begin"]: row for row in all_rows}
     rows = [deduped[key] for key in sorted(deduped)]
@@ -279,7 +320,10 @@ def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
         far_series = json.loads(far_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise IssIntakeError(f"cannot read candle series: {exc}") from exc
-    if near_series.get("schema_version") != "iss-candles.v1" or far_series.get("schema_version") != "iss-candles.v1":
+    if (
+        near_series.get("schema_version") != "iss-candles.v1"
+        or far_series.get("schema_version") != "iss-candles.v1"
+    ):
         raise IssIntakeError("pair check requires iss-candles.v1 series")
     if near_series.get("interval") != far_series.get("interval"):
         raise IssIntakeError("pair check requires equal intervals")
@@ -291,7 +335,11 @@ def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
         proxy_markers = 0
         for row in rows:
             values = [row.get(field) for field in ("open", "close", "high", "low")]
-            if all(isinstance(value, (int, float)) for value in values) and row["low"] <= min(row["open"], row["close"], row["high"]) and row["high"] >= max(row["open"], row["close"], row["low"]):
+            if (
+                all(isinstance(value, (int, float)) for value in values)
+                and row["low"] <= min(row["open"], row["close"], row["high"])
+                and row["high"] >= max(row["open"], row["close"], row["low"])
+            ):
                 valid_ohlc += 1
             if row.get("price_proxy_kind") == "candle_close":
                 proxy_markers += 1
@@ -301,7 +349,9 @@ def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
             "first_begin": begins[0] if begins else None,
             "last_begin": begins[-1] if begins else None,
             "duplicate_begin_count": len(begins) - len(set(begins)),
-            "out_of_order_count": sum(1 for left, right in zip(begins, begins[1:]) if left >= right),
+            "out_of_order_count": sum(
+                1 for left, right in zip(begins, begins[1:]) if left >= right
+            ),
             "valid_ohlc_count": valid_ohlc,
             "invalid_ohlc_count": len(rows) - valid_ohlc,
             "price_proxy_marker_count": proxy_markers,
@@ -341,10 +391,13 @@ def _fetch_json(
 ) -> tuple[Any, ...]:
     request = urllib.request.Request(
         url,
-        headers={"Accept": "application/json", "User-Agent": f"moex-spread-lab/0.1 W1 {probe} probe"},
+        headers={
+            "Accept": "application/json",
+            "User-Agent": f"moex-spread-lab/0.1 W1 {probe} probe",
+        },
         method="GET",
     )
-    received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    received_at = datetime.now(UTC).isoformat(timespec="seconds")
     try:
         with opener(request, timeout=timeout) as response:
             raw = response.read()
@@ -405,10 +458,15 @@ def fetch_candle_coverage(
             time.sleep(delay_seconds)
         try:
             payload, received_at, raw_sha256 = _fetch_json(url, timeout=timeout, opener=opener)
-            coverage = normalize_candle_borders(payload, secid=secid, url=url, received_at=received_at, raw_sha256=raw_sha256)
+            coverage = normalize_candle_borders(
+                payload, secid=secid, url=url, received_at=received_at, raw_sha256=raw_sha256
+            )
             if cache_path:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(json.dumps(coverage, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                cache_path.write_text(
+                    json.dumps(coverage, ensure_ascii=False, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
             return {**instrument, "candle_coverage": coverage}
         except IssIntakeError as exc:
             return {
@@ -440,7 +498,7 @@ def fetch_candle_coverage(
         timeframe_counts[timeframe] = timeframe_counts.get(timeframe, 0) + 1
     return {
         "schema_version": "iss-timeframe-inventory.v1",
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "board": board,
         "source": {
             "provider": "moex_iss",
@@ -457,31 +515,49 @@ def fetch_candle_coverage(
     }
 
 
-def write_timeframe_inventory(result: dict[str, Any], output: Path, csv_output: Path | None = None) -> None:
+def write_timeframe_inventory(
+    result: dict[str, Any], output: Path, csv_output: Path | None = None
+) -> None:
     write_json(output, result)
     if csv_output is None:
         return
     csv_output.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["stable_id", "secid", "security", "asset_code", "expiry", "minimum_timeframe", "minimum_interval", "available_timeframes", "coverage_status"]
+    fields = [
+        "stable_id",
+        "secid",
+        "security",
+        "asset_code",
+        "expiry",
+        "minimum_timeframe",
+        "minimum_interval",
+        "available_timeframes",
+        "coverage_status",
+    ]
     with csv_output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for instrument in result["instruments"]:
             coverage = instrument["candle_coverage"]
-            writer.writerow({
-                "stable_id": instrument["stable_id"],
-                "secid": instrument["secid"],
-                "security": instrument.get("security"),
-                "asset_code": instrument.get("asset_code"),
-                "expiry": instrument.get("expiry"),
-                "minimum_timeframe": coverage.get("minimum_timeframe"),
-                "minimum_interval": coverage.get("minimum_interval"),
-                "available_timeframes": ",".join(item["timeframe"] for item in coverage.get("available_intervals", [])),
-                "coverage_status": coverage.get("coverage_status"),
-            })
+            writer.writerow(
+                {
+                    "stable_id": instrument["stable_id"],
+                    "secid": instrument["secid"],
+                    "security": instrument.get("security"),
+                    "asset_code": instrument.get("asset_code"),
+                    "expiry": instrument.get("expiry"),
+                    "minimum_timeframe": coverage.get("minimum_timeframe"),
+                    "minimum_interval": coverage.get("minimum_interval"),
+                    "available_timeframes": ",".join(
+                        item["timeframe"] for item in coverage.get("available_intervals", [])
+                    ),
+                    "coverage_status": coverage.get("coverage_status"),
+                }
+            )
 
 
-def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str, raw_sha256: str) -> dict[str, Any]:
+def normalize_iss_payload(
+    payload: dict[str, Any], *, url: str, received_at: str, raw_sha256: str
+) -> dict[str, Any]:
     securities = _rows(payload.get("securities"), "securities")
     marketdata = _rows(payload.get("marketdata"), "marketdata")
     market_by_sec_id = {row.get("SECID"): row for row in marketdata}
@@ -503,37 +579,39 @@ def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str
             quote_quality = "crossed_quote"
         else:
             quote_quality = "two_sided_quote"
-        instruments.append({
-            "stable_id": stable_id,
-            "secid": secid,
-            "board": market.get("BOARDID", "RFUD"),
-            "security": security.get("SHORTNAME"),
-            "short_code": secid,
-            "asset_code": security.get("ASSETCODE"),
-            "expiry": expiry,
-            "first_trade": security.get("FRSTTRADE"),
-            "lot_size": security.get("LOTVOLUME"),
-            "tick_size": security.get("MINSTEP"),
-            "tick_value": security.get("STEPPRICE"),
-            "initial_margin": security.get("INITIALMARGIN"),
-            "settlement": market.get("SETTLEPRICE"),
-            "last_trade": market.get("LAST"),
-            "analytical_close": None,
-            "last_trade_close": None,
-            "bid": bid,
-            "ask": ask,
-            "live_mark": None,
-            "quote_quality": quote_quality,
-            "source_times": {
-                "event_at": market.get("TIME"),
-                "source_published_at": market.get("UPDATETIME"),
-                "source_system_at": market.get("SYSTIME"),
-                "trade_date": market.get("TRADEDATE"),
-            },
-            "source_vintage": "current_snapshot",
-            "historical_evidence": False,
-            "historical_specification_basis": HISTORICAL_SPECIFICATION_STATUS,
-        })
+        instruments.append(
+            {
+                "stable_id": stable_id,
+                "secid": secid,
+                "board": market.get("BOARDID", "RFUD"),
+                "security": security.get("SHORTNAME"),
+                "short_code": secid,
+                "asset_code": security.get("ASSETCODE"),
+                "expiry": expiry,
+                "first_trade": security.get("FRSTTRADE"),
+                "lot_size": security.get("LOTVOLUME"),
+                "tick_size": security.get("MINSTEP"),
+                "tick_value": security.get("STEPPRICE"),
+                "initial_margin": security.get("INITIALMARGIN"),
+                "settlement": market.get("SETTLEPRICE"),
+                "last_trade": market.get("LAST"),
+                "analytical_close": None,
+                "last_trade_close": None,
+                "bid": bid,
+                "ask": ask,
+                "live_mark": None,
+                "quote_quality": quote_quality,
+                "source_times": {
+                    "event_at": market.get("TIME"),
+                    "source_published_at": market.get("UPDATETIME"),
+                    "source_system_at": market.get("SYSTIME"),
+                    "trade_date": market.get("TRADEDATE"),
+                },
+                "source_vintage": "current_snapshot",
+                "historical_evidence": False,
+                "historical_specification_basis": HISTORICAL_SPECIFICATION_STATUS,
+            }
+        )
     instruments.sort(key=lambda item: item["stable_id"])
     quality_summary: dict[str, int] = {}
     for instrument in instruments:
@@ -556,7 +634,9 @@ def normalize_iss_payload(payload: dict[str, Any], *, url: str, received_at: str
     }
 
 
-def _candidate_status(instruments: list[dict[str, Any]], near_secid: str, far_secid: str) -> dict[str, Any]:
+def _candidate_status(
+    instruments: list[dict[str, Any]], near_secid: str, far_secid: str
+) -> dict[str, Any]:
     by_sec_id = {item["secid"]: item for item in instruments}
     near = by_sec_id.get(near_secid)
     far = by_sec_id.get(far_secid)
@@ -569,25 +649,52 @@ def _candidate_status(instruments: list[dict[str, Any]], near_secid: str, far_se
     if near is not None and far is not None:
         if near["asset_code"] not in ("CNYRUBTOM", "CNY") or far["asset_code"] != "CNY":
             reasons.append("asset-code relationship is not the configured CNY/RUB candidate")
-        if near["source_vintage"] != "current_snapshot" or far["source_vintage"] != "current_snapshot":
+        if (
+            near["source_vintage"] != "current_snapshot"
+            or far["source_vintage"] != "current_snapshot"
+        ):
             reasons.append("unexpected source-vintage state")
-        assumptions.append("historical contract parameters use the current snapshot until a dated specification is available")
-        reasons.append("historical executable bid/ask is unavailable; execution replay remains blocked")
-    if near is not None and far is not None and any(item["quote_quality"] != "two_sided_quote" for item in (near, far)):
+        assumptions.append(
+            "historical contract parameters use the current snapshot until a dated specification is available"
+        )
+        reasons.append(
+            "historical executable bid/ask is unavailable; execution replay remains blocked"
+        )
+    if (
+        near is not None
+        and far is not None
+        and any(item["quote_quality"] != "two_sided_quote" for item in (near, far))
+    ):
         reasons.append("one or both candidate instruments have invalid or missing current quotes")
     return {
         "candidate_id": f"{near_secid}/{far_secid}",
         "near_secid": near_secid,
         "far_secid": far_secid,
-        "status": "conditionally_admitted_analytical_only" if near is not None and far is not None and not any("invalid or missing" in reason for reason in reasons) else "not_admitted",
+        "status": "conditionally_admitted_analytical_only"
+        if near is not None
+        and far is not None
+        and not any("invalid or missing" in reason for reason in reasons)
+        else "not_admitted",
         "reasons": reasons,
         "assumptions": assumptions,
-        "execution_status": "blocked_historical_quote_evidence" if near is not None and far is not None else "not_evaluable",
+        "execution_status": "blocked_historical_quote_evidence"
+        if near is not None and far is not None
+        else "not_evaluable",
     }
 
 
-def normalize_iss_intake(payload: dict[str, Any], *, url: str, received_at: str, raw_sha256: str, near_secid: str = DEFAULT_NEAR, far_secid: str = DEFAULT_FAR) -> dict[str, Any]:
-    normalized = normalize_iss_payload(payload, url=url, received_at=received_at, raw_sha256=raw_sha256)
+def normalize_iss_intake(
+    payload: dict[str, Any],
+    *,
+    url: str,
+    received_at: str,
+    raw_sha256: str,
+    near_secid: str = DEFAULT_NEAR,
+    far_secid: str = DEFAULT_FAR,
+) -> dict[str, Any]:
+    normalized = normalize_iss_payload(
+        payload, url=url, received_at=received_at, raw_sha256=raw_sha256
+    )
     normalized["candidate"] = _candidate_status(normalized["instruments"], near_secid, far_secid)
     normalized["admission_status"] = normalized["candidate"]["status"]
     return normalized
@@ -604,7 +711,10 @@ def fetch_iss_catalog(
 ) -> dict[str, Any]:
     url = _url(base_url, board)
     payload, received_at, raw_sha256 = _fetch_json(
-        url, timeout=timeout, opener=opener, probe="read-only",
+        url,
+        timeout=timeout,
+        opener=opener,
+        probe="read-only",
     )
     return normalize_iss_intake(
         payload,
@@ -672,9 +782,7 @@ def _history_rows(
     ):
         raise error(f"malformed ISS block: {name}")
     return [
-        dict(zip(block["columns"], values))
-        for values in block["data"]
-        if isinstance(values, list)
+        dict(zip(block["columns"], values)) for values in block["data"] if isinstance(values, list)
     ]
 
 
@@ -721,9 +829,7 @@ def fetch_history(
         start = page * HISTORY_PAGE_SIZE
         url = _history_url(secid, from_date, till_date, start, fields)
         cache_path = (
-            cache_dir / f"{secid}-{from_date}-{till_date}-{start}.json"
-            if cache_dir
-            else None
+            cache_dir / f"{secid}-{from_date}-{till_date}-{start}.json" if cache_dir else None
         )
         payload = None
         raw_hash = None
@@ -782,9 +888,7 @@ def fetch_history(
         if len(block_rows) < HISTORY_PAGE_SIZE:
             break
     if total is not None and len(all_rows) < total:
-        raise error(
-            f"Неполная история ISS {secid}: получено строк {len(all_rows)} из {total}."
-        )
+        raise error(f"Неполная история ISS {secid}: получено строк {len(all_rows)} из {total}.")
     deduped = {row.get("TRADEDATE"): row for row in all_rows if row.get("TRADEDATE")}
     rows = [deduped[key] for key in sorted(deduped)]
     if not rows and (not allow_empty or all_rows):

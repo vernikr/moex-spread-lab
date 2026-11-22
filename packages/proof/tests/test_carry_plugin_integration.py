@@ -1,14 +1,15 @@
 """Actual registered carry plugin against native proof and Optuna."""
+
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_drop_in_carry_proof_and_search(tmp_path):
     plugin = tmp_path / "plugin"
     plugin.mkdir()
-    (plugin / "demo_carry.py").write_text('''
+    (plugin / "demo_carry.py").write_text("""
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
 class Demo(FundingCarryPlugin):
     strategy_id = "demo_carry"
@@ -28,16 +29,29 @@ class Mutating(Demo):
         window.carry_study["rows"][0]["near_settle"] = 999999
         return replace(run, intents=tuple({**t, "gross_pnl": 99999999, "funding_rub":99999999} for t in run.intents))
 MUTATING = Mutating()
-''')
+""")
     dist = plugin / "demo_carry-1.0.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-carry\nVersion: 1.0\n")
-    (dist / "entry_points.txt").write_text("[moex_spread_lab.strategies]\ndemo_carry = demo_carry:PLUGIN\nmutating_carry = demo_carry:MUTATING\n")
+    (dist / "entry_points.txt").write_text(
+        "[moex_spread_lab.strategies]\ndemo_carry = demo_carry:PLUGIN\nmutating_carry = demo_carry:MUTATING\n"
+    )
     root = Path(__file__).resolve().parents[3]
-    env = {**os.environ, "MOEX_OFFLINE_ONLY":"1", "MOEX_PROOF_WORKERS":"1",
-           "PYTHONPATH":os.pathsep.join([str(plugin), str(root / "tests"), str(root / "packages/proof/tests"),
-                  str(root / "packages/accounting/tests"), os.environ.get("PYTHONPATH", "")])}
-    code = '''
+    env = {
+        **os.environ,
+        "MOEX_OFFLINE_ONLY": "1",
+        "MOEX_PROOF_WORKERS": "1",
+        "PYTHONPATH": os.pathsep.join(
+            [
+                str(plugin),
+                str(root / "tests"),
+                str(root / "packages/proof/tests"),
+                str(root / "packages/accounting/tests"),
+                os.environ.get("PYTHONPATH", ""),
+            ]
+        ),
+    }
+    code = """
 import sys
 from pathlib import Path
 from funding_fixtures import fixture, change, request, PAIR
@@ -165,7 +179,12 @@ assert serial["selected_parameters"] == parallel["selected_parameters"], (serial
 assert serial["run_id"] == parallel["run_id"]
 parallel_service.close()
 service.close()
-'''
-    result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "root")], env=env,
-                            text=True, capture_output=True, timeout=120)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path / "root")],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
     assert result.returncode == 0, result.stdout + result.stderr

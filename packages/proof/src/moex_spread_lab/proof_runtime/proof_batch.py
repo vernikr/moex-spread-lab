@@ -1,14 +1,17 @@
 """One Optuna objective on a fixed, equally weighted cohort of independent proof windows."""
 
-from dataclasses import dataclass
 import inspect
+from dataclasses import dataclass
 from statistics import fmean
 
 import optuna
 
-from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
+from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from .service import _benchmark_marks
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
+from moex_spread_lab.core.w0 import W0Error, _run_id
+from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
+
 from .proof_kernel import (
     STRATEGY_AXES,
     STRATEGY_REGISTRY,
@@ -25,9 +28,7 @@ from .proof_kernel import (
     resolve_seed,
 )
 from .proof_pool import _estimate_weight, get_worker_pool
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
-from moex_spread_lab.core.contracts import InstrumentContext
-from moex_spread_lab.core.w0 import W0Error, _run_id
+from .service import _benchmark_marks
 
 MAX_TARGETS = 1024
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -39,10 +40,7 @@ def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
             params = inspect.signature(fn).parameters.values()
         except (TypeError, ValueError):
             params = ()
-        if any(
-            p.name == "on_progress" or p.kind is inspect.Parameter.VAR_KEYWORD
-            for p in params
-        ):
+        if any(p.name == "on_progress" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
             kwargs["on_progress"] = on_progress
     return fn(*args, **kwargs)
 
@@ -63,8 +61,13 @@ def _native_request(active, target, *, default_price_fill="reference_same_bar"):
     if strategy not in STRATEGY_AXES:
         raise W0Error("Неизвестная стратегия подбора")
     plugin = STRATEGY_REGISTRY.get(strategy)
-    adapters = [p for p in STRATEGY_REGISTRY if p.strategy_id in STRATEGY_AXES
-                and p.family_id == plugin.family_id and target["universe"] in p.supported_universes]
+    adapters = [
+        p
+        for p in STRATEGY_REGISTRY
+        if p.strategy_id in STRATEGY_AXES
+        and p.family_id == plugin.family_id
+        and target["universe"] in p.supported_universes
+    ]
     if not adapters:
         raise W0Error("Выбранная стратегия неприменима к этому типу пары.")
     strategy = adapters[0].strategy_id
@@ -109,13 +112,22 @@ def _active_seed(request, active):
         asset=request.get("asset"),
         monthly=bool(ASSETS.get(request.get("asset"), {}).get("monthly")),
     )
-    defaults = {spec.name: spec.default for spec in STRATEGY_REGISTRY.get(active).parameter_schema(context)
-                if spec.tunable}
+    defaults = {
+        spec.name: spec.default
+        for spec in STRATEGY_REGISTRY.get(active).parameter_schema(context)
+        if spec.tunable
+    }
     return {
         **defaults,
         **request.get("parameters", {}),
-        **({"quantity": request.get("quantity", 1), "slippage_ticks": request.get("slippage_ticks", 1.0)}
-           if execution_axes(request) else {}),
+        **(
+            {
+                "quantity": request.get("quantity", 1),
+                "slippage_ticks": request.get("slippage_ticks", 1.0),
+            }
+            if execution_axes(request)
+            else {}
+        ),
     }
 
 
@@ -190,9 +202,7 @@ class _Cohort:
         # Never substitute a clamped seed or a smaller, measurable subset for the user's vector.
         reason = self._plateau_reason(point)
         first = self.members[0][1]
-        native_single = (
-            len(self.members) == 1 and first.request["strategy"] == self.active
-        )
+        native_single = len(self.members) == 1 and first.request["strategy"] == self.active
         return _lamps(
             first.fit if native_single else self.land,
             point,
@@ -203,9 +213,7 @@ class _Cohort:
     def report_members(self, point, best, settings, check_cancelled, on_progress=None):
         rows = []
         single = None
-        any_exec_ref = any(
-            case.full.get("execution_reference", False) for _, case in self.members
-        )
+        any_exec_ref = any(case.full.get("execution_reference", False) for _, case in self.members)
         total_members = len(self.members)
         for idx, (target, case) in enumerate(self.members, start=1):
             check_cancelled()
@@ -234,9 +242,7 @@ class _Cohort:
             }
             try:
                 single = case.report(local)
-                rows.append(
-                    {**row, "run_id": single["run_id"], "evaluation": single["evaluation"]}
-                )
+                rows.append({**row, "run_id": single["run_id"], "evaluation": single["evaluation"]})
             except (W0Error, OSError) as exc:
                 rows.append(
                     {
@@ -263,9 +269,7 @@ class _RemoteCohort(_Cohort):
 
     def close(self) -> None:
         if self.pool is not None and self.cohort_state is not None:
-            self.pool.release_cohort(
-                self.cohort_state["cohort_id"], self.cohort_state["owner_of"]
-            )
+            self.pool.release_cohort(self.cohort_state["cohort_id"], self.cohort_state["owner_of"])
             self.cohort_state = None
 
     def plateau(self, point, *, on_progress=None):
@@ -280,8 +284,7 @@ class _RemoteCohort(_Cohort):
                 if key not in self.land.cache and key not in seen_keys:
                     seen_keys.add(key)
                     point_by_strat = {
-                        strat: _translate(candidate, strat)
-                        for strat in self.distinct_strategies
+                        strat: _translate(candidate, strat) for strat in self.distinct_strategies
                     }
                     uncached_points.append((key, point_by_strat))
 
@@ -309,9 +312,7 @@ class _RemoteCohort(_Cohort):
         return _lamps(self.land, point, reason)
 
     def report_members(self, point, best, settings, check_cancelled, on_progress=None):
-        point_by_strat = {
-            strat: _translate(point, strat) for strat in self.distinct_strategies
-        }
+        point_by_strat = {strat: _translate(point, strat) for strat in self.distinct_strategies}
         results = self.pool.report_cohort(
             self.cohort_state,
             point_by_strat,
@@ -374,9 +375,7 @@ def _prepare_cohort(
             check_cancelled,
             on_progress=on_progress,
         )
-        worker_by_idx = {
-            idx: (status, info) for idx, status, info in cohort_state["results"]
-        }
+        worker_by_idx = {idx: (status, info) for idx, status, info in cohort_state["results"]}
         members, rejected = [], []
         for idx, target in enumerate(targets):
             if idx in early_rejected:
@@ -404,9 +403,7 @@ def _prepare_cohort(
             members.append((target, case))
             for name, other in _translate(case.strategy_axes, active).items():
                 a = axes[name]
-                axes[name] = Axis(
-                    max(a.low, other.low), min(a.high, other.high), a.step
-                )
+                axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
         minimum = max(
             (a.low + 2 for k, a in axes.items() if k in ("window", "lookback")),
             default=2,
@@ -434,16 +431,12 @@ def _prepare_cohort(
                 "selected_parameters": None,
             }
 
-        distinct_strategies = tuple(
-            dict.fromkeys(case.request["strategy"] for _, case in members)
-        )
+        distinct_strategies = tuple(dict.fromkeys(case.request["strategy"] for _, case in members))
         canary_box = [0]
         total_members = len(members)
 
         def average(point):
-            point_by_strat = {
-                strat: _translate(point, strat) for strat in distinct_strategies
-            }
+            point_by_strat = {strat: _translate(point, strat) for strat in distinct_strategies}
             return pool.eval_point(
                 cohort_state, point_by_strat, canary_box, total_members, check_cancelled
             )
@@ -509,9 +502,7 @@ def _prepare_cohort(
             members.append((target, case))
             for name, other in _translate(case.strategy_axes, active).items():
                 a = axes[name]
-                axes[name] = Axis(
-                    max(a.low, other.low), min(a.high, other.high), a.step
-                )
+                axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
         except (W0Error, OSError) as exc:
             if not checked:
                 raise
@@ -520,9 +511,7 @@ def _prepare_cohort(
             on_progress(idx + 1, total_targets)
     # Some individual histories fit the native domain but not its intersection
     # (e.g. a 5-session calendar combined with a 5-lookback-minimum pair).
-    minimum = max(
-        (a.low + 2 for k, a in axes.items() if k in ("window", "lookback")), default=2
-    )
+    minimum = max((a.low + 2 for k, a in axes.items() if k in ("window", "lookback")), default=2)
     compatible = []
     for target, case in members:
         if len(case.split.training) >= minimum:
@@ -796,10 +785,7 @@ def _cohort_result(
             )
         ),
     )
-    rates = [
-        r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp")
-        for r in rows
-    ]
+    rates = [r.get("evaluation", {}).get("result", {}).get("annualized_excess_pp") for r in rows]
     summary = {
         "member_count": len(rows),
         "execution_reference": any_exec_ref,
@@ -808,9 +794,7 @@ def _cohort_result(
         **settings.metadata(),
         "result_basis": "validation" if settings.validation_percent else "training",
         "training_mean_pp": land.measure(best)["rank_score"] if best else None,
-        "result_mean_pp": fmean(rates)
-        if best and all(v is not None for v in rates)
-        else None,
+        "result_mean_pp": fmean(rates) if best and all(v is not None for v in rates) else None,
     }
     # Same fixed-cohort diagnostic used by the live form, only after the final choice.
     native_single = len(members) == 1 and first.request["strategy"] == group.active
@@ -858,9 +842,7 @@ def _cohort_result(
         "selection": {k: v for k, v in request.items() if k != "targets"},
         "group": summary,
         "plateau": plateau,
-        "reason": None
-        if best
-        else "Нет допустимого результата сразу для всех выбранных окон.",
+        "reason": None if best else "Нет допустимого результата сразу для всех выбранных окон.",
     }
     if len(rows) == 1 and single:
         result.update(

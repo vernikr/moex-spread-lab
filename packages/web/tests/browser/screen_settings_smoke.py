@@ -8,9 +8,9 @@ from pathlib import Path
 
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import screen_failures
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import screen_failures
 
 
 def run(browser, url):
@@ -23,9 +23,7 @@ def run(browser, url):
         page.on("pageerror", lambda e: errors.append(str(e)))
 
     def wait(page, route):
-        return page.expect_response(
-            lambda r: r.url.endswith("/api/" + route), timeout=16000
-        )
+        return page.expect_response(lambda r: r.url.endswith("/api/" + route), timeout=16000)
 
     def open_dialog(page):
         page.locator("#open-settings").click()
@@ -78,21 +76,17 @@ def run(browser, url):
     expect(pg.locator("#tune-state")).to_be_empty()
     pg.locator("#batch-result summary").click()
     assert {
-        name
-        for m in opt["data"]["group"]["members"]
-        for name in m["evaluation"]["failed_screens"]
+        name for m in opt["data"]["group"]["members"] for name in m["evaluation"]["failed_screens"]
     } == {"capital", "volume"}
     expect(pg.locator("#batch-result")).not_to_contain_text("допуск разрешён")
     r = edit(True, False)
     assert [x["target"]["pair"] for x in r["excluded"]] == ["SRH3/SRM3"]
     expect(pg.locator("#batch-result")).to_be_hidden()
     expect(pg.locator("#group-profile-state")).to_contain_text("1 из 2")
-    expect(
-        other.locator("#window-list tr.current [data-metric=rate]")
-    ).to_have_attribute("title", re.compile("Не пройден стресс-тест капитала"))
-    expect(other.locator("#period-result")).not_to_contain_text(
-        "Не пройден стресс-тест капитала"
+    expect(other.locator("#window-list tr.current [data-metric=rate]")).to_have_attribute(
+        "title", re.compile("Не пройден стресс-тест капитала")
     )
+    expect(other.locator("#period-result")).not_to_contain_text("Не пройден стресс-тест капитала")
     with expect_api_json(pg, "/api/proof/optimize") as rejection:
         pg.locator("#auto-tune").click()
     assert rejection["data"]["trial_count"] == 0
@@ -114,11 +108,7 @@ def run(browser, url):
     assert len(r["excluded"]) == 2 and pg.evaluate("checked.size") == 2
     expect(pg.locator("#group-profile-state")).to_contain_text("2 из 2")
     r = edit(True, True, 25)
-    assert (
-        r["status"] == "measured"
-        and r["member_count"] == 2
-        and r["validation_percent"] == 25
-    )
+    assert r["status"] == "measured" and r["member_count"] == 2 and r["validation_percent"] == 25
     ready(pg, "validation")
     expect(pg.locator("#period-result")).not_to_contain_text("допуск разрешён")
     assert not errors, errors

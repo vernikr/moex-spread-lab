@@ -1,11 +1,17 @@
 import unittest
 
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
-CONTRACT = {"secid": "SBERF", "lot_size": 100, "tick_value": 1.0, "tick_size": 0.01, "initial_margin": 1000.0}
+CONTRACT = {
+    "secid": "SBERF",
+    "lot_size": 100,
+    "tick_value": 1.0,
+    "tick_size": 0.01,
+    "initial_margin": 1000.0,
+}
 
 
 def _series(spike_close=15.0, next_open=14.0):
@@ -13,11 +19,20 @@ def _series(spike_close=15.0, next_open=14.0):
     closes[22] = spike_close
     opens = list(closes)
     opens[23] = next_open
-    rows = [{
-        "date": f"2026-03-{day:02d}", "timestamp": f"2026-03-{day:02d} 00:00:00",
-        "near_close": 10.0, "far_close": closes[i], "near_open": 10.0, "far_open": opens[i],
-        "spread_ticks": 10.0 - closes[i], "benchmark_price": 1.0, "benchmark_source_kind": "observed",
-    } for i, day in enumerate(range(1, 26))]
+    rows = [
+        {
+            "date": f"2026-03-{day:02d}",
+            "timestamp": f"2026-03-{day:02d} 00:00:00",
+            "near_close": 10.0,
+            "far_close": closes[i],
+            "near_open": 10.0,
+            "far_open": opens[i],
+            "spread_ticks": 10.0 - closes[i],
+            "benchmark_price": 1.0,
+            "benchmark_source_kind": "observed",
+        }
+        for i, day in enumerate(range(1, 26))
+    ]
     contracts = {
         "SBERF": {**CONTRACT, "tick_size": 1.0},
         "SRZ6": {**CONTRACT, "secid": "SRZ6", "tick_size": 1.0},
@@ -63,8 +78,12 @@ class OpenFillTests(unittest.TestCase):
 
     def test_tariff_costs_charge_both_sides_and_overlay_keeps_cash_in_lqdt(self):
         report = run_mean_reversion_baseline(
-            _series(), fill="open", cash_in_lqdt=True, cost_profile={**tariff_profile(1.0)},
-            analysis_role="diagnostic_only", initial_capital=30000.0,
+            _series(),
+            fill="open",
+            cash_in_lqdt=True,
+            cost_profile={**tariff_profile(1.0)},
+            analysis_role="diagnostic_only",
+            initial_capital=30000.0,
         )
         costs = report["costs"]["total_by_component"]
         self.assertGreater(costs["slippage"], 0)

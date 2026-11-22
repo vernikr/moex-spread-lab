@@ -7,9 +7,10 @@ import importlib.metadata
 import math
 import pkgutil
 from array import array
+from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -107,7 +108,9 @@ def row_ts_days(raw_date: Any) -> float:
 
 def calendar_row_buffers(rows: Any, *, z_cache: dict | None = None, z_cache_key: Any = None):
     """Build typed C-contiguous column arrays for fast calendar strategy scans."""
-    cache_key = ("_cols", z_cache_key) if (z_cache is not None and z_cache_key is not None) else None
+    cache_key = (
+        ("_cols", z_cache_key) if (z_cache is not None and z_cache_key is not None) else None
+    )
     if cache_key is not None and cache_key in z_cache:
         return z_cache[cache_key]
     n = len(rows)
@@ -217,14 +220,14 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     for plugin in plugins:
         counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
     return frozenset(
-        p.strategy_id for p in plugins
+        p.strategy_id
+        for p in plugins
         if getattr(p, "proof_adapter", None) == "calendar_price_intents.v1"
         and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
         and len(p.supported_fills) == len(PRICE_FILLS)
         and set(p.supported_fills) == set(PRICE_FILLS)
         and counts[p.family_id] == 1
     )
-
 
 
 def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
@@ -236,14 +239,24 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     for plugin in plugins:
         counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
     return frozenset(
-        p.strategy_id for p in plugins
-        if ((getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1" and p.requires_daily_bars is True)
-            or (getattr(p, "proof_adapter", None) == "pair_price_intents.v1" and p.requires_daily_bars is False))
+        p.strategy_id
+        for p in plugins
+        if (
+            (
+                getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1"
+                and p.requires_daily_bars is True
+            )
+            or (
+                getattr(p, "proof_adapter", None) == "pair_price_intents.v1"
+                and p.requires_daily_bars is False
+            )
+        )
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and len(p.supported_fills) == len(PRICE_FILLS)
         and set(p.supported_fills) == set(PRICE_FILLS)
         and counts[p.family_id] == 1
     )
+
 
 def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     """Opt in unique, daily short-near settlement-intent carry families."""
@@ -253,12 +266,17 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     counts: dict[str, int] = {}
     for plugin in plugins:
         counts[plugin.family_id] = counts.get(plugin.family_id, 0) + 1
-    return frozenset(p.strategy_id for p in plugins
+    return frozenset(
+        p.strategy_id
+        for p in plugins
         if getattr(p, "proof_adapter", None) == "carry_settlement_intents.v1"
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and p.supported_fills == ("same_day_settlement",)
-        and p.requires_daily_bars is True and counts[p.family_id] == 1
-        and bool(p.parameter_schema()) and all(spec.tunable for spec in p.parameter_schema()))
+        and p.requires_daily_bars is True
+        and counts[p.family_id] == 1
+        and bool(p.parameter_schema())
+        and all(spec.tunable for spec in p.parameter_schema())
+    )
 
 
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
@@ -291,7 +309,9 @@ def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegist
                         break
                 if plugin_file is None:
                     continue
-                spec = importlib.util.spec_from_file_location(f"_ext_strategy_{name}_plugin", plugin_file)
+                spec = importlib.util.spec_from_file_location(
+                    f"_ext_strategy_{name}_plugin", plugin_file
+                )
                 if spec is None or spec.loader is None:
                     continue
                 mod = importlib.util.module_from_spec(spec)
@@ -321,19 +341,19 @@ def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegist
 __all__ = [
     "CALENDAR_EXIT_REASONS",
     "CALENDAR_FILLS",
-    "CompatibilityVerdict",
     "ENTRY_BAND_NOTE_RU",
-    "EntryBandPoint",
-    "InstrumentContext",
     "NON_PRICE_SIGNAL_NOTE_RU",
     "PRICE_FILLS",
-    "ParameterSpec",
     "REFERENCE_WARNING",
+    "ZSCORE_CALENDAR_OPTIONS",
+    "CompatibilityVerdict",
+    "EntryBandPoint",
+    "InstrumentContext",
+    "ParameterSpec",
     "StrategyIntentRun",
     "StrategyPlugin",
     "StrategyRegistry",
     "WindowSnapshot",
-    "ZSCORE_CALENDAR_OPTIONS",
     "calendar_price",
     "calendar_proof_plugin_ids",
     "calendar_row_buffers",

@@ -1,4 +1,5 @@
 """Lossless, fail-closed import of legacy baseline JSON; never removes the source."""
+
 from __future__ import annotations
 
 import ctypes
@@ -10,10 +11,15 @@ import tempfile
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
+
 from .ledger import build_ledger
 from .run_artifacts import (
-    RunArtifactError, _atomic_write_json, _validate_report, load_run_artifact,
-    publish_baseline_artifact, verify_run_artifact,
+    RunArtifactError,
+    _atomic_write_json,
+    _validate_report,
+    load_run_artifact,
+    publish_baseline_artifact,
+    verify_run_artifact,
 )
 from .validation import build_validation
 
@@ -65,19 +71,30 @@ def _consumer_checks(report_path: Path, work: Path, label: str) -> dict:
         item.pop("sha256", None)
     validation_digest = sha256_bytes(canonical_bytes(validation))
     ledger_path.unlink()
-    return {"execution_ledger_sha256": ledger_digest, "validate_analytics_sha256": validation_digest}
+    return {
+        "execution_ledger_sha256": ledger_digest,
+        "validate_analytics_sha256": validation_digest,
+    }
 
 
 def import_baseline_artifact(
-    legacy: Path, output_dir: Path, *, expected_sha256: str | None = None,
-    retention_days: int = 30, pin: bool = False,
+    legacy: Path,
+    output_dir: Path,
+    *,
+    expected_sha256: str | None = None,
+    retention_days: int = 30,
+    pin: bool = False,
 ) -> dict:
     """Publish only after exact rehydration and consumer compatibility checks.
 
     Source bytes are frozen in a private temporary workspace, then checked again
     immediately before publication. No deletion, overwrite or automatic pinning.
     """
-    if isinstance(retention_days, bool) or not isinstance(retention_days, int) or retention_days < 0:
+    if (
+        isinstance(retention_days, bool)
+        or not isinstance(retention_days, int)
+        or retention_days < 0
+    ):
         raise RunArtifactError("retention_days must be a nonnegative integer")
     if expected_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
         raise RunArtifactError("expected_sha256 must be a lowercase SHA-256")
@@ -105,7 +122,9 @@ def import_baseline_artifact(
         del raw
         staged = work / "artifact"
         try:
-            result = publish_baseline_artifact(staged, report, retention_days=retention_days, pin=pin)
+            result = publish_baseline_artifact(
+                staged, report, retention_days=retention_days, pin=pin
+            )
             del report
             rehydrated, _ = load_run_artifact(staged)
             if sha256_bytes(canonical_bytes(rehydrated)) != report_digest:
@@ -126,10 +145,12 @@ def import_baseline_artifact(
                 "consumer_fingerprints": legacy_checks,
             }
             manifest["legacy_import"] = lineage
-            identity = {"result_schema_version": manifest["result_schema_version"],
-                        "summary_sha256": manifest["summary_sha256"],
-                        "details": {k: v["sha256"] for k, v in manifest["details"].items()},
-                        "legacy_import": lineage}
+            identity = {
+                "result_schema_version": manifest["result_schema_version"],
+                "summary_sha256": manifest["summary_sha256"],
+                "details": {k: v["sha256"] for k, v in manifest["details"].items()},
+                "legacy_import": lineage,
+            }
             artifact_id = sha256_bytes(canonical_bytes(identity))
             manifest.update(artifact_id=artifact_id, run_id=artifact_id)
             _atomic_write_json(manifest_path, manifest)
@@ -139,7 +160,14 @@ def import_baseline_artifact(
             _publish_new_directory(staged, target)
         except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
             raise RunArtifactError(f"legacy import failed: {exc}") from exc
-    return {**result, "status": "imported", "artifact_id": artifact_id,
-            "artifact_dir": str(target), "summary_path": str(target / "summary.json"),
-            "manifest_path": str(target / "manifest.json"), "legacy_sha256": digest,
-            "verification": lineage["verification"], "consumer_fingerprints": legacy_checks}
+    return {
+        **result,
+        "status": "imported",
+        "artifact_id": artifact_id,
+        "artifact_dir": str(target),
+        "summary_path": str(target / "summary.json"),
+        "manifest_path": str(target / "manifest.json"),
+        "legacy_sha256": digest,
+        "verification": lineage["verification"],
+        "consumer_fingerprints": legacy_checks,
+    }

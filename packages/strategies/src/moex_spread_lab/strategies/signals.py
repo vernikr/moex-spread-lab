@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error
+
 from .base import (
     ENTRY_BAND_NOTE_RU,
     NON_PRICE_SIGNAL_NOTE_RU,
@@ -18,7 +19,9 @@ from .base import (
 )
 
 
-def pair_fill(request: dict[str, Any], strategy: str, *, default_price_fill: str = "reference_same_bar") -> str:
+def pair_fill(
+    request: dict[str, Any], strategy: str, *, default_price_fill: str = "reference_same_bar"
+) -> str:
     registry = discover_strategies()
     plugin = registry.get(strategy) if strategy in registry else None
     if plugin is not None and plugin.supported_fills == ("same_day_settlement",):

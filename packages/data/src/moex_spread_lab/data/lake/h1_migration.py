@@ -1,11 +1,13 @@
 """Plan and verify isolated H1 candidate lakes; no activation or source deletion."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
-from .data_lake import DataLakeError, ParquetBarStore, _read_legacy_series, _atomic_write_json
+
+from .data_lake import DataLakeError, ParquetBarStore, _atomic_write_json, _read_legacy_series
 
 SCHEMA = "h1-source-plan.v1"
 GROUPS = ("candles", "candles-screen")
@@ -30,29 +32,48 @@ def build_h1_plan(root: Path) -> dict:
     files = []
     for group, path in _source_files(root):
         series = _read_legacy_series(path)
-        if (series.timeframe != "1h" or series.interval != 60
-                or path.name != f"{series.secid}_1h.json"):
+        if (
+            series.timeframe != "1h"
+            or series.interval != 60
+            or path.name != f"{series.secid}_1h.json"
+        ):
             raise DataLakeError(f"H1 source identity disagrees with filename/interval: {path}")
         if sha256_file(path) != series.sha256:
             raise DataLakeError(f"source changed while planning: {path}")
-        files.append({"source_group": group, "legacy_path": path.relative_to(root).as_posix(),
-                      "secid": series.secid, "dataset_id": series.dataset_id,
-                      "legacy_sha256": series.sha256, "logical_bytes": path.stat().st_size,
-                      "row_count": len(series.bars), "first_begin": series.bars[0]["begin"],
-                      "last_begin": series.bars[-1]["begin"], "source_page_count": len(series.sources)})
+        files.append(
+            {
+                "source_group": group,
+                "legacy_path": path.relative_to(root).as_posix(),
+                "secid": series.secid,
+                "dataset_id": series.dataset_id,
+                "legacy_sha256": series.sha256,
+                "logical_bytes": path.stat().st_size,
+                "row_count": len(series.bars),
+                "first_begin": series.bars[0]["begin"],
+                "last_begin": series.bars[-1]["begin"],
+                "source_page_count": len(series.sources),
+            }
+        )
     if not files:
         raise DataLakeError("no runtime-named H1 source files found")
     files.sort(key=lambda e: e["legacy_path"])
     by_secid = {}
     for entry in files:
         by_secid.setdefault(entry["secid"], {})[entry["source_group"]] = entry["legacy_path"]
-    selection = {secid: paths.get("candles-screen", paths.get("candles"))
-                 for secid, paths in sorted(by_secid.items())}
+    selection = {
+        secid: paths.get("candles-screen", paths.get("candles"))
+        for secid, paths in sorted(by_secid.items())
+    }
     content = {"files": files, "screen_selection": selection}
-    return {"schema_version": SCHEMA, "root": str(root), **content,
-            "source_fingerprint": sha256_bytes(canonical_bytes(content)),
-            "source_count": len(files), "selected_count": len(selection),
-            "logical_bytes": sum(e["logical_bytes"] for e in files)}
+    return {
+        "schema_version": SCHEMA,
+        "root": str(root),
+        **content,
+        "source_fingerprint": sha256_bytes(canonical_bytes(content)),
+        "source_count": len(files),
+        "selected_count": len(selection),
+        "logical_bytes": sum(e["logical_bytes"] for e in files),
+    }
 
 
 def write_h1_plan(root: Path, path: Path) -> dict:
@@ -97,9 +118,16 @@ def _verify_files(root: Path, plan: dict, output: Path) -> list[dict]:
             for field in ("row_count", "first_begin", "last_begin", "source_page_count"):
                 if record[field] != entry[field]:
                     raise DataLakeError(f"candidate metadata mismatch: {field}")
-            verified.append({"source_group": group, "legacy_path": entry["legacy_path"],
-                             **result, "first_begin": record["first_begin"],
-                             "last_begin": record["last_begin"], "sources_sha256": record["sources_sha256"]})
+            verified.append(
+                {
+                    "source_group": group,
+                    "legacy_path": entry["legacy_path"],
+                    **result,
+                    "first_begin": record["first_begin"],
+                    "last_begin": record["last_begin"],
+                    "sources_sha256": record["sources_sha256"],
+                }
+            )
     return verified
 
 
@@ -111,9 +139,15 @@ def stage_h1(root: Path, plan_path: Path, output: Path) -> dict:
     # never discoverable by the production MarketDataStore and never resumed implicitly.
     output.mkdir(parents=True, exist_ok=False)
     report_path = output / "h1-stage.json"
-    report = {"schema_version": "h1-candidate-stage.v1", "status": "staging",
-              "source_fingerprint": plan["source_fingerprint"], "plan": plan,
-              "runtime_activated": False, "source_deletion_allowed": False, "datasets": []}
+    report = {
+        "schema_version": "h1-candidate-stage.v1",
+        "status": "staging",
+        "source_fingerprint": plan["source_fingerprint"],
+        "plan": plan,
+        "runtime_activated": False,
+        "source_deletion_allowed": False,
+        "datasets": [],
+    }
     _atomic_write_json(report_path, report)
     try:
         for entry in plan["files"]:
@@ -125,15 +159,24 @@ def stage_h1(root: Path, plan_path: Path, output: Path) -> dict:
             if record["legacy_sha256"] != entry["legacy_sha256"]:
                 raise DataLakeError(f"source changed during import: {source}")
             store.verify_legacy(source)
-            report["datasets"].append({"source_group": entry["source_group"],
-                                       "legacy_path": entry["legacy_path"], "dataset_id": record["dataset_id"]})
+            report["datasets"].append(
+                {
+                    "source_group": entry["source_group"],
+                    "legacy_path": entry["legacy_path"],
+                    "dataset_id": record["dataset_id"],
+                }
+            )
             _atomic_write_json(report_path, report)
         report["datasets"] = _verify_files(root, plan, output)
         _load_current_plan(root, plan_path)
         parquet = list(output.rglob("*.parquet"))
-        report.update(status="verified_candidate", parquet_logical_bytes=sum(p.stat().st_size for p in parquet),
-                      parquet_allocated_bytes=sum(p.stat().st_blocks * 512 for p in parquet))
+        report.update(
+            status="verified_candidate",
+            parquet_logical_bytes=sum(p.stat().st_size for p in parquet),
+            parquet_allocated_bytes=sum(p.stat().st_blocks * 512 for p in parquet),
+        )
         _atomic_write_json(report_path, report)
+    # code-health: allow broad exception: record failed evidence, then re-raise.
     except Exception as exc:
         report.update(status="failed", error=str(exc))
         _atomic_write_json(report_path, report)
@@ -146,13 +189,21 @@ def verify_h1_stage(root: Path, plan_path: Path, output: Path) -> dict:
     plan = _load_current_plan(root, plan_path)
     output = _candidate_path(root, output)
     report = json.loads((output / "h1-stage.json").read_text())
-    if (report.get("schema_version") != "h1-candidate-stage.v1"
-            or report.get("status") != "verified_candidate" or report.get("plan") != plan
-            or report.get("source_fingerprint") != plan["source_fingerprint"]):
+    if (
+        report.get("schema_version") != "h1-candidate-stage.v1"
+        or report.get("status") != "verified_candidate"
+        or report.get("plan") != plan
+        or report.get("source_fingerprint") != plan["source_fingerprint"]
+    ):
         raise DataLakeError("candidate stage is incomplete or belongs to another source plan")
     actual = _verify_files(root, plan, output)
     if actual != report["datasets"]:
         raise DataLakeError("candidate verification differs from recorded stage evidence")
-    return {"status": "verified_candidate", "source_count": len(actual),
-            "selected_count": plan["selected_count"], "source_fingerprint": plan["source_fingerprint"],
-            "runtime_activated": False, "source_deletion_allowed": False}
+    return {
+        "status": "verified_candidate",
+        "source_count": len(actual),
+        "selected_count": plan["selected_count"],
+        "source_fingerprint": plan["source_fingerprint"],
+        "runtime_activated": False,
+        "source_deletion_allowed": False,
+    }

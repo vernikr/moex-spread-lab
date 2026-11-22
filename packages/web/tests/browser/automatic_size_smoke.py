@@ -13,9 +13,9 @@ from pathlib import Path
 
 from period_settings_smoke import ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import fixture
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import fixture
 
 
 def run(browser, url):
@@ -26,14 +26,11 @@ def run(browser, url):
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on(
             "request",
-            lambda r: (
-                requests.append(r) if "/api/proof/" in r.url and r.post_data else None
-            ),
+            lambda r: requests.append(r) if "/api/proof/" in r.url and r.post_data else None,
         )
     pair.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6")
     cal.goto(
-        url
-        + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
+        url + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
     )
     ready(pair, "training")
     ready(cal, "training")
@@ -52,9 +49,7 @@ def run(browser, url):
     # Invalid values cannot save; cancel cannot change the server or a proof.
     original = pair.evaluate("payload.run_id")
     pair.locator("#open-settings").click()
-    expect(pair.locator("label[for=global-slippage]")).to_have_text(
-        "Проскальзывание · тики"
-    )
+    expect(pair.locator("label[for=global-slippage]")).to_have_text("Проскальзывание · тики")
     pair.locator("#global-slippage").fill("-1")
     pair.locator("#apply-settings").click()
     expect(pair.locator("#global-settings")).to_be_visible()
@@ -106,20 +101,12 @@ def run(browser, url):
     text = Path(download.value.path()).read_text()
     table = list(
         csv.DictReader(
-            io.StringIO(
-                "\n".join(l for l in text.splitlines() if not l.startswith("#"))
-            )
+            io.StringIO("\n".join(l for l in text.splitlines() if not l.startswith("#")))
         )
     )
-    assert all(
-        k in table[0] for k in ("contracts_held", "entry_contracts", "exit_contracts")
-    )
-    entries = {
-        r["date"]: int(r["entry_contracts"]) for r in table if int(r["entry_contracts"])
-    }
-    assert entries == {
-        t["entry"]["date"]: t["quantity"] for t in cal.evaluate("payload.trades")
-    }
+    assert all(k in table[0] for k in ("contracts_held", "entry_contracts", "exit_contracts"))
+    entries = {r["date"]: int(r["entry_contracts"]) for r in table if int(r["entry_contracts"])}
+    assert entries == {t["entry"]["date"]: t["quantity"] for t in cal.evaluate("payload.trades")}
     # All browser requests use the same implicit size/cost policy, including cohort profiles.
     for request in requests:
         body = request.post_data_json
@@ -128,10 +115,8 @@ def run(browser, url):
     cal.set_viewport_size({"width": 400, "height": 850})
     cal.locator("#open-settings").click()
     expect(cal.locator("#global-slippage")).to_have_value("2.5")
-    assert cal.evaluate("document.documentElement.scrollWidth <= innerWidth"), (
-        cal.evaluate(
-            "[...document.body.querySelectorAll('*')].filter(n=>n.getBoundingClientRect().right>innerWidth+1).map(n=>[n.tagName,n.id,n.className,n.getBoundingClientRect().right]).slice(0,15)"
-        )
+    assert cal.evaluate("document.documentElement.scrollWidth <= innerWidth"), cal.evaluate(
+        "[...document.body.querySelectorAll('*')].filter(n=>n.getBoundingClientRect().right>innerWidth+1).map(n=>[n.tagName,n.id,n.className,n.getBoundingClientRect().right]).slice(0,15)"
     )
     assert not errors, errors
     context.close()

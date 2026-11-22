@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Protocol
 
 import pyarrow.parquet as pq
 
@@ -180,7 +181,10 @@ class SealedH1Reader:
                 return self._cache[key]
             verify_key = (relative, bars_sig, sources_sig, legacy_signature, self._snapshot)
             if verify_key not in self._verified_sigs:
-                if legacy_signature is not None and sha256_file(legacy_path) != record["legacy_sha256"]:
+                if (
+                    legacy_signature is not None
+                    and sha256_file(legacy_path) != record["legacy_sha256"]
+                ):
                     raise DataLakeError(
                         "retained H1 JSON changed after sealing; refusing stale Parquet"
                     )
@@ -219,8 +223,7 @@ class SealedH1Reader:
 def reject_sealed_table_write(root: Path, bars_path: Path) -> None:
     value = SealedH1Reader(root).payload()
     if value and any(
-        (root / r["bars_path"]).resolve() == bars_path.resolve()
-        for r in value["records"].values()
+        (root / r["bars_path"]).resolve() == bars_path.resolve() for r in value["records"].values()
     ):
         raise DataLakeError(
             "cannot rewrite an active sealed table; restore JSON and deactivate first"
@@ -263,8 +266,10 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
         path = store._record_path(record[path_key])
         if sha256_file(path) != record[hash_key]:
             raise DataLakeError("archived mirror file hash mismatch")
-        if not pq.ParquetFile(path).read().equals(
-            pq.ParquetFile(store.root / sealed[path_key]).read()
+        if (
+            not pq.ParquetFile(path)
+            .read()
+            .equals(pq.ParquetFile(store.root / sealed[path_key]).read())
         ):
             raise DataLakeError("archived mirror differs from sealed semantics")
     with duckdb.connect(str(store.catalog_path), read_only=True) as connection:

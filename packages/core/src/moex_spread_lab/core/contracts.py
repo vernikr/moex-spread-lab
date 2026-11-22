@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from .settings import ResearchSettings
+
+
+def _empty_mapping() -> dict[str, Any]:
+    return {}
 
 
 @dataclass(frozen=True)
@@ -84,7 +89,7 @@ class WindowSnapshot:
     timeframe: str = "1d"
     asset: str | None = None
     rows: tuple[dict[str, Any], ...] | list[dict[str, Any]] = ()
-    contracts: Mapping[str, Any] = field(default_factory=dict)
+    contracts: Mapping[str, Any] = field(default_factory=_empty_mapping)
     near: str = ""
     far: str = ""
     funding_swaprates: Mapping[str, float] | None = None
@@ -95,7 +100,7 @@ class WindowSnapshot:
     slippage_ticks: float = 1.0
     native_spread_order: bool = True
     far_point_value_rub: float = 1.0
-    extra: Mapping[str, Any] = field(default_factory=dict)
+    extra: Mapping[str, Any] = field(default_factory=_empty_mapping)
 
     def truncated(self, count: int) -> WindowSnapshot:
         """Return a causal prefix copy containing only the first ``count`` rows."""
@@ -147,7 +152,9 @@ class StrategyPlugin(Protocol):
     supported_fills: tuple[str, ...]
     requires_daily_bars: bool
 
-    def parameter_schema(self, context: InstrumentContext | None = None) -> tuple[ParameterSpec, ...]: ...
+    def parameter_schema(
+        self, context: InstrumentContext | None = None
+    ) -> tuple[ParameterSpec, ...]: ...
     def validate_parameters(
         self, raw: Mapping[str, Any], context: InstrumentContext | None = None
     ) -> dict[str, Any]: ...

@@ -6,20 +6,19 @@ Every row is measured by the exact same continuous proof/evaluation as its chart
 
 from __future__ import annotations
 
-from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from .service import _benchmark_marks
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+
 from .proof_kernel import StudyWindow, _identity, _validate, compact_result
 from .proof_pool import _estimate_weight, get_worker_pool
-from moex_spread_lab.core.w0 import W0Error
+from .service import _benchmark_marks
 
 MAX_WINDOW_REQUESTS = 128
 _DEFAULT_STUDY_WINDOW = StudyWindow
 
 
-def window_summaries(
-    service, request, *, check_cancelled=lambda: None, on_progress=None
-):
+def window_summaries(service, request, *, check_cancelled=lambda: None, on_progress=None):
     if not isinstance(request, dict) or request.keys() != {"requests"}:
         raise W0Error("Для таблицы нужен список requests.")
     requests = request["requests"]

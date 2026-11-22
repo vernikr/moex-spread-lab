@@ -10,9 +10,9 @@ from pathlib import Path
 
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import two_calendar_windows
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import two_calendar_windows
 
 
 def run(browser, url):
@@ -23,9 +23,7 @@ def run(browser, url):
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     def post(route):
-        return page.expect_response(
-            lambda r: r.url.endswith("/api/" + route), timeout=20000
-        )
+        return page.expect_response(lambda r: r.url.endswith("/api/" + route), timeout=20000)
 
     page.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion")
     ready(page, "training")

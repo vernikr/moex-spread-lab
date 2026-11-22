@@ -7,6 +7,8 @@ import os
 import uuid
 from pathlib import Path
 
+from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
+
 from .bar_types import (
     H1_SEAL_SCHEMA,
     BarSeries,
@@ -16,7 +18,6 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
-from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
 from .data_lake import ParquetBarStore
 from .h1_migration import build_h1_plan, verify_h1_stage
 
@@ -104,9 +105,7 @@ def deactivate_h1(root: Path) -> dict:
     if value is None:
         raise DataLakeError("no H1 seal is active")
     if build_h1_plan(reader.root) != value["plan"]:
-        raise DataLakeError(
-            "rollback requires all original JSON and exact selection restored"
-        )
+        raise DataLakeError("rollback requires all original JSON and exact selection restored")
     # Preserve every activation's controls, including repeated rollback rehearsals.
     history = reader.root / "data-lake/h1-seal-history" / uuid.uuid4().hex
     history.mkdir(parents=True, exist_ok=False)

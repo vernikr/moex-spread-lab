@@ -9,27 +9,28 @@ import os
 import re
 import time
 from bisect import bisect_left, bisect_right
-from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.accounting.account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
+from moex_spread_lab.accounting.account_risk import (
+    DEFAULT_STRESS_VM_BUFFER,
+    DEFAULT_UNCERTAINTY_BUFFER,
+)
 from moex_spread_lab.accounting.costs import TAKER_RATE_PERCENT, tariff_profile
 from moex_spread_lab.core._fastcore_loader import load_fastcore
-from moex_spread_lab.core.settings import EvaluationSplit, INITIAL_CAPITAL, MIN_DAILY_VOLUME
+from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
+from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME, EvaluationSplit
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.iss.catalog import IssHistoryError, fetch_history
 from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore
+
 from ..base import ZSCORE_CALENDAR_OPTIONS, calendar_proof_plugin_ids, discover_strategies
-from .intents import calendar_intent_trades
-from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from ..calendar_ruonia.engine import (
-    DIVIDEND_SHARES_PER_CONTRACT,
     QUARTER_DAYS,
-    SBER_EX_DATES,
     convergence_trades,
     implied_ruonia_deviation_pp,
     window_dividend_rub,
@@ -41,6 +42,7 @@ from ..s3_reference.engine import (
     evaluate_variants,
     read_benchmark,
 )
+from .intents import calendar_intent_trades
 
 
 def _calendar_strategy_runner(
@@ -78,9 +80,20 @@ def _calendar_strategy_runner(
         )
     raise W0Error(f"unknown strategy: {strategy}")
 
+
 QUARTER_CODES = "HMUZ"
 MONTH_CODES = "FGHJKMNQUVXZ"
-HISTORY_FIELDS = ("TRADEDATE", "SECID", "OPEN", "LOW", "HIGH", "CLOSE", "SETTLEPRICE", "VOLUME", "NUMTRADES")
+HISTORY_FIELDS = (
+    "TRADEDATE",
+    "SECID",
+    "OPEN",
+    "LOW",
+    "HIGH",
+    "CLOSE",
+    "SETTLEPRICE",
+    "VOLUME",
+    "NUMTRADES",
+)
 ASSETS: dict[str, dict[str, Any]] = {
     "SR": {"group": "stock", "convergence": True, "name": "SBRF"},
     "GZ": {"group": "stock", "convergence": True, "name": "GAZR"},
@@ -111,8 +124,20 @@ ASSETS: dict[str, dict[str, Any]] = {
 }
 FX_SOURCE = {"usd": "Si", "cny": "CR"}
 CROSS_EXPIRY_PAIRS: tuple[dict[str, str], ...] = (
-    {"pair_id": "MX/MM", "near": "MX", "far": "MM", "family": "cross_contract_same_expiry", "name": "MIX vs MXI"},
-    {"pair_id": "GD/GN", "near": "GD", "far": "GN", "family": "cross_contract_same_expiry", "name": "GOLD vs GOLDM"},
+    {
+        "pair_id": "MX/MM",
+        "near": "MX",
+        "far": "MM",
+        "family": "cross_contract_same_expiry",
+        "name": "MIX vs MXI",
+    },
+    {
+        "pair_id": "GD/GN",
+        "near": "GD",
+        "far": "GN",
+        "family": "cross_contract_same_expiry",
+        "name": "GOLD vs GOLDM",
+    },
 )
 SYNTHETIC_TRIANGLE_PAIRS: tuple[dict[str, Any], ...] = (
     {
@@ -145,7 +170,7 @@ def contract_chain(asset: str, first_year: int = 3, last_year: int = 7) -> list[
     monthly = ASSETS.get(asset, {}).get("monthly", False)
     codes, last = (MONTH_CODES, "F") if monthly else (QUARTER_CODES, "H")
     chain = [f"{asset}{code}{year}" for year in range(first_year, last_year + 1) for code in codes]
-    return chain[:chain.index(f"{asset}{last}{last_year}") + 1]
+    return chain[: chain.index(f"{asset}{last}{last_year}") + 1]
 
 
 def spread_id(near: str, far: str) -> str:
@@ -153,7 +178,12 @@ def spread_id(near: str, far: str) -> str:
 
 
 def fetch_inputs(
-    cache_dir: Path, assets: tuple[str, ...], till_date: str, *, delay_seconds: float = 0.05, opener: Any = None,
+    cache_dir: Path,
+    assets: tuple[str, ...],
+    till_date: str,
+    *,
+    delay_seconds: float = 0.05,
+    opener: Any = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """EOD history of every leg and consecutive native spread (plus FX sources), keyed by secid then date."""
     needed = set(assets) | {FX_SOURCE[ASSETS[a]["fx"]] for a in assets if ASSETS[a].get("fx")}
@@ -165,8 +195,15 @@ def fetch_inputs(
 
     def load(secid: str) -> tuple[str, dict[str, dict[str, Any]] | None]:
         try:
-            source = fetch_history(secid, HISTORY_FROM, till_date, cache_dir=cache_dir, delay_seconds=delay_seconds,
-                                   fields=HISTORY_FIELDS, **extra)
+            source = fetch_history(
+                secid,
+                HISTORY_FROM,
+                till_date,
+                cache_dir=cache_dir,
+                delay_seconds=delay_seconds,
+                fields=HISTORY_FIELDS,
+                **extra,
+            )
         except IssHistoryError:
             return secid, None
         return secid, {row["TRADEDATE"]: row for row in source["rows"]}
@@ -183,7 +220,11 @@ def fetch_inputs(
 
 
 def cached_till_date(cache_dir: Path) -> str | None:
-    found = {m.group(1) for path in cache_dir.glob("*.json") if (m := re.search(rf"-{HISTORY_FROM}-(\d{{4}}-\d{{2}}-\d{{2}})-\d+\.json$", path.name))}
+    found = {
+        m.group(1)
+        for path in cache_dir.glob("*.json")
+        if (m := re.search(rf"-{HISTORY_FROM}-(\d{{4}}-\d{{2}}-\d{{2}})-\d+\.json$", path.name))
+    }
     return max(found) if found else None
 
 
@@ -202,14 +243,23 @@ def _ruonia(benchmark_cache: Path) -> tuple[list[str], dict[str, float]]:
 
 def _terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str, Any]]:
     try:
-        instruments = [r for r in json.loads(contracts_path.read_text(encoding="utf-8"))["instruments"]
-                       if r.get("expiry") and r["expiry"] < "2100"]
+        instruments = [
+            r
+            for r in json.loads(contracts_path.read_text(encoding="utf-8"))["instruments"]
+            if r.get("expiry") and r["expiry"] < "2100"
+        ]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise W0Error(f"cannot read current contract terms: {exc}") from exc
     terms = {}
     for asset in assets:
-        live = sorted((r for r in instruments if r["secid"].startswith(asset) and len(r["secid"]) == len(asset) + 2),
-                      key=lambda r: r["expiry"])
+        live = sorted(
+            (
+                r
+                for r in instruments
+                if r["secid"].startswith(asset) and len(r["secid"]) == len(asset) + 2
+            ),
+            key=lambda r: r["expiry"],
+        )
         if not live:
             continue
         row = live[0]
@@ -219,8 +269,11 @@ def _terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str,
             continue
         mult = row["tick_value"] / row["tick_size"]
         terms[asset] = {
-            "mult": mult, "tick_value": row["tick_value"], "tick_size": row["tick_size"],
-            "margin_rate": row["initial_margin"] / (row["settlement"] * mult), "reference_contract": row["secid"],
+            "mult": mult,
+            "tick_value": row["tick_value"],
+            "tick_size": row["tick_size"],
+            "margin_rate": row["initial_margin"] / (row["settlement"] * mult),
+            "reference_contract": row["secid"],
         }
     return terms
 
@@ -236,7 +289,11 @@ def _fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, di
         scale = 1000.0 if kind == "usd" else 1.0
         fronts = {}
         for day in dates:
-            live = [s for expiry, s in sorted(chain) if expiry >= day and day in histories[s] and histories[s][day]["SETTLEPRICE"]]
+            live = [
+                s
+                for expiry, s in sorted(chain)
+                if expiry >= day and day in histories[s] and histories[s][day]["SETTLEPRICE"]
+            ]
             if live:
                 fronts[day] = histories[live[0]][day]["SETTLEPRICE"] / scale
         if fronts:
@@ -247,7 +304,9 @@ def _fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, di
 
 def _positive_spread_volume_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rows with observed native spread executions; zero/missing volume is journal-only."""
-    return [row for row in rows if row.get("min_volume") is not None and float(row["min_volume"]) > 0]
+    return [
+        row for row in rows if row.get("min_volume") is not None and float(row["min_volume"]) > 0
+    ]
 
 
 def _stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIAL_CAPITAL) -> bool:
@@ -256,8 +315,11 @@ def _stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIA
 
 
 def build_windows(
-    histories: dict[str, dict[str, dict[str, Any]]], asset: str, terms: dict[str, Any],
-    ruonia: tuple[list[str], dict[str, float]], factors: dict[str, dict[str, float]] | None = None,
+    histories: dict[str, dict[str, dict[str, Any]]],
+    asset: str,
+    terms: dict[str, Any],
+    ruonia: tuple[list[str], dict[str, float]],
+    factors: dict[str, dict[str, float]] | None = None,
 ) -> list[dict[str, Any]]:
     """One window per complete contract cycle: days after the previous near expiry through two days before this one."""
     config = ASSETS[asset]
@@ -268,7 +330,11 @@ def build_windows(
     min_rows = 12 if config.get("monthly") else 25
     windows, previous_expiry = [], None
     for near, far in itertools.pairwise(chain):
-        legs, native, far_rows = histories.get(near), histories.get(spread_id(near, far)), histories.get(far)
+        legs, native, far_rows = (
+            histories.get(near),
+            histories.get(spread_id(near, far)),
+            histories.get(far),
+        )
         if not legs or not native or not far_rows:
             continue
         expiry = max(legs)
@@ -276,9 +342,17 @@ def build_windows(
             break
         expiry_date = date.fromisoformat(expiry)
         cutoff = (expiry_date - timedelta(days=EXIT_BUFFER_DAYS)).isoformat()
-        days = [d for d in sorted(native) if (previous_expiry is None or d > previous_expiry) and d <= cutoff
-                and d in legs and d in far_rows and legs[d]["SETTLEPRICE"] and far_rows[d]["SETTLEPRICE"]
-                and (not config.get("fx") or d in fx)]
+        days = [
+            d
+            for d in sorted(native)
+            if (previous_expiry is None or d > previous_expiry)
+            and d <= cutoff
+            and d in legs
+            and d in far_rows
+            and legs[d]["SETTLEPRICE"]
+            and far_rows[d]["SETTLEPRICE"]
+            and (not config.get("fx") or d in fx)
+        ]
         previous_expiry = expiry
         if len(days) < min_rows:
             continue
@@ -291,39 +365,64 @@ def build_windows(
             near_value, far_value = near_px * mult, far_px * mult
             spread = far_value - near_value
             rate = rates[ruonia_dates[max(0, bisect_right(ruonia_dates, d) - 1)]]
-            rows.append({
-                "date": d,
-                "spread": spread,
-                "open_spread": (far_open - near_open) * mult if near_open > 0 and far_open > 0 else spread,
-                "near_close": near_value,
-                "far_close": far_value,
-                "dev_pp": implied_ruonia_deviation_pp(
-                    spread, near_value, dividend, rate, convergence_supported=bool(config.get("convergence"))
-                ),
-                "days_to_near_expiry": (expiry_date - date.fromisoformat(d)).days,
-                "dividend_in_window": dividend > 0,
-                "margin": terms["margin_rate"] * (near_value + far_value),
-                "min_volume": float(native[d]["VOLUME"] or 0),
-                "mult": mult,
-                "near_price": near_px, "far_price": far_px, "near_open_price": near_open, "far_open_price": far_open,
-                "spread_price": far_px - near_px,
-                "spread_open_price": far_open - near_open if near_open > 0 and far_open > 0 else far_px - near_px,
-                "spread_last_trade": native[d].get("CLOSE"),
-                "spread_trades": native[d].get("NUMTRADES"),
-                "near_volume": legs[d].get("VOLUME"), "far_volume": far_rows[d].get("VOLUME"),
-            })
+            rows.append(
+                {
+                    "date": d,
+                    "spread": spread,
+                    "open_spread": (far_open - near_open) * mult
+                    if near_open > 0 and far_open > 0
+                    else spread,
+                    "near_close": near_value,
+                    "far_close": far_value,
+                    "dev_pp": implied_ruonia_deviation_pp(
+                        spread,
+                        near_value,
+                        dividend,
+                        rate,
+                        convergence_supported=bool(config.get("convergence")),
+                    ),
+                    "days_to_near_expiry": (expiry_date - date.fromisoformat(d)).days,
+                    "dividend_in_window": dividend > 0,
+                    "margin": terms["margin_rate"] * (near_value + far_value),
+                    "min_volume": float(native[d]["VOLUME"] or 0),
+                    "mult": mult,
+                    "near_price": near_px,
+                    "far_price": far_px,
+                    "near_open_price": near_open,
+                    "far_open_price": far_open,
+                    "spread_price": far_px - near_px,
+                    "spread_open_price": far_open - near_open
+                    if near_open > 0 and far_open > 0
+                    else far_px - near_px,
+                    "spread_last_trade": native[d].get("CLOSE"),
+                    "spread_trades": native[d].get("NUMTRADES"),
+                    "near_volume": legs[d].get("VOLUME"),
+                    "far_volume": far_rows[d].get("VOLUME"),
+                }
+            )
         eligible_volumes = [r["min_volume"] for r in _positive_spread_volume_rows(rows)]
-        windows.append({
-            "pair": f"{near}/{far}", "spread_instrument": spread_id(near, far), "near": near, "far": far,
-            "first_date": days[0], "last_date": days[-1], "near_expiry": expiry, "rows": rows,
-            "min_spread_volume": min(eligible_volumes) if eligible_volumes else 0.0,
-            "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2),
-        })
+        windows.append(
+            {
+                "pair": f"{near}/{far}",
+                "spread_instrument": spread_id(near, far),
+                "near": near,
+                "far": far,
+                "first_date": days[0],
+                "last_date": days[-1],
+                "near_expiry": expiry,
+                "rows": rows,
+                "min_spread_volume": min(eligible_volumes) if eligible_volumes else 0.0,
+                "max_pair_margin_rub": round(max(r["margin"] for r in rows), 2),
+            }
+        )
     return windows
 
 
 def _span_years(windows: list[dict[str, Any]]) -> float:
-    return (date.fromisoformat(windows[-1]["near_expiry"]) - date.fromisoformat(windows[0]["first_date"])).days / 365
+    return (
+        date.fromisoformat(windows[-1]["near_expiry"])
+        - date.fromisoformat(windows[0]["first_date"])
+    ).days / 365
 
 
 def _zscore_options(asset: str) -> dict[str, Any]:
@@ -331,8 +430,14 @@ def _zscore_options(asset: str) -> dict[str, Any]:
 
 
 def run_calendar_study(
-    cache_dir: Path, benchmark_path: Path, benchmark_cache_dir: Path, contracts_path: Path,
-    *, assets: tuple[str, ...] = tuple(ASSETS), slippage_ticks: float = 1.0, till_date: str,
+    cache_dir: Path,
+    benchmark_path: Path,
+    benchmark_cache_dir: Path,
+    contracts_path: Path,
+    *,
+    assets: tuple[str, ...] = tuple(ASSETS),
+    slippage_ticks: float = 1.0,
+    till_date: str,
 ) -> dict[str, Any]:
     histories = fetch_inputs(cache_dir, assets, till_date)
     benchmark = read_benchmark(benchmark_path)
@@ -342,37 +447,66 @@ def run_calendar_study(
     profile = tariff_profile(slippage_ticks)
     report: dict[str, Any] = {}
     for asset in assets:
-        windows = build_windows(histories, asset, terms[asset], ruonia, factors) if asset in terms else []
+        windows = (
+            build_windows(histories, asset, terms[asset], ruonia, factors) if asset in terms else []
+        )
         if not windows:
             report[asset] = {"status": "no_complete_windows"}
             continue
-        eligible = {w["pair"]: w["rows"] for w in windows if w["min_spread_volume"] >= MIN_DAILY_VOLUME}
+        eligible = {
+            w["pair"]: w["rows"] for w in windows if w["min_spread_volume"] >= MIN_DAILY_VOLUME
+        }
         years = _span_years(windows)
         variants = []
-        for variant in evaluate_variants(
-            eligible, benchmark, {**profile, "tariff_group": ASSETS[asset]["group"]}, native_spread=True, reference_cost=False,
-            skip_dividend_windows_in_zscore=False, close_at_end=True, zscore_options=_zscore_options(asset),
-        ) if eligible else []:
+        for variant in (
+            evaluate_variants(
+                eligible,
+                benchmark,
+                {**profile, "tariff_group": ASSETS[asset]["group"]},
+                native_spread=True,
+                reference_cost=False,
+                skip_dividend_windows_in_zscore=False,
+                close_at_end=True,
+                zscore_options=_zscore_options(asset),
+            )
+            if eligible
+            else []
+        ):
             by_window: dict[str, float] = {}
             for trade in variant.pop("trade_list"):
-                by_window[trade["pair"]] = by_window.get(trade["pair"], 0.0) + trade["gross_rub"] - trade["costs_rub"]
-            variants.append({
-                **variant,
-                "windows_with_trades": len(by_window),
-                "windows_net_positive": sum(v > 0 for v in by_window.values()),
-                "excess_pp_per_year_on_allocation": round(variant["excess_over_lqdt_on_margin_rub"] / INITIAL_CAPITAL / years * 100, 3),
-            })
+                by_window[trade["pair"]] = (
+                    by_window.get(trade["pair"], 0.0) + trade["gross_rub"] - trade["costs_rub"]
+                )
+            variants.append(
+                {
+                    **variant,
+                    "windows_with_trades": len(by_window),
+                    "windows_net_positive": sum(v > 0 for v in by_window.values()),
+                    "excess_pp_per_year_on_allocation": round(
+                        variant["excess_over_lqdt_on_margin_rub"] / INITIAL_CAPITAL / years * 100, 3
+                    ),
+                }
+            )
         report[asset] = {
             "status": "evaluated",
             "name": ASSETS[asset]["name"],
             "tariff_group": ASSETS[asset]["group"],
-            "span": {"from": windows[0]["first_date"], "to": windows[-1]["near_expiry"], "years": round(years, 2)},
+            "span": {
+                "from": windows[0]["first_date"],
+                "to": windows[-1]["near_expiry"],
+                "years": round(years, 2),
+            },
             "windows": [
                 {
-                    "pair": w["pair"], "spread_instrument": w["spread_instrument"], "from": w["first_date"], "to": w["last_date"],
-                    "observations": len(w["rows"]), "min_spread_volume": w["min_spread_volume"],
+                    "pair": w["pair"],
+                    "spread_instrument": w["spread_instrument"],
+                    "from": w["first_date"],
+                    "to": w["last_date"],
+                    "observations": len(w["rows"]),
+                    "min_spread_volume": w["min_spread_volume"],
                     "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
-                    "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"]),
+                    "max_pair_margin_rub": w["max_pair_margin_rub"],
+                    "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"]),
                 }
                 for w in windows
             ],
@@ -401,7 +535,9 @@ class CalendarData:
         self._loaded: dict[str, Any] | None = None
         self._loaded_sig: tuple[Any, ...] | None = None
         self.bar_store = MarketDataStore(self.root)
-        self._h1_candle_cache: dict[str, tuple[tuple[Any, ...], tuple[dict[str, Any] | None, str | None]]] = {}
+        self._h1_candle_cache: dict[
+            str, tuple[tuple[Any, ...], tuple[dict[str, Any] | None, str | None]]
+        ] = {}
         self._h1_windows: dict[str, list[dict[str, Any]]] = {}
         self._h1_windows_sig: dict[str, tuple[Any, ...]] = {}
         self._loaded_assets: dict[str, dict[str, Any]] = {}
@@ -495,7 +631,9 @@ class CalendarData:
         self._shared_meta_sig = sig
         return self._shared_meta
 
-    def _asset_eod_signature(self, asset: str, till: str, extras_sig: tuple[Any, ...]) -> tuple[Any, ...]:
+    def _asset_eod_signature(
+        self, asset: str, till: str, extras_sig: tuple[Any, ...]
+    ) -> tuple[Any, ...]:
         needed = {asset}
         fx = ASSETS.get(asset, {}).get("fx")
         if fx:
@@ -547,7 +685,9 @@ class CalendarData:
         factors = _fx_factors(histories)
         windows = {}
         if asset in meta["terms"] and any(s in histories for s in contract_chain(asset)):
-            windows[asset] = build_windows(histories, asset, meta["terms"][asset], meta["ruonia"], factors)
+            windows[asset] = build_windows(
+                histories, asset, meta["terms"][asset], meta["ruonia"], factors
+            )
         data = {
             "histories": histories,
             "windows": windows,
@@ -588,8 +728,11 @@ class CalendarData:
         terms = _terms(self.root / "data/w1/current-intake.json", tuple(ASSETS))
         ruonia = _ruonia(self.root / "data/benchmark-cache/CBR_RUONIA.json")
         factors = _fx_factors(histories)
-        windows = {a: build_windows(histories, a, terms[a], ruonia, factors) for a in ASSETS if a in terms and any(
-            s in histories for s in contract_chain(a))}
+        windows = {
+            a: build_windows(histories, a, terms[a], ruonia, factors)
+            for a in ASSETS
+            if a in terms and any(s in histories for s in contract_chain(a))
+        }
         benchmark = read_benchmark(self.root / "data/benchmark/lqdt-lineage.json")
         self._loaded = {
             "histories": histories,
@@ -630,6 +773,7 @@ class CalendarData:
         import hashlib
         import os
         import urllib.request
+
         target = self.root / "data/w1/candles/1h" / f"{secid}_1h.json"
         if target.exists():
             try:
@@ -653,12 +797,15 @@ class CalendarData:
                         "volume": self._number(source_row.get("volume")),
                     }
                 if rows:
-                    res = ({
-                        "secid": secid,
-                        "path": str(target),
-                        "sha256": hashlib.sha256(raw).hexdigest(),
-                        "rows": rows,
-                    }, None)
+                    res = (
+                        {
+                            "secid": secid,
+                            "path": str(target),
+                            "sha256": hashlib.sha256(raw).hexdigest(),
+                            "rows": rows,
+                        },
+                        None,
+                    )
                     self._h1_candle_cache[secid] = (fp, res)
                     return res
             except Exception:
@@ -681,12 +828,15 @@ class CalendarData:
                 return None, "no_local_h1_file"
             raw_rows = [dict(zip(cols, row)) for row in data]
             target.parent.mkdir(parents=True, exist_ok=True)
-            encoded = json.dumps({
-                "schema_version": "iss-candles.v1",
-                "secid": secid,
-                "interval": 60,
-                "rows": raw_rows,
-            }, ensure_ascii=False).encode("utf-8")
+            encoded = json.dumps(
+                {
+                    "schema_version": "iss-candles.v1",
+                    "secid": secid,
+                    "interval": 60,
+                    "rows": raw_rows,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
             target.write_bytes(encoded)
             rows = {}
             for source_row in raw_rows:
@@ -702,16 +852,21 @@ class CalendarData:
                 }
             if not rows:
                 return None, "no_valid_h1_rows"
-            return ({
-                "secid": secid,
-                "path": str(target),
-                "sha256": hashlib.sha256(encoded).hexdigest(),
-                "rows": rows,
-            }, None)
+            return (
+                {
+                    "secid": secid,
+                    "path": str(target),
+                    "sha256": hashlib.sha256(encoded).hexdigest(),
+                    "rows": rows,
+                },
+                None,
+            )
         except Exception:
             return None, "no_local_h1_file"
 
-    def _read_h1_candles(self, secid: str, *, allow_fetch: bool = True) -> tuple[dict[str, Any] | None, str | None]:
+    def _read_h1_candles(
+        self, secid: str, *, allow_fetch: bool = True
+    ) -> tuple[dict[str, Any] | None, str | None]:
         path = self.bar_store.select_h1(secid)
         if not self.bar_store.source_available(path):
             if allow_fetch:
@@ -750,26 +905,38 @@ class CalendarData:
                 if not rows:
                     result = (None, "no_valid_h1_rows")
                 else:
-                    result = ({
-                        "secid": secid,
-                        "path": source.source_path,
-                        "sha256": source.source_sha256,
-                        "rows": rows,
-                    }, None)
+                    result = (
+                        {
+                            "secid": secid,
+                            "path": source.source_path,
+                            "sha256": source.source_sha256,
+                            "rows": rows,
+                        },
+                        None,
+                    )
             self._h1_candle_cache[secid] = (fingerprint, result)
             return result
         except (DataLakeError, OSError, TypeError, ValueError):
             return None, "unreadable_h1_series"
 
     @staticmethod
-    def _asof_before(days: list[str], values: dict[str, float], day: str) -> tuple[str | None, float | None]:
+    def _asof_before(
+        days: list[str], values: dict[str, float], day: str
+    ) -> tuple[str | None, float | None]:
         index = bisect_left(days, day) - 1
         if index < 0:
             return None, None
         key = days[index]
         return key, values.get(key)
 
-    def _intraday_window(self, asset: str, daily_window: dict[str, Any], data: dict[str, Any], *, allow_fetch: bool = True) -> dict[str, Any] | None:
+    def _intraday_window(
+        self,
+        asset: str,
+        daily_window: dict[str, Any],
+        data: dict[str, Any],
+        *,
+        allow_fetch: bool = True,
+    ) -> dict[str, Any] | None:
         near, far = daily_window["near"], daily_window["far"]
         near_source, near_error = self._read_h1_candles(near, allow_fetch=allow_fetch)
         far_source, far_error = self._read_h1_candles(far, allow_fetch=allow_fetch)
@@ -778,11 +945,13 @@ class CalendarData:
 
         first_day, last_day = daily_window["first_date"][:10], daily_window["last_date"][:10]
         near_rows = {
-            stamp: row for stamp, row in near_source["rows"].items()
+            stamp: row
+            for stamp, row in near_source["rows"].items()
             if first_day <= stamp[:10] <= last_day and row["close"] > 0
         }
         far_rows = {
-            stamp: row for stamp, row in far_source["rows"].items()
+            stamp: row
+            for stamp, row in far_source["rows"].items()
             if first_day <= stamp[:10] <= last_day and row["close"] > 0
         }
         common = sorted(near_rows.keys() & far_rows.keys())
@@ -804,14 +973,18 @@ class CalendarData:
         else:
             price_source = "synthetic_leg_proxy"
             source_rows = {}
-            fallback_reason = native_error or ("native_h1_insufficient_overlap" if native_source else "native_h1_unavailable")
+            fallback_reason = native_error or (
+                "native_h1_insufficient_overlap" if native_source else "native_h1_unavailable"
+            )
             gate = MIN_H1_PROXY_LEG_SESSION_VOLUME
             liquidity_source = "matched_near_far_session_volume"
-            liquidity_volume_label = "минимум суммарных объёмов синхронных баров обеих ног за сессию"
+            liquidity_volume_label = (
+                "минимум суммарных объёмов синхронных баров обеих ног за сессию"
+            )
             liquidity_rule = "Прокси far − near: минимум суммарных объёмов ближней и дальней ноги на синхронных часовых отметках; бар исполним при объёме обеих ног."
 
         session_days = sorted({stamp[:10] for stamp in common})
-        session_volume: dict[str, float] = {day: 0.0 for day in session_days}
+        session_volume: dict[str, float] = dict.fromkeys(session_days, 0.0)
         unknown_volume: set[str] = set()
         if price_source == "native_h1_spread":
             for stamp in native_common:
@@ -821,8 +994,8 @@ class CalendarData:
                 else:
                     session_volume[stamp[:10]] += value
         else:
-            near_session: dict[str, float] = {day: 0.0 for day in session_days}
-            far_session: dict[str, float] = {day: 0.0 for day in session_days}
+            near_session: dict[str, float] = dict.fromkeys(session_days, 0.0)
+            far_session: dict[str, float] = dict.fromkeys(session_days, 0.0)
             for stamp in common:
                 nv, fv = near_rows[stamp].get("volume"), far_rows[stamp].get("volume")
                 if nv is None or fv is None:
@@ -898,7 +1071,11 @@ class CalendarData:
             spread_value = spread_raw * mult
             open_spread_value = spread_open_raw * mult
             dev_pp = implied_ruonia_deviation_pp(
-                spread_value, near_value, dividend, rate, convergence_supported=bool(config.get("convergence"))
+                spread_value,
+                near_value,
+                dividend,
+                rate,
+                convergence_supported=bool(config.get("convergence")),
             )
 
             if price_source == "native_h1_spread":
@@ -922,49 +1099,51 @@ class CalendarData:
                 previous_bar_volume[session_day] = min_volume
 
             margin = terms["margin_rate"] * (near_value + far_value)
-            rows.append({
-                "date": stamp,
-                "timestamp": stamp,
-                "session_date": session_day,
-                "benchmark_mark_date": benchmark_date,
-                "spread": spread_value,
-                "open_spread": open_spread_value,
-                "spread_price": spread_raw,
-                "spread_open_price": spread_open_raw,
-                "near_close": near_value,
-                "far_close": far_value,
-                "near_price": near_raw,
-                "far_price": far_raw,
-                "near_open_price": near_open_raw,
-                "far_open_price": far_open_raw,
-                "near_open": near_open_raw,
-                "far_open": far_open_raw,
-                "near_volume": nr.get("volume"),
-                "far_volume": fr.get("volume"),
-                "spread_volume": spread_volume,
-                "spread_trades": None,
-                "spread_last_trade": None,
-                "min_volume": min_volume,
-                "session_liquidity_volume": session_volume.get(session_day, 0.0),
-                "liquidity_cumulative_before": before,
-                "liquidity_cumulative": current,
-                "prior_bar_volume": prior_bar,
-                "volume_eligible": current >= gate and min_volume > 0,
-                "signal_eligible": current >= gate and min_volume > 0,
-                "dev_pp": dev_pp,
-                "ruonia_rate": rate,
-                "ruonia_rate_date": rate_date,
-                "fx_rate_date": fx_date,
-                "days_to_near_expiry": days_to_expiry_cache.setdefault(
-                    session_day, (expiry_date - date.fromisoformat(session_day)).days
-                ),
-                "dividend_in_window": dividend > 0,
-                "margin": margin,
-                "mult": mult,
-                "near_price_raw": near_raw,
-                "far_price_raw": far_raw,
-                "spread_open": open_spread_value,
-            })
+            rows.append(
+                {
+                    "date": stamp,
+                    "timestamp": stamp,
+                    "session_date": session_day,
+                    "benchmark_mark_date": benchmark_date,
+                    "spread": spread_value,
+                    "open_spread": open_spread_value,
+                    "spread_price": spread_raw,
+                    "spread_open_price": spread_open_raw,
+                    "near_close": near_value,
+                    "far_close": far_value,
+                    "near_price": near_raw,
+                    "far_price": far_raw,
+                    "near_open_price": near_open_raw,
+                    "far_open_price": far_open_raw,
+                    "near_open": near_open_raw,
+                    "far_open": far_open_raw,
+                    "near_volume": nr.get("volume"),
+                    "far_volume": fr.get("volume"),
+                    "spread_volume": spread_volume,
+                    "spread_trades": None,
+                    "spread_last_trade": None,
+                    "min_volume": min_volume,
+                    "session_liquidity_volume": session_volume.get(session_day, 0.0),
+                    "liquidity_cumulative_before": before,
+                    "liquidity_cumulative": current,
+                    "prior_bar_volume": prior_bar,
+                    "volume_eligible": current >= gate and min_volume > 0,
+                    "signal_eligible": current >= gate and min_volume > 0,
+                    "dev_pp": dev_pp,
+                    "ruonia_rate": rate,
+                    "ruonia_rate_date": rate_date,
+                    "fx_rate_date": fx_date,
+                    "days_to_near_expiry": days_to_expiry_cache.setdefault(
+                        session_day, (expiry_date - date.fromisoformat(session_day)).days
+                    ),
+                    "dividend_in_window": dividend > 0,
+                    "margin": margin,
+                    "mult": mult,
+                    "near_price_raw": near_raw,
+                    "far_price_raw": far_raw,
+                    "spread_open": open_spread_value,
+                }
+            )
 
         if len(rows) < MIN_H1_CALENDAR_OBSERVATIONS:
             return None
@@ -1035,7 +1214,9 @@ class CalendarData:
         eod_sig = self._loaded_assets_sig.get(asset) or self._loaded_sig
         return (eod_sig, seal_sig, tuple(file_sigs))
 
-    def _intraday_windows_for(self, asset: str, *, allow_fetch: bool = True) -> list[dict[str, Any]]:
+    def _intraday_windows_for(
+        self, asset: str, *, allow_fetch: bool = True
+    ) -> list[dict[str, Any]]:
         data = self._load_asset(asset) if asset in ASSETS else self._load()
         sig = self._asset_h1_signature(asset, data)
         fetched_key = f"_fetched_{asset}"
@@ -1071,7 +1252,9 @@ class CalendarData:
         last = max((window["last_date"] for window in windows), default=None)
         return last[:10] if last else None
 
-    def catalog(self, *, initial_capital: float = INITIAL_CAPITAL, timeframe: str = "1d") -> dict[str, Any]:
+    def catalog(
+        self, *, initial_capital: float = INITIAL_CAPITAL, timeframe: str = "1d"
+    ) -> dict[str, Any]:
         if timeframe == "1h":
             data = self._load()
             assets = []
@@ -1081,40 +1264,44 @@ class CalendarData:
                 all_windows.extend(windows)
                 if not windows:
                     continue
-                assets.append({
-                    "asset": asset,
-                    "name": ASSETS[asset]["name"],
-                    "group": ASSETS[asset]["group"],
-                    "monthly": bool(ASSETS[asset].get("monthly")),
-                    "convergence": bool(ASSETS[asset].get("convergence")),
-                    "windows": [
-                        {
-                            "pair": window["pair"],
-                            "from": window["first_date"],
-                            "to": window["last_date"],
-                            "observations": window["observations"],
-                            "timeframe": "1h",
-                            "price_source": window["price_source"],
-                            "price_source_label": window["price_source_label"],
-                            "native_fallback_reason": window["native_fallback_reason"],
-                            "has_native_spread_volume": window["has_native_spread_volume"],
-                            "min_spread_volume": window["min_spread_volume"],
-                            "min_liquidity_volume": window["min_liquidity_volume"],
-                            "liquidity_source": window["liquidity_source"],
-                            "liquidity_gate": window["liquidity_gate"],
-                            "liquidity_gate_unit": window["liquidity_gate_unit"],
-                            "liquidity_volume_label": window["liquidity_volume_label"],
-                            "liquidity_rule": window["liquidity_rule"],
-                            "min_daily_volume_rule": window["liquidity_gate"],
-                            "tradable_every_day": window["tradable_every_day"],
-                            "tradable_every_session": window["tradable_every_session"],
-                            "session_count": window["session_count"],
-                            "max_pair_margin_rub": window["max_pair_margin_rub"],
-                            "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], initial_capital=initial_capital),
-                        }
-                        for window in windows
-                    ],
-                })
+                assets.append(
+                    {
+                        "asset": asset,
+                        "name": ASSETS[asset]["name"],
+                        "group": ASSETS[asset]["group"],
+                        "monthly": bool(ASSETS[asset].get("monthly")),
+                        "convergence": bool(ASSETS[asset].get("convergence")),
+                        "windows": [
+                            {
+                                "pair": window["pair"],
+                                "from": window["first_date"],
+                                "to": window["last_date"],
+                                "observations": window["observations"],
+                                "timeframe": "1h",
+                                "price_source": window["price_source"],
+                                "price_source_label": window["price_source_label"],
+                                "native_fallback_reason": window["native_fallback_reason"],
+                                "has_native_spread_volume": window["has_native_spread_volume"],
+                                "min_spread_volume": window["min_spread_volume"],
+                                "min_liquidity_volume": window["min_liquidity_volume"],
+                                "liquidity_source": window["liquidity_source"],
+                                "liquidity_gate": window["liquidity_gate"],
+                                "liquidity_gate_unit": window["liquidity_gate_unit"],
+                                "liquidity_volume_label": window["liquidity_volume_label"],
+                                "liquidity_rule": window["liquidity_rule"],
+                                "min_daily_volume_rule": window["liquidity_gate"],
+                                "tradable_every_day": window["tradable_every_day"],
+                                "tradable_every_session": window["tradable_every_session"],
+                                "session_count": window["session_count"],
+                                "max_pair_margin_rub": window["max_pair_margin_rub"],
+                                "passes_capital_screen": _stress_ok(
+                                    window["max_pair_margin_rub"], initial_capital=initial_capital
+                                ),
+                            }
+                            for window in windows
+                        ],
+                    }
+                )
             return {
                 "till": self._intraday_till(all_windows),
                 "timeframe": "1h",
@@ -1133,17 +1320,29 @@ class CalendarData:
         data = self._load()
         base_assets = [
             {
-                "asset": asset, "name": ASSETS[asset]["name"], "group": ASSETS[asset]["group"],
+                "asset": asset,
+                "name": ASSETS[asset]["name"],
+                "group": ASSETS[asset]["group"],
                 "monthly": bool(ASSETS[asset].get("monthly")),
                 "convergence": bool(ASSETS[asset].get("convergence")),
                 "windows": [
-                    {"pair": w["pair"], "from": w["first_date"], "to": w["last_date"], "observations": len(w["rows"]),
-                     "min_spread_volume": w["min_spread_volume"], "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
-                     "max_pair_margin_rub": w["max_pair_margin_rub"], "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"], initial_capital=initial_capital)}
+                    {
+                        "pair": w["pair"],
+                        "from": w["first_date"],
+                        "to": w["last_date"],
+                        "observations": len(w["rows"]),
+                        "min_spread_volume": w["min_spread_volume"],
+                        "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
+                        "max_pair_margin_rub": w["max_pair_margin_rub"],
+                        "passes_capital_screen": _stress_ok(
+                            w["max_pair_margin_rub"], initial_capital=initial_capital
+                        ),
+                    }
                     for w in windows
                 ],
             }
-            for asset, windows in data["windows"].items() if windows
+            for asset, windows in data["windows"].items()
+            if windows
         ]
         histories = data.get("histories", {})
         for spec in (*CROSS_EXPIRY_PAIRS, *SYNTHETIC_TRIANGLE_PAIRS):
@@ -1154,26 +1353,34 @@ class CalendarData:
                 if all(histories.get(s) for s in secids):
                     common = sorted(set.intersection(*(set(histories[s]) for s in secids)))
                     if len(common) >= 22:
-                        pair_label = f"{secids[0]}+{secids[1]}/{secids[2]}" if len(secids) == 3 else f"{secids[0]}/{secids[1]}"
-                        windows.append({
-                            "pair": pair_label,
-                            "from": common[0],
-                            "to": common[-1],
-                            "observations": len(common),
-                            "min_spread_volume": MIN_DAILY_VOLUME,
-                            "tradable_every_day": True,
-                            "max_pair_margin_rub": 0.0,
-                            "passes_capital_screen": True,
-                        })
+                        pair_label = (
+                            f"{secids[0]}+{secids[1]}/{secids[2]}"
+                            if len(secids) == 3
+                            else f"{secids[0]}/{secids[1]}"
+                        )
+                        windows.append(
+                            {
+                                "pair": pair_label,
+                                "from": common[0],
+                                "to": common[-1],
+                                "observations": len(common),
+                                "min_spread_volume": MIN_DAILY_VOLUME,
+                                "tradable_every_day": True,
+                                "max_pair_margin_rub": 0.0,
+                                "passes_capital_screen": True,
+                            }
+                        )
             if windows:
-                base_assets.append({
-                    "asset": spec["pair_id"],
-                    "name": spec["name"],
-                    "group": spec["family"],
-                    "monthly": False,
-                    "convergence": False,
-                    "windows": windows,
-                })
+                base_assets.append(
+                    {
+                        "asset": spec["pair_id"],
+                        "name": spec["name"],
+                        "group": spec["family"],
+                        "monthly": False,
+                        "convergence": False,
+                        "windows": windows,
+                    }
+                )
         return {
             "till": data["till"],
             "timeframe": "1d",
@@ -1185,10 +1392,16 @@ class CalendarData:
 
     def window(self, asset: str, pair: str, timeframe: str = "1d") -> dict[str, Any]:
         if timeframe == "1h":
-            window = next((window for window in self._intraday_windows_for(asset) if window["pair"] == pair), None)
+            window = next(
+                (window for window in self._intraday_windows_for(asset) if window["pair"] == pair),
+                None,
+            )
         elif timeframe == "1d":
             data = self._load_asset(asset) if asset in ASSETS else self._load()
-            window = next((window for window in data["windows"].get(asset, []) if window["pair"] == pair), None)
+            window = next(
+                (window for window in data["windows"].get(asset, []) if window["pair"] == pair),
+                None,
+            )
         else:
             raise W0Error("unsupported calendar timeframe")
         if window is None:
@@ -1199,8 +1412,13 @@ class CalendarData:
     def _through(window: dict[str, Any], day: str) -> dict[str, Any]:
         if window.get("timeframe") == "1h":
             rows = [
-                row for row in window["rows"]
-                if (row.get("session_date", row["date"][:10]) <= day if len(day) == 10 else row["date"] <= day)
+                row
+                for row in window["rows"]
+                if (
+                    row.get("session_date", row["date"][:10]) <= day
+                    if len(day) == 10
+                    else row["date"] <= day
+                )
             ]
             if len(rows) < 2:
                 raise W0Error("Недостаточно часовых наблюдений для проверки параметров")
@@ -1208,7 +1426,9 @@ class CalendarData:
             for row in rows:
                 session_liquidity[row["session_date"]] = float(row.get("liquidity_cumulative", 0.0))
             min_liquidity = min(session_liquidity.values()) if session_liquidity else 0.0
-            tradable = bool(session_liquidity) and all(value >= window["liquidity_gate"] for value in session_liquidity.values())
+            tradable = bool(session_liquidity) and all(
+                value >= window["liquidity_gate"] for value in session_liquidity.values()
+            )
             return {
                 **window,
                 "rows": rows,
@@ -1224,9 +1444,13 @@ class CalendarData:
         eligible = _positive_spread_volume_rows(rows)
         if len(eligible) < 2:
             raise W0Error("Недостаточно наблюдений для проверки параметров")
-        return {**window, "rows": rows, "last_date": rows[-1]["date"],
-                "min_spread_volume": min(row["min_volume"] for row in eligible),
-                "max_pair_margin_rub": round(max(row["margin"] for row in rows), 2)}
+        return {
+            **window,
+            "rows": rows,
+            "last_date": rows[-1]["date"],
+            "min_spread_volume": min(row["min_volume"] for row in eligible),
+            "max_pair_margin_rub": round(max(row["margin"] for row in rows), 2),
+        }
 
     def check_training_window(self, asset, pair, quantity, settings):
         """Cheap preflight for a prefix, with the same source-specific volume gate as replay."""
@@ -1239,7 +1463,9 @@ class CalendarData:
                 observations = [row["date"] for row in window["rows"] if row.get("signal_eligible")]
             else:
                 observations = [row["date"] for row in _positive_spread_volume_rows(window["rows"])]
-            cutoff = EvaluationSplit.from_dates(observations, settings.validation_percent).training[-1]
+            cutoff = EvaluationSplit.from_dates(observations, settings.validation_percent).training[
+                -1
+            ]
             window = self._through(window, cutoff)
         if not settings.allow_failed_volume:
             if timeframe == "1h":
@@ -1248,7 +1474,9 @@ class CalendarData:
                 volume_ok = window["min_spread_volume"] >= MIN_DAILY_VOLUME
             if not volume_ok:
                 raise W0Error("Не пройдено правило ликвидности на обучении.")
-        if not settings.allow_failed_capital and not _stress_ok(window["max_pair_margin_rub"], quantity, settings.initial_capital_rub):
+        if not settings.allow_failed_capital and not _stress_ok(
+            window["max_pair_margin_rub"], quantity, settings.initial_capital_rub
+        ):
             raise W0Error("Не пройден стресс-тест капитала на обучении.")
 
     def proof(
@@ -1264,11 +1492,19 @@ class CalendarData:
     ) -> dict[str, Any]:
         asset, pair = selection.get("asset"), selection.get("pair")
         timeframe = timeframe or selection.get("timeframe", "1d")
-        strategy, fill_label = selection.get("strategy", "zscore_mean_reversion"), selection.get("fill", "next_open")
+        strategy, fill_label = (
+            selection.get("strategy", "zscore_mean_reversion"),
+            selection.get("fill", "next_open"),
+        )
         quantity, slippage = selection.get("quantity", 1), selection.get("slippage_ticks", 1.0)
         registry = discover_strategies()
         generic = strategy in calendar_proof_plugin_ids(registry)
-        if not isinstance(asset, str) or asset not in ASSETS or (strategy not in STRATEGIES and not generic) or fill_label not in FILL_LABELS:
+        if (
+            not isinstance(asset, str)
+            or asset not in ASSETS
+            or (strategy not in STRATEGIES and not generic)
+            or fill_label not in FILL_LABELS
+        ):
             if not cached_till_date(self.cache):
                 raise W0Error("calendar history is not cached; run calendar-study first")
             raise W0Error("unknown asset, strategy or fill rule")
@@ -1296,19 +1532,31 @@ class CalendarData:
             raise W0Error("unknown strategy parameter")
         plugin_params = None
         if generic:
-            context = InstrumentContext(universe=CALENDAR_UNIVERSE, pair=pair, asset=asset,
-                                        timeframe=timeframe, monthly=bool(ASSETS[asset].get("monthly")),
-                                        convergence=bool(ASSETS[asset].get("convergence")))
+            context = InstrumentContext(
+                universe=CALENDAR_UNIVERSE,
+                pair=pair,
+                asset=asset,
+                timeframe=timeframe,
+                monthly=bool(ASSETS[asset].get("monthly")),
+                convergence=bool(ASSETS[asset].get("convergence")),
+            )
             plugin = registry.get(strategy)
             if plugin.requires_daily_bars and timeframe != "1d":
                 raise W0Error("Плагин поддерживает только дневные данные.")
             schema = plugin.parameter_schema(context)
             names = [spec.name for spec in schema]
-            if len(names) != len(set(names)) or not any(spec.tunable for spec in schema) or set(params) - set(names):
+            if (
+                len(names) != len(set(names))
+                or not any(spec.tunable for spec in schema)
+                or set(params) - set(names)
+            ):
                 raise W0Error("Некорректная схема параметров плагина.")
             plugin_params = plugin.validate_parameters(dict(params), context)
-            if (not isinstance(plugin_params, dict) or set(plugin_params) != set(names)
-                    or any(not spec.contains(plugin_params[spec.name]) for spec in schema)):
+            if (
+                not isinstance(plugin_params, dict)
+                or set(plugin_params) != set(names)
+                or any(not spec.contains(plugin_params[spec.name]) for spec in schema)
+            ):
                 raise W0Error("Некорректные параметры плагина.")
         else:
             if set(params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
@@ -1317,15 +1565,33 @@ class CalendarData:
                 if key in params:
                     options[key] = params[key]
         threshold = float(params.get("threshold_pp", 1.0)) if not generic else 1.0
-        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
-                   for value in (*options.values(), threshold)):
+        if not all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0
+            for value in (*options.values(), threshold)
+        ):
             raise W0Error("strategy parameters must be positive finite numbers")
         options["window"] = int(options["window"])
         profile = {**tariff_profile(float(slippage)), "tariff_group": ASSETS[asset]["group"]}
         z_cache = _cache.setdefault("z", {}) if _cache is not None else None
         z_cache_key = (through, fill, quantity)
-        runner = None if generic else _calendar_strategy_runner(strategy, delay=delay, fill=fill, close_at_end=True, skip_dividend_windows_in_zscore=False,
-                                 threshold=threshold, zscore_options=options, z_cache=z_cache, z_cache_key=z_cache_key)
+        runner = (
+            None
+            if generic
+            else _calendar_strategy_runner(
+                strategy,
+                delay=delay,
+                fill=fill,
+                close_at_end=True,
+                skip_dividend_windows_in_zscore=False,
+                threshold=threshold,
+                zscore_options=options,
+                z_cache=z_cache,
+                z_cache_key=z_cache_key,
+            )
+        )
         if timeframe == "1h":
             h1_cache = _cache.setdefault("h1", {}) if _cache is not None else None
             h1_key = (through, fill, quantity)
@@ -1369,13 +1635,21 @@ class CalendarData:
         native_order = window.get("native_spread_order", True)
         if generic:
             snapshot = WindowSnapshot(
-                universe=CALENDAR_UNIVERSE, pair=pair, asset=asset, timeframe=timeframe,
-                rows=tuple(analysis_rows), near=window.get("near", ""), far=window.get("far", ""),
-                initial_capital_rub=initial_capital, slippage_ticks=float(slippage),
+                universe=CALENDAR_UNIVERSE,
+                pair=pair,
+                asset=asset,
+                timeframe=timeframe,
+                rows=tuple(analysis_rows),
+                near=window.get("near", ""),
+                far=window.get("far", ""),
+                initial_capital_rub=initial_capital,
+                slippage_ticks=float(slippage),
                 native_spread_order=native_order,
-                extra={"monthly": bool(ASSETS[asset].get("monthly")),
-                       "convergence": bool(ASSETS[asset].get("convergence")),
-                       "tradable_every_session": window.get("tradable_every_session", True)},
+                extra={
+                    "monthly": bool(ASSETS[asset].get("monthly")),
+                    "convergence": bool(ASSETS[asset].get("convergence")),
+                    "tradable_every_session": window.get("tradable_every_session", True),
+                },
             )
             plugin = registry.get(strategy)
             verdict = plugin.check_compatibility(deepcopy(snapshot))
@@ -1385,52 +1659,98 @@ class CalendarData:
         else:
             per_pair = {pair: runner(analysis_rows)}
         if metrics_only and sizing_intents:
-            account = {"trade_list": [
-                {"direction": item["direction"], "signal": item["signal"], "reason": item["reason"],
-                 "entry_row": item["entry"], "exit_row": item["exit"]}
-                for item in per_pair[pair]
-            ]}
+            account = {
+                "trade_list": [
+                    {
+                        "direction": item["direction"],
+                        "signal": item["signal"],
+                        "reason": item["reason"],
+                        "entry_row": item["entry"],
+                        "exit_row": item["exit"],
+                    }
+                    for item in per_pair[pair]
+                ]
+            }
         else:
-            account = account_trades("proof", per_pair, data["benchmark"], profile,
-                                     native_spread=native_order, quantity=quantity,
-                                     benchmark_dates=data["benchmark_dates"])
-        series_cache = _cache.setdefault("series", {}) if (_cache is not None and metrics_only) else None
+            account = account_trades(
+                "proof",
+                per_pair,
+                data["benchmark"],
+                profile,
+                native_spread=native_order,
+                quantity=quantity,
+                benchmark_dates=data["benchmark_dates"],
+            )
+        series_cache = (
+            _cache.setdefault("series", {}) if (_cache is not None and metrics_only) else None
+        )
         series_key = (through, fill, quantity) if timeframe == "1h" else (through,)
         payload = _proof_payload(
-            window, account, asset, strategy, fill_label, options, threshold, quantity,
-            float(slippage), data["terms"][asset], profile, initial_capital,
-            metrics_only=metrics_only, sizing_intents=sizing_intents,
-            series_cache=series_cache, series_key=series_key,
+            window,
+            account,
+            asset,
+            strategy,
+            fill_label,
+            options,
+            threshold,
+            quantity,
+            float(slippage),
+            data["terms"][asset],
+            profile,
+            initial_capital,
+            metrics_only=metrics_only,
+            sizing_intents=sizing_intents,
+            series_cache=series_cache,
+            series_key=series_key,
         )
         if generic:
             payload["selection"]["parameters"] = plugin_params
         price_source = window.get("price_source", "native_daily_spread")
         payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
         if metrics_only:
-            payload["window"].update({
+            payload["window"].update(
+                {
+                    "timeframe": timeframe,
+                    "price_source": price_source,
+                }
+            )
+            return payload
+        payload["window"].update(
+            {
                 "timeframe": timeframe,
                 "price_source": price_source,
-            })
-            return payload
-        payload["window"].update({
-            "timeframe": timeframe,
-            "price_source": price_source,
-            "price_source_label": window.get("price_source_label", "Нативная дневная история календарного спреда"),
-            "has_native_spread_volume": window.get("has_native_spread_volume", True),
-            "observations": len(window["rows"]),
-            "min_liquidity_volume": window.get("min_liquidity_volume", window.get("min_spread_volume")),
-            "liquidity_source": window.get("liquidity_source", "native_daily_spread_volume"),
-            "liquidity_gate": window.get("liquidity_gate", MIN_DAILY_VOLUME),
-            "liquidity_gate_unit": window.get("liquidity_gate_unit", "контр./день"),
-            "liquidity_volume_label": window.get("liquidity_volume_label", "минимальный дневной объём нативного спреда"),
-            "liquidity_rule": window.get("liquidity_rule", f"Нативный spread-volume не менее {MIN_DAILY_VOLUME} контрактов в день."),
-            "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
-            "tradable_every_session": window.get("tradable_every_session", window.get("tradable_every_day", True)),
-            "min_liquidity_volume": window.get("min_liquidity_volume", window.get("min_spread_volume")),
-            "min_spread_volume": window.get("min_spread_volume"),
-            "native_fallback_reason": window.get("native_fallback_reason"),
-            "session_count": window.get("session_count"),
-        })
+                "price_source_label": window.get(
+                    "price_source_label", "Нативная дневная история календарного спреда"
+                ),
+                "has_native_spread_volume": window.get("has_native_spread_volume", True),
+                "observations": len(window["rows"]),
+                "min_liquidity_volume": window.get(
+                    "min_liquidity_volume", window.get("min_spread_volume")
+                ),
+                "liquidity_source": window.get("liquidity_source", "native_daily_spread_volume"),
+                "liquidity_gate": window.get("liquidity_gate", MIN_DAILY_VOLUME),
+                "liquidity_gate_unit": window.get("liquidity_gate_unit", "контр./день"),
+                "liquidity_volume_label": window.get(
+                    "liquidity_volume_label", "минимальный дневной объём нативного спреда"
+                ),
+                "liquidity_rule": window.get(
+                    "liquidity_rule",
+                    f"Нативный spread-volume не менее {MIN_DAILY_VOLUME} контрактов в день.",
+                ),
+                "tradable_every_day": window.get(
+                    "tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME
+                ),
+                "tradable_every_session": window.get(
+                    "tradable_every_session", window.get("tradable_every_day", True)
+                ),
+                "min_liquidity_volume": window.get(
+                    "min_liquidity_volume", window.get("min_spread_volume")
+                ),
+                "min_spread_volume": window.get("min_spread_volume"),
+                "native_fallback_reason": window.get("native_fallback_reason"),
+                "session_count": window.get("session_count"),
+            }
+        )
         if timeframe == "1h":
             payload["provenance"] = payload.get("provenance") or {}
             payload["provenance"].update(window.get("source_hashes", {}))
@@ -1450,6 +1770,7 @@ class CalendarData:
                 "Открытая на конец окна позиция — принудительная отметка, не исполнимая сделка; свечные OHLC/объёмы являются ценовыми прокси, не тиковыми сделками.",
             ]
         return payload
+
 
 def _rel_pct(value: Any, base: Any) -> float | None:
     """Spread as % of the far price. Pure same-row ratio — strictly causal."""
@@ -1521,8 +1842,12 @@ def _proof_payload(
                     "far_open": r["far_open_price"],
                     "spread": r["spread_price"],
                     "volume_eligible": r.get("volume_eligible", r["min_volume"] > 0),
-                    "entry_eligible": r.get("entry_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
-                    "exit_eligible": r.get("exit_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
+                    "entry_eligible": r.get(
+                        "entry_eligible", r.get("volume_eligible", r["min_volume"] > 0)
+                    ),
+                    "exit_eligible": r.get(
+                        "exit_eligible", r.get("volume_eligible", r["min_volume"] > 0)
+                    ),
                     "point_value_rub": r["mult"],
                 }
                 for r in rows
@@ -1537,15 +1862,27 @@ def _proof_payload(
                     "signal": trade["signal"],
                     "entry": {
                         "date": trade["entry_row"]["date"],
-                        "spread_fill": trade["entry_row"]["spread_open_price"] if is_open else trade["entry_row"]["spread_price"],
-                        "near_price": trade["entry_row"]["near_open_price"] if is_open else trade["entry_row"]["near_price"],
-                        "far_price": trade["entry_row"]["far_open_price"] if is_open else trade["entry_row"]["far_price"],
+                        "spread_fill": trade["entry_row"]["spread_open_price"]
+                        if is_open
+                        else trade["entry_row"]["spread_price"],
+                        "near_price": trade["entry_row"]["near_open_price"]
+                        if is_open
+                        else trade["entry_row"]["near_price"],
+                        "far_price": trade["entry_row"]["far_open_price"]
+                        if is_open
+                        else trade["entry_row"]["far_price"],
                     },
                     "exit": {
                         "date": trade["exit_row"]["date"],
-                        "spread_fill": trade["exit_row"]["spread_open_price"] if is_open else trade["exit_row"]["spread_price"],
-                        "near_price": trade["exit_row"]["near_open_price"] if is_open else trade["exit_row"]["near_price"],
-                        "far_price": trade["exit_row"]["far_open_price"] if is_open else trade["exit_row"]["far_price"],
+                        "spread_fill": trade["exit_row"]["spread_open_price"]
+                        if is_open
+                        else trade["exit_row"]["spread_price"],
+                        "near_price": trade["exit_row"]["near_open_price"]
+                        if is_open
+                        else trade["exit_row"]["near_price"],
+                        "far_price": trade["exit_row"]["far_open_price"]
+                        if is_open
+                        else trade["exit_row"]["far_price"],
                     },
                     "reason": trade["reason"],
                 }
@@ -1571,8 +1908,13 @@ def _proof_payload(
                     "near_expiry": window["near_expiry"],
                     "near": window["near"],
                     "far": window["far"],
-                    "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
-                    "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
+                    "tradable_every_day": window.get(
+                        "tradable_every_day",
+                        (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME,
+                    ),
+                    "passes_capital_screen": _stress_ok(
+                        window["max_pair_margin_rub"], quantity, initial_capital
+                    ),
                     "max_pair_margin_rub": window["max_pair_margin_rub"],
                     "timeframe": tf,
                     "price_source": window.get("price_source", "native_daily_spread"),
@@ -1596,29 +1938,37 @@ def _proof_payload(
         for number, trade in enumerate(account["trade_list"], start=1):
             entry, exit_row, side = trade["entry_row"], trade["exit_row"], trade["direction"]
             entry_fee, exit_fee = trade["entry_costs"], trade["exit_costs"]
-            trades.append({
-                "number": number,
-                "side": "short_spread" if side < 0 else "long_spread",
-                "quantity": quantity,
-                "signal": trade["signal"],
-                "entry": {
-                    "date": entry["date"],
-                    "spread_fill": entry["spread_open_price"] if is_open else entry["spread_price"],
-                    "costs": entry_fee,
-                },
-                "exit": {
-                    "date": exit_row["date"],
-                    "spread_fill": exit_row["spread_open_price"] if is_open else exit_row["spread_price"],
-                    "costs": exit_fee,
-                },
-                "reason": trade["reason"],
-                "margin_rub": trade["margin_rub"],
-                "gross_rub": trade["gross_rub"],
-                "costs_rub": trade["costs_rub"],
-                "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
-                "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
-                "excess_rub": round(trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2),
-            })
+            trades.append(
+                {
+                    "number": number,
+                    "side": "short_spread" if side < 0 else "long_spread",
+                    "quantity": quantity,
+                    "signal": trade["signal"],
+                    "entry": {
+                        "date": entry["date"],
+                        "spread_fill": entry["spread_open_price"]
+                        if is_open
+                        else entry["spread_price"],
+                        "costs": entry_fee,
+                    },
+                    "exit": {
+                        "date": exit_row["date"],
+                        "spread_fill": exit_row["spread_open_price"]
+                        if is_open
+                        else exit_row["spread_price"],
+                        "costs": exit_fee,
+                    },
+                    "reason": trade["reason"],
+                    "margin_rub": trade["margin_rub"],
+                    "gross_rub": trade["gross_rub"],
+                    "costs_rub": trade["costs_rub"],
+                    "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
+                    "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
+                    "excess_rub": round(
+                        trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2
+                    ),
+                }
+            )
         ledger, position, cumulative = [], None, 0.0
         by_entry = {t["entry"]["date"]: t for t in trades}
         by_exit = {t["exit"]["date"]: t for t in trades}
@@ -1626,7 +1976,9 @@ def _proof_payload(
         for row in rows:
             day, daily, cost = row["date"], 0.0, 0.0
             point = row["mult"] * quantity
-            volume_eligible = row.get("volume_eligible", row.get("min_volume") is not None and row["min_volume"] > 0)
+            volume_eligible = row.get(
+                "volume_eligible", row.get("min_volume") is not None and row["min_volume"] > 0
+            )
             entry_eligible = row.get("entry_eligible", volume_eligible)
             exit_eligible = row.get("exit_eligible", volume_eligible)
             if position is not None:
@@ -1684,8 +2036,12 @@ def _proof_payload(
                 "near_expiry": window["near_expiry"],
                 "near": window["near"],
                 "far": window["far"],
-                "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
-                "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
+                "tradable_every_day": window.get(
+                    "tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME
+                ),
+                "passes_capital_screen": _stress_ok(
+                    window["max_pair_margin_rub"], quantity, initial_capital
+                ),
                 "max_pair_margin_rub": window["max_pair_margin_rub"],
                 "timeframe": tf,
                 "price_source": window.get("price_source", "native_daily_spread"),
@@ -1709,7 +2065,9 @@ def _proof_payload(
                 "costs_rub": account["costs_rub"],
                 "net_rub": round(net, 2),
                 "lqdt_on_margin_rub": account["lqdt_on_pair_margin_while_open_rub"],
-                "excess_over_lqdt_rub": round(net - account["lqdt_on_pair_margin_while_open_rub"], 2),
+                "excess_over_lqdt_rub": round(
+                    net - account["lqdt_on_pair_margin_while_open_rub"], 2
+                ),
                 "winners": sum(t["net_rub"] > 0 for t in trades),
             },
         }
@@ -1717,33 +2075,73 @@ def _proof_payload(
     for number, trade in enumerate(account["trade_list"], start=1):
         entry, exit_row, side = trade["entry_row"], trade["exit_row"], trade["direction"]
         entry_fee, exit_fee = trade["entry_costs"], trade["exit_costs"]
-        trades.append({
-            "number": number,
-            "side": "short_spread" if side < 0 else "long_spread",
-            "legs": "sell far, buy near" if side < 0 else "buy far, sell near",
-            "quantity": quantity,
-            "signal": trade["signal"],
-            "entry": {"date": entry["date"], "spread_fill": entry["spread_open_price"] if fill_label == "next_open" else entry["spread_price"],
-                      "spread_fill_rel": _rel_pct(entry["spread_open_price"] if fill_label == "next_open" else entry["spread_price"], entry["far_open_price"] if fill_label == "next_open" else entry["far_price"]),
-                      "near_price": entry["near_open_price"] if fill_label == "next_open" else entry["near_price"],
-                      "far_price": entry["far_open_price"] if fill_label == "next_open" else entry["far_price"],
-                      "spread_volume": entry.get("spread_volume", entry["min_volume"]), "near_volume": entry["near_volume"], "far_volume": entry["far_volume"],
-                      "costs": entry_fee},
-            "exit": {"date": exit_row["date"], "spread_fill": exit_row["spread_open_price"] if fill_label == "next_open" else exit_row["spread_price"],
-                     "spread_fill_rel": _rel_pct(exit_row["spread_open_price"] if fill_label == "next_open" else exit_row["spread_price"], exit_row["far_open_price"] if fill_label == "next_open" else exit_row["far_price"]),
-                     "near_price": exit_row["near_open_price"] if fill_label == "next_open" else exit_row["near_price"],
-                     "far_price": exit_row["far_open_price"] if fill_label == "next_open" else exit_row["far_price"],
-                     "spread_volume": exit_row.get("spread_volume", exit_row["min_volume"]), "near_volume": exit_row["near_volume"], "far_volume": exit_row["far_volume"],
-                     "costs": exit_fee},
-            "reason": trade["reason"],
-            "days_held": _elapsed_days(entry["date"], exit_row["date"]),
-            "margin_rub": trade["margin_rub"],
-            "gross_rub": trade["gross_rub"],
-            "costs_rub": trade["costs_rub"],
-            "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
-            "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
-            "excess_rub": round(trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2),
-        })
+        trades.append(
+            {
+                "number": number,
+                "side": "short_spread" if side < 0 else "long_spread",
+                "legs": "sell far, buy near" if side < 0 else "buy far, sell near",
+                "quantity": quantity,
+                "signal": trade["signal"],
+                "entry": {
+                    "date": entry["date"],
+                    "spread_fill": entry["spread_open_price"]
+                    if fill_label == "next_open"
+                    else entry["spread_price"],
+                    "spread_fill_rel": _rel_pct(
+                        entry["spread_open_price"]
+                        if fill_label == "next_open"
+                        else entry["spread_price"],
+                        entry["far_open_price"]
+                        if fill_label == "next_open"
+                        else entry["far_price"],
+                    ),
+                    "near_price": entry["near_open_price"]
+                    if fill_label == "next_open"
+                    else entry["near_price"],
+                    "far_price": entry["far_open_price"]
+                    if fill_label == "next_open"
+                    else entry["far_price"],
+                    "spread_volume": entry.get("spread_volume", entry["min_volume"]),
+                    "near_volume": entry["near_volume"],
+                    "far_volume": entry["far_volume"],
+                    "costs": entry_fee,
+                },
+                "exit": {
+                    "date": exit_row["date"],
+                    "spread_fill": exit_row["spread_open_price"]
+                    if fill_label == "next_open"
+                    else exit_row["spread_price"],
+                    "spread_fill_rel": _rel_pct(
+                        exit_row["spread_open_price"]
+                        if fill_label == "next_open"
+                        else exit_row["spread_price"],
+                        exit_row["far_open_price"]
+                        if fill_label == "next_open"
+                        else exit_row["far_price"],
+                    ),
+                    "near_price": exit_row["near_open_price"]
+                    if fill_label == "next_open"
+                    else exit_row["near_price"],
+                    "far_price": exit_row["far_open_price"]
+                    if fill_label == "next_open"
+                    else exit_row["far_price"],
+                    "spread_volume": exit_row.get("spread_volume", exit_row["min_volume"]),
+                    "near_volume": exit_row["near_volume"],
+                    "far_volume": exit_row["far_volume"],
+                    "costs": exit_fee,
+                },
+                "reason": trade["reason"],
+                "days_held": _elapsed_days(entry["date"], exit_row["date"]),
+                "margin_rub": trade["margin_rub"],
+                "gross_rub": trade["gross_rub"],
+                "costs_rub": trade["costs_rub"],
+                "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
+                "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
+                "excess_rub": round(
+                    trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2
+                ),
+            }
+        )
     ledger, position, cumulative = [], None, 0.0
     by_entry = {t["entry"]["date"]: t for t in trades}
     by_exit = {t["exit"]["date"]: t for t in trades}
@@ -1751,7 +2149,9 @@ def _proof_payload(
     for row in rows:
         day, daily, cost = row["date"], 0.0, 0.0
         point = row["mult"] * quantity
-        volume_eligible = row.get("volume_eligible", row.get("min_volume") is not None and row["min_volume"] > 0)
+        volume_eligible = row.get(
+            "volume_eligible", row.get("min_volume") is not None and row["min_volume"] > 0
+        )
         entry_eligible = row.get("entry_eligible", volume_eligible)
         exit_eligible = row.get("exit_eligible", volume_eligible)
         if position is not None:
@@ -1782,10 +2182,15 @@ def _proof_payload(
                 mark = entering["entry"]["spread_fill"]
             position = {"sign": sign, "mark": mark, "number": entering["number"]}
         cumulative += daily - cost
-        ledger.append({
-            "date": day, "position": position["sign"] if position else 0, "mark_pnl_rub": round(daily, 2),
-            "costs_rub": round(cost, 2), "cumulative_net_rub": round(cumulative, 2),
-        })
+        ledger.append(
+            {
+                "date": day,
+                "position": position["sign"] if position else 0,
+                "mark_pnl_rub": round(daily, 2),
+                "costs_rub": round(cost, 2),
+                "cumulative_net_rub": round(cumulative, 2),
+            }
+        )
     fx_drift = 0.0
     for trade in trades:
         static = trade["gross_rub"]
@@ -1797,68 +2202,122 @@ def _proof_payload(
     gross = sum(t["gross_rub"] for t in trades)
     net = sum(t["net_rub"] for t in trades)
     reconciliation = round(net - cumulative, 2)
-    return _clean({
-        "schema_version": "calendar-proof.v1",
-        "initial_capital_rub": initial_capital,
-        "selection": {"asset": asset, "pair": window["pair"], "spread_instrument": window["spread_instrument"], "strategy": strategy,
-                      "fill": fill_label, "quantity": quantity, "slippage_ticks": slippage, "initial_capital_rub": initial_capital,
-                      "parameters": {**options, "threshold_pp": threshold}},
-        "window": {"from": window["first_date"], "to": window["last_date"], "near_expiry": window["near_expiry"],
-                   "near": window["near"], "far": window["far"], "min_spread_volume": window.get("min_spread_volume"),
-                   "tradable_every_day": window.get("tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME),
-                   "min_daily_volume_rule": window.get("liquidity_gate", MIN_DAILY_VOLUME),
-                   "excluded_volume_observations": sum(not r.get("volume_eligible", r.get("min_volume") is not None and r["min_volume"] > 0) for r in rows),
-                   "passes_capital_screen": _stress_ok(window["max_pair_margin_rub"], quantity, initial_capital),
-                   "max_pair_margin_rub": window["max_pair_margin_rub"],
-                   "timeframe": window.get("timeframe", "1d"),
-                   "price_source": window.get("price_source", "native_daily_spread"),
-                   "has_native_spread_volume": window.get("has_native_spread_volume", True),
-                   "observations": len(rows)},
-        "contract": {"point_value_rub": terms["mult"], "tick_size": terms["tick_size"], "reference_contract": terms["reference_contract"],
-                     "margin_rate": terms["margin_rate"],
-                     "tariff_group": ASSETS[asset]["group"],
-                     "taker_rate_percent": TAKER_RATE_PERCENT[ASSETS[asset]["group"]], "broker_fee_rub": 0.0},
-        "series": [
-            {"date": r["date"], "timestamp": r.get("timestamp", r["date"]),
-             "session_date": r.get("session_date", r["date"][:10]),
-             "benchmark_mark_date": r.get("benchmark_mark_date"),
-             "timeframe": window.get("timeframe", "1d"),
-             "near": r["near_price"], "far": r["far_price"], "near_open": r["near_open_price"],
-             "far_open": r["far_open_price"], "spread": r["spread_price"], "spread_open": r["spread_open_price"],
-             "spread_rel": _rel_pct(r["spread_price"], r["far_price"]),
-             "spread_open_rel": _rel_pct(r["spread_open_price"], r["far_open_price"]),
-             "spread_last_trade_rel": _rel_pct(r["spread_last_trade"], r["far_price"]),
-             "spread_last_trade": r["spread_last_trade"], "spread_volume": r.get("spread_volume", r["min_volume"]),
-             "volume_eligible": r.get("volume_eligible", r["min_volume"] > 0),
-             "signal_eligible": r.get("signal_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
-             "entry_eligible": r.get("entry_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
-             "exit_eligible": r.get("exit_eligible", r.get("volume_eligible", r["min_volume"] > 0)),
-             "spread_trades": r["spread_trades"],
-             "near_volume": r["near_volume"], "far_volume": r["far_volume"], "days_to_near_expiry": r["days_to_near_expiry"],
-             "dev_pp": r["dev_pp"],
-             "ruonia_rate_pct": r.get("ruonia_rate") * 100 if r.get("ruonia_rate") is not None else None,
-             "ruonia_rate_date": r.get("ruonia_rate_date"),
-             "rate_price_per_pp": r["near_price"] * QUARTER_DAYS / 365 / 100,
-             "margin_rub": round(r["margin"] * quantity, 2),
-             "point_value_rub": r["mult"]}
-            for r in rows
-        ],
-        "trades": trades,
-        "ledger": ledger,
-        "summary": {
-            "trades": len(trades), "gross_rub": round(gross, 2), "costs_rub": account["costs_rub"], "net_rub": round(net, 2),
-            "lqdt_on_margin_rub": account["lqdt_on_pair_margin_while_open_rub"],
-            "excess_over_lqdt_rub": round(net - account["lqdt_on_pair_margin_while_open_rub"], 2),
-            "winners": sum(t["net_rub"] > 0 for t in trades), "ledger_reconciliation_rub": reconciliation,
-            "fx_point_value_drift_rub": round(fx_drift, 2),
-        },
-        "notes": [
-            "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
-            "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцениваются.",
-            "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
-            "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс проскальзывание один раз на сторону.",
-            "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
-            "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
-            "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",
-        ],
-    })
+    return _clean(
+        {
+            "schema_version": "calendar-proof.v1",
+            "initial_capital_rub": initial_capital,
+            "selection": {
+                "asset": asset,
+                "pair": window["pair"],
+                "spread_instrument": window["spread_instrument"],
+                "strategy": strategy,
+                "fill": fill_label,
+                "quantity": quantity,
+                "slippage_ticks": slippage,
+                "initial_capital_rub": initial_capital,
+                "parameters": {**options, "threshold_pp": threshold},
+            },
+            "window": {
+                "from": window["first_date"],
+                "to": window["last_date"],
+                "near_expiry": window["near_expiry"],
+                "near": window["near"],
+                "far": window["far"],
+                "min_spread_volume": window.get("min_spread_volume"),
+                "tradable_every_day": window.get(
+                    "tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME
+                ),
+                "min_daily_volume_rule": window.get("liquidity_gate", MIN_DAILY_VOLUME),
+                "excluded_volume_observations": sum(
+                    not r.get(
+                        "volume_eligible", r.get("min_volume") is not None and r["min_volume"] > 0
+                    )
+                    for r in rows
+                ),
+                "passes_capital_screen": _stress_ok(
+                    window["max_pair_margin_rub"], quantity, initial_capital
+                ),
+                "max_pair_margin_rub": window["max_pair_margin_rub"],
+                "timeframe": window.get("timeframe", "1d"),
+                "price_source": window.get("price_source", "native_daily_spread"),
+                "has_native_spread_volume": window.get("has_native_spread_volume", True),
+                "observations": len(rows),
+            },
+            "contract": {
+                "point_value_rub": terms["mult"],
+                "tick_size": terms["tick_size"],
+                "reference_contract": terms["reference_contract"],
+                "margin_rate": terms["margin_rate"],
+                "tariff_group": ASSETS[asset]["group"],
+                "taker_rate_percent": TAKER_RATE_PERCENT[ASSETS[asset]["group"]],
+                "broker_fee_rub": 0.0,
+            },
+            "series": [
+                {
+                    "date": r["date"],
+                    "timestamp": r.get("timestamp", r["date"]),
+                    "session_date": r.get("session_date", r["date"][:10]),
+                    "benchmark_mark_date": r.get("benchmark_mark_date"),
+                    "timeframe": window.get("timeframe", "1d"),
+                    "near": r["near_price"],
+                    "far": r["far_price"],
+                    "near_open": r["near_open_price"],
+                    "far_open": r["far_open_price"],
+                    "spread": r["spread_price"],
+                    "spread_open": r["spread_open_price"],
+                    "spread_rel": _rel_pct(r["spread_price"], r["far_price"]),
+                    "spread_open_rel": _rel_pct(r["spread_open_price"], r["far_open_price"]),
+                    "spread_last_trade_rel": _rel_pct(r["spread_last_trade"], r["far_price"]),
+                    "spread_last_trade": r["spread_last_trade"],
+                    "spread_volume": r.get("spread_volume", r["min_volume"]),
+                    "volume_eligible": r.get("volume_eligible", r["min_volume"] > 0),
+                    "signal_eligible": r.get(
+                        "signal_eligible", r.get("volume_eligible", r["min_volume"] > 0)
+                    ),
+                    "entry_eligible": r.get(
+                        "entry_eligible", r.get("volume_eligible", r["min_volume"] > 0)
+                    ),
+                    "exit_eligible": r.get(
+                        "exit_eligible", r.get("volume_eligible", r["min_volume"] > 0)
+                    ),
+                    "spread_trades": r["spread_trades"],
+                    "near_volume": r["near_volume"],
+                    "far_volume": r["far_volume"],
+                    "days_to_near_expiry": r["days_to_near_expiry"],
+                    "dev_pp": r["dev_pp"],
+                    "ruonia_rate_pct": r.get("ruonia_rate") * 100
+                    if r.get("ruonia_rate") is not None
+                    else None,
+                    "ruonia_rate_date": r.get("ruonia_rate_date"),
+                    "rate_price_per_pp": r["near_price"] * QUARTER_DAYS / 365 / 100,
+                    "margin_rub": round(r["margin"] * quantity, 2),
+                    "point_value_rub": r["mult"],
+                }
+                for r in rows
+            ],
+            "trades": trades,
+            "ledger": ledger,
+            "summary": {
+                "trades": len(trades),
+                "gross_rub": round(gross, 2),
+                "costs_rub": account["costs_rub"],
+                "net_rub": round(net, 2),
+                "lqdt_on_margin_rub": account["lqdt_on_pair_margin_while_open_rub"],
+                "excess_over_lqdt_rub": round(
+                    net - account["lqdt_on_pair_margin_while_open_rub"], 2
+                ),
+                "winners": sum(t["net_rub"] > 0 for t in trades),
+                "ledger_reconciliation_rub": reconciliation,
+                "fx_point_value_drift_rub": round(fx_drift, 2),
+            },
+            "notes": [
+                "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
+                "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцениваются.",
+                "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
+                "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс проскальзывание один раз на сторону.",
+                "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
+                "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
+                "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",
+            ],
+        }
+    )

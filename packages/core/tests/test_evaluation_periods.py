@@ -46,7 +46,9 @@ class GlobalPeriodTests(unittest.TestCase):
             self.assertEqual(read_settings(root)["price_fill"], "reference_same_bar")
             saved = save_settings(root, {"price_fill": "next_open"})
             self.assertEqual(saved["price_fill"], "next_open")
-            self.assertEqual(save_settings(root, {"slippage_ticks": 2.5})["price_fill"], "next_open")
+            self.assertEqual(
+                save_settings(root, {"slippage_ticks": 2.5})["price_fill"], "next_open"
+            )
             for value in ("bad", "same_day_settlement", 1, True, None, []):
                 with self.subTest(value=value), self.assertRaises(W0Error):
                     save_settings(root, {"price_fill": value})

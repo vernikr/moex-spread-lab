@@ -12,16 +12,18 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from proof_fixtures import two_calendar_windows
-
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import AnalyticsError, run_mean_reversion_baseline
 from moex_spread_lab.core.settings import save_settings, settings_path
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.proof_search import StudyWindow, research_run
-from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
-from moex_spread_lab.proof_runtime.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof_runtime.proof_search import StudyWindow, research_run
+from moex_spread_lab.proof_runtime.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+    AnalyticsError,
+    run_mean_reversion_baseline,
+)
+from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
+from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import two_calendar_windows
 
 PAIR = {
     "universe": "pair_screen",
@@ -64,17 +66,13 @@ class ReferenceAndBandsTests(FixtureCase):
                     p = self.run_proof({**base, "fill": fill})
                     ids.append(p["run_id"])
                     self.assertEqual(p["selection"]["fill"], fill)
-                    self.assertEqual(
-                        p["execution_reference"], fill == "reference_same_bar"
-                    )
+                    self.assertEqual(p["execution_reference"], fill == "reference_same_bar")
                     self.assertEqual(
                         p["evaluation"]["execution_reference"],
                         fill == "reference_same_bar",
                     )
                     self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-                    self.assertEqual(
-                        self.run_proof(p["selection"])["run_id"], p["run_id"]
-                    )
+                    self.assertEqual(self.run_proof(p["selection"])["run_id"], p["run_id"])
                     self.assertTrue(p["trades"])
                     rows = {r["date"]: r for r in p["series"]}
                     for trade in p["trades"]:
@@ -84,15 +82,10 @@ class ReferenceAndBandsTests(FixtureCase):
                             row["near_open" if fill == "next_open" else "near"],
                         )
                         if fill == "reference_same_bar":
-                            self.assertEqual(
-                                trade["signal"]["date"], trade["entry"]["date"]
-                            )
+                            self.assertEqual(trade["signal"]["date"], trade["entry"]["date"])
                     if fill == "reference_same_bar":
                         self.assertTrue(
-                            any(
-                                "не является проверкой исполнимой" in n
-                                for n in p["notes"]
-                            )
+                            any("не является проверкой исполнимой" in n for n in p["notes"])
                         )
             self.assertEqual(len(set(ids)), 3)
         self.assertEqual(
@@ -108,9 +101,7 @@ class ReferenceAndBandsTests(FixtureCase):
                     rows = {r["date"]: r for r in p["series"]}
                     for t in p["trades"]:
                         signal = rows[t["signal"]["date"]]
-                        bound = signal[
-                            "buy_level" if t["side"] == "long_spread" else "sell_level"
-                        ]
+                        bound = signal["buy_level" if t["side"] == "long_spread" else "sell_level"]
                         self.assertIsNotNone(bound)
                         self.assertLessEqual(signal["spread"] - bound, 1e-6) if t[
                             "side"
@@ -137,9 +128,7 @@ class ReferenceAndBandsTests(FixtureCase):
                         for r in rows[end - window : end]
                     ]
                     mean = statistics.mean(sample)
-                    deviation = (
-                        statistics.stdev(sample) if native else statistics.pstdev(sample)
-                    )
+                    deviation = statistics.stdev(sample) if native else statistics.pstdev(sample)
                     point = rows[i]["point_value_rub"] if native else 1
                     self.assertAlmostEqual(
                         rows[i]["buy_level"],
@@ -232,11 +221,7 @@ class ReferenceAndBandsTests(FixtureCase):
                     **PAIR,
                     "fill": fill,
                     "targets": [
-                        {
-                            k: v
-                            for k, v in r.items()
-                            if k in ("universe", "asset", "pair")
-                        }
+                        {k: v for k, v in r.items() if k in ("universe", "asset", "pair")}
                         for r in (PAIR, CAL)
                     ],
                 },
@@ -244,16 +229,11 @@ class ReferenceAndBandsTests(FixtureCase):
             )
             self.assertEqual(result["status"], "maximum_found")
             self.assertEqual(result["group"]["member_count"], 2)
-            self.assertEqual(
-                result["group"]["execution_reference"], fill == "reference_same_bar"
-            )
-            self.assertTrue(
-                all(m["selection"]["fill"] == fill for m in result["group"]["members"])
-            )
+            self.assertEqual(result["group"]["execution_reference"], fill == "reference_same_bar")
+            self.assertTrue(all(m["selection"]["fill"] == fill for m in result["group"]["members"]))
             self.assertTrue(
                 all(
-                    m["selection"]["execution_reference"]
-                    == (fill == "reference_same_bar")
+                    m["selection"]["execution_reference"] == (fill == "reference_same_bar")
                     for m in result["group"]["members"]
                 )
             )
@@ -266,9 +246,7 @@ class WindowSummaryTests(FixtureCase):
         requests = [PAIR, CAL, FLAT]
         original = deepcopy(requests)
         for share in (0, 25):
-            save_settings(
-                self.root, {"validation_percent": share, "slippage_ticks": 2.5}
-            )
+            save_settings(self.root, {"validation_percent": share, "slippage_ticks": 2.5})
             result = window_summaries(self.service, {"requests": requests})
             self.assertEqual(result["validation_percent"], share)
             for req, row in zip(requests, result["rows"]):
@@ -318,9 +296,7 @@ class WindowSummaryTests(FixtureCase):
         with patch("moex_spread_lab.proof_runtime.proof_windows.StudyWindow", side_effect=changed):
             result = window_summaries(self.service, {"requests": [PAIR, CAL]})
         self.assertEqual(result["slippage_ticks"], 1)
-        self.assertTrue(
-            all(r["selection"]["slippage_ticks"] == 1 for r in result["rows"])
-        )
+        self.assertTrue(all(r["selection"]["slippage_ticks"] == 1 for r in result["rows"]))
         with self.assertRaises(ConnectionAbortedError):
             window_summaries(
                 self.service,
@@ -341,16 +317,10 @@ class WindowSummaryTests(FixtureCase):
             with self.subTest(request=request), self.assertRaises(W0Error):
                 window_summaries(self.service, request)
         catalog = self.service.catalog()
-        pair = next(
-            p for p in catalog["pair_screen"]["pairs"] if p["id"] == PAIR["pair"]
-        )
+        pair = next(p for p in catalog["pair_screen"]["pairs"] if p["id"] == PAIR["pair"])
         proof = self.run_proof(PAIR)
-        self.assertEqual(
-            pair["passes_capital_screen"], proof["window"]["passes_capital_screen"]
-        )
-        self.assertEqual(
-            pair["tradable_every_day"], proof["window"]["tradable_every_day"]
-        )
+        self.assertEqual(pair["passes_capital_screen"], proof["window"]["passes_capital_screen"])
+        self.assertEqual(pair["tradable_every_day"], proof["window"]["tradable_every_day"])
         self.assertTrue(math.isfinite(pair["max_pair_margin_rub"]))
 
     def test_http_table_endpoint_is_read_only_and_local_origin_only(self):

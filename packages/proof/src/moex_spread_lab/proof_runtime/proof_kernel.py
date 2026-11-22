@@ -12,20 +12,20 @@ import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import cached_property
-from typing import Any
 
 import optuna
 
+from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.core.evaluation_periods import (
     DEFAULT_INITIAL_CAPITAL_RUB,
     EvaluationSplit,
     ResearchSettings,
 )
-from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
-from .service import ProofService, _benchmark_marks, _mark, _run_id, reference_eval
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.w0 import W0Error
+
+from .service import _mark, _run_id, reference_eval
 
 TRIALS = 40
 SEED = 41
@@ -84,15 +84,21 @@ class Axis:
 
 
 from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.base import calendar_proof_plugin_ids, daily_pair_proof_plugin_ids, carry_proof_plugin_ids
-
+from moex_spread_lab.strategies.base import (
+    calendar_proof_plugin_ids,
+    carry_proof_plugin_ids,
+    daily_pair_proof_plugin_ids,
+)
 
 # Built-in engines plus explicitly declared, narrowly scoped intent adapters.
 # Discovery alone must never route an unimplemented plugin into another engine.
 STRATEGY_REGISTRY = discover_strategies()
-PROOF_ADAPTER_IDS = frozenset({
-    "mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"
-}) | calendar_proof_plugin_ids(STRATEGY_REGISTRY) | daily_pair_proof_plugin_ids(STRATEGY_REGISTRY) | carry_proof_plugin_ids(STRATEGY_REGISTRY)
+PROOF_ADAPTER_IDS = (
+    frozenset({"mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"})
+    | calendar_proof_plugin_ids(STRATEGY_REGISTRY)
+    | daily_pair_proof_plugin_ids(STRATEGY_REGISTRY)
+    | carry_proof_plugin_ids(STRATEGY_REGISTRY)
+)
 
 
 def _strategy_axes() -> dict[str, dict[str, Axis]]:
@@ -124,11 +130,7 @@ def execution_axes(request):
 
 
 def _ordered(values):
-    return (
-        "exit_z" not in values
-        or "entry_z" not in values
-        or values["exit_z"] < values["entry_z"]
-    )
+    return "exit_z" not in values or "entry_z" not in values or values["exit_z"] < values["entry_z"]
 
 
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
@@ -155,9 +157,7 @@ def compact_result(proof):
         "trades": summary["trades"],
         "closed_trades": summary["closed_trades"],
         "open_positions": summary["open_positions"],
-        "annualized_excess_pp": proof["evaluation"]["result"].get(
-            "annualized_excess_pp"
-        ),
+        "annualized_excess_pp": proof["evaluation"]["result"].get("annualized_excess_pp"),
         "evaluation": proof["evaluation"],
         "window": proof["window"],
         "execution_reference": proof.get("execution_reference", False),
@@ -169,10 +169,17 @@ def _validate(request):
         raise W0Error("Выбор должен быть объектом.")
     if "optimize_strategy" in request and type(request["optimize_strategy"]) is not bool:
         raise W0Error("optimize_strategy: укажите true или false.")
-    if "price_fill" in request and request["price_fill"] not in ("next_open", "next_close", "reference_same_bar"):
+    if "price_fill" in request and request["price_fill"] not in (
+        "next_open",
+        "next_close",
+        "reference_same_bar",
+    ):
         raise W0Error("Неизвестное исполнение ценовых стратегий.")
     if request.get("optimize_strategy") and request.get("fill", "reference_same_bar") not in (
-        "next_open", "next_close", "reference_same_bar", "same_day_settlement"
+        "next_open",
+        "next_close",
+        "reference_same_bar",
+        "same_day_settlement",
     ):
         raise W0Error("Неизвестное исполнение.")
     if request.get("sizing") not in (None, AUTO_SIZING):
@@ -187,7 +194,14 @@ def _validate(request):
     if not isinstance(params, dict) or params.keys() - axes.keys():
         raise W0Error("Переданы параметры другой стратегии")
     domains = axes | EXECUTION_AXES
-    values = {**params, **{k: request[k] for k in EXECUTION_AXES if k in request and (not automatic(request) or k != "quantity")}}
+    values = {
+        **params,
+        **{
+            k: request[k]
+            for k in EXECUTION_AXES
+            if k in request and (not automatic(request) or k != "quantity")
+        },
+    }
     for name, value in values.items():
         axis = domains[name]
         if not axis.contains(value):
@@ -197,15 +211,9 @@ def _validate(request):
 
 
 def _admission(proof, settings):
-    if (
-        "min_leg_volume" in proof["window"]
-        and proof["window"]["min_leg_volume"] is None
-    ):
+    if "min_leg_volume" in proof["window"] and proof["window"]["min_leg_volume"] is None:
         return "Нет наблюдений с положительным объёмом обеих ног."
-    if (
-        not settings.allow_failed_capital
-        and not proof["window"]["passes_capital_screen"]
-    ):
+    if not settings.allow_failed_capital and not proof["window"]["passes_capital_screen"]:
         return "Не пройден стресс-тест капитала."
     if not settings.allow_failed_volume and not proof["window"]["tradable_every_day"]:
         return "Не пройдено правило ликвидности."
@@ -229,7 +237,9 @@ def _excess_curve(proof, marks):
     if automatic(proof.get("selection", {})):
         initial = proof["sizing"]["initial_capital_rub"]
         start = marks[ledger[0]["date"]]
-        return {r["date"]: r["account_value_rub"] - initial * marks[r["date"]] / start for r in ledger}
+        return {
+            r["date"]: r["account_value_rub"] - initial * marks[r["date"]] / start for r in ledger
+        }
     index = {row["date"]: i for i, row in enumerate(ledger)}
     hurdle_changes = [0.0] * len(ledger)
     for trade in proof["trades"]:
@@ -295,6 +305,7 @@ def _annualized_returns(proof, marks, split):
             initial, [r["cumulative_net_rub"] for r in rows], margins, prices
         )
     anchor = train_end if split.validation else start
+
     def as_datetime(value):
         try:
             return datetime.fromisoformat(value.replace("Z", ""))
@@ -363,7 +374,13 @@ def _measure_scalar_train(proof, marks, split: EvaluationSplit, settings: Resear
             return datetime.combine(date.fromisoformat(value), time.min)
 
     anchor_price = marks.get(start)
-    if anchor_price is None or not math.isfinite(anchor_price) or anchor_price <= 0 or not math.isfinite(end_price) or end_price <= 0:
+    if (
+        anchor_price is None
+        or not math.isfinite(anchor_price)
+        or anchor_price <= 0
+        or not math.isfinite(end_price)
+        or end_price <= 0
+    ):
         return {
             **metrics,
             "utility": None,
@@ -376,7 +393,12 @@ def _measure_scalar_train(proof, marks, split: EvaluationSplit, settings: Resear
             **metrics,
             "utility": None,
             "rank_score": None,
-            "reason": " ".join([*reasons, "Нет положительного капитала или календарного интервала для годовой доходности."]),
+            "reason": " ".join(
+                [
+                    *reasons,
+                    "Нет положительного капитала или календарного интервала для годовой доходности.",
+                ]
+            ),
         }
     power = 365 / elapsed_days
     try:
@@ -457,9 +479,7 @@ def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
         "net_rub": round(net_change, 2),
         "lqdt_on_margin_rub": round(net_change - result_x, 2),
         "train": round(train_rate, 6),
-        "validation": round(validation_rate, 6)
-        if validation_rate is not None
-        else None,
+        "validation": round(validation_rate, 6) if validation_rate is not None else None,
         "excess_rub": round(result_x, 2),
         "rub_per_session": round(rate, 6),
     }
@@ -467,8 +487,7 @@ def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
         label
         for label, days in segments
         if not any(
-            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0]
-            for t in proof["trades"]
+            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0] for t in proof["trades"]
         )
     ]
     reasons = []
@@ -526,9 +545,7 @@ class Landscape:
         if key not in self.cache:
             try:
                 self.cache[key] = self.evaluate(values)
-            except (
-                W0Error
-            ) as exc:  # e.g. infeasible adjacent size / insufficient carry warm-up
+            except W0Error as exc:  # e.g. infeasible adjacent size / insufficient carry warm-up
                 self.cache[key] = {"utility": None, "reason": str(exc)}
         return self.cache[key]
 
@@ -588,9 +605,7 @@ def _tune(
         sampler=optuna.samplers.TPESampler(seed=base, n_startup_trials=8),
     )
     bounds = {
-        name: min(axis.high, train_size - 2)
-        if name in ("lookback", "window")
-        else axis.high
+        name: min(axis.high, train_size - 2) if name in ("lookback", "window") else axis.high
         for name, axis in strategy_axes.items()
     }
     if all(
@@ -629,9 +644,7 @@ def _tune(
 class StudyWindow:
     """One independent account, its own dated split, inputs shared by all parameter trials."""
 
-    def __init__(
-        self, service, request, settings: ResearchSettings, benchmark, calendar=None
-    ):
+    def __init__(self, service, request, settings: ResearchSettings, benchmark, calendar=None):
         self.request = request
         self.settings = settings
         self.replay = service.prepare(request, calendar=calendar, settings=settings)
@@ -647,9 +660,7 @@ class StudyWindow:
         }
         if not _ordered(self.seed):
             raise W0Error("Порог выхода должен быть ниже порога входа")
-        days = [
-            r["date"] for r in self.full["series"] if r.get("volume_eligible", True)
-        ]
+        days = [r["date"] for r in self.full["series"] if r.get("volume_eligible", True)]
         self.split = EvaluationSplit.from_dates(days, settings.validation_percent)
         self.train = EvaluationSplit.from_dates(self.split.training, 0)
         dates, prices = benchmark
@@ -687,11 +698,7 @@ class StudyWindow:
             else None
         )
         metrics_only = training and not reference_eval()
-        scalar_summary = (
-            (self.train.training[0], self.train.training[-1])
-            if metrics_only
-            else None
-        )
+        scalar_summary = (self.train.training[0], self.train.training[-1]) if metrics_only else None
         return self.replay(
             req,
             through=through,
@@ -733,17 +740,13 @@ class StudyWindow:
                 )
                 if not p["window"][key]
             ],
-            "result": {
-                k: v for k, v in measured.items() if k not in ("utility", "rank_score")
-            },
+            "result": {k: v for k, v in measured.items() if k not in ("utility", "rank_score")},
         }
         return {
             **p,
             "proof_run_id": p["run_id"],
             "evaluation": evaluation,
-            "run_id": _run_id(
-                {"policy": "annual-excess.v1", "proof": p["run_id"], **evaluation}
-            ),
+            "run_id": _run_id({"policy": "annual-excess.v1", "proof": p["run_id"], **evaluation}),
         }
 
 

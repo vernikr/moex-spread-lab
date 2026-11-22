@@ -12,11 +12,11 @@ from .engine import (
 from .plugin import PLUGIN, CalendarRuoniaPlugin
 
 __all__ = [
-    "CalendarRuoniaPlugin",
     "DIVIDEND_SHARES_PER_CONTRACT",
     "PLUGIN",
     "QUARTER_DAYS",
     "SBER_EX_DATES",
+    "CalendarRuoniaPlugin",
     "compute_ruonia_entry_bands",
     "convergence_trades",
     "implied_ruonia_deviation_pp",

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -16,6 +17,7 @@ from moex_spread_lab.core.contracts import (
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
+
 from ..base import PRICE_FILLS, validate_parameter_map
 from .engine import compute_ruonia_entry_bands, convergence_trades
 
@@ -32,7 +34,9 @@ class CalendarRuoniaPlugin:
     supported_fills = ("next_open", "next_close", "reference_same_bar")
     requires_daily_bars = False
 
-    def parameter_schema(self, context: InstrumentContext | None = None) -> tuple[ParameterSpec, ...]:
+    def parameter_schema(
+        self, context: InstrumentContext | None = None
+    ) -> tuple[ParameterSpec, ...]:
         return _SCHEMA
 
     def validate_parameters(
@@ -46,23 +50,37 @@ class CalendarRuoniaPlugin:
         if window.universe not in self.supported_universes:
             return CompatibilityVerdict(False, "Выбранная стратегия неприменима к этому типу пары.")
         convergence_flag = window.extra.get("convergence")
-        if convergence_flag is False or (convergence_flag is None and window.asset not in _CONVERGENCE_ASSETS):
-            return CompatibilityVerdict(False, "Для этого актива не предусмотрена стратегия RUONIA.")
+        if convergence_flag is False or (
+            convergence_flag is None and window.asset not in _CONVERGENCE_ASSETS
+        ):
+            return CompatibilityVerdict(
+                False, "Для этого актива не предусмотрена стратегия RUONIA."
+            )
         if window.timeframe == "1h":
-            eligible = [r for r in window.rows if r.get("volume_eligible", (r.get("min_volume") or 0) > 0)]
+            eligible = [
+                r for r in window.rows if r.get("volume_eligible", (r.get("min_volume") or 0) > 0)
+            ]
             if len(eligible) < 2:
-                return CompatibilityVerdict(False, "fewer than two causally liquidity-eligible hourly observations")
+                return CompatibilityVerdict(
+                    False, "fewer than two causally liquidity-eligible hourly observations"
+                )
             if settings is not None and not settings.allow_failed_volume:
                 if not window.extra.get("tradable_every_session", True):
-                    return CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении.")
+                    return CompatibilityVerdict(
+                        False, "Не пройдено правило ликвидности на обучении."
+                    )
         else:
             eligible = [r for r in window.rows if (r.get("min_volume") or 0) > 0]
             if len(eligible) < 2:
-                return CompatibilityVerdict(False, "fewer than two positive-volume calendar-spread observations")
+                return CompatibilityVerdict(
+                    False, "fewer than two positive-volume calendar-spread observations"
+                )
             if settings is not None and not settings.allow_failed_volume:
                 min_vol = min(float(r["min_volume"]) for r in eligible)
                 if min_vol < MIN_DAILY_VOLUME:
-                    return CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении.")
+                    return CompatibilityVerdict(
+                        False, "Не пройдено правило ликвидности на обучении."
+                    )
         if not any(math.isfinite(float(r.get("dev_pp", math.nan))) for r in eligible):
             return CompatibilityVerdict(False, "RUONIA deviation series is unavailable")
         return CompatibilityVerdict(True)

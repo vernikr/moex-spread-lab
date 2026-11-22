@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any, cast
 
 from .timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from .w0 import W0Error
@@ -27,9 +28,12 @@ MAX_RANDOM_SEED = 2_147_483_647
 
 
 def validation_percent(value: object) -> float:
-    if type(value) not in (int, float) or not 0 <= value <= 50:
+    if type(value) not in (int, float):
         raise W0Error("Доля проверки должна быть числом от 0 до 50%.")
-    return int(value) if int(value) == value else value
+    numeric = cast(int | float, value)
+    if not 0 <= numeric <= 50:
+        raise W0Error("Доля проверки должна быть числом от 0 до 50%.")
+    return int(numeric) if int(numeric) == numeric else numeric
 
 
 def random_seed(value: object) -> int:
@@ -59,37 +63,49 @@ class ResearchSettings:
 
     @classmethod
     def load(cls, root: Path) -> ResearchSettings:
-        return cls(**read_settings(root))
+        return cls(**cast(dict[str, Any], read_settings(root)))
 
 
 # Direct, non-tuning proof consumers do not implicitly opt into the research exceptions.
 STRICT_SCREENS = ResearchSettings(allow_failed_volume=False, allow_failed_capital=False)
 
 
-def _validated_patch(value: object) -> dict:
-    if (
-        not isinstance(value, dict)
-        or not value
-        or value.keys() - ResearchSettings().metadata().keys()
-    ):
+def _validated_initial_capital(value: object) -> float:
+    if type(value) not in (int, float):
+        raise W0Error(
+            "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
+        )
+    numeric = cast(int | float, value)
+    if not 0.01 <= numeric <= MAX_RESEARCH_CAPITAL_RUB or round(numeric, 2) != numeric:
+        raise W0Error(
+            "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
+        )
+    return float(numeric)
+
+
+def _validated_slippage(value: object) -> float:
+    if type(value) not in (int, float):
+        raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
+    numeric = cast(int | float, value)
+    if not 0 <= numeric <= 10:
+        raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
+    return float(numeric)
+
+
+def _validated_patch(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
         raise W0Error("Неизвестные или пустые настройки расчёта.")
-    patch = dict(value)
+    mapping = cast(dict[str, object], value)
+    if not mapping or mapping.keys() - ResearchSettings().metadata().keys():
+        raise W0Error("Неизвестные или пустые настройки расчёта.")
+    patch = dict(mapping)
     if "validation_percent" in patch:
         patch["validation_percent"] = validation_percent(patch["validation_percent"])
     if "initial_capital_rub" in patch:
-        value = patch["initial_capital_rub"]
-        if (
-            type(value) not in (int, float)
-            or not 0.01 <= value <= MAX_RESEARCH_CAPITAL_RUB
-            or round(value, 2) != value
-        ):
-            raise W0Error(
-                "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
-            )
-        patch["initial_capital_rub"] = float(value)
+        patch["initial_capital_rub"] = _validated_initial_capital(patch["initial_capital_rub"])
     if "timeframe" in patch:
         try:
-            get_timeframe(patch["timeframe"])
+            get_timeframe(cast(str, patch["timeframe"]))
         except ValueError as exc:
             raise W0Error(str(exc)) from exc
     if "price_fill" in patch:
@@ -99,10 +115,7 @@ def _validated_patch(value: object) -> dict:
                 "Режим исполнения должен быть одним из: next_open, next_close, reference_same_bar."
             )
     if "slippage_ticks" in patch:
-        value = patch["slippage_ticks"]
-        if type(value) not in (int, float) or not 0 <= value <= 10:
-            raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
-        patch["slippage_ticks"] = float(value)
+        patch["slippage_ticks"] = _validated_slippage(patch["slippage_ticks"])
     for k in ("allow_failed_volume", "allow_failed_capital"):
         if k in patch and type(patch[k]) is not bool:
             raise W0Error(f"{k}: укажите true или false.")
@@ -117,29 +130,26 @@ def settings_path(root: Path) -> Path:
 
 def read_settings(root: Path) -> dict[str, float | bool | str]:
     try:
-        stored = _validated_patch(
-            json.loads(settings_path(root).read_text(encoding="utf-8"))
-        )
+        stored = _validated_patch(json.loads(settings_path(root).read_text(encoding="utf-8")))
         if "validation_percent" not in stored:
             raise W0Error("В настройках отсутствует доля проверки.")
         # Older files omit newer preferences. GET supplies defaults without rewriting them.
-        return ResearchSettings(**stored).metadata()
+        return ResearchSettings(**cast(dict[str, Any], stored)).metadata()
     except FileNotFoundError:
         return ResearchSettings().metadata()
     except (ValueError, UnicodeError) as exc:
-        raise W0Error(
-            "Не удалось прочитать настройки расчёта. Сохраните их заново."
-        ) from exc
+        raise W0Error("Не удалось прочитать настройки расчёта. Сохраните их заново.") from exc
 
 
 def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
     patch = _validated_patch(body)
     # A full valid submission can also repair corrupt settings. Legacy split-only
     # clients and partial updates must preserve every other saved preference.
-    settings = (
+    settings = cast(
+        dict[str, object],
         patch
         if patch.keys() == ResearchSettings().metadata().keys()
-        else read_settings(root) | patch
+        else read_settings(root) | patch,
     )
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,7 +158,7 @@ def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
         temporary = Path(staging) / path.name
         temporary.write_text(json.dumps(settings) + "\n", encoding="utf-8")
         temporary.replace(path)
-    return settings
+    return cast(dict[str, float | bool | str], settings)
 
 
 @dataclass(frozen=True)
@@ -172,7 +182,7 @@ class EvaluationSplit:
     def basis(self) -> str:
         return "validation" if self.validation else "training"
 
-    def metadata(self) -> dict:
+    def metadata(self) -> dict[str, object]:
         return {
             "validation_percent": self.percent,
             "result_basis": self.basis,

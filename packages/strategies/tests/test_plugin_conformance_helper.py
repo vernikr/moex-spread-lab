@@ -18,10 +18,20 @@ class FixturePlugin:
     def evaluate_intents(self, window, params, fill):
         self.calls += 1
         value = self.calls if self.nondeterministic else 1
-        return StrategyIntentRun(self.strategy_id, fill, {}, ({
-            "side": "long_spread", "entry_date": "2026-01-01", "exit_date": "2026-01-02",
-            "reason": "exit", "value": value,
-        },))
+        return StrategyIntentRun(
+            self.strategy_id,
+            fill,
+            {},
+            (
+                {
+                    "side": "long_spread",
+                    "entry_date": "2026-01-01",
+                    "exit_date": "2026-01-02",
+                    "reason": "exit",
+                    "value": value,
+                },
+            ),
+        )
 
     def compute_entry_bands(self, series, params, fill, *, far_point_value_rub=1.0):
         value = len(series) if self.lookahead else 1
@@ -47,4 +57,6 @@ def test_future_dependent_bands_fail():
 def test_nondeterministic_intents_fail():
     window, rows = fixture()
     with pytest.raises(AssertionError, match="nondeterministic intents"):
-        assert_causal_conformance(FixturePlugin(nondeterministic=True), window, rows, {}, cutoffs=(4,))
+        assert_causal_conformance(
+            FixturePlugin(nondeterministic=True), window, rows, {}, cutoffs=(4,)
+        )

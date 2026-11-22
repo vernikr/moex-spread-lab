@@ -71,13 +71,17 @@ def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str
                     "quarterly": [
                         spec.to_dict()
                         for spec in plugin.parameter_schema(
-                            InstrumentContext(universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=False)
+                            InstrumentContext(
+                                universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=False
+                            )
                         )
                     ],
                     "monthly": [
                         spec.to_dict()
                         for spec in plugin.parameter_schema(
-                            InstrumentContext(universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=True)
+                            InstrumentContext(
+                                universe=CALENDAR_UNIVERSE, timeframe=tf, monthly=True
+                            )
                         )
                     ],
                 }
@@ -199,12 +203,11 @@ def handle_post_proof(
         if not store.proof_search_lock.acquire(blocking=False):
             send_json(
                 409,
-                {
-                    "error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."
-                },
+                {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."},
             )
             return True, True, None
         try:
+
             def _run_search(cb: Callable[[dict[str, Any]], None] | None) -> dict[str, Any]:
                 res = research_run(
                     store.proof,

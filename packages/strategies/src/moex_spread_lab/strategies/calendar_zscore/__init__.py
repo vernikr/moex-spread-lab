@@ -4,8 +4,8 @@ from .engine import compute_calendar_zscore_entry_bands, zscore_trades
 from .plugin import PLUGIN, CalendarZscorePlugin
 
 __all__ = [
-    "CalendarZscorePlugin",
     "PLUGIN",
+    "CalendarZscorePlugin",
     "compute_calendar_zscore_entry_bands",
     "zscore_trades",
 ]

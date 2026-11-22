@@ -11,6 +11,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+from moex_spread_lab.proof_runtime.screener_search import screen_table
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.web.server import (
     HISTORICAL_PERPETUAL_PAIRS,
@@ -25,7 +26,6 @@ from moex_spread_lab.web.server import (
     catalog,
     make_handler,
 )
-from moex_spread_lab.proof_runtime.screener_search import screen_table
 
 
 class ScreenerAppTests(unittest.TestCase):
@@ -104,17 +104,39 @@ class ScreenerAppTests(unittest.TestCase):
             cache_path = self.inputs.history_cache(pair) / f"{near}-{start}-{end}-0.json"
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             history_rows = [
-                ["RFUD", d.isoformat(), near, 10 + i * 0.01, 10 + i * 0.01, 0.015, 1000, 10000.0, 500,
-                 10 + i * 0.01, 1, None]
+                [
+                    "RFUD",
+                    d.isoformat(),
+                    near,
+                    10 + i * 0.01,
+                    10 + i * 0.01,
+                    0.015,
+                    1000,
+                    10000.0,
+                    500,
+                    10 + i * 0.01,
+                    1,
+                    None,
+                ]
                 for i, d in enumerate(days)
             ]
             request_url = _history_url(near, start, end, 0, HISTORY_FIELDS)
             cached_payload = {
                 "history": {"columns": list(HISTORY_FIELDS), "data": history_rows},
-                "history.cursor": {"columns": ["INDEX", "TOTAL", "PAGESIZE"], "data": [[0, len(history_rows), 100]]},
+                "history.cursor": {
+                    "columns": ["INDEX", "TOTAL", "PAGESIZE"],
+                    "data": [[0, len(history_rows), 100]],
+                },
             }
-            cache_path.write_text(json.dumps({"url": request_url, "payload": cached_payload,
-                                              "raw_response_sha256": "cd" * 32}))
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "url": request_url,
+                        "payload": cached_payload,
+                        "raw_response_sha256": "cd" * 32,
+                    }
+                )
+            )
         self.days = days
 
     def test_hourly_price_pair_proof_does_not_require_daily_swaprate(self):
@@ -126,19 +148,29 @@ class ScreenerAppTests(unittest.TestCase):
             for i, day in enumerate(self.days):
                 for hour in (10, 11):
                     close = 10 + offset + i * 0.01 + (i % 8) * 0.003
-                    rows.append({
-                        "begin": f"{day.isoformat()} {hour:02d}:00:00",
-                        "open": close,
-                        "close": close,
-                        "volume": 500,
-                    })
-            path.write_text(json.dumps({
-                "schema_version": "iss-candles.v1", "secid": secid,
-                "interval": 60, "timeframe": "1h", "rows": rows,
-            }))
+                    rows.append(
+                        {
+                            "begin": f"{day.isoformat()} {hour:02d}:00:00",
+                            "open": close,
+                            "close": close,
+                            "volume": 500,
+                        }
+                    )
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "iss-candles.v1",
+                        "secid": secid,
+                        "interval": 60,
+                        "timeframe": "1h",
+                        "rows": rows,
+                    }
+                )
+            )
 
         entry = next(
-            row for row in catalog(self.inputs, timeframe="1h")["pairs"]
+            row
+            for row in catalog(self.inputs, timeframe="1h")["pairs"]
             if row["id"] == pair["pair_id"]
         )
         self.assertEqual(entry["observations"], len(self.days) * 2)
@@ -164,7 +196,9 @@ class ScreenerAppTests(unittest.TestCase):
         declarations = []
         for path in js_files:
             declarations.extend(
-                re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", path.read_text(encoding="utf-8"))
+                re.findall(
+                    r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", path.read_text(encoding="utf-8")
+                )
             )
         self.assertEqual(len(declarations), len(set(declarations)))
 
@@ -177,9 +211,7 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertIn("to", pairs["GLDRUBF/GLU3"])
 
     def test_pair_choice_parameter_change_and_replay(self):
-        self.assertTrue(
-            catalog(self.inputs)["pairs"][0]["strategies"]["mean_reversion"]
-        )
+        self.assertTrue(catalog(self.inputs)["pairs"][0]["strategies"]["mean_reversion"])
         base = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion", "slippage_ticks": 1.0}
         first = build_result(self.inputs, base)
         self.assertEqual(first, build_result(self.inputs, base))
@@ -187,12 +219,12 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(first["period"]["observations"], 50)
         self.assertIn("near_funding_history_sha256", first["provenance"])
         self.assertTrue(any("SWAPRATE" in note for note in first["notes"]))
-        self.assertEqual(first["price_role"], "ISS: дневной candle, заполнение по открытию, отметки по закрытию")
+        self.assertEqual(
+            first["price_role"], "ISS: дневной candle, заполнение по открытию, отметки по закрытию"
+        )
         self.assertNotEqual(
             first["run_id"],
-            build_result(self.inputs, {**base, "parameters": {"lookback": 15}})[
-                "run_id"
-            ],
+            build_result(self.inputs, {**base, "parameters": {"lookback": 15}})["run_id"],
         )
         self.assertNotEqual(
             first["run_id"],
@@ -214,9 +246,7 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(rows["GLDRUBF/GLZ6"]["status"], "short_history")
         self.assertIsNone(rows["CNYRUBF/CRZ6"]["metrics"]["annualized_excess_pp"])
         self.assertEqual(rows["GLDRUBF/GLZ6"]["chart"][0]["strategy_index"], 100)
-        self.assertTrue(
-            all("rub" not in key.lower() for key in rows["GLDRUBF/GLZ6"]["metrics"])
-        )
+        self.assertTrue(all("rub" not in key.lower() for key in rows["GLDRUBF/GLZ6"]["metrics"]))
         self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
 
     def test_legacy_manual_run_and_table_use_the_same_global_share(self):
@@ -229,7 +259,9 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(e["result_basis"], "validation")
         self.assertEqual(e["observations"], {"training": 40, "validation": 10})
         ledger = result["daily"]
-        self.assertAlmostEqual(e["result"]["excess_rub"], ledger[-1]["X"] - ledger[39]["X"], delta=0.02)
+        self.assertAlmostEqual(
+            e["result"]["excess_rub"], ledger[-1]["X"] - ledger[39]["X"], delta=0.02
+        )
         table = screen_table(self.inputs, {"strategy": "mean_reversion"})
         row = next(r for r in table["pairs"] if r["id"] == selection["pair"])
         self.assertEqual(row["evaluation"]["periods"], e["periods"])
@@ -351,14 +383,10 @@ class ScreenerAppTests(unittest.TestCase):
                 },
             )
         with self.assertRaises(ScreenerError):
-            build_result(
-                self.inputs, {"pair": "UNKNOWN/PAIR", "strategy": "mean_reversion"}
-            )
+            build_result(self.inputs, {"pair": "UNKNOWN/PAIR", "strategy": "mean_reversion"})
 
     def test_loopback_http_and_saved_result(self):
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs))
-        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
@@ -406,12 +434,8 @@ class ScreenerAppTests(unittest.TestCase):
         screen_response = connection.getresponse()
         self.assertEqual(screen_response.status, 200)
         self.assertEqual(len(json.loads(screen_response.read())["pairs"]), len(PAIRS))
-        self.assertEqual(
-            len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1
-        )
-        search_payload = json.dumps(
-            {"pairs": ["CNYRUBF/CRZ6"], "strategy": "mean_reversion"}
-        )
+        self.assertEqual(len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1)
+        search_payload = json.dumps({"pairs": ["CNYRUBF/CRZ6"], "strategy": "mean_reversion"})
         connection.request("POST", "/api/optimize", search_payload, headers)
         short_history = connection.getresponse()
         self.assertEqual(short_history.status, 400)
@@ -425,14 +449,10 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(json.loads(connection.getresponse().read())["timeframe"], "1h")
         connection.close()
         self.assertEqual(len(ScreenerStore(self.inputs).list_runs()), 1)
-        self.assertEqual(
-            result["run_id"], ScreenerStore(self.inputs).list_runs()[0]["run_id"]
-        )
+        self.assertEqual(result["run_id"], ScreenerStore(self.inputs).list_runs()[0]["run_id"])
 
     def test_http_rejects_cross_origin_and_network_fallback(self):
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs))
-        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)

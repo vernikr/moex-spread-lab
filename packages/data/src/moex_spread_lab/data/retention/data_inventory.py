@@ -5,24 +5,26 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
-
 
 DATA_INVENTORY_SCHEMA = "data-inventory.v1"
 _ACTIVE_TIMEFRAMES = frozenset(("1d", "1h"))
 _TIMEFRAME_SUFFIXES = ("1m", "10m", "1h", "1d")
-_RUNTIME_ANALYTICS = frozenset((
-    "research-settings.json",
-    "screener-runs.jsonl",
-    "screener-screens.jsonl",
-    "screener-searches.jsonl",
-    "proof-searches.jsonl",
-))
+_RUNTIME_ANALYTICS = frozenset(
+    (
+        "research-settings.json",
+        "screener-runs.jsonl",
+        "screener-screens.jsonl",
+        "screener-searches.jsonl",
+        "proof-searches.jsonl",
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -49,19 +51,25 @@ def _policy(path: str, metadata: dict[str, Any]) -> _Policy:
     """Classify a path without making a deletion decision."""
     if path == "w1/current-intake.json":
         return _Policy(
-            "w1/current-intake", "active_input", "keep",
+            "w1/current-intake",
+            "active_input",
+            "keep",
             ("pair screen", "calendar proof", "contract terms"),
             "Current local contract snapshot used by offline readers.",
         )
     if path == "w1/historical-contracts.json":
         return _Policy(
-            "w1/historical-contracts", "active_input", "keep",
+            "w1/historical-contracts",
+            "active_input",
+            "keep",
             ("historical pair proof",),
             "Fallback terms for historical contracts are hashed into proof provenance.",
         )
     if path.startswith("w1/candles-screen/"):
         return _Policy(
-            "w1/candles-screen", "active_input", "keep",
+            "w1/candles-screen",
+            "active_input",
+            "keep",
             ("pair screen", "hourly calendar proof"),
             "The screener gives screened candle inputs priority over intake candles.",
         )
@@ -69,72 +77,96 @@ def _policy(path: str, metadata: dict[str, Any]) -> _Policy:
         timeframe = _path_timeframe(path, metadata)
         if timeframe in _ACTIVE_TIMEFRAMES:
             return _Policy(
-                f"w1/candles/{timeframe}", "active_input", "keep",
+                f"w1/candles/{timeframe}",
+                "active_input",
+                "keep",
                 ("pair screen", "hourly calendar proof"),
                 "Registered runtime timeframe in timeframes.py.",
             )
         return _Policy(
-            f"w1/candles/{timeframe or 'unknown'}", "archive_candidate", "pin_or_archive",
+            f"w1/candles/{timeframe or 'unknown'}",
+            "archive_candidate",
+            "pin_or_archive",
             ("legacy analytical reproduction",),
             "The current runtime registry exposes only 1d and 1h candle timeframes.",
         )
     if path.startswith("w1/candles-cache/"):
         return _Policy(
-            "w1/candles-cache", "rebuildable_cache", "ttl_or_rebuild",
+            "w1/candles-cache",
+            "rebuildable_cache",
+            "ttl_or_rebuild",
             ("iss-candles intake",),
             "Paginated normalized ISS pages avoid refetching but are not read by the offline screener.",
         )
     if path.startswith("w1/candles-screen-cache/"):
         return _Policy(
-            "w1/candles-screen-cache", "rebuildable_cache", "ttl_or_rebuild",
+            "w1/candles-screen-cache",
+            "rebuildable_cache",
+            "ttl_or_rebuild",
             ("screen candle intake",),
             "Paginated intake cache; final screened candles remain separate.",
         )
     if path.startswith("w1/candles-cache-common/"):
         return _Policy(
-            "w1/candles-cache-common", "rebuildable_cache", "ttl_or_rebuild",
+            "w1/candles-cache-common",
+            "rebuildable_cache",
+            "ttl_or_rebuild",
             ("legacy common-candle intake",),
             "Rebuildable page cache for an unregistered experimental timeframe.",
         )
     if path.startswith("w1/candles-common/"):
         return _Policy(
-            "w1/candles-common", "archive_candidate", "pin_or_archive",
+            "w1/candles-common",
+            "archive_candidate",
+            "pin_or_archive",
             ("legacy minute diagnostics",),
             "No direct runtime reader consumes this experimental common-candle directory.",
         )
     if path.startswith("w1/candleborders-cache/"):
         return _Policy(
-            "w1/candleborders-cache", "rebuildable_cache", "ttl_or_rebuild",
+            "w1/candleborders-cache",
+            "rebuildable_cache",
+            "ttl_or_rebuild",
             ("timeframe inventory intake",),
             "Rebuildable ISS availability probes.",
         )
     if path.startswith("w1/perpetual-history-discovery/"):
         return _Policy(
-            "w1/perpetual-history-discovery", "archive_candidate", "pin_or_archive",
+            "w1/perpetual-history-discovery",
+            "archive_candidate",
+            "pin_or_archive",
             ("historical-pair discovery reproduction",),
             "Discovery artifact; active selectors read copied candle inputs instead.",
         )
     if path.startswith("spread-history-cache/"):
         return _Policy(
-            "spread-history-cache", "active_input", "keep_while_calendar_research_active",
+            "spread-history-cache",
+            "active_input",
+            "keep_while_calendar_research_active",
             ("calendar proof", "calendar study"),
             "CalendarData reads this local history in offline mode.",
         )
     if path.startswith("carry-history-cache/") or path.startswith("carry-screen-history-cache/"):
         return _Policy(
-            path.split("/", 1)[0], "active_input", "keep_while_funding_research_active",
+            path.split("/", 1)[0],
+            "active_input",
+            "keep_while_funding_research_active",
             ("funding proof", "funding screen"),
             "Offline funding readers use these cached FORTS EOD histories.",
         )
     if path.startswith("benchmark/") or path.startswith("benchmark-cache/"):
         return _Policy(
-            path.split("/", 1)[0], "active_input", "keep",
+            path.split("/", 1)[0],
+            "active_input",
+            "keep",
             ("LQDT benchmark", "calendar proof", "pair screen"),
             "Local benchmark lineage and supporting inputs are used by offline calculations.",
         )
     if path.startswith("proof-funding-verified/"):
         return _Policy(
-            "proof-funding-verified", "active_input", "keep",
+            "proof-funding-verified",
+            "active_input",
+            "keep",
             ("funding proof",),
             "Supplementary published funding evidence can be used by the proof overlay.",
         )
@@ -142,18 +174,25 @@ def _policy(path: str, metadata: dict[str, Any]) -> _Policy:
         name = Path(path).name
         if name in _RUNTIME_ANALYTICS:
             return _Policy(
-                "analytics/runtime", "derived_runtime", "keep_with_rotation",
+                "analytics/runtime",
+                "derived_runtime",
+                "keep_with_rotation",
                 ("screener settings", "local run history"),
                 "Small settings and local UI histories are read by the running application.",
             )
         return _Policy(
-            "analytics/derived", "derived_archive_candidate", "summary_then_archive",
+            "analytics/derived",
+            "derived_archive_candidate",
+            "summary_then_archive",
             ("analytical reproduction",),
             "Generated research result; retain its manifest and summary before archiving detail.",
         )
     return _Policy(
-        path.split("/", 1)[0] if "/" in path else "root", "unclassified", "review",
-        (), "No explicit consumer policy is registered for this local data path.",
+        path.split("/", 1)[0] if "/" in path else "root",
+        "unclassified",
+        "review",
+        (),
+        "No explicit consumer policy is registered for this local data path.",
     )
 
 
@@ -161,7 +200,9 @@ def _json_time_range(payload: dict[str, Any]) -> dict[str, str] | None:
     start = payload.get("from")
     end = payload.get("till")
     if isinstance(start, str) or isinstance(end, str):
-        return {key: value for key, value in (("from", start), ("till", end)) if isinstance(value, str)}
+        return {
+            key: value for key, value in (("from", start), ("till", end)) if isinstance(value, str)
+        }
     for key in ("rows", "daily"):
         rows = payload.get(key)
         if not isinstance(rows, list):
@@ -302,11 +343,13 @@ def build_data_inventory(
     datasets: list[dict[str, Any]] = []
     for dataset, entries in sorted(grouped.items()):
         first = entries[0]
-        schemas = sorted({
-            entry.get("metadata", {}).get("schema_version")
-            for entry in entries
-            if isinstance(entry.get("metadata", {}).get("schema_version"), str)
-        })
+        schemas = sorted(
+            {
+                entry.get("metadata", {}).get("schema_version")
+                for entry in entries
+                if isinstance(entry.get("metadata", {}).get("schema_version"), str)
+            }
+        )
         starts: list[str] = []
         ends: list[str] = []
         row_count = 0
@@ -342,10 +385,11 @@ def build_data_inventory(
                 **({"till": max(ends)} if ends else {}),
             }
         if include_hashes:
-            item["content_sha256"] = sha256_bytes(canonical_bytes([
-                {"path": entry["path"], "sha256": entry["sha256"]}
-                for entry in entries
-            ]))
+            item["content_sha256"] = sha256_bytes(
+                canonical_bytes(
+                    [{"path": entry["path"], "sha256": entry["sha256"]} for entry in entries]
+                )
+            )
         datasets.append(item)
 
     classification_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -367,7 +411,9 @@ def build_data_inventory(
         "allocated_bytes": sum(entry["allocated_bytes"] for entry in files),
         "by_classification": by_classification,
         "candidate_reclaimable_bytes": sum(
-            entry["allocated_bytes"] for entry in files if entry["classification"] in candidate_classes
+            entry["allocated_bytes"]
+            for entry in files
+            if entry["classification"] in candidate_classes
         ),
         "candidate_reclaimable_requires_review": True,
     }

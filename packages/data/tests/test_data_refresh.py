@@ -5,8 +5,11 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.data.lake.data_lake import ParquetBarStore, RawResponseArchive
-from moex_spread_lab.data.lake.data_refresh import DataRefreshError, RefreshTarget, refresh_candle_datasets
-
+from moex_spread_lab.data.lake.data_refresh import (
+    DataRefreshError,
+    RefreshTarget,
+    refresh_candle_datasets,
+)
 
 ASSUMPTION = "user_A-06_candle_is_usable_medium_term_price_proxy"
 
@@ -57,16 +60,23 @@ class DataRefreshTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             archive = RawResponseArchive(Path(directory) / "data-lake")
             pinned = archive.archive(
-                url="https://iss.example/pinned", raw=b'{"pinned": true}',
-                received_at="2026-11-20T10:00:00+00:00", ttl_days=0, pin=True,
+                url="https://iss.example/pinned",
+                raw=b'{"pinned": true}',
+                received_at="2026-11-20T10:00:00+00:00",
+                ttl_days=0,
+                pin=True,
             )
             expired = archive.archive(
-                url="https://iss.example/expired", raw=b'{"expired": true}',
-                received_at="2026-11-20T10:00:00+00:00", ttl_days=0,
+                url="https://iss.example/expired",
+                raw=b'{"expired": true}',
+                received_at="2026-11-20T10:00:00+00:00",
+                ttl_days=0,
             )
             repeated = archive.archive(
-                url="https://iss.example/expired", raw=b'{"expired": true}',
-                received_at="2026-11-20T10:00:01+00:00", ttl_days=0,
+                url="https://iss.example/expired",
+                raw=b'{"expired": true}',
+                received_at="2026-11-20T10:00:01+00:00",
+                ttl_days=0,
             )
             self.assertNotEqual(expired["id"], repeated["id"])
             verified = archive.verify()
@@ -89,7 +99,10 @@ class DataRefreshTests(unittest.TestCase):
             legacy.parent.mkdir(parents=True)
             hash_a = hashlib.sha256(b"a").hexdigest()
             hash_b = hashlib.sha256(b"b").hexdigest()
-            legacy.write_text(json.dumps(_payload([_row(1, 10.0, hash_a), _row(2, 11.0, hash_b)])), encoding="utf-8")
+            legacy.write_text(
+                json.dumps(_payload([_row(1, 10.0, hash_a), _row(2, 11.0, hash_b)])),
+                encoding="utf-8",
+            )
             ParquetBarStore(root).import_legacy(legacy)
             calls = []
             raw = b'{"candles": "delta"}'
@@ -97,7 +110,9 @@ class DataRefreshTests(unittest.TestCase):
 
             def fetcher(**kwargs):
                 calls.append((kwargs["from_date"], kwargs["till_date"]))
-                kwargs["raw_sink"]("https://iss.example/ABC/delta", raw, "2026-11-20T11:00:00+00:00", raw_hash)
+                kwargs["raw_sink"](
+                    "https://iss.example/ABC/delta", raw, "2026-11-20T11:00:00+00:00", raw_hash
+                )
                 return _payload([_row(2, 21.0, raw_hash), _row(3, 31.0, raw_hash)])
 
             result = refresh_candle_datasets(
@@ -111,9 +126,14 @@ class DataRefreshTests(unittest.TestCase):
             self.assertEqual(result["status"], "refreshed")
             self.assertEqual(calls, [("2026-01-01", "2026-01-03")])
             refreshed = json.loads(legacy.read_text(encoding="utf-8"))
-            self.assertEqual([row["begin"] for row in refreshed["rows"]], [
-                "2026-01-01 00:00:00", "2026-01-02 00:00:00", "2026-01-03 00:00:00",
-            ])
+            self.assertEqual(
+                [row["begin"] for row in refreshed["rows"]],
+                [
+                    "2026-01-01 00:00:00",
+                    "2026-01-02 00:00:00",
+                    "2026-01-03 00:00:00",
+                ],
+            )
             self.assertEqual(refreshed["rows"][1]["close"], 21.0)
             store = ParquetBarStore(root)
             self.assertEqual(store.verify_legacy(legacy)["row_count"], 3)
@@ -134,7 +154,6 @@ class DataRefreshTests(unittest.TestCase):
             self.assertEqual(second["status"], "up_to_date")
             self.assertEqual(second["datasets"][0]["network_requests"], 0)
 
-
     def test_first_backfill_is_chunked_and_worker_bound_is_enforced(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -146,7 +165,10 @@ class DataRefreshTests(unittest.TestCase):
                 calls.append((kwargs["from_date"], kwargs["till_date"]))
                 day = int(kwargs["till_date"].rsplit("-", 1)[1])
                 kwargs["raw_sink"](
-                    f"https://iss.example/FIRST/{day}", raw, "2026-11-20T11:00:00+00:00", raw_hash,
+                    f"https://iss.example/FIRST/{day}",
+                    raw,
+                    "2026-11-20T11:00:00+00:00",
+                    raw_hash,
                 )
                 payload = _payload([_row(day, float(day), raw_hash)])
                 payload["secid"] = "FIRST"
@@ -162,11 +184,14 @@ class DataRefreshTests(unittest.TestCase):
                 fetcher=fetcher,
             )
             self.assertEqual(result["scheduled_chunk_count"], 3)
-            self.assertEqual(sorted(calls), [
-                ("2026-01-01", "2026-01-02"),
-                ("2026-01-03", "2026-01-04"),
-                ("2026-01-05", "2026-01-05"),
-            ])
+            self.assertEqual(
+                sorted(calls),
+                [
+                    ("2026-01-01", "2026-01-02"),
+                    ("2026-01-03", "2026-01-04"),
+                    ("2026-01-05", "2026-01-05"),
+                ],
+            )
             with self.assertRaises(DataRefreshError):
                 refresh_candle_datasets(
                     root=root,

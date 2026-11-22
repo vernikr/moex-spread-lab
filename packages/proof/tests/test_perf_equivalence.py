@@ -13,16 +13,20 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from proof_fixtures import fixture, funding_winner
-
-from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.strategies.funding_carry.carry import _history_url, fetch_history
-from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof_runtime.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService, reference_eval
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
+from moex_spread_lab.proof_runtime.service import (
+    CALENDAR_UNIVERSE,
+    PAIR_UNIVERSE,
+    ProofService,
+    reference_eval,
+)
+from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
+from moex_spread_lab.strategies.funding_carry.carry import _history_url, fetch_history
+from proof_fixtures import fixture, funding_winner
 
 TILL = "2023-06-15"
 
@@ -239,9 +243,21 @@ def _build_h1_workspace(root: Path) -> None:
     lqdt_path.write_text(json.dumps(lqdt), encoding="utf-8")
 
     mk_row = lambda secid, d, settle, vol, op: [
-        d, secid, op, settle + 5.0, settle - 5.0, settle, settle, vol, 25
+        d,
+        secid,
+        op,
+        settle + 5.0,
+        settle - 5.0,
+        settle,
+        settle,
+        vol,
+        25,
     ]
-    write_cal_eod("SRH3", srh3_days, lambda i, d: mk_row("SRH3", d, 30000.0 + 10.0 * math.sin(i / 3.0), 8000, 29995.0))
+    write_cal_eod(
+        "SRH3",
+        srh3_days,
+        lambda i, d: mk_row("SRH3", d, 30000.0 + 10.0 * math.sin(i / 3.0), 8000, 29995.0),
+    )
     write_cal_eod(
         "SRM3",
         srm3_days,
@@ -290,9 +306,7 @@ def _build_h1_workspace(root: Path) -> None:
         for hour in range(10, 19):
             ts = f"{day}T{hour:02d}:00:00"
             near_c = round(30000.0 + 4.0 * math.sin(k / 2.0), 2)
-            far_c = round(
-                31020.0 + 38.0 * math.sin(k / 2.1) + (75.0 if k % 11 == 6 else 0.0), 2
-            )
+            far_c = round(31020.0 + 38.0 * math.sin(k / 2.1) + (75.0 if k % 11 == 6 else 0.0), 2)
             srh3_h1.append({"begin": ts, "open": near_c - 1.0, "close": near_c, "volume": 40})
             srm3_h1.append({"begin": ts, "open": far_c - 1.0, "close": far_c, "volume": 35})
             k += 1
@@ -674,9 +688,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             #    length and verify the shared CalendarData picks up the fresh
             #    mtime/size key (calendar proofs read EOD history, not 1h candles,
             #    for near_history_sha256).
-            eod_candidates = sorted(
-                root.glob("data/spread-history-cache/SRH3-*-0.json")
-            )
+            eod_candidates = sorted(root.glob("data/spread-history-cache/SRH3-*-0.json"))
             self.assertTrue(eod_candidates, "SRH3 EOD history cache present")
             srh3_eod = eod_candidates[0]
             raw_srh3 = srh3_eod.read_text(encoding="utf-8")
@@ -920,11 +932,16 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):
         from moex_spread_lab.core._fastcore_loader import load_fastcore
-        from moex_spread_lab.strategies.pair_mean_reversion.analytics import compute_rolling_z, run_mean_reversion_baseline
         from moex_spread_lab.proof_runtime.service import _clean
+        from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+            compute_rolling_z,
+            run_mean_reversion_baseline,
+        )
 
         fc = load_fastcore()
-        self.assertIsNotNone(fc, "_fastcore extension should build and load when compiler is available")
+        self.assertIsNotNone(
+            fc, "_fastcore extension should build and load when compiler is available"
+        )
 
         # 1) compute_rolling_z including constant windows and floating-point sums
         ticks = [float(i % 7 - 3) + 0.125 * (i % 5) for i in range(120)]
@@ -975,8 +992,18 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             "near": "CRZ6",
             "far": "CRM6",
             "contracts": {
-                "CRZ6": {"initial_margin": 2500.0, "tick_value": 1.0, "tick_size": 1.0, "lot_size": 1.0},
-                "CRM6": {"initial_margin": 2500.0, "tick_value": 1.0, "tick_size": 1.0, "lot_size": 1.0},
+                "CRZ6": {
+                    "initial_margin": 2500.0,
+                    "tick_value": 1.0,
+                    "tick_size": 1.0,
+                    "lot_size": 1.0,
+                },
+                "CRM6": {
+                    "initial_margin": 2500.0,
+                    "tick_value": 1.0,
+                    "tick_size": 1.0,
+                    "lot_size": 1.0,
+                },
             },
             "rows": rows,
         }
@@ -1077,6 +1104,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         import threading
         import urllib.request
         from http.server import ThreadingHTTPServer
+
         from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1177,7 +1205,9 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                     events, streamed = post_stream(endpoint, body)
                     self.assertGreaterEqual(len(events), min_events, endpoint)
                     pcts = [float(ev["percent"]) for ev in events]
-                    self.assertEqual(pcts, sorted(pcts), f"Non-monotonic progress on {endpoint}: {pcts}")
+                    self.assertEqual(
+                        pcts, sorted(pcts), f"Non-monotonic progress on {endpoint}: {pcts}"
+                    )
                     self.assertGreaterEqual(pcts[0], 0.0)
                     self.assertLessEqual(pcts[-1], 100.0)
                     for ev in events:
@@ -1212,9 +1242,7 @@ def _build_pool_test_workspace(root: Path) -> None:
     intake_path = root / "data/w1/current-intake.json"
     intake = json.loads(intake_path.read_text(encoding="utf-8"))
     crz6 = next(item for item in intake["instruments"] if item.get("secid") == "CRZ6")
-    intake["instruments"] = [
-        item for item in intake["instruments"] if item.get("secid") != "CRM6"
-    ]
+    intake["instruments"] = [item for item in intake["instruments"] if item.get("secid") != "CRM6"]
     intake["instruments"].append(
         {
             **crz6,

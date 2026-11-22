@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from datetime import date, timedelta
-from typing import Any, Mapping
+from typing import Any
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.contracts import EntryBandPoint
+
 from ..base import (
     CALENDAR_EXIT_REASONS,
     calendar_row_buffers,
@@ -73,11 +75,26 @@ def convergence_trades(
             rows, z_cache=z_cache, z_cache_key=z_cache_key
         )
         specs = fc.calendar_convergence_scan(
-            dev_pp, dte, sig_el, ent_el, ext_el, float(threshold), int(delay), int(exit_days), bool(close_at_end)
+            dev_pp,
+            dte,
+            sig_el,
+            ent_el,
+            ext_el,
+            float(threshold),
+            int(delay),
+            int(exit_days),
+            bool(close_at_end),
         )
         return [
             make_calendar_trade(
-                rows[e_i], rows[x_i], direction, fill, CALENDAR_EXIT_REASONS[r_code], "dev_pp", rows[s_i], s_val
+                rows[e_i],
+                rows[x_i],
+                direction,
+                fill,
+                CALENDAR_EXIT_REASONS[r_code],
+                "dev_pp",
+                rows[s_i],
+                s_val,
             )
             for e_i, x_i, direction, r_code, s_i, s_val in specs
         ]
@@ -86,7 +103,14 @@ def convergence_trades(
         if position and row.get("exit_eligible", True) and row["days_to_near_expiry"] <= exit_days:
             trades.append(
                 make_calendar_trade(
-                    entry, row, position, fill, "near_expiry_buffer", "dev_pp", signal_row, signal_row["dev_pp"]
+                    entry,
+                    row,
+                    position,
+                    fill,
+                    "near_expiry_buffer",
+                    "dev_pp",
+                    signal_row,
+                    signal_row["dev_pp"],
                 )
             )
             position = 0
@@ -104,7 +128,14 @@ def convergence_trades(
     if position and close_at_end:
         trades.append(
             make_calendar_trade(
-                entry, rows[-1], position, fill, "end_of_window", "dev_pp", signal_row, signal_row["dev_pp"]
+                entry,
+                rows[-1],
+                position,
+                fill,
+                "end_of_window",
+                "dev_pp",
+                signal_row,
+                signal_row["dev_pp"],
             )
         )
     return trades

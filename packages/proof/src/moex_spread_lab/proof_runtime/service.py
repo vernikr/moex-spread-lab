@@ -20,9 +20,15 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
-from moex_spread_lab.accounting.costs import CONTRACT_GROUP, TAKER_RATE_PERCENT, _cost_totals, side_cost, tariff_profile
-from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
+from moex_spread_lab.accounting.costs import (
+    CONTRACT_GROUP,
+    TAKER_RATE_PERCENT,
+    _cost_totals,
+    side_cost,
+    tariff_profile,
+)
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic, size_proof
+from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
 from moex_spread_lab.core.universe import (
     CALENDAR_UNIVERSE,
@@ -48,13 +54,17 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     _pair,
     _parameters,
     _session_volumes,
-    catalog as _pair_catalog,
     execution_settings,
     pair_price_inputs,
 )
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    catalog as _pair_catalog,
+)
 
 PROOF_SCHEMA = "execution-proof.v1"
-FORCED_EXIT_REASONS = frozenset({"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"})
+FORCED_EXIT_REASONS = frozenset(
+    {"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"}
+)
 _BENCHMARK_MARKS_CACHE = _HashedJSONCache(32)
 _INSTRUMENTS_CACHE = _HashedJSONCache(32)
 _SHA256_CACHE = _HashedJSONCache(512)
@@ -137,7 +147,10 @@ def _mark(dates: list[str], prices: dict[str, float], day: str) -> float:
 
 
 def _positive_pair_volume(row: dict[str, Any]) -> bool:
-    return all(value is not None and float(value) > 0 for value in (row.get("near_volume"), row.get("far_volume")))
+    return all(
+        value is not None and float(value) > 0
+        for value in (row.get("near_volume"), row.get("far_volume"))
+    )
 
 
 def _events(trades: list[dict[str, Any]]) -> dict[str, str]:
@@ -190,7 +203,9 @@ def _load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
         main_payload, _ = read_hashed_json(resolved, error=W0Error, label="contracts")
         rows = list(main_payload["instruments"])
         if h_stat is not None:
-            hist_payload, _ = read_hashed_json(historical_path, error=W0Error, label="historical contracts")
+            hist_payload, _ = read_hashed_json(
+                historical_path, error=W0Error, label="historical contracts"
+            )
             rows.extend(hist_payload.get("instruments", []))
     except (W0Error, OSError, ValueError, KeyError, TypeError):
         return {}
@@ -269,7 +284,9 @@ class ProofService:
         spec = get_timeframe(settings.timeframe)
         try:
             if not spec.supports_calendar:
-                raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
+                raise W0Error(
+                    f"{spec.label}: календарный proof не поддерживается на выбранном интервале."
+                )
             calendar = self.calendar_data.catalog(
                 initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe
             )
@@ -291,16 +308,26 @@ class ProofService:
         # screener's fixed strategy controls. Availability is per timeframe; pair
         # data/volume/contract compatibility remains a proof-time decision.
         from moex_spread_lab.strategies import discover_strategies
-        from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids, carry_proof_plugin_ids
+        from moex_spread_lab.strategies.base import (
+            carry_proof_plugin_ids,
+            daily_pair_proof_plugin_ids,
+        )
+
         registry = discover_strategies()
         adapted = daily_pair_proof_plugin_ids(registry) | carry_proof_plugin_ids(registry)
         pair["proof_plugins"] = [
-            {"id": p.strategy_id, "family_id": p.family_id, "label": p.label_ru,
-             "adapter": p.proof_adapter, "supported_fills": list(p.supported_fills),
-             "requires_daily_bars": p.requires_daily_bars,
-             "timeframe_supported": settings.timeframe == "1d" or not p.requires_daily_bars,
-             "parameters": [spec.to_dict() for spec in p.parameter_schema()]}
-            for p in registry if p.strategy_id in adapted
+            {
+                "id": p.strategy_id,
+                "family_id": p.family_id,
+                "label": p.label_ru,
+                "adapter": p.proof_adapter,
+                "supported_fills": list(p.supported_fills),
+                "requires_daily_bars": p.requires_daily_bars,
+                "timeframe_supported": settings.timeframe == "1d" or not p.requires_daily_bars,
+                "parameters": [spec.to_dict() for spec in p.parameter_schema()],
+            }
+            for p in registry
+            if p.strategy_id in adapted
         ]
         return {
             **calendar,
@@ -326,11 +353,18 @@ class ProofService:
         )
         return self.prepare(selection, calendar=self.calendar_data, settings=strict)(selection)
 
-    def prepare(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS) -> Callable[..., dict[str, Any]]:
+    def prepare(
+        self,
+        selection: dict[str, Any],
+        *,
+        calendar=None,
+        settings: ResearchSettings = STRICT_SCREENS,
+    ) -> Callable[..., dict[str, Any]]:
         if not isinstance(selection, dict):
             raise W0Error("выбор должен быть объектом")
         from moex_spread_lab.strategies import discover_strategies
         from moex_spread_lab.strategies.base import daily_pair_proof_plugin_ids
+
         registry = discover_strategies()
         strategy = selection.get("strategy")
         if isinstance(strategy, str) and strategy in daily_pair_proof_plugin_ids(registry):
@@ -346,9 +380,17 @@ class ProofService:
 
         def intent_request(request):
             strategy = request.get("strategy", "zscore_mean_reversion")
-            selected_plugin = registry.get(strategy) if isinstance(strategy, str) and strategy in registry else None
-            default_fill = ("same_day_settlement" if selected_plugin is not None
-                            and selected_plugin.supported_fills == ("same_day_settlement",) else settings.price_fill)
+            selected_plugin = (
+                registry.get(strategy)
+                if isinstance(strategy, str) and strategy in registry
+                else None
+            )
+            default_fill = (
+                "same_day_settlement"
+                if selected_plugin is not None
+                and selected_plugin.supported_fills == ("same_day_settlement",)
+                else settings.price_fill
+            )
             return {
                 **request,
                 "quantity": 1,
@@ -356,7 +398,9 @@ class ProofService:
                 **({} if "fill" in request else {"fill": default_fill}),
             }
 
-        replay = self._prepare_fixed(intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True)
+        replay = self._prepare_fixed(
+            intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True
+        )
         dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
         contracts = _load_instruments(self.root / "data/w1/current-intake.json")
         marks_cache: dict[str | None, dict[str, float]] = {}
@@ -370,9 +414,15 @@ class ProofService:
             scalar_summary: tuple[str, str] | None = None,
         ):
             from moex_spread_lab.strategies.base import carry_proof_plugin_ids
-            if (strategy in carry_proof_plugin_ids(registry)
-                    and (not isinstance(request, dict) or not automatic(request) or request.get("quantity") is not None)):
-                raise W0Error("Запрос не соответствует подготовленному автоматическому размеру carry.")
+
+            if strategy in carry_proof_plugin_ids(registry) and (
+                not isinstance(request, dict)
+                or not automatic(request)
+                or request.get("quantity") is not None
+            ):
+                raise W0Error(
+                    "Запрос не соответствует подготовленному автоматическому размеру carry."
+                )
             unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
             if unit.get("schema_version") == "calendar-proof.v1":
                 if through is None:
@@ -423,7 +473,14 @@ class ProofService:
 
         return sized_replay
 
-    def _prepare_fixed(self, selection: dict[str, Any], *, calendar=None, settings: ResearchSettings = STRICT_SCREENS, sizing_intents=False) -> Callable[..., dict[str, Any]]:
+    def _prepare_fixed(
+        self,
+        selection: dict[str, Any],
+        *,
+        calendar=None,
+        settings: ResearchSettings = STRICT_SCREENS,
+        sizing_intents=False,
+    ) -> Callable[..., dict[str, Any]]:
         """Request-scoped replay of one instrument/strategy with different numeric settings.
 
         Load the selected inputs once, not the entire registry per trial. Outside this
@@ -436,15 +493,24 @@ class ProofService:
         if universe == PAIR_UNIVERSE:
             from moex_spread_lab.strategies import discover_strategies
             from moex_spread_lab.strategies.base import carry_proof_plugin_ids
+
             registry = discover_strategies()
             strategy = selection.get("strategy")
-            plugin = registry.get(strategy) if isinstance(strategy, str) and strategy in carry_proof_plugin_ids(registry) else None
-            return self._prepare_pair(selection, settings, sizing_intents=sizing_intents, carry_plugin=plugin)
+            plugin = (
+                registry.get(strategy)
+                if isinstance(strategy, str) and strategy in carry_proof_plugin_ids(registry)
+                else None
+            )
+            return self._prepare_pair(
+                selection, settings, sizing_intents=sizing_intents, carry_plugin=plugin
+            )
         if universe != CALENDAR_UNIVERSE:
             raise W0Error("неизвестная вселенная")
         spec = get_timeframe(settings.timeframe)
         if not spec.supports_calendar:
-            raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
+            raise W0Error(
+                f"{spec.label}: календарный proof не поддерживается на выбранном интервале."
+            )
         calendar = calendar if calendar is not None else self.calendar_data
         cal_cache: dict[str, Any] = {}
 
@@ -479,7 +545,9 @@ class ProofService:
         trades = payload.get("trades", [])
         for trade in trades:
             direction = 1 if trade["side"] == "long_spread" else -1
-            trade["gross_pts"] = round((trade["exit"]["spread_fill"] - trade["entry"]["spread_fill"]) * direction, 3)
+            trade["gross_pts"] = round(
+                (trade["exit"]["spread_fill"] - trade["entry"]["spread_fill"]) * direction, 3
+            )
             trade["result"] = _result(trade["net_rub"])
             trade["open_at_end"] = trade["reason"] in FORCED_EXIT_REASONS
         events = _events(trades)
@@ -496,22 +564,35 @@ class ProofService:
         summary["open_positions"] = sum(trade["open_at_end"] for trade in trades)
         summary.setdefault("max_excess_drawdown_rub", None)
         payload["provenance"] = payload.get("provenance") or {}
-        selection_out = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
-        payload["provenance"] = {**self._calendar_provenance(selection_out), **payload["provenance"]}
+        selection_out = (
+            payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
+        )
+        payload["provenance"] = {
+            **self._calendar_provenance(selection_out),
+            **payload["provenance"],
+        }
         payload["instrument"] = self._calendar_instrument(selection_out, payload)
         attach_entry_levels(payload)
         if payload["execution_reference"]:
             payload["notes"].append(REFERENCE_WARNING)
-        timeframe = selection_out.get("timeframe") or (payload.get("window") or {}).get("timeframe") or "1d"
+        timeframe = (
+            selection_out.get("timeframe") or (payload.get("window") or {}).get("timeframe") or "1d"
+        )
         selection_out.setdefault("timeframe", timeframe)
         fill = (selection.get("fill") or "next_open").replace("_", " ")
-        price_source = (payload.get("window") or {}).get("price_source") or selection_out.get("price_source")
+        price_source = (payload.get("window") or {}).get("price_source") or selection_out.get(
+            "price_source"
+        )
         if price_source == "synthetic_leg_proxy":
-            payload["price_role"] = f"Синтетический H1 proxy far − near по синхронным свечам ног; исполнение {fill}"
+            payload["price_role"] = (
+                f"Синтетический H1 proxy far − near по синхронным свечам ног; исполнение {fill}"
+            )
         elif timeframe == "1h":
             payload["price_role"] = f"Нативные часовые свечи календарного спреда; исполнение {fill}"
         else:
-            payload["price_role"] = f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
+            payload["price_role"] = (
+                f"Нативный календарный спред; исполнение {fill}, отметки по официальному расчёту"
+            )
         payload["run_id"] = _run_id(
             {
                 "selection": payload["selection"],
@@ -550,7 +631,9 @@ class ProofService:
                 provenance[f"{label}_sha256"] = digest
         return provenance
 
-    def _calendar_instrument(self, selection: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    def _calendar_instrument(
+        self, selection: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         window = payload.get("window") or {}
         contract = payload.get("contract") or {}
         legs = str(selection.get("pair") or "").split("/")
@@ -562,7 +645,8 @@ class ProofService:
             "near": near,
             "far": far,
             "family": "calendar_spread",
-            "near_expiry": (instruments.get(near or "") or {}).get("expiry") or window.get("near_expiry"),
+            "near_expiry": (instruments.get(near or "") or {}).get("expiry")
+            or window.get("near_expiry"),
             "far_expiry": (instruments.get(far or "") or {}).get("expiry"),
             "near_point_value_rub": point_value,
             "far_point_value_rub": point_value,
@@ -571,7 +655,14 @@ class ProofService:
 
     # ----------------------------------------------------------- pair adapter
 
-    def _prepare_pair(self, selection: dict[str, Any], settings: ResearchSettings, *, sizing_intents=False, carry_plugin=None) -> Callable[..., dict[str, Any]]:
+    def _prepare_pair(
+        self,
+        selection: dict[str, Any],
+        settings: ResearchSettings,
+        *,
+        sizing_intents=False,
+        carry_plugin=None,
+    ) -> Callable[..., dict[str, Any]]:
         pair = _pair(selection.get("pair"))
         near, far = pair["near"], pair["far"]
         strategy = selection.get("strategy")
@@ -584,18 +675,29 @@ class ProofService:
         if not timeframe.supports_pair_proof:
             raise W0Error(f"{timeframe.label}: pair-proof не поддерживается.")
         entry = _pair_catalog(
-            inputs, registry=(pair,), funding=funding,
-            initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe,
+            inputs,
+            registry=(pair,),
+            funding=funding,
+            initial_capital=settings.initial_capital_rub,
+            timeframe=settings.timeframe,
         )["pairs"][0]
         if not entry["proof_strategies"].get(screen_strategy):
             raise W0Error(entry["data_reasons"][screen_strategy])
         # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
-        if not (settings.validation_percent or settings.allow_failed_volume) and not entry["strategies"].get(screen_strategy):
+        if not (settings.validation_percent or settings.allow_failed_volume) and not entry[
+            "strategies"
+        ].get(screen_strategy):
             raise W0Error("Не пройдено правило ликвидности пары.")
 
         @cache
         def risk_for(quantity):
-            risk = assess_vtb_pair(inputs.contracts, near, far, quantity=quantity, initial_capital=settings.initial_capital_rub)
+            risk = assess_vtb_pair(
+                inputs.contracts,
+                near,
+                far,
+                quantity=quantity,
+                initial_capital=settings.initial_capital_rub,
+            )
             if not settings.allow_failed_capital and not risk["summary"]["all_scenarios_passed"]:
                 raise W0Error("пара не проходит стресс-экран рабочего капитала")
             return risk
@@ -605,15 +707,25 @@ class ProofService:
         terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
         dates, prices = _benchmark_marks(inputs.benchmark)
         if strategy == "mean_reversion":
-            prepared, engine = self._price_inputs(inputs, pair, funding, settings.validation_percent, settings.timeframe), self._mean_reversion_proof
+            prepared, engine = (
+                self._price_inputs(
+                    inputs, pair, funding, settings.validation_percent, settings.timeframe
+                ),
+                self._mean_reversion_proof,
+            )
         else:
-            prepared, engine = self._funding_inputs(inputs, pair, funding, settings.validation_percent), self._funding_proof
+            prepared, engine = (
+                self._funding_inputs(inputs, pair, funding, settings.validation_percent),
+                self._funding_proof,
+            )
 
         # Reuse immutable input hashes throughout this request's Optuna trials.
         source_hashes = {
             "benchmark_sha256": _sha256_bytes(inputs.benchmark),
             "contracts_sha256": _sha256_bytes(inputs.contracts),
-            "historical_contracts_sha256": _sha256_bytes(inputs.contracts.parent / "historical-contracts.json"),
+            "historical_contracts_sha256": _sha256_bytes(
+                inputs.contracts.parent / "historical-contracts.json"
+            ),
         }
         prepared = (*prepared, source_hashes)
         pair_cache: dict[str, Any] = {
@@ -627,27 +739,51 @@ class ProofService:
         }
 
         def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
-            execution = {**execution_settings(request), "sizing_intents": sizing_intents,
-                         "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill), "initial_capital_rub": settings.initial_capital_rub}
-            if (request.get("strategy") != strategy or request.get("pair") != pair["pair_id"]
-                    or request.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
-                    or (carry_plugin is not None and automatic(request) != sizing_intents)):
+            execution = {
+                **execution_settings(request),
+                "sizing_intents": sizing_intents,
+                "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill),
+                "initial_capital_rub": settings.initial_capital_rub,
+            }
+            if (
+                request.get("strategy") != strategy
+                or request.get("pair") != pair["pair_id"]
+                or request.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
+                or (carry_plugin is not None and automatic(request) != sizing_intents)
+            ):
                 raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
             if carry_plugin is None:
                 params = _parameters(request, strategy)
             else:
                 from copy import deepcopy
+
                 from moex_spread_lab.core.contracts import InstrumentContext
                 from moex_spread_lab.strategies.base import validate_parameter_map
-                context = InstrumentContext(universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe)
+
+                context = InstrumentContext(
+                    universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe
+                )
                 schema = carry_plugin.parameter_schema(context)
                 clean = validate_parameter_map(request.get("parameters", {}), schema)
-                params = validate_parameter_map(carry_plugin.validate_parameters(deepcopy(clean), context), schema)
+                params = validate_parameter_map(
+                    carry_plugin.validate_parameters(deepcopy(clean), context), schema
+                )
                 if params != clean or any(not spec.contains(params[spec.name]) for spec in schema):
                     raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
-            result = engine(inputs, pair, execution, params, terms, dates, prices,
-                            risk_for(execution["quantity"]), prepared, through,
-                            metrics_only=metrics_only, pair_cache=pair_cache)
+            result = engine(
+                inputs,
+                pair,
+                execution,
+                params,
+                terms,
+                dates,
+                prices,
+                risk_for(execution["quantity"]),
+                prepared,
+                through,
+                metrics_only=metrics_only,
+                pair_cache=pair_cache,
+            )
             if carry_plugin is not None:
                 result["accounting_policy"] = "carry_settlement.v1"
                 if not metrics_only and abs(result["summary"]["ledger_reconciliation_rub"]) > 0.02:
@@ -659,10 +795,14 @@ class ProofService:
     def _prepare_daily_pair_plugin(self, selection, settings, plugin):
         """Pair-plugin route using the existing screens and funded account."""
         from moex_spread_lab.core.contracts import WindowSnapshot
+
         from .pair_plugin_accounting import prepare_daily_pair_unit, size_daily_pair_plugin
 
-        if (selection.get("universe") != PAIR_UNIVERSE or settings.timeframe not in ("1d", "1h")
-                or (settings.timeframe == "1h" and plugin.requires_daily_bars)):
+        if (
+            selection.get("universe") != PAIR_UNIVERSE
+            or settings.timeframe not in ("1d", "1h")
+            or (settings.timeframe == "1h" and plugin.requires_daily_bars)
+        ):
             raise W0Error("Парный плагин не поддерживает выбранное окно или интервал.")
         pair = _pair(selection.get("pair"))
         # Native pair preflight owns data, funding, liquidity and capital screens.
@@ -670,35 +810,55 @@ class ProofService:
         native = self.prepare(native_selection, settings=settings)
         inputs = self.screener_inputs
         series, _, funding_window, provenance = self._price_inputs(
-            inputs, pair, ProofFunding(inputs), settings.validation_percent, settings.timeframe)
-        snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe,
-            near=pair["near"], far=pair["far"], rows=series["rows"], contracts=series["contracts"])
+            inputs, pair, ProofFunding(inputs), settings.validation_percent, settings.timeframe
+        )
+        snapshot = WindowSnapshot(
+            universe=PAIR_UNIVERSE,
+            pair=pair["pair_id"],
+            timeframe=settings.timeframe,
+            near=pair["near"],
+            far=pair["far"],
+            rows=series["rows"],
+            contracts=series["contracts"],
+        )
         marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
         dates, prices = _benchmark_marks(inputs.benchmark)
 
         def replay(request, through=None, *, metrics_only=False, scalar_summary=None):
-            if (not isinstance(request, dict) or request.get("strategy") != plugin.strategy_id
-                    or request.get("universe") != PAIR_UNIVERSE or request.get("pair") != pair["pair_id"]
-                    or automatic(request) != automatic(selection)
-                    or (automatic(request) and request.get("quantity") is not None)):
+            if (
+                not isinstance(request, dict)
+                or request.get("strategy") != plugin.strategy_id
+                or request.get("universe") != PAIR_UNIVERSE
+                or request.get("pair") != pair["pair_id"]
+                or automatic(request) != automatic(selection)
+                or (automatic(request) and request.get("quantity") is not None)
+            ):
                 raise W0Error("Запрос не соответствует подготовленному окну плагина.")
             fill = pair_fill(request, plugin.strategy_id, default_price_fill=settings.price_fill)
             params = request.get("parameters", {})
             if automatic(request):
-                actual = size_daily_pair_plugin(plugin, snapshot, params, fill, funding_window,
-                                                marks, settings, through=through)
+                actual = size_daily_pair_plugin(
+                    plugin, snapshot, params, fill, funding_window, marks, settings, through=through
+                )
             else:
                 execution = execution_settings(request)
-                unit, _ = prepare_daily_pair_unit(plugin, snapshot, params, fill, funding_window,
-                                                  marks, settings, through=through)
+                unit, _ = prepare_daily_pair_unit(
+                    plugin, snapshot, params, fill, funding_window, marks, settings, through=through
+                )
                 actual = None
             # The native proof supplies trusted market/chart/screen metadata only;
             # never retain its decisions, ledger or indicator values.
-            template_request = {**request, "strategy": "mean_reversion", "parameters": {}, "fill": fill}
+            template_request = {
+                **request,
+                "strategy": "mean_reversion",
+                "parameters": {},
+                "fill": fill,
+            }
             template = native(template_request, through=through)
             if actual is None:
-                return self._fixed_daily_pair_plugin_payload(template, unit, series, pair,
-                    execution, dates, prices, provenance)
+                return self._fixed_daily_pair_plugin_payload(
+                    template, unit, series, pair, execution, dates, prices, provenance
+                )
             by_date = {row["date"]: row for row in template["series"]}
             enriched_rows = []
             for row in actual["series"]:
@@ -712,38 +872,79 @@ class ProofService:
                 blocks = {}
                 for event in ("entry", "exit"):
                     raw = trade[event]
-                    blocks[event] = self._fill_block(raw["date"], raw["spread_fill"], raw["near_price"],
-                        raw["far_price"], indexed, raw["costs"], far_value=raw["far_price"] * far_mult)
+                    blocks[event] = self._fill_block(
+                        raw["date"],
+                        raw["spread_fill"],
+                        raw["near_price"],
+                        raw["far_price"],
+                        indexed,
+                        raw["costs"],
+                        far_value=raw["far_price"] * far_mult,
+                    )
                     blocks[event]["margin_rub"] = raw.get("margin_rub")
-                full_trade = self._trade_block(number=trade["number"], side=trade["side"], quantity=trade["quantity"],
-                    signal=trade["signal"], entry=blocks["entry"], exit=blocks["exit"], exit_reason=trade["exit_reason"],
-                    margin_pair=trade["margin_rub"], gross_rub=trade["gross_rub"], costs_rub=trade["costs_rub"],
-                    net_rub=trade["net_rub"], benchmark_dates=dates, benchmark_prices=prices,
-                    open_at_end=trade["open_at_end"], funding_rub=trade.get("funding_rub"))
+                full_trade = self._trade_block(
+                    number=trade["number"],
+                    side=trade["side"],
+                    quantity=trade["quantity"],
+                    signal=trade["signal"],
+                    entry=blocks["entry"],
+                    exit=blocks["exit"],
+                    exit_reason=trade["exit_reason"],
+                    margin_pair=trade["margin_rub"],
+                    gross_rub=trade["gross_rub"],
+                    costs_rub=trade["costs_rub"],
+                    net_rub=trade["net_rub"],
+                    benchmark_dates=dates,
+                    benchmark_prices=prices,
+                    open_at_end=trade["open_at_end"],
+                    funding_rub=trade.get("funding_rub"),
+                )
                 if "sizing" in trade:
                     full_trade["sizing"] = trade["sizing"]
                 enriched_trades.append(full_trade)
             if abs(actual["summary"]["ledger_reconciliation_rub"]) > 0.02:
                 raise W0Error("Учёт плагина не согласован с журналом сделок.")
             actual["summary"]["fx_point_value_drift_rub"] = None
-            template.update(selection=actual["selection"], series=enriched_rows, trades=enriched_trades,
-                            ledger=actual["ledger"], summary=actual["summary"], sizing=actual["sizing"],
-                            skipped_entries=actual["skipped_entries"])
+            template.update(
+                selection=actual["selection"],
+                series=enriched_rows,
+                trades=enriched_trades,
+                ledger=actual["ledger"],
+                summary=actual["summary"],
+                sizing=actual["sizing"],
+                skipped_entries=actual["skipped_entries"],
+            )
             template["provenance"].update({**provenance, **actual["provenance"]})
-            template["notes"] = [note for note in template["notes"]
-                if not note.startswith("Открытая на конец выборки позиция отмечается")]
+            template["notes"] = [
+                note
+                for note in template["notes"]
+                if not note.startswith("Открытая на конец выборки позиция отмечается")
+            ]
             if any(trade["open_at_end"] for trade in enriched_trades):
-                template["notes"].append("Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.")
-            template["notes"].append("Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно.")
+                template["notes"].append(
+                    "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."
+                )
+            template["notes"].append(
+                "Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно."
+            )
             attach_entry_levels(template)
-            template["run_id"] = _run_id({"selection": template["selection"], "series": template["series"],
-                                           "trades": template["trades"], "ledger": template["ledger"],
-                                           "sizing": template["sizing"], "provenance": template["provenance"]})
+            template["run_id"] = _run_id(
+                {
+                    "selection": template["selection"],
+                    "series": template["series"],
+                    "trades": template["trades"],
+                    "ledger": template["ledger"],
+                    "sizing": template["sizing"],
+                    "provenance": template["provenance"],
+                }
+            )
             return template
+
         return replay
 
-    def _fixed_daily_pair_plugin_payload(self, template, unit, series, pair, execution,
-                                         benchmark_dates, benchmark_prices, provenance):
+    def _fixed_daily_pair_plugin_payload(
+        self, template, unit, series, pair, execution, benchmark_dates, benchmark_prices, provenance
+    ):
         """Recompute fixed-quantity fills, cash flows and journal from unit intents."""
         from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 
@@ -758,41 +959,86 @@ class ProofService:
             amount = raw["funding_rub"]
             if amount is not None and not math.isfinite(amount * quantity):
                 raise W0Error("Переполнение суммы фондирования.")
-            rows.append({**originals[raw["date"]], **raw,
-                         "funding_rub": round(amount * quantity, 8) if amount is not None else None,
-                         "funding_contracts": quantity * raw["funding_contracts"], "signal_z": None})
+            rows.append(
+                {
+                    **originals[raw["date"]],
+                    **raw,
+                    "funding_rub": round(amount * quantity, 8) if amount is not None else None,
+                    "funding_contracts": quantity * raw["funding_contracts"],
+                    "signal_z": None,
+                }
+            )
         by_date = {r["date"]: r for r in rows}
         trades = []
         for number, intent in enumerate(unit["trades"], 1):
             blocks = {}
             for event in ("entry", "exit"):
                 fill = intent[event]
-                costs = side_cost(tariff_profile(slippage), list(zip(contracts, (fill["near_price"], fill["far_price"]))), quantity)
+                costs = side_cost(
+                    tariff_profile(slippage),
+                    list(zip(contracts, (fill["near_price"], fill["far_price"]))),
+                    quantity,
+                )
                 if any(not math.isfinite(v) or v < 0 for v in costs.values()):
                     raise W0Error("Некорректные издержки пары.")
                 costs = {k: round(v, 8) for k, v in costs.items()}
-                blocks[event] = self._fill_block(fill["date"], fill["spread_fill"], fill["near_price"],
-                    fill["far_price"], by_date, costs, far_value=fill["far_price"] * far_mult)
-            funding = sum(float(r["funding_rub"] or 0) for r in rows
-                          if intent["entry"]["date"] <= r["date"] <= intent["exit"]["date"])
+                blocks[event] = self._fill_block(
+                    fill["date"],
+                    fill["spread_fill"],
+                    fill["near_price"],
+                    fill["far_price"],
+                    by_date,
+                    costs,
+                    far_value=fill["far_price"] * far_mult,
+                )
+            funding = sum(
+                float(r["funding_rub"] or 0)
+                for r in rows
+                if intent["entry"]["date"] <= r["date"] <= intent["exit"]["date"]
+            )
             direction = 1 if intent["side"] == "long_spread" else -1
             entry, exit_ = intent["entry"], intent["exit"]
-            gross = direction * quantity * ((exit_["near_price"] - entry["near_price"]) * near_mult
-                    - (exit_["far_price"] - entry["far_price"]) * far_mult) + funding
+            gross = (
+                direction
+                * quantity
+                * (
+                    (exit_["near_price"] - entry["near_price"]) * near_mult
+                    - (exit_["far_price"] - entry["far_price"]) * far_mult
+                )
+                + funding
+            )
             cost = sum(sum(blocks[event]["costs"].values()) for event in ("entry", "exit"))
             if not all(math.isfinite(v) for v in (gross, cost, funding, gross - cost)):
                 raise W0Error("Переполнение расчёта сделки.")
-            trades.append(self._trade_block(number=number, side=intent["side"], quantity=quantity,
-                signal=intent["signal"], entry=blocks["entry"], exit=blocks["exit"],
-                exit_reason=intent["exit_reason"], margin_pair=margin, gross_rub=gross,
-                costs_rub=cost, net_rub=gross-cost, benchmark_dates=benchmark_dates,
-                benchmark_prices=benchmark_prices, open_at_end=intent["open_at_end"],
-                funding_rub=funding if series["provenance"].get("near_funding_history_sha256") or provenance else None))
+            trades.append(
+                self._trade_block(
+                    number=number,
+                    side=intent["side"],
+                    quantity=quantity,
+                    signal=intent["signal"],
+                    entry=blocks["entry"],
+                    exit=blocks["exit"],
+                    exit_reason=intent["exit_reason"],
+                    margin_pair=margin,
+                    gross_rub=gross,
+                    costs_rub=cost,
+                    net_rub=gross - cost,
+                    benchmark_dates=benchmark_dates,
+                    benchmark_prices=benchmark_prices,
+                    open_at_end=intent["open_at_end"],
+                    funding_rub=funding
+                    if series["provenance"].get("near_funding_history_sha256") or provenance
+                    else None,
+                )
+            )
         ledger = self._price_ledger(rows, trades, near_mult, far_mult, quantity)
         for row, led in zip(rows, ledger, strict=True):
             row["margin_rub"] = round(margin, 2) if led["position"] else 0.0
         capital = template["initial_capital_rub"]
-        marks = [_mark(benchmark_dates, benchmark_prices, r.get("benchmark_mark_date") or r["date"]) for r in rows]
+        marks = [
+            _mark(benchmark_dates, benchmark_prices, r.get("benchmark_mark_date") or r["date"])
+            for r in rows
+        ]
         # Keep sub-kopeck precision for the account curve; ledger presentation is
         # rounded to kopecks and must not be used to calculate risk drawdown.
         entries = {t["entry"]["date"]: t for t in trades}
@@ -806,10 +1052,19 @@ class ProofService:
             change = fee = 0.0
             if row["volume_eligible"] and position is not None:
                 closing = exits.get(day)
-                near_px, far_px = ((closing["exit"]["near_price"], closing["exit"]["far_price"])
-                                   if closing else (row["near"], row["far"]))
-                change += position["sign"] * quantity * ((near_px-position["near"]) * near_mult
-                                                          - (far_px-position["far"]) * far_mult)
+                near_px, far_px = (
+                    (closing["exit"]["near_price"], closing["exit"]["far_price"])
+                    if closing
+                    else (row["near"], row["far"])
+                )
+                change += (
+                    position["sign"]
+                    * quantity
+                    * (
+                        (near_px - position["near"]) * near_mult
+                        - (far_px - position["far"]) * far_mult
+                    )
+                )
                 if closing:
                     fee += sum(closing["exit"]["costs"].values())
                     position = None
@@ -820,38 +1075,75 @@ class ProofService:
                 sign = 1 if opening["side"] == "long_spread" else -1
                 enter = opening["entry"]
                 fee += sum(enter["costs"].values())
-                change += sign * quantity * ((row["near"]-enter["near_price"]) * near_mult
-                                              - (row["far"]-enter["far_price"]) * far_mult)
+                change += (
+                    sign
+                    * quantity
+                    * (
+                        (row["near"] - enter["near_price"]) * near_mult
+                        - (row["far"] - enter["far_price"]) * far_mult
+                    )
+                )
                 position = {"sign": sign, "near": row["near"], "far": row["far"]}
             cumulative += change - fee + float(unit_by_date[day]["funding_rub"] or 0) * quantity
             precise_pnl.append(round(capital + cumulative, 8) - capital)
-        values, _ = lqdt_overlay_values(capital, precise_pnl,
-                                        [margin if r["position"] else 0.0 for r in ledger], marks)
+        values, _ = lqdt_overlay_values(
+            capital, precise_pnl, [margin if r["position"] else 0.0 for r in ledger], marks
+        )
         peak = drawdown = 0.0
         for value, mark in zip(values, marks, strict=True):
             excess = round(round(value, 8) - round(capital * mark / marks[0], 8), 8)
             peak = max(peak, excess)
             drawdown = max(drawdown, peak - excess)
         closed = [t for t in trades if not t["open_at_end"]]
-        gross, costs, net = (sum(t[k] for t in trades) for k in ("gross_rub", "costs_rub", "net_rub"))
+        gross, costs, net = (
+            sum(t[k] for t in trades) for k in ("gross_rub", "costs_rub", "net_rub")
+        )
         hurdle = sum(t["lqdt_on_margin_rub"] for t in trades)
-        template["selection"].update(strategy=unit["selection"]["strategy"], parameters=unit["selection"]["parameters"])
+        template["selection"].update(
+            strategy=unit["selection"]["strategy"], parameters=unit["selection"]["parameters"]
+        )
         template.update(series=rows, trades=trades, ledger=ledger)
-        template["summary"].update(trades=len(trades), closed_trades=len(closed), open_positions=len(trades)-len(closed),
-            winners=sum(t["net_rub"] > 0 for t in closed), gross_rub=round(gross, 2), costs_rub=round(costs, 2),
-            net_rub=round(net, 2), cost_totals=_cost_totals(trades), lqdt_on_margin_rub=round(hurdle, 2),
-            excess_over_lqdt_rub=round(net-hurdle, 2), max_excess_drawdown_rub=round(drawdown, 2),
-            ledger_reconciliation_rub=round(net-(ledger[-1]["cumulative_net_rub"] if ledger else 0), 2))
+        template["summary"].update(
+            trades=len(trades),
+            closed_trades=len(closed),
+            open_positions=len(trades) - len(closed),
+            winners=sum(t["net_rub"] > 0 for t in closed),
+            gross_rub=round(gross, 2),
+            costs_rub=round(costs, 2),
+            net_rub=round(net, 2),
+            cost_totals=_cost_totals(trades),
+            lqdt_on_margin_rub=round(hurdle, 2),
+            excess_over_lqdt_rub=round(net - hurdle, 2),
+            max_excess_drawdown_rub=round(drawdown, 2),
+            ledger_reconciliation_rub=round(
+                net - (ledger[-1]["cumulative_net_rub"] if ledger else 0), 2
+            ),
+        )
         if abs(template["summary"]["ledger_reconciliation_rub"]) > 0.02:
             raise W0Error("Учёт плагина не согласован с журналом сделок.")
         template["provenance"].update({**provenance, **unit["provenance"]})
-        template["notes"] = [n for n in template["notes"] if not n.startswith("Открытая на конец выборки позиция отмечается")]
+        template["notes"] = [
+            n
+            for n in template["notes"]
+            if not n.startswith("Открытая на конец выборки позиция отмечается")
+        ]
         if any(t["open_at_end"] for t in trades):
-            template["notes"].append("Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка.")
-        template["notes"].append("Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно.")
+            template["notes"].append(
+                "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."
+            )
+        template["notes"].append(
+            "Решения стратегии поступают из проверенных намерений плагина; цены и учёт рассчитаны отдельно."
+        )
         attach_entry_levels(template)
-        template["run_id"] = _run_id({"selection": template["selection"], "series": rows,
-                                      "trades": trades, "ledger": ledger, "provenance": template["provenance"]})
+        template["run_id"] = _run_id(
+            {
+                "selection": template["selection"],
+                "series": rows,
+                "trades": trades,
+                "ledger": ledger,
+                "provenance": template["provenance"],
+            }
+        )
         return template
 
     def _price_inputs(self, inputs, pair, funding, validation_percent, timeframe="1d"):
@@ -866,8 +1158,20 @@ class ProofService:
         return series, analysis_rows, window, {"near_funding_history_sha256": hashes}
 
     def _mean_reversion_proof(
-        self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
-        *, metrics_only: bool = False, pair_cache: dict[str, Any] | None = None,
+        self,
+        inputs,
+        pair,
+        execution,
+        params,
+        terms,
+        benchmark_dates,
+        benchmark_prices,
+        risk,
+        prepared,
+        through,
+        *,
+        metrics_only: bool = False,
+        pair_cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         near, far = pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
@@ -877,12 +1181,22 @@ class ProofService:
         intraday = get_timeframe(series["timeframe"]).intraday
         through_cache = pair_cache["through"] if pair_cache is not None else None
         if through_cache is not None and through in through_cache:
-            series, analysis_rows, analysis_series, spread_ticks, evidence, marks, funding_swaprates, volume_map = through_cache[through]
+            (
+                series,
+                analysis_rows,
+                analysis_series,
+                spread_ticks,
+                evidence,
+                marks,
+                funding_swaprates,
+                volume_map,
+            ) = through_cache[through]
         else:
             evidence = window.resolve(through) if window else None
             marks = evidence.marks if evidence else {}
             funding_swaprates = evidence.rates if evidence else {}
             if through is not None:
+
                 def inside_cutoff(row):
                     key = (
                         row.get("session_date", row["date"][:10])
@@ -897,12 +1211,23 @@ class ProofService:
             spread_ticks = array("d", (float(item["spread_ticks"]) for item in analysis_rows))
             volume_map = {row["date"]: row for row in series["rows"]}
             if through_cache is not None:
-                through_cache[through] = (series, analysis_rows, analysis_series, spread_ticks, evidence, marks, funding_swaprates, volume_map)
+                through_cache[through] = (
+                    series,
+                    analysis_rows,
+                    analysis_series,
+                    spread_ticks,
+                    evidence,
+                    marks,
+                    funding_swaprates,
+                    volume_map,
+                )
         near_contract = series["contracts"][near]
         far_contract = series["contracts"][far]
         near_mult = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
         far_mult = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
-        margin_pair = (float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])) * quantity
+        margin_pair = (
+            float(near_contract["initial_margin"]) + float(far_contract["initial_margin"])
+        ) * quantity
         lookback = int(params["lookback"])
         z_cache = pair_cache["z"] if pair_cache is not None else None
         z_key = (through, lookback, delay)
@@ -935,34 +1260,49 @@ class ProofService:
         sd_key = (through, delay)
         signal_dates = sd_cache.get(sd_key) if sd_cache is not None else None
         if signal_dates is None:
-            signal_dates = {r["date"]: analysis_rows[max(0, i - delay)]["date"] for i, r in enumerate(analysis_rows)}
+            signal_dates = {
+                r["date"]: analysis_rows[max(0, i - delay)]["date"]
+                for i, r in enumerate(analysis_rows)
+            }
             if sd_cache is not None:
                 sd_cache[sd_key] = signal_dates
 
         if metrics_only and sizing_intents:
             trades: list[dict[str, Any]] = []
             for row in report["trades"]:
-                side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
-                entry_date = row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
-                exit_date = row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
-                trades.append({
-                    "side": side,
-                    "signal": {"kind": "z", "value": row.get("entry_signal_z"), "date": signal_dates[entry_date]},
-                    "entry": {
-                        "date": entry_date,
-                        "spread_fill": row["entry_spread_fill"],
-                        "near_price": row["entry_near_fill"],
-                        "far_price": row["entry_far_fill"],
-                    },
-                    "exit": {
-                        "date": exit_date,
-                        "spread_fill": row["exit_spread_fill"],
-                        "near_price": row["exit_near_fill"],
-                        "far_price": row["exit_far_fill"],
-                    },
-                    "exit_reason": row["exit_reason"],
-                    "open_at_end": row["exit_reason"] in FORCED_EXIT_REASONS,
-                })
+                side = (
+                    "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
+                )
+                entry_date = (
+                    row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
+                )
+                exit_date = (
+                    row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
+                )
+                trades.append(
+                    {
+                        "side": side,
+                        "signal": {
+                            "kind": "z",
+                            "value": row.get("entry_signal_z"),
+                            "date": signal_dates[entry_date],
+                        },
+                        "entry": {
+                            "date": entry_date,
+                            "spread_fill": row["entry_spread_fill"],
+                            "near_price": row["entry_near_fill"],
+                            "far_price": row["entry_far_fill"],
+                        },
+                        "exit": {
+                            "date": exit_date,
+                            "spread_fill": row["exit_spread_fill"],
+                            "near_price": row["exit_near_fill"],
+                            "far_price": row["exit_far_fill"],
+                        },
+                        "exit_reason": row["exit_reason"],
+                        "open_at_end": row["exit_reason"] in FORCED_EXIT_REASONS,
+                    }
+                )
 
             series_cache = pair_cache["series"] if pair_cache is not None else None
             base_series = series_cache.get(through) if series_cache is not None else None
@@ -991,12 +1331,20 @@ class ProofService:
                     if day in daily_map:
                         position_on_last_analyzed_day = daily.get("position") or 0
                     position = daily.get("position", position_on_last_analyzed_day) or 0
-                    held_for_clearing = bool(position) or daily.get("action") == "forced_exit_end_of_sample"
-                    series_rows.append({
-                        **base_row,
-                        "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in marks else None,
-                        "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,
-                    })
+                    held_for_clearing = (
+                        bool(position) or daily.get("action") == "forced_exit_end_of_sample"
+                    )
+                    series_rows.append(
+                        {
+                            **base_row,
+                            "funding_rub": round(daily.get("funding_rub", 0.0), 8)
+                            if day in marks
+                            else None,
+                            "funding_contracts": quantity
+                            if day in funding_swaprates and held_for_clearing
+                            else 0,
+                        }
+                    )
             else:
                 series_rows = base_series
 
@@ -1004,7 +1352,9 @@ class ProofService:
             window_meta = meta_cache.get(through) if meta_cache is not None else None
             if window_meta is None:
                 if "sessions" not in pair_cache:
-                    pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
+                    pair_cache["sessions"] = _session_volumes(
+                        inputs, pair, series["timeframe"]
+                    ) or {near: {}, far: {}}
                 sessions = pair_cache["sessions"]
                 near_sess = sessions.get(near, {})
                 far_sess = sessions.get(far, {})
@@ -1018,7 +1368,9 @@ class ProofService:
                 min_leg_volume = min(volumes) if volumes else None
                 window_meta = {
                     "min_leg_volume": min_leg_volume,
-                    "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                    "tradable_every_day": bool(
+                        min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME
+                    ),
                 }
                 if meta_cache is not None:
                     meta_cache[through] = window_meta
@@ -1057,18 +1409,42 @@ class ProofService:
         trades = []
         for number, row in enumerate(report["trades"], start=1):
             side = "long_spread" if row["direction"] == "long_near_short_far" else "short_spread"
-            entry_date = row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
-            exit_date = row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
+            entry_date = (
+                row["entry_date"][:19].replace(" ", "T") if intraday else row["entry_date"][:10]
+            )
+            exit_date = (
+                row["exit_date"][:19].replace(" ", "T") if intraday else row["exit_date"][:10]
+            )
             entry_costs = row.get("entry_costs") or {}
             exit_costs = row.get("exit_costs") or {}
-            entry = self._fill_block(entry_date, row["entry_spread_fill"], row["entry_near_fill"], row["entry_far_fill"], volume_map, entry_costs, far_value=row["entry_far_fill"] * far_mult)
-            exit_ = self._fill_block(exit_date, row["exit_spread_fill"], row["exit_near_fill"], row["exit_far_fill"], volume_map, exit_costs, far_value=row["exit_far_fill"] * far_mult)
+            entry = self._fill_block(
+                entry_date,
+                row["entry_spread_fill"],
+                row["entry_near_fill"],
+                row["entry_far_fill"],
+                volume_map,
+                entry_costs,
+                far_value=row["entry_far_fill"] * far_mult,
+            )
+            exit_ = self._fill_block(
+                exit_date,
+                row["exit_spread_fill"],
+                row["exit_near_fill"],
+                row["exit_far_fill"],
+                volume_map,
+                exit_costs,
+                far_value=row["exit_far_fill"] * far_mult,
+            )
             trades.append(
                 self._trade_block(
                     number=number,
                     side=side,
                     quantity=quantity,
-                    signal={"kind": "z", "value": row.get("entry_signal_z"), "date": signal_dates[entry_date]},
+                    signal={
+                        "kind": "z",
+                        "value": row.get("entry_signal_z"),
+                        "date": signal_dates[entry_date],
+                    },
                     entry=entry,
                     exit=exit_,
                     exit_reason=row["exit_reason"],
@@ -1084,7 +1460,10 @@ class ProofService:
 
         if pair_cache is not None:
             if "sessions" not in pair_cache:
-                pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
+                pair_cache["sessions"] = _session_volumes(inputs, pair, series["timeframe"]) or {
+                    near: {},
+                    far: {},
+                }
             sessions = pair_cache["sessions"]
         else:
             sessions = _session_volumes(inputs, pair, series["timeframe"]) or {near: {}, far: {}}
@@ -1105,17 +1484,26 @@ class ProofService:
                     "timeframe": series["timeframe"],
                     "benchmark_mark_kind": row.get("benchmark_mark_kind"),
                     "benchmark_mark_date": row.get("benchmark_mark_date"),
-                    "near_session_volume": sessions.get(near, {}).get(row.get("session_date", day[:10])),
-                    "far_session_volume": sessions.get(far, {}).get(row.get("session_date", day[:10])),
+                    "near_session_volume": sessions.get(near, {}).get(
+                        row.get("session_date", day[:10])
+                    ),
+                    "far_session_volume": sessions.get(far, {}).get(
+                        row.get("session_date", day[:10])
+                    ),
                     "near": row["near_close"],
                     "far": row["far_close"],
                     "near_open": row["near_open"],
                     "far_open": row["far_open"],
                     "spread": row["spread_value"],
-                    "spread_open": round(row["near_open"] * near_mult - row["far_open"] * far_mult, 8),
+                    "spread_open": round(
+                        row["near_open"] * near_mult - row["far_open"] * far_mult, 8
+                    ),
                     "spread_last_trade": None,
                     "spread_rel": _rel_pct(row["spread_value"], row["far_close"] * far_mult),
-                    "spread_open_rel": _rel_pct(row["near_open"] * near_mult - row["far_open"] * far_mult, row["far_open"] * far_mult),
+                    "spread_open_rel": _rel_pct(
+                        row["near_open"] * near_mult - row["far_open"] * far_mult,
+                        row["far_open"] * far_mult,
+                    ),
                     "spread_last_trade_rel": None,
                     "near_volume": row.get("near_volume"),
                     "far_volume": row.get("far_volume"),
@@ -1123,11 +1511,19 @@ class ProofService:
                     "spread_trades": None,
                     "volume_eligible": _positive_pair_volume(row),
                     "days_to_near_expiry": None,
-                    "funding_rub": round(daily.get("funding_rub", 0.0), 8) if day in marks else None,
+                    "funding_rub": round(daily.get("funding_rub", 0.0), 8)
+                    if day in marks
+                    else None,
                     "funding_swaprate_rub_per_unit": funding_swaprates.get(day),
-                    "funding_lot_size": float(near_contract.get("lot_size") or 1.0) if day in funding_swaprates else None,
-                    "funding_contracts": quantity if day in funding_swaprates and held_for_clearing else 0,
-                    "funding_source": "MOEX ISS SWAPRATE; EOD settlement history" if day in funding_swaprates else None,
+                    "funding_lot_size": float(near_contract.get("lot_size") or 1.0)
+                    if day in funding_swaprates
+                    else None,
+                    "funding_contracts": quantity
+                    if day in funding_swaprates and held_for_clearing
+                    else 0,
+                    "funding_source": "MOEX ISS SWAPRATE; EOD settlement history"
+                    if day in funding_swaprates
+                    else None,
                     **(marks[day].series_fields(window.book.marks) if day in marks else {}),
                     "signal_z": daily.get("signal_z"),
                     "margin_rub": round(margin_pair, 2) if position else 0.0,
@@ -1137,7 +1533,10 @@ class ProofService:
         ledger = self._price_ledger(series_rows, trades, near_mult, far_mult, quantity)
         if metrics_only:
             volumes = [
-                min(row.get("near_session_volume", row.get("near_volume")), row.get("far_session_volume", row.get("far_volume")))
+                min(
+                    row.get("near_session_volume", row.get("near_volume")),
+                    row.get("far_session_volume", row.get("far_volume")),
+                )
                 for row in series_rows
                 if row.get("near_session_volume", row.get("near_volume")) is not None
                 and row.get("far_session_volume", row.get("far_volume")) is not None
@@ -1167,7 +1566,9 @@ class ProofService:
                 },
                 "window": {
                     "min_leg_volume": min_leg_volume,
-                    "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                    "tradable_every_day": bool(
+                        min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME
+                    ),
                     "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
                 },
                 "trades": trades,
@@ -1194,15 +1595,34 @@ class ProofService:
                 **(evidence.provenance if evidence else {}),
             },
             notes=[
-                *(evidence.notes() if evidence else ["На выбранном внутридневном таймфрейме SWAPRATE не включён: дневную ставку нельзя размножать на внутридневные бары." if intraday else "Для пары без вечного фьючерса фандинг неприменим."]),
-                *(["Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."] if evidence else []),
-                "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
-                (REFERENCE_WARNING if fill_label == "reference_same_bar" else
-                 "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию."
-                 if fill_label == "next_open" else
-                 "Сигнал по закрытию дня; исполнение по закрытию следующего дня (ценовой прокси); отметки по закрытию."),
                 *(
-                    ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
+                    evidence.notes()
+                    if evidence
+                    else [
+                        "На выбранном внутридневном таймфрейме SWAPRATE не включён: дневную ставку нельзя размножать на внутридневные бары."
+                        if intraday
+                        else "Для пары без вечного фьючерса фандинг неприменим."
+                    ]
+                ),
+                *(
+                    [
+                        "Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."
+                    ]
+                    if evidence
+                    else []
+                ),
+                "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются.",
+                (
+                    REFERENCE_WARNING
+                    if fill_label == "reference_same_bar"
+                    else "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); отметки по закрытию."
+                    if fill_label == "next_open"
+                    else "Сигнал по закрытию дня; исполнение по закрытию следующего дня (ценовой прокси); отметки по закрытию."
+                ),
+                *(
+                    [
+                        "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."
+                    ]
                     if any(trade["open_at_end"] for trade in trades)
                     else []
                 ),
@@ -1221,15 +1641,32 @@ class ProofService:
         far_source = funding.source(pair_id, far)
         # Resolve the full research period (including its split) before the study reads any estimate.
         study = build_carry_study(
-            near_source, far_source, inputs.contracts, near=near, far=far,
+            near_source,
+            far_source,
+            inputs.contracts,
+            near=near,
+            far=far,
             funding_regimes=None if pair_id == "CNYRUBF/CRZ6" else (),
-            funding_marks=window.resolve().marks, no_clearing_dates=window.book.no_clearing_dates,
+            funding_marks=window.resolve().marks,
+            no_clearing_dates=window.book.no_clearing_dates,
         )
         return study, near_source["source"], far_source["source"], window
 
     def _funding_proof(
-        self, inputs, pair, execution, params, terms, benchmark_dates, benchmark_prices, risk, prepared, through,
-        *, metrics_only: bool = False, pair_cache: dict[str, Any] | None = None,
+        self,
+        inputs,
+        pair,
+        execution,
+        params,
+        terms,
+        benchmark_dates,
+        benchmark_prices,
+        risk,
+        prepared,
+        through,
+        *,
+        metrics_only: bool = False,
+        pair_cache: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
         quantity, slippage = int(execution["quantity"]), float(execution["slippage_ticks"])
@@ -1256,7 +1693,9 @@ class ProofService:
             min_leg_volume = min(volumes) if volumes else None
             window_meta = {
                 "min_leg_volume": min_leg_volume,
-                "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                "tradable_every_day": bool(
+                    min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME
+                ),
             }
             if ft_cache is not None:
                 ft_cache[through] = (study, evidence, study_by_date, ref_near, ref_far, window_meta)
@@ -1281,33 +1720,63 @@ class ProofService:
         else:
             from moex_spread_lab.core.contracts import WindowSnapshot
             from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
+
             from .carry_intent_accounting import replay_carry_intents
 
-            snapshot = WindowSnapshot(universe=PAIR_UNIVERSE, pair=pair_id, near=near, far=far,
-                timeframe="1d", carry_study=study, contracts=terms, benchmark=inputs.benchmark,
-                initial_capital_rub=execution["initial_capital_rub"], slippage_ticks=slippage,
-                extra={"contracts_path": inputs.contracts, "transaction_cost_scenario": "tariff"})
+            snapshot = WindowSnapshot(
+                universe=PAIR_UNIVERSE,
+                pair=pair_id,
+                near=near,
+                far=far,
+                timeframe="1d",
+                carry_study=study,
+                contracts=terms,
+                benchmark=inputs.benchmark,
+                initial_capital_rub=execution["initial_capital_rub"],
+                slippage_ticks=slippage,
+                extra={"contracts_path": inputs.contracts, "transaction_cost_scenario": "tariff"},
+            )
             from copy import deepcopy
+
             verdict = carry_plugin.check_compatibility(deepcopy(snapshot))
             if not verdict.compatible:
                 raise W0Error(verdict.reason or "Несовместимое окно carry.")
             intents = carry_settlement_intents(carry_plugin, snapshot, params)
             leg_contracts = _load_contracts_for_side_cost(inputs.contracts, near, far)
-            costs = side_cost(tariff_profile(slippage), [(leg_contracts[near], ref_near),
-                               (leg_contracts[far], ref_far)], 1)
+            costs = side_cost(
+                tariff_profile(slippage),
+                [(leg_contracts[near], ref_near), (leg_contracts[far], ref_far)],
+                1,
+            )
             fee = round(sum(costs.values()), 8)
-            full = {} if metrics_only else {"initial_capital": execution["initial_capital_rub"],
-                "margin_per_pair": float(terms[near].get("initial_margin") or 0) + float(terms[far].get("initial_margin") or 0),
-                "benchmark": benchmark_prices}
-            report = replay_carry_intents(study, intents, quantity=quantity, side_cost=fee,
-                far_expiry=leg_contracts[far].get("expiry"), **full)
+            full = (
+                {}
+                if metrics_only
+                else {
+                    "initial_capital": execution["initial_capital_rub"],
+                    "margin_per_pair": float(terms[near].get("initial_margin") or 0)
+                    + float(terms[far].get("initial_margin") or 0),
+                    "benchmark": benchmark_prices,
+                }
+            )
+            report = replay_carry_intents(
+                study,
+                intents,
+                quantity=quantity,
+                side_cost=fee,
+                far_expiry=leg_contracts[far].get("expiry"),
+                **full,
+            )
             if metrics_only:
                 for row in report["daily"]:
                     row.pop("near_volume", None)
                     row.pop("far_volume", None)
         near_mult = _point_value(terms[near], fallback=1.0)
         far_mult = _point_value(terms[far], fallback=near_mult)
-        margin_pair = (float(terms[near].get("initial_margin") or 0.0) + float(terms[far].get("initial_margin") or 0.0)) * quantity
+        margin_pair = (
+            float(terms[near].get("initial_margin") or 0.0)
+            + float(terms[far].get("initial_margin") or 0.0)
+        ) * quantity
         sizing_intents = bool(execution.get("sizing_intents", False))
         daily_rows = report["daily"]
         daily_by_date = {row["date"]: row for row in daily_rows}
@@ -1321,27 +1790,39 @@ class ProofService:
                 exit_date = row["exit_execution_date"] or last_date
                 erow = daily_by_date[entry_date]
                 xrow = daily_by_date[exit_date]
-                trades.append({
-                    "side": "short_spread",
-                    "signal": {"kind": "funding", "value": None, "date": row["entry_decision_date"]},
-                    "entry": {
-                        "date": entry_date,
-                        "spread_fill": round(erow["near_settle"] * near_mult - erow["far_settle"] * far_mult, 8),
-                        "near_price": erow["near_settle"],
-                        "far_price": erow["far_settle"],
-                    },
-                    "exit": {
-                        "date": exit_date,
-                        "spread_fill": round(xrow["near_settle"] * near_mult - xrow["far_settle"] * far_mult, 8),
-                        "near_price": xrow["near_settle"],
-                        "far_price": xrow["far_settle"],
-                    },
-                    "open_at_end": open_at_end,
-                })
+                trades.append(
+                    {
+                        "side": "short_spread",
+                        "signal": {
+                            "kind": "funding",
+                            "value": None,
+                            "date": row["entry_decision_date"],
+                        },
+                        "entry": {
+                            "date": entry_date,
+                            "spread_fill": round(
+                                erow["near_settle"] * near_mult - erow["far_settle"] * far_mult, 8
+                            ),
+                            "near_price": erow["near_settle"],
+                            "far_price": erow["far_settle"],
+                        },
+                        "exit": {
+                            "date": exit_date,
+                            "spread_fill": round(
+                                xrow["near_settle"] * near_mult - xrow["far_settle"] * far_mult, 8
+                            ),
+                            "near_price": xrow["near_settle"],
+                            "far_price": xrow["far_settle"],
+                        },
+                        "open_at_end": open_at_end,
+                    }
+                )
             series_rows = [
                 {
                     "date": row["date"],
-                    "spread": round(row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8),
+                    "spread": round(
+                        row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8
+                    ),
                     "funding_rub": round(row["daily_funding_included_rub"], 2),
                     "funding_contracts": quantity if row["position"] else 0,
                 }
@@ -1380,17 +1861,23 @@ class ProofService:
         study_rows = study["rows"]
         tariff = tariff_profile(slippage)
         leg_contracts = _load_contracts_for_side_cost(inputs.contracts, near, far)
-        reference_side = side_cost(tariff, [(leg_contracts[near], ref_near), (leg_contracts[far], ref_far)], 1)
+        reference_side = side_cost(
+            tariff, [(leg_contracts[near], ref_near), (leg_contracts[far], ref_far)], 1
+        )
         entry_costs = {key: round(value * quantity, 2) for key, value in reference_side.items()}
 
-        signal_reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])}
+        signal_reasons = {
+            (sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])
+        }
 
         def settlement_fill(day, costs):
             row = daily_by_date[day]
             near_price, far_price = row["near_settle"], row["far_settle"]
             far_value = far_price * far_mult
             spread = round(near_price * near_mult - far_value, 8)
-            return self._fill_block(day, spread, near_price, far_price, daily_by_date, costs, far_value=far_value)
+            return self._fill_block(
+                day, spread, near_price, far_price, daily_by_date, costs, far_value=far_value
+            )
 
         trades = []
         for number, row in enumerate(report["trades"], start=1):
@@ -1470,10 +1957,15 @@ class ProofService:
                     "far": row["far_settle"],
                     "near_open": None,
                     "far_open": None,
-                    "spread": round(row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8),
+                    "spread": round(
+                        row["near_settle"] * near_mult - row["far_settle"] * far_mult, 8
+                    ),
                     "spread_open": None,
                     "spread_last_trade": None,
-                    "spread_rel": _rel_pct(row["near_settle"] * near_mult - row["far_settle"] * far_mult, row["far_settle"] * far_mult),
+                    "spread_rel": _rel_pct(
+                        row["near_settle"] * near_mult - row["far_settle"] * far_mult,
+                        row["far_settle"] * far_mult,
+                    ),
                     "spread_open_rel": None,
                     "spread_last_trade_rel": None,
                     "near_volume": row.get("near_volume"),
@@ -1514,23 +2006,35 @@ class ProofService:
             },
             notes=[
                 *evidence.notes(),
-                ("Сигнал встроенной стратегии использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня."
-                 if carry_plugin is None else
-                 "Сигналы предоставлены доверенным carry-плагином: их причинность должна проверяться отдельно. Исполнение — расчёт в тот же день; обычный выход теряет фондирование этого дня."),
+                (
+                    "Сигнал встроенной стратегии использует фондирование до предыдущего клиринга; прокси исполнения — расчёт в тот же день; выход в тот же день теряет фондирование этого дня."
+                    if carry_plugin is None
+                    else "Сигналы предоставлены доверенным carry-плагином: их причинность должна проверяться отдельно. Исполнение — расчёт в тот же день; обычный выход теряет фондирование этого дня."
+                ),
                 "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего перпетуала. Базовый источник — итог клиринга ISS; оценки помечены отдельно. Это не брокерская выписка.",
-                *(["Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; источник исходных ставок — ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."] if near == "GLDRUBF" else []),
+                *(
+                    [
+                        "Для GLDRUBF MOEX публикует K1=0,05% и K2=0,15%; источник исходных ставок — ISS. Внутридневное отклонение D и параметры режима из исторических данных не реконструируются."
+                    ]
+                    if near == "GLDRUBF"
+                    else []
+                ),
                 *(
                     ["Потолки правил фондирования для не-CNY инструментов не восстанавливаются."]
                     if pair_id != "CNYRUBF/CRZ6"
                     else []
                 ),
                 "Спред пары — близкая минус дальняя, нормированный в рублях, а не собственный инструмент; его объём не наблюдаем.",
-                ("Комиссии и проскальзывание пересчитываются по прокси-ценам каждого входа и выхода; проскальзывание — из общих настроек."
-                 if execution.get("sizing_intents") else
-                 "Комиссии — опубликованный тариф MOEX taker, смоделированный на текущем референсе (расчёт по последней строке), а не на каждом ценовом значении исполнения."),
+                (
+                    "Комиссии и проскальзывание пересчитываются по прокси-ценам каждого входа и выхода; проскальзывание — из общих настроек."
+                    if execution.get("sizing_intents")
+                    else "Комиссии — опубликованный тариф MOEX taker, смоделированный на текущем референсе (расчёт по последней строке), а не на каждом ценовом значении исполнения."
+                ),
                 "Спред показан в % от стоимости дальней ноги; абсолютные отметки в рублях — в CSV и во второй строке таблицы.",
                 *(
-                    ["Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."]
+                    [
+                        "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как исполнимая сделка."
+                    ]
                     if any(trade["open_at_end"] for trade in trades)
                     else []
                 ),
@@ -1555,7 +2059,9 @@ class ProofService:
             "date": day,
             "benchmark_mark_date": row.get("benchmark_mark_date"),
             "spread_fill": spread_fill,
-            "spread_fill_rel": _rel_pct(spread_fill, far_value if far_value is not None else far_price),
+            "spread_fill_rel": _rel_pct(
+                spread_fill, far_value if far_value is not None else far_price
+            ),
             "near_price": near_price,
             "far_price": far_price,
             "near_volume": row.get("near_volume") if "near_volume" in row else row.get("volume"),
@@ -1585,14 +2091,22 @@ class ProofService:
         funding_rub: float | None = None,
     ) -> dict[str, Any]:
         open_at_end = open_at_end if open_at_end is not None else exit_reason in FORCED_EXIT_REASONS
-        entry_mark = _mark(benchmark_dates, benchmark_prices, entry.get("benchmark_mark_date") or entry["date"][:10])
-        exit_mark = _mark(benchmark_dates, benchmark_prices, exit.get("benchmark_mark_date") or exit["date"][:10])
+        entry_mark = _mark(
+            benchmark_dates,
+            benchmark_prices,
+            entry.get("benchmark_mark_date") or entry["date"][:10],
+        )
+        exit_mark = _mark(
+            benchmark_dates, benchmark_prices, exit.get("benchmark_mark_date") or exit["date"][:10]
+        )
         hurdle = margin_pair * (exit_mark / entry_mark - 1)
         return {
             "number": number,
             "side": side,
             "legs": _legs_label(side),
-            "direction_detail": "long_near_short_far" if side == "long_spread" else "short_near_long_far",
+            "direction_detail": "long_near_short_far"
+            if side == "long_spread"
+            else "short_near_long_far",
             "quantity": quantity,
             "signal": signal,
             "entry": entry,
@@ -1634,15 +2148,25 @@ class ProofService:
                 exiting = by_exit.get(day)
                 if exiting is not None:
                     end_near, end_far = exiting["exit"]["near_price"], exiting["exit"]["far_price"]
-                    move = position["sign"] * quantity * (
-                        (end_near - position["near"]) * near_mult - (end_far - position["far"]) * far_mult
+                    move = (
+                        position["sign"]
+                        * quantity
+                        * (
+                            (end_near - position["near"]) * near_mult
+                            - (end_far - position["far"]) * far_mult
+                        )
                     )
                     cost += sum((exiting["exit"]["costs"] or {}).values())
                     position = None
                 else:
                     end_near, end_far = row["near"], row["far"]
-                    move = position["sign"] * quantity * (
-                        (end_near - position["near"]) * near_mult - (end_far - position["far"]) * far_mult
+                    move = (
+                        position["sign"]
+                        * quantity
+                        * (
+                            (end_near - position["near"]) * near_mult
+                            - (end_far - position["far"]) * far_mult
+                        )
                     )
                     position["near"], position["far"] = end_near, end_far
                 mark += move
@@ -1651,8 +2175,13 @@ class ProofService:
                 sign = 1 if entering["side"] == "long_spread" else -1
                 entry = entering["entry"]
                 cost += sum((entry["costs"] or {}).values())
-                mark += sign * quantity * (
-                    (row["near"] - entry["near_price"]) * near_mult - (row["far"] - entry["far_price"]) * far_mult
+                mark += (
+                    sign
+                    * quantity
+                    * (
+                        (row["near"] - entry["near_price"]) * near_mult
+                        - (row["far"] - entry["far_price"]) * far_mult
+                    )
                 )
                 position = {"sign": sign, "near": row["near"], "far": row["far"]}
             funding = float(row.get("funding_rub") or 0.0)
@@ -1737,7 +2266,10 @@ class ProofService:
         hurdle = sum(trade["lqdt_on_margin_rub"] for trade in trades)
         cumulative = ledger[-1]["cumulative_net_rub"] if ledger else 0.0
         volumes = [
-            min(row.get("near_session_volume", row.get("near_volume")), row.get("far_session_volume", row.get("far_volume")))
+            min(
+                row.get("near_session_volume", row.get("near_volume")),
+                row.get("far_session_volume", row.get("far_volume")),
+            )
             for row in series_rows
             if row.get("near_session_volume", row.get("near_volume")) is not None
             and row.get("far_session_volume", row.get("far_volume")) is not None
@@ -1748,7 +2280,8 @@ class ProofService:
         trade_volume_rule = (
             all(
                 min(trade[side].get("near_volume") or 0, trade[side].get("far_volume") or 0) > 0
-                for trade in trades for side in ("entry", "exit")
+                for trade in trades
+                for side in ("entry", "exit")
             )
             if trades
             else True
@@ -1772,10 +2305,13 @@ class ProofService:
             "universe": PAIR_UNIVERSE,
             "status": "exploratory_proxy_not_live",
             "price_role": (
-                (f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, справочное закрытие сигнального бара, не исполнимая доходность"
-                 if fill_label == "reference_same_bar" else
-                 f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, заполнение по открытию, отметки по закрытию"
-                 if fill_label == "next_open" else f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, следующее закрытие (прокси)")
+                (
+                    f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, справочное закрытие сигнального бара, не исполнимая доходность"
+                    if fill_label == "reference_same_bar"
+                    else f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, заполнение по открытию, отметки по закрытию"
+                    if fill_label == "next_open"
+                    else f"ISS: свеча {get_timeframe(series_rows[0].get('timeframe', '1d')).label}, следующее закрытие (прокси)"
+                )
                 if strategy == "mean_reversion"
                 else "ISS: расчётная цена на конец дня (прокси)"
             ),
@@ -1790,7 +2326,9 @@ class ProofService:
                 "near_point_value_rub": _point_value(terms[near]) if terms[near] else None,
                 "far_point_value_rub": _point_value(terms[far]) if terms[far] else None,
                 "far_contract_historical_evidence": terms[far].get("historical_evidence"),
-                "far_contract_specification_basis": terms[far].get("historical_specification_basis"),
+                "far_contract_specification_basis": terms[far].get(
+                    "historical_specification_basis"
+                ),
                 "spread_instrument": None,
             },
             "window": {
@@ -1802,9 +2340,13 @@ class ProofService:
                 "far": far,
                 "min_spread_volume": None,
                 "min_leg_volume": min_leg_volume,
-                "tradable_every_day": bool(min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME),
+                "tradable_every_day": bool(
+                    min_leg_volume is not None and min_leg_volume >= MIN_DAILY_VOLUME
+                ),
                 "min_daily_volume_rule": MIN_DAILY_VOLUME,
-                "excluded_volume_observations": sum(not row.get("volume_eligible", True) for row in series_rows),
+                "excluded_volume_observations": sum(
+                    not row.get("volume_eligible", True) for row in series_rows
+                ),
                 "passes_capital_screen": risk["summary"]["all_scenarios_passed"],
                 "max_pair_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
             },
@@ -1812,7 +2354,9 @@ class ProofService:
                 "point_value_rub": _point_value(terms[near]) if terms[near] else None,
                 "tick_size": terms[near].get("tick_size") if terms[near] else None,
                 "tariff_group": common_group,
-                "taker_rate_percent": TAKER_RATE_PERCENT.get(common_group) if common_group != "mixed" else None,
+                "taker_rate_percent": TAKER_RATE_PERCENT.get(common_group)
+                if common_group != "mixed"
+                else None,
                 "broker_fee_rub": 0.0,
             },
             "series": series_rows,
@@ -1829,20 +2373,34 @@ class ProofService:
                 "cost_totals": _cost_totals(trades),
                 "lqdt_on_margin_rub": round(hurdle, 2),
                 "excess_over_lqdt_rub": round(net - hurdle, 2),
-                "max_excess_drawdown_rub": round(max((float(row.get("D") or 0.0) for row in daily_rows), default=0.0), 2),
+                "max_excess_drawdown_rub": round(
+                    max((float(row.get("D") or 0.0) for row in daily_rows), default=0.0), 2
+                ),
                 "ledger_reconciliation_rub": round(net - cumulative, 2),
                 "fx_point_value_drift_rub": None,
             },
             "notes": [
                 "Сопоставимый ценовой путь LQDT — не сверка с выпиской по счёту.",
                 "Текущие снапшоты контрактов/маржи — запасные допущения, а не датированные условия брокера.",
-                *([f"Исторические параметры дальней ноги используют fallback: {terms[far].get('historical_specification_basis')}."] if terms[far].get("historical_specification_basis") else []),
+                *(
+                    [
+                        f"Исторические параметры дальней ноги используют fallback: {terms[far].get('historical_specification_basis')}."
+                    ]
+                    if terms[far].get("historical_specification_basis")
+                    else []
+                ),
                 "Свободные средства держатся в LQDT, маржинальные средства ничего не зарабатывают (A-11); бенчмарк держит весь капитал в LQDT.",
                 "Цены — candle/расчётные прокси, не исполнимые заполнения.",
                 "Издержки: опубликованный тариф MOEX taker, нулевая брокерская комиссия VTB до 2026-12-31, проскальзывание как параметр.",
                 "Отбор по капиталу использует фиксированные рабочие буферы и текущие снапшоты маржи, а не потери, известные заранее.",
                 *notes,
-                *([f"Проверка правила объёма в дни сделок: {'пройдена' if trade_volume_rule else 'нарушена'}."] if trades else []),
+                *(
+                    [
+                        f"Проверка правила объёма в дни сделок: {'пройдена' if trade_volume_rule else 'нарушена'}."
+                    ]
+                    if trades
+                    else []
+                ),
             ],
             "provenance": provenance,
         }
@@ -1852,7 +2410,15 @@ class ProofService:
             {
                 "selection": payload["selection"],
                 "daily": payload["series"],
-                **({"funding_evidence": {k:v for k,v in provenance.items() if k.startswith("funding_")}} if "funding_policy" in provenance else {}),
+                **(
+                    {
+                        "funding_evidence": {
+                            k: v for k, v in provenance.items() if k.startswith("funding_")
+                        }
+                    }
+                    if "funding_policy" in provenance
+                    else {}
+                ),
                 "source_hashes": {
                     key: value
                     for key, value in provenance.items()
@@ -1863,7 +2429,9 @@ class ProofService:
         return payload
 
 
-def _load_contracts_for_side_cost(contracts_path: Path, near: str, far: str) -> dict[str, dict[str, Any]]:
+def _load_contracts_for_side_cost(
+    contracts_path: Path, near: str, far: str
+) -> dict[str, dict[str, Any]]:
     payload = json.loads(contracts_path.read_text(encoding="utf-8"))
     rows = list(payload.get("instruments", []))
     historical_path = contracts_path.parent / "historical-contracts.json"

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from moex_spread_lab.accounting.costs import tariff_profile
 from moex_spread_lab.core.contracts import (
@@ -16,6 +17,7 @@ from moex_spread_lab.core.contracts import (
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
+
 from ..base import PRICE_FILLS, validate_parameter_map
 from .engine import compute_pair_entry_bands, run_mean_reversion_baseline
 
@@ -35,7 +37,9 @@ class PairMeanReversionPlugin:
     supported_fills = ("next_open", "next_close", "reference_same_bar")
     requires_daily_bars = False
 
-    def parameter_schema(self, context: InstrumentContext | None = None) -> tuple[ParameterSpec, ...]:
+    def parameter_schema(
+        self, context: InstrumentContext | None = None
+    ) -> tuple[ParameterSpec, ...]:
         return _SCHEMA
 
     def validate_parameters(
@@ -66,7 +70,12 @@ class PairMeanReversionPlugin:
     ) -> StrategyIntentRun:
         if fill not in PRICE_FILLS:
             raise W0Error("Выбранный режим исполнения не поддерживается этой стратегией.")
-        validated = self.validate_parameters(params, InstrumentContext(universe=window.universe, pair=window.pair, timeframe=window.timeframe))
+        validated = self.validate_parameters(
+            params,
+            InstrumentContext(
+                universe=window.universe, pair=window.pair, timeframe=window.timeframe
+            ),
+        )
         verdict = self.check_compatibility(window)
         if not verdict.compatible:
             raise W0Error(verdict.reason or "incompatible window")
@@ -107,7 +116,9 @@ class PairMeanReversionPlugin:
         )
         intents = tuple(
             {
-                "side": "long_spread" if row["direction"] == "long_near_short_far" else "short_spread",
+                "side": "long_spread"
+                if row["direction"] == "long_near_short_far"
+                else "short_spread",
                 "entry_date": row["entry_date"],
                 "exit_date": row["exit_date"],
                 "entry_near_fill": row["entry_near_fill"],

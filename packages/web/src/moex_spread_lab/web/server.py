@@ -35,7 +35,6 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
     ScreenerInputs,
     _candle_summary,
-    _history_source as _pair_history_source,
     _leg_volumes,
     _offline_only,
     _pair,
@@ -43,10 +42,17 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     _parameters,
     _positive_leg_volume_dates,
     _session_volumes,
-    build_result as _pair_build_result,
-    catalog as _pair_catalog,
     execution_settings,
     pair_price_inputs,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    _history_source as _pair_history_source,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    build_result as _pair_build_result,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    catalog as _pair_catalog,
 )
 
 from .routes_legacy import LEGACY_POST_ROUTES, handle_get_legacy, handle_post_legacy
@@ -97,11 +103,11 @@ __all__ = [
     "SCREEN_PAIRS",
     "STATIC_DIR",
     "STRATEGIES",
+    "VENDOR_DIR",
+    "_CANDLE_SUMMARY_CACHE",
     "ScreenerError",
     "ScreenerInputs",
     "ScreenerStore",
-    "VENDOR_DIR",
-    "_CANDLE_SUMMARY_CACHE",
     "_candle_summary",
     "_history_source",
     "_leg_volumes",
@@ -115,6 +121,7 @@ __all__ = [
     "catalog",
     "execution_settings",
     "fetch_history",
+    "get_timeframe",
     "make_handler",
     "pair_price_inputs",
     "read_settings",
@@ -122,7 +129,6 @@ __all__ = [
     "serve",
     "strategy_registry_payload",
     "timeframe_options",
-    "get_timeframe",
 ]
 
 
@@ -249,7 +255,9 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             path = urlsplit(self.path).path
             if path in {"/", "/proof"}:
                 try:
-                    self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
+                    self._send(
+                        200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8"
+                    )
                 except OSError:
                     self._json(404, {"error": "not found"})
                 return
@@ -304,10 +312,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             if path not in _ALL_POST_ROUTES:
                 self._json(404, {"error": "not found"})
                 return
-            if (
-                self.headers.get("Content-Type", "").split(";", 1)[0]
-                != "application/json"
-            ):
+            if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
                 self._json(415, {"error": "JSON body required"})
                 return
             try:

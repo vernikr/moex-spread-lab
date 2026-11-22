@@ -13,15 +13,16 @@ from pathlib import Path
 
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
+
 from proof_fixtures import funding_winner, rising_calendar, two_calendar_windows
+
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_REPO_ROOT / "packages" / "accounting" / "tests"))
 sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
-from test_global_capital import PAIR
-
-from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from test_global_capital import PAIR
 
 PAIR_URL = "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
 CAL_URL = "/proof?universe=calendar_native&asset=SR&pair=SRM3%2FSRU3&strategy=zscore_mean_reversion"
@@ -34,9 +35,7 @@ REMOVED = (
 
 
 def post(page, path):
-    return page.expect_response(
-        lambda r: r.url.endswith("/api/proof/" + path), timeout=30000
-    )
+    return page.expect_response(lambda r: r.url.endswith("/api/proof/" + path), timeout=30000)
 
 
 def tune(page, expected):
@@ -56,13 +55,9 @@ def tune(page, expected):
 
 def presentation(page):
     assert all(text not in page.locator("body").inner_text() for text in REMOVED)
+    assert page.locator("#strategy-form").evaluate("n=>getComputedStyle(n).borderTopWidth") == "1px"
     assert (
-        page.locator("#strategy-form").evaluate("n=>getComputedStyle(n).borderTopWidth")
-        == "1px"
-    )
-    assert (
-        page.locator("#strategy-form").evaluate("n=>getComputedStyle(n).borderTopStyle")
-        == "solid"
+        page.locator("#strategy-form").evaluate("n=>getComputedStyle(n).borderTopStyle") == "solid"
     )
     rows = page.locator("#window-list tr[data-leaf]").evaluate_all(
         "ns=>ns.map(n=>({from:n.dataset.from,to:n.dataset.to,text:n.querySelector('button').textContent,wrap:getComputedStyle(n.querySelector('button')).whiteSpace}))"
@@ -90,23 +85,15 @@ def run_pair(browser, url):
     assert page.evaluate("payload.execution_reference")
     expect(page.locator("#period-result .result-warning")).to_have_count(0)
     r = tune(page, "funding_only")
-    assert {
-        (a["strategy"], a["fill"]) for a in r["strategy_search"]["alternatives"]
-    } == {
+    assert {(a["strategy"], a["fill"]) for a in r["strategy_search"]["alternatives"]} == {
         ("mean_reversion", "reference_same_bar"),
         ("funding_only", "same_day_settlement"),
     }
     expect(page.locator("#strategy")).to_have_value("funding_only")
     expect(page.locator("#entry")).to_be_hidden()
     assert not page.evaluate("payload.execution_reference")
-    assert (
-        r["selected_fill"]
-        == page.evaluate("payload.selection.fill")
-        == "same_day_settlement"
-    )
-    expect(page.locator("#chart-h-spread-raw")).to_have_attribute(
-        "data-signal-lines", "0"
-    )
+    assert r["selected_fill"] == page.evaluate("payload.selection.fill") == "same_day_settlement"
+    expect(page.locator("#chart-h-spread-raw")).to_have_attribute("data-signal-lines", "0")
     # A same-day native winner must not overwrite the global price_fill preference.
     with post(page, "run"):
         page.locator("#strategy").select_option("mean_reversion")
@@ -162,9 +149,7 @@ def run_calendar(browser, url):
         str(page.evaluate("payload.selection.parameters.threshold_pp"))
     )
     assert page.evaluate("payload.selection.fill") == "next_close"
-    expect(page.locator("#group-profile-state")).not_to_have_attribute(
-        "data-state", "loading"
-    )
+    expect(page.locator("#group-profile-state")).not_to_have_attribute("data-state", "loading")
     presentation(page)
     page.set_viewport_size({"width": 400, "height": 850})
     assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
@@ -214,18 +199,13 @@ def run_dash(browser, url, expected):
     expect(row).to_have_attribute("data-reading", "measured")
     expect(row).to_have_attribute("data-rate-state", "unavailable")
     expect(row).to_have_attribute("data-run-id", expected["run_id"])
-    expect(row.locator("[data-metric=trades]")).to_have_text(
-        str(expected["summary"]["trades"])
-    )
+    expect(row.locator("[data-metric=trades]")).to_have_text(str(expected["summary"]["trades"]))
     rate = row.locator("[data-metric=rate]")
     expect(rate).to_have_text("—")
     checks = expected["evaluation"]["account_checks"]
     title = rate.get_attribute("title")
     assert "Годовая оценка недоступна" in title
-    assert (
-        "Дефицит свободных средств" in title
-        and checks["first_cash_shortfall_date"] in title
-    )
+    assert "Дефицит свободных средств" in title and checks["first_cash_shortfall_date"] in title
     assert page.evaluate("x=>fmt(x,2)", checks["minimum_free_cash_rub"]) in title
     assert "минимум" in title and "Входы могли пройти раньше" in title
     expect(rate).to_have_attribute("tabindex", "0")

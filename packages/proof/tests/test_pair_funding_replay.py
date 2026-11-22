@@ -1,4 +1,5 @@
 """Characterize pair funding timing against the existing baseline, not a proof adapter."""
+
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
@@ -10,27 +11,60 @@ RATES = dict(zip(DATES, [0.2, 0.3, 0.4, 0.5, 0.7]))
 
 
 def trade(side="long_spread", terminal=False):
-    return {"side": side, "entry": {"date": DATES[3]}, "exit": {"date": DATES[4]}, "open_at_end": terminal}
+    return {
+        "side": side,
+        "entry": {"date": DATES[3]},
+        "exit": {"date": DATES[4]},
+        "open_at_end": terminal,
+    }
 
 
 @pytest.mark.parametrize("side,z", [("long_spread", -2.0), ("short_spread", 2.0)])
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("fill", ["open", "close"])
 def test_funding_matches_existing_baseline(side, z, terminal, fill):
-    rows = [{"date": d, "near_open": 100 + i, "far_open": 100,
-             "near_close": 100.5 + i, "far_close": 100.5,
-             "spread_ticks": i, "benchmark_price": 1, "benchmark_source_kind": "observed"}
-            for i, d in enumerate(DATES)]
+    rows = [
+        {
+            "date": d,
+            "near_open": 100 + i,
+            "far_open": 100,
+            "near_close": 100.5 + i,
+            "far_close": 100.5,
+            "spread_ticks": i,
+            "benchmark_price": 1,
+            "benchmark_source_kind": "observed",
+        }
+        for i, d in enumerate(DATES)
+    ]
     contract = {"initial_margin": 100, "tick_value": 1, "tick_size": 1, "lot_size": 10}
-    series = {"rows": rows, "contracts": {"N": contract, "F": contract}, "near": "N", "far": "F", "provenance": {}}
-    report = run_mean_reversion_baseline(series, lookback=2, entry_z=1.5, exit_z=.5,
-        quantity=3, fill=fill, funding_swaprates=RATES,
-        precomputed_z=[None, None, None, z, z if terminal else 0])
-    replay = replay_pair_funding(DATES, [trade(side, terminal)], RATES, near_lot_size=10, quantity=3)
+    series = {
+        "rows": rows,
+        "contracts": {"N": contract, "F": contract},
+        "near": "N",
+        "far": "F",
+        "provenance": {},
+    }
+    report = run_mean_reversion_baseline(
+        series,
+        lookback=2,
+        entry_z=1.5,
+        exit_z=0.5,
+        quantity=3,
+        fill=fill,
+        funding_swaprates=RATES,
+        precomputed_z=[None, None, None, z, z if terminal else 0],
+    )
+    replay = replay_pair_funding(
+        DATES, [trade(side, terminal)], RATES, near_lot_size=10, quantity=3
+    )
     assert len(report["trades"]) == 1
-    assert [round(row["funding_rub"], 8) for row in replay] == [row["funding_rub"] for row in report["daily"]]
+    assert [round(row["funding_rub"], 8) for row in replay] == [
+        row["funding_rub"] for row in report["daily"]
+    ]
     assert round(sum(row["funding_rub"] for row in replay), 8) == report["trades"][0]["funding_rub"]
-    assert replay[-1]["position_at_clearing"] == ((1 if side == "long_spread" else -1) if terminal else 0)
+    assert replay[-1]["position_at_clearing"] == (
+        (1 if side == "long_spread" else -1) if terminal else 0
+    )
 
 
 def test_missing_rate_is_not_silently_zero():
@@ -41,14 +75,21 @@ def test_missing_rate_is_not_silently_zero():
     assert rows[0]["funding_rub"] == 0
 
 
-@pytest.mark.parametrize("changes", [
-    {"dates": DATES[::-1]}, {"dates": DATES + [DATES[-1]]},
-    {"rates": {DATES[0]: float("nan")}}, {"rates": {"unknown": 1}},
-    {"near_lot_size": 0}, {"quantity": True}, {"quantity": 0},
-    {"trades": [trade(), trade()]},
-    {"trades": [{**trade(), "open_at_end": 1}]},
-    {"trades": [{**trade(), "exit": {"date": DATES[2]}}]},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"dates": DATES[::-1]},
+        {"dates": DATES + [DATES[-1]]},
+        {"rates": {DATES[0]: float("nan")}},
+        {"rates": {"unknown": 1}},
+        {"near_lot_size": 0},
+        {"quantity": True},
+        {"quantity": 0},
+        {"trades": [trade(), trade()]},
+        {"trades": [{**trade(), "open_at_end": 1}]},
+        {"trades": [{**trade(), "exit": {"date": DATES[2]}}]},
+    ],
+)
 def test_invalid_inputs_fail_closed(changes):
     args = {"dates": DATES, "trades": [trade()], "rates": RATES, "near_lot_size": 10, "quantity": 1}
     args.update(changes)
@@ -62,7 +103,13 @@ def test_multiple_trades_and_same_bar_reentry():
     replay = replay_pair_funding(DATES, [first, second], RATES, near_lot_size=1, quantity=1)
     assert [row["position_at_clearing"] for row in replay] == [1, 0, -1, -1, 0]
     with pytest.raises(W0Error):
-        replay_pair_funding(DATES, [first, {**second, "entry": {"date": DATES[1]}}], RATES, near_lot_size=1, quantity=1)
+        replay_pair_funding(
+            DATES,
+            [first, {**second, "entry": {"date": DATES[1]}}],
+            RATES,
+            near_lot_size=1,
+            quantity=1,
+        )
 
 
 def test_overflow_fails_closed():
@@ -72,17 +119,38 @@ def test_overflow_fails_closed():
 
 def test_daily_resolver_keeps_estimates_zero_and_no_clearing_distinct():
     from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
+    from moex_spread_lab.strategies.funding_carry.proof_funding import (
+        FundingTimeline,
+        FundingWindow,
+    )
+
     days = ["2025-08-15", "2025-08-16", "2025-08-17", "2025-08-18", "2025-08-19"]
     published = {days[0]: 0.0, days[3]: None, days[4]: -0.04}
     window = FundingWindow(FundingTimeline("GAZPF", published, days), days)
-    position = {"side": "long_spread", "entry": {"date": days[0]}, "exit": {"date": days[4]}, "open_at_end": True}
+    position = {
+        "side": "long_spread",
+        "entry": {"date": days[0]},
+        "exit": {"date": days[4]},
+        "open_at_end": True,
+    }
     result = replay_daily_pair_funding(days, [position], window, near_lot_size=10, quantity=2)
     rows = result["daily"]
-    assert [r["rate_kind"] for r in rows] == ["published", "no_clearing", "no_clearing", "midpoint", "published"]
+    assert [r["rate_kind"] for r in rows] == [
+        "published",
+        "no_clearing",
+        "no_clearing",
+        "midpoint",
+        "published",
+    ]
     assert [r["rate"] for r in rows] == [0, None, None, -0.02, -0.04]
-    assert [r["funding_status"] for r in rows] == ["applied", "no_clearing", "no_clearing", "applied", "applied"]
-    assert [r["funding_rub"] for r in rows] == [0, 0, 0, .4, .8]
+    assert [r["funding_status"] for r in rows] == [
+        "applied",
+        "no_clearing",
+        "no_clearing",
+        "applied",
+        "applied",
+    ]
+    assert [r["funding_rub"] for r in rows] == [0, 0, 0, 0.4, 0.8]
     assert result["provenance"]["funding_estimated_dates"] == [days[3]]
     assert set(result["provenance"]["funding_no_clearing_dates"]) == set(days[1:3])
     result["provenance"]["funding_estimated_dates"].clear()
@@ -91,11 +159,17 @@ def test_daily_resolver_keeps_estimates_zero_and_no_clearing_distinct():
 
 def test_daily_resolver_rejects_future_anchor_gap_and_partial_mismatch():
     from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
+    from moex_spread_lab.strategies.funding_carry.proof_funding import (
+        FundingTimeline,
+        FundingWindow,
+    )
+
     days = DATES
-    published = {days[0]: 0.1, days[1]: None, days[2]: .3, days[3]: .4, days[4]: .5}
+    published = {days[0]: 0.1, days[1]: None, days[2]: 0.3, days[3]: 0.4, days[4]: 0.5}
     window = FundingWindow(FundingTimeline("TEST", published, days), days)
-    call = lambda ds, cutoff=None: replay_daily_pair_funding(ds, [], window, through=cutoff, near_lot_size=1, quantity=1)
+    call = lambda ds, cutoff=None: replay_daily_pair_funding(
+        ds, [], window, through=cutoff, near_lot_size=1, quantity=1
+    )
     with pytest.raises(W0Error):
         call(days[:2], days[1])  # midpoint's right anchor is after cutoff
     with pytest.raises(W0Error):
@@ -110,8 +184,12 @@ def test_daily_resolver_rejects_future_anchor_gap_and_partial_mismatch():
 
 def test_training_cutoff_cannot_borrow_holdout_anchor():
     from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
-    rates = {DATES[0]: .1, DATES[1]: .2, DATES[2]: None, DATES[3]: .4, DATES[4]: .5}
+    from moex_spread_lab.strategies.funding_carry.proof_funding import (
+        FundingTimeline,
+        FundingWindow,
+    )
+
+    rates = {DATES[0]: 0.1, DATES[1]: 0.2, DATES[2]: None, DATES[3]: 0.4, DATES[4]: 0.5}
     window = FundingWindow(FundingTimeline("TEST", rates, DATES), DATES, validation_percent=40)
     with pytest.raises(W0Error):
         replay_daily_pair_funding(DATES, [], window, near_lot_size=1, quantity=1)
@@ -119,25 +197,72 @@ def test_training_cutoff_cannot_borrow_holdout_anchor():
 
 def test_no_clearing_requires_explicit_distinct_evidence():
     with pytest.raises(W0Error):
-        replay_pair_funding(DATES, [trade()], RATES, near_lot_size=1, quantity=1, no_clearing_dates=[DATES[3]])
+        replay_pair_funding(
+            DATES, [trade()], RATES, near_lot_size=1, quantity=1, no_clearing_dates=[DATES[3]]
+        )
 
 
 def test_resolved_evidence_reconciles_with_baseline_including_nonclearing():
     from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
-    days = ["2025-08-13", "2025-08-14", "2025-08-15", "2025-08-16", "2025-08-17", "2025-08-18", "2025-08-19"]
-    published = {days[0]: .01, days[1]: .02, days[2]: .03, days[5]: None, days[6]: .05}
+    from moex_spread_lab.strategies.funding_carry.proof_funding import (
+        FundingTimeline,
+        FundingWindow,
+    )
+
+    days = [
+        "2025-08-13",
+        "2025-08-14",
+        "2025-08-15",
+        "2025-08-16",
+        "2025-08-17",
+        "2025-08-18",
+        "2025-08-19",
+    ]
+    published = {days[0]: 0.01, days[1]: 0.02, days[2]: 0.03, days[5]: None, days[6]: 0.05}
     window = FundingWindow(FundingTimeline("GAZPF", published, days), days)
     contract = {"initial_margin": 100, "tick_value": 1, "tick_size": 1, "lot_size": 10}
-    rows = [{"date": d, "near_open": 100 + i, "far_open": 100, "near_close": 100.5 + i,
-             "far_close": 100.5, "spread_ticks": i, "benchmark_price": 1,
-             "benchmark_source_kind": "observed"} for i, d in enumerate(days)]
-    series = {"rows": rows, "contracts": {"N": contract, "F": contract}, "near": "N", "far": "F", "provenance": {}}
-    baseline = run_mean_reversion_baseline(series, lookback=2, entry_z=1.5, exit_z=.5,
-        quantity=2, fill="open", funding_swaprates=window.resolve().rates,
-        precomputed_z=[None, None, None, -2, -2, -2, -2])
-    intent = {"side": "long_spread", "entry": {"date": days[3]}, "exit": {"date": days[-1]}, "open_at_end": True}
+    rows = [
+        {
+            "date": d,
+            "near_open": 100 + i,
+            "far_open": 100,
+            "near_close": 100.5 + i,
+            "far_close": 100.5,
+            "spread_ticks": i,
+            "benchmark_price": 1,
+            "benchmark_source_kind": "observed",
+        }
+        for i, d in enumerate(days)
+    ]
+    series = {
+        "rows": rows,
+        "contracts": {"N": contract, "F": contract},
+        "near": "N",
+        "far": "F",
+        "provenance": {},
+    }
+    baseline = run_mean_reversion_baseline(
+        series,
+        lookback=2,
+        entry_z=1.5,
+        exit_z=0.5,
+        quantity=2,
+        fill="open",
+        funding_swaprates=window.resolve().rates,
+        precomputed_z=[None, None, None, -2, -2, -2, -2],
+    )
+    intent = {
+        "side": "long_spread",
+        "entry": {"date": days[3]},
+        "exit": {"date": days[-1]},
+        "open_at_end": True,
+    }
     replay = replay_daily_pair_funding(days, [intent], window, near_lot_size=10, quantity=2)
-    assert [round(r["funding_rub"], 8) for r in replay["daily"]] == [r["funding_rub"] for r in baseline["daily"]]
-    assert round(sum(r["funding_rub"] for r in replay["daily"]), 8) == baseline["summary"]["funding_rub"]
+    assert [round(r["funding_rub"], 8) for r in replay["daily"]] == [
+        r["funding_rub"] for r in baseline["daily"]
+    ]
+    assert (
+        round(sum(r["funding_rub"] for r in replay["daily"]), 8)
+        == baseline["summary"]["funding_rub"]
+    )
     assert baseline["trades"][0]["funding_rub"] == baseline["summary"]["funding_rub"]

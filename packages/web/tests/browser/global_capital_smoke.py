@@ -10,9 +10,9 @@ from pathlib import Path
 
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import two_calendar_windows
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import two_calendar_windows
 
 
 def run(browser, url):
@@ -24,9 +24,7 @@ def run(browser, url):
         page.on("pageerror", lambda e: errors.append(str(e)))
 
     def post(page, route):
-        return page.expect_response(
-            lambda r: r.url.endswith("/api/" + route), timeout=20000
-        )
+        return page.expect_response(lambda r: r.url.endswith("/api/" + route), timeout=20000)
 
     def amount_ready(page, amount):
         page.wait_for_function(
@@ -46,9 +44,7 @@ def run(browser, url):
         amount_ready(cal, amount)
 
     def current_table_matches(page):
-        expect(page.locator("#window-list [data-reading=pending]")).to_have_count(
-            0, timeout=20000
-        )
+        expect(page.locator("#window-list [data-reading=pending]")).to_have_count(0, timeout=20000)
         row = page.locator("#window-list tr.current")
         expect(row).to_have_attribute("data-run-id", page.evaluate("payload.run_id"))
         expect(row.locator("[data-metric=trades]")).to_have_text(
@@ -69,9 +65,7 @@ def run(browser, url):
         ready(pair, "training")
         ready(cal, "training")
 
-    pair.goto(
-        url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
-    )
+    pair.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion")
     cal.goto(
         url
         + "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
@@ -92,16 +86,9 @@ def run(browser, url):
     original_run = pair.evaluate("payload.run_id")
     for page in (pair, cal):
         expect(page.locator("#global-capital")).to_have_count(1)
-        expect(
-            page.locator("#selection-count,#group-count,#sizing-hint")
-        ).to_have_count(0)
-        assert (
-            "Нет отметок · подбор для открытого окна"
-            not in page.locator("body").inner_text()
-        )
-        assert (
-            "Размер каждой сделки — максимум" not in page.locator("body").inner_text()
-        )
+        expect(page.locator("#selection-count,#group-count,#sizing-hint")).to_have_count(0)
+        assert "Нет отметок · подбор для открытого окна" not in page.locator("body").inner_text()
+        assert "Размер каждой сделки — максимум" not in page.locator("body").inner_text()
 
     # Drive both previously noisy result branches without erasing the audit metadata.
     reason = "Свободные средства недостаточны для маржи."
@@ -111,9 +98,7 @@ def run(browser, url):
     )
     assert pair.evaluate("payload.evaluation.result.reason") == reason
     expect(pair.locator("#period-result")).not_to_contain_text(reason)
-    expect(pair.locator("#period-result")).not_to_contain_text(
-        "допуск разрешён в настройках"
-    )
+    expect(pair.locator("#period-result")).not_to_contain_text("допуск разрешён в настройках")
 
     # Invalid input and cancel never save or rerun.
     pair.locator("#open-settings").click()
@@ -132,9 +117,9 @@ def run(browser, url):
     for page, before in zip((pair, cal), original_sizes):
         assert page.evaluate("payload.trades[0].quantity") < before
         assert page.evaluate("payload.sizing.initial_capital_rub") == 15000
-        expect(
-            page.locator("#window-list tr.current [data-gate=capital] span")
-        ).to_have_attribute("data-state", "fail")
+        expect(page.locator("#window-list tr.current [data-gate=capital] span")).to_have_attribute(
+            "data-state", "fail"
+        )
         current_table_matches(page)
     expect(pair.locator("#lookback")).to_have_value("6")
     expect(cal.locator("#clookback")).to_have_value("10")
@@ -168,9 +153,9 @@ def run(browser, url):
     )
     assert pair.evaluate("checked.size") == 2
     expect(pair.locator("#group-fill,#fill,#cfill")).to_have_count(0)
-    expect(
-        pair.locator("#window-list tr.current [data-gate=capital] span")
-    ).to_have_attribute("data-state", "pass")
+    expect(pair.locator("#window-list tr.current [data-gate=capital] span")).to_have_attribute(
+        "data-state", "pass"
+    )
 
     with expect_api_json(pair, "/api/proof/optimize") as result:
         pair.locator("#auto-tune").click()
@@ -185,9 +170,7 @@ def run(browser, url):
     expect(pair.locator("#tune-state")).to_be_empty()
     current_table_matches(pair)
     expect(pair.locator("#batch-result")).not_to_contain_text("допуск разрешён")
-    expect(pair.locator("#batch-result")).not_to_contain_text(
-        "Свободные средства недостаточны"
-    )
+    expect(pair.locator("#batch-result")).not_to_contain_text("Свободные средства недостаточны")
 
     change_fill(pair, "reference_same_bar")
     expect(pair.locator("#period-result .result-warning")).to_have_count(0)

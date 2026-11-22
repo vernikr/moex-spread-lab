@@ -55,6 +55,7 @@ pythonpath = [
     "packages/proof/src",
     "packages/web/src",
     "src",
+    ".",
     "packages/data/tests",
     "packages/accounting/tests",
     "packages/strategies/tests",
@@ -75,7 +76,192 @@ testpaths = [
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.28,<2",
+    "complexipy>=4.0,<6",
+    "lizard>=1.17,<2",
     "pytest>=8.3,<10",
     "pytest-subtests>=0.14,<1",
     "pytest-xdist>=3.6,<4",
+    "ruff>=0.9,<1",
+    "vulture>=2.14,<3",
 ]
+
+# Code-health gate (docs/development/code-health-plan.md, Step 1).
+# Tier 1 runs via scripts/check_health.sh; baselines freeze legacy
+# violations so CI is green Day 1 while new violations fail.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = [
+    "packages/core/src",
+    "packages/data/src",
+    "packages/accounting/src",
+    "packages/strategies/src",
+    "packages/proof/src",
+    "packages/web/src",
+    "src",
+    "tests",
+    "packages/core/tests",
+    "packages/data/tests",
+    "packages/accounting/tests",
+    "packages/strategies/tests",
+    "packages/proof/tests",
+    "packages/web/tests",
+]
+extend-exclude = ["**/vendor/**", "**/__pycache__/**"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",
+    "F",
+    "I",
+    "B",
+    "BLE",
+    "UP",
+    "SIM",
+    "C4",
+    "PIE",
+    "C901",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "RUF",
+]
+ignore = [
+    "E501",
+    # RUF001/RUF003 flag intentional Russian UI strings/comments (AGENTS.md).
+    "RUF001",
+    "RUF003",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001", "E701", "E702", "RUF059", "E731"]
+"packages/*/tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001", "E701", "E702", "RUF059", "E731"]
+# Legacy ratchet (Step 1): frozen violations in existing files. New files
+# have no ignores and must be clean. Burn down per Step 4 of the plan.
+"packages/accounting/src/moex_spread_lab/accounting/account_risk.py" = ["PLR0913"]
+"packages/accounting/src/moex_spread_lab/accounting/cli.py" = ["PLR0911", "PLR0912"]
+"packages/accounting/src/moex_spread_lab/accounting/position_sizing.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/accounting/src/moex_spread_lab/accounting/research.py" = ["C901", "PLR0912", "PLR0915"]
+"packages/accounting/src/moex_spread_lab/accounting/run_artifact_import.py" = ["PLR0915"]
+"packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py" = ["C901", "PLR0912"]
+"packages/accounting/src/moex_spread_lab/accounting/validation.py" = ["PLR0912"]
+"packages/accounting/tests/test_position_sizing.py" = ["B905"]
+"packages/accounting/tests/test_run_artifact_import.py" = ["C401", "SIM117"]
+"packages/core/src/moex_spread_lab/core/_fastcore_loader.py" = ["BLE001"]
+"packages/core/src/moex_spread_lab/core/settings.py" = ["PLR0912"]
+"packages/core/src/moex_spread_lab/core/w0.py" = ["C901", "PLR0912"]
+"packages/core/tests/test_architecture_dag.py" = ["PLR0912"]
+"packages/core/tests/test_cli_plugins.py" = ["SIM117"]
+"packages/data/src/moex_spread_lab/data/benchmark/lineage.py" = ["B905", "PLR0912", "RUF007"]
+"packages/data/src/moex_spread_lab/data/cli.py" = ["C901", "PLR0911", "PLR0912", "PLR0915"]
+"packages/data/src/moex_spread_lab/data/iss/catalog.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915", "RUF007"]
+"packages/data/src/moex_spread_lab/data/lake/bar_types.py" = ["PLR0912"]
+"packages/data/src/moex_spread_lab/data/lake/data_lake.py" = ["B904", "B905", "C901", "F811", "PLR0912", "PLR0915", "RUF007", "SIM105"]
+"packages/data/src/moex_spread_lab/data/lake/data_refresh.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/data/src/moex_spread_lab/data/retention/data_archive_candidates.py" = ["B023", "PLR0912", "PLR0915"]
+"packages/data/src/moex_spread_lab/data/retention/data_inventory.py" = ["C901", "PIE810", "PLR0911", "PLR0912"]
+"packages/data/src/moex_spread_lab/data/retention/data_retention.py" = ["B023"]
+"packages/data/src/moex_spread_lab/data/retention/h1_archive.py" = ["C901", "PLR0912", "PLR0915", "SIM117"]
+"packages/data/tests/test_benchmark.py" = ["C408"]
+"packages/data/tests/test_h1_migration.py" = ["RUF005", "SIM117"]
+"packages/data/tests/test_h1_seal.py" = ["RUF005"]
+"packages/data/tests/test_iss.py" = ["RUF012"]
+"packages/data/tests/test_storage_policy.py" = ["SIM117"]
+"packages/proof/src/moex_spread_lab/proof_runtime/audit.py" = ["PLR0913"]
+"packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py" = ["B905", "E402", "PLR0911", "PLR0913"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py" = ["BLE001", "PLR0911", "PLR0912", "PLR0915", "SIM102", "SIM105"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py" = ["PLR0912", "PLR0915"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_windows.py" = ["B905"]
+"packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py" = ["B905", "C901", "PLR0912", "PLR0915"]
+"packages/proof/src/moex_spread_lab/proof_runtime/service.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/proof/tests/test_global_capital.py" = ["B905"]
+"packages/proof/tests/test_pair_funding_replay.py" = ["B905", "RUF005"]
+"packages/proof/tests/test_perf_equivalence.py" = ["C408", "C901", "PLR0912"]
+"packages/proof/tests/test_proof_batch.py" = ["B905"]
+"packages/proof/tests/test_proof_funding.py" = ["B905", "E741"]
+"packages/proof/tests/test_proof_search.py" = ["B905"]
+"packages/proof/tests/test_proof_windows.py" = ["B905"]
+"packages/strategies/src/moex_spread_lab/strategies/base.py" = ["B007", "C901", "PLR0912", "PLR0913"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py" = ["B905", "BLE001", "C901", "F601", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "RUF059"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar/intents.py" = ["C901", "PLR0912", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/engine.py" = ["PLR0913"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/plugin.py" = ["PLR0911", "SIM102"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/engine.py" = ["C901", "PLR0912", "PLR0913", "PLR0915", "RUF005"]
+"packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/plugin.py" = ["SIM102"]
+"packages/strategies/src/moex_spread_lab/strategies/cli.py" = ["C901", "PLR0911", "PLR0912", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/conformance.py" = ["C901"]
+"packages/strategies/src/moex_spread_lab/strategies/funding_carry/carry.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/funding_carry/funding_screen.py" = ["PLR0913"]
+"packages/strategies/src/moex_spread_lab/strategies/funding_carry/intents.py" = ["C901", "PLR0912"]
+"packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/analytics.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/pair_screener/intents.py" = ["C901", "PLR0912", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/pair_screener/pair_screener.py" = ["PLR0912", "PLR0915"]
+"packages/strategies/src/moex_spread_lab/strategies/pair_screener/screener.py" = ["PLR0913"]
+"packages/strategies/src/moex_spread_lab/strategies/s3_reference/engine.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"packages/strategies/tests/contract/test_strategy_conformance.py" = ["B023"]
+"packages/strategies/tests/test_carry.py" = ["B905", "C408"]
+"packages/web/src/moex_spread_lab/web/routes_proof.py" = ["PLR0913"]
+"packages/web/src/moex_spread_lab/web/server.py" = ["C901", "PLR0911", "SIM105"]
+"packages/web/tests/browser/automatic_size_smoke.py" = ["E741"]
+"packages/web/tests/browser/global_capital_smoke.py" = ["B905"]
+"packages/web/tests/browser/period_settings_smoke.py" = ["E402"]
+"packages/web/tests/browser/strategy_search_smoke.py" = ["E402"]
+"tests/funding_fixtures.py" = ["B905"]
+"tests/proof_fixtures.py" = ["B905"]
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+include = [
+    "packages/core/src",
+    "packages/data/src",
+    "packages/accounting/src",
+    "packages/strategies/src",
+    "packages/proof/src",
+    "packages/web/src",
+    "src",
+    "scripts",
+]
+exclude = ["**/vendor/**", "**/__pycache__/**"]
+extraPaths = [
+    "packages/core/src",
+    "packages/data/src",
+    "packages/accounting/src",
+    "packages/strategies/src",
+    "packages/proof/src",
+    "packages/web/src",
+    "src",
+    "scripts",
+]
+baselineFile = ".basedpyright/baseline.json"
+typeCheckingMode = "standard"
+strict = ["packages/core/src"]
+reportMissingTypeStubs = false
+# Namespace-package false positives (verified via --verbose: imports resolve
+# but the diagnostic persists). Missing imports are caught by the test suite
+# and the architecture DAG instead.
+reportMissingImports = "none"
+
+[tool.complexipy]
+paths = ["packages", "src", "scripts"]
+max-complexity-allowed = 15
+quiet = false
+
+[tool.vulture]
+paths = ["packages", "src", "scripts"]
+exclude = ["*/vendor/*"]
+min_confidence = 80
+sort_by_size = true

@@ -1,3 +1,3 @@
 """Money-market benchmark lineage (CBR RUONIA -> FXMM -> VTBM -> LQDT / RUSFAR)."""
 
-from .lineage import *  # noqa: F401,F403
+from .lineage import *  # noqa: F403

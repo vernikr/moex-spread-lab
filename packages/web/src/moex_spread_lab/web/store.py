@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import threading
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.proof_runtime.proof_pool import get_worker_pool
@@ -65,17 +65,13 @@ class ScreenerStore:
                 return
             record = {**result, "recorded_at": datetime.now(UTC).isoformat()}
             with path.open("a", encoding="utf-8") as handle:
-                handle.write(
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
-                )
+                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
 
     def save(self, result: dict[str, Any]) -> None:
         self._save(self.inputs.history, result)
 
     def save_screen(self, result: dict[str, Any]) -> None:
-        compact = {
-            key: result[key] for key in ("run_id", "schema_version", "selection")
-        }
+        compact = {key: result[key] for key in ("run_id", "schema_version", "selection")}
         compact["pairs"] = [
             {key: row[key] for key in ("id", "status", "metrics", "evaluation") if key in row}
             for row in result["pairs"]

@@ -18,9 +18,9 @@ and ``src/moex_spread_lab/`` using AST inspection (including function-level / la
 from __future__ import annotations
 
 import ast
-from functools import lru_cache
 import re
 import unittest
+from functools import lru_cache
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -206,9 +206,7 @@ def _discover_modules() -> dict[str, Path]:
     discovered: dict[str, Path] = {}
     roots = [UMBRELLA_DIR]
     if PACKAGES_DIR.is_dir():
-        roots.extend(
-            sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab"))
-        )
+        roots.extend(sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab")))
     for root in roots:
         for path in sorted(root.rglob("*.py")):
             key = _module_key(root, path)
@@ -348,10 +346,7 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
         modules, detailed_edges = _workspace_analysis()
-        adjacency = {
-            src: {dst for dst, _ in targets}
-            for src, targets in detailed_edges.items()
-        }
+        adjacency = {src: {dst for dst, _ in targets} for src, targets in detailed_edges.items()}
         cycles = [scc for scc in _tarjan_sccs(adjacency) if len(scc) > 1]
         self.assertEqual(
             cycles,
@@ -368,9 +363,7 @@ class ArchitectureDagTests(unittest.TestCase):
             for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
                 dst_layer = LAYER_ASSIGNMENTS[dst]
                 if dst_layer not in allowed:
-                    violations.append(
-                        f"{src}:{lineno} ({src_layer}) -> {dst} ({dst_layer})"
-                    )
+                    violations.append(f"{src}:{lineno} ({src_layer}) -> {dst} ({dst_layer})")
         self.assertEqual(
             violations,
             [],
@@ -379,7 +372,14 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         modules, detailed_edges = _workspace_analysis()
-        package_prefixes = ("core.", "data.", "accounting.", "strategies.", "proof_runtime.", "web.")
+        package_prefixes = (
+            "core.",
+            "data.",
+            "accounting.",
+            "strategies.",
+            "proof_runtime.",
+            "web.",
+        )
         package_roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
         violations: list[str] = []
         for src, targets in sorted(detailed_edges.items()):
@@ -490,7 +490,7 @@ class ArchitectureDagTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             for match in legacy_path.finditer(source):
                 if match.group(1) in shim_names:
-                    line = source[:match.start()].count(chr(10)) + 1
+                    line = source[: match.start()].count(chr(10)) + 1
                     violations.append(f"{path.relative_to(REPO_ROOT)}:{line} -> {match.group(0)}")
             tree = ast.parse(source, filename=str(path))
             for node in ast.walk(tree):

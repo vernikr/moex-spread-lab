@@ -1,6 +1,6 @@
 # Automated Code Health & AI-Readability Plan
 
-Status: **Proposal & Implementation Blueprint** (2026-11-21). No runtime code, dependencies, or CI workflows are modified in this turn.
+Status: **Step 1 implemented and locally validated** (2026-11-21); Steps 2–5 remain deferred. Development-only tooling and ratchets were added; production runtime dependencies and CI workflows are unchanged.
 
 ## 1. Objective & Design Constraints
 
@@ -19,9 +19,9 @@ Status: **Proposal & Implementation Blueprint** (2026-11-21). No runtime code, d
 
 ---
 
-## 2. Empirical Baseline of This Repository (Measured 2026-11-21)
+## 2. Initial Root-Layer Audit Snapshot (Measured 2026-11-21)
 
-Before choosing tools, the current repository (`57` Python source files / `20,236` LOC, `1` C99 extension / `1,414` LOC, `1` single-file UI / `1,176` LOC, `120` code/test commits) was audited statically and via `git log`:
+The original audit counted the root Python source layer (`57` files / `20,236` LOC), `_fastcore.c` (`1,414` LOC), and the single-file UI (`1,176` LOC) across `120` code/test commits. These root-layer counts are not totals for the current Phase 6 package tree; Step 1's baseline below covers the current workspace.
 
 | Dimension | Measured baseline (2026-11-21) | Primary offenders | Impact on AI agents & maintenance |
 |---|---|---|---|
@@ -43,21 +43,21 @@ Every candidate tool from the reference report was evaluated specifically agains
 
 | Layer / Concern | Selected Tool | Execution Mode | Why Selected for `moex-spread-lab` |
 |---|---|---|---|
-| **1. Fast Python lint, structural budgets, formatting & partial typing** | **`ruff`** (Astral, Rust, MIT) | Locked in `dev` group (`pyproject.toml`), runs in CI `<1 s` | Replaces Flake8/isort/Black/Pylint-refactor in one binary. Enforces `C901` (McCabe), `PLR0911..0915` (returns/branches/args/statements), `B` (bugbear), `BLE`/`TRY` (silent exception swallowing — critical for fail-closed `G6/G9` rules), `RUF`, `UP`, and `ANN` (public type annotations on refactored `packages/*`). |
-| **2. Python Cognitive Complexity (Sonar model) with ratchet** | **`complexipy`** (Rust, MIT) | Locked in `dev` group (`pyproject.toml`), runs in CI `<1 s` | Unlike `C901`, penalizes **nesting depth** (`if` inside `for` inside `try`), which directly predicts where LLM edits break financial state machines. Supports JSON/SARIF output and per-file/baseline ratcheting. |
-| **3. Deterministic Python static type checking** | **`basedpyright`** (MIT) | Locked in `dev` group (`pyproject.toml`), runs in CI `~3–5 s` | Understands `uv` workspaces + PEP 420 implicit namespace packages (`moex_spread_lab.*`) out of the box and supports per-directory strictness (`strict` on extracted `packages/*`, `standard`/ratchet on legacy `src/moex_spread_lab/*`). *(Note: Astral’s `ty` is fast and promising, but `basedpyright` currently has mature per-folder strictness overrides and baseline files `.basedpyright/baseline.json` essential for incremental onboarding without rewriting 20k LOC at once.)* |
-| **4. Unified C99 + Python size & token-budget gate** | **`lizard`** (Python, MIT) | Locked in `dev` group (`pyproject.toml`), runs in CI `<2 s` | Single lightweight CLI covering **both** `packages/core/.../_fastcore.c` and `**/*.py` without needing full CMake. Directly measures per-function `NLOC`, `CCN`, parameter count, and **`token_count`** (LLM context consumption). |
+| **1. Fast Python lint, structural budgets, formatting & partial typing** | **`ruff`** (Astral, Rust, MIT) | Locked in `dev` group (`pyproject.toml`), run locally by `check_health.sh`; CI wiring is deferred to Step 3 | Replaces Flake8/isort/Black/Pylint-refactor in one binary. Enforces `C901` (McCabe), `PLR0911..0915` (returns/branches/args/statements), `B` (bugbear), `BLE` (broad exception handling), `RUF`, `UP`, and formatting; `TRY`/`ANN` expansion remains deferred. |
+| **2. Python Cognitive Complexity (Sonar model) with ratchet** | **`complexipy`** (Rust, MIT) | Locked in `dev` group (`pyproject.toml`), run locally by `check_health.sh`; CI wiring is deferred to Step 3 | Unlike `C901`, penalizes **nesting depth** (`if` inside `for` inside `try`), which directly predicts where LLM edits break financial state machines. Supports JSON/SARIF output and per-file/baseline ratcheting. |
+| **3. Deterministic Python static type checking** | **`basedpyright`** (MIT) | Locked in `dev` group (`pyproject.toml`), run locally by `check_health.sh`; full analysis takes `~10 s` on 147 files, and CI wiring is deferred to Step 3 | Understands `uv` workspaces + PEP 420 implicit namespace packages (`moex_spread_lab.*`) out of the box and supports per-directory strictness (`strict` on `packages/core/src` in Step 1; standard analysis with a locked baseline on the remaining package sources and root shims; expand strict coverage with Phases 2–5). *(Note: Astral’s `ty` is fast and promising, but `basedpyright` currently has mature per-folder strictness overrides and baseline files `.basedpyright/baseline.json` essential for incremental onboarding without rewriting 20k LOC at once.)* |
+| **4. Unified C99 + Python size & token-budget gate** | **`lizard`** (Python, MIT) | Locked in `dev` group (`pyproject.toml`), run locally by `check_health.sh`; CI wiring is deferred to Step 3 | Measures C-function `NLOC`, `CCN`, and parameter count without CMake. The repository-native ratchet separately estimates file tokens from UTF-8 byte size. |
 | **5. C99 AST cognitive complexity, bugprone & Undefined Behavior checks** | **`clang-tidy` + Clang ASan/UBSan** | System LLVM in GitHub Actions `code-health` job + generated `compile_commands.json` | `_fastcore.c` is 1,414 LOC of raw CPython C-API (`PyBuffer`, `PyMem_Malloc`, IEEE-754 double-double math). `clang-tidy` (`readability-function-cognitive-complexity`, `bugprone-*`, `clang-analyzer-core.*`) + running `test_perf_equivalence.py` under `-fsanitize=address,undefined` catches reference/buffer leaks and UB that Python linters cannot see. |
-| **6. Dead code elimination** | **`vulture`** (Python, MIT) + whitelist | Locked in `dev` group (`pyproject.toml`), runs in CI `<1 s` | During Phases 1–6 package moves, orphaned helpers and stale shims easily linger in `src/` and confuse agent `grep` searches. A small `vulture_whitelist.py` handles dynamic CLI/HTTP/plugin entry points cleanly. |
+| **6. Dead code elimination** | **`vulture`** (Python, MIT) + whitelist | Locked in `dev` group (`pyproject.toml`), run locally by `check_health.sh`; CI wiring is deferred to Step 3 | During Phases 1–6 package moves, orphaned helpers and stale shims easily linger in `src/` and confuse agent `grep` searches. A small `vulture_whitelist.py` handles dynamic CLI/HTTP/plugin entry points cleanly. |
 | **7. Behavioral analysis (Hotspots, Code Health, Change Coupling) + Agent MCP** | **`repowise`** (`uv tool install repowise`, AGPL-3.0, local-only) | **Workstation CLI + local MCP server** + weekly scheduled CI report artifact (not a per-push install bottleneck) | Best open-source CodeScene equivalent: combines git churn/hotspots, temporal coupling (`_fastcore.c <-> Python`, `proof <-> web`), tree-sitter call graphs (Python + C via `compile_commands.json`), and a **local MCP server** so agents query blast radius and coupling before editing. AGPL-3.0 is safe because it runs strictly as an external local developer tool, never linked into or distributed with `moex-spread-lab`. |
-| **8. Copy-paste & context-window token audit** | **`jscpd`** (`npx jscpd`) + **repo-native budget script** (`scripts/code_health_gate.py`) | Weekly / pre-PR audit (`jscpd`); per-push `<0.5 s` (`code_health_gate.py`) | `jscpd` checks cross-language clones (`.py`, `.c`, `.js`/`.html`) without requiring Java. Meanwhile, a 90-line stdlib script `scripts/code_health_gate.py` enforces exact **file-LOC / token budgets** and **ratchets** in `<0.5 s` on every push without pulling Node.js into the fast Python CI path! |
+| **8. Copy-paste & context-window token audit** | **`jscpd`** (`npx jscpd`) + **repo-native budget script** (`scripts/code_health_gate.py`) | `jscpd` weekly/pre-PR remains deferred; native ratchet runs locally within the measured 12–13 s full gate | `jscpd` is a deferred clone audit. The stdlib modules behind `scripts/code_health_gate.py` enforce **file-LOC / estimated-token budgets** and structural ratchets locally without adding a runtime dependency. |
 
 ### 3.2 Explicitly Rejected or Deferred Tools (Avoiding Bloat & Overlap)
 
 | Candidate from Report | Decision | Rationale for Rejection / Deferral |
 |---|---|---|
 | **`import-linter` / `pydeps`** | **Reject (redundant)** | `tests/test_architecture_dag.py` already enforces a stricter, zero-dependency AST check across both `src/` and `packages/*`, including **function-level lazy imports** and Tarjan SCC == 1. Adding `import-linter` duplicates an already superior project-native gate. |
-| **`radon` / `xenon`** | **Reject (superseded)** | Superseded by `ruff` (`C901` + `PLR`), `complexipy` (true cognitive complexity), and `lizard` (C + Python NLOC/CCN/tokens). |
+| **`radon` / `xenon`** | **Reject (superseded)** | Superseded by `ruff` (`C901` + `PLR`), `complexipy` (cognitive complexity), `lizard` (C-function NLOC/CCN), and the repo-native file LOC/token ratchet. |
 | **PMD CPD** | **Reject (heavy runtime)** | Requires a JVM installation in CI/workstation; `jscpd` (via already-present Node/`npx`) covers Python, C, JS, and HTML with zero Java footprint. |
 | **Include-What-You-Use (`iwyu`) & GNU `cflow`** | **Reject (overkill for 1 C file)** | `_fastcore.c` is a single self-contained C99 translation unit with only **5 standard headers** (`Python.h`, `math.h`, `stdint.h`, `stdlib.h`, `string.h`) and 24 static functions. Header-graph pruning (`iwyu`) and multi-TU call trees (`cflow`) add zero value unless `_fastcore.c` is split into multiple `.c`/`.h` units in the future. |
 | **Code-Maat** | **Reject (heavy runtime, superseded)** | Requires Clojure/JVM + manual log pipelines; `repowise` natively computes git hotspots and temporal coupling in Python/Rust, and if custom C↔Python co-change rules are needed in CI, 30 lines of Python over `git log` do it with zero dependencies. |
@@ -73,16 +73,13 @@ The setup is split into **three execution tiers** so developer velocity and CI b
 
 ```text
 +-----------------------------------------------------------------------------------+
-| TIER 1: Fast Deterministic Gate (< 8 s wall time — Local pre-push & Every CI PR)  |
+| TIER 1: Deterministic Gate (~12–13 s observed; <15 s budget — local pre-push)  |
 |   Runs via `uv run` from locked `uv.lock` (zero network, zero Node/JVM):          |
 |   1. `ruff check` + `ruff format --check`        (< 0.5 s)                        |
-|   2. `basedpyright` (strict on packages/*, baseline ratchet on legacy src/*)      |
-|   3. `complexipy` + `lizard` + `vulture`         (< 2.0 s)                        |
-|   4. `scripts/code_health_gate.py`               (< 0.4 s)                        |
-|      - File LOC / token ceiling ratchet (`config/code-health-baseline.json`)      |
-|      - C <-> Python `_fastcore` parity touch-check                                |
-|   5. Existing `tests/test_architecture_dag.py` + `cli validate-manifest`          |
-|      + `cli secret-scan --tracked-only`          (< 1.0 s)                        |
+|   2. `basedpyright` (strict core; baseline ratchet on remaining sources)           |
+|   3. `complexipy` + `lizard` + `vulture` (parallel)                               |
+|   4. `scripts/code_health_gate.py`: LOC/token, complexity, C, exceptions, parity  |
+|   5. Architecture/conformance + manifest and secret scan (~3.2 s measured)       |
 +-----------------------------------------------------------------------------------+
                                          |
                                          v
@@ -111,12 +108,12 @@ The setup is split into **three execution tiers** so developer velocity and CI b
 
 To prevent immediate CI failure on the 13 existing >500 LOC files and 96 >15 cognitive-complexity functions while strictly stopping *any* further degradation, rules apply **two thresholds**:
 
-1. **Greenfield / Touched-Package Standard** (enforced immediately on `packages/*` and any newly created file/function):
-2. **Legacy Baseline Ratchet** (`config/code-health-baseline.json` + `.basedpyright/baseline.json`): existing legacy files in `src/moex_spread_lab/*` cannot grow in LOC or complexity beyond their recorded baseline; when a file is refactored or extracted into `packages/*` during Phases 2–5, its legacy allowance is deleted permanently.
+1. **Greenfield Standard** (strict cognitive and LOC/token budgets for new Python functions/files; lower complexity and C-function outliers are also blocked).
+2. **Baseline Ratchet** (`config/code-health-baseline.json` + `.basedpyright/baseline.json`): Step 1 freezes current oversized or token-heavy files across `packages/` and `src/` (plus the `proof.py` compatibility shim), and records existing cognitive/C-function outliers. No baseline may be raised; remove entries when files are extracted, deleted, or brought below their budget.
 
 | Metric | Target Budget (`packages/*` & new code) | Hard Ceiling (Legacy ratchet cap) | Enforcing Tool |
 |---|---|---|---|
-| **Python / JS / CSS file length** | `<= 400` LOC (`<= 3,500` LLM tokens) | Ratcheted to current LOC + `0%` growth on files `> 500` LOC | `scripts/code_health_gate.py` |
+| **Python / JS / CSS file length** | `<= 400` LOC (`<= 3,500` estimated tokens) | No LOC/token growth on current baselined offenders; only decreases can be recorded | `scripts/code_health_gate.py` |
 | **C99 source file / function length** | Function `<= 100` NLOC, parameters `<= 7` | Existing `fast_size_proof_metrics` frozen at `378` LOC until split into static helpers | `lizard` + `clang-tidy` |
 | **Python Cognitive Complexity** | `<= 15` per function (warning at `12`) | Legacy functions `> 15` listed in baseline; any edit to them may not increase score | `complexipy` |
 | **C99 Cognitive Complexity** | `<= 20` per function (`IgnoreMacros: true`) | Legacy `fast_size_proof_metrics` exempted via `NOLINTNEXTLINE` with ticket until helper split | `clang-tidy` |
@@ -128,100 +125,20 @@ To prevent immediate CI failure on the 13 existing >500 LOC files and 96 >15 cog
 
 ---
 
-## 6. Concrete Configuration Blueprints
+## 6. Configuration and Tooling Reference
 
-Below are the exact configurations to be added during implementation (none applied yet).
+This section is the implementation reference. Step 1 is now implemented against the Phase 6 workspace; later-tier C sanitizers, CI wiring, duplication audit, and workstation MCP remain deferred.
 
-### 6.1 `pyproject.toml` Additions (`dev` group + Ruff, BasedPyright, Complexipy, Vulture)
+### 6.1 Applied `pyproject.toml` and `uv.lock` settings
 
-Add to `[dependency-groups].dev`:
-```toml
-[dependency-groups]
-dev = [
-    "basedpyright>=1.28,<2",
-    "complexipy>=4.0,<6",
-    "lizard>=1.17,<2",
-    "pytest>=8.3,<10",
-    "pytest-subtests>=0.14,<1",
-    "pytest-xdist>=3.6,<4",
-    "ruff>=0.9,<1",
-    "vulture>=2.14,<3",
-]
-```
+The root `pyproject.toml` and committed `uv.lock` are authoritative; this section summarizes the Step 1 configuration without duplicating the full TOML.
 
-Test scheduling follows the Phase 6 configuration: package-matrix CI jobs use `pytest-xdist --dist loadfile`; no shared test-duration registry is used.
-
-Tool sections in root `pyproject.toml`:
-```toml
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-src = ["packages/core/src", "src", "tests"]
-extend-exclude = ["src/moex_spread_lab/vendor"]
-
-[tool.ruff.lint]
-select = [
-    "E", "W",   # pycodestyle
-    "F",        # pyflakes (unused imports/vars)
-    "I",        # deterministic import sorting (reduces agent merge conflicts)
-    "B",        # flake8-bugbear
-    "BLE",      # blind-except (guards fail-closed financial/risk invariants!)
-    "UP",       # pyupgrade (modern Python 3.12 syntax: X | Y, type aliases)
-    "SIM",      # flake8-simplify
-    "C4",       # comprehensions
-    "PIE",      # misc lints
-    "C901",     # McCabe cyclomatic complexity ceiling
-    "PLR0911",  # too-many-return-statements
-    "PLR0912",  # too-many-branches
-    "PLR0913",  # too-many-arguments
-    "PLR0915",  # too-many-statements
-    "RUF",      # Ruff-specific rules
-]
-ignore = [
-    "E501",     # line length handled by formatter / semantic readability
-]
-
-[tool.ruff.lint.mccabe]
-max-complexity = 15
-
-[tool.ruff.lint.pylint]
-max-args = 7
-max-branches = 12
-max-returns = 6
-max-statements = 50
-
-[tool.ruff.lint.per-file-ignores]
-# Enforce strict public type annotations on modular workspace packages:
-# (enabled via extend-select in packages/*/pyproject.toml or per-path override)
-"tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001"]
-"packages/*/tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001"]
-# Temporary legacy structural exemptions removed as Phases 2-5 extract each file:
-"src/moex_spread_lab/{cli,calendar_spreads,proof,proof_batch,analytics,carry,position_sizing,screener_app,pair_screener,data_refresh,s3_reference}.py" = [
-    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
-]
-
-[tool.basedpyright]
-pythonVersion = "3.12"
-include = ["packages", "src", "tests"]
-exclude = ["src/moex_spread_lab/vendor", "**/__pycache__"]
-extraPaths = ["packages/core/src", "src"]
-baselineFile = ".basedpyright/baseline.json"
-typeCheckingMode = "standard"
-# Strict contract enforcement on all cleanly extracted workspace packages:
-strict = ["packages/core/src"]
-reportMissingTypeStubs = false
-
-[tool.complexipy]
-paths = ["packages", "src"]
-max-complexity-allowed = 15
-quiet = true
-
-[tool.vulture]
-paths = ["packages", "src", "scripts/vulture_whitelist.py"]
-exclude = ["*/vendor/*"]
-min_confidence = 80
-sort_by_size = true
-```
+- Development dependencies include Ruff, basedpyright, complexipy, lizard and Vulture; the project runtime dependency list is unchanged.
+- Ruff checks/formats `packages/`, root `src/`, shared tests and `scripts/`. It enforces the configured bug, import, structural and formatting rules, with documented legacy per-file exemptions.
+- basedpyright analyzes package sources, root compatibility shims and `scripts/` in standard mode; `packages/core/src` is strict. Existing diagnostics are frozen in `.basedpyright/baseline.json`; missing import reports are disabled for verified namespace-package false positives.
+- complexipy analyzes `packages/`, `src/` and `scripts/` at a cognitive-complexity threshold of 15; the custom gate applies the checked-in baseline ratchet.
+- Vulture analyzes `packages/`, `src/` and `scripts/` at 80% confidence with `scripts/vulture_whitelist.py`. Lizard is invoked by the custom gate for C-function metrics.
+- These checks are local via `scripts/check_health.sh`; CI wiring remains a later step. Test scheduling remains package-scoped with xdist `loadfile`.
 
 ### 6.2 C99 Tooling: `compile_commands.json` Generator & `.clang-tidy`
 
@@ -261,19 +178,24 @@ Because `_fastcore.c` is compiled dynamically via `sysconfig.get_path("include")
 
 ### 6.3 Custom Repo-Native Gate: `scripts/code_health_gate.py`
 
-A fast (`<0.4 s`), zero-dependency Python script executed in CI and locally that enforces rules generic linters miss:
+A stdlib-only local gate, called from `scripts/check_health.sh` (about 1.5 s standalone in the measured workspace; CI wiring is deferred to Step 3), enforcing rules generic linters miss:
 
-1. **File LOC & Token Budget Ratchet (`config/code-health-baseline.json`):**
-   - Scans `packages/**/*.{py,c,js,css,html}` and `src/**/*.{py,c,js,css,html}` (excluding `vendor/`).
-   - Approximates token count (`utf8_bytes / 3.6` or exact `tiktoken` if installed) and counts non-blank LOC.
-   - **Rule A:** Any file *not* in `config/code-health-baseline.json` fails if `LOC > 450` (Python/JS/HTML/CSS) or `LOC > 600` (C99).
-   - **Rule B:** Any legacy file listed in `config/code-health-baseline.json` fails if its current `LOC` exceeds `baseline_loc` (strict non-increase ratchet) and suggests `--update-baseline` when `LOC` drops by `>= 10%` so wins are locked in automatically.
-2. **Explicit C99 ↔ Python Fallback Coupling Check:**
-   - Every function registered in `FastCoreMethods` inside `packages/core/src/moex_spread_lab/core/_fastcore.c` has a pure-Python twin (`compute_rolling_z`, `calendar_sample_z`, `calendar_zscore_scan`, `calendar_convergence_scan`, `clean_obj`, `mean_reversion_scan`, `size_proof_metrics`).
-   - Checks that every exported method name in `FastCoreMethods` is referenced in `packages/proof/tests/test_perf_equivalence.py`, preventing an agent from adding a new C fast-path function without a bit-for-bit Python equivalence test!
-3. **Blind `except Exception:` Guard on Financial/Accounting Layers:**
-   - Verifies zero unannotated `except Exception:` blocks inside `packages/core` (except `_fastcore_loader.py` optional-build fallback), `packages/accounting`, and `packages/data/lake` (`h1_seal.py`), protecting `G6/G8/G9` fail-closed semantics.
+1. **File LOC & estimated-token ratchet (`config/code-health-baseline.json`):**
+   - Scans Python/C/JS/CSS/HTML under `packages/`, root `src/`, and `scripts/`, excluding `vendor/` and `__pycache__/`.
+   - Counts non-blank LOC and estimates tokens as `floor(utf8_bytes / 3.6)`.
+   - New non-C files are capped at 400 LOC and 3,500 estimated tokens; new C files are capped at 600 LOC.
+   - Existing baseline entries cannot grow in either LOC or estimated tokens. `--update-baseline` can only record reductions and prune resolved/deleted entries; it never adds new offenders or raises a ceiling.
+2. **Complexity and C-function ratchets:**
+   - `complexipy` measures Python cognitive complexity; new functions must be `<=15`, while listed legacy outliers cannot grow.
+   - `lizard` measures C-function NLOC, CCN and parameter count; new functions must meet the configured limits, and listed outliers cannot grow.
+3. **C99 ↔ Python fallback parity inventory:**
+   - The gate parses `FastCoreMethods` and requires an exact export-name mapping in `packages/proof/tests/test_fastcore_parity.py` to existing tests.
+   - The mapped tests compare the C-enabled adapters with `MOEX_PROOF_DISABLE_C=1` fallbacks for all seven exports (four are covered by the established end-to-end equivalence test; calendar z-score and convergence have focused tests).
+4. **Broad-exception guard:**
+   - Checks bare/`Exception`/`BaseException` handlers in `packages/core/src`, `packages/accounting/src`, and `packages/data/src/moex_spread_lab/data/lake`.
+   - Each requires an adjacent `code-health: allow broad exception:` rationale, preserving the optional-build fallback while making other broad catches reviewable.
 
+Regression tests for these policies live in `packages/core/tests/test_code_health_gate.py`; `_fastcore` parity tests live in `packages/proof/tests/test_fastcore_parity.py`.
 ### 6.4 Duplication Config: `.jscpd.json`
 
 ```json
@@ -316,22 +238,19 @@ A fast (`<0.4 s`), zero-dependency Python script executed in CI and locally that
 
 Implementation is organized into **five small, non-disruptive PRs** aligned with `docs/development/modular-architecture-plan.md` so ongoing Stage-9 feature/migration work is never blocked.
 
-### Step 1 — Deterministic Python Gate & Baseline Freeze (PR 1, ~1–2 hours)
+### Step 1 — Deterministic Python Gate & Baseline Freeze (implemented 2026-11-21)
 
-**Scope:** `pyproject.toml`, `uv.lock`, `.basedpyright/baseline.json`, `config/code-health-baseline.json`, `scripts/code_health_gate.py`, `scripts/vulture_whitelist.py`.
+**Implemented scope:** development analyzers and lockfile; Ruff configuration and safe lint/format cleanup; basedpyright standard analysis with strict `packages/core/src` and a 159-diagnostic baseline for existing issues; `config/code-health-baseline.json`; `scripts/code_health_gate.py` plus shared rule modules; `scripts/check_health.sh`; Vulture whitelist; permanent code-health and C/Python parity tests; this implementation record. No CI workflow or production dependency was added.
 
-1. Add `ruff`, `basedpyright`, `complexipy`, `lizard`, and `vulture` to `[dependency-groups].dev` and run `uv lock && uv sync --frozen`.
-2. Configure `[tool.ruff]`, `[tool.basedpyright]`, `[tool.complexipy]`, and `[tool.vulture]` in `pyproject.toml`.
-   - Fix safe zero-semantic lint issues (`F401` unused imports, `I001` import sorting) **only** in a dedicated style-only commit verified against `packages/proof/tests/test_perf_equivalence.py` and `config/run-manifest.json`. Do **not** run mass auto-rewrites across numerical expressions.
-3. Generate initial `.basedpyright/baseline.json` for legacy `src/moex_spread_lab/*` while ensuring `packages/core/src` passes `strict` mode with **zero** errors (adding missing annotations to `packages/core` if any).
-4. Implement `scripts/code_health_gate.py` and generate `config/code-health-baseline.json` recording exact current LOC and cognitive-complexity ceilings for existing legacy offenders (`>450` LOC files and `>15` complexity functions).
-5. Add a single CLI convenience entrypoint or Makefile/script (`scripts/check_health.sh`) that runs Tier 1 end-to-end in `<8 s`.
+The custom ratchet covers Python/C/HTML/JS/CSS sources under `packages/`, root `src/`, and `scripts/`. It applies 400-LOC / 3,500-estimated-token ceilings to new non-C files, records existing file/complexity/C outliers without allowing growth, guards the root compatibility shim, checks justified broad exceptions in protected modules, and maps every `_fastcore` C export to a parity test. The baseline currently contains 53 file entries, 118 complexity entries, and 8 C-function entries.
 
-**Acceptance Gate:**
-- `scripts/check_health.sh` finishes in `<8 s` with exit code `0`.
-- Introducing a synthetic 20-complexity function or growing `proof.py` by 10 LOC fails `check_health.sh` deterministically.
-- `uv run pytest -q -n auto --dist loadfile` and `packages/proof/tests/test_perf_equivalence.py` pass 100%.
+**Validation results:**
+- `basedpyright --stats`: 147 source files checked; 0 errors, warnings, or notes after applying the baseline (the baseline was generated from 159 existing diagnostics).
+- `scripts/check_health.sh`: all six parallel checks pass, including Ruff, Vulture, the custom ratchet, and the architecture/manifest/secret-scan gate; measured at **12–13 s wall-clock** locally (the script's integer counter prints 12 s). The original `<8 s` aspiration is revised to a `<15 s` budget to keep the full type-analysis scope (basedpyright alone takes about 10 s on this 2-vCPU workspace).
+- Permanent regression tests cover LOC/token and complexity/C-function growth, broad-exception justification, baseline-only reductions, gate failure reporting, all seven C export mappings, and focused calendar C/Python equivalence. Temporary probes also confirmed that +10 LOC and complexity 21 fail the ratchet.
+- `uv run pytest -q -n auto --dist loadfile`: **502 passed, 232 subtests passed** in 83.09 s. The focused health/parity/equivalence suites: **19 passed** in 31.55 s.
 
+The executable gate lives at `scripts/check_health.sh`; `scripts/architecture_gate.py` invokes manifest validation and tracked-file secret scanning. CI wiring, C sanitizers, clone analysis, and workstation MCP remain in later steps.
 ---
 
 ### Step 2 — C99 Static Analysis & Sanitizer Gate (PR 2, ~1–2 hours)
@@ -398,9 +317,9 @@ Rather than scheduling risky standalone "refactoring sprints" on untested legacy
 
 | Failure Mode Today | Automated Protection After Rollout |
 |---|---|
-| Agent grows an already huge file (`calendar_spreads.py`, `proof.py`, `proof_ui.html`) to 2,000+ LOC | **Blocked in `<0.4 s`** by `code_health_gate.py` LOC/token ratchet (`0%` growth allowed above cap; `400` LOC max for new files). |
-| Agent writes a 7-level nested `if/for/try` patch that subtly breaks edge-case accounting | **Blocked in `<1 s`** by `complexipy` (`cog <= 15`) and `ruff` (`PLR0912` / `C901` / `BLE001`). |
-| Agent adds untyped `dict[str, Any]` helper in `packages/*`, forcing future agents to read 5 files | **Blocked in `~3 s`** by `basedpyright` (`strict` on `packages/*`) + `ruff` (`ANN`). |
+| Agent grows an already huge file (`calendar_spreads.py`, `proof.py`, `proof_ui.html`) to 2,000+ LOC | **Blocked by the local `code_health_gate.py` ratchet** (included in the measured 12 s full gate; `400` LOC / 3,500 estimated tokens for new non-C files). |
+| Agent writes a 7-level nested `if/for/try` patch that subtly breaks edge-case accounting | **Blocked by `complexipy` and Ruff in the local gate** (`cog <= 15`, `PLR0912` / `C901` / `BLE001`). |
+| Agent adds untyped `dict[str, Any]` helper in `packages/*`, forcing future agents to read 5 files | **Baselined existing diagnostics; strict typing is enabled on `packages/core/src`, while wider strict/ANN coverage remains deferred.** |
 | Agent modifies `_fastcore.c` with a subtle `Py_DECREF` leak, buffer overrun, or missing Python fallback test | **Blocked in CI** by `clang-tidy` (`clang-analyzer-unix.Malloc`), ASan/UBSan `test_perf_equivalence.py`, and `FastCoreMethods` parity check. |
-| Agent leaves dead functions/imports during package extraction or duplicates 30 lines across modules | **Caught automatically** by `vulture` + `ruff F401` (per push) and `jscpd` (`<3%` clone ceiling, weekly/pre-PR). |
+| Agent leaves dead functions/imports during package extraction or duplicates 30 lines across modules | **Caught locally** by `vulture` + `ruff F401` in `check_health.sh`; `jscpd` clone auditing remains deferred. |
 | Agent misses hidden co-change dependency (`position_sizing <-> proof`, `proof_search <-> UI`) | **Eliminated structurally** by Phases 2–5 `StrategyPlugin` + surfaced pre-edit via local `repowise` MCP coupling queries. |

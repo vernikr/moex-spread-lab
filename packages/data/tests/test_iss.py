@@ -4,29 +4,95 @@ import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from moex_spread_lab.data.iss.catalog import analyze_candle_pair, fetch_candle_series, normalize_candle_borders, normalize_candles, normalize_iss_intake
+from moex_spread_lab.data.iss.catalog import (
+    analyze_candle_pair,
+    fetch_candle_series,
+    normalize_candle_borders,
+    normalize_candles,
+    normalize_iss_intake,
+)
 
 
 def payload():
     return {
         "securities": {
             "columns": [
-                "SECID", "SHORTNAME", "ASSETCODE", "FRSTTRADE", "LOTVOLUME",
-                "MINSTEP", "STEPPRICE", "INITIALMARGIN", "LASTTRADEDATE", "LASTDELDATE",
+                "SECID",
+                "SHORTNAME",
+                "ASSETCODE",
+                "FRSTTRADE",
+                "LOTVOLUME",
+                "MINSTEP",
+                "STEPPRICE",
+                "INITIALMARGIN",
+                "LASTTRADEDATE",
+                "LASTDELDATE",
             ],
             "data": [
-                ["CNYRUBF", "CNYRUBF", "CNYRUBTOM", "2022-04-26", 1000, 0.001, 1, 1000, "2100-01-01", "2100-01-01"],
-                ["CRZ6", "CNY-12.26", "CNY", "2026-06-01", 1000, 0.001, 1, 1200, "2026-12-17", "2026-12-17"],
+                [
+                    "CNYRUBF",
+                    "CNYRUBF",
+                    "CNYRUBTOM",
+                    "2022-04-26",
+                    1000,
+                    0.001,
+                    1,
+                    1000,
+                    "2100-01-01",
+                    "2100-01-01",
+                ],
+                [
+                    "CRZ6",
+                    "CNY-12.26",
+                    "CNY",
+                    "2026-06-01",
+                    1000,
+                    0.001,
+                    1,
+                    1200,
+                    "2026-12-17",
+                    "2026-12-17",
+                ],
             ],
         },
         "marketdata": {
             "columns": [
-                "SECID", "BOARDID", "BID", "OFFER", "LAST", "SETTLEPRICE",
-                "UPDATETIME", "TIME", "SYSTIME", "TRADEDATE",
+                "SECID",
+                "BOARDID",
+                "BID",
+                "OFFER",
+                "LAST",
+                "SETTLEPRICE",
+                "UPDATETIME",
+                "TIME",
+                "SYSTIME",
+                "TRADEDATE",
             ],
             "data": [
-                ["CNYRUBF", "RFUD", 12.12, 12.121, 12.121, 12.125, "09:00:00", "08:59:00", "2026-10-27 09:15:00", "2026-10-27"],
-                ["CRZ6", "RFUD", 12.30, 12.302, 12.301, 12.306, "09:00:00", "08:59:00", "2026-10-27 09:15:00", "2026-10-27"],
+                [
+                    "CNYRUBF",
+                    "RFUD",
+                    12.12,
+                    12.121,
+                    12.121,
+                    12.125,
+                    "09:00:00",
+                    "08:59:00",
+                    "2026-10-27 09:15:00",
+                    "2026-10-27",
+                ],
+                [
+                    "CRZ6",
+                    "RFUD",
+                    12.30,
+                    12.302,
+                    12.301,
+                    12.306,
+                    "09:00:00",
+                    "08:59:00",
+                    "2026-10-27 09:15:00",
+                    "2026-10-27",
+                ],
             ],
         },
     }
@@ -36,6 +102,7 @@ class IssIntakeTests(unittest.TestCase):
     def test_pair_check_reports_common_timestamps_and_ohlc_quality(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+
             def series(secid, begins):
                 return {
                     "schema_version": "iss-candles.v1",
@@ -54,21 +121,39 @@ class IssIntakeTests(unittest.TestCase):
                         for begin in begins
                     ],
                 }
+
             near = root / "near.json"
             far = root / "far.json"
-            near.write_text(json.dumps(series("CNYRUBF", ["2026-01-01", "2026-01-02"])), encoding="utf-8")
-            far.write_text(json.dumps(series("CRZ6", ["2026-01-02", "2026-01-03"])), encoding="utf-8")
+            near.write_text(
+                json.dumps(series("CNYRUBF", ["2026-01-01", "2026-01-02"])), encoding="utf-8"
+            )
+            far.write_text(
+                json.dumps(series("CRZ6", ["2026-01-02", "2026-01-03"])), encoding="utf-8"
+            )
             result = analyze_candle_pair(near, far)
         self.assertEqual(result["synchronization"]["common_timestamp_count"], 1)
         self.assertEqual(result["near"]["invalid_ohlc_count"], 0)
-        self.assertEqual(result["synchronization"]["pair_analytical_status"], "usable_common_proxy_rows")
+        self.assertEqual(
+            result["synchronization"]["pair_analytical_status"], "usable_common_proxy_rows"
+        )
 
     def test_candle_rows_use_close_as_explicit_price_proxy(self):
         result = normalize_candles(
             {
                 "candles": {
                     "columns": ["open", "close", "high", "low", "value", "volume", "begin", "end"],
-                    "data": [[12.0, 12.1, 12.2, 11.9, 0, 10, "2026-10-01 10:00:00", "2026-10-01 10:09:59"]],
+                    "data": [
+                        [
+                            12.0,
+                            12.1,
+                            12.2,
+                            11.9,
+                            0,
+                            10,
+                            "2026-10-01 10:00:00",
+                            "2026-10-01 10:09:59",
+                        ]
+                    ],
                 },
             },
             secid="CRZ6",
@@ -103,16 +188,42 @@ class IssIntakeTests(unittest.TestCase):
             query = parse_qs(urlparse(request.full_url).query)
             start = int(query["start"][0])
             calls.append(start)
-            rows = [] if start >= 500 else [
-                [12.0, 12.1, 12.2, 11.9, 0, 10, f"2026-10-01 10:{index:02d}:00", f"2026-10-01 10:{index:02d}:59"]
-                for index in range(500)
-            ]
-            return Response(json.dumps({
-                "candles": {
-                    "columns": ["open", "close", "high", "low", "value", "volume", "begin", "end"],
-                    "data": rows,
-                },
-            }).encode())
+            rows = (
+                []
+                if start >= 500
+                else [
+                    [
+                        12.0,
+                        12.1,
+                        12.2,
+                        11.9,
+                        0,
+                        10,
+                        f"2026-10-01 10:{index:02d}:00",
+                        f"2026-10-01 10:{index:02d}:59",
+                    ]
+                    for index in range(500)
+                ]
+            )
+            return Response(
+                json.dumps(
+                    {
+                        "candles": {
+                            "columns": [
+                                "open",
+                                "close",
+                                "high",
+                                "low",
+                                "value",
+                                "volume",
+                                "begin",
+                                "end",
+                            ],
+                            "data": rows,
+                        },
+                    }
+                ).encode()
+            )
 
         with tempfile.TemporaryDirectory() as directory:
             result = fetch_candle_series(
@@ -147,7 +258,9 @@ class IssIntakeTests(unittest.TestCase):
         )
         self.assertEqual(result["minimum_interval"], 1)
         self.assertEqual(result["minimum_timeframe"], "1m")
-        self.assertEqual([item["timeframe"] for item in result["available_intervals"]], ["1m", "10m", "1d"])
+        self.assertEqual(
+            [item["timeframe"] for item in result["available_intervals"]], ["1m", "10m", "1d"]
+        )
 
     def test_current_snapshot_keeps_price_roles_separate(self):
         result = normalize_iss_intake(
@@ -173,7 +286,9 @@ class IssIntakeTests(unittest.TestCase):
         )
         reasons = result["candidate"]["reasons"]
         self.assertTrue(any("executable bid/ask" in reason for reason in reasons))
-        self.assertEqual(result["source"]["rights_status"], "accepted_project_assumption_personal_use")
+        self.assertEqual(
+            result["source"]["rights_status"], "accepted_project_assumption_personal_use"
+        )
         self.assertTrue(result["candidate"]["assumptions"])
 
     def test_normalized_output_is_json_serializable(self):

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Any, Mapping
+from typing import Any
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.contracts import EntryBandPoint
+
 from ..base import (
     CALENDAR_EXIT_REASONS,
     calendar_row_buffers,
@@ -64,7 +66,14 @@ def zscore_trades(
         )
         return [
             make_calendar_trade(
-                rows[e_i], rows[x_i], direction, fill, CALENDAR_EXIT_REASONS[r_code], "z", rows[s_i], s_val
+                rows[e_i],
+                rows[x_i],
+                direction,
+                fill,
+                CALENDAR_EXIT_REASONS[r_code],
+                "z",
+                rows[s_i],
+                s_val,
             )
             for e_i, x_i, direction, r_code, s_i, s_val in specs
         ]
@@ -86,7 +95,11 @@ def zscore_trades(
                 continue
             sample = spreads_py[start:end]
             deviation = statistics.stdev(sample)
-            z[index] = (spreads_py[index] - statistics.mean(sample)) / deviation if deviation > 0 else math.nan
+            z[index] = (
+                (spreads_py[index] - statistics.mean(sample)) / deviation
+                if deviation > 0
+                else math.nan
+            )
         if cache_id is not None:
             z_cache[cache_id] = z
     position, entry, trades, signal_index = 0, None, [], 0
@@ -124,7 +137,9 @@ def zscore_trades(
                     reason = None
             if reason:
                 trades.append(
-                    make_calendar_trade(entry, row, position, fill, reason, "z", rows[signal_index], z[signal_index])
+                    make_calendar_trade(
+                        entry, row, position, fill, reason, "z", rows[signal_index], z[signal_index]
+                    )
                 )
                 position = 0
                 entry_dt = None
@@ -144,12 +159,23 @@ def zscore_trades(
             entry_dt = parsed_dts[index]
             if entry_dt is None:
                 s = str(row["date"])
-                entry_dt = datetime.fromisoformat(s.replace("Z", "")) if "T" in s else date.fromisoformat(s[:10])
+                entry_dt = (
+                    datetime.fromisoformat(s.replace("Z", ""))
+                    if "T" in s
+                    else date.fromisoformat(s[:10])
+                )
                 parsed_dts[index] = entry_dt
     if position and close_at_end:
         trades.append(
             make_calendar_trade(
-                entry, rows[-1], position, fill, "end_of_window", "z", rows[signal_index], z[signal_index]
+                entry,
+                rows[-1],
+                position,
+                fill,
+                "end_of_window",
+                "z",
+                rows[signal_index],
+                z[signal_index],
             )
         )
     return trades

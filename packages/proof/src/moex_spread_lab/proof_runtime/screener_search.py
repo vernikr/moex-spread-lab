@@ -11,6 +11,8 @@ from itertools import product
 from typing import Any
 
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, read_settings
+from moex_spread_lab.core.universe import PAIRS, STRATEGIES
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
     ScreenerInputs,
@@ -19,8 +21,6 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     catalog,
     execution_settings,
 )
-from moex_spread_lab.core.universe import PAIRS, STRATEGIES
-from moex_spread_lab.core.w0 import W0Error
 
 INITIAL_CAPITAL = 30_000.0
 PLATEAU_RATIO = 0.7
@@ -117,9 +117,7 @@ def screen_table(
     execution = execution_settings(selection)
     pairs = []
     for pair in catalog(inputs)["pairs"]:
-        row = {
-            key: pair[key] for key in ("id", "family", "expiry", "current_margin_pct")
-        }
+        row = {key: pair[key] for key in ("id", "family", "expiry", "current_margin_pct")}
         row["min_leg_daily_volume"] = pair.get("min_leg_daily_volume")
         if pair["status"] == "excluded_thin_leg":
             row.update(
@@ -158,9 +156,7 @@ def screen_table(
         "execution": execution,
         "pairs": [(row["id"], row.get("run_id"), row["status"]) for row in pairs],
     }
-    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
-        :16
-    ]
+    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
     return {
         "schema_version": "screener-table.v2",
         "run_id": run_id,
@@ -175,15 +171,9 @@ def screen_table(
     }
 
 
-def _grid(
-    strategy: str, seed: dict[str, Any]
-) -> tuple[list[str], list[tuple[Any, ...]]]:
+def _grid(strategy: str, seed: dict[str, Any]) -> tuple[list[str], list[tuple[Any, ...]]]:
     lookbacks = sorted(
-        {
-            value
-            for delta in (-5, 0, 5)
-            if 5 <= (value := seed["lookback"] + delta) <= 80
-        }
+        {value for delta in (-5, 0, 5) if 5 <= (value := seed["lookback"] + delta) <= 80}
     )
     if strategy == "funding_only":
         lookbacks = sorted(
@@ -215,9 +205,7 @@ def _grid(
     return ["lookback", "entry_z", "exit_z"], list(product(lookbacks, entries, exits))
 
 
-def _neighbors(
-    point: tuple[Any, ...], points: list[tuple[Any, ...]]
-) -> list[tuple[Any, ...]]:
+def _neighbors(point: tuple[Any, ...], points: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
     axes = [sorted({item[index] for item in points}) for index in range(len(point))]
     result = []
     for other in points:
@@ -259,16 +247,10 @@ def optimize(
         raise ScreenerError("unknown strategy")
     execution = execution_settings(request)
     seed = _parameters(request, strategy)
-    catalog_by_id = {
-        pair["id"]: pair for pair in (available or catalog(inputs))["pairs"]
-    }
-    invalid = [
-        pair for pair in selected if not catalog_by_id[pair]["strategies"][strategy]
-    ]
+    catalog_by_id = {pair["id"]: pair for pair in (available or catalog(inputs))["pairs"]}
+    invalid = [pair for pair in selected if not catalog_by_id[pair]["strategies"][strategy]]
     if invalid:
-        raise ScreenerError(
-            "selected pairs lack compatible local inputs: " + ", ".join(invalid)
-        )
+        raise ScreenerError("selected pairs lack compatible local inputs: " + ", ".join(invalid))
     axes, points = _grid(strategy, seed)
     initial = {}
     for pair in selected:
@@ -280,9 +262,7 @@ def optimize(
         except (W0Error, OSError, ValueError) as exc:
             raise ScreenerError(f"{pair} cannot be searched: {exc}") from exc
     dates = sorted(
-        set.intersection(
-            *({row["date"] for row in result["daily"]} for result in initial.values())
-        )
+        set.intersection(*({row["date"] for row in result["daily"]} for result in initial.values()))
     )
     if len(dates) < MIN_COMMON_OBSERVATIONS:
         raise ScreenerError(
@@ -290,12 +270,8 @@ def optimize(
         )
     split = EvaluationSplit.from_dates(dates, percent)
     train_dates = (split.training[0], split.training[-1])
-    if (
-        date.fromisoformat(train_dates[1]) - date.fromisoformat(train_dates[0])
-    ).days < 30:
-        raise ScreenerError(
-            "training needs at least 30 calendar days for an annualized score"
-        )
+    if (date.fromisoformat(train_dates[1]) - date.fromisoformat(train_dates[0])).days < 30:
+        raise ScreenerError("training needs at least 30 calendar days for an annualized score")
     trials = []
     for point in points:
         params = dict(zip(axes, point))
@@ -310,9 +286,7 @@ def optimize(
                     **execution,
                 }
                 pair_reports[pair] = evaluator(inputs, settings, through=train_dates[1])
-            train = [
-                _segment(pair_reports[pair]["daily"], *train_dates) for pair in selected
-            ]
+            train = [_segment(pair_reports[pair]["daily"], *train_dates) for pair in selected]
             if any(value is None or not math.isfinite(value) for value in train):
                 raise ScreenerError("non-annualizable training window")
             visible_rows = [
@@ -322,9 +296,7 @@ def optimize(
                 if dates[0] <= row["date"] <= train_dates[1]
             ]
             max_dd = max(row["D"] for row in visible_rows) / INITIAL_CAPITAL * 100
-            worst_shortfall = (
-                min(row["X"] for row in visible_rows) / INITIAL_CAPITAL * 100
-            )
+            worst_shortfall = min(row["X"] for row in visible_rows) / INITIAL_CAPITAL * 100
             trial.update(
                 {
                     "train_min_excess_pp": round(min(train), 3),
@@ -340,9 +312,7 @@ def optimize(
         except (W0Error, OSError, ValueError) as exc:
             trial.update({"status": "rejected", "reason": str(exc)})
         trials.append(trial)
-    by_point = {
-        tuple(trial["parameters"][axis] for axis in axes): trial for trial in trials
-    }
+    by_point = {tuple(trial["parameters"][axis] for axis in axes): trial for trial in trials}
     plateaus = []
     for point, trial in by_point.items():
         if trial["status"] != "evaluated" or trial["train_min_excess_pp"] <= 0:
@@ -362,10 +332,7 @@ def optimize(
             trial["plateau"] = True
             plateaus.append(
                 (
-                    min(
-                        by_point[other]["train_min_excess_pp"]
-                        for other in (*stable, point)
-                    ),
+                    min(by_point[other]["train_min_excess_pp"] for other in (*stable, point)),
                     point,
                     stable,
                 )
@@ -390,9 +357,7 @@ def optimize(
                     through=split.validation[-1],
                 )
                 # Anchor at the last training mark to include the first validation session's change.
-                by_pair[pair] = _segment(
-                    report["daily"], train_dates[1], split.validation[-1]
-                )
+                by_pair[pair] = _segment(report["daily"], train_dates[1], split.validation[-1])
     identity = {
         "pairs": selected,
         "strategy": strategy,
@@ -404,15 +369,11 @@ def optimize(
         "result_by_pair_pp": by_pair,
         "input_run_ids": {pair: initial[pair].get("run_id") for pair in selected},
     }
-    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[
-        :16
-    ]
+    run_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
     return {
         "schema_version": "screener-search.v2",
         "run_id": run_id,
-        "status": "exploratory_plateau_found"
-        if chosen
-        else "no_stable_positive_plateau",
+        "status": "exploratory_plateau_found" if chosen else "no_stable_positive_plateau",
         "scope": "independent_pair_studies_not_a_shared_capital_basket",
         "input_run_ids": identity["input_run_ids"],
         "selection": {
@@ -432,9 +393,7 @@ def optimize(
         },
         **split.metadata(),
         "selected_parameters": selected_params,
-        "stable_neighbors": [dict(zip(axes, point)) for point in chosen[2]]
-        if chosen
-        else [],
+        "stable_neighbors": [dict(zip(axes, point)) for point in chosen[2]] if chosen else [],
         "result_by_pair_pp": by_pair,
         "result_note": "Годовая оценка требует не менее 30 календарных дней в расчётном периоде."
         if by_pair and any(v is None for v in by_pair.values())

@@ -5,13 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 
-
 def register(subparsers):
-    local_screener_parser = subparsers.add_parser("screener", help="serve the private offline research screener on loopback")
-    local_screener_parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository with local ignored research inputs")
+    local_screener_parser = subparsers.add_parser(
+        "screener", help="serve the private offline research screener on loopback"
+    )
+    local_screener_parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path.cwd(),
+        help="repository with local ignored research inputs",
+    )
     local_screener_parser.add_argument("--port", type=int, default=8765)
     local_screener_parser.set_defaults(_msl_cli_handler=run)
-
 
 
 def run(args):

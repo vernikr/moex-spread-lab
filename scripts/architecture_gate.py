@@ -8,10 +8,10 @@ full behavioral and numerical suites run in the package test matrix.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sys
 import time
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -24,8 +24,9 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "core" / "tests"))
 sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests" / "contract"))
 
-from test_architecture_dag import ArchitectureDagTests  # noqa: E402
 from test_strategy_conformance import StrategyPluginConformanceTests  # noqa: E402
+
+from test_architecture_dag import ArchitectureDagTests  # noqa: E402
 
 
 def main() -> int:

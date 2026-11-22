@@ -7,54 +7,58 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Protocol
 
 import duckdb
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from moex_spread_lab.core.w0 import canonical_bytes, sha256_file
+
 from .bar_types import (
     LEGACY_CANDLE_SCHEMA,
     BarSeries,
-    BarStore,
     DataLakeError,
     SealedH1Reader,
     _atomic_write_json,
     reject_sealed_table_write,
     verify_archived_record,
 )
-from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_file
-
 
 DATA_LAKE_SCHEMA = "market-data-lake.v1"
 BAR_DATASET_SCHEMA = "market-data-bars.v1"
 RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
-BAR_SCHEMA = pa.schema((
-    pa.field("begin", pa.string(), nullable=False),
-    pa.field("end", pa.string(), nullable=False),
-    pa.field("open", pa.float64()),
-    pa.field("high", pa.float64()),
-    pa.field("low", pa.float64()),
-    pa.field("close", pa.float64(), nullable=False),
-    pa.field("value", pa.float64()),
-    pa.field("volume", pa.int64()),
-    pa.field("source_page_id", pa.int32()),
-))
-SOURCE_SCHEMA = pa.schema((
-    pa.field("source_page_id", pa.int32(), nullable=False),
-    pa.field("url", pa.string()),
-    pa.field("received_at", pa.string()),
-    pa.field("raw_response_sha256", pa.string()),
-    pa.field("first_begin", pa.string(), nullable=False),
-    pa.field("last_begin", pa.string(), nullable=False),
-    pa.field("row_count", pa.int32(), nullable=False),
-))
+BAR_SCHEMA = pa.schema(
+    (
+        pa.field("begin", pa.string(), nullable=False),
+        pa.field("end", pa.string(), nullable=False),
+        pa.field("open", pa.float64()),
+        pa.field("high", pa.float64()),
+        pa.field("low", pa.float64()),
+        pa.field("close", pa.float64(), nullable=False),
+        pa.field("value", pa.float64()),
+        pa.field("volume", pa.int64()),
+        pa.field("source_page_id", pa.int32()),
+    )
+)
+SOURCE_SCHEMA = pa.schema(
+    (
+        pa.field("source_page_id", pa.int32(), nullable=False),
+        pa.field("url", pa.string()),
+        pa.field("received_at", pa.string()),
+        pa.field("raw_response_sha256", pa.string()),
+        pa.field("first_begin", pa.string(), nullable=False),
+        pa.field("last_begin", pa.string(), nullable=False),
+        pa.field("row_count", pa.int32(), nullable=False),
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -111,11 +115,13 @@ def _integer(value: Any, label: str) -> int | None:
 
 
 def _source_key(source: dict[str, Any]) -> bytes:
-    return canonical_bytes({
-        "url": source.get("url"),
-        "received_at": source.get("received_at"),
-        "raw_response_sha256": source.get("raw_response_sha256"),
-    })
+    return canonical_bytes(
+        {
+            "url": source.get("url"),
+            "received_at": source.get("received_at"),
+            "raw_response_sha256": source.get("raw_response_sha256"),
+        }
+    )
 
 
 def _read_legacy_series(path: Path) -> LegacyCandleSeries:
@@ -170,9 +176,13 @@ def _read_legacy_series(path: Path) -> LegacyCandleSeries:
             try:
                 proxy_value = float(price_proxy)
             except ValueError as exc:
-                raise DataLakeError(f"legacy candle price_proxy is not numeric: {path}[{index}]") from exc
+                raise DataLakeError(
+                    f"legacy candle price_proxy is not numeric: {path}[{index}]"
+                ) from exc
             if proxy_value != close:
-                raise DataLakeError(f"legacy candle price_proxy differs from close: {path}[{index}]")
+                raise DataLakeError(
+                    f"legacy candle price_proxy differs from close: {path}[{index}]"
+                )
         source_page_id: int | None = None
         source = row.get("source")
         if source is not None:
@@ -182,37 +192,45 @@ def _read_legacy_series(path: Path) -> LegacyCandleSeries:
             for field in ("url", "received_at", "raw_response_sha256"):
                 value = source.get(field)
                 if value is not None and not isinstance(value, str):
-                    raise DataLakeError(f"legacy candle source {field} must be a string or null: {path}[{index}]")
+                    raise DataLakeError(
+                        f"legacy candle source {field} must be a string or null: {path}[{index}]"
+                    )
                 page_provenance[field] = value
             raw_hash = page_provenance["raw_response_sha256"]
             if raw_hash is not None and not re.fullmatch(r"[0-9a-fA-F]{64}", raw_hash):
-                raise DataLakeError(f"legacy candle source raw_response_sha256 is invalid: {path}[{index}]")
+                raise DataLakeError(
+                    f"legacy candle source raw_response_sha256 is invalid: {path}[{index}]"
+                )
             key = _source_key(page_provenance)
             source_page_id = source_ids.get(key)
             if source_page_id is None:
                 source_page_id = len(sources)
                 source_ids[key] = source_page_id
-                sources.append({
-                    "source_page_id": source_page_id,
-                    **page_provenance,
-                    "first_begin": begin,
-                    "last_begin": begin,
-                    "row_count": 0,
-                })
+                sources.append(
+                    {
+                        "source_page_id": source_page_id,
+                        **page_provenance,
+                        "first_begin": begin,
+                        "last_begin": begin,
+                        "row_count": 0,
+                    }
+                )
             page = sources[source_page_id]
             page["last_begin"] = begin
             page["row_count"] += 1
-        bars.append({
-            "begin": begin,
-            "end": end,
-            "open": _number(row.get("open"), "open"),
-            "high": _number(row.get("high"), "high"),
-            "low": _number(row.get("low"), "low"),
-            "close": close,
-            "value": _number(row.get("value"), "value"),
-            "volume": _integer(row.get("volume"), "volume"),
-            "source_page_id": source_page_id,
-        })
+        bars.append(
+            {
+                "begin": begin,
+                "end": end,
+                "open": _number(row.get("open"), "open"),
+                "high": _number(row.get("high"), "high"),
+                "low": _number(row.get("low"), "low"),
+                "close": close,
+                "value": _number(row.get("value"), "value"),
+                "volume": _integer(row.get("volume"), "volume"),
+                "source_page_id": source_page_id,
+            }
+        )
     if any(left["begin"] >= right["begin"] for left, right in zip(bars, bars[1:])):
         raise DataLakeError(f"legacy candle timestamps are not strictly increasing: {path}")
     row_semantics = {
@@ -240,7 +258,9 @@ def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
             temporary = Path(handle.name)
         pq.write_table(table, temporary, compression="zstd", version="2.6")
         os.replace(temporary, path)
@@ -254,7 +274,9 @@ def _atomic_write_bytes(path: Path, value: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
             temporary = Path(handle.name)
             handle.write(value)
         os.replace(temporary, path)
@@ -293,7 +315,11 @@ class RawResponseArchive:
     @staticmethod
     def _entry_path(entry: dict[str, Any]) -> str:
         value = entry.get("path")
-        if not isinstance(value, str) or Path(value).name != value or not value.endswith(".json.zst"):
+        if (
+            not isinstance(value, str)
+            or Path(value).name != value
+            or not value.endswith(".json.zst")
+        ):
             raise DataLakeError("raw response manifest contains an unsafe path")
         return value
 
@@ -321,7 +347,14 @@ class RawResponseArchive:
         compressed = self._codec.compress(raw).to_pybytes()
         _atomic_write_bytes(self.root / filename, compressed)
         manifest = self._read_manifest()
-        old = next((item for item in manifest["entries"] if isinstance(item, dict) and item.get("id") == entry_id), None)
+        old = next(
+            (
+                item
+                for item in manifest["entries"]
+                if isinstance(item, dict) and item.get("id") == entry_id
+            ),
+            None,
+        )
         pinned = bool(pin or (old and old.get("pinned") is True))
         stored_at = now.isoformat(timespec="seconds")
         entry = {
@@ -334,12 +367,18 @@ class RawResponseArchive:
             "received_at": received_at,
             "stored_at": stored_at,
             "last_seen_at": stored_at,
-            "expires_at": None if pinned else (now + timedelta(days=ttl_days)).isoformat(timespec="seconds"),
+            "expires_at": None
+            if pinned
+            else (now + timedelta(days=ttl_days)).isoformat(timespec="seconds"),
             "pinned": pinned,
             "raw_bytes": len(raw),
             "compressed_bytes": len(compressed),
         }
-        entries = [item for item in manifest["entries"] if not (isinstance(item, dict) and item.get("id") == entry_id)]
+        entries = [
+            item
+            for item in manifest["entries"]
+            if not (isinstance(item, dict) and item.get("id") == entry_id)
+        ]
         entries.append(entry)
         manifest["entries"] = sorted(entries, key=lambda item: item["id"])
         self._write_manifest(manifest)
@@ -350,7 +389,11 @@ class RawResponseArchive:
         for entry in manifest["entries"]:
             if isinstance(entry, dict) and entry.get("id") == entry_id:
                 entry["pinned"] = pinned
-                entry["expires_at"] = None if pinned else entry.get("expires_at") or datetime.now(UTC).isoformat(timespec="seconds")
+                entry["expires_at"] = (
+                    None
+                    if pinned
+                    else entry.get("expires_at") or datetime.now(UTC).isoformat(timespec="seconds")
+                )
                 self._write_manifest(manifest)
                 return entry
         raise DataLakeError(f"raw response entry is not registered: {entry_id}")
@@ -364,7 +407,9 @@ class RawResponseArchive:
             name = self._entry_path(entry)
             registered_paths.add(name)
             try:
-                raw = self._codec.decompress((self.root / name).read_bytes(), int(entry["raw_bytes"]))
+                raw = self._codec.decompress(
+                    (self.root / name).read_bytes(), int(entry["raw_bytes"])
+                )
             except (OSError, ValueError, KeyError) as exc:
                 raise DataLakeError(f"cannot verify raw response {entry.get('id')}: {exc}") from exc
             url = entry.get("url")
@@ -379,12 +424,22 @@ class RawResponseArchive:
                 or entry.get("received_at_sha256") != received_sha256
                 or entry.get("id") != expected_id
             ):
-                raise DataLakeError(f"raw response provenance hash differs from manifest: {entry.get('id')}")
+                raise DataLakeError(
+                    f"raw response provenance hash differs from manifest: {entry.get('id')}"
+                )
             if hashlib.sha256(raw).hexdigest() != entry.get("raw_response_sha256"):
-                raise DataLakeError(f"raw response SHA-256 differs from manifest: {entry.get('id')}")
+                raise DataLakeError(
+                    f"raw response SHA-256 differs from manifest: {entry.get('id')}"
+                )
             verified_bytes += len(raw)
-        orphans = sorted(path.name for path in self.root.glob("*.json.zst") if path.name not in registered_paths)
-        return {"entry_count": len(entries), "verified_raw_bytes": verified_bytes, "orphan_files": orphans}
+        orphans = sorted(
+            path.name for path in self.root.glob("*.json.zst") if path.name not in registered_paths
+        )
+        return {
+            "entry_count": len(entries),
+            "verified_raw_bytes": verified_bytes,
+            "orphan_files": orphans,
+        }
 
     def gc(self, *, dry_run: bool = True) -> dict[str, Any]:
         manifest = self._read_manifest()
@@ -403,7 +458,9 @@ class RawResponseArchive:
                     raise DataLakeError(f"raw response expiry is invalid: {entry.get('id')}")
             (expired if is_expired else keep).append(entry)
         registered_paths = {self._entry_path(entry) for entry in manifest["entries"]}
-        orphans = sorted(path for path in self.root.glob("*.json.zst") if path.name not in registered_paths)
+        orphans = sorted(
+            path for path in self.root.glob("*.json.zst") if path.name not in registered_paths
+        )
         planned = [self._entry_path(entry) for entry in expired] + [path.name for path in orphans]
         if not dry_run:
             for name in planned:
@@ -437,7 +494,10 @@ class ParquetBarStore:
 
     def _paths(self, series: LegacyCandleSeries) -> tuple[Path, Path]:
         prefix = Path(f"timeframe={series.timeframe}") / f"secid={series.secid}"
-        return self.bars_root / prefix / "data.parquet", self.sources_root / prefix / "sources.parquet"
+        return (
+            self.bars_root / prefix / "data.parquet",
+            self.sources_root / prefix / "sources.parquet",
+        )
 
     def _read_manifest(self) -> dict[str, Any]:
         try:
@@ -514,47 +574,88 @@ class ParquetBarStore:
                     PRIMARY KEY(dataset_id, source_page_id)
                 )
             """)
-            connection.execute("DELETE FROM source_pages WHERE dataset_id = ?", [record["dataset_id"]])
-            connection.execute("DELETE FROM bar_datasets WHERE dataset_id = ?", [record["dataset_id"]])
-            connection.execute("""
+            connection.execute(
+                "DELETE FROM source_pages WHERE dataset_id = ?", [record["dataset_id"]]
+            )
+            connection.execute(
+                "DELETE FROM bar_datasets WHERE dataset_id = ?", [record["dataset_id"]]
+            )
+            connection.execute(
+                """
                 INSERT INTO bar_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                record[key] for key in (
-                    "dataset_id", "secid", "board", "interval", "timeframe", "bars_path", "sources_path",
-                    "row_count", "first_begin", "last_begin", "legacy_path", "legacy_sha256",
-                    "parquet_sha256", "sources_sha256", "created_at",
-                )
-            ])
+            """,
+                [
+                    record[key]
+                    for key in (
+                        "dataset_id",
+                        "secid",
+                        "board",
+                        "interval",
+                        "timeframe",
+                        "bars_path",
+                        "sources_path",
+                        "row_count",
+                        "first_begin",
+                        "last_begin",
+                        "legacy_path",
+                        "legacy_sha256",
+                        "parquet_sha256",
+                        "sources_sha256",
+                        "created_at",
+                    )
+                ],
+            )
             if sources:
-                connection.executemany("""
+                connection.executemany(
+                    """
                     INSERT INTO source_pages VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
-                    [record["dataset_id"], *[
-                        source[key]
-                        for key in (
-                            "source_page_id", "url", "received_at", "raw_response_sha256",
-                            "first_begin", "last_begin", "row_count",
-                        )
-                    ]]
-                    for source in sources
-                ])
+                """,
+                    [
+                        [
+                            record["dataset_id"],
+                            *[
+                                source[key]
+                                for key in (
+                                    "source_page_id",
+                                    "url",
+                                    "received_at",
+                                    "raw_response_sha256",
+                                    "first_begin",
+                                    "last_begin",
+                                    "row_count",
+                                )
+                            ],
+                        ]
+                        for source in sources
+                    ],
+                )
 
     def _upsert_manifest(self, record: dict[str, Any]) -> None:
         manifest = self._read_manifest()
         previous = next(
-            (entry for entry in manifest["datasets"] if isinstance(entry, dict) and entry.get("dataset_id") == record["dataset_id"]),
+            (
+                entry
+                for entry in manifest["datasets"]
+                if isinstance(entry, dict) and entry.get("dataset_id") == record["dataset_id"]
+            ),
             None,
         )
         if previous is not None and previous != record:
             revisions = manifest.setdefault("dataset_revisions", [])
             if not isinstance(revisions, list):
                 raise DataLakeError("data-lake manifest dataset_revisions must be a list")
-            revisions.append({
-                "dataset_id": record["dataset_id"],
-                "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                "record": previous,
-            })
-        entries = [entry for entry in manifest["datasets"] if entry.get("dataset_id") != record["dataset_id"]]
+            revisions.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "record": previous,
+                }
+            )
+        entries = [
+            entry
+            for entry in manifest["datasets"]
+            if entry.get("dataset_id") != record["dataset_id"]
+        ]
         entries.append(record)
         manifest["datasets"] = sorted(entries, key=lambda item: item["dataset_id"])
         manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
@@ -565,7 +666,9 @@ class ParquetBarStore:
         bars_path, sources_path = self._paths(series)
         reject_sealed_table_write(self.root, bars_path)
         if not replace and (bars_path.exists() or sources_path.exists()):
-            raise DataLakeError(f"data-lake dataset already exists: {series.dataset_id}; use --replace")
+            raise DataLakeError(
+                f"data-lake dataset already exists: {series.dataset_id}; use --replace"
+            )
         bars = pa.Table.from_pylist(series.bars, schema=BAR_SCHEMA)
         sources = pa.Table.from_pylist(series.sources, schema=SOURCE_SCHEMA)
         _atomic_write_parquet(bars_path, bars)
@@ -582,12 +685,18 @@ class ParquetBarStore:
             "last_begin": series.bars[-1]["begin"],
             "from": series.from_date,
             "till": series.till_date,
-            "legacy_path": str(series.path.relative_to(self.root)) if series.path.is_relative_to(self.root) else str(series.path),
+            "legacy_path": str(series.path.relative_to(self.root))
+            if series.path.is_relative_to(self.root)
+            else str(series.path),
             "legacy_sha256": series.sha256,
             "legacy_metadata": series.legacy_metadata,
             "row_semantics": series.row_semantics,
-            "bars_path": str(bars_path.relative_to(self.root)) if bars_path.is_relative_to(self.root) else str(bars_path),
-            "sources_path": str(sources_path.relative_to(self.root)) if sources_path.is_relative_to(self.root) else str(sources_path),
+            "bars_path": str(bars_path.relative_to(self.root))
+            if bars_path.is_relative_to(self.root)
+            else str(bars_path),
+            "sources_path": str(sources_path.relative_to(self.root))
+            if sources_path.is_relative_to(self.root)
+            else str(sources_path),
             "parquet_sha256": sha256_file(bars_path),
             "sources_sha256": sha256_file(sources_path),
             "source_page_count": len(series.sources),
@@ -630,9 +739,13 @@ class ParquetBarStore:
         """Read a registered Parquet dataset as rows consumed by research logic."""
         record = self._record(secid, timeframe)
         bars_path = self._record_path(record["bars_path"])
-        table = pq.ParquetFile(bars_path).read(columns=list(columns) if columns is not None else None)
+        table = pq.ParquetFile(bars_path).read(
+            columns=list(columns) if columns is not None else None
+        )
         semantics = record.get("row_semantics")
-        price_proxy_kind = semantics.get("price_proxy_kind") if isinstance(semantics, dict) else None
+        price_proxy_kind = (
+            semantics.get("price_proxy_kind") if isinstance(semantics, dict) else None
+        )
         rows = []
         for row in table.to_pylist():
             if price_proxy_kind is not None:
@@ -649,14 +762,20 @@ class ParquetBarStore:
             schema_version=LEGACY_CANDLE_SCHEMA,
             secid=record.get("secid") if isinstance(record.get("secid"), str) else secid,
             interval=record.get("interval") if isinstance(record.get("interval"), int) else None,
-            timeframe=record.get("timeframe") if isinstance(record.get("timeframe"), str) else timeframe,
+            timeframe=record.get("timeframe")
+            if isinstance(record.get("timeframe"), str)
+            else timeframe,
             rows=tuple(rows),
             source_path=str(selected_path),
             source_sha256=source_sha256 or str(record["legacy_sha256"]),
             backend="parquet",
             cache_key=(
-                "parquet", str(selected_path.resolve()), *source_fingerprint,
-                str(bars_path.resolve()), bars_stat.st_mtime_ns, bars_stat.st_size,
+                "parquet",
+                str(selected_path.resolve()),
+                *source_fingerprint,
+                str(bars_path.resolve()),
+                bars_stat.st_mtime_ns,
+                bars_stat.st_size,
             ),
             metadata=record,
         )
@@ -672,7 +791,9 @@ class ParquetBarStore:
     ) -> pa.Table:
         record = self._record(secid, timeframe)
         bars_path = self.root / record["bars_path"]
-        table = pq.ParquetFile(bars_path).read(columns=list(columns) if columns is not None else None)
+        table = pq.ParquetFile(bars_path).read(
+            columns=list(columns) if columns is not None else None
+        )
         if start is not None or end is not None:
             if "begin" not in table.column_names:
                 raise DataLakeError("date filtering requires the begin column")
@@ -691,29 +812,44 @@ class ParquetBarStore:
         series = _read_legacy_series(legacy_path)
         record = self._record(series.secid, series.timeframe)
         if record.get("legacy_sha256") != series.sha256:
-            raise DataLakeError(f"legacy SHA-256 differs from imported dataset: {series.dataset_id}")
+            raise DataLakeError(
+                f"legacy SHA-256 differs from imported dataset: {series.dataset_id}"
+            )
         if record.get("legacy_metadata") != series.legacy_metadata:
-            raise DataLakeError(f"legacy metadata differs from imported dataset: {series.dataset_id}")
+            raise DataLakeError(
+                f"legacy metadata differs from imported dataset: {series.dataset_id}"
+            )
         if record.get("row_semantics") != series.row_semantics:
-            raise DataLakeError(f"legacy row semantics differ from imported dataset: {series.dataset_id}")
+            raise DataLakeError(
+                f"legacy row semantics differ from imported dataset: {series.dataset_id}"
+            )
         bars_path = self.root / record["bars_path"]
         sources_path = self.root / record["sources_path"]
         if sha256_file(bars_path) != record.get("parquet_sha256"):
             raise DataLakeError(f"bars Parquet SHA-256 differs from manifest: {series.dataset_id}")
         if sha256_file(sources_path) != record.get("sources_sha256"):
-            raise DataLakeError(f"sources Parquet SHA-256 differs from manifest: {series.dataset_id}")
+            raise DataLakeError(
+                f"sources Parquet SHA-256 differs from manifest: {series.dataset_id}"
+            )
         actual_bars = pq.ParquetFile(bars_path).read().to_pylist()
         actual_sources = pq.ParquetFile(sources_path).read().to_pylist()
         if actual_bars != series.bars:
             raise DataLakeError(f"Parquet bars differ from legacy rows: {series.dataset_id}")
         if actual_sources != series.sources:
-            raise DataLakeError(f"Parquet source manifest differs from legacy provenance: {series.dataset_id}")
+            raise DataLakeError(
+                f"Parquet source manifest differs from legacy provenance: {series.dataset_id}"
+            )
         with duckdb.connect(str(self.catalog_path), read_only=True) as connection:
             catalog = connection.execute(
                 "SELECT row_count, legacy_sha256, parquet_sha256, sources_sha256 FROM bar_datasets WHERE dataset_id = ?",
                 [series.dataset_id],
             ).fetchone()
-        if catalog != (len(series.bars), series.sha256, record["parquet_sha256"], record["sources_sha256"]):
+        if catalog != (
+            len(series.bars),
+            series.sha256,
+            record["parquet_sha256"],
+            record["sources_sha256"],
+        ):
             raise DataLakeError(f"DuckDB catalog differs from manifest: {series.dataset_id}")
         return {
             "schema_version": BAR_DATASET_SCHEMA,
@@ -724,7 +860,6 @@ class ParquetBarStore:
             "legacy_sha256": series.sha256,
             "parquet_sha256": record["parquet_sha256"],
         }
-
 
     @property
     def raw_archive(self) -> RawResponseArchive:
@@ -777,9 +912,13 @@ class ParquetBarStore:
             self._upsert_catalog(updated, sources.to_pylist())
             self._upsert_manifest(updated)
             self.verify_legacy(self._record_path(str(updated["legacy_path"])))
-            results.append({"dataset_id": dataset_id, "status": "compacted", "row_count": bars.num_rows})
+            results.append(
+                {"dataset_id": dataset_id, "status": "compacted", "row_count": bars.num_rows}
+            )
         return {
-            "status": "compacted" if any(item["status"] == "compacted" for item in results) else "already_compact",
+            "status": "compacted"
+            if any(item["status"] == "compacted" for item in results)
+            else "already_compact",
             "dataset_count": len(results),
             "datasets": results,
         }
@@ -845,10 +984,18 @@ class LegacyJsonBarStore:
             interval=interval,
             timeframe=timeframe,
             rows=tuple(
-                ({
-                    **{key: row[key] for key in columns if key in row},
-                    **({"price_proxy_kind": row["price_proxy_kind"]} if "price_proxy_kind" in row else {}),
-                } if columns is not None else dict(row))
+                (
+                    {
+                        **{key: row[key] for key in columns if key in row},
+                        **(
+                            {"price_proxy_kind": row["price_proxy_kind"]}
+                            if "price_proxy_kind" in row
+                            else {}
+                        ),
+                    }
+                    if columns is not None
+                    else dict(row)
+                )
                 for row in raw_rows
             ),
             source_path=str(legacy_path),
@@ -915,7 +1062,10 @@ class MarketDataStore:
         except OSError:
             return None
         key: tuple[Any, ...] = (
-            str(legacy_path.resolve()), stat.st_mtime_ns, stat.st_size, columns,
+            str(legacy_path.resolve()),
+            stat.st_mtime_ns,
+            stat.st_size,
+            columns,
         )
         if record is None:
             return (*key, "legacy_json")
@@ -924,13 +1074,23 @@ class MarketDataStore:
             bars_stat = bars_path.stat()
             manifest_stat = self.parquet.manifest_path.stat()
         except (KeyError, OSError):
-            return (*key, "parquet_unavailable", record.get("legacy_sha256"), record.get("parquet_sha256"))
+            return (
+                *key,
+                "parquet_unavailable",
+                record.get("legacy_sha256"),
+                record.get("parquet_sha256"),
+            )
         return (
             *key,
             "parquet",
-            record.get("dataset_id"), record.get("legacy_sha256"), record.get("parquet_sha256"),
-            manifest_stat.st_mtime_ns, manifest_stat.st_size,
-            str(bars_path.resolve()), bars_stat.st_mtime_ns, bars_stat.st_size,
+            record.get("dataset_id"),
+            record.get("legacy_sha256"),
+            record.get("parquet_sha256"),
+            manifest_stat.st_mtime_ns,
+            manifest_stat.st_size,
+            str(bars_path.resolve()),
+            bars_stat.st_mtime_ns,
+            bars_stat.st_size,
         )
 
     def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:

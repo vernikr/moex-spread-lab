@@ -12,6 +12,7 @@ from array import array
 from copy import deepcopy
 
 from moex_spread_lab.core.w0 import W0Error, _run_id
+
 from .account_risk import DEFAULT_STRESS_VM_BUFFER, DEFAULT_UNCERTAINTY_BUFFER
 from .costs import _cost_totals, side_cost, tariff_profile
 
@@ -60,9 +61,7 @@ def maximum_quantity(budget, margin, unit_costs, *, stress, native_spread=False)
 
     q = max(
         0,
-        math.floor(
-            (budget - fixed_reserve) / (required_margin + 2 * sum(unit_costs.values()))
-        ),
+        math.floor((budget - fixed_reserve) / (required_margin + 2 * sum(unit_costs.values()))),
     )
     # Component rounding can move the exact boundary by a kopeck.
     while q and requirement(q) > budget + 1e-9:
@@ -75,7 +74,9 @@ def maximum_quantity(budget, margin, unit_costs, *, stress, native_spread=False)
 class _Terms:
     def __init__(self, proof, contracts, settings):
         self.native = proof.get("universe") == "calendar_native"
-        self.native_order = self.native and proof.get("selection", {}).get("price_source") != "synthetic_leg_proxy"
+        self.native_order = (
+            self.native and proof.get("selection", {}).get("price_source") != "synthetic_leg_proxy"
+        )
         self.rows = proof["series"]
         self.open_fill = proof["selection"].get("fill") == "next_open"
         self.profile = tariff_profile(settings.slippage_ticks)
@@ -93,18 +94,14 @@ class _Terms:
                 self.legs = [contracts[instrument[k]] for k in ("near", "far")]
             except KeyError as exc:
                 raise W0Error("Нет параметров обеих ног для расчёта размера.") from exc
-            self.margin = sum(
-                _positive(c.get("initial_margin"), "ГО ноги") for c in self.legs
-            )
+            self.margin = sum(_positive(c.get("initial_margin"), "ГО ноги") for c in self.legs)
             for c in self.legs:
                 _positive(c.get("tick_size"), "шаг цены ноги")
                 _positive(c.get("tick_value"), "стоимость шага ноги")
 
     def point(self, index):
         return (
-            _positive(
-                self.rows[index].get("point_value_rub"), "дневная стоимость пункта"
-            )
+            _positive(self.rows[index].get("point_value_rub"), "дневная стоимость пункта")
             if self.native
             else 1.0
         )
@@ -163,7 +160,9 @@ def _size_proof_fast_c(
         return None
     scan_cols = _scan_cache.get(_scan_key) if _scan_cache is not None else None
     if scan_cols is not None and len(scan_cols[0]) == n:
-        dates, prices, spreads, points, posted_units, elig, entry_elig, exit_elig, date_to_idx = scan_cols
+        dates, prices, spreads, points, posted_units, elig, entry_elig, exit_elig, date_to_idx = (
+            scan_cols
+        )
     else:
         dates = [r["date"] for r in rows]
         prices = array("d", (_positive(marks[d], "отметка LQDT") for d in dates))
@@ -176,8 +175,12 @@ def _size_proof_fast_c(
             posted_units = array("d", [terms.margin]) * n
         elig_list = [1 if r.get("volume_eligible", True) else 0 for r in rows]
         elig = array("B", elig_list)
-        entry_elig = array("B", (1 if r.get("entry_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list)))
-        exit_elig = array("B", (1 if r.get("exit_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list)))
+        entry_elig = array(
+            "B", (1 if r.get("entry_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list))
+        )
+        exit_elig = array(
+            "B", (1 if r.get("exit_eligible", bool(e)) else 0 for r, e in zip(rows, elig_list))
+        )
         date_to_idx = {d: i for i, d in enumerate(dates)}
         if _scan_cache is not None:
             _scan_cache[_scan_key] = (
@@ -203,16 +206,12 @@ def _size_proof_fast_c(
         exit_idx = date_to_idx.get(exit_day, -1)
         same_day = exit_idx == entry_idx
         open_at_end = bool(t.get("open_at_end"))
-        entry_margin, entry_costs = terms.at_fill(
-            t["entry"], entry_idx, at_open=terms.open_fill
-        )
+        entry_margin, entry_costs = terms.at_fill(t["entry"], entry_idx, at_open=terms.open_fill)
         if not set(entry_costs) <= _STD_COST_KEYS:
             return None
         _positive(entry_margin, "ГО пары")
         if any(not math.isfinite(v) or v < 0 for v in entry_costs.values()):
-            raise W0Error(
-                "Неизвестные издержки не могут стать нулём при расчёте размера."
-            )
+            raise W0Error("Неизвестные издержки не могут стать нулём при расчёте размера.")
         if exit_idx >= 0:
             _, exit_costs = terms.at_fill(
                 t["exit"],
@@ -224,9 +223,7 @@ def _size_proof_fast_c(
             exit_point = (
                 terms.point(exit_idx)
                 if same_day
-                else terms.fill_point(
-                    exit_idx, at_open=terms.open_fill and not open_at_end
-                )
+                else terms.fill_point(exit_idx, at_open=terms.open_fill and not open_at_end)
             )
         else:
             exit_costs = {}
@@ -254,8 +251,7 @@ def _size_proof_fast_c(
         )
     trade_specs.sort(key=lambda item: item[1])
     has_funding = any(
-        r.get("funding_rub") is not None or r.get("funding_contracts", 0)
-        for r in rows
+        r.get("funding_rub") is not None or r.get("funding_contracts", 0) for r in rows
     )
 
     use_scalar = False
@@ -291,15 +287,10 @@ def _size_proof_fast_c(
         end_idx,
     )
     if ledger_or_summary == "overlap":
-        raise W0Error(
-            "Перекрывающиеся сигналы не поддерживаются одним счётом окна."
-        )
+        raise W0Error("Перекрывающиеся сигналы не поддерживаются одним счётом окна.")
     if use_scalar:
         p0, end_price, end_wealth, end_cum_net, any_window_shortfall = ledger_or_summary
-        exposed = any(
-            e_i <= end_idx and (x_i < 0 or x_i >= start_idx)
-            for e_i, x_i in acc_tuples
-        )
+        exposed = any(e_i <= end_idx and (x_i < 0 or x_i >= start_idx) for e_i, x_i in acc_tuples)
         proof["selection"]["sizing"] = AUTO_SIZING
         proof["initial_capital_rub"] = initial
         proof["sizing"] = {"initial_capital_rub": initial}
@@ -347,13 +338,10 @@ def _size_proof_fast_c(
             }
         else:
             t["exit"]["costs"] = {}
-        t["costs_rub"] = _money(
-            ec0 + ec1 + ec2 + (xc0 + xc1 + xc2 if has_xc else 0.0)
-        )
+        t["costs_rub"] = _money(ec0 + ec1 + ec2 + (xc0 + xc1 + xc2 if has_xc else 0.0))
         t["net_rub"] = _money(gross_rub - t["costs_rub"])
         t["lqdt_on_margin_rub"] = _money(
-            margin_rub
-            * (marks[t["exit"]["date"]] / marks[t["entry"]["date"]] - 1)
+            margin_rub * (marks[t["exit"]["date"]] / marks[t["entry"]["date"]] - 1)
         )
         accepted.append(t)
 
@@ -429,9 +417,7 @@ def size_proof(
         return {k: _money(v * q) for k, v in costs.items()}
 
     def move(pos, end, point):
-        change = _money(
-            pos["sign"] * (end - pos["mark"]) * point * pos["trade"]["quantity"]
-        )
+        change = _money(pos["sign"] * (end - pos["mark"]) * point * pos["trade"]["quantity"])
         pos["trade"]["_gross"] += change
         pos["mark"] = end
         return change
@@ -470,7 +456,10 @@ def size_proof(
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and (strategy_name == "funding_only" or proof.get("accounting_policy") == "carry_settlement.v1")
+                        and (
+                            strategy_name == "funding_only"
+                            or proof.get("accounting_policy") == "carry_settlement.v1"
+                        )
                         else scaled(unit_costs, t["quantity"])
                     )
                     fee = sum(t["exit"]["costs"].values())
@@ -485,12 +474,8 @@ def size_proof(
         candidate = intents.get(day)
         if candidate is not None and entry_eligible:
             if position is not None:
-                raise W0Error(
-                    "Перекрывающиеся сигналы не поддерживаются одним счётом окна."
-                )
-            margin, entry_costs = terms.at_fill(
-                candidate["entry"], i, at_open=terms.open_fill
-            )
+                raise W0Error("Перекрывающиеся сигналы не поддерживаются одним счётом окна.")
+            margin, entry_costs = terms.at_fill(candidate["entry"], i, at_open=terms.open_fill)
             budget = max(0.0, min(initial, fill_wealth))
             q = (
                 0
@@ -562,7 +547,10 @@ def size_proof(
                     t["exit"]["costs"] = (
                         {}
                         if t.get("open_at_end")
-                        and (strategy_name == "funding_only" or proof.get("accounting_policy") == "carry_settlement.v1")
+                        and (
+                            strategy_name == "funding_only"
+                            or proof.get("accounting_policy") == "carry_settlement.v1"
+                        )
                         else scaled(exit_costs, q)
                     )
                     cost += sum(t["exit"]["costs"].values())
@@ -571,9 +559,7 @@ def size_proof(
                     position = None
 
         funding_q = (
-            funding_owner["quantity"]
-            if funding_owner is not None and unit_funding_contracts
-            else 0
+            funding_owner["quantity"] if funding_owner is not None and unit_funding_contracts else 0
         )
         funding = _money(float(unit_funding or 0.0) * funding_q)
         if funding_owner is not None:
@@ -641,9 +627,7 @@ def size_proof(
         for t in accepted:
             t["gross_rub"] = _money(t.pop("_gross"))
             t.pop("_funding")
-            t["costs_rub"] = _money(
-                sum(sum(t[s]["costs"].values()) for s in ("entry", "exit"))
-            )
+            t["costs_rub"] = _money(sum(sum(t[s]["costs"].values()) for s in ("entry", "exit")))
             t["net_rub"] = _money(t["gross_rub"] - t["costs_rub"])
             t["lqdt_on_margin_rub"] = _money(
                 t["margin_rub"] * (marks[t["exit"]["date"]] / marks[t["entry"]["date"]] - 1)
@@ -660,17 +644,13 @@ def size_proof(
         total_funding = _money(t.pop("_funding"))
         if t.get("funding_rub") is not None or not terms.native:
             t["funding_rub"] = total_funding
-        t["costs_rub"] = _money(
-            sum(sum(t[s]["costs"].values()) for s in ("entry", "exit"))
-        )
+        t["costs_rub"] = _money(sum(sum(t[s]["costs"].values()) for s in ("entry", "exit")))
         t["net_rub"] = _money(t["gross_rub"] - t["costs_rub"])
         t["lqdt_on_margin_rub"] = _money(
             t["margin_rub"] * (marks[t["exit"]["date"]] / marks[t["entry"]["date"]] - 1)
         )
         t["excess_rub"] = _money(t["net_rub"] - t["lqdt_on_margin_rub"])
-        t["result"] = (
-            "win" if t["net_rub"] > 0 else "loss" if t["net_rub"] < 0 else "flat"
-        )
+        t["result"] = "win" if t["net_rub"] > 0 else "loss" if t["net_rub"] < 0 else "flat"
         if "gross_rub_static" in t:
             t["gross_rub_static"] = _money(t["gross_rub_static"] * t["quantity"])
     closed = [t for t in accepted if not t.get("open_at_end")]
@@ -684,7 +664,10 @@ def size_proof(
         slippage_ticks=settings.slippage_ticks,
         initial_capital_rub=initial,
     )
-    if terms.native and proof["selection"]["strategy"] in {"zscore_mean_reversion", "convergence_to_ruonia"}:
+    if terms.native and proof["selection"]["strategy"] in {
+        "zscore_mean_reversion",
+        "convergence_to_ruonia",
+    }:
         editable = (
             {"entry_z", "exit_z", "window"}
             if proof["selection"]["strategy"] == "zscore_mean_reversion"
@@ -694,9 +677,7 @@ def size_proof(
         proof["selection"]["strategy_conventions"] = {
             k: v for k, v in parameters.items() if k not in editable
         }
-        proof["selection"]["parameters"] = {
-            k: v for k, v in parameters.items() if k in editable
-        }
+        proof["selection"]["parameters"] = {k: v for k, v in parameters.items() if k in editable}
     proof.update(
         initial_capital_rub=initial,
         trades=accepted,
@@ -733,10 +714,7 @@ def size_proof(
     )
     if terms.native:
         proof["summary"]["fx_point_value_drift_rub"] = _money(
-            sum(
-                t["gross_rub"] - t.get("gross_rub_static", t["gross_rub"])
-                for t in accepted
-            )
+            sum(t["gross_rub"] - t.get("gross_rub_static", t["gross_rub"]) for t in accepted)
         )
     if not metrics_only:
         # Presentation fields (notes, run_id) are only required for the published

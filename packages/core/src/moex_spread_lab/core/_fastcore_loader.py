@@ -12,20 +12,20 @@ from pathlib import Path
 from typing import Any
 
 _LOCK = threading.Lock()
-_LOADED = False
-_MODULE: Any = None
+_loaded = False
+_module: Any = None
 
 
 def load_fastcore() -> Any:
     """Return compiled `_fastcore` C module if available, else None (pure-Python fallback)."""
-    global _LOADED, _MODULE
+    global _loaded, _module
     if os.environ.get("MOEX_PROOF_DISABLE_C") == "1":
         return None
-    if _LOADED:
-        return _MODULE
+    if _loaded:
+        return _module
     with _LOCK:
-        if _LOADED:
-            return _MODULE
+        if _loaded:
+            return _module
         pkg_dir = Path(__file__).resolve().parent
         c_path = pkg_dir / "_fastcore.c"
         ext = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
@@ -63,12 +63,15 @@ def load_fastcore() -> Any:
                     )
                     os.replace(tmp_so, so_path)
             if so_path.is_file():
-                spec = importlib.util.spec_from_file_location("moex_spread_lab.core._fastcore", so_path)
+                spec = importlib.util.spec_from_file_location(
+                    "moex_spread_lab.core._fastcore", so_path
+                )
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
-                    _MODULE = mod
+                    _module = mod
+        # code-health: allow broad exception: optional C extension falls back to Python.
         except Exception:
-            _MODULE = None
-        _LOADED = True
-        return _MODULE
+            _module = None
+        _loaded = True
+        return _module

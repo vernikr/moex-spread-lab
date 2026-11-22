@@ -7,9 +7,9 @@ from pathlib import Path
 
 from period_settings_smoke import apply, expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import two_calendar_windows
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import two_calendar_windows
 
 
 def run(browser, url):
@@ -30,9 +30,7 @@ def run(browser, url):
     pg.on("request", record)
 
     def post(path):
-        return pg.expect_response(
-            lambda r: r.url.endswith("/api/proof/" + path), timeout=12000
-        )
+        return pg.expect_response(lambda r: r.url.endswith("/api/proof/" + path), timeout=12000)
 
     def open_row(row, basis="training"):
         with post("run"):
@@ -40,9 +38,7 @@ def run(browser, url):
         ready(pg, basis)
 
     def validate_ui(response):
-        expect(pg.locator("#group-profile-state")).to_have_attribute(
-            "data-state", "ready"
-        )
+        expect(pg.locator("#group-profile-state")).to_have_attribute("data-state", "ready")
         for k, f in response["plateau"]["fields"].items():
             lamp = pg.locator(f"#group-{k} + .plateau-dot")
             expect(lamp).to_be_visible()
@@ -74,9 +70,7 @@ def run(browser, url):
     a_score = float(pg.locator("#centry + .plateau-dot").get_attribute("data-score"))
     assert a_score > 70
     open_row(leaf(b))
-    expect(pg.locator("#centry + .plateau-dot")).to_have_attribute(
-        "data-level", "unknown"
-    )
+    expect(pg.locator("#centry + .plateau-dot")).to_have_attribute("data-level", "unknown")
     pg.locator("#clookback").fill("7")
     with post("run"):
         pg.locator("#clookback").press("Enter")
@@ -89,19 +83,14 @@ def run(browser, url):
     validate_ui(together)
     assert together["member_count"] == 2 and not searches
     entry = together["plateau"]["fields"]["entry_z"]["center"]
-    assert (
-        entry["by_window_pp"][1] == 0
-        and entry["utility"] == sum(entry["by_window_pp"]) / 2
-    )
+    assert entry["by_window_pp"][1] == 0 and entry["utility"] == sum(entry["by_window_pp"]) / 2
     assert pg.evaluate("checked.size") == 2
     expect(pg.locator("#group-count")).to_have_count(0)
     expect(pg.locator("#focus-editor")).to_be_hidden()
     both = snapshot()
     calls = len(profiles)
     open_row(leaf(b))
-    assert pg.evaluate("payload.selection.pair") == b and "plateau" not in pg.evaluate(
-        "payload"
-    )
+    assert pg.evaluate("payload.selection.pair") == b and "plateau" not in pg.evaluate("payload")
     expect(pg.locator("#group-window")).to_have_value("10")
     assert snapshot() == both and len(profiles) == calls
     open_row(branch("pair_screen|CNYRUBF"))
@@ -122,11 +111,7 @@ def run(browser, url):
     with expect_api_json(pg, "/api/proof/plateau") as changed:
         pg.locator("#group-window").fill("12")
     validate_ui(changed["data"])
-    assert (
-        profiles[-1]["parameters"]["window"] == 12
-        and len(runs) == run_count
-        and not searches
-    )
+    assert profiles[-1]["parameters"]["window"] == 12 and len(runs) == run_count and not searches
     assert all(not ({"pair", "asset", "universe"} & r.keys()) for r in profiles)
     # Changes to the persistent split re-evaluate the entire fixed cohort, not its current chart.
     with expect_api_json(pg, "/api/proof/plateau") as res:
@@ -186,9 +171,7 @@ def run(browser, url):
     ready(pg, "validation")
     expect(pg.locator("#cohort-editor")).to_be_hidden()
     expect(pg.locator("#centry + .plateau-dot")).to_be_visible()
-    assert pg.evaluate("payload.selection.pair") == a and "plateau" in pg.evaluate(
-        "payload"
-    )
+    assert pg.evaluate("payload.selection.pair") == a and "plateau" in pg.evaluate("payload")
     assert not errors, errors
     pg.close()
 

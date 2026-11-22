@@ -1,15 +1,15 @@
 """A third-party calendar plugin can enter the real proof and cohort search."""
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_drop_in_calendar_plugin_proof_and_search(tmp_path):
     plugin_dir = tmp_path / "plugin"
     plugin_dir.mkdir()
-    (plugin_dir / "demo_strategy.py").write_text('''
+    (plugin_dir / "demo_strategy.py").write_text("""
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 
 class Demo(CalendarZscorePlugin):
@@ -18,7 +18,7 @@ class Demo(CalendarZscorePlugin):
     proof_adapter = "calendar_price_intents.v1"
 
 PLUGIN = Demo()
-''')
+""")
     dist = plugin_dir / "demo_strategy-1.0.dist-info"
     dist.mkdir()
     (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: demo-strategy\nVersion: 1.0\n")
@@ -27,13 +27,18 @@ PLUGIN = Demo()
     )
     root = Path(__file__).resolve().parents[3]
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join([
-        str(plugin_dir), str(root / "tests"), str(root / "packages/accounting/tests"),
-        str(root / "packages/proof/tests"), str(root / "packages/strategies/tests/contract"),
-        env.get("PYTHONPATH", ""),
-    ])
+    env["PYTHONPATH"] = os.pathsep.join(
+        [
+            str(plugin_dir),
+            str(root / "tests"),
+            str(root / "packages/accounting/tests"),
+            str(root / "packages/proof/tests"),
+            str(root / "packages/strategies/tests/contract"),
+            env.get("PYTHONPATH", ""),
+        ]
+    )
     env["MOEX_PROOF_WORKERS"] = "1"
-    code = '''
+    code = """
 import sys
 from pathlib import Path
 from proof_fixtures import two_calendar_windows
@@ -96,12 +101,26 @@ for mode in ("synthetic_leg_proxy", "native_h1_spread"):
         assert actual["ledger"] == reference["ledger"], (mode, fill)
         assert actual["summary"] == reference["summary"], (mode, fill)
 
-'''
-    process = subprocess.run([sys.executable, "-c", code, str(tmp_path / "data_root")],
-                             env=env, capture_output=True, text=True, timeout=180)
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path / "data_root")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
     assert process.returncode == 0, process.stdout + process.stderr
     conformance = subprocess.run(
-        [sys.executable, "-m", "pytest", str(root / "packages/strategies/tests/contract/test_strategy_conformance.py"), "-q"],
-        env=env, capture_output=True, text=True, timeout=180,
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(root / "packages/strategies/tests/contract/test_strategy_conformance.py"),
+            "-q",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     assert conformance.returncode == 0, conformance.stdout + conformance.stderr

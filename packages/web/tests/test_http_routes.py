@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-from http.client import HTTPConnection
-from http.server import ThreadingHTTPServer
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
+from pathlib import Path
 from unittest import mock
 
+import moex_spread_lab.web.routes_proof as routes_proof
 import moex_spread_lab.web.server as screener_app
+import moex_spread_lab.web.server as web_server
 from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
-import moex_spread_lab.web.routes_proof as routes_proof
-import moex_spread_lab.web.server as web_server
 
 
 class WebPackageArchitectureTests(unittest.TestCase):
@@ -130,7 +130,9 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(headers["content-type"], "application/javascript; charset=utf-8")
             self.assertLessEqual(len(raw.decode("utf-8").splitlines()), 600, js_name)
 
-        status, headers, raw = self._request("GET", "/vendor/lightweight-charts.standalone.production.js")
+        status, headers, raw = self._request(
+            "GET", "/vendor/lightweight-charts.standalone.production.js"
+        )
         self.assertEqual(status, 200)
         self.assertEqual(headers["content-type"], "application/javascript; charset=utf-8")
         self.assertGreater(len(raw), 100_000)
@@ -148,7 +150,12 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(status, 404, bad_path)
 
     def test_loopback_host_and_origin_guards_enforced_across_routes(self) -> None:
-        for path in ("/", "/api/strategies", "/static/js/app.js", "/vendor/lightweight-charts.standalone.production.js"):
+        for path in (
+            "/",
+            "/api/strategies",
+            "/static/js/app.js",
+            "/vendor/lightweight-charts.standalone.production.js",
+        ):
             status, _, _ = self._request("GET", path, headers={"Host": "evil.example:8899"})
             self.assertEqual(status, 403, f"Host check failed on {path}")
             status, _, _ = self._request("GET", path, headers={"Origin": "http://evil.example"})
@@ -164,7 +171,12 @@ class WebHttpRoutesTests(unittest.TestCase):
 
         by_id = {entry["id"]: entry for entry in payload["strategies"]}
         self.assertTrue(
-            {"mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"}.issubset(by_id)
+            {
+                "mean_reversion",
+                "funding_only",
+                "zscore_mean_reversion",
+                "convergence_to_ruonia",
+            }.issubset(by_id)
         )
 
         mr = by_id["mean_reversion"]
@@ -175,10 +187,14 @@ class WebHttpRoutesTests(unittest.TestCase):
         cal_mr = by_id["zscore_mean_reversion"]
         self.assertEqual(cal_mr["ui_order"], ["entry_z", "exit_z", "window"])
         q_window = next(
-            p for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["quarterly"] if p["name"] == "window"
+            p
+            for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["quarterly"]
+            if p["name"] == "window"
         )
         m_window = next(
-            p for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["monthly"] if p["name"] == "window"
+            p
+            for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["monthly"]
+            if p["name"] == "window"
         )
         self.assertEqual(q_window["default"], 20)
         self.assertEqual(m_window["default"], 7)
@@ -201,7 +217,9 @@ class WebHttpRoutesTests(unittest.TestCase):
         self.assertEqual(status, 200)
         status, _, raw_h1 = self._request("GET", "/api/strategies")
         self.assertEqual(status, 200)
-        by_id_h1 = {entry["id"]: entry for entry in json.loads(raw_h1.decode("utf-8"))["strategies"]}
+        by_id_h1 = {
+            entry["id"]: entry for entry in json.loads(raw_h1.decode("utf-8"))["strategies"]
+        }
         self.assertTrue(by_id_h1["mean_reversion"]["timeframe_supported"])
         self.assertTrue(by_id_h1["zscore_mean_reversion"]["timeframe_supported"])
         self.assertFalse(by_id_h1["funding_only"]["timeframe_supported"])

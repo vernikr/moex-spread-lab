@@ -16,6 +16,7 @@ from typing import Any
 from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
+
 from ..base import PRICE_FILLS
 
 
@@ -50,7 +51,9 @@ def _number(value: Any) -> float:
         raise W0Error("Требуется конечное числовое значение.") from None
 
 
-def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, Any], fill: str) -> list[dict[str, Any]]:
+def pair_price_intent_trades(
+    plugin, window: WindowSnapshot, params: dict[str, Any], fill: str
+) -> list[dict[str, Any]]:
     """Rebind unit pair decisions to actual two-leg price proxies; fail closed.
 
     Rows must be the positive-volume, synchronized analysis prefix. A forced
@@ -58,7 +61,11 @@ def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, A
     explicitly marked as open, not an executable exit. The adapter never trusts
     the plugin to provide costs, funding or a profit figure.
     """
-    if window.universe != PAIR_UNIVERSE or fill not in PRICE_FILLS or fill not in plugin.supported_fills:
+    if (
+        window.universe != PAIR_UNIVERSE
+        or fill not in PRICE_FILLS
+        or fill not in plugin.supported_fills
+    ):
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
     rows = list(window.rows)
     dates = [_date(r.get("date"), window.timeframe) for r in rows]
@@ -79,7 +86,13 @@ def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, A
         if any(_number(row.get(f"{leg}_volume")) <= 0 for leg in ("near", "far")):
             raise W0Error("Строка пары не прошла проверку объёмов.")
     result = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
-    if not isinstance(result, StrategyIntentRun) or result.strategy_id != plugin.strategy_id or result.fill != fill or result.parameters != params or not isinstance(result.intents, tuple):
+    if (
+        not isinstance(result, StrategyIntentRun)
+        or result.strategy_id != plugin.strategy_id
+        or result.fill != fill
+        or result.parameters != params
+        or not isinstance(result.intents, tuple)
+    ):
         raise W0Error("Плагин вернул несогласованный набор сигналов.")
     delay, quote = PRICE_FILLS[fill]
     trades = []
@@ -97,11 +110,20 @@ def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, A
         except KeyError:
             raise W0Error("Даты сигнала или сделки отсутствуют в окне.") from None
         side, reason = item.get("side"), item.get("reason")
-        if (side not in ("long_spread", "short_spread") or not isinstance(reason, str) or not reason
-                or reason in {"end_of_window", "open_at_data_end_no_executable_exit"}):
+        if (
+            side not in ("long_spread", "short_spread")
+            or not isinstance(reason, str)
+            or not reason
+            or reason in {"end_of_window", "open_at_data_end_no_executable_exit"}
+        ):
             raise W0Error("Некорректное направление или причина выхода.")
-        if (si > ei - delay or xi <= ei or ei < previous_exit
-                or entry_day in entries or exit_day in exits):
+        if (
+            si > ei - delay
+            or xi <= ei
+            or ei < previous_exit
+            or entry_day in entries
+            or exit_day in exits
+        ):
             raise W0Error("Нарушен порядок событий или причинность сигналов.")
         if not isinstance(signal.get("kind"), str) or not signal["kind"]:
             raise W0Error("Сигнал должен содержать тип.")
@@ -114,7 +136,10 @@ def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, A
         if not forced and not rows[xi].get("exit_eligible", True):
             raise W0Error("Выход на недопустимом баре.")
         event_fills = []
-        for event, row, price_kind in (("entry", rows[ei], quote), ("exit", rows[xi], "close" if forced else quote)):
+        for event, row, price_kind in (
+            ("entry", rows[ei], quote),
+            ("exit", rows[xi], "close" if forced else quote),
+        ):
             prices = []
             for leg in ("near", "far"):
                 expected = _number(row.get(f"{leg}_{price_kind}"))
@@ -122,12 +147,26 @@ def pair_price_intent_trades(plugin, window: WindowSnapshot, params: dict[str, A
                 if expected <= 0 or proposed != expected:
                     raise W0Error("Цены исполнения ног не совпадают с ценовыми прокси.")
                 prices.append(expected)
-            event_fills.append({"date": entry_day if event == "entry" else exit_day,
-                                "near_price": prices[0], "far_price": prices[1],
-                                "spread_fill": round(prices[0] * multipliers[0] - prices[1] * multipliers[1], 8)})
-        trades.append({"side": side, "signal": {**signal, "date": signal_day},
-                       "entry": event_fills[0], "exit": event_fills[1],
-                       "exit_reason": reason, "open_at_end": forced})
+            event_fills.append(
+                {
+                    "date": entry_day if event == "entry" else exit_day,
+                    "near_price": prices[0],
+                    "far_price": prices[1],
+                    "spread_fill": round(
+                        prices[0] * multipliers[0] - prices[1] * multipliers[1], 8
+                    ),
+                }
+            )
+        trades.append(
+            {
+                "side": side,
+                "signal": {**signal, "date": signal_day},
+                "entry": event_fills[0],
+                "exit": event_fills[1],
+                "exit_reason": reason,
+                "open_at_end": forced,
+            }
+        )
         entries.add(entry_day)
         exits.add(exit_day)
         previous_exit = xi

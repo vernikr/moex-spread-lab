@@ -2,10 +2,9 @@
 
 import json
 
-from test_execution_proof import _build_root
-
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from moex_spread_lab.web.server import HISTORY_WINDOWS, ScreenerInputs
+from test_execution_proof import _build_root
 
 PAIR = "CNYRUBF/CRZ6"
 WEEKEND_PAIR = "GAZPF/GZH6"
@@ -70,9 +69,7 @@ def weekend(root):
         candles = json.loads(src.candles(PAIR, old).read_text())
         candles["secid"] = new
         friday = next(r for r in candles["rows"] if r["begin"][:10] == "2025-08-15")
-        candles["rows"] += [
-            dict(friday, begin=f"{d} 00:00:00") for d in sorted(NO_CLEARING)
-        ]
+        candles["rows"] += [dict(friday, begin=f"{d} 00:00:00") for d in sorted(NO_CLEARING)]
         candles["rows"].sort(key=lambda r: r["begin"])
         src.candles(WEEKEND_PAIR, new).write_text(json.dumps(candles))
         doc = json.loads(page(root, old).read_text())

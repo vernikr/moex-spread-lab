@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_file
-from .data_inventory import DATA_INVENTORY_SCHEMA
 
+from .data_inventory import DATA_INVENTORY_SCHEMA
 
 DATA_ARCHIVE_SCHEMA = "data-archive.v1"
 _ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
@@ -73,7 +73,12 @@ def _selected_entries(manifest: dict[str, Any], root: Path) -> list[dict[str, An
             continue
         relative = entry.get("path")
         digest = entry.get("sha256")
-        if not isinstance(relative, str) or not relative or not isinstance(digest, str) or len(digest) != 64:
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or not isinstance(digest, str)
+            or len(digest) != 64
+        ):
             raise DataRetentionError("rebuildable-cache entry lacks a valid path or SHA-256")
         if relative in seen:
             raise DataRetentionError(f"duplicate rebuildable-cache path in manifest: {relative}")
@@ -82,13 +87,15 @@ def _selected_entries(manifest: dict[str, Any], root: Path) -> list[dict[str, An
             raise DataRetentionError(f"manifest cache file is missing: {relative}")
         if sha256_file(source) != digest:
             raise DataRetentionError(f"manifest cache hash no longer matches: {relative}")
-        selected.append({
-            "path": relative,
-            "sha256": digest,
-            "logical_bytes": int(entry.get("logical_bytes", source.stat().st_size)),
-            "allocated_bytes": int(entry.get("allocated_bytes", source.stat().st_size)),
-            "dataset": entry.get("dataset"),
-        })
+        selected.append(
+            {
+                "path": relative,
+                "sha256": digest,
+                "logical_bytes": int(entry.get("logical_bytes", source.stat().st_size)),
+                "allocated_bytes": int(entry.get("allocated_bytes", source.stat().st_size)),
+                "dataset": entry.get("dataset"),
+            }
+        )
         seen.add(relative)
     return sorted(selected, key=lambda item: item["path"])
 
@@ -103,7 +110,9 @@ def _validate_archive_path(root: Path, archive_path: Path) -> Path:
     raise DataRetentionError("archive path must be outside the repository data directory")
 
 
-def plan_rebuildable_cache_archive(root: Path, manifest_path: Path, archive_path: Path) -> dict[str, Any]:
+def plan_rebuildable_cache_archive(
+    root: Path, manifest_path: Path, archive_path: Path
+) -> dict[str, Any]:
     """Validate a pinned manifest and return a no-side-effect cache archive plan."""
     resolved_root = root.resolve()
     manifest = _load_inventory_manifest(manifest_path, resolved_root)
@@ -160,6 +169,7 @@ def _verify_archive(archive_path: Path, files: list[dict[str, Any]]) -> None:
             if source is None:
                 raise DataRetentionError(f"cannot read archived member: {name}")
             import hashlib
+
             digest = hashlib.sha256()
             with source:
                 for block in iter(lambda: source.read(1024 * 1024), b""):
@@ -181,7 +191,9 @@ def _prune_empty_parents(root: Path, files: list[dict[str, Any]]) -> None:
             current = current.parent
 
 
-def archive_rebuildable_caches(root: Path, manifest_path: Path, archive_path: Path) -> dict[str, Any]:
+def archive_rebuildable_caches(
+    root: Path, manifest_path: Path, archive_path: Path
+) -> dict[str, Any]:
     """Archive verified page caches, then remove only the verified originals."""
     plan = plan_rebuildable_cache_archive(root, manifest_path, archive_path)
     files = plan["files"]
@@ -192,7 +204,10 @@ def archive_rebuildable_caches(root: Path, manifest_path: Path, archive_path: Pa
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            prefix=f".{archive.name}.", suffix=".tmp", dir=archive.parent, delete=False,
+            prefix=f".{archive.name}.",
+            suffix=".tmp",
+            dir=archive.parent,
+            delete=False,
         ) as handle:
             temporary = Path(handle.name)
         with tarfile.open(temporary, "w:gz", compresslevel=6) as handle:

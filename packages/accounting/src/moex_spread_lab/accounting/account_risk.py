@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error, load_contracts
-
 
 ACCOUNT_RISK_SCHEMA = "vtb-account-risk.v1"
 DEFAULT_INITIAL_CAPITAL = 30_000.0
@@ -82,23 +82,29 @@ def assess_vtb_pair(
 
     scenario_specs = (
         ("current_snapshot_no_offset", pair_margin, "current ISS margin sum; no offset credit"),
-        ("single_leg_failure", one_leg_margin, "larger individual leg margin before the second leg"),
+        (
+            "single_leg_failure",
+            one_leg_margin,
+            "larger individual leg margin before the second leg",
+        ),
         ("two_times_margin_shock", pair_margin * 2.0, "2x pair margin shock"),
         ("three_times_margin_shock", pair_margin * 3.0, "3x pair margin shock"),
     )
     scenarios = []
     for scenario_id, margin, description in scenario_specs:
         total_required = margin + effective_vm_buffer + uncertainty_buffer
-        scenarios.append({
-            "id": scenario_id,
-            "description": description,
-            "margin_requirement_rub": _round(margin),
-            "vm_buffer_rub": _round(effective_vm_buffer),
-            "uncertainty_buffer_rub": _round(uncertainty_buffer),
-            "total_required_rub": _round(total_required),
-            "remaining_capital_rub": _round(initial_capital - total_required),
-            "passed": total_required <= initial_capital,
-        })
+        scenarios.append(
+            {
+                "id": scenario_id,
+                "description": description,
+                "margin_requirement_rub": _round(margin),
+                "vm_buffer_rub": _round(effective_vm_buffer),
+                "uncertainty_buffer_rub": _round(uncertainty_buffer),
+                "total_required_rub": _round(total_required),
+                "remaining_capital_rub": _round(initial_capital - total_required),
+                "passed": total_required <= initial_capital,
+            }
+        )
 
     zero_cash_charge = ebs_undercovered_margin_charge(
         pair_margin,

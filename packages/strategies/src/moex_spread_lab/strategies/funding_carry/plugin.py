@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -17,6 +18,7 @@ from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
+
 from ..base import validate_parameter_map
 from .engine import build_carry_strategy
 
@@ -32,7 +34,9 @@ class FundingCarryPlugin:
     supported_fills = ("same_day_settlement",)
     requires_daily_bars = True
 
-    def parameter_schema(self, context: InstrumentContext | None = None) -> tuple[ParameterSpec, ...]:
+    def parameter_schema(
+        self, context: InstrumentContext | None = None
+    ) -> tuple[ParameterSpec, ...]:
         return _SCHEMA
 
     def validate_parameters(
@@ -47,7 +51,9 @@ class FundingCarryPlugin:
             return CompatibilityVerdict(False, "Выбранная стратегия неприменима к этому типу пары.")
         tf = get_timeframe(window.timeframe)
         if not tf.supports_funding_strategy:
-            return CompatibilityVerdict(False, f"{tf.label}: carry требует дневных расчётных ставок.")
+            return CompatibilityVerdict(
+                False, f"{tf.label}: carry требует дневных расчётных ставок."
+            )
         study = window.carry_study
         if not study or not isinstance(study.get("rows"), list) or len(study["rows"]) < 2:
             return CompatibilityVerdict(False, "carry study rows are unavailable")
@@ -68,7 +74,9 @@ class FundingCarryPlugin:
             raise W0Error("Выбранный режим исполнения не поддерживается этой стратегией.")
         validated = self.validate_parameters(
             params,
-            InstrumentContext(universe=window.universe, pair=window.pair, timeframe=window.timeframe),
+            InstrumentContext(
+                universe=window.universe, pair=window.pair, timeframe=window.timeframe
+            ),
         )
         verdict = self.check_compatibility(window)
         if not verdict.compatible:

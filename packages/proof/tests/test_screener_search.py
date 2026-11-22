@@ -4,8 +4,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.web.server import ScreenerError, ScreenerInputs
 from moex_spread_lab.proof_runtime.screener_search import optimize
+from moex_spread_lab.web.server import ScreenerError, ScreenerInputs
 
 
 class SearchTests(unittest.TestCase):
@@ -58,9 +58,7 @@ class SearchTests(unittest.TestCase):
             "slippage_ticks": 1.0,
             "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
         }
-        result = optimize(
-            self.inputs, request, evaluator=self.evaluator, available=self.available
-        )
+        result = optimize(self.inputs, request, evaluator=self.evaluator, available=self.available)
         self.assertEqual(result["status"], "exploratory_plateau_found")
         self.assertEqual(len(result["trials"]), 27)
         self.assertEqual(result["result_basis"], "training")
@@ -70,13 +68,9 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(set(result["result_by_pair_pp"]), set(self.pairs))
         self.assertEqual(
             result,
-            optimize(
-                self.inputs, request, evaluator=self.evaluator, available=self.available
-            ),
+            optimize(self.inputs, request, evaluator=self.evaluator, available=self.available),
         )
-        self.assertEqual(
-            result["scope"], "independent_pair_studies_not_a_shared_capital_basket"
-        )
+        self.assertEqual(result["scope"], "independent_pair_studies_not_a_shared_capital_basket")
 
     def test_validation_change_does_not_select_parameters(self):
         save_settings(self.inputs.root, {"validation_percent": 50})
@@ -85,9 +79,7 @@ class SearchTests(unittest.TestCase):
             "strategy": "mean_reversion",
             "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
         }
-        first = optimize(
-            self.inputs, request, evaluator=self.evaluator, available=self.available
-        )
+        first = optimize(self.inputs, request, evaluator=self.evaluator, available=self.available)
 
         def changed_validation(inputs, selection, *, through=None):
             result = self.evaluator(inputs, selection, through=through)
@@ -145,9 +137,7 @@ class SearchTests(unittest.TestCase):
             ]
         }
         with self.assertRaises(ScreenerError):
-            optimize(
-                self.inputs, request, evaluator=self.evaluator, available=unavailable
-            )
+            optimize(self.inputs, request, evaluator=self.evaluator, available=unavailable)
 
     def test_common_history_gate(self):
         def short(_inputs, selection):

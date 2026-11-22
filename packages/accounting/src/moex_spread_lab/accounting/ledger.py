@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error
-from .run_artifacts import load_report
 
+from .run_artifacts import load_report
 
 LEDGER_SCHEMA = "execution-ledger.v1"
 
@@ -61,25 +61,31 @@ def _attempts(baseline: dict[str, Any]) -> list[dict[str, Any]]:
         for lifecycle, field in (("entry", "entry_date"), ("exit", "exit_date")):
             decision_at = trade.get(field)
             if decision_at not in row_by_time:
-                raise LedgerError(f"trade {field} is absent from baseline daily rows: {decision_at}")
+                raise LedgerError(
+                    f"trade {field} is absent from baseline daily rows: {decision_at}"
+                )
             decision_index = timestamp_index[decision_at]
             signal_index = max(0, decision_index - delay)
             signal_at = timestamps[signal_index]
-            attempts.append({
-                "attempt_id": f"ATT-{number:05d}-{lifecycle}",
-                "lifecycle": lifecycle,
-                "scenario": "analytical_close_proxy",
-                "signal_at": _timestamp(signal_at, "signal_at"),
-                "decision_at": _timestamp(decision_at, "decision_at"),
-                "requested_qty": int(trade.get("quantity", 1)),
-                "filled_near_qty": 0,
-                "filled_far_qty": 0,
-                "outcome": "unresolved_no_executable_quote",
-                "reason_code": "historical_bid_ask_unavailable",
-                "proxy_price_used_for_valuation": True,
-                "execution_evidence_status": baseline.get("execution_evidence_status", "unknown"),
-                "direction": trade.get("direction"),
-            })
+            attempts.append(
+                {
+                    "attempt_id": f"ATT-{number:05d}-{lifecycle}",
+                    "lifecycle": lifecycle,
+                    "scenario": "analytical_close_proxy",
+                    "signal_at": _timestamp(signal_at, "signal_at"),
+                    "decision_at": _timestamp(decision_at, "decision_at"),
+                    "requested_qty": int(trade.get("quantity", 1)),
+                    "filled_near_qty": 0,
+                    "filled_far_qty": 0,
+                    "outcome": "unresolved_no_executable_quote",
+                    "reason_code": "historical_bid_ask_unavailable",
+                    "proxy_price_used_for_valuation": True,
+                    "execution_evidence_status": baseline.get(
+                        "execution_evidence_status", "unknown"
+                    ),
+                    "direction": trade.get("direction"),
+                }
+            )
     return attempts
 
 
@@ -145,11 +151,18 @@ def build_ledger(baseline_path: Path) -> dict[str, Any]:
         raise LedgerError("positive pair margin is required for the portfolio projection")
 
     attempts = _attempts(baseline)
-    events = [_event("EVT-000000", rows[0].get("timestamp", rows[0]["date"]), "run_open", {
-        "source": "analytical_baseline",
-        "execution_evidence_status": baseline.get("execution_evidence_status"),
-        "actual_execution_enabled": False,
-    })]
+    events = [
+        _event(
+            "EVT-000000",
+            rows[0].get("timestamp", rows[0]["date"]),
+            "run_open",
+            {
+                "source": "analytical_baseline",
+                "execution_evidence_status": baseline.get("execution_evidence_status"),
+                "actual_execution_enabled": False,
+            },
+        )
+    ]
     attempts_by_time: dict[str, list[dict[str, Any]]] = {}
     for attempt in attempts:
         attempts_by_time.setdefault(attempt["decision_at"], []).append(attempt)
@@ -165,30 +178,46 @@ def build_ledger(baseline_path: Path) -> dict[str, Any]:
         benchmark_value = float(row["benchmark_value"])
         modeled_costs = row.get("modeled_costs")
         realized_gross = float(row.get("gross_realized_pnl", 0))
-        unrealized_gross = strategy_value - float(parameters.get("initial_capital", 30000)) - realized_gross
+        unrealized_gross = (
+            strategy_value - float(parameters.get("initial_capital", 30000)) - realized_gross
+        )
         if modeled_costs is not None:
             unrealized_gross += float(modeled_costs)
-        events.append(_event(f"EVT-{sequence:06d}", timestamp, "portfolio_mark", {
-            "event_time": timestamp,
-            "positions": _positions(row, near, far, quantity),
-            "cash_proxy": _round(strategy_value - reserved_margin),
-            "reserved_margin_proxy": _round(reserved_margin),
-            "variation_margin_proxy": _round(unrealized_gross),
-            "strategy_value_proxy": _round(strategy_value),
-            "V_proxy": _round(strategy_value),
-            "benchmark_value": _round(benchmark_value),
-            "B": _round(benchmark_value),
-            "X": _round(float(row["X"])),
-            "H": _round(float(row["H"])),
-            "D": _round(float(row["D"])),
-            "modeled_costs": modeled_costs,
-            "funding_event": None,
-            "valuation_status": "candle_close_proxy_not_execution_mark",
-        }))
+        events.append(
+            _event(
+                f"EVT-{sequence:06d}",
+                timestamp,
+                "portfolio_mark",
+                {
+                    "event_time": timestamp,
+                    "positions": _positions(row, near, far, quantity),
+                    "cash_proxy": _round(strategy_value - reserved_margin),
+                    "reserved_margin_proxy": _round(reserved_margin),
+                    "variation_margin_proxy": _round(unrealized_gross),
+                    "strategy_value_proxy": _round(strategy_value),
+                    "V_proxy": _round(strategy_value),
+                    "benchmark_value": _round(benchmark_value),
+                    "B": _round(benchmark_value),
+                    "X": _round(float(row["X"])),
+                    "H": _round(float(row["H"])),
+                    "D": _round(float(row["D"])),
+                    "modeled_costs": modeled_costs,
+                    "funding_event": None,
+                    "valuation_status": "candle_close_proxy_not_execution_mark",
+                },
+            )
+        )
         sequence += 1
-    events.append(_event(f"EVT-{sequence:06d}", rows[-1].get("timestamp", rows[-1]["date"]), "run_close", {
-        "release_state": "exploratory_inconclusive",
-    }))
+    events.append(
+        _event(
+            f"EVT-{sequence:06d}",
+            rows[-1].get("timestamp", rows[-1]["date"]),
+            "run_close",
+            {
+                "release_state": "exploratory_inconclusive",
+            },
+        )
+    )
     rebuilt = rebuild_projection(events)
     final = rebuilt["marks"][-1]
     result = {

@@ -10,9 +10,9 @@ from pathlib import Path
 
 from period_settings_smoke import apply, expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-from proof_fixtures import two_calendar_windows
 
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from proof_fixtures import two_calendar_windows
 
 
 def run(browser, url):
@@ -25,9 +25,7 @@ def run(browser, url):
     pg.on(
         "request",
         lambda r: (
-            searches.append(r.post_data_json)
-            if r.url.endswith("/api/proof/optimize")
-            else None
+            searches.append(r.post_data_json) if r.url.endswith("/api/proof/optimize") else None
         ),
     )
 
@@ -35,9 +33,7 @@ def run(browser, url):
         return pg.locator(f'#window-list tr[data-leaf="{key}"]')
 
     def table_ready():
-        expect(pg.locator("#window-list [data-reading=pending]")).to_have_count(
-            0, timeout=20000
-        )
+        expect(pg.locator("#window-list [data-reading=pending]")).to_have_count(0, timeout=20000)
 
     def matches_chart():
         table_ready()
@@ -55,9 +51,7 @@ def run(browser, url):
         )
 
     def post(route):
-        return pg.expect_response(
-            lambda r: r.url.endswith("/api/proof/" + route), timeout=20000
-        )
+        return pg.expect_response(lambda r: r.url.endswith("/api/proof/" + route), timeout=20000)
 
     def bands():
         return pg.evaluate(
@@ -66,8 +60,7 @@ def run(browser, url):
 
     a, b = "calendar_native|SR|SRH3/SRM3", "calendar_native|SR|SRM3/SRU3"
     pg.goto(
-        url
-        + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
+        url + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
     )
     ready(pg, "training")
     matches_chart()
@@ -83,9 +76,9 @@ def run(browser, url):
     ]
     text = pg.locator("#window-list").inner_text()
     assert "SRH3" not in text and "SRM3" not in text and "мин. объём" not in text
-    assert "объём календарного спреда" in row(a).locator(
-        "[data-gate=volume] span"
-    ).get_attribute("title")
+    assert "объём календарного спреда" in row(a).locator("[data-gate=volume] span").get_attribute(
+        "title"
+    )
     assert "3×ГО" in row(a).locator("[data-gate=capital] span").get_attribute("title")
     expect(row(b).locator("[data-metric=trades]")).to_have_text("0")
     expect(row(b).locator("[data-metric=rate]")).to_have_text("0,00")
@@ -119,9 +112,7 @@ def run(browser, url):
     expect(pg.locator("#clookback")).to_have_value("10")
 
     # The existing reference mode is the global default and works in standalone ordinary CNY pair.
-    pg.goto(
-        url + "/proof?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
-    )
+    pg.goto(url + "/proof?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion")
     ready(pg, "training")
     pg.locator("#entry").fill("0.8")
     pg.locator("#exit").fill("0.1")
@@ -153,8 +144,7 @@ def run(browser, url):
     matches_chart()
     assert pg.evaluate("checked.size") == 2
     assert all(
-        r["selection"]["fill"] == "reference_same_bar"
-        for r in result["data"]["group"]["members"]
+        r["selection"]["fill"] == "reference_same_bar" for r in result["data"]["group"]["members"]
     )
     assert pg.evaluate("leafId") == b
     assert pg.evaluate("payload.execution_reference")
@@ -194,9 +184,7 @@ def run(browser, url):
     expect(missing.locator("[data-icon=download]")).to_be_visible()
     expect(missing.locator("[data-metric=trades]")).to_have_text("—")
     expect(missing.locator("[data-metric=rate]")).to_have_text("—")
-    assert (
-        "нужна загрузка данных" not in pg.locator("#window-list").inner_text().lower()
-    )
+    assert "нужна загрузка данных" not in pg.locator("#window-list").inner_text().lower()
     pg.set_viewport_size({"width": 400, "height": 850})
     assert pg.evaluate("document.documentElement.scrollWidth<=innerWidth")
     assert not errors, errors

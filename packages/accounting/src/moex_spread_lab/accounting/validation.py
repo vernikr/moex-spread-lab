@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
-from .run_artifacts import load_report
 
+from .run_artifacts import load_report
 
 VALIDATION_SCHEMA = "validation-report.v1"
 
@@ -173,7 +173,9 @@ def build_validation(
             "selection_adjustment": "not_applicable_fixed_preregistered_baseline",
         },
         "splits": splits,
-        "sign_flip_null": _sign_flip_null(rows, float(baseline.get("parameters", {}).get("initial_capital", 30000))),
+        "sign_flip_null": _sign_flip_null(
+            rows, float(baseline.get("parameters", {}).get("initial_capital", 30000))
+        ),
         "trade_concentration": _trade_concentration(baseline),
         "sensitivity": sensitivity,
         "gates": {
@@ -183,8 +185,12 @@ def build_validation(
             "delay_cost_sensitivity": bool(sensitivity),
             "executable_fills": False,
             "verified_costs": baseline.get("costs", {}).get("status") == "verified",
-            "historical_contract_terms": baseline.get("economics", {}).get("contract_terms_status") == "historical_evidence",
-            "account_reconciliation": ledger.get("portfolio", {}).get("actual_account_reconciliation") is True,
+            "historical_contract_terms": baseline.get("economics", {}).get("contract_terms_status")
+            == "historical_evidence",
+            "account_reconciliation": ledger.get("portfolio", {}).get(
+                "actual_account_reconciliation"
+            )
+            is True,
             "pass_eligible": False,
         },
         "conclusion_blockers": blockers,

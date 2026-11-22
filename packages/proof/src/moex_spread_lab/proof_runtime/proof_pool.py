@@ -14,18 +14,18 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.bar_types import SealedH1Reader
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+
 from .proof_kernel import (
     STRATEGY_AXES,
     StudyWindow,
-    _ordered,
     _validate,
     compact_result,
 )
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import W0Error
 
 MIN_POOL_WINDOWS = 3
 MIN_POOL_BARS = 1500
@@ -52,6 +52,7 @@ def _worker_service(root_str: str):
     svc = _WORKER_SERVICES.get(root_str)
     if svc is None:
         from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+
         from .service import ProofService
 
         root = Path(root_str).resolve()
@@ -270,7 +271,9 @@ def _worker_window_summaries(
     return rows
 
 
-def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None) -> int:
+def _estimate_weight(
+    root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None
+) -> int:
     if timeframe == "1h" and item.get("universe") == "pair_screen":
         pair = str(item.get("pair") or "")
         parts = pair.split("/")
@@ -282,7 +285,9 @@ def _estimate_weight(root: Path, item: dict[str, Any], timeframe: str, *, _seal_
             else:
                 reader = SealedH1Reader(root)
                 seal = reader.payload()
-                by_legacy = {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
+                by_legacy = (
+                    {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
+                )
                 if _seal_cache is not None:
                     _seal_cache["reader"] = reader
                     _seal_cache["seal"] = seal
@@ -337,9 +342,7 @@ class CohortWorkerPool:
                 raise RuntimeError("CohortWorkerPool is closed")
             ctx = multiprocessing.get_context("spawn")
             while len(self._worker_slots) < count:
-                self._worker_slots.append(
-                    ProcessPoolExecutor(max_workers=1, mp_context=ctx)
-                )
+                self._worker_slots.append(ProcessPoolExecutor(max_workers=1, mp_context=ctx))
             return list(self._worker_slots[:count])
 
     def should_use(self, count: int, estimated_bars: int) -> bool:
@@ -363,9 +366,14 @@ class CohortWorkerPool:
         w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
         seal_cache: dict[str, Any] = {}
-        weights = {entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache) for entry in items}
+        weights = {
+            entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache)
+            for entry in items
+        }
         weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
-        shards: list[list[tuple[int, dict[str, Any], dict[str, Any], bool]]] = [[] for _ in range(w)]
+        shards: list[list[tuple[int, dict[str, Any], dict[str, Any], bool]]] = [
+            [] for _ in range(w)
+        ]
         shard_loads = [0] * w
         owner_of: dict[int, int] = {}
         for entry in weighted:
@@ -421,7 +429,9 @@ class CohortWorkerPool:
             slots = list(self._worker_slots)
         if not slots:
             return
-        indices = sorted(set(owner_of.values())) if owner_of is not None else list(range(len(slots)))
+        indices = (
+            sorted(set(owner_of.values())) if owner_of is not None else list(range(len(slots)))
+        )
         for s_idx in indices:
             if s_idx < len(slots):
                 try:
@@ -448,9 +458,7 @@ class CohortWorkerPool:
             # Optimistic single-roundtrip fan-out across all active shards simultaneously.
             active_slots = sorted(set(owner_of.values()))
             futs = [
-                slots[s_idx].submit(
-                    _worker_eval_indices, cohort_id, point_by_strategy, None, None
-                )
+                slots[s_idx].submit(_worker_eval_indices, cohort_id, point_by_strategy, None, None)
                 for s_idx in active_slots
             ]
             all_scores: list[tuple[int, float, bool]] = []
@@ -531,9 +539,7 @@ class CohortWorkerPool:
 
         active_slots = sorted(set(owner_of.values()))
         futs = [
-            slots[s_idx].submit(
-                _worker_eval_indices, cohort_id, point_by_strategy, None, canary
-            )
+            slots[s_idx].submit(_worker_eval_indices, cohort_id, point_by_strategy, None, canary)
             for s_idx in active_slots
             if any(entry[0] != canary for entry in shards[s_idx])
         ]
@@ -589,7 +595,9 @@ class CohortWorkerPool:
             if on_progress is not None:
                 on_progress(done_slots, total_slots)
 
-        shard_maps = _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None)
+        shard_maps = _await_futures(
+            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
+        )
         results: dict[int, dict[str, Any]] = {}
         for p_idx, _ in points:
             min_fail = None
@@ -649,7 +657,9 @@ class CohortWorkerPool:
                 on_progress(done_count, total_members)
 
         combined: list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]] = []
-        for chunk in _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None):
+        for chunk in _await_futures(
+            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
+        ):
             combined.extend(chunk)
         combined.sort(key=lambda item: item[0])
         return combined
@@ -667,11 +677,16 @@ class CohortWorkerPool:
         w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
         seal_cache: dict[str, Any] = {}
-        weights = {entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache) for entry in items}
+        weights = {
+            entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache)
+            for entry in items
+        }
         weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
         # Split into up to 2 micro-batches per worker for larger sets so progress updates smoothly.
         batches = min(n, w * 2) if n >= w * 2 else w
-        shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [[] for _ in range(batches)]
+        shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [
+            [] for _ in range(batches)
+        ]
         shard_loads = [0] * batches
         for entry in weighted:
             s_idx = min(range(batches), key=lambda k: shard_loads[k])
@@ -696,7 +711,9 @@ class CohortWorkerPool:
                 on_progress(done_count, n)
 
         combined: list[tuple[int, dict[str, Any]]] = []
-        for chunk in _await_futures(futs, check_cancelled, on_done=_on_done if on_progress is not None else None):
+        for chunk in _await_futures(
+            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
+        ):
             combined.extend(chunk)
         combined.sort(key=lambda entry: entry[0])
         return [entry[1] for entry in combined]

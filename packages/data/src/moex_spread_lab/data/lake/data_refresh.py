@@ -2,23 +2,28 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import tempfile
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-
-import fcntl
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from moex_spread_lab.core.w0 import sha256_file
-from ..iss.catalog import CANDLE_INTERVAL_LABELS, DEFAULT_BOARD, DEFAULT_ISS_BASE_URL, fetch_candle_series
-from .data_lake import DataLakeError, ParquetBarStore
 
+from ..iss.catalog import (
+    CANDLE_INTERVAL_LABELS,
+    DEFAULT_BOARD,
+    DEFAULT_ISS_BASE_URL,
+    fetch_candle_series,
+)
+from .data_lake import DataLakeError, ParquetBarStore
 
 REFRESH_SCHEMA = "market-data-refresh.v1"
 
@@ -76,7 +81,9 @@ def _read_legacy_payload(path: Path, target: RefreshTarget) -> dict[str, Any] | 
     if not isinstance(payload, dict) or payload.get("schema_version") != "iss-candles.v1":
         raise DataRefreshError(f"existing candle file is not iss-candles.v1: {path}")
     if payload.get("secid") != target.secid or payload.get("interval") != target.interval:
-        raise DataRefreshError(f"existing candle file does not match refresh target {target.id}: {path}")
+        raise DataRefreshError(
+            f"existing candle file does not match refresh target {target.id}: {path}"
+        )
     if not isinstance(payload.get("rows"), list):
         raise DataRefreshError(f"existing candle file rows are invalid: {path}")
     return payload
@@ -85,20 +92,26 @@ def _read_legacy_payload(path: Path, target: RefreshTarget) -> dict[str, Any] | 
 def _payload_watermark(payload: dict[str, Any] | None) -> date | None:
     if not payload:
         return None
-    dates = [_timestamp_date(row.get("begin")) for row in payload.get("rows", []) if isinstance(row, dict)]
+    dates = [
+        _timestamp_date(row.get("begin"))
+        for row in payload.get("rows", [])
+        if isinstance(row, dict)
+    ]
     return max((item for item in dates if item is not None), default=None)
 
 
 def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sessions: int) -> date:
     """Return the Nth preceding observed session date, not a weekday heuristic."""
     if payload:
-        sessions = sorted({
-            item
-            for row in payload.get("rows", [])
-            if isinstance(row, dict)
-            for item in [_timestamp_date(row.get("begin"))]
-            if item is not None and item <= watermark
-        })
+        sessions = sorted(
+            {
+                item
+                for row in payload.get("rows", [])
+                if isinstance(row, dict)
+                for item in [_timestamp_date(row.get("begin"))]
+                if item is not None and item <= watermark
+            }
+        )
         if sessions:
             return sessions[max(0, len(sessions) - 1 - overlap_sessions)]
     # A retained compatibility series should normally supply the observed dates.
@@ -124,9 +137,14 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
             temporary = Path(handle.name)
-            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         os.replace(temporary, path)
         temporary = None
     finally:
@@ -180,7 +198,11 @@ def refresh_candle_datasets(
     """
     root = root.resolve()
     from .h1_seal import SealedH1Reader
-    if any(target.interval == 60 for target in targets) and SealedH1Reader(root).payload() is not None:
+
+    if (
+        any(target.interval == 60 for target in targets)
+        and SealedH1Reader(root).payload() is not None
+    ):
         raise DataRefreshError("deactivate the H1 seal with restored JSON before refreshing H1")
     if not targets:
         raise DataRefreshError("at least one refresh target is required")
@@ -214,27 +236,39 @@ def refresh_candle_datasets(
                 record = store.record_for_legacy_path(legacy_path)
             except DataLakeError:
                 record = None
-            if record and legacy_path.is_file() and sha256_file(legacy_path) == record.get("legacy_sha256"):
+            if (
+                record
+                and legacy_path.is_file()
+                and sha256_file(legacy_path) == record.get("legacy_sha256")
+            ):
                 record_date = _timestamp_date(record.get("last_begin"))
                 if record_date is not None:
                     watermark = record_date
             if not full_refresh and watermark is not None and watermark >= until:
-                skipped.append({
-                    "dataset_id": target.id,
-                    "status": "up_to_date",
-                    "watermark": watermark.isoformat(),
-                    "requested_till": till_date,
-                    "network_requests": 0,
-                })
+                skipped.append(
+                    {
+                        "dataset_id": target.id,
+                        "status": "up_to_date",
+                        "watermark": watermark.isoformat(),
+                        "requested_till": till_date,
+                        "network_requests": 0,
+                    }
+                )
                 continue
             if full_refresh:
-                requested_from = initial_from or _date(payload.get("from"), "existing payload from") if payload else initial_from
+                requested_from = (
+                    initial_from or _date(payload.get("from"), "existing payload from")
+                    if payload
+                    else initial_from
+                )
             elif watermark is not None:
                 requested_from = _overlap_start(payload, watermark, overlap_sessions)
             else:
                 requested_from = initial_from
             if requested_from is None:
-                raise DataRefreshError(f"from_date is required for the first refresh of {target.id}")
+                raise DataRefreshError(
+                    f"from_date is required for the first refresh of {target.id}"
+                )
             if requested_from > until:
                 raise DataRefreshError(f"refresh range is invalid for {target.id}")
             states.append(_TargetState(target, legacy_path, payload, watermark, requested_from))
@@ -256,8 +290,12 @@ def refresh_candle_datasets(
                         chunk_till: date = chunk_till,
                     ) -> tuple[str, date, dict[str, Any], list[tuple[str, bytes, str, str]]]:
                         captured: list[tuple[str, bytes, str, str]] = []
-                        def raw_sink(url: str, raw: bytes, received_at: str, raw_sha256: str) -> None:
+
+                        def raw_sink(
+                            url: str, raw: bytes, received_at: str, raw_sha256: str
+                        ) -> None:
                             captured.append((url, raw, received_at, raw_sha256))
+
                         result = fetcher(
                             secid=state.target.secid,
                             interval=state.target.interval,
@@ -285,22 +323,34 @@ def refresh_candle_datasets(
             chunks = sorted(fetched[state.target.id], key=lambda item: item[0])
             old_rows = state.payload.get("rows", []) if state.payload else []
             rows_by_begin: dict[str, dict[str, Any]] = {
-                row["begin"]: dict(row) for row in old_rows
+                row["begin"]: dict(row)
+                for row in old_rows
                 if isinstance(row, dict) and isinstance(row.get("begin"), str)
             }
             raw_entries = []
             page_count = 0
             for _, result, captured in chunks:
-                if result.get("schema_version") != "iss-candles.v1" or result.get("secid") != state.target.secid:
-                    raise DataRefreshError(f"fetcher returned an invalid series for {state.target.id}")
+                if (
+                    result.get("schema_version") != "iss-candles.v1"
+                    or result.get("secid") != state.target.secid
+                ):
+                    raise DataRefreshError(
+                        f"fetcher returned an invalid series for {state.target.id}"
+                    )
                 page_count += int(result.get("page_count", 0))
                 for row in result.get("rows", []):
                     if not isinstance(row, dict) or not isinstance(row.get("begin"), str):
-                        raise DataRefreshError(f"fetcher returned an invalid candle row for {state.target.id}")
+                        raise DataRefreshError(
+                            f"fetcher returned an invalid candle row for {state.target.id}"
+                        )
                     rows_by_begin[row["begin"]] = dict(row)
                 for url, raw, received_at, raw_sha256 in captured:
                     entry = raw_archive.archive(
-                        url=url, raw=raw, received_at=received_at, ttl_days=raw_ttl_days, pin=pin_raw,
+                        url=url,
+                        raw=raw,
+                        received_at=received_at,
+                        ttl_days=raw_ttl_days,
+                        pin=pin_raw,
                     )
                     if entry["raw_response_sha256"] != raw_sha256:
                         raise DataRefreshError("raw response hash changed before archival")
@@ -308,50 +358,66 @@ def refresh_candle_datasets(
             rows = [rows_by_begin[key] for key in sorted(rows_by_begin)]
             if not rows:
                 raise DataRefreshError(f"refresh produced no rows for {state.target.id}")
-            existing_from = _date(state.payload["from"], "existing payload from") if state.payload and isinstance(state.payload.get("from"), str) else None
+            existing_from = (
+                _date(state.payload["from"], "existing payload from")
+                if state.payload and isinstance(state.payload.get("from"), str)
+                else None
+            )
             payload = dict(state.payload or {})
-            payload.update({
-                "schema_version": "iss-candles.v1",
-                "secid": state.target.secid,
-                "board": board,
-                "interval": state.target.interval,
-                "timeframe": state.target.timeframe,
-                "from": min(item for item in (existing_from, state.requested_from) if item is not None).isoformat(),
-                "till": till_date,
-                "page_count": page_count,
-                "raw_row_count": len(rows),
-                "row_count": len(rows),
-                "duplicate_count": 0,
-                "coverage_status": "available",
-                "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
-                "rows": rows,
-                "refresh": {
-                    "schema_version": REFRESH_SCHEMA,
-                    "refreshed_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                    "watermark_before": state.watermark.isoformat() if state.watermark else None,
-                    "requested_from": state.requested_from.isoformat() if state.requested_from else None,
-                    "requested_till": till_date,
-                    "overlap_sessions": overlap_sessions,
-                    "chunk_count": len(chunks),
-                    "raw_entry_count": len(raw_entries),
-                },
-            })
+            payload.update(
+                {
+                    "schema_version": "iss-candles.v1",
+                    "secid": state.target.secid,
+                    "board": board,
+                    "interval": state.target.interval,
+                    "timeframe": state.target.timeframe,
+                    "from": min(
+                        item for item in (existing_from, state.requested_from) if item is not None
+                    ).isoformat(),
+                    "till": till_date,
+                    "page_count": page_count,
+                    "raw_row_count": len(rows),
+                    "row_count": len(rows),
+                    "duplicate_count": 0,
+                    "coverage_status": "available",
+                    "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
+                    "rows": rows,
+                    "refresh": {
+                        "schema_version": REFRESH_SCHEMA,
+                        "refreshed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                        "watermark_before": state.watermark.isoformat()
+                        if state.watermark
+                        else None,
+                        "requested_from": state.requested_from.isoformat()
+                        if state.requested_from
+                        else None,
+                        "requested_till": till_date,
+                        "overlap_sessions": overlap_sessions,
+                        "chunk_count": len(chunks),
+                        "raw_entry_count": len(raw_entries),
+                    },
+                }
+            )
             _atomic_write_json(state.legacy_path, payload)
             record = store.upsert_legacy(state.legacy_path)
             store.verify_legacy(state.legacy_path)
-            refreshed.append({
-                "dataset_id": state.target.id,
-                "status": "refreshed",
-                "watermark_before": state.watermark.isoformat() if state.watermark else None,
-                "watermark_after": _timestamp_date(rows[-1]["begin"]).isoformat(),
-                "requested_from": state.requested_from.isoformat() if state.requested_from else None,
-                "requested_till": till_date,
-                "chunk_count": len(chunks),
-                "network_requests": sum(item[1].get("page_count", 0) for item in chunks),
-                "raw_entry_count": len(raw_entries),
-                "row_count": record["row_count"],
-                "legacy_path": str(state.legacy_path),
-            })
+            refreshed.append(
+                {
+                    "dataset_id": state.target.id,
+                    "status": "refreshed",
+                    "watermark_before": state.watermark.isoformat() if state.watermark else None,
+                    "watermark_after": _timestamp_date(rows[-1]["begin"]).isoformat(),
+                    "requested_from": state.requested_from.isoformat()
+                    if state.requested_from
+                    else None,
+                    "requested_till": till_date,
+                    "chunk_count": len(chunks),
+                    "network_requests": sum(item[1].get("page_count", 0) for item in chunks),
+                    "raw_entry_count": len(raw_entries),
+                    "row_count": record["row_count"],
+                    "legacy_path": str(state.legacy_path),
+                }
+            )
         return {
             "schema_version": REFRESH_SCHEMA,
             "status": "refreshed" if refreshed else "up_to_date",

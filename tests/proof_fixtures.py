@@ -69,9 +69,7 @@ def screen_failures(root, *, thin_calendar=False):
     doc = json.loads(path.read_text())
     for row in doc["instruments"]:
         if row["secid"] in (("CNYRUBF", "CRZ6") if thin_calendar else ("SRZ6",)):
-            row["initial_margin"] = (
-                6000  # ~12k actual margin fits; 3× margin plus buffers fails.
-            )
+            row["initial_margin"] = 6000  # ~12k actual margin fits; 3× margin plus buffers fails.
     path.write_text(json.dumps(doc))
 
 
@@ -122,7 +120,5 @@ def rising_calendar(root):
                 i += 1
             spread = 50 + i * 10
             for field in ("OPEN", "HIGH", "LOW", "CLOSE", "SETTLEPRICE"):
-                row[columns.index(field)] = (
-                    (reference[day] + spread) if secid == "SRU3" else spread
-                )
+                row[columns.index(field)] = (reference[day] + spread) if secid == "SRU3" else spread
         paths[secid].write_text(json.dumps(docs[secid]))

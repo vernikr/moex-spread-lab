@@ -1,0 +1,392 @@
+{
+  "c_functions": {
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::calc_max_quantity": {
+      "baseline_ccn": 19,
+      "baseline_nloc": 35,
+      "baseline_parameters": 5
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::clean_recursive": {
+      "baseline_ccn": 39,
+      "baseline_nloc": 124,
+      "baseline_parameters": 1
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_convergence_scan": {
+      "baseline_ccn": 38,
+      "baseline_nloc": 78,
+      "baseline_parameters": 2
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_sample_z": {
+      "baseline_ccn": 42,
+      "baseline_nloc": 138,
+      "baseline_parameters": 2
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_zscore_scan": {
+      "baseline_ccn": 46,
+      "baseline_nloc": 99,
+      "baseline_parameters": 2
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_compute_rolling_z": {
+      "baseline_ccn": 27,
+      "baseline_nloc": 96,
+      "baseline_parameters": 2
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_mean_reversion_scan": {
+      "baseline_ccn": 32,
+      "baseline_nloc": 101,
+      "baseline_parameters": 2
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_size_proof_metrics": {
+      "baseline_ccn": 137,
+      "baseline_nloc": 355,
+      "baseline_parameters": 2
+    }
+  },
+  "complexity": {
+    "packages/accounting/src/moex_spread_lab/accounting/cli.py::run": 21,
+    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py::_size_proof_fast_c": 37,
+    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py::size_proof": 149,
+    "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w1_catalog": 37,
+    "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w2_corporate_actions": 18,
+    "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w3_economics": 20,
+    "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w4_execution": 31,
+    "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w5_portfolio": 20,
+    "packages/accounting/src/moex_spread_lab/accounting/run_artifact_import.py::import_baseline_artifact": 20,
+    "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py::gc_run_artifacts": 20,
+    "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py::verify_run_artifact": 27,
+    "packages/core/src/moex_spread_lab/core/_fastcore_loader.py::load_fastcore": 30,
+    "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
+    "packages/core/src/moex_spread_lab/core/w0.py::validate_manifest": 28,
+    "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_data_and_accounting_siblings_are_strictly_isolated": 20,
+    "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_strategy_plugin_subfolders_are_strictly_isolated": 18,
+    "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_workspace_code_and_tests_do_not_import_compatibility_shims": 21,
+    "packages/core/tests/test_architecture_dag.py::_build_import_graph": 25,
+    "packages/core/tests/test_architecture_dag.py::_resolve_internal_target": 42,
+    "packages/core/tests/test_architecture_dag.py::_tarjan_sccs": 18,
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py::_read_ruonia_xlsx": 25,
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py::build_lineage": 32,
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py::fetch_cbr_ruonia_rates": 23,
+    "packages/data/src/moex_spread_lab/data/cli.py::run": 143,
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py::_candidate_status": 16,
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py::analyze_candle_pair": 20,
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py::fetch_candle_coverage": 33,
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py::fetch_candle_series": 49,
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py::fetch_history": 50,
+    "packages/data/src/moex_spread_lab/data/lake/bar_types.py::SealedH1Reader::payload": 19,
+    "packages/data/src/moex_spread_lab/data/lake/bar_types.py::SealedH1Reader::read": 39,
+    "packages/data/src/moex_spread_lab/data/lake/data_lake.py::_read_legacy_series": 53,
+    "packages/data/src/moex_spread_lab/data/lake/data_refresh.py::refresh_candle_datasets": 101,
+    "packages/data/src/moex_spread_lab/data/lake/h1_migration.py::_verify_files": 17,
+    "packages/data/src/moex_spread_lab/data/retention/data_archive_candidates.py::execute": 28,
+    "packages/data/src/moex_spread_lab/data/retention/data_archive_candidates.py::verify_archive": 38,
+    "packages/data/src/moex_spread_lab/data/retention/data_inventory.py::_inspect_file": 26,
+    "packages/data/src/moex_spread_lab/data/retention/data_inventory.py::_json_time_range": 20,
+    "packages/data/src/moex_spread_lab/data/retention/data_inventory.py::_policy": 22,
+    "packages/data/src/moex_spread_lab/data/retention/data_inventory.py::build_data_inventory": 42,
+    "packages/data/src/moex_spread_lab/data/retention/data_retention.py::_verify_archive": 16,
+    "packages/data/src/moex_spread_lab/data/retention/h1_archive.py::execute": 48,
+    "packages/data/src/moex_spread_lab/data/retention/storage_policy.py::_dry_run_gc_run_artifacts": 25,
+    "packages/data/src/moex_spread_lab/data/retention/storage_policy.py::_files": 16,
+    "packages/data/src/moex_spread_lab/data/retention/storage_policy.py::archive_catalog": 21,
+    "packages/data/src/moex_spread_lab/data/retention/storage_policy.py::storage_budget": 30,
+    "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
+    "packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py::replay_carry_intents": 73,
+    "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_daily_pair_funding": 20,
+    "packages/proof/src/moex_spread_lab/proof_runtime/pair_funding_replay.py::replay_pair_funding": 36,
+    "packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py::prepare_daily_pair_unit": 52,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_RemoteCohort::plateau": 19,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_cohort_result": 17,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py::_prepare_cohort": 79,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_annualized_returns": 19,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_lamps": 23,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_measure": 16,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_tune": 18,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py::_validate": 18,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::CohortWorkerPool::eval_plateau_batch": 20,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::CohortWorkerPool::eval_point": 41,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::_estimate_weight": 30,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py::_worker_init_cohort": 22,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py::strategy_search": 35,
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_windows.py::window_summaries": 20,
+    "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py::optimize": 40,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_calendar_provenance": 17,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_fixed_daily_pair_plugin_payload": 38,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_funding_proof": 39,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_mean_reversion_proof": 113,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_pair_payload": 18,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_prepare_daily_pair_plugin": 27,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_prepare_pair": 33,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_price_ledger": 16,
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::prepare": 38,
+    "packages/proof/tests/test_global_capital.py::CapitalReplayTests::test_nonzero_annualization_uses_configured_capital_and_continuous_validation": 27,
+    "packages/proof/tests/test_global_capital.py::CapitalReplayTests::test_zero_trade_lqdt_score_has_the_right_base_with_and_without_holdout": 16,
+    "packages/proof/tests/test_pair_plugin_real_proof_parity.py::test_loaded_pair_plugin_matches_native_accounting": 18,
+    "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests::test_streaming_progress_is_monotonic_and_matches_json_bit_for_bit": 20,
+    "packages/proof/tests/test_perf_equivalence.py::_build_h1_workspace": 41,
+    "packages/proof/tests/test_proof_plateau.py::CheckedPlateauTests::test_mean_at_center_and_every_neighbour_precedes_the_stability_ratio": 18,
+    "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_pair_uses_population_deviation_and_calendar_uses_rub_sample_deviation": 16,
+    "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_same_bar_and_next_close_work_in_both_universes_and_replay_identically": 16,
+    "packages/proof/tests/test_tuning_screens.py::TuningScreenTests::test_all_four_combinations_in_preflight_search_report_and_live_lamps": 36,
+    "packages/strategies/src/moex_spread_lab/strategies/base.py::discover_strategies": 43,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::_eod_signature": 19,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::_fetch_h1_candles": 33,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::_intraday_window": 70,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::_read_h1_candles": 32,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::catalog": 25,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::CalendarData::proof": 98,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py::_proof_payload": 70,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/intents.py::calendar_intent_trades": 43,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/engine.py::convergence_trades": 18,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/plugin.py::CalendarRuoniaPlugin::check_compatibility": 23,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/engine.py::zscore_trades": 101,
+    "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/plugin.py::CalendarZscorePlugin::check_compatibility": 19,
+    "packages/strategies/src/moex_spread_lab/strategies/cli.py::run": 27,
+    "packages/strategies/src/moex_spread_lab/strategies/conformance.py::assert_causal_conformance": 28,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/carry.py::build_carry_strategy": 121,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/carry.py::build_carry_study": 27,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/intents.py::carry_settlement_intents": 51,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/proof_funding.py::FundingTimeline::__init__": 33,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/proof_funding.py::FundingTimeline::require": 34,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/proof_funding.py::ProofFunding::statuses": 26,
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/proof_funding.py::_default_positive_volume_dates": 18,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/analytics.py::run_mean_reversion_baseline": 146,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/intents.py::_date": 18,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/intents.py::pair_price_intent_trades": 46,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/pair_screener.py::_candle_summary": 16,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/pair_screener.py::build_result": 30,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/pair_screener.py::catalog": 39,
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/screener.py::_normalized_series": 23,
+    "packages/strategies/src/moex_spread_lab/strategies/s3_reference/engine.py::convergence_trades": 18,
+    "packages/strategies/src/moex_spread_lab/strategies/s3_reference/engine.py::zscore_trades": 101,
+    "packages/web/src/moex_spread_lab/web/routes_proof.py::handle_post_proof": 18,
+    "packages/web/src/moex_spread_lab/web/server.py::make_handler": 42,
+    "packages/web/tests/browser/group_lamps_smoke.py::run": 20
+  },
+  "files": {
+    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py": {
+      "baseline_loc": 699,
+      "baseline_tokens": 8485
+    },
+    "packages/accounting/src/moex_spread_lab/accounting/research.py": {
+      "baseline_loc": 604,
+      "baseline_tokens": 7455
+    },
+    "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py": {
+      "baseline_loc": 339,
+      "baseline_tokens": 4319
+    },
+    "packages/accounting/tests/test_position_sizing.py": {
+      "baseline_loc": 454,
+      "baseline_tokens": 6344
+    },
+    "packages/core/src/moex_spread_lab/core/_fastcore.c": {
+      "baseline_loc": 1323,
+      "baseline_tokens": 14753
+    },
+    "packages/core/src/moex_spread_lab/core/w0.py": {
+      "baseline_loc": 320,
+      "baseline_tokens": 3996
+    },
+    "packages/core/tests/test_architecture_dag.py": {
+      "baseline_loc": 481,
+      "baseline_tokens": 5863
+    },
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py": {
+      "baseline_loc": 457,
+      "baseline_tokens": 4892
+    },
+    "packages/data/src/moex_spread_lab/data/cli.py": {
+      "baseline_loc": 729,
+      "baseline_tokens": 9399
+    },
+    "packages/data/src/moex_spread_lab/data/iss/catalog.py": {
+      "baseline_loc": 853,
+      "baseline_tokens": 9353
+    },
+    "packages/data/src/moex_spread_lab/data/lake/data_lake.py": {
+      "baseline_loc": 1050,
+      "baseline_tokens": 13078
+    },
+    "packages/data/src/moex_spread_lab/data/lake/data_refresh.py": {
+      "baseline_loc": 385,
+      "baseline_tokens": 4944
+    },
+    "packages/data/src/moex_spread_lab/data/retention/data_inventory.py": {
+      "baseline_loc": 405,
+      "baseline_tokens": 4460
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": {
+      "baseline_loc": 807,
+      "baseline_tokens": 8866
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": {
+      "baseline_loc": 713,
+      "baseline_tokens": 8792
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": {
+      "baseline_loc": 683,
+      "baseline_tokens": 7971
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py": {
+      "baseline_loc": 313,
+      "baseline_tokens": 3763
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py": {
+      "baseline_loc": 384,
+      "baseline_tokens": 4682
+    },
+    "packages/proof/src/moex_spread_lab/proof_runtime/service.py": {
+      "baseline_loc": 2331,
+      "baseline_tokens": 30901
+    },
+    "packages/proof/tests/test_calendar_proof.py": {
+      "baseline_loc": 478,
+      "baseline_tokens": 5955
+    },
+    "packages/proof/tests/test_execution_proof.py": {
+      "baseline_loc": 475,
+      "baseline_tokens": 5803
+    },
+    "packages/proof/tests/test_global_capital.py": {
+      "baseline_loc": 352,
+      "baseline_tokens": 5037
+    },
+    "packages/proof/tests/test_pair_plugin_integration.py": {
+      "baseline_loc": 231,
+      "baseline_tokens": 3556
+    },
+    "packages/proof/tests/test_pair_plugin_pipeline.py": {
+      "baseline_loc": 297,
+      "baseline_tokens": 3557
+    },
+    "packages/proof/tests/test_perf_equivalence.py": {
+      "baseline_loc": 1206,
+      "baseline_tokens": 14496
+    },
+    "packages/proof/tests/test_proof_batch.py": {
+      "baseline_loc": 298,
+      "baseline_tokens": 4076
+    },
+    "packages/proof/tests/test_proof_funding.py": {
+      "baseline_loc": 303,
+      "baseline_tokens": 4406
+    },
+    "packages/proof/tests/test_proof_search.py": {
+      "baseline_loc": 460,
+      "baseline_tokens": 6203
+    },
+    "packages/proof/tests/test_proof_windows.py": {
+      "baseline_loc": 327,
+      "baseline_tokens": 4468
+    },
+    "packages/proof/tests/test_strategy_search.py": {
+      "baseline_loc": 384,
+      "baseline_tokens": 5121
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/base.py": {
+      "baseline_loc": 313,
+      "baseline_tokens": 3944
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py": {
+      "baseline_loc": 2242,
+      "baseline_tokens": 29564
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/cli.py": {
+      "baseline_loc": 454,
+      "baseline_tokens": 5524
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/carry.py": {
+      "baseline_loc": 832,
+      "baseline_tokens": 10290
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/proof_funding.py": {
+      "baseline_loc": 458,
+      "baseline_tokens": 6164
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/analytics.py": {
+      "baseline_loc": 815,
+      "baseline_tokens": 10016
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/pair_screener.py": {
+      "baseline_loc": 715,
+      "baseline_tokens": 8599
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/screener.py": {
+      "baseline_loc": 301,
+      "baseline_tokens": 3723
+    },
+    "packages/strategies/src/moex_spread_lab/strategies/s3_reference/engine.py": {
+      "baseline_loc": 497,
+      "baseline_tokens": 5323
+    },
+    "packages/strategies/tests/contract/test_strategy_conformance.py": {
+      "baseline_loc": 654,
+      "baseline_tokens": 6810
+    },
+    "packages/strategies/tests/test_analytics.py": {
+      "baseline_loc": 362,
+      "baseline_tokens": 4096
+    },
+    "packages/strategies/tests/test_carry.py": {
+      "baseline_loc": 585,
+      "baseline_tokens": 6939
+    },
+    "packages/web/src/moex_spread_lab/web/server.py": {
+      "baseline_loc": 337,
+      "baseline_tokens": 3648
+    },
+    "packages/web/src/moex_spread_lab/web/static/css/layout.css": {
+      "baseline_loc": 143,
+      "baseline_tokens": 3611
+    },
+    "packages/web/src/moex_spread_lab/web/static/index.html": {
+      "baseline_loc": 174,
+      "baseline_tokens": 4086
+    },
+    "packages/web/src/moex_spread_lab/web/static/js/charts.js": {
+      "baseline_loc": 573,
+      "baseline_tokens": 7495
+    },
+    "packages/web/src/moex_spread_lab/web/static/js/ledger.js": {
+      "baseline_loc": 493,
+      "baseline_tokens": 6645
+    },
+    "packages/web/src/moex_spread_lab/web/static/js/picker.js": {
+      "baseline_loc": 522,
+      "baseline_tokens": 6464
+    },
+    "packages/web/src/moex_spread_lab/web/static/js/state.js": {
+      "baseline_loc": 334,
+      "baseline_tokens": 3622
+    },
+    "packages/web/src/moex_spread_lab/web/static/js/strategy-form.js": {
+      "baseline_loc": 548,
+      "baseline_tokens": 6321
+    },
+    "packages/web/tests/test_http_routes.py": {
+      "baseline_loc": 264,
+      "baseline_tokens": 3555
+    },
+    "packages/web/tests/test_screener_app.py": {
+      "baseline_loc": 456,
+      "baseline_tokens": 5752
+    },
+    "src/moex_spread_lab/proof.py": {
+      "baseline_loc": 4,
+      "baseline_tokens": 50
+    }
+  },
+  "guard_files": [
+    "src/moex_spread_lab/proof.py"
+  ],
+  "policy": {
+    "max_c_function_ccn": 15,
+    "max_c_function_nloc": 100,
+    "max_c_function_parameters": 7,
+    "max_cognitive_complexity": 15,
+    "new_c_file_max_loc": 600,
+    "new_file_max_loc": 400,
+    "new_file_max_tokens": 3500,
+    "token_estimator": "utf8_bytes / 3.6 (rounded down)"
+  },
+  "schema_version": 1
+}

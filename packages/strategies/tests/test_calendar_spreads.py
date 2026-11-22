@@ -23,7 +23,12 @@ def _days(start: date, end: date) -> list[str]:
 
 
 def _row(day: str, settle: float, volume: int = 500, opening: float | None = None) -> dict:
-    return {"TRADEDATE": day, "SETTLEPRICE": settle, "OPEN": settle if opening is None else opening, "VOLUME": volume}
+    return {
+        "TRADEDATE": day,
+        "SETTLEPRICE": settle,
+        "OPEN": settle if opening is None else opening,
+        "VOLUME": volume,
+    }
 
 
 def _histories(thin_day: str | None = None) -> dict:

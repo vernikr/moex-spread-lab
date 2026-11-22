@@ -13,7 +13,12 @@ from moex_spread_lab.core.timeframes import get_timeframe, timeframe_for_interva
 from moex_spread_lab.core.universe import SCREEN_PAIRS
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
-from ..pair_mean_reversion.analytics import get_cost_scenario, load_contracts, run_mean_reversion_baseline
+
+from ..pair_mean_reversion.analytics import (
+    get_cost_scenario,
+    load_contracts,
+    run_mean_reversion_baseline,
+)
 
 SCREEN_SCHEMA = "pair-screen.v1"
 
@@ -94,12 +99,19 @@ def _normalized_series(
     near_series = _bar_series(near_source)
     far_series = _bar_series(far_source)
     benchmark_payload, benchmark_hash = _read_json(benchmark_path)
-    if near_series.schema_version != "iss-candles.v1" or far_series.schema_version != "iss-candles.v1":
+    if (
+        near_series.schema_version != "iss-candles.v1"
+        or far_series.schema_version != "iss-candles.v1"
+    ):
         raise ScreenError("screen requires iss-candles.v1 pair inputs")
     if benchmark_payload.get("schema_version") != "lqdt-lineage.v1":
         raise ScreenError("screen requires lqdt-lineage.v1 benchmark")
     try:
-        spec = get_timeframe(timeframe) if timeframe is not None else timeframe_for_interval(near_series.interval)
+        spec = (
+            get_timeframe(timeframe)
+            if timeframe is not None
+            else timeframe_for_interval(near_series.interval)
+        )
     except ValueError as exc:
         raise ScreenError(str(exc)) from exc
     if near_series.interval != spec.iss_interval or far_series.interval != spec.iss_interval:
@@ -109,7 +121,9 @@ def _normalized_series(
     far_contract = contracts[far]
     near_multiplier = float(near_contract["tick_value"]) / float(near_contract["tick_size"])
     far_multiplier = float(far_contract["tick_value"]) / float(far_contract["tick_size"])
-    common_tick_rub = max(float(near_contract["tick_value"]), float(far_contract["tick_value"]), 1.0)
+    common_tick_rub = max(
+        float(near_contract["tick_value"]), float(far_contract["tick_value"]), 1.0
+    )
 
     near_rows = _rows_by_ts(near_series)
     far_rows = _rows_by_ts(far_series)
@@ -131,26 +145,28 @@ def _normalized_series(
         near_row, far_row = near_rows[timestamp], far_rows[timestamp]
         near_close, far_close = float(near_row["close"]), float(far_row["close"])
         normalized_spread = near_close * near_multiplier - far_close * far_multiplier
-        rows.append({
-            "date": timestamp if spec.intraday else session_date,
-            "session_date": session_date,
-            "timestamp": timestamp,
-            "near_close": near_close,
-            "far_close": far_close,
-            "near_open": float(near_row.get("open") or near_close),
-            "far_open": float(far_row.get("open") or far_close),
-            "spread_value": _round(normalized_spread),
-            "spread_ticks": _round(normalized_spread / common_tick_rub),
-            "benchmark_price": float(benchmark_row["price"]),
-            "benchmark_source_ticker": benchmark_row.get("source_ticker"),
-            "benchmark_source_kind": benchmark_row.get("source_kind"),
-            "benchmark_mark_kind": mark_kind,
-            "benchmark_mark_date": benchmark_date,
-            "near_price_proxy_kind": near_row.get("price_proxy_kind", "candle_close"),
-            "far_price_proxy_kind": far_row.get("price_proxy_kind", "candle_close"),
-            "near_volume": near_row.get("volume"),
-            "far_volume": far_row.get("volume"),
-        })
+        rows.append(
+            {
+                "date": timestamp if spec.intraday else session_date,
+                "session_date": session_date,
+                "timestamp": timestamp,
+                "near_close": near_close,
+                "far_close": far_close,
+                "near_open": float(near_row.get("open") or near_close),
+                "far_open": float(far_row.get("open") or far_close),
+                "spread_value": _round(normalized_spread),
+                "spread_ticks": _round(normalized_spread / common_tick_rub),
+                "benchmark_price": float(benchmark_row["price"]),
+                "benchmark_source_ticker": benchmark_row.get("source_ticker"),
+                "benchmark_source_kind": benchmark_row.get("source_kind"),
+                "benchmark_mark_kind": mark_kind,
+                "benchmark_mark_date": benchmark_date,
+                "near_price_proxy_kind": near_row.get("price_proxy_kind", "candle_close"),
+                "far_price_proxy_kind": far_row.get("price_proxy_kind", "candle_close"),
+                "near_volume": near_row.get("volume"),
+                "far_volume": far_row.get("volume"),
+            }
+        )
     if len(rows) < 2:
         raise ScreenError(f"fewer than two normalized common rows for {near}/{far}")
     return {
@@ -174,7 +190,9 @@ def _normalized_series(
             "benchmark_path": str(benchmark_path),
             "contracts_path": str(contracts_path),
             "normalization": "close * (tick_value / tick_size) per leg",
-            "benchmark_alignment": "previous observed daily close for intraday bars" if spec.intraday else "same-day close; documented non-clearing fallback only",
+            "benchmark_alignment": "previous observed daily close for intraday bars"
+            if spec.intraday
+            else "same-day close; documented non-clearing fallback only",
         },
     }
 
@@ -227,35 +245,41 @@ def screen_pairs(
                 cost_profile=stress_cost,
             )
             summary = baseline["summary"]
-            base.update({
-                "common_rows": summary["common_row_count"],
-                "first_date": summary["first_date"],
-                "last_date": summary["last_date"],
-                "pair_initial_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
-                "stress_screen_passed": risk["summary"]["all_scenarios_passed"],
-                "current_margin_screen_passed": risk["summary"]["current_snapshot_passed"],
-                "stress_remaining_capital_rub": risk["summary"]["most_severe_remaining_capital_rub"],
-                "h1_control": {
-                    "trade_count": summary["trade_count"],
-                    "gross_pnl_rub": summary["gross_pnl"],
-                    "illustrative_stress_costs_rub": summary["modeled_costs"],
-                    "final_X_rub": summary["final_X"],
-                    "max_drawdown_rub": summary["max_drawdown_D"],
-                },
-                "decision": (
-                    "candidate_for_separate_hypothesis"
-                    if risk["summary"]["all_scenarios_passed"] and summary["final_X"] > 0
-                    else "not_promoted"
-                ),
-                "risk": risk,
-                "series_provenance": series["provenance"],
-            })
+            base.update(
+                {
+                    "common_rows": summary["common_row_count"],
+                    "first_date": summary["first_date"],
+                    "last_date": summary["last_date"],
+                    "pair_initial_margin_rub": risk["pair"]["pair_margin_no_offset_rub"],
+                    "stress_screen_passed": risk["summary"]["all_scenarios_passed"],
+                    "current_margin_screen_passed": risk["summary"]["current_snapshot_passed"],
+                    "stress_remaining_capital_rub": risk["summary"][
+                        "most_severe_remaining_capital_rub"
+                    ],
+                    "h1_control": {
+                        "trade_count": summary["trade_count"],
+                        "gross_pnl_rub": summary["gross_pnl"],
+                        "illustrative_stress_costs_rub": summary["modeled_costs"],
+                        "final_X_rub": summary["final_X"],
+                        "max_drawdown_rub": summary["max_drawdown_D"],
+                    },
+                    "decision": (
+                        "candidate_for_separate_hypothesis"
+                        if risk["summary"]["all_scenarios_passed"] and summary["final_X"] > 0
+                        else "not_promoted"
+                    ),
+                    "risk": risk,
+                    "series_provenance": series["provenance"],
+                }
+            )
         except (OSError, ScreenError, W0Error) as exc:
-            base.update({
-                "candidate_status": "rejected_input_or_capital_gate",
-                "decision": "not_screenable",
-                "error": str(exc),
-            })
+            base.update(
+                {
+                    "candidate_status": "rejected_input_or_capital_gate",
+                    "decision": "not_screenable",
+                    "error": str(exc),
+                }
+            )
         candidates.append(base)
     candidates.sort(
         key=lambda item: (
@@ -282,7 +306,9 @@ def screen_pairs(
         },
         "summary": {
             "candidate_count": len(candidates),
-            "stress_pass_count": sum(item.get("stress_screen_passed", False) for item in candidates),
+            "stress_pass_count": sum(
+                item.get("stress_screen_passed", False) for item in candidates
+            ),
             "positive_h1_control_count": sum(
                 (item.get("h1_control", {}).get("final_X_rub") or 0) > 0 for item in candidates
             ),

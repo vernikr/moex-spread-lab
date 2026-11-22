@@ -10,15 +10,14 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from proof_fixtures import fixture
-
-from moex_spread_lab.strategies.calendar import calendar_spreads
 from moex_spread_lab.core.settings import EvaluationSplit, save_settings
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import MAX_TARGETS, _targets
 from moex_spread_lab.proof_runtime.proof_search import TRIALS, _annualized_returns, research_run
+from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.strategies.calendar import calendar_spreads
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.core.w0 import W0Error
+from proof_fixtures import fixture
 
 P = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6"}
 C = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}
@@ -36,10 +35,7 @@ class AnnualizationTests(unittest.TestCase):
         days = ["2021-01-01", "2022-01-01", "2023-01-01"]
         marks = dict(zip(days, [100, 110, 121]))
         proof = {
-            "ledger": [
-                {"date": d, "cumulative_net_rub": v}
-                for d, v in zip(days, [0, 600, 600])
-            ],
+            "ledger": [{"date": d, "cumulative_net_rub": v} for d, v in zip(days, [0, 600, 600])],
             "trades": [
                 {
                     "entry": {"date": days[0]},
@@ -48,9 +44,7 @@ class AnnualizationTests(unittest.TestCase):
                 }
             ],
         }
-        training = _annualized_returns(
-            proof, marks, EvaluationSplit.from_dates(days[:2], 0)
-        )
+        training = _annualized_returns(proof, marks, EvaluationSplit.from_dates(days[:2], 0))
         self.assertEqual(training["calendar_days"], 365)
         self.assertAlmostEqual(training["strategy_annualized_pct"], 11.0)
         self.assertAlmostEqual(training["lqdt_annualized_pct"], 10.0)
@@ -67,9 +61,7 @@ class AnnualizationTests(unittest.TestCase):
             (days, dict.fromkeys(days, 0.0)),
         ]:
             with self.subTest(days=bad_days), self.assertRaises(W0Error):
-                _annualized_returns(
-                    proof, bad_marks, EvaluationSplit.from_dates(bad_days, 0)
-                )
+                _annualized_returns(proof, bad_marks, EvaluationSplit.from_dates(bad_days, 0))
 
 
 class CohortTests(unittest.TestCase):
@@ -106,9 +98,7 @@ class CohortTests(unittest.TestCase):
             cal["evaluation"]["periods"]["validation"][-1],
             pair["evaluation"]["periods"]["training"][0],
         )
-        self.assertNotEqual(
-            cal["evaluation"]["observations"], pair["evaluation"]["observations"]
-        )
+        self.assertNotEqual(cal["evaluation"]["observations"], pair["evaluation"]["observations"])
         scores = {}
         for t in result["candidates"]:
             self.assertEqual(len(t["by_window_pp"]), 2)
@@ -144,9 +134,9 @@ class CohortTests(unittest.TestCase):
             dates = row["evaluation"]["periods"]["training"]
             prices = {
                 r["date"]: r["price"]
-                for r in json.loads(
-                    (self.root / "data/benchmark/lqdt-lineage.json").read_text()
-                )["rows"]
+                for r in json.loads((self.root / "data/benchmark/lqdt-lineage.json").read_text())[
+                    "rows"
+                ]
             }
             wealth = 30_000.0
             last_px = prices[dates[0]]
@@ -156,9 +146,7 @@ class CohortTests(unittest.TestCase):
                 d = r["date"]
                 price = prices[d]
                 net = r["cumulative_net_rub"]
-                wealth += (
-                    (wealth - reserved) * (price / last_px - 1) + net - previous_net
-                )
+                wealth += (wealth - reserved) * (price / last_px - 1) + net - previous_net
                 reserved = sum(
                     t["margin_rub"]
                     for t in prefix["trades"]
@@ -166,17 +154,12 @@ class CohortTests(unittest.TestCase):
                 )
                 last_px = price
                 previous_net = net
-            years = (
-                date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])
-            ).days / 365
+            years = (date.fromisoformat(dates[-1]) - date.fromisoformat(dates[0])).days / 365
             manual = 100 * (
-                (wealth / 30_000) ** (1 / years)
-                - (last_px / prices[dates[0]]) ** (1 / years)
+                (wealth / 30_000) ** (1 / years) - (last_px / prices[dates[0]]) ** (1 / years)
             )
             self.assertAlmostEqual(row["training_annualized_excess_pp"], manual)
-        rates = [
-            m["evaluation"]["result"]["annualized_excess_pp"] for m in g["members"]
-        ]
+        rates = [m["evaluation"]["result"]["annualized_excess_pp"] for m in g["members"]]
         self.assertAlmostEqual(g["result_mean_pp"], sum(rates) / 2)
         self.assertNotEqual(g["training_mean_pp"], g["result_mean_pp"])
         cal_active = {
@@ -189,9 +172,7 @@ class CohortTests(unittest.TestCase):
         self.assertEqual(reverse["group"], g)
 
     def test_only_holdout_liquidity_changes_neither_trials_nor_winner_or_lamps(self):
-        save_settings(
-            self.root, {"validation_percent": 25, "allow_failed_volume": False}
-        )
+        save_settings(self.root, {"validation_percent": 25, "allow_failed_volume": False})
         before = self.search(targets=[P, C])
         path = self.root / "data/w1/candles/CRZ6_1d.json"
         data = json.loads(path.read_text())

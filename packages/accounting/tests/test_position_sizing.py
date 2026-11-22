@@ -9,27 +9,22 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from proof_fixtures import fixture
-
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, maximum_quantity, size_proof
 from moex_spread_lab.core.settings import (
     ResearchSettings,
     read_settings,
     save_settings,
     settings_path,
 )
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, maximum_quantity, size_proof
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import _tune, research_run
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof_runtime.service import ProofService
+from proof_fixtures import fixture
 
 
-def unit_proof(
-    near=(50000, 49000, 49000, 49200), entries=((0, 1), (2, 3)), *, margin=5000
-):
-    days = [
-        (date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(len(near))
-    ]
+def unit_proof(near=(50000, 49000, 49000, 49200), entries=((0, 1), (2, 3)), *, margin=5000):
+    days = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(len(near))]
     rows = [
         {
             "date": d,
@@ -95,7 +90,7 @@ def unit_proof(
         }
         for s in ("SRZ6", "GZZ6")
     }
-    return proof, {d: 1.0 for d in days}, contracts
+    return proof, dict.fromkeys(days, 1.0), contracts
 
 
 def native_proof(*, entries=((0, 1),)):
@@ -128,9 +123,7 @@ class MaximumQuantityTests(unittest.TestCase):
     def test_stress_preserves_the_two_engines_uncertainty_buffer_conventions(self):
         # Pair account: 3*M*q + 5k*q + 5k. Native: (3*M + 5k + 5k)*q.
         self.assertEqual(maximum_quantity(30000, 100, {}, stress=True), 4)
-        self.assertEqual(
-            maximum_quantity(30000, 100, {}, stress=True, native_spread=True), 2
-        )
+        self.assertEqual(maximum_quantity(30000, 100, {}, stress=True, native_spread=True), 2)
 
     def test_every_returned_integer_is_maximal_after_component_rounding(self):
         for budget in (1, 100, 5000, 29999.99, 30000):
@@ -161,9 +154,7 @@ class FundedSizingTests(unittest.TestCase):
             sum(r["costs_rub"] for r in proof["ledger"]),
             places=6,
         )
-        self.assertEqual(
-            proof["summary"]["net_rub"], proof["ledger"][-1]["cumulative_net_rub"]
-        )
+        self.assertEqual(proof["summary"]["net_rub"], proof["ledger"][-1]["cumulative_net_rub"])
 
     def test_losses_resize_the_next_entry_but_never_an_open_position(self):
         unit, marks, contracts = unit_proof()
@@ -188,14 +179,9 @@ class FundedSizingTests(unittest.TestCase):
         proof = self.replay(unit, marks, contracts)
         self.assertFalse(proof["trades"])
         self.assertEqual(len(proof["skipped_entries"]), 2)
+        self.assertTrue(all(t["quantity"] == 0 and t["reason"] for t in proof["skipped_entries"]))
         self.assertTrue(
-            all(t["quantity"] == 0 and t["reason"] for t in proof["skipped_entries"])
-        )
-        self.assertTrue(
-            all(
-                r["quantity"] == r["costs_rub"] == r["mark_pnl_rub"] == 0
-                for r in proof["ledger"]
-            )
+            all(r["quantity"] == r["costs_rub"] == r["mark_pnl_rub"] == 0 for r in proof["ledger"])
         )
         self.assertTrue(all(r["account_value_rub"] == 30000 for r in proof["ledger"]))
         self.assert_reconciles(proof)
@@ -212,9 +198,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_stress_preference_changes_size_without_changing_raw_window_verdict(self):
         unit, marks, contracts = unit_proof()
-        proof = self.replay(
-            unit, marks, contracts, ResearchSettings(allow_failed_capital=False)
-        )
+        proof = self.replay(unit, marks, contracts, ResearchSettings(allow_failed_capital=False))
         self.assertTrue(proof["window"]["passes_capital_screen"])
         self.assertEqual([t["quantity"] for t in proof["trades"]], [1, 1])
         self.assert_reconciles(proof)
@@ -225,9 +209,7 @@ class FundedSizingTests(unittest.TestCase):
         t = proof["trades"][0]
         # 3 RUB/point * 2 points/tick; one native spread book, not two legs.
         self.assertEqual(t["entry"]["costs"]["slippage"], 2.5 * 6 * t["quantity"])
-        self.assertEqual(
-            proof["summary"]["cost_totals"]["slippage"], 2 * 2.5 * 6 * t["quantity"]
-        )
+        self.assertEqual(proof["summary"]["cost_totals"]["slippage"], 2 * 2.5 * 6 * t["quantity"])
         self.assert_reconciles(proof)
 
     def test_entry_size_does_not_use_its_close_future_exit_fx_or_benchmark_return(self):
@@ -240,9 +222,7 @@ class FundedSizingTests(unittest.TestCase):
         changed_marks = dict(marks)
         changed_marks[changed["series"][1]["date"]] = 100.0
         altered = self.replay(changed, changed_marks)
-        self.assertEqual(
-            base["trades"][0]["quantity"], altered["trades"][0]["quantity"]
-        )
+        self.assertEqual(base["trades"][0]["quantity"], altered["trades"][0]["quantity"])
         self.assertEqual(
             base["trades"][0]["entry"]["costs"], altered["trades"][0]["entry"]["costs"]
         )
@@ -259,9 +239,7 @@ class FundedSizingTests(unittest.TestCase):
         self.assert_reconciles(proof)
 
     def test_automatic_account_has_no_former_fifty_contract_ceiling(self):
-        unit, marks, contracts = unit_proof(
-            near=(50000, 50000), entries=((0, 1),), margin=100
-        )
+        unit, marks, contracts = unit_proof(near=(50000, 50000), entries=((0, 1),), margin=100)
         p = self.replay(unit, marks, contracts)
         self.assertGreater(p["trades"][0]["quantity"], 50)
         self.assert_reconciles(p)
@@ -275,9 +253,7 @@ class FundedSizingTests(unittest.TestCase):
         unit["trades"][1]["entry"].update(near_price=200000, far_price=200000)
         p = self.replay(unit, marks)
         self.assertEqual([t["quantity"] for t in p["trades"]], [18, 3])
-        self.assertEqual(
-            [t["sizing"]["margin_per_pair_rub"] for t in p["trades"]], [1500, 6000]
-        )
+        self.assertEqual([t["sizing"]["margin_per_pair_rub"] for t in p["trades"]], [1500, 6000])
         self.assert_reconciles(p)
 
     def test_native_next_open_exit_never_uses_that_days_later_fx_fixing(self):
@@ -297,13 +273,9 @@ class FundedSizingTests(unittest.TestCase):
         self,
     ):
         unit, marks = native_proof(entries=((0, 2),))
-        unit["series"][1].update(
-            volume_eligible=False, spread=1000000, near=1000000, far=1000000
-        )
+        unit["series"][1].update(volume_eligible=False, spread=1000000, near=1000000, far=1000000)
         p = self.replay(unit, marks)
-        self.assertEqual(
-            p["ledger"][0]["posted_margin_rub"], p["ledger"][1]["posted_margin_rub"]
-        )
+        self.assertEqual(p["ledger"][0]["posted_margin_rub"], p["ledger"][1]["posted_margin_rub"])
         self.assertEqual(p["ledger"][1]["mark_pnl_rub"], 0)
         self.assertEqual(p["ledger"][0]["quantity"], p["ledger"][1]["quantity"])
         self.assertEqual(p["summary"]["cash_shortfall_rows"], 0)
@@ -330,9 +302,7 @@ class FundedSizingTests(unittest.TestCase):
         for row in unit["series"]:
             row.update(funding_rub=300, funding_contracts=1)
         p = self.replay(unit, marks, contracts)
-        self.assertTrue(
-            all(r["funding_rub"] == r["funding_contracts"] == 0 for r in p["series"])
-        )
+        self.assertTrue(all(r["funding_rub"] == r["funding_contracts"] == 0 for r in p["series"]))
         self.assertEqual(p["summary"]["gross_rub"], 0)
         self.assert_reconciles(p)
 
@@ -345,9 +315,7 @@ class FundedSizingTests(unittest.TestCase):
                 unit["trades"][0]["open_at_end"] = True
                 unit["series"][-1].update(funding_rub=2, funding_contracts=1)
                 if funding_only:
-                    unit["selection"].update(
-                        strategy="funding_only", fill="same_day_settlement"
-                    )
+                    unit["selection"].update(strategy="funding_only", fill="same_day_settlement")
                 p = self.replay(unit, marks, contracts)
                 t = p["trades"][0]
                 self.assertEqual(p["summary"]["open_positions"], 1)
@@ -415,9 +383,9 @@ class SizingIntegrationTests(unittest.TestCase):
                 self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
                 self.assertEqual(p["sizing"]["additional_funding_rub"], 0)
                 self.assertEqual(
-                    research_run(
-                        self.svc, p["selection"], optimize=False, include_plateau=False
-                    )["run_id"],
+                    research_run(self.svc, p["selection"], optimize=False, include_plateau=False)[
+                        "run_id"
+                    ],
                     p["run_id"],
                 )
 
@@ -431,9 +399,7 @@ class SizingIntegrationTests(unittest.TestCase):
         p = research_run(self.svc, req, optimize=False, include_plateau=False)
         self.assertEqual(p["selection"]["parameters"], {"threshold_pp": 0.1})
         self.assertEqual(
-            research_run(
-                self.svc, p["selection"], optimize=False, include_plateau=False
-            )["run_id"],
+            research_run(self.svc, p["selection"], optimize=False, include_plateau=False)["run_id"],
             p["run_id"],
         )
         self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
@@ -450,9 +416,7 @@ class SizingIntegrationTests(unittest.TestCase):
         self.assertEqual(r["status"], "maximum_found")
         self.assertEqual(set(r["plateau"]["fields"]), {"lookback", "entry_z", "exit_z"})
         self.assertNotIn("quantity", r["selected_parameters"])
-        preview = checked_plateau(
-            self.svc, {**req, "parameters": r["selected_parameters"]}
-        )
+        preview = checked_plateau(self.svc, {**req, "parameters": r["selected_parameters"]})
         self.assertEqual(preview["plateau"], r["plateau"])
         for member in r["group"]["members"]:
             proof = research_run(
@@ -468,9 +432,7 @@ class SizingIntegrationTests(unittest.TestCase):
         replay = self.svc.prepare(self.cal, settings=ResearchSettings.load(self.root))
         prefix = replay(self.cal, through=cutoff)
         a = [
-            (t["entry"]["date"], t["quantity"])
-            for t in p["trades"]
-            if t["entry"]["date"] < cutoff
+            (t["entry"]["date"], t["quantity"]) for t in p["trades"] if t["entry"]["date"] < cutoff
         ]
         b = [
             (t["entry"]["date"], t["quantity"])
@@ -507,10 +469,7 @@ class SizingIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(result["group"]["slippage_ticks"], 1.0)
         self.assertTrue(
-            all(
-                m["selection"]["slippage_ticks"] == 1
-                for m in result["group"]["members"]
-            )
+            all(m["selection"]["slippage_ticks"] == 1 for m in result["group"]["members"])
         )
         next_ = research_run(self.svc, self.cal, optimize=False, include_plateau=False)
         self.assertEqual(next_["selection"]["slippage_ticks"], 4)
@@ -525,9 +484,7 @@ class SizingIntegrationTests(unittest.TestCase):
         p = research_run(self.svc, self.pair, optimize=False, include_plateau=False)
         self.assertFalse(p["trades"])
         self.assertGreater(p["summary"]["skipped_entries"], 0)
-        self.assertAlmostEqual(
-            p["evaluation"]["result"]["annualized_excess_pp"], 0, places=7
-        )
+        self.assertAlmostEqual(p["evaluation"]["result"]["annualized_excess_pp"], 0, places=7)
         self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
         for c in data["instruments"]:
             if c["secid"] == "CNYRUBF":

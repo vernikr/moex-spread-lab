@@ -9,9 +9,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-from proof_fixtures import two_calendar_windows
-from test_position_sizing import unit_proof
-
+from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import (
     MAX_RESEARCH_CAPITAL_RUB,
     EvaluationSplit,
@@ -20,8 +18,7 @@ from moex_spread_lab.core.settings import (
     save_settings,
     settings_path,
 )
-from moex_spread_lab.accounting.position_sizing import size_proof
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import (
     StudyWindow,
@@ -30,8 +27,10 @@ from moex_spread_lab.proof_runtime.proof_search import (
     research_run,
 )
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
+from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, catalog
-from moex_spread_lab.core.w0 import W0Error
+from proof_fixtures import two_calendar_windows
+from test_position_sizing import unit_proof
 
 PAIR = {
     "universe": "pair_screen",
@@ -49,10 +48,7 @@ CAL = {
     "sizing": "max_affordable",
 }
 FLAT = {**CAL, "pair": "SRM3/SRU3"}
-TARGETS = [
-    {k: v for k, v in r.items() if k in ("universe", "asset", "pair")}
-    for r in (PAIR, CAL)
-]
+TARGETS = [{k: v for k, v in r.items() if k in ("universe", "asset", "pair")} for r in (PAIR, CAL)]
 
 
 class CapitalSettingsTests(unittest.TestCase):
@@ -103,9 +99,7 @@ class CapitalSettingsTests(unittest.TestCase):
             for value in (0.01, 1, 15000, 60000.25, MAX_RESEARCH_CAPITAL_RUB):
                 with self.subTest(valid=value):
                     self.assertEqual(
-                        save_settings(root, {"initial_capital_rub": value})[
-                            "initial_capital_rub"
-                        ],
+                        save_settings(root, {"initial_capital_rub": value})["initial_capital_rub"],
                         value,
                     )
 
@@ -131,9 +125,7 @@ class CapitalReplayTests(unittest.TestCase):
         self.service = ProofService(self.root)
 
     def run_proof(self, request):
-        return research_run(
-            self.service, request, optimize=False, include_plateau=False
-        )
+        return research_run(self.service, request, optimize=False, include_plateau=False)
 
     def test_all_four_strategies_use_the_budget_and_never_a_request_override(self):
         requests = (
@@ -160,13 +152,9 @@ class CapitalReplayTests(unittest.TestCase):
                     self.assertEqual(p["sizing"]["entry_capital_ceiling_rub"], initial)
                     self.assertEqual(p["sizing"]["additional_funding_rub"], 0)
                     self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-                    self.assertEqual(
-                        self.run_proof(p["selection"])["run_id"], p["run_id"]
-                    )
+                    self.assertEqual(self.run_proof(p["selection"])["run_id"], p["run_id"])
                     for trade in p["trades"]:
-                        self.assertLessEqual(
-                            trade["sizing"]["available_capital_rub"], initial
-                        )
+                        self.assertLessEqual(trade["sizing"]["available_capital_rub"], initial)
                     ids[request["strategy"]].append(p["run_id"])
                     quantities[initial][request["strategy"]] = (
                         p["trades"][0]["quantity"] if p["trades"] else 0
@@ -178,17 +166,13 @@ class CapitalReplayTests(unittest.TestCase):
 
     def test_profits_do_not_expand_a_nondefault_envelope_and_small_budgets_skip(self):
         unit, marks, contracts = unit_proof(near=(50000, 50200, 50200, 50200))
-        p = size_proof(
-            unit, marks, ResearchSettings(initial_capital_rub=15000), contracts
-        )
+        p = size_proof(unit, marks, ResearchSettings(initial_capital_rub=15000), contracts)
         self.assertGreater(p["ledger"][1]["account_value_rub"], 15000)
         self.assertEqual([t["quantity"] for t in p["trades"]], [2, 2])
         self.assertEqual(
             [t["sizing"]["available_capital_rub"] for t in p["trades"]], [15000, 15000]
         )
-        p = size_proof(
-            unit, marks, ResearchSettings(initial_capital_rub=100), contracts
-        )
+        p = size_proof(unit, marks, ResearchSettings(initial_capital_rub=100), contracts)
         self.assertEqual(p["trades"], [])
         self.assertTrue(p["skipped_entries"])
         self.assertTrue(all(r["account_value_rub"] == 100 for r in p["ledger"]))
@@ -209,9 +193,7 @@ class CapitalReplayTests(unittest.TestCase):
                     50000 - loss_per_spread,
                 )
             )
-            p = size_proof(
-                unit, marks, ResearchSettings(initial_capital_rub=initial), contracts
-            )
+            p = size_proof(unit, marks, ResearchSettings(initial_capital_rub=initial), contracts)
             # The drawdown is still reported, it just no longer vetoes an entry.
             self.assertGreaterEqual(p["summary"]["max_excess_drawdown_rub"], 10000)
             self.assertGreater(p["ledger"][-1]["account_value_rub"], 0)
@@ -220,9 +202,7 @@ class CapitalReplayTests(unittest.TestCase):
                 # The account cannot fund a second spread any more.
                 self.assertEqual(len(p["trades"]), 1)
                 self.assertEqual(len(p["skipped_entries"]), 1)
-                self.assertIn(
-                    "Недостаточно средств", p["skipped_entries"][0]["reason"]
-                )
+                self.assertIn("Недостаточно средств", p["skipped_entries"][0]["reason"])
             else:
                 # Capital is left, so the second spread is taken.
                 self.assertEqual(len(p["trades"]), 2)
@@ -278,24 +258,16 @@ class CapitalReplayTests(unittest.TestCase):
                     split = EvaluationSplit.from_dates(days, share)
                     anchor = split.training[-1] if share else split.training[0]
                     opening = values[anchor] if share else initial
-                    span = (
-                        date.fromisoformat(days[-1]) - date.fromisoformat(anchor)
-                    ).days
+                    span = (date.fromisoformat(days[-1]) - date.fromisoformat(anchor)).days
                     expected = 100 * (
                         (values[days[-1]] / opening) ** (365 / span)
                         - (marks[days[-1]] / marks[anchor]) ** (365 / span)
                     )
-                    actual = _annualized_returns(p, marks, split)[
-                        "annualized_excess_pp"
-                    ]
-                    with self.subTest(
-                        initial=initial, share=share, automatic=automatic
-                    ):
+                    actual = _annualized_returns(p, marks, split)["annualized_excess_pp"]
+                    with self.subTest(initial=initial, share=share, automatic=automatic):
                         self.assertNotEqual(expected, 0)
                         self.assertAlmostEqual(actual, expected, places=8)
-                        self.assertEqual(
-                            actual, p["evaluation"]["result"]["annualized_excess_pp"]
-                        )
+                        self.assertEqual(actual, p["evaluation"]["result"]["annualized_excess_pp"])
 
     def test_zero_trade_lqdt_score_has_the_right_base_with_and_without_holdout(self):
         for initial in (500, 15000, 60000):
@@ -305,22 +277,16 @@ class CapitalReplayTests(unittest.TestCase):
                     {"initial_capital_rub": initial, "validation_percent": share},
                 )
                 for automatic in (False, True):
-                    with self.subTest(
-                        capital=initial, share=share, automatic=automatic
-                    ):
+                    with self.subTest(capital=initial, share=share, automatic=automatic):
                         req = deepcopy(FLAT)
                         if not automatic:
                             req.pop("sizing")
                         p = self.run_proof(req)
                         self.assertEqual(p["summary"]["trades"], 0)
-                        self.assertEqual(
-                            p["evaluation"]["result"]["annualized_excess_pp"], 0
-                        )
+                        self.assertEqual(p["evaluation"]["result"]["annualized_excess_pp"], 0)
                         self.assertEqual(p["selection"]["initial_capital_rub"], initial)
                         if automatic:
-                            self.assertEqual(
-                                p["ledger"][0]["account_value_rub"], initial
-                            )
+                            self.assertEqual(p["ledger"][0]["account_value_rub"], initial)
 
     def test_current_capital_changes_both_catalog_checks_and_strict_group_admission(
         self,
@@ -332,9 +298,7 @@ class CapitalReplayTests(unittest.TestCase):
                 {"initial_capital_rub": initial, "allow_failed_capital": False},
             )
             data = self.service.catalog()
-            pair = next(
-                p for p in data["pair_screen"]["pairs"] if p["id"] == PAIR["pair"]
-            )
+            pair = next(p for p in data["pair_screen"]["pairs"] if p["id"] == PAIR["pair"])
             native = next(
                 w
                 for a in data["assets"]
@@ -352,9 +316,7 @@ class CapitalReplayTests(unittest.TestCase):
 
     def test_compact_rows_match_the_current_chart_and_are_not_a_previous_capital(self):
         for initial in (15000, 60000):
-            save_settings(
-                self.root, {"initial_capital_rub": initial, "validation_percent": 25}
-            )
+            save_settings(self.root, {"initial_capital_rub": initial, "validation_percent": 25})
             requests = [PAIR, CAL, FLAT]
             before = deepcopy(requests)
             compact = window_summaries(self.service, {"requests": requests})
@@ -382,9 +344,7 @@ class CapitalReplayTests(unittest.TestCase):
         ):
             result = window_summaries(self.service, {"requests": [PAIR, CAL]})
         self.assertEqual(result["initial_capital_rub"], 20000)
-        self.assertTrue(
-            all(r["selection"]["initial_capital_rub"] == 20000 for r in result["rows"])
-        )
+        self.assertTrue(all(r["selection"]["initial_capital_rub"] == 20000 for r in result["rows"]))
         self.assertEqual(read_settings(self.root)["initial_capital_rub"], 60000)
 
     def test_search_freezes_capital_and_fill_and_neither_is_an_optimization_axis(self):
@@ -402,9 +362,7 @@ class CapitalReplayTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "maximum_found")
         self.assertEqual(result["group"]["initial_capital_rub"], 20000)
-        self.assertEqual(
-            set(result["selected_parameters"]), {"lookback", "entry_z", "exit_z"}
-        )
+        self.assertEqual(set(result["selected_parameters"]), {"lookback", "entry_z", "exit_z"})
         for member in result["group"]["members"]:
             self.assertEqual(member["selection"]["fill"], "next_close")
             self.assertEqual(member["selection"]["initial_capital_rub"], 20000)

@@ -14,10 +14,10 @@ must pass these behavioral invariants automatically:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 import json
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 from moex_spread_lab.core.contracts import (
@@ -41,9 +41,36 @@ def _pair_mean_reversion_fixture() -> tuple[WindowSnapshot, list[dict]]:
     rows = []
     series_rows = []
     offsets = [
-        0.0, 2.0, -2.0, 3.0, -1.0, 1.5, -2.5, 0.5, 18.0, 16.0,
-        2.0, 0.0, -1.0, -19.0, -15.0, -1.0, 0.5, 1.0, -0.5, 0.0,
-        2.0, -1.5, 17.5, 3.0, 0.2, -0.4, 0.8, -0.2, 0.1, 0.0,
+        0.0,
+        2.0,
+        -2.0,
+        3.0,
+        -1.0,
+        1.5,
+        -2.5,
+        0.5,
+        18.0,
+        16.0,
+        2.0,
+        0.0,
+        -1.0,
+        -19.0,
+        -15.0,
+        -1.0,
+        0.5,
+        1.0,
+        -0.5,
+        0.0,
+        2.0,
+        -1.5,
+        17.5,
+        3.0,
+        0.2,
+        -0.4,
+        0.8,
+        -0.2,
+        0.1,
+        0.0,
     ]
     for i, off in enumerate(offsets):
         d = (start + timedelta(days=i)).isoformat()
@@ -242,15 +269,69 @@ def _funding_carry_fixture(tmp_dir: Path) -> tuple[WindowSnapshot, list[dict]]:
 def _calendar_fixture() -> tuple[WindowSnapshot, list[dict]]:
     start = date(2026, 1, 10)
     spreads = [
-        1200.0, 1210.0, 1195.0, 1205.0, 1198.0, 1202.0, 1207.0, 1193.0, 1201.0, 1199.0,
-        1550.0, 1540.0, 1202.0, 1200.0, 860.0, 865.0, 1200.0, 1201.0, 1199.0, 1200.0,
-        1204.0, 1196.0, 1520.0, 1203.0, 1200.0, 1198.0, 1202.0, 1197.0, 1200.0, 1200.0,
+        1200.0,
+        1210.0,
+        1195.0,
+        1205.0,
+        1198.0,
+        1202.0,
+        1207.0,
+        1193.0,
+        1201.0,
+        1199.0,
+        1550.0,
+        1540.0,
+        1202.0,
+        1200.0,
+        860.0,
+        865.0,
+        1200.0,
+        1201.0,
+        1199.0,
+        1200.0,
+        1204.0,
+        1196.0,
+        1520.0,
+        1203.0,
+        1200.0,
+        1198.0,
+        1202.0,
+        1197.0,
+        1200.0,
+        1200.0,
     ]
     # Include near-expiry buffer exit around bar 18 for RUONIA convergence
     dtes = [
-        45, 44, 43, 42, 41, 40, 39, 38, 37, 36,
-        25, 24, 23, 22, 10, 2, 20, 19, 18, 17,
-        16, 15, 14, 13, 12, 2, 10, 9, 8, 7,
+        45,
+        44,
+        43,
+        42,
+        41,
+        40,
+        39,
+        38,
+        37,
+        36,
+        25,
+        24,
+        23,
+        22,
+        10,
+        2,
+        20,
+        19,
+        18,
+        17,
+        16,
+        15,
+        14,
+        13,
+        12,
+        2,
+        10,
+        9,
+        8,
+        7,
     ]
     rows = []
     series_rows = []
@@ -326,7 +407,7 @@ class StrategyPluginConformanceTests(unittest.TestCase):
 
     def test_auto_discovers_all_builtin_strategy_plugins(self) -> None:
         registry = discover_strategies()
-        self.assertTrue(EXPECTED_BUILTINS <= set(registry.ids()))
+        self.assertTrue(set(registry.ids()) >= EXPECTED_BUILTINS)
         for plugin in registry.values():
             self.assertIsInstance(plugin, StrategyPlugin)
             self.assertTrue(plugin.label_ru)
@@ -387,7 +468,9 @@ PLUGIN = SyntheticPlugin()
         snap, series = _calendar_fixture()
         run = plugin.evaluate_intents(snap, {"threshold": 2.0}, "next_open")
         self.assertEqual(run.strategy_id, "synthetic_drop_in")
-        self.assertEqual(len(plugin.compute_entry_bands(series, {"threshold": 2.0}, "next_open")), len(series))
+        self.assertEqual(
+            len(plugin.compute_entry_bands(series, {"threshold": 2.0}, "next_open")), len(series)
+        )
 
     def test_parameter_specs_and_fail_closed_validation(self) -> None:
         registry = discover_strategies()
@@ -444,11 +527,20 @@ PLUGIN = SyntheticPlugin()
                     self.assertEqual(prefix_bands, full_bands[:cutoff])
 
                     cutoff_date = str(series[cutoff - 1]["date"])[:10]
-                    forced = {"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"}
+                    forced = {
+                        "end_of_sample",
+                        "end_of_window",
+                        "open_at_data_end_no_executable_exit",
+                    }
 
                     def _closed_strictly_before(intents_seq, limit_day: str):
                         return [
-                            (item["side"], str(item["entry_date"])[:10], str(item["exit_date"])[:10], item["reason"])
+                            (
+                                item["side"],
+                                str(item["entry_date"])[:10],
+                                str(item["exit_date"])[:10],
+                                item["reason"],
+                            )
                             for item in intents_seq
                             if str(item["exit_date"])[:10] < limit_day
                             and item["reason"] not in forced
@@ -513,11 +605,22 @@ def test_calendar_intent_adapter_matches_existing_engines():
             actual = calendar_intent_trades(plugin, window, normalized, fill)
             if sid == "zscore_mean_reversion":
                 options = {**ZSCORE_CALENDAR_OPTIONS["quarterly"], **normalized}
-                expected = zscore_trades(list(window.rows), delay=delay, fill=quote,
-                                         skip_dividend_windows=False, close_at_end=True, **options)
+                expected = zscore_trades(
+                    list(window.rows),
+                    delay=delay,
+                    fill=quote,
+                    skip_dividend_windows=False,
+                    close_at_end=True,
+                    **options,
+                )
             else:
-                expected = convergence_trades(list(window.rows), delay=delay, fill=quote,
-                                              threshold=normalized["threshold_pp"], close_at_end=True)
+                expected = convergence_trades(
+                    list(window.rows),
+                    delay=delay,
+                    fill=quote,
+                    threshold=normalized["threshold_pp"],
+                    close_at_end=True,
+                )
             assert actual == expected
 
 
@@ -525,10 +628,13 @@ def test_reusable_conformance_helper_on_calendar_builtins():
     from moex_spread_lab.strategies.conformance import assert_causal_conformance
 
     window, series = _calendar_fixture()
-    for sid, params in (("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
-                        ("convergence_to_ruonia", {"threshold_pp": 1.0})):
-        assert_causal_conformance(discover_strategies().get(sid), window, series, params,
-                                  cutoffs=(14, 20, 26))
+    for sid, params in (
+        ("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
+        ("convergence_to_ruonia", {"threshold_pp": 1.0}),
+    ):
+        assert_causal_conformance(
+            discover_strategies().get(sid), window, series, params, cutoffs=(14, 20, 26)
+        )
 
 
 def test_reusable_conformance_helper_on_pair_builtins(tmp_path):
@@ -536,16 +642,23 @@ def test_reusable_conformance_helper_on_pair_builtins(tmp_path):
 
     registry = discover_strategies()
     pair, pair_series = _pair_mean_reversion_fixture()
-    assert_causal_conformance(registry.get("mean_reversion"), pair, pair_series,
-                              {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5}, cutoffs=(14, 20, 26))
+    assert_causal_conformance(
+        registry.get("mean_reversion"),
+        pair,
+        pair_series,
+        {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5},
+        cutoffs=(14, 20, 26),
+    )
     funding, funding_series = _funding_carry_fixture(tmp_path)
-    assert_causal_conformance(registry.get("funding_only"), funding, funding_series,
-                              {"lookback": 5}, cutoffs=(14, 20, 26))
+    assert_causal_conformance(
+        registry.get("funding_only"), funding, funding_series, {"lookback": 5}, cutoffs=(14, 20, 26)
+    )
 
 
 def test_pair_intent_boundary_reproduces_legacy_price_intents():
     """The legacy plugin's timing is made explicit without changing its output."""
     from dataclasses import replace
+
     from moex_spread_lab.strategies.base import PRICE_FILLS
     from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 
@@ -564,7 +677,16 @@ def test_pair_intent_boundary_reproduces_legacy_price_intents():
             enriched = []
             for item in result.intents:
                 i = days.index(item["entry_date"][:10])
-                enriched.append({**item, "signal": {"date": days[i - delay], "kind": "z", "value": item["entry_signal_z"]}})
+                enriched.append(
+                    {
+                        **item,
+                        "signal": {
+                            "date": days[i - delay],
+                            "kind": "z",
+                            "value": item["entry_signal_z"],
+                        },
+                    }
+                )
             return replace(result, intents=tuple(enriched))
 
     for fill in original.supported_fills:

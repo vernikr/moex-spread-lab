@@ -20,7 +20,9 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.iss.catalog import fetch_history
 
 FX_PERPETUALS = frozenset({"CNYRUBF", "EURRUBF", "USDRUBF"})
-FX_NEW_REGIME = "2022-12-05"  # MOEX n52418: do not interpolate across different cash-flow definitions.
+FX_NEW_REGIME = (
+    "2022-12-05"  # MOEX n52418: do not interpolate across different cash-flow definitions.
+)
 MAX_GAP = 3
 POLICY = "proof-funding.v1"
 DSVD_NOTICE = "https://www.moex.com/n92862"
@@ -84,10 +86,7 @@ def read_supplement(root, secid):
                 finite_rate(record["rate"]) is None
                 or not isinstance(hashes, list)
                 or not hashes
-                or not all(
-                    isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h)
-                    for h in hashes
-                )
+                or not all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes)
                 or not (record["from"] <= day <= record["till"])
             ):
                 raise ValueError
@@ -95,9 +94,7 @@ def read_supplement(root, secid):
     except FileNotFoundError:
         return {}
     except (TypeError, KeyError, ValueError, AttributeError) as exc:
-        raise W0Error(
-            f"Не удалось прочитать повторную сверку SWAPRATE для {secid}."
-        ) from exc
+        raise W0Error(f"Не удалось прочитать повторную сверку SWAPRATE для {secid}.") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,9 +136,7 @@ class FundingTimeline:
         self.check_spans = []
         for d in sorted(set(candle_days) | clearing):
             value = published.get(d)
-            verified_value = (
-                finite_rate(self.verified[d]["rate"]) if d in self.verified else None
-            )
+            verified_value = finite_rate(self.verified[d]["rate"]) if d in self.verified else None
             if secid in LAUNCH_PERPETUALS and d in NO_CLEARING:
                 if value not in (None, 0) or verified_value not in (None, 0):
                     raise W0Error(
@@ -166,10 +161,7 @@ class FundingTimeline:
             left = sessions[start - 1] if start else None
             right = sessions[i] if i < len(sessions) else None
             same_regime = not (
-                secid in FX_PERPETUALS
-                and left
-                and right
-                and left < FX_NEW_REGIME <= right
+                secid in FX_PERPETUALS and left and right and left < FX_NEW_REGIME <= right
             )
             confirmed = all(d in clearing for d in days)
             if (
@@ -179,8 +171,7 @@ class FundingTimeline:
                 and len(days) <= MAX_GAP
                 and (
                     not confirmed
-                    or (date.fromisoformat(right) - date.fromisoformat(left)).days
-                    > len(days) + 1
+                    or (date.fromisoformat(right) - date.fromisoformat(left)).days > len(days) + 1
                 )
             ):
                 self.check_spans.append((left, right))
@@ -206,11 +197,7 @@ class FundingTimeline:
 
     @property
     def no_clearing_dates(self):
-        return {
-            d
-            for d in NO_CLEARING
-            if d in self.marks and self.marks[d].kind == "no_clearing"
-        }
+        return {d for d in NO_CLEARING if d in self.marks and self.marks[d].kind == "no_clearing"}
 
     def require(self, days, *, through=None, training_end=None):
         """Both anchors must already exist at the evaluation cutoff; never fit from holdout."""
@@ -278,9 +265,7 @@ class FundingTimeline:
 
 
 def _default_offline_only(*_args, **_kwargs):
-    raise OSError(
-        "local screener does not download data; run the documented intake first"
-    )
+    raise OSError("local screener does not download data; run the documented intake first")
 
 
 def _default_history_source(inputs, pair_id, secid):
@@ -337,9 +322,7 @@ class ProofFunding:
     def __init__(self, inputs, *, history_fn=None, positive_volume_dates_fn=None):
         self.inputs = inputs
         self._history_fn = history_fn or _default_history_source
-        self._positive_volume_dates_fn = (
-            positive_volume_dates_fn or _default_positive_volume_dates
-        )
+        self._positive_volume_dates_fn = positive_volume_dates_fn or _default_positive_volume_dates
         self._sources = {}
         self._timelines = {}
         self._market_dates = None
@@ -395,19 +378,12 @@ class ProofFunding:
                 for secid in (p["near"], p["far"]):
                     directory = self.inputs.history_cache(pid)
                     key = directory, secid, a, b
-                    if (
-                        key in seen
-                        or not (directory / f"{secid}-{a}-{b}-0.json").is_file()
-                    ):
+                    if key in seen or not (directory / f"{secid}-{a}-{b}-0.json").is_file():
                         continue
                     seen.add(key)
                     try:
-                        source = self._sources.get(key) or self._history_fn(
-                            self.inputs, pid, secid
-                        )
-                        dates.update(
-                            r["TRADEDATE"] for r in source["rows"] if has_settle(r)
-                        )
+                        source = self._sources.get(key) or self._history_fn(self.inputs, pid, secid)
+                        dates.update(r["TRADEDATE"] for r in source["rows"] if has_settle(r))
                     except (ValueError, OSError, TypeError, KeyError):
                         continue  # not evidence of a market clearing
             self._market_dates = dates
@@ -428,9 +404,7 @@ class ProofFunding:
         if is_perp and len(reasons) < 2:
             try:
                 if not funding_files[0].is_file():
-                    raise W0Error(
-                        f"Нет локальных данных SWAPRATE: {funding_files[0].name}."
-                    )
+                    raise W0Error(f"Нет локальных данных SWAPRATE: {funding_files[0].name}.")
                 if not positive_days:
                     raise W0Error("Нет общих дней с положительным объёмом обеих ног.")
                 book = self.timeline(pair)
@@ -442,9 +416,7 @@ class ProofFunding:
                 if "funding_only" not in reasons:
                     try:
                         settles = self.settlement_days(pair)
-                        needed_settles = {
-                            d for d, m in needed.items() if m.kind != "no_clearing"
-                        }
+                        needed_settles = {d for d, m in needed.items() if m.kind != "no_clearing"}
                         if absent := sorted(needed_settles - settles):
                             raise W0Error(
                                 f"Нет расчётной цены одной из ног за {absent[0]}. Среднее заменяет только ставку, не цену."
@@ -452,21 +424,15 @@ class ProofFunding:
                         book.require(settles)
                     except (ValueError, OSError, KeyError, TypeError) as exc:
                         reasons["funding_only"] = str(exc)
-        return {
-            s: s not in reasons for s in ("mean_reversion", "funding_only")
-        }, reasons
+        return {s: s not in reasons for s in ("mean_reversion", "funding_only")}, reasons
 
     def settlement_days(self, pair):
         def days(secid):
             return {
-                r["TRADEDATE"]
-                for r in self.source(pair["pair_id"], secid)["rows"]
-                if has_settle(r)
+                r["TRADEDATE"] for r in self.source(pair["pair_id"], secid)["rows"] if has_settle(r)
             }
 
-        return (days(pair["near"]) & days(pair["far"])) - self.timeline(
-            pair
-        ).no_clearing_dates
+        return (days(pair["near"]) & days(pair["far"])) - self.timeline(pair).no_clearing_dates
 
     def carry_window(self, pair, share):
         book = self.timeline(pair)
@@ -496,9 +462,7 @@ class FundingWindow:
         self.resolve = cache(self._resolve)
 
     def _resolve(self, through=None):
-        marks = self.book.require(
-            self.days, through=through, training_end=self.training_end
-        )
+        marks = self.book.require(self.days, through=through, training_end=self.training_end)
         if not marks:
             raise W0Error("Нет расчётных дат в выбранном периоде.")
         detail = self.book.provenance(marks)

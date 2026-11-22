@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from moex_spread_lab.core.contracts import EntryBandPoint
+
 from ..base import population_rolling_stats
 from .analytics import (
     ANALYTICS_SCHEMA,
@@ -65,9 +67,9 @@ def compute_pair_entry_bands(
 
 __all__ = [
     "ANALYTICS_SCHEMA",
-    "AnalyticsError",
     "COST_SCENARIOS",
     "REQUIRED_COST_COMPONENTS",
+    "AnalyticsError",
     "build_daily_series",
     "build_series",
     "compute_pair_entry_bands",

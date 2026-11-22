@@ -18,10 +18,7 @@ def download(page):
     with page.expect_download() as data:
         page.locator("#download-csv").click()
     text = Path(data.value.path()).read_text().splitlines()
-    return {
-        r["date"]: r
-        for r in csv.DictReader(line for line in text if not line.startswith("#"))
-    }
+    return {r["date"]: r for r in csv.DictReader(line for line in text if not line.startswith("#"))}
 
 
 def run(page, url, root, days):

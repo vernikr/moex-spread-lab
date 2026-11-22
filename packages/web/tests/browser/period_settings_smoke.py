@@ -77,13 +77,9 @@ def expect_api_json(page, suffix, timeout=120000):
 
 def ready(page, basis):
     expect(page.locator("#period-result")).to_be_visible(timeout=20000)
-    expect(page.locator("#period-result")).to_have_attribute(
-        "data-basis", basis, timeout=20000
-    )
+    expect(page.locator("#period-result")).to_have_attribute("data-basis", basis, timeout=20000)
     expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
-    expect(page.locator("#render-progress")).to_have_attribute(
-        "aria-hidden", "true", timeout=20000
-    )
+    expect(page.locator("#render-progress")).to_have_attribute("aria-hidden", "true", timeout=20000)
 
 
 def apply(page, share):
@@ -112,11 +108,18 @@ def run(browser, url):
     expect(pair.locator("#validation-percent")).to_have_value("0")
     expect(pair.locator("#global-fill")).to_have_value("reference_same_bar")
     expect(pair.locator('#global-timeframe[role="radiogroup"]')).to_be_visible()
-    expect(pair.locator('#global-timeframe [role="radio"][data-value="1d"]')).to_have_attribute("aria-checked", "true")
+    expect(pair.locator('#global-timeframe [role="radio"][data-value="1d"]')).to_have_attribute(
+        "aria-checked", "true"
+    )
     settings_text = pair.locator("#global-settings").inner_text()
     assert "Снимите галочку, чтобы сделать проверку обязательной" not in settings_text
     assert "Настройки общие для всех пар и стратегий" not in settings_text
-    assert pair.locator("#global-settings .settings-footer").evaluate("n=>getComputedStyle(n).position") == "sticky"
+    assert (
+        pair.locator("#global-settings .settings-footer").evaluate(
+            "n=>getComputedStyle(n).position"
+        )
+        == "sticky"
+    )
     # Clicking outside on the backdrop closes the dialog.
     pair.mouse.click(5, 5)
     expect(pair.get_by_role("dialog")).not_to_be_visible()
@@ -145,9 +148,7 @@ def run(browser, url):
     assert pair.locator("tr[data-period=training]").count() == 42
     pair.locator("#lookback + .plateau-dot").hover()
     expect(pair.locator("#plateau-tip")).to_contain_text("Проверка:")
-    expect(pair.locator("#plateau-tip")).to_contain_text(
-        "ни на обучении, ни на проверке"
-    )
+    expect(pair.locator("#plateau-tip")).to_contain_text("ни на обучении, ни на проверке")
     with pair.expect_response(lambda r: r.url.endswith("/api/proof/run")):
         pair.locator("#auto-tune").click()
     ready(pair, "validation")
@@ -192,9 +193,7 @@ if __name__ == "__main__":
         browser = pw.chromium.launch()
         try:
             run(browser, "http://127.0.0.1:" + str(server.server_port))
-            print(
-                "Global settings, both routes/universes, holdout, chart, journal and CSV: OK"
-            )
+            print("Global settings, both routes/universes, holdout, chart, journal and CSV: OK")
         finally:
             browser.close()
             server.shutdown()

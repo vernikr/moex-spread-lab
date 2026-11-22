@@ -6,16 +6,13 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from test_calendar_proof import _build_root as calendar_fixture
-from test_execution_proof import _build_root as pair_fixture
-
 from moex_spread_lab.core.settings import (
     EvaluationSplit,
     ResearchSettings,
     read_settings,
     save_settings,
 )
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_search import (
     EXECUTION_AXES,
     GREEN,
@@ -28,8 +25,10 @@ from moex_spread_lab.proof_runtime.proof_search import (
     _tune,
     research_run,
 )
+from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.core.w0 import W0Error
+from test_calendar_proof import _build_root as calendar_fixture
+from test_execution_proof import _build_root as pair_fixture
 
 PAIR = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
 CALENDAR = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}
@@ -132,9 +131,7 @@ class PlateauTests(unittest.TestCase):
                     self.assertNotIn("reason", measured)
                 else:
                     self.assertIsNone(measured["utility"])
-                    self.assertEqual(
-                        measured["reason"], f"Открытого спреда не было {missing}."
-                    )
+                    self.assertEqual(measured["reason"], f"Открытого спреда не было {missing}.")
 
     def test_benchmark_relative_drawdown_and_shortfall_no_longer_veto_a_candidate(self):
         # A book that falls far behind LQDT stays a candidate: the measured
@@ -159,9 +156,7 @@ class PlateauTests(unittest.TestCase):
             ],
         }
         marks = dict.fromkeys(days, 1.0)
-        measured = _measure(
-            proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings()
-        )
+        measured = _measure(proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings())
         self.assertIsNotNone(measured["rank_score"])
         self.assertIsNotNone(measured["utility"])
         self.assertNotIn("просадки", str(measured.get("reason", "")))
@@ -172,10 +167,7 @@ class PlateauTests(unittest.TestCase):
         proof = {
             "selection": {"strategy": "funding_only"},
             "window": {"passes_capital_screen": True, "tradable_every_day": True},
-            "ledger": [
-                {"date": d, "cumulative_net_rub": x}
-                for d, x in zip(days, [0, 10, 70, 72])
-            ],
+            "ledger": [{"date": d, "cumulative_net_rub": x} for d, x in zip(days, [0, 10, 70, 72])],
             "trades": [
                 {
                     "entry": {"date": days[0]},
@@ -198,21 +190,16 @@ class PlateauTests(unittest.TestCase):
                     EvaluationSplit.from_dates(days, percent),
                     ResearchSettings(),
                 )
-                self.assertEqual(
-                    (m["net_rub"], m["excess_rub"], m["rub_per_session"]), expected
-                )
+                self.assertEqual((m["net_rub"], m["excess_rub"], m["rub_per_session"]), expected)
         proof["trades"] = []
-        no_check = _measure(
-            proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings()
-        )
+        no_check = _measure(proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings())
         self.assertEqual(no_check["reason"], "Открытого спреда не было на обучении.")
         self.assertIsNone(no_check["validation"])
 
     def test_daily_hurdle_marks_positions_across_a_split_and_reconciles_at_exit(self):
         proof = {
             "ledger": [
-                {"date": d, "cumulative_net_rub": x}
-                for d, x in zip("abcd", [0, 10, 20, 31])
+                {"date": d, "cumulative_net_rub": x} for d, x in zip("abcd", [0, 10, 20, 31])
             ],
             "trades": [
                 {
@@ -266,9 +253,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         self.assertEqual(a["trial_count"], TRIALS)
         self.assertEqual([c["trial"] for c in a["candidates"]], list(range(TRIALS)))
         self.assertEqual(a["status"], "maximum_found")
-        self.assertEqual(
-            set(a["selected_parameters"]), {"lookback", "entry_z", "exit_z"}
-        )
+        self.assertEqual(set(a["selected_parameters"]), {"lookback", "entry_z", "exit_z"})
         picked = {**req, "parameters": a["selected_parameters"]}
         displayed = research_run(proof, picked, optimize=False)
         self.assertEqual(displayed["plateau"], a["plateau"])
@@ -308,9 +293,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
             self.assertEqual(e["result_basis"], "training")
             self.assertIsNone(e["periods"]["validation"])
             self.assertEqual(e["observations"]["validation"], 0)
-            self.assertAlmostEqual(
-                e["result"]["net_rub"], whole["summary"]["net_rub"], delta=0.03
-            )
+            self.assertAlmostEqual(e["result"]["net_rub"], whole["summary"]["net_rub"], delta=0.03)
             save_settings(service.root, {"validation_percent": 50})
             half = research_run(service, req, optimize=False, include_plateau=False)
             for k in ("proof_run_id", "series", "trades", "ledger", "summary"):
@@ -318,14 +301,11 @@ class ProofSearchIntegrationTests(unittest.TestCase):
             self.assertNotEqual(whole["run_id"], half["run_id"])
             h = half["evaluation"]
             self.assertEqual(h["result_basis"], "validation")
-            self.assertEqual(
-                h["observations"]["validation"], e["observations"]["training"] // 2
-            )
+            self.assertEqual(h["observations"]["validation"], e["observations"]["training"] // 2)
             marks = {r["date"]: r["cumulative_net_rub"] for r in half["ledger"]}
             self.assertAlmostEqual(
                 h["result"]["net_rub"],
-                marks[h["periods"]["validation"][-1]]
-                - marks[h["periods"]["training"][-1]],
+                marks[h["periods"]["validation"][-1]] - marks[h["periods"]["training"][-1]],
             )
 
     def test_journal_only_rows_do_not_move_the_validation_boundary(self):
@@ -355,9 +335,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         req = {**CALENDAR, "strategy": "zscore_mean_reversion"}
         before = research_run(service, req, optimize=True)
         self.assertIsNotNone(before["selected_parameters"])
-        path = next(
-            (service.root / "data/spread-history-cache").glob("SRH3SRM3-*.json")
-        )
+        path = next((service.root / "data/spread-history-cache").glob("SRH3SRM3-*.json"))
         data = json.loads(path.read_text())
         history = data["payload"]["history"]
         dates, volume = (history["columns"].index(k) for k in ("TRADEDATE", "VOLUME"))
@@ -384,20 +362,14 @@ class ProofSearchIntegrationTests(unittest.TestCase):
                 result = research_run(service, req, optimize=True)
                 json.dumps(result, allow_nan=False)
                 self.assertEqual(result["trial_count"], TRIALS)
-                self.assertEqual(
-                    set(result["plateau"]["fields"]), active | EXECUTION_AXES.keys()
-                )
-                self.assertTrue(
-                    all(set(t["parameters"]) == active for t in result["candidates"])
-                )
+                self.assertEqual(set(result["plateau"]["fields"]), active | EXECUTION_AXES.keys())
+                self.assertTrue(all(set(t["parameters"]) == active for t in result["candidates"]))
         save_settings(cal.root, {"allow_failed_capital": False})
         no_capital = research_run(cal, {**CALENDAR, "quantity": 3}, optimize=True)
         self.assertEqual(no_capital["status"], "unavailable")
         self.assertEqual(no_capital["trial_count"], 0)
         self.assertIsNone(no_capital["selected_parameters"])
-        self.assertTrue(
-            all(f["score"] is None for f in no_capital["plateau"]["fields"].values())
-        )
+        self.assertTrue(all(f["score"] is None for f in no_capital["plateau"]["fields"].values()))
 
     def test_short_series_and_invalid_values_never_produce_a_fake_plateau(self):
         proof = self.fixture(pair_fixture)
@@ -428,9 +400,7 @@ class ProofSearchIntegrationTests(unittest.TestCase):
     def test_http_home_alias_new_search_rerun_and_local_origin_boundary(self):
         proof = self.fixture(pair_fixture)
         inputs = ScreenerInputs(proof.root)
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(inputs))
-        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(inputs)))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -503,15 +473,11 @@ class ProofSearchIntegrationTests(unittest.TestCase):
         response = conn.getresponse()
         self.assertEqual(response.status, 200)
         displayed = json.loads(response.read())
-        self.assertEqual(
-            displayed["selection"]["parameters"], result["selected_parameters"]
-        )
+        self.assertEqual(displayed["selection"]["parameters"], result["selected_parameters"])
         self.assertEqual(displayed["plateau"], result["plateau"])
         self.assertEqual(
             result["run_id"],
-            json.loads((inputs.history.parent / "proof-searches.jsonl").read_text())[
-                "run_id"
-            ],
+            json.loads((inputs.history.parent / "proof-searches.jsonl").read_text())["run_id"],
         )
 
 

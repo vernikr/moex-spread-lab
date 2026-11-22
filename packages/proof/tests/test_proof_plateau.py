@@ -10,15 +10,14 @@ from pathlib import Path
 from statistics import fmean
 from unittest.mock import patch
 
-from proof_fixtures import fixture
-from test_proof_batch import ACTIVE, C, P
-
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-from moex_spread_lab.core.w0 import W0Error
+from proof_fixtures import fixture
+from test_proof_batch import ACTIVE, C, P
 
 
 class CheckedPlateauTests(unittest.TestCase):
@@ -47,10 +46,7 @@ class CheckedPlateauTests(unittest.TestCase):
             },
             ACTIVE,
         ]
-        solo = [
-            research_run(self.service, r, optimize=False)["plateau"]["fields"]
-            for r in reqs
-        ]
+        solo = [research_run(self.service, r, optimize=False)["plateau"]["fields"] for r in reqs]
         # Probes must not start a study, evaluate the holdout or write a trial log.
         with (
             patch(
@@ -76,10 +72,7 @@ class CheckedPlateauTests(unittest.TestCase):
             self.assertAlmostEqual(field["center"]["utility"], center)
             expected = []
             for n in field["neighbors"]:
-                rs = [
-                    next(x for x in f["neighbors"] if x["value"] == n["value"])
-                    for f in fs
-                ]
+                rs = [next(x for x in f["neighbors"] if x["value"] == n["value"]) for f in fs]
                 vals = [r.get("rank_score") for r in rs]
                 if None in vals:
                     self.assertIsNone(n["utility"])
@@ -143,18 +136,15 @@ class CheckedPlateauTests(unittest.TestCase):
         self.assertEqual([x["target"] for x in bad["excluded"]], [C])
         self.assertNotIn("selected_parameters", bad)
         self.assertIsNone(
-            self.profile(
-                strategy="funding_only", parameters={"lookback": 10}, targets=[C]
-            )["plateau"]
+            self.profile(strategy="funding_only", parameters={"lookback": 10}, targets=[C])[
+                "plateau"
+            ]
         )
         wide = self.profile(parameters={**ACTIVE["parameters"], "lookback": 70})
         fields = wide["plateau"]["fields"]
         self.assertEqual(fields["lookback"]["value"], 70)
         self.assertTrue(
-            all(
-                f["score"] is None and "диапазон" in f["reason"]
-                for f in fields.values()
-            )
+            all(f["score"] is None and "диапазон" in f["reason"] for f in fields.values())
         )
         for bad_req in (
             {"targets": []},

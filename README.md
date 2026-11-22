@@ -80,6 +80,7 @@ uv run pytest -q -n auto --dist loadfile        # full package-scoped suite
 - [CI and fast test runs](docs/development/ci.md)
 - [Remote agent testing and benchmarking design](docs/development/remote-agent-testing.md)
 - [Modular architecture and multi-agent workspace plan](docs/development/modular-architecture-plan.md)
+- [Post-migration architectural review and Phase 7 plan](docs/development/modular-architecture-review.md)
 - [Calendar proof plugin contract](packages/strategies/docs/calendar-proof-plugins.md)
 - [Pair intent boundary and remaining accounting work](packages/strategies/docs/pair-intent-boundary.md)
 - [Automated code health and AI-readability plan](docs/development/code-health-plan.md)

@@ -84,14 +84,17 @@ def test_benchmark_reports_exact_match_and_refuses_drift(tmp_path, monkeypatch):
     monkeypatch.setattr(
         bench,
         "_post",
-        lambda port, payload: {"result": {"run_id": "same"}, "telemetry": {"median_ms": 1}},
+        lambda port, payload, root: {"result": {"run_id": "same"}, "telemetry": {"median_ms": 1}},
     )
     result = bench.benchmark(tmp_path, {"suite": "calendar_proof", "revision": "abc"})
     assert result["exact_match"] is True
     monkeypatch.setattr(
         bench,
         "_post",
-        lambda port, payload: {"result": {"run_id": str(port)}, "telemetry": {"median_ms": 1}},
+        lambda port, payload, root: {
+            "result": {"run_id": str(port)},
+            "telemetry": {"median_ms": 1},
+        },
     )
     with pytest.raises(RuntimeError, match="differ"):
         bench.benchmark(tmp_path, {"suite": "calendar_proof", "revision": "abc"})
@@ -198,7 +201,7 @@ def test_fastcore_comparison_uses_isolated_servers_and_fails_on_drift(tmp_path, 
     monkeypatch.setattr(
         bench,
         "_post",
-        lambda port, payload: {
+        lambda port, payload, root: {
             "result": {"sha256": "same"},
             "telemetry": {"median_ms": port - 8764},
         },
@@ -209,7 +212,27 @@ def test_fastcore_comparison_uses_isolated_servers_and_fails_on_drift(tmp_path, 
     monkeypatch.setattr(
         bench,
         "_post",
-        lambda port, payload: {"result": {"sha256": str(port)}, "telemetry": {"median_ms": 1}},
+        lambda port, payload, root: {
+            "result": {"sha256": str(port)},
+            "telemetry": {"median_ms": 1},
+        },
     )
     with pytest.raises(RuntimeError, match="differ"):
         bench.benchmark(tmp_path, {"suite": "ab_fastcore", "revision": "abc"})
+
+
+def test_full_result_hash_normalizes_only_root_bound_provenance(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    value = {
+        "action": "run",
+        "result": {"provenance": {"candles_path": str(a / "data/a.json")}, "ledger": [1]},
+        "telemetry": {},
+    }
+    first = bench._compact(value, a)["result"]["sha256"]
+    value["result"]["provenance"]["candles_path"] = str(b / "data/a.json")
+    assert bench._compact(value, b)["result"]["sha256"] == first
+    value["result"]["ledger"] = [2]
+    assert bench._compact(value, b)["result"]["sha256"] != first
+    value["result"]["ledger"] = [1]
+    value["result"]["provenance"]["candles_path"] = str(b / "data/other.json")
+    assert bench._compact(value, b)["result"]["sha256"] != first

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .w0 import canonical_bytes, sha256_bytes
+from .workstation_results import normalize_provenance
 from .workstation_suites import suite as _suite
 
 
@@ -35,7 +36,7 @@ def _cmd(root: Path, *args: str, input_text: str | None = None) -> str:
     return proc.stdout.strip()
 
 
-def _post(port: int, payload: dict[str, Any]) -> dict[str, Any]:
+def _post(port: int, payload: dict[str, Any], root: Path) -> dict[str, Any]:
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/dev/probe",
         data=json.dumps(payload).encode(),
@@ -44,15 +45,16 @@ def _post(port: int, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(req, timeout=300) as response:
             value: dict[str, Any] = json.load(response)
-            return _compact(value)
+            return _compact(value, root)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(
             f"benchmark HTTP {exc.code}: {exc.read(1000).decode(errors='replace')}"
         ) from None
 
 
-def _compact(value: dict[str, Any]) -> dict[str, Any]:
+def _compact(value: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     full: Any = value["result"]
+    full = normalize_provenance(full, root)
     digest = hashlib.sha256(
         json.dumps(full, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
@@ -220,7 +222,7 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
         if not revision:
             raise ValueError("ab_fastcore requires a candidate revision")
         return _benchmark_fastcore(root, revision, options.get("patch", ""), jobs, health, warmup)
-    baseline = [_post(8765, job) for job in jobs]
+    baseline = [_post(8765, job, root) for job in jobs]
     result: dict[str, Any] = {
         "suite": suite,
         "warmup": warmup,
@@ -234,7 +236,7 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
             candidate_worktree(root, revision, options.get("patch", "")) as candidate,
             candidate_server(candidate) as port,
         ):
-            comparison = [_post(port, job) for job in jobs]
+            comparison = [_post(port, job, candidate) for job in jobs]
         result["candidate"] = comparison
         result["exact_match"] = [a["result"] for a in baseline] == [b["result"] for b in comparison]
         result["speedup_x"] = [
@@ -262,11 +264,11 @@ def _benchmark_fastcore(
         with candidate_server(
             candidate, {"MOEX_PROOF_DISABLE_C": "0", "MOEX_PROOF_WORKERS": "6"}
         ) as port:
-            baseline = [_post(port, job) for job in jobs]
+            baseline = [_post(port, job, candidate) for job in jobs]
         with candidate_server(
             candidate, {"MOEX_PROOF_DISABLE_C": "1", "MOEX_PROOF_WORKERS": "1"}
         ) as port:
-            comparison = [_post(port, job) for job in jobs]
+            comparison = [_post(port, job, candidate) for job in jobs]
     exact = [a["result"] for a in baseline] == [b["result"] for b in comparison]
     if not exact:
         raise RuntimeError("fastcore A/B benchmark results differ")

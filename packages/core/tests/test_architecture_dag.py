@@ -29,7 +29,7 @@ def _expand(spec: str) -> list[str]:
 
 _LAYER_SPECS: dict[str, str] = {
     "core": (
-        "core.{,_fastcore_loader,cache_metrics,contracts,evaluation_periods,hashed_json_cache,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote,workstation_suites} "
+        "core.{,_fastcore_loader,cache_metrics,contracts,evaluation_periods,hashed_json_cache,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote,workstation_results,workstation_suites} "
         "_fastcore_loader w0 timeframes evaluation_periods universe"
     ),
     "data": (

@@ -29,7 +29,7 @@ def _expand(spec: str) -> list[str]:
 
 _LAYER_SPECS: dict[str, str] = {
     "core": (
-        "core.{,_fastcore_loader,contracts,evaluation_periods,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote} "
+        "core.{,_fastcore_loader,cache_metrics,contracts,evaluation_periods,hashed_json_cache,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote} "
         "_fastcore_loader w0 timeframes evaluation_periods universe"
     ),
     "data": (
@@ -208,7 +208,7 @@ class ArchitectureDagTests(unittest.TestCase):
         unclassified = sorted(set(modules) - set(LAYER_ASSIGNMENTS))
         stale = sorted(set(LAYER_ASSIGNMENTS) - set(modules))
         self.assertEqual(unclassified, [], f"Unclassified modules: {unclassified}")
-        self.assertEqual(stale, [], f"Removed modules still in LAYER_ASSIGNMENTS: {stale}")
+        self.assertEqual(stale, [])
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
         _, detailed_edges = _workspace_analysis()

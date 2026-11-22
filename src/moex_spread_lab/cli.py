@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from importlib.metadata import entry_points
 
 from moex_spread_lab.core.w0 import W0Error
@@ -17,7 +18,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    # Remote commands must not import every strategy/web plugin just to contact
+    # the bridge. The normal parser still discovers all installed providers.
+    if len(sys.argv) > 1 and sys.argv[1] == "remote":
+        from moex_spread_lab.core.remote_cli import register
+
+        parser = argparse.ArgumentParser(prog="moex-spread-lab")
+        register(parser.add_subparsers(dest="command", required=True))
+    else:
+        parser = build_parser()
+    args = parser.parse_args()
     try:
         return args._msl_cli_handler(args)
     except W0Error as exc:

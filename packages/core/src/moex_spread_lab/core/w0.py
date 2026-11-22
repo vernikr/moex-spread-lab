@@ -8,11 +8,11 @@ import math
 import os
 import re
 import subprocess
-import threading
-from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
+
+from .hashed_json_cache import HashedJSONCache as _HashedJSONCache
 
 MANIFEST_SCHEMA = "run-manifest.v1"
 FIXTURE_SCHEMA = "w0.fixture.v1"
@@ -67,28 +67,8 @@ def load_json(path: Path) -> dict[str, Any]:
 # Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
 # A file whose mtime_ns and size are unchanged is byte-identical, so its cached
 # (value, sha256) is exact; any external edit changes the key and invalidates.
+
 _HASHED_JSON_CACHE_CAPACITY = int(os.environ.get("MOEX_HASHED_JSON_CACHE_CAPACITY", "256"))
-
-
-class _HashedJSONCache:
-    def __init__(self, capacity: int) -> None:
-        self._capacity = max(1, capacity)
-        self._data: OrderedDict[tuple[str, int, int], tuple[dict[str, Any], str]] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def get(self, key: tuple[str, int, int]) -> tuple[dict[str, Any], str] | None:
-        with self._lock:
-            entry = self._data.get(key)
-            if entry is not None:
-                self._data.move_to_end(key)
-            return entry
-
-    def put(self, key: tuple[str, int, int], value: tuple[dict[str, Any], str]) -> None:
-        with self._lock:
-            self._data[key] = value
-            self._data.move_to_end(key)
-            while len(self._data) > self._capacity:
-                self._data.popitem(last=False)
 
 
 _HASHED_JSON_CACHE = _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)

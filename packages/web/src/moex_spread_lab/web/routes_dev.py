@@ -19,12 +19,15 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core import _fastcore_loader
+from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_pool import configured_workers
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
+
+from .dev_pool_metrics import pool_snapshot
 
 _STARTED = time.monotonic()
 _STARTED_AT = datetime.now(UTC).isoformat()
@@ -50,6 +53,7 @@ def health(store: Any, port: int) -> dict[str, Any]:
         "uptime_sec": round(time.monotonic() - _STARTED, 2),
         "started_at": _STARTED_AT,
         "configured_workers": configured_workers(),
+        "pool": pool_snapshot(store),
         "fastcore_compiled": Path(_fastcore_loader.__file__)
         .with_name("_fastcore" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so"))
         .is_file(),
@@ -214,19 +218,22 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         profiler.enable()
     result: Any = None
     try:
-        for _ in range(repeat):
-            started = time.perf_counter()
-            clock = PhaseClock()
-            result = _execute(store, action, payload, settings, check, clock.advance)
-            clock.finish()
-            _merge_phases(phases, clock.elapsed)
-            durations.append(round((time.perf_counter() - started) * 1000, 2))
+        with collect_cache_metrics() as cache_metrics:
+            for _ in range(repeat):
+                started = time.perf_counter()
+                clock = PhaseClock()
+                result = _execute(store, action, payload, settings, check, clock.advance)
+                clock.finish()
+                _merge_phases(phases, clock.elapsed)
+                durations.append(round((time.perf_counter() - started) * 1000, 2))
     finally:
         if profiler:
             profiler.disable()
     usage = resource.getrusage(resource.RUSAGE_SELF)
     telemetry: dict[str, Any] = {
         "wall_ms": durations,
+        "cache_metrics_main_thread": cache_metrics,
+        "pool": pool_snapshot(store),
         "progress_phase_ms": phases,
         "min_ms": min(durations),
         "median_ms": statistics.median(durations),

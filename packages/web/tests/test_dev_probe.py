@@ -129,3 +129,21 @@ def test_optimization_matches_saved_route_without_new_history(server):
     assert diagnostic["selected_parameters"] == normal["selected_parameters"]
     after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
     assert after == before
+
+
+def test_pool_census_counts_live_workers_only():
+    from types import SimpleNamespace
+
+    from moex_spread_lab.web.dev_pool_metrics import pool_snapshot
+
+    assert pool_snapshot(SimpleNamespace(_proof=None))["active_pool_workers"] == 0
+    live = SimpleNamespace(pid=17, is_alive=lambda: True)
+    dead = SimpleNamespace(pid=18, is_alive=lambda: False)
+    executor = SimpleNamespace(_processes={17: live, 18: dead})
+    pool = SimpleNamespace(_worker_slots=[executor], _executor=None)
+    store = SimpleNamespace(_proof=SimpleNamespace(_pool=pool))
+    assert pool_snapshot(store) == {
+        "pool_initialized": True,
+        "worker_slots": 1,
+        "active_pool_workers": 1,
+    }

@@ -10,6 +10,7 @@ from datetime import date, datetime
 from typing import Any
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
+from moex_spread_lab.core.cache_metrics import record_cache_lookup
 from moex_spread_lab.core.contracts import EntryBandPoint
 
 from ..base import (
@@ -215,6 +216,8 @@ def _zscore_fastcore(
     )
     cache_id = (cfg.z_cache_key, cfg.window, include_current) if cfg.z_cache is not None else None
     z = cfg.z_cache.get(cache_id) if (cache_id is not None and cfg.z_cache is not None) else None
+    if cache_id is not None:
+        record_cache_lookup("zscore", z is not None)
     if z is None:
         z = fc.calendar_sample_z(spreads, sig_el, elig_pref, cfg.window, include_current)
         if cache_id is not None and cfg.z_cache is not None:
@@ -278,6 +281,8 @@ def zscore_trades(
     include_current = cfg.delay == 0
     cache_id = (cfg.z_cache_key, cfg.window, include_current) if cfg.z_cache is not None else None
     z = cfg.z_cache.get(cache_id) if (cache_id is not None and cfg.z_cache is not None) else None
+    if cache_id is not None:
+        record_cache_lookup("zscore", z is not None)
     if z is None:
         z = _compute_sample_z_py(rows, cfg.window, include_current)
         if cache_id is not None and cfg.z_cache is not None:

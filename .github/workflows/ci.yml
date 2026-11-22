@@ -37,6 +37,62 @@ jobs:
       - name: Verify package DAG, plugin discovery, manifest, and tracked-file secrets
         run: uv run python scripts/architecture_gate.py
 
+  code-health:
+    name: code-health (Tier 1 + conditional C99 Tier 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment (incl. dev group)
+        run: uv sync --frozen
+
+      - name: Run Tier 1 deterministic code-health gate
+        run: ./scripts/check_health.sh
+
+      - name: Detect C99 Tier 2 trigger paths
+        id: tier2
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          uv run python scripts/should_run_c_tier2.py
+          --event "$EVENT_NAME"
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Install clang-tidy and clang sanitizer runtime (Tier 2)
+        if: steps.tier2.outputs.run_tier2 == 'true'
+        run: |
+          if ! command -v clang-tidy >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends clang clang-tidy
+          fi
+
+      - name: Run C99 clang-tidy static analysis (Tier 2)
+        if: steps.tier2.outputs.run_tier2 == 'true'
+        run: |
+          uv run python scripts/gen_compile_commands.py
+          clang-tidy -p . packages/core/src/moex_spread_lab/core/_fastcore.c
+
+      - name: Run ASan + UBSan equivalence & parity gate (Tier 2)
+        if: steps.tier2.outputs.run_tier2 == 'true'
+        run: >-
+          uv run python scripts/run_sanitized_pytest.py -v --tb=short
+          packages/proof/tests/test_perf_equivalence.py
+          packages/proof/tests/test_fastcore_parity.py
+
   package-tests:
     name: pytest ${{ matrix.package }} (ubuntu-latest)
     needs: architecture-gate

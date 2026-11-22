@@ -1,0 +1,18 @@
+{
+  "threshold": 3.0,
+  "minLines": 12,
+  "minTokens": 85,
+  "maxLines": 5000,
+  "maxSize": "500kb",
+  "mode": "strict",
+  "format": ["python", "c", "javascript", "markup"],
+  "path": ["packages", "src"],
+  "ignore": [
+    "**/vendor/**",
+    "**/__pycache__/**",
+    "**/tests/**",
+    "tests/**"
+  ],
+  "reporters": ["console", "json"],
+  "output": "reports/code-health/jscpd"
+}

@@ -274,20 +274,21 @@ The executable gate lives at `scripts/check_health.sh`; `scripts/architecture_ga
 
 ### Step 3 — CI Integration Without Slowing Shards (PR 3, ~1 hour)
 
-**Scope:** `.github/workflows/ci.yml`, `.github/workflows/code-health-weekly.yml`, `docs/development/ci.md`.
+**Status:** Implemented on `main`.
 
-1. Add a lightweight parallel job `code-health` to `.github/workflows/ci.yml` (`ubuntu-latest`, timeout 5 min):
-   - Runs `uv sync --frozen`, then Tier 1 (`ruff check`, `basedpyright`, `complexipy` ratchet, `lizard`, `vulture`, `scripts/code_health_gate.py`, `tests/test_architecture_dag.py`, `cli validate-manifest`, `cli secret-scan --tracked-only`).
-   - Runs in parallel with `test` shards `1/2`, `2/2`, and `perf-equivalence` — **adds `0 s` to critical-path CI wall time** (`~15–20 s` total job duration vs `~35 s` test shards).
-   - Conditionally runs Tier 2 (`clang-tidy` + ASan/UBSan `test_perf_equivalence.py`) in the same workflow whenever `packages/core/**/_fastcore*` or `.clang-tidy` changes (using `dorny/paths-filter` or `git diff --name-only`).
-   - Keep `.github/workflows/ci-macos.yml` free of extra linter runs to avoid 10x macOS billing waste.
-2. Add `.github/workflows/code-health-weekly.yml` (Monday 04:30 UTC + `workflow_dispatch`):
-   - Runs full Tier 2 (`clang-tidy` + ASan/UBSan unconditionally), `npx jscpd@4`, and `repowise` health/hotspot/coupling analysis.
-   - Publishes a Markdown table of Top-10 Hotspots (lowest Code Health × highest recent churn), Top Change-Coupled file pairs, and Duplicate % directly into `$GITHUB_STEP_SUMMARY`.
+**Scope:** `.github/workflows/ci.yml`, `.github/workflows/code-health-weekly.yml`, `.jscpd.json`, `scripts/should_run_c_tier2.py`, `scripts/render_code_health_digest.py`, `packages/core/tests/test_ci_code_health.py`, `docs/development/ci.md`.
+
+1. Added parallel job `code-health` to `.github/workflows/ci.yml` (`ubuntu-latest`, timeout 5 min):
+   - Runs `uv sync --frozen`, then Tier 1 (`./scripts/check_health.sh`) in parallel with `package-tests` and `perf-equivalence` (**adds `0 s` to critical-path CI wall time**).
+   - Conditionally runs Tier 2 (`clang-tidy` + ASan/UBSan/LSan `test_perf_equivalence.py` + `test_fastcore_parity.py`) via `scripts/should_run_c_tier2.py` whenever `_fastcore.c`, `_fastcore_loader.py`, `.clang-tidy`, sanitizer/parity scripts/tests, or `ci.yml` change (and unconditionally on `schedule` / `workflow_dispatch`).
+   - Kept `.github/workflows/ci-macos.yml` free of extra linter runs to avoid 10x macOS billing waste.
+2. Added `.jscpd.json` (`< 3.0%` duplication threshold, `maxLines: 5000`, `maxSize: "500kb"`, excluding `**/tests/**` so C99 `_fastcore.c` and large Python modules are covered alongside JS/HTML) and `.github/workflows/code-health-weekly.yml` (Monday 04:30 UTC + `workflow_dispatch`):
+   - Runs Tier 1 + full Tier 2 (`clang-tidy` + ASan/UBSan unconditionally), `npx --yes jscpd@4.0.5 --config .jscpd.json`, and `uvx repowise init . --no-prose --follow-renames --no-editor-setup --no-hook --no-claude-md --no-agents --no-codex --no-onboarding`.
+   - Renders `reports/code-health/code-health-digest.{md,json}` via `scripts/render_code_health_digest.py` (Top-10 Hotspots, Top Change-Coupled file pairs, Duplicate %, Top-20 token-heaviest files & `lizard` functions) directly into `$GITHUB_STEP_SUMMARY` and a 14-day artifact, verifying clean `git status --porcelain` afterwards.
 
 **Acceptance Gate:**
-- PR checks show `code-health` green in `<30 s` on `ubuntu-latest`.
-- Weekly workflow dispatch produces readable `$GITHUB_STEP_SUMMARY` digest with zero repo dirtiness.
+- PR checks run `code-health` in parallel with `package-tests` without lengthening critical-path CI duration.
+- Weekly workflow dispatch produces readable `$GITHUB_STEP_SUMMARY` digest and `code-health-digest` artifacts with zero repo dirtiness.
 
 ---
 
@@ -323,5 +324,5 @@ Rather than scheduling risky standalone "refactoring sprints" on untested legacy
 | Agent writes a 7-level nested `if/for/try` patch that subtly breaks edge-case accounting | **Blocked by `complexipy` and Ruff in the local gate** (`cog <= 15`, `PLR0912` / `C901` / `BLE001`). |
 | Agent adds untyped `dict[str, Any]` helper in `packages/*`, forcing future agents to read 5 files | **Baselined existing diagnostics; strict typing is enabled on `packages/core/src`, while wider strict/ANN coverage remains deferred.** |
 | Agent modifies `_fastcore.c` with a subtle `Py_DECREF` leak, buffer overrun, or missing Python fallback test | **Blocked in CI** by `clang-tidy` (`clang-analyzer-unix.Malloc`), ASan/UBSan `test_perf_equivalence.py`, and `FastCoreMethods` parity check. |
-| Agent leaves dead functions/imports during package extraction or duplicates 30 lines across modules | **Caught locally** by `vulture` + `ruff F401` in `check_health.sh`; `jscpd` clone auditing remains deferred. |
+| Agent leaves dead functions/imports during package extraction or duplicates 30 lines across modules | **Caught locally** by `vulture` + `ruff F401` in `check_health.sh` and audited weekly by `jscpd` (`< 3.0%` threshold in `.jscpd.json`). |
 | Agent misses hidden co-change dependency (`position_sizing <-> proof`, `proof_search <-> UI`) | **Eliminated structurally** by Phases 2–5 `StrategyPlugin` + surfaced pre-edit via local `repowise` MCP coupling queries. |

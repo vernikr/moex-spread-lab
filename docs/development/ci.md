@@ -4,7 +4,10 @@ Continuous integration runs on every push to `main`, on pull requests, weekly (M
 
 ## Layout
 
-- `architecture-gate` (ubuntu-latest) runs first. After syncing the locked workspace, `scripts/architecture_gate.py` checks the full package/import DAG, the no-legacy-shim rule for internal code/tests, built-in and synthetic strategy discovery, `validate-manifest`, and `secret-scan --tracked-only`. The gate script is dependency-light and targets under 2 seconds; environment setup is outside that measured step.
+- `architecture-gate` (`ubuntu-latest`) runs first (`<2 s` script runtime). After syncing the locked workspace, `scripts/architecture_gate.py` checks the full package/import DAG, the no-legacy-shim rule for internal code/tests, built-in and synthetic strategy discovery, `validate-manifest`, and `secret-scan --tracked-only`.
+- `code-health` (`ubuntu-latest`, 5-minute timeout) runs in parallel with the test jobs so it adds `0 s` to critical-path CI wall time:
+  - Always runs Tier 1 (`./scripts/check_health.sh`: `ruff check`, `ruff format --check`, `basedpyright` strict/baselined typecheck, `vulture`, `scripts/code_health_gate.py` LOC/token/cognitive/C/parity/exception ratchets, and `scripts/architecture_gate.py`).
+  - Conditionally runs Tier 2 (`scripts/gen_compile_commands.py` + `clang-tidy` + `scripts/run_sanitized_pytest.py` under ASan + UBSan + LSan) whenever `scripts/should_run_c_tier2.py` detects changes to `_fastcore.c`, `_fastcore_loader.py`, `.clang-tidy`, sanitizer/parity scripts/tests, or on `schedule` / `workflow_dispatch`.
 - `package-tests` is a six-member matrix (`core`, `data`, `accounting`, `strategies`, `proof`, `web`). Each job runs only `packages/<member>/tests` with `pytest -n auto --dist loadfile`, and uploads its `--durations=15` report as a seven-day artifact. Parallel package jobs avoid a single shared duration JSON; xdist schedules whole files dynamically within each package.
 - `perf-equivalence` runs `packages/proof/tests/test_perf_equivalence.py` separately so bit-for-bit numerical and hash parity remains a merge gate.
 - Every job uses `astral-sh/setup-uv`, caches by `uv.lock`, and runs `uv sync --frozen`. Test jobs also fail if the C99 `_fastcore` extension cannot compile (there is no silent Python fallback in CI).
@@ -14,14 +17,17 @@ Pytest's `testpaths` includes only the six package test directories. Root `tests
 
 ## Other workflows
 
-- `.github/workflows/ci-macos.yml` — opt-in (manual dispatch, weekly Tuesday). Runs the same architecture gate and full package-scoped test suite on `macos-latest` to catch clang/path drift; it is not per-push because macOS minutes bill at a 10x multiplier on private repositories.
+- `.github/workflows/code-health-weekly.yml` — scheduled weekly (Monday 04:30 UTC) and on manual dispatch. Runs Tier 1 + unconditional Tier 2 (`clang-tidy` + ASan/UBSan), `npx jscpd@4.0.5 --config .jscpd.json` (`<3.0%` duplication gate), and `repowise` behavioral indexing (`--no-prose --follow-renames`), then renders Top-10 Hotspots, Top Change-Coupled file pairs, Duplicate %, and Top-20 token-heaviest files/functions into `$GITHUB_STEP_SUMMARY` and a 14-day `code-health-digest` artifact with zero working-tree dirtiness.
+- `.github/workflows/ci-macos.yml` — opt-in (manual dispatch, weekly Tuesday). Runs the architecture gate and full package-scoped test suite on `macos-latest` to catch clang/path drift; extra linters stay out of this workflow because macOS minutes bill at a 10x multiplier on private repositories.
 - `.github/workflows/browser-smoke.yml` — manual dispatch and weekly Wednesday. Runs the architecture gate, installs Playwright Chromium, then runs every synthetic-data script in `packages/web/tests/browser/*_smoke.py`. Browser startup remains out of per-push CI.
 
 ## Local runs
 
 ```sh
 uv sync --frozen
-uv run python scripts/architecture_gate.py
+./scripts/check_health.sh
+uv run python scripts/gen_compile_commands.py
+uv run python scripts/run_sanitized_pytest.py -v packages/proof/tests/test_perf_equivalence.py
 uv run pytest packages/proof/tests -q
 uv run pytest -q -n auto --dist loadfile
 ```

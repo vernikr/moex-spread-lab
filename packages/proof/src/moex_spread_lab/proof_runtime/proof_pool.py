@@ -11,7 +11,6 @@ import uuid
 import weakref
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
-from statistics import fmean
 from typing import Any
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
@@ -19,6 +18,7 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
+from .cohort_scores import combine_shards, failure_payload, point_result, score_payload
 from .proof_kernel import StudyWindow as StudyWindow
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .worker_cohort import _WORKER_COHORTS as _WORKER_COHORTS
@@ -214,31 +214,7 @@ class CohortWorkerPool:
                 )
                 for s_idx in active_slots
             ]
-            all_scores: list[tuple[int, float, bool]] = []
-            min_fail = None
-            for sub_fail, sub_scores in _await_futures(futs, check_cancelled):
-                if sub_fail is not None:
-                    if min_fail is None or sub_fail[0] < min_fail[0]:
-                        min_fail = sub_fail
-                all_scores.extend(sub_scores)
-            if min_fail is not None:
-                canary_box[0] = min_fail[0]
-                cohort_state["canary_active"] = True
-                return {
-                    "utility": None,
-                    "rank_score": None,
-                    "reason": f"{min_fail[1]}: {min_fail[2]}",
-                }
-            all_scores.sort(key=lambda item: item[0])
-            ordered_scores = [item[1] for item in all_scores]
-            exposed = any(item[2] for item in all_scores)
-            score = fmean(ordered_scores)
-            return {
-                "rank_score": score,
-                "by_window_pp": ordered_scores,
-                "utility": score if exposed else None,
-                **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
-            }
+            return point_result(cohort_state, canary_box, _await_futures(futs, check_cancelled))
 
         canary = canary_box[0]
 
@@ -253,34 +229,9 @@ class CohortWorkerPool:
             check_cancelled,
         )[0]
         if fail is not None:
-            if canary == 0:
-                return {
-                    "utility": None,
-                    "rank_score": None,
-                    "reason": f"{fail[1]}: {fail[2]}",
-                }
-            # A lower canonical index may also fail on this point; inspect only < canary.
-            earlier_slots = sorted({owner_of[i] for i in range(canary)})
-            sub_futs = [
-                submit_worker(
-                    slots[s_idx],
-                    _worker_eval_indices,
-                    cohort_id,
-                    point_by_strategy,
-                    [entry[0] for entry in shards[s_idx] if entry[0] < canary],
-                )
-                for s_idx in earlier_slots
-            ]
-            best_fail = fail
-            for sub_fail, _ in _await_futures(sub_futs, check_cancelled):
-                if sub_fail is not None and sub_fail[0] < best_fail[0]:
-                    best_fail = sub_fail
-            canary_box[0] = best_fail[0]
-            return {
-                "utility": None,
-                "rank_score": None,
-                "reason": f"{best_fail[1]}: {best_fail[2]}",
-            }
+            return self._canary_failure(
+                cohort_state, point_by_strategy, canary_box, fail, check_cancelled
+            )
 
         # Canary passed on this point; switch back to single-roundtrip fan-out for subsequent passing trials.
         cohort_state["canary_active"] = False
@@ -303,31 +254,36 @@ class CohortWorkerPool:
             for s_idx in active_slots
             if any(entry[0] != canary for entry in shards[s_idx])
         ]
-        all_scores = list(canary_scores)
-        min_fail = None
-        for sub_fail, sub_scores in _await_futures(futs, check_cancelled):
-            if sub_fail is not None:
-                if min_fail is None or sub_fail[0] < min_fail[0]:
-                    min_fail = sub_fail
-            all_scores.extend(sub_scores)
-        if min_fail is not None:
-            canary_box[0] = min_fail[0]
-            cohort_state["canary_active"] = True
-            return {
-                "utility": None,
-                "rank_score": None,
-                "reason": f"{min_fail[1]}: {min_fail[2]}",
-            }
-        all_scores.sort(key=lambda item: item[0])
-        ordered_scores = [item[1] for item in all_scores]
-        exposed = any(item[2] for item in all_scores)
-        score = fmean(ordered_scores)
-        return {
-            "rank_score": score,
-            "by_window_pp": ordered_scores,
-            "utility": score if exposed else None,
-            **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
-        }
+        return point_result(
+            cohort_state, canary_box, _await_futures(futs, check_cancelled), canary_scores
+        )
+
+    def _canary_failure(self, cohort_state, point_by_strategy, canary_box, fail, check_cancelled):
+        canary = canary_box[0]
+        if canary == 0:
+            return failure_payload(fail)
+        owner_of = cohort_state["owner_of"]
+        slots = cohort_state["slots"]
+        shards = cohort_state["shards"]
+        cohort_id = cohort_state["cohort_id"]
+        # A lower canonical index may also fail; inspect only indices before the canary.
+        earlier_slots = sorted({owner_of[i] for i in range(canary)})
+        sub_futs = [
+            submit_worker(
+                slots[s_idx],
+                _worker_eval_indices,
+                cohort_id,
+                point_by_strategy,
+                [entry[0] for entry in shards[s_idx] if entry[0] < canary],
+            )
+            for s_idx in earlier_slots
+        ]
+        best_fail = fail
+        for sub_fail, _ in _await_futures(sub_futs, check_cancelled):
+            if sub_fail is not None and sub_fail[0] < best_fail[0]:
+                best_fail = sub_fail
+        canary_box[0] = best_fail[0]
+        return failure_payload(best_fail)
 
     def eval_plateau_batch(
         self,
@@ -360,30 +316,10 @@ class CohortWorkerPool:
         )
         results: dict[int, dict[str, Any]] = {}
         for p_idx, _ in points:
-            min_fail = None
-            all_scores: list[tuple[int, float, bool]] = []
-            for smap in shard_maps:
-                sub_fail, sub_scores = smap[p_idx]
-                if sub_fail is not None and (min_fail is None or sub_fail[0] < min_fail[0]):
-                    min_fail = sub_fail
-                all_scores.extend(sub_scores)
-            if min_fail is not None:
-                results[p_idx] = {
-                    "utility": None,
-                    "rank_score": None,
-                    "reason": f"{min_fail[1]}: {min_fail[2]}",
-                }
-            else:
-                all_scores.sort(key=lambda item: item[0])
-                ordered_scores = [item[1] for item in all_scores]
-                exposed = any(item[2] for item in all_scores)
-                score = fmean(ordered_scores)
-                results[p_idx] = {
-                    "rank_score": score,
-                    "by_window_pp": ordered_scores,
-                    "utility": score if exposed else None,
-                    **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
-                }
+            failure, scores = combine_shards(smap[p_idx] for smap in shard_maps)
+            results[p_idx] = (
+                failure_payload(failure) if failure is not None else score_payload(scores)
+            )
         return results
 
     def report_cohort(

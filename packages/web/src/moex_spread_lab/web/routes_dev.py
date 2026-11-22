@@ -3,22 +3,17 @@
 from __future__ import annotations
 
 import cProfile
-import io
 import json
 import math
 import os
-import pstats
 import resource
 import statistics
 import subprocess
 import sys
-import sysconfig
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.core import _fastcore_loader
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
@@ -29,6 +24,7 @@ from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 from moex_spread_lab.proof_runtime.worker_metrics import collect_worker_metrics
 
+from .dev_diagnostics import calendar_cache_count, fastcore_binary, profile_summary
 from .dev_pool_metrics import pool_snapshot
 from .dev_worker_rss import sample_worker_rss
 
@@ -49,6 +45,7 @@ def health(store: Any, port: int) -> dict[str, Any]:
             return None
 
     dirty = git("status", "--porcelain", "--untracked-files=no")
+    compiled, fastcore_path = fastcore_binary(root)
 
     return {
         "pid": os.getpid(),
@@ -57,9 +54,8 @@ def health(store: Any, port: int) -> dict[str, Any]:
         "started_at": _STARTED_AT,
         "configured_workers": configured_workers(),
         "pool": pool_snapshot(store),
-        "fastcore_compiled": Path(_fastcore_loader.__file__)
-        .with_name("_fastcore" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so"))
-        .is_file(),
+        "fastcore_compiled": compiled,
+        "fastcore_path": fastcore_path,
         "git_head": git("rev-parse", "HEAD"),
         "git_dirty": None if dirty is None else bool(dirty),
         "python_version": sys.version.split()[0],
@@ -72,6 +68,7 @@ def health(store: Any, port: int) -> dict[str, Any]:
             "intake": (root / "data/w1/current-intake.json").exists(),
             "lineage": (root / "data/benchmark/lqdt-lineage.json").exists(),
             "h1_seal": (root / "data-lake/h1-seal.enabled.json").exists(),
+            "calendar_cache_json_files": calendar_cache_count(root),
         },
         "loadavg_1m": os.getloadavg()[0] if hasattr(os, "getloadavg") else None,
     }
@@ -267,9 +264,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     if rss_sampler is not None:
         telemetry["worker_rss_sampling"] = rss_sampler.snapshot()
     if profiler:
-        stream = io.StringIO()
-        pstats.Stats(profiler, stream=stream).strip_dirs().sort_stats("cumulative").print_stats(10)
-        telemetry["profile"] = stream.getvalue()[:3000]
+        telemetry["profile"] = profile_summary(profiler)
     return {
         "action": action,
         "result": result if mode == "full" else _summary(result),

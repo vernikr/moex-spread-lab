@@ -245,3 +245,40 @@ def test_optional_rss_sampling_keeps_simple_probe_compact(server):
     assert status == 200 and len(raw) < 2048
     sampled = json.loads(raw)["telemetry"]["worker_rss_sampling"]
     assert sampled["sampler_stopped"] and sampled["samples"] >= 1
+
+
+def test_health_reports_read_only_cache_count_and_private_binary_path(server):
+    port, root = server
+    cache = root / "data/spread-history-cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    before = sum(p.is_file() for p in cache.glob("*.json"))
+    (cache / "health-test.json").write_text("{}")
+    (cache / "ignore.txt").write_text("not json")
+    (cache / "directory.json").mkdir()
+    status, raw = request(port, "GET", "/api/dev/health")
+    data = json.loads(raw)
+    assert status == 200 and len(raw) < 2048
+    assert data["data"]["calendar_cache_json_files"] == before + 1
+    path = data["fastcore_path"]
+    assert (path is not None) == data["fastcore_compiled"]
+    if path:
+        assert path.startswith(("$ROOT/", "$EXTERNAL/"))
+        assert str(root) not in path
+
+
+def test_profile_has_twenty_rows_without_global_truncation(server):
+    port, _ = server
+    status, raw = request(port, "POST", "/api/dev/probe", {"action": "catalog", "profile": True})
+    assert status == 200
+    profile = json.loads(raw)["telemetry"]["profile"]
+    assert "List reduced from" in profile and "due to restriction <20>" in profile
+    rows = [line for line in profile.splitlines() if "(" in line and ")" in line]
+    assert len(rows) >= 20
+
+
+def test_diagnostic_missing_cache_and_missing_binary(tmp_path, monkeypatch):
+    from moex_spread_lab.web import dev_diagnostics
+
+    assert dev_diagnostics.calendar_cache_count(tmp_path) == 0
+    monkeypatch.setattr(dev_diagnostics._fastcore_loader, "__file__", str(tmp_path / "loader.py"))
+    assert dev_diagnostics.fastcore_binary(tmp_path) == (False, None)

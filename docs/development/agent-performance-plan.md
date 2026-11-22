@@ -258,7 +258,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 - [x] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
 - [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Runner, `--filter`, and CI wiring delivered; <2 min acceptance remains open (189.1 s on 2-vCPU sandbox; CI timing not yet verified).
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).
-- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: the Phase 1 introspection details and broader latency verification listed in the acceptance audit below. The Bridge token was rotated; rotation of other potentially exposed credentials is not established. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
+- [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Core daemon, CLI (including isolated A/B worktrees) and probe endpoints are delivered. Remaining: broader latency verification and exact per-request worker RSS attribution as listed in the acceptance audit below. The Bridge token was rotated; rotation of other potentially exposed credentials is not established. See [`remote-agent-testing.md`](remote-agent-testing.md) for implemented suite and isolation limitations.
 
 ### Projected Impact on Equivalent Future Work
 
@@ -301,10 +301,9 @@ proposed canonical workloads; see the workstation verification note in
   covered fixed/automatic sizing at 1d/1h, and C-enabled versus Python-fallback
   results matched exactly in those four cases. Ledger and trade arrays were not
   changed. See the rounding note in `remote-agent-testing.md`.
-- [ ] The original Phase 1 introspection proposal is not fully matched: health
-  does not expose a fastcore path or calendar cache count, and the optional
-  cProfile output is top 10, not top 20. Progress and operation timers have
-  different scopes; worker peak RSS is an optional sampled aggregate, not exact
+- [x] Health exposes a privacy-preserving fastcore binary location and calendar
+  JSON cache-file count; opt-in cProfile returns the top 20 cumulative functions.
+- [ ] Progress and operation timers have different scopes; worker peak RSS is an optional sampled aggregate, not exact
   per-request attribution. The <2 s latency goal has only been demonstrated on
   a small warm sample, not as a cold or loaded guarantee.
 - [ ] Phase 2's standalone versioned bench CLI, `http`/`inproc` modes, report

@@ -22,9 +22,7 @@ def _settings(root, override):
     return override or ResearchSettings.load(root)
 
 
-def window_summaries(
-    service, request, *, settings_override=None, check_cancelled=lambda: None, on_progress=None
-):
+def _window_identities(request):
     if not isinstance(request, dict) or request.keys() != {"requests"}:
         raise W0Error("Для таблицы нужен список requests.")
     requests = request["requests"]
@@ -40,17 +38,29 @@ def window_summaries(
             raise W0Error("Окно таблицы указано дважды.")
         seen.add(key)
         identities.append(target)
-    total_windows = len(requests)
+    return identities
+
+
+def _progress(on_progress, done, total):
     if on_progress is not None:
         on_progress(
             {
                 "stage": "windows",
-                "done": 0,
-                "total": total_windows,
-                "percent": 4.0,
-                "label": f"Окна: 0/{total_windows}",
+                "done": done,
+                "total": total,
+                "percent": 4.0 if done == 0 else round(4.0 + 94.0 * (done / max(total, 1)), 1),
+                "label": f"Окна: {done}/{total}",
             }
         )
+
+
+def window_summaries(
+    service, request, *, settings_override=None, check_cancelled=lambda: None, on_progress=None
+):
+    identities = _window_identities(request)
+    requests = request["requests"]
+    total_windows = len(requests)
+    _progress(on_progress, 0, total_windows)
     settings = _settings(service.root, settings_override)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
@@ -69,15 +79,7 @@ def window_summaries(
                 on_progress=(
                     None
                     if on_progress is None
-                    else lambda done, total: on_progress(
-                        {
-                            "stage": "windows",
-                            "done": done,
-                            "total": total,
-                            "percent": round(4.0 + 94.0 * (done / max(total, 1)), 1),
-                            "label": f"Окна: {done}/{total}",
-                        }
-                    )
+                    else lambda done, total: _progress(on_progress, done, total)
                 ),
             )
             return {**settings.metadata(), "rows": rows}
@@ -96,14 +98,5 @@ def window_summaries(
                 "reason": str(exc),
             }
         rows.append({"target": target, **result})
-        if on_progress is not None:
-            on_progress(
-                {
-                    "stage": "windows",
-                    "done": idx,
-                    "total": total_windows,
-                    "percent": round(4.0 + 94.0 * (idx / max(total_windows, 1)), 1),
-                    "label": f"Окна: {idx}/{total_windows}",
-                }
-            )
+        _progress(on_progress, idx, total_windows)
     return {**settings.metadata(), "rows": rows}

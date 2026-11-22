@@ -8,7 +8,7 @@ Private, research-first MOEX futures-spread screener. Select a pair, strategy an
 uv run python -m moex_spread_lab.cli screener --port 8765
 ```
 
-Open `http://127.0.0.1:8765/` (or `/proof`). Select a window to inspect its chart and ledger; check windows to search one common strategy across them. See the [execution-proof guide](docs/development/execution-proof.md) for settings, scores and diagnostic limits.
+Open `http://127.0.0.1:8765/` (or `/proof`). The server keeps its loopback-only guard; a cloud-agent preview opts in with `MSL_ALLOWED_HOSTS=<preview host>` (or `*`) in front of a reverse proxy instead of widening the bind address. Select a window to inspect its chart and ledger; check windows to search one common strategy across them. See the [execution-proof guide](docs/development/execution-proof.md) for settings, scores and diagnostic limits.
 
 Both universes use ignored local inputs: [pair setup](docs/development/screener-s1.md) and native-calendar cache preparation:
 

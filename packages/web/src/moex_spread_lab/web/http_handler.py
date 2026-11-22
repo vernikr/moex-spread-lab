@@ -73,32 +73,28 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         """The bound loopback port; `BaseServer` does not declare it."""
         return getattr(self.server, "server_port", 0)
 
-    def trusted_hosts(self) -> set[str]:
-        """Loopback hosts plus any explicitly allow-listed preview/proxy hosts.
-
-        `MSL_ALLOWED_HOSTS` (comma separated) exists for cloud-agent previews that proxy the
-        loopback server under an external hostname; it never relaxes the loopback bind itself.
-        """
-        port = self.server_port()
-        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
-        extra = os.environ.get("MSL_ALLOWED_HOSTS", "")
-        hosts.update(part.strip() for part in extra.split(",") if part.strip())
-        return hosts
-
     def local_request(self) -> bool:
-        return self.headers.get("Host", "") in self.trusted_hosts()
+        """Loopback by default; `MSL_ALLOWED_HOSTS` is an explicit preview/proxy opt-in only.
+
+        The bind address stays `127.0.0.1`; a cloud-agent preview opts in with the exact preview
+        hostname (or `*`) and the API keeps rejecting every other Host.
+        """
+        host = self.headers.get("Host", "")
+        port = self.server_port()
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        extra = {p.strip() for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()}
+        return "*" in extra or host in allowed or host in extra
 
     def local_origin(self) -> bool:
         origin = self.headers.get("Origin")
         if origin is None:
             return True
         port = self.server_port()
+        extra = {p.strip() for p in os.environ.get("MSL_ALLOWED_HOSTS", "").split(",") if p.strip()}
+        if "*" in extra:
+            return True
         allowed = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
-        allowed |= {
-            f"https://{host}"
-            for host in self.trusted_hosts()
-            if not host.startswith(("127.0.0.1", "localhost"))
-        }
+        allowed |= {f"https://{host}" for host in extra}
         return origin in allowed
 
     def check_connected(self) -> None:

@@ -10,6 +10,9 @@ Between baseline commit `aed0de1` and `036a8c8` (38 commits), the repository com
 
 ### Verdict: Strong, Production-Grade Modularization (~85% of Ideal End-State Achieved)
 
+> **Status update (2026-11-22, `71c0411`):** F1 and the frontend half of F6 are done (Phase 4 split `service.py` 2,331 -> 499 LOC, Phase 5 split the frontend to 18 modules). The live, re-measured remainder of this backlog is tracked in [`phase7-backlog.md`](phase7-backlog.md); the tables below are the pre-split snapshot kept for history.
+
+
 The core structural transformation succeeded without breaking numerical determinism, Stage-9 accounting invariants, or external CLI/HTTP compatibility:
 
 - **Strict 6-Layer Acyclic Workspace (`packages/*`):** All 6 workspace packages (`msl-core`, `msl-data`, `msl-accounting`, `msl-strategies`, `msl-proof`, `msl-web`) are active PEP 420 implicit namespace packages (`0` stray `packages/*/src/moex_spread_lab/__init__.py` files), verified by `packages/core/tests/test_architecture_dag.py` (`Tarjan max SCC == 1` across all modules including function-level lazy imports, strict `data ⊥ accounting` sibling isolation, and zero workspace imports of root compatibility shims).

@@ -39,13 +39,13 @@ Use a package-specific path for focused work (for example `packages/strategies/t
 Workstation coding agents can query local structural/git-churn hotspots, change-coupled files, and blast radius without touching tracked repo files (`.repowise/` is gitignored):
 
 ```sh
-uv tool install repowise
+uv tool install repowise   # on macOS x86_64 if tree-sitter-gdscript sdist lacks headers, pass CFLAGS="-I<tree-sitter-v0.22-src-include>"
 REPOWISE_SKIP_EDITOR_SETUP=1 REPOWISE_NO_SAVE_KEY=1 \
-  repowise init --no-prose --follow-renames \
+  repowise init . --yes --no-prose --follow-renames \
   --no-editor-setup --no-hook --no-claude-md --no-agents --no-codex --no-onboarding
 ```
 
-Register `repowise serve --mcp` (with `--path ~/Downloads/projects/moex-spread-lab` or working directory set to the checkout) in user-scoped workstation agent configs (for example Claude Code `claude mcp add --scope user`, Codex `~/.codex/config.toml`, or user-level OpenCode config) so repository files stay clean. Refresh the index after large refactors with `repowise index --no-prose --follow-renames`.
+Register `repowise mcp ~/Downloads/projects/moex-spread-lab` (stdio MCP server; add `--tools core,+get_health` if desired) in user-scoped workstation agent configs (for example `claude mcp add --scope user moex-repowise -- repowise mcp ~/Downloads/projects/moex-spread-lab`, Codex `~/.codex/config.toml`, or user-level OpenCode config) so repository files stay clean. Refresh the index after refactors with `repowise update --index-only --no-agents`.
 
 ## Diagnostics
 

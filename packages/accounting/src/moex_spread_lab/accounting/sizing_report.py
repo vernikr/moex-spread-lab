@@ -127,6 +127,10 @@ def finalize_sized_proof(
             "additional_funding_rub": 0,
         },
     )
+    # A fixed-size template may contain rounding disclosures from its own trades;
+    # those are not applicable to the independently replayed sized account.
+    for component in ("gross", "costs", "net"):
+        proof["summary"].pop(f"displayed_trade_{component}_rounding_delta_rub", None)
     proof["summary"].update(
         trades=len(state.accepted),
         closed_trades=len(closed),

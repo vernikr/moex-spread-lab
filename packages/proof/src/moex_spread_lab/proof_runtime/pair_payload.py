@@ -20,6 +20,7 @@ from moex_spread_lab.core.w0 import _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .payload_tools import PROOF_SCHEMA, clean, observed_min_leg_volume, point_value
+from .rounding_totals import apply_raw_trade_totals
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,7 @@ class PairPayloadSpec:
     provenance: dict[str, Any]
     notes: list[str]
     risk: dict[str, Any]
+    raw_trade_totals: tuple[float, float, float] | None = None
 
 
 def _price_role(spec: PairPayloadSpec, timeframe: str) -> str:
@@ -231,6 +233,8 @@ def pair_payload(spec: PairPayloadSpec) -> dict[str, Any]:
         "notes": _notes_block(spec, far),
         "provenance": spec.provenance,
     }
+    if spec.raw_trade_totals is not None:
+        apply_raw_trade_totals(payload["summary"], spec.trades, spec.ledger, spec.raw_trade_totals)
     attach_entry_levels(payload)
     payload = clean(payload)
     payload["run_id"] = _run_identity(spec, payload)

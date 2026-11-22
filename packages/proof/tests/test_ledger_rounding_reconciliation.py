@@ -6,6 +6,7 @@ import pytest
 
 from moex_spread_lab.proof_runtime import ledger_blocks
 from moex_spread_lab.proof_runtime.pair_payload import _summary_block
+from moex_spread_lab.proof_runtime.rounding_totals import apply_raw_trade_totals
 
 
 def test_independently_rounded_trades_can_differ_from_unrounded_ledger(monkeypatch):
@@ -49,3 +50,54 @@ def test_independently_rounded_trades_can_differ_from_unrounded_ledger(monkeypat
     assert sum(t["net_rub"] for t in trades) == 0.0
     assert ledger[-1]["cumulative_net_rub"] == 0.01
     assert summary["ledger_reconciliation_rub"] == -0.01
+
+
+def test_unrounded_aggregate_reconciles_without_mutating_trades_or_journal():
+    from copy import deepcopy
+
+    trades = [
+        {"gross_rub": 0.0, "costs_rub": 0.0, "net_rub": 0.0, "lqdt_on_margin_rub": 0.0}
+        for _ in range(3)
+    ]
+    ledger = [{"cumulative_net_rub": 0.01}]
+    original_trades, original_ledger = deepcopy(trades), deepcopy(ledger)
+    summary = {}
+    apply_raw_trade_totals(summary, trades, ledger, (0.012, 0.0, 0.012))
+    assert summary["net_rub"] == 0.01
+    assert summary["ledger_reconciliation_rub"] == 0.0
+    assert summary["displayed_trade_net_rounding_delta_rub"] == -0.01
+    assert trades == original_trades and ledger == original_ledger
+
+    # A real drift is still reported, never suppressed as rounding.
+    ledger[-1]["cumulative_net_rub"] = 0.03
+    apply_raw_trade_totals(summary, trades, ledger, (0.012, 0.0, 0.012))
+    assert summary["ledger_reconciliation_rub"] == -0.02
+
+
+def test_fixed_pair_summary_uses_raw_trade_values_from_engine(tmp_path, monkeypatch):
+    from math import fsum
+
+    from funding_fixtures import fixture, request
+    from moex_spread_lab.proof_runtime import mean_reversion_blocks
+    from moex_spread_lab.proof_runtime.proof_search import research_run
+    from moex_spread_lab.proof_runtime.service import ProofService
+
+    fixture(tmp_path)
+    seen = []
+    original = mean_reversion_blocks.trade_block
+
+    def capture(spec, *args, **kwargs):
+        seen.append(spec.net_rub)
+        return original(spec, *args, **kwargs)
+
+    monkeypatch.setattr(mean_reversion_blocks, "trade_block", capture)
+    service = ProofService(tmp_path)
+    try:
+        result = research_run(service, request(), optimize=False, include_plateau=False)
+    finally:
+        service.close()
+    assert seen
+    assert result["summary"]["net_rub"] == round(fsum(seen), 2)
+    assert result["summary"]["ledger_reconciliation_rub"] == round(
+        result["summary"]["net_rub"] - result["ledger"][-1]["cumulative_net_rub"], 2
+    )

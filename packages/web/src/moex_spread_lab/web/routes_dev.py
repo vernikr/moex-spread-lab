@@ -140,6 +140,11 @@ def _execute(
         lock.release()
 
 
+def _prioritize_rounding(key: str, value: dict[str, Any]) -> dict[str, Any]:
+    field = "displayed_trade_net_rounding_delta_rub"
+    return {field: value[field], **value} if key == "summary" and field in value else value
+
+
 def _summary(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"result_type": type(result).__name__}
@@ -150,6 +155,7 @@ def _summary(result: Any) -> dict[str, Any]:
     for key in ("selection", "summary", "evaluation", "account_checks", "plateau"):
         value = result.get(key)
         if isinstance(value, dict):
+            value = _prioritize_rounding(key, value)
             compact[key] = {
                 k: v
                 for k, v in value.items()

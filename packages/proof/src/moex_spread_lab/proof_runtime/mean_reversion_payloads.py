@@ -6,6 +6,7 @@ metrics payload and the web UI consumes the full `execution-proof.v1` payload.
 
 from __future__ import annotations
 
+from math import fsum
 from typing import Any
 
 from moex_spread_lab.core.timeframes import get_timeframe
@@ -153,6 +154,11 @@ def proof_payload(
             },
             notes=notes(window, trades),
             risk=spec.risk,
+            raw_trade_totals=(
+                fsum(float(row.get("gross_pnl") or 0.0) for row in report["trades"]),
+                fsum(float(row.get("modeled_costs") or 0.0) for row in report["trades"]),
+                fsum(float(row.get("net_pnl") or 0.0) for row in report["trades"]),
+            ),
         )
     )
 

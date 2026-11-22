@@ -13,6 +13,7 @@ from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 from moex_spread_lab.core.w0 import W0Error, _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
+from .fixed_plugin_series import _scaled_series
 from .ledger_blocks import price_ledger
 from .payload_tools import TradeSpec, fill_block, mark, point_value, trade_block
 from .plugin_notes import (
@@ -20,26 +21,7 @@ from .plugin_notes import (
     OPEN_POSITION_PREFIX,
     PLUGIN_SOURCE_NOTE,
 )
-
-
-def _scaled_series(unit: dict[str, Any], template: dict[str, Any], quantity: int) -> list[dict]:
-    """Sizing rows scaled to the quantity and merged over the template rows."""
-    originals = {row["date"]: row for row in template["series"]}
-    rows = []
-    for raw in unit["series"]:
-        amount = raw["funding_rub"]
-        if amount is not None and not math.isfinite(amount * quantity):
-            raise W0Error("Переполнение суммы фондирования.")
-        rows.append(
-            {
-                **originals[raw["date"]],
-                **raw,
-                "funding_rub": round(amount * quantity, 8) if amount is not None else None,
-                "funding_contracts": quantity * raw["funding_contracts"],
-                "signal_z": None,
-            }
-        )
-    return rows
+from .rounding_totals import apply_raw_trade_totals
 
 
 def _trade_blocks(
@@ -81,6 +63,7 @@ def _trade_rows(
     blocks: list[dict[str, Any]],
     scaling: tuple[float, float, int, float, tuple[list[str], dict[str, float]]],
     funding_known: bool,
+    raw_totals: list[tuple[float, float, float]],
 ) -> list[dict[str, Any]]:
     """Trade rows: gross includes funding, costs come from the recomputed fill blocks."""
     near_mult, far_mult, quantity, margin, benchmark = scaling
@@ -105,6 +88,7 @@ def _trade_rows(
         cost = sum(sum(events[event]["costs"].values()) for event in ("entry", "exit"))
         if not all(math.isfinite(value) for value in (gross, cost, funding, gross - cost)):
             raise W0Error("Переполнение расчёта сделки.")
+        raw_totals.append((round(gross, 8), round(cost, 8), round(gross - cost, 8)))
         trades.append(
             trade_block(
                 TradeSpec(
@@ -230,6 +214,7 @@ def _summary_update(
     trades: list[dict[str, Any]],
     ledger: list[dict[str, Any]],
     drawdown: float,
+    raw_totals: list[tuple[float, float, float]],
 ) -> None:
     closed = [trade for trade in trades if not trade["open_at_end"]]
     gross, costs, net = (
@@ -252,6 +237,8 @@ def _summary_update(
             net - (ledger[-1]["cumulative_net_rub"] if ledger else 0), 2
         ),
     )
+    totals = [math.fsum(row[i] for row in raw_totals) for i in range(3)]
+    apply_raw_trade_totals(template["summary"], trades, ledger, totals)
     if abs(template["summary"]["ledger_reconciliation_rub"]) > 0.02:
         raise W0Error("Учёт плагина не согласован с журналом сделок.")
 
@@ -279,12 +266,14 @@ def fixed_daily_pair_plugin_payload(
         unit, {r["date"]: r for r in rows}, contracts, (quantity, slippage, far_mult)
     )
     funding_known = bool(series["provenance"].get("near_funding_history_sha256") or provenance)
+    raw_totals: list[tuple[float, float, float]] = []
     trades = _trade_rows(
         unit,
         rows,
         blocks,
         (near_mult, far_mult, quantity, margin, benchmark),
         funding_known,
+        raw_totals,
     )
     ledger = price_ledger(rows, trades, near_mult, far_mult, quantity)
     for row, entry in zip(rows, ledger, strict=True):
@@ -300,7 +289,7 @@ def fixed_daily_pair_plugin_payload(
         strategy=unit["selection"]["strategy"], parameters=unit["selection"]["parameters"]
     )
     template.update(series=rows, trades=trades, ledger=ledger)
-    _summary_update(template, trades, ledger, drawdown)
+    _summary_update(template, trades, ledger, drawdown, raw_totals)
     template["provenance"].update({**provenance, **unit["provenance"]})
     template["notes"] = [
         note for note in template["notes"] if not note.startswith(OPEN_POSITION_PREFIX)

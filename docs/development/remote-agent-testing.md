@@ -207,9 +207,9 @@ cold and can exceed 2 s. This is not a latency guarantee under load.
 Earlier versions of the `single_proof_1d_1h`, `calendar_proof`, `window_table_batch`
 and `cohort_optimize` suites completed once on the Mac. At that point the
 window workload contained one window and optimization recorded 40 trials;
-these were expanded afterwards as documented below. The 1d single-proof
-result reported `ledger_reconciliation_rub = -0.01`; consequently the
-specified zero-reconciliation acceptance criterion is **not met**. A full
+these were expanded afterwards as documented below. The earlier 1d fixed-size single-proof
+result reported `ledger_reconciliation_rub = -0.01`; the investigation and
+subsequent selected rounding policy are described below. A full
 workload/equivalence audit and missing standalone Phase 2 modes remain outstanding; the basic suite runs are not evidence of those features.
 
 
@@ -240,8 +240,30 @@ unrounded cash flows. `test_ledger_rounding_reconciliation.py` reproduces the
 phenomenon using synthetic 0.004 RUB trade P&Ls. It does not use workstation
 data and deliberately preserves the current accounting semantics.
 
-Making that displayed reconciliation exactly zero requires an explicit rounding
+Making that displayed reconciliation exactly zero required an explicit rounding
 policy: either aggregate unrounded values and explain the difference from the
 sum of displayed trades, or post visible per-trade rounding adjustments to the
 ledger (which changes the equity curve). Neither should be done silently, and a
 blanket tolerance or a zeroed reconciliation field would hide genuine drift.
+
+
+**Selected policy:** fixed-quantity mean-reversion pair summaries aggregate the
+unrounded trade gross, cost and net values, then round each aggregate once.
+The ledger, trade rows and account curve are unchanged. When a sum of displayed
+trade rows differs from an aggregate, the summary exposes a signed
+`displayed_trade_<gross|costs|net>_rounding_delta_rub`; the UI displays the net
+difference. The net reconciliation still compares the new rounded aggregate
+with the ledger and does not hide genuine divergence. The policy also applies to
+fixed daily pair-plugin replays; automatic sizing uses its separate accounting
+replay and discards stale disclosures from any fixed-size template. Separately
+rounded gross, costs and net totals need not satisfy gross minus costs exactly
+to the last kopek; the component deltas are disclosed when nonzero.
+
+Before deployment, an isolated Mac worktree using the code patch was compared
+with the previous daemon for the original fixed and max-affordable CNY cases
+at 1d and 1h. Apart from the explicitly changed summary fields, full results
+(including the journal and trade rows) matched. C-enabled and Python-fallback
+candidate outputs matched exactly in all four cases. The original 1d fixed
+case changed its displayed net from 296.30 to 296.31 RUB, reported a -0.01 RUB
+trade-display rounding delta, and reconciled to zero. This does not imply every
+possible workload reconciles to zero; discrepancies are retained and reported.

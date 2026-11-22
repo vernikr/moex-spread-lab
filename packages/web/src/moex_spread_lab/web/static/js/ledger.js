@@ -1,10 +1,10 @@
 import { ledgerIndex, refreshSelection } from './charts.js';
 import { cellRow, dayVolumeCell, fundingCell, signalCell, spreadCell, td, th, toggleCard } from './ledger-cells.js';
 import {
-  $, FILL_RU, GROUP_RU,
+  $, GROUP_RU,
   cls, displayTime, el, fmt, humanCost, humanReason, pct, pp, px, rub, signed, status,
 } from './dom.js';
-import { isIntraday, proofLabel, rowPeriod, state, strategyLabel, timeframeLabel } from './state.js';
+import { isIntraday, proofLabel, rowPeriod, state } from './state.js';
 
 export function toggleSummaryBlock() {
   const button = $('toggle-summary');
@@ -108,6 +108,9 @@ export function renderSummary() {
     tile('LQDT на маржу', `−${fmt(s.lqdt_on_margin_rub)} ₽`),
     tile('Сверх LQDT', rub(s.excess_over_lqdt_rub), cls(s.excess_over_lqdt_rub)),
   );
+  if (s.displayed_trade_net_rounding_delta_rub != null) {
+    t.append(tile('Округление сделок', rub(s.displayed_trade_net_rounding_delta_rub, 2), '', 'сумма показанных сделок − нетто без промежуточного округления'));
+  }
   if (s.max_excess_drawdown_rub != null) t.append(tile('Макс. изб. просадка', `−${fmt(s.max_excess_drawdown_rub, 2)} ₽`, 'warn'));
   const reconOk = Math.abs(s.ledger_reconciliation_rub) < 0.5;
   t.append(tile('Сверка журнала', rub(s.ledger_reconciliation_rub, 2), reconOk ? 'pos' : 'warn', 'нетто − кумулятив'));
@@ -116,32 +119,7 @@ export function renderSummary() {
   }
 }
 
-export function renderEvidence() {
-  const ev = $('evidence');
-  ev.classList.add('show');
-  $('ev-runid').textContent = state.payload.run_id;
-  $('ev-period').textContent = `Вся история: ${displayTime(state.payload.window.from)} → ${displayTime(state.payload.window.to)}`;
-  const s = state.payload.selection;
-  const inst = state.payload.instrument || {};
-  const pairLabel = s.pair || inst.spread_instrument || '';
-  $('ev-selection').textContent = `${state.universe === 'pair_screen' ? 'пара' : 'календарь'} ${pairLabel} · ${timeframeLabel(s.timeframe || '1d')} · ${strategyLabel(s.strategy)} · ${FILL_RU[s.fill] || s.fill || ''} · ${s.sizing === 'max_affordable' ? `размер: авто (${state.payload.summary.min_quantity}–${state.payload.summary.max_quantity} контр.)` : `контрактов: ${s.quantity}`} · проскальзывание ${s.slippage_ticks} т.`;
-  $('ev-role').textContent = state.payload.price_role || '';
-  const prov = state.payload.provenance || {};
-  const provKeys = Object.keys(prov);
-  const provEl = $('ev-provenance');
-  provEl.textContent = provKeys.length ? `происхождение: ${provKeys.length} хэшей входных данных` : 'происхождение: не записано';
-  provEl.title = provKeys.map(k => `${k}: ${String(prov[k])}`).join('\n');
-  const reconOk = Math.abs(state.payload.summary.ledger_reconciliation_rub) < 0.5;
-  $('ev-recon').innerHTML = '';
-  const chip = el(
-    'span',
-    reconOk ? 'pos' : 'warn',
-    reconOk
-      ? `✓ сверяется (${fmt(state.payload.summary.ledger_reconciliation_rub, 2)} ₽)`
-      : `⚠ расхождение ${fmt(state.payload.summary.ledger_reconciliation_rub, 2)} ₽`,
-  );
-  $('ev-recon').append(chip);
-}
+export { renderEvidence } from './ledger-evidence.js';
 
 export function renderTable() {
   const root = $('ledger-table');

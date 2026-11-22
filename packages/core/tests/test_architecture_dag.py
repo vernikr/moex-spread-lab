@@ -55,14 +55,19 @@ _LAYER_SPECS: dict[str, str] = {
         "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
     "proof": (
-        "proof_runtime.{,service,pair_funding_replay,pair_plugin_accounting,carry_intent_accounting,proof_kernel,proof_windows,proof_search,proof_batch,proof_strategy_search,proof_pool,screener_search,audit} "
-        "audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search"
+        "proof_runtime audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search "
     ),
     "web": "web.{,store,server,routes_proof,routes_settings,routes_legacy} screener_app",
     "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
 }
 LAYER_ASSIGNMENTS: dict[str, str] = {
     module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
+}
+# Everything inside `proof_runtime` is the proof layer by construction.
+LAYER_ASSIGNMENTS |= {
+    f"proof_runtime.{path.stem}": "proof"
+    for path in (PACKAGES_DIR / "proof/src/moex_spread_lab/proof_runtime").glob("*.py")
+    if path.stem != "__init__"
 }
 
 _LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "cli")
@@ -223,9 +228,7 @@ class ArchitectureDagTests(unittest.TestCase):
             for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
             if LAYER_ASSIGNMENTS[dst] not in ALLOWED_LAYER_TARGETS[LAYER_ASSIGNMENTS[src]]
         ]
-        self.assertEqual(
-            violations, [], "Cross-layer DAG violations:\n  " + "\n  ".join(violations)
-        )
+        self.assertFalse(violations, "Cross-layer DAG violations:\n  " + "\n  ".join(violations))
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         _, detailed_edges = _workspace_analysis()
@@ -238,9 +241,7 @@ class ArchitectureDagTests(unittest.TestCase):
             for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
             if dst not in roots and not dst.startswith(prefixes)
         ]
-        self.assertEqual(
-            violations, [], "Umbrella imports forbidden:\n  " + "\n  ".join(violations)
-        )
+        self.assertFalse(violations, "Umbrella imports forbidden:\n  " + "\n  ".join(violations))
 
     def test_frontend_es_module_import_dag_is_acyclic(self) -> None:
         js_dir = PACKAGES_DIR / "web" / "src" / "moex_spread_lab" / "web" / "static" / "js"
@@ -282,8 +283,8 @@ class ArchitectureDagTests(unittest.TestCase):
                 ):
                     continue
                 violations.append(f"{src}:{lineno} -> {dst}")
-        self.assertEqual(
-            violations, [], "Cross-strategy subfolder imports:\n  " + "\n  ".join(violations)
+        self.assertFalse(
+            violations, "Cross-strategy subfolder imports:\n  " + "\n  ".join(violations)
         )
 
     def test_data_and_accounting_siblings_are_strictly_isolated(self) -> None:
@@ -297,8 +298,8 @@ class ArchitectureDagTests(unittest.TestCase):
                             violations.append(
                                 f"{src}:{lineno} ({pkg}) -> {dst} ({LAYER_ASSIGNMENTS[dst]})"
                             )
-        self.assertEqual(
-            violations, [], "Sibling Layer 1 isolation broken:\n  " + "\n  ".join(violations)
+        self.assertFalse(
+            violations, "Sibling Layer 1 isolation broken:\n  " + "\n  ".join(violations)
         )
 
     def test_workspace_code_and_tests_do_not_import_compatibility_shims(self) -> None:
@@ -326,9 +327,7 @@ class ArchitectureDagTests(unittest.TestCase):
                             violations.append(
                                 f"{rel}:{node.lineno} -> from moex_spread_lab import {alias.name}"
                             )
-        self.assertEqual(
-            violations, [], "Root shim imports forbidden:\n  " + "\n  ".join(violations)
-        )
+        self.assertFalse(violations, "Root shim imports forbidden:\n  " + "\n  ".join(violations))
 
 
 if __name__ == "__main__":

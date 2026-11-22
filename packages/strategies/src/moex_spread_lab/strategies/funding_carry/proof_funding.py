@@ -260,6 +260,15 @@ class FundingWindow:
             else None
         )
         self.resolve = cache(self._resolve)
+        self.resolve_full = cache(self._resolve_full)
+
+    def _resolve_full(self) -> FundingEvidence:
+        """Uncut evidence for the whole window, used by the full proof payload.
+
+        The cut (`through`) only limits the strategy's decisions, not the funding marks
+        that are needed to value every journal row of the full period.
+        """
+        return self._resolve(None)
 
     def _resolve(self, through: str | None = None) -> FundingEvidence:
         marks = self.book.require(self.days, through=through, training_end=self.training_end)

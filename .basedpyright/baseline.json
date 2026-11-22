@@ -1,394 +1,264 @@
 {
-  "files": {
-    "./packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py": [
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 33,
-          "endColumn": 48,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalOperand",
-        "range": {
-          "startColumn": 15,
-          "endColumn": 30,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 33,
-          "endColumn": 48,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalOperand",
-        "range": {
-          "startColumn": 15,
-          "endColumn": 30,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalOperand",
-        "range": {
-          "startColumn": 13,
-          "endColumn": 28,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportPossiblyUnboundVariable",
-        "range": {
-          "startColumn": 13,
-          "endColumn": 17,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportPossiblyUnboundVariable",
-        "range": {
-          "startColumn": 37,
-          "endColumn": 41,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportPossiblyUnboundVariable",
-        "range": {
-          "startColumn": 57,
-          "endColumn": 62,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": [
-      {
-        "code": "reportAssignmentType",
-        "range": {
-          "startColumn": 25,
-          "endColumn": 29,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 36,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 32,
-          "endColumn": 36,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 38,
-          "endColumn": 56,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 28,
-          "endColumn": 41,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportRedeclaration",
-        "range": {
-          "startColumn": 12,
-          "endColumn": 19,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": [
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 28,
-          "endColumn": 35,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": [
-      {
-        "code": "reportOptionalMemberAccess",
-        "range": {
-          "startColumn": 25,
-          "endColumn": 46,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 40,
-          "endColumn": 56,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/proof_search.py": [
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 60,
-          "endColumn": 67,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py": [
-      {
-        "code": "reportOperatorIssue",
-        "range": {
-          "startColumn": 16,
-          "endColumn": 27,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalSubscript",
-        "range": {
-          "startColumn": 41,
-          "endColumn": 47,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py": [
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 53,
-          "endColumn": 58,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportCallIssue",
-        "range": {
-          "startColumn": 30,
-          "endColumn": 45,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 36,
-          "endColumn": 41,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/proof/src/moex_spread_lab/proof_runtime/service.py": [
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 40,
-          "endColumn": 53,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 58,
-          "endColumn": 71,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalMemberAccess",
-        "range": {
-          "startColumn": 26,
-          "endColumn": 29,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalMemberAccess",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 32,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalMemberAccess",
-        "range": {
-          "startColumn": 90,
-          "endColumn": 93,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportPossiblyUnboundVariable",
-        "range": {
-          "startColumn": 30,
-          "endColumn": 34,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportPossiblyUnboundVariable",
-        "range": {
-          "startColumn": 50,
-          "endColumn": 59,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOperatorIssue",
-        "range": {
-          "startColumn": 19,
-          "endColumn": 47,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalSubscript",
-        "range": {
-          "startColumn": 20,
-          "endColumn": 30,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportOptionalSubscript",
-        "range": {
-          "startColumn": 27,
-          "endColumn": 37,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 16,
-          "endColumn": 70,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 16,
-          "endColumn": 68,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 76,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 76,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 74,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportArgumentType",
-        "range": {
-          "startColumn": 22,
-          "endColumn": 74,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/web/src/moex_spread_lab/web/__init__.py": [
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 4,
-          "endColumn": 17,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 4,
-          "endColumn": 18,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/web/src/moex_spread_lab/web/cli.py": [
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 28,
-          "endColumn": 42,
-          "lineCount": 1
-        }
-      }
-    ],
-    "./packages/web/src/moex_spread_lab/web/server.py": [
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 31,
-          "endColumn": 42,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 48,
-          "endColumn": 59,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportAttributeAccessIssue",
-        "range": {
-          "startColumn": 48,
-          "endColumn": 59,
-          "lineCount": 1
-        }
-      },
-      {
-        "code": "reportIncompatibleMethodOverride",
-        "range": {
-          "startColumn": 12,
-          "endColumn": 23,
-          "lineCount": 1
-        }
-      }
-    ]
-  }
+    "files": {
+        "./packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py": [
+            {
+                "code": "reportArgumentType",
+                "range": {
+                    "startColumn": 33,
+                    "endColumn": 48,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportOptionalOperand",
+                "range": {
+                    "startColumn": 15,
+                    "endColumn": 30,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportArgumentType",
+                "range": {
+                    "startColumn": 33,
+                    "endColumn": 48,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportOptionalOperand",
+                "range": {
+                    "startColumn": 15,
+                    "endColumn": 30,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportOptionalOperand",
+                "range": {
+                    "startColumn": 13,
+                    "endColumn": 28,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportPossiblyUnboundVariable",
+                "range": {
+                    "startColumn": 13,
+                    "endColumn": 17,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportPossiblyUnboundVariable",
+                "range": {
+                    "startColumn": 37,
+                    "endColumn": 41,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportPossiblyUnboundVariable",
+                "range": {
+                    "startColumn": 57,
+                    "endColumn": 62,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py": [
+            {
+                "code": "reportAssignmentType",
+                "range": {
+                    "startColumn": 25,
+                    "endColumn": 29,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 22,
+                    "endColumn": 36,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 32,
+                    "endColumn": 36,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 38,
+                    "endColumn": 56,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 28,
+                    "endColumn": 41,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportRedeclaration",
+                "range": {
+                    "startColumn": 12,
+                    "endColumn": 19,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py": [
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 28,
+                    "endColumn": 35,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": [
+            {
+                "code": "reportOptionalMemberAccess",
+                "range": {
+                    "startColumn": 25,
+                    "endColumn": 46,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportArgumentType",
+                "range": {
+                    "startColumn": 40,
+                    "endColumn": 56,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/proof_search.py": [
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 60,
+                    "endColumn": 67,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py": [
+            {
+                "code": "reportOperatorIssue",
+                "range": {
+                    "startColumn": 16,
+                    "endColumn": 27,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportOptionalSubscript",
+                "range": {
+                    "startColumn": 41,
+                    "endColumn": 47,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py": [
+            {
+                "code": "reportArgumentType",
+                "range": {
+                    "startColumn": 53,
+                    "endColumn": 58,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportCallIssue",
+                "range": {
+                    "startColumn": 30,
+                    "endColumn": 45,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportArgumentType",
+                "range": {
+                    "startColumn": 36,
+                    "endColumn": 41,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/web/src/moex_spread_lab/web/__init__.py": [
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 4,
+                    "endColumn": 17,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 4,
+                    "endColumn": 18,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/web/src/moex_spread_lab/web/cli.py": [
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 28,
+                    "endColumn": 42,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./packages/web/src/moex_spread_lab/web/server.py": [
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 31,
+                    "endColumn": 42,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 48,
+                    "endColumn": 59,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 48,
+                    "endColumn": 59,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportIncompatibleMethodOverride",
+                "range": {
+                    "startColumn": 12,
+                    "endColumn": 23,
+                    "lineCount": 1
+                }
+            }
+        ]
+    }
 }

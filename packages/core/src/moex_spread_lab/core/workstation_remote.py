@@ -110,14 +110,24 @@ def main() -> int:
         else Path.home() / "Downloads/projects/moex-spread-lab"
     )
     try:
-        if action not in {"status", "sync", "probe"}:
+        if action not in {"status", "sync", "probe", "bench"}:
             raise ValueError("unknown action")
         if action == "status":
             result = status(root)
         elif action == "sync":
             result = sync(root)
-        else:
+        elif action == "probe":
             result = probe(json.loads(sys.argv[3]))
+        else:
+            result = json.loads(
+                command(
+                    root,
+                    str(root / ".venv/bin/python3"),
+                    "-m",
+                    "moex_spread_lab.core.workstation_bench",
+                    sys.argv[3],
+                )
+            )
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, RuntimeError, ValueError) as exc:

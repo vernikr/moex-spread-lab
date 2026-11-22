@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import shlex
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -33,7 +34,7 @@ def request(url: str, token: str, *, body: dict[str, Any] | None = None) -> dict
     }
     req = urllib.request.Request(url, data=data, headers=headers)
     try:
-        with urllib.request.build_opener(NoRedirect()).open(req, timeout=180) as response:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=660) as response:
             result: Any = json.load(response)
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise RuntimeError(
@@ -66,6 +67,27 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
                 }
             )
         )
+    elif args.remote_command == "bench":
+        parts.append(root or "~/Downloads/projects/moex-spread-lab")
+        request_data = json.loads(args.json)
+        if not isinstance(request_data, dict):
+            raise ValueError("--json must be a JSON object")
+        options: dict[str, Any] = {
+            "suite": args.suite,
+            "repeat": args.repeat,
+            "request": request_data,
+        }
+        if args.worktree_patch:
+            revision = subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+            patch = subprocess.run(
+                ["git", "diff", "--binary", "HEAD"], capture_output=True, text=True, check=True
+            ).stdout
+            if len(patch.encode()) > 16000:
+                raise ValueError("tracked patch exceeds the 16 KB bridge limit")
+            options.update(revision=revision, patch=patch)
+        parts.append(json.dumps(options))
     elif root:
         parts.append(root)
     return " ".join(shlex.quote(part) for part in parts)
@@ -98,14 +120,21 @@ def run(args: argparse.Namespace) -> int:
         encoded = base64.b64encode(source).decode("ascii")
         code = f"import base64;exec(compile(base64.b64decode('{encoded}'),'<workstation_remote>','exec'))"
         command = _workstation_command(args, code)
-        result = request(base + "/exec", token, body={"command": command, "timeout_sec": 160})
+        result = request(
+            base + "/exec",
+            token,
+            body={
+                "command": command,
+                "timeout_sec": 600 if args.remote_command == "bench" else 160,
+            },
+        )
         if not result.get("ok") or result.get("exit_code") != 0:
             detail = result.get("stderr") or result.get("error") or "workstation command failed"
             raise RuntimeError(str(detail)[:2000])
         payload = json.loads(result["stdout"])
         print(json.dumps(payload, sort_keys=True).replace(token, "[redacted]"))
         return 0
-    except (OSError, RuntimeError, ValueError, KeyError) as exc:
+    except (OSError, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         print(
             f"remote {args.remote_command}: {str(exc).replace(token, '[redacted]')}",
             file=sys.stderr,
@@ -129,5 +158,29 @@ def register(subparsers: SubparserRegistry) -> None:
     probe.add_argument("--profile", action="store_true")
     probe.add_argument(
         "--full", action="store_true", help="return full result rather than compact summary"
+    )
+    bench = commands.add_parser(
+        "bench", help="benchmark the workstation, optionally with an isolated tracked patch"
+    )
+    bench.add_argument(
+        "--suite",
+        required=True,
+        choices=(
+            "catalog_boot",
+            "single_proof_1d_1h",
+            "calendar_proof",
+            "window_table_batch",
+            "cohort_optimize",
+            "custom",
+        ),
+    )
+    bench.add_argument("--repeat", type=int, default=1)
+    bench.add_argument(
+        "--json", default="{}", help="custom action/payload/settings_override object"
+    )
+    bench.add_argument(
+        "--worktree-patch",
+        choices=("HEAD",),
+        help="compare against current tracked Git diff; untracked files are excluded",
     )
     parser.set_defaults(_msl_cli_handler=run)

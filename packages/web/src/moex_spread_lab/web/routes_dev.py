@@ -70,7 +70,34 @@ def health(store: Any, port: int) -> dict[str, Any]:
     }
 
 
-def _execute(store: Any, action: str, payload: dict[str, Any], settings: Any, check: Any) -> Any:
+class PhaseClock:
+    """Measure intervals between progress stages, not internal sub-phase CPU time."""
+
+    def __init__(self) -> None:
+        self.stage = "startup"
+        self.last = time.perf_counter()
+        self.elapsed: dict[str, float] = {}
+
+    def advance(self, event: dict[str, Any]) -> None:
+        stage = str(event.get("stage", "unknown"))[:40]
+        if stage != self.stage:
+            self.finish()
+            self.stage = stage
+
+    def finish(self) -> None:
+        now = time.perf_counter()
+        self.elapsed[self.stage] = self.elapsed.get(self.stage, 0) + (now - self.last) * 1000
+        self.last = now
+
+
+def _execute(
+    store: Any,
+    action: str,
+    payload: dict[str, Any],
+    settings: Any,
+    check: Any,
+    progress: Any = None,
+) -> Any:
     if action == "catalog":
         return store.proof.catalog(override=settings)
     if action == "run":
@@ -83,6 +110,7 @@ def _execute(store: Any, action: str, payload: dict[str, Any], settings: Any, ch
             include_plateau=payload.get("include_plateau") is True,
             settings_override=settings,
             check_cancelled=check,
+            on_progress=progress,
         )
     funcs = {
         "optimize": (store.proof_search_lock, research_run),
@@ -93,7 +121,11 @@ def _execute(store: Any, action: str, payload: dict[str, Any], settings: Any, ch
     if not lock.acquire(blocking=False):
         raise W0Error(f"{action} is busy")
     try:
-        kwargs: dict[str, Any] = {"settings_override": settings, "check_cancelled": check}
+        kwargs: dict[str, Any] = {
+            "settings_override": settings,
+            "check_cancelled": check,
+            "on_progress": progress,
+        }
         if action == "optimize":
             kwargs["optimize"] = True
         return func(store.proof, dict(payload), **kwargs)
@@ -162,6 +194,12 @@ def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, st
     return action, payload, settings, repeat, warmup, profile, mode
 
 
+def _merge_phases(total: dict[str, float], elapsed: dict[str, float]) -> None:
+    for key, value in elapsed.items():
+        if key in total or len(total) < 8:
+            total[key] = round(total.get(key, 0) + value, 2)
+
+
 def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     action, payload, override, repeat, warmup, profile, mode = _options(request)
     settings = settings_with_override(store.inputs.root, override)
@@ -169,6 +207,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         _execute(store, action, payload, settings, check)
     profiler = cProfile.Profile() if profile else None
     durations = []
+    phases: dict[str, float] = {}
     cpu_start = time.process_time()
     usage_start = resource.getrusage(resource.RUSAGE_SELF)
     if profiler:
@@ -177,7 +216,10 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     try:
         for _ in range(repeat):
             started = time.perf_counter()
-            result = _execute(store, action, payload, settings, check)
+            clock = PhaseClock()
+            result = _execute(store, action, payload, settings, check, clock.advance)
+            clock.finish()
+            _merge_phases(phases, clock.elapsed)
             durations.append(round((time.perf_counter() - started) * 1000, 2))
     finally:
         if profiler:
@@ -185,6 +227,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     usage = resource.getrusage(resource.RUSAGE_SELF)
     telemetry: dict[str, Any] = {
         "wall_ms": durations,
+        "progress_phase_ms": phases,
         "min_ms": min(durations),
         "median_ms": statistics.median(durations),
         "p95_ms": sorted(durations)[math.ceil(len(durations) * 0.95) - 1],

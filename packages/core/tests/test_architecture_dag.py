@@ -1,4 +1,4 @@
-"""Architectural DAG and 6-layer dependency boundary tests."""
+"""Architecture dependency tests."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _expand(spec: str) -> list[str]:
 
 _LAYER_SPECS: dict[str, str] = {
     "core": (
-        "core.{,_fastcore_loader,contracts,evaluation_periods,remote_cli,settings,timeframes,universe,w0,workstation_remote} "
+        "core.{,_fastcore_loader,contracts,evaluation_periods,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote} "
         "_fastcore_loader w0 timeframes evaluation_periods universe"
     ),
     "data": (

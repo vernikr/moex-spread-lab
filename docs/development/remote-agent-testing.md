@@ -193,3 +193,23 @@ Each slice is independently testable, backward-compatible and covered by unit te
 - Add template `config/launchd/local.moex-spread-lab.screener.plist.example` (no hardcoded user paths) and a setup helper `moex-spread-lab install-workstation-daemon --dry-run|--apply` to keep `127.0.0.1:8765` running cleanly with `CohortWorkerPool` cleanup on restart.
 - Optional: add `moex_dev_probe` read-only tool to Arena Bridge so cloud agents can benchmark without opening a shell trust window.
 - **Verification:** verify single canonical process on port `8765`, zero orphaned multiprocessing workers across restarts, and <2 s end-to-end cloud-to-workstation probe round-trip.
+
+
+### Workstation verification (2026-11-22)
+
+On macOS, a three-window 1h calendar probe started three pool workers. A launchd
+restart replaced the server and all four old child processes (three workers and
+the multiprocessing helper) exited; the replacement server returned HTTP 200.
+Five warm cloud CLI catalog probes took 1.782, 1.235, 1.134, 1.101 and 1.165 s
+end to end (median 1.165 s); the first catalog request after server restart is
+cold and can exceed 2 s. This is not a latency guarantee under load.
+
+The current fixed `single_proof_1d_1h`, `calendar_proof`, `window_table_batch`
+and `cohort_optimize` suites each completed once on the Mac, but they are only
+initial workloads, not the Phase 2 suite definitions above. In particular the
+window workload contains one window and the optimization recorded 40 trials,
+so neither exercises the specified large sharded cohort. The 1d single-proof
+result reported `ledger_reconciliation_rub = -0.01`; consequently the
+specified zero-reconciliation acceptance criterion is **not met**. A full
+workload/equivalence audit and the missing Phase 2 modes and fastcore A/B suite
+remain outstanding; the basic suite runs are not evidence of those features.

@@ -270,3 +270,14 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 | Total `Bash` calls per completed slice | `248–250` (hitting hard limit) | **`25–55`** | **~5x fewer calls** |
 | Transcript / context footprint per slice | `470–660 KB` | **`< 80–120 KB`** | **~5x smaller context** |
 | Wall-clock time for a Phase-4 / Phase-5 split | `~4.5 hours` (6 turns) | **`~20–35 min` (2 clean turns)** | **~8–10x faster** |
+
+
+**P3 verification update (2026-11-22):** A real three-worker 1h calendar
+probe followed by launchd restart left none of the old server's four child
+processes alive, and the new server returned HTTP 200. Five warm cloud catalog
+CLI probes had median end-to-end latency 1.165 s (range 1.101–1.782 s); cold
+startup is slower. The initial single-proof benchmark returned a -0.01 RUB
+ledger reconciliation on its 1d case, so zero-reconciliation acceptance is
+not established. The initial window and optimize suites are smaller than the
+proposed canonical workloads; see the workstation verification note in
+`remote-agent-testing.md`.

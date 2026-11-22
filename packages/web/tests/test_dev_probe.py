@@ -147,3 +147,22 @@ def test_pool_census_counts_live_workers_only():
         "worker_slots": 1,
         "active_pool_workers": 1,
     }
+
+
+def test_probe_reports_real_request_thread_cache_lookups(server):
+    port, _ = server
+    selection = {
+        "universe": "calendar_native",
+        "asset": "SR",
+        "pair": "SRH3/SRM3",
+        "strategy": "zscore_mean_reversion",
+    }
+    status, raw = request(
+        port, "POST", "/api/dev/probe", {"action": "run", "payload": selection, "repeat": 2}
+    )
+    assert status == 200, raw
+    telemetry = json.loads(raw)["telemetry"]
+    counts = telemetry["cache_metrics_main_thread"]
+    assert counts["json_hits"] + counts["json_misses"] > 0
+    assert counts["zscore_hits"] + counts["zscore_misses"] > 0
+    assert telemetry["pool"]["active_pool_workers"] == 0

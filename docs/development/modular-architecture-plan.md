@@ -297,19 +297,30 @@ class ParameterSpec:
     tunable: bool = True
     lamp_steps: tuple[int, ...] = (-2, -1, 1, 2)
 
+
 class StrategyPlugin(Protocol):
-    strategy_id: str                       # e.g. "funding_only"
-    family_id: str                         # e.g. "mean_reversion" (unifies pair & calendar MR adapters!)
+    strategy_id: str  # e.g. "funding_only"
+    family_id: str  # e.g. "mean_reversion" (unifies pair & calendar MR adapters!)
     label_ru: str
-    supported_universes: frozenset[str]    # {"pair_screen"} or {"calendar_native"}
-    supported_fills: tuple[str, ...]       # ("next_open", "next_close", "reference_same_bar") or ("same_day_settlement",)
+    supported_universes: frozenset[str]  # {"pair_screen"} or {"calendar_native"}
+    supported_fills: tuple[
+        str, ...
+    ]  # ("next_open", "next_close", "reference_same_bar") or ("same_day_settlement",)
     requires_daily_bars: bool
 
     def parameter_schema(self, context: InstrumentContext) -> tuple[ParameterSpec, ...]: ...
-    def validate_parameters(self, raw: Mapping[str, Any], context: InstrumentContext) -> dict[str, Any]: ...
-    def check_compatibility(self, window: WindowSnapshot, settings: ResearchSettings) -> CompatibilityVerdict: ...
-    def evaluate_intents(self, window: WindowSnapshot, params: Mapping[str, Any], fill: str) -> StrategyIntentRun: ...
-    def compute_entry_bands(self, series: list[dict], params: Mapping[str, Any], fill: str) -> list[EntryBandPoint]: ...
+    def validate_parameters(
+        self, raw: Mapping[str, Any], context: InstrumentContext
+    ) -> dict[str, Any]: ...
+    def check_compatibility(
+        self, window: WindowSnapshot, settings: ResearchSettings
+    ) -> CompatibilityVerdict: ...
+    def evaluate_intents(
+        self, window: WindowSnapshot, params: Mapping[str, Any], fill: str
+    ) -> StrategyIntentRun: ...
+    def compute_entry_bands(
+        self, series: list[dict], params: Mapping[str, Any], fill: str
+    ) -> list[EntryBandPoint]: ...
 ```
 
 **Why this makes parallel agent work conflict-free:**

@@ -108,6 +108,28 @@ def _sensitivity(path: Path) -> dict[str, Any]:
     }
 
 
+def _conclusion_blockers(
+    baseline: dict[str, Any], ledger: dict[str, Any], rows: list[dict[str, Any]]
+) -> list[str]:
+    blockers: list[str] = []
+    if ledger.get("summary", {}).get("executable_value_available") is not True:
+        blockers.append("historical executable quotes and fills are unavailable")
+    cost_status = baseline.get("costs", {}).get("status")
+    if cost_status == "unknown":
+        blockers.append("required trading and funding costs are unknown")
+    elif cost_status != "verified":
+        blockers.append("cost profile is illustrative or otherwise unverified")
+    if baseline.get("economics", {}).get("contract_terms_status") != "historical_evidence":
+        blockers.append("dated historical contract terms are not evidenced")
+    if baseline.get("execution_evidence_status") != "historical_bid_ask_available":
+        blockers.append("execution evidence status is not historical bid/ask available")
+    if any(row.get("benchmark_source_kind") != "observed" for row in rows):
+        blockers.append("benchmark includes a proxy period")
+    if ledger.get("portfolio", {}).get("actual_account_reconciliation") is not True:
+        blockers.append("actual account and collateral reconciliation is unavailable")
+    return blockers
+
+
 def build_validation(
     baseline_path: Path,
     ledger_path: Path,
@@ -122,10 +144,8 @@ def build_validation(
         raise ValidationError("unsupported baseline schema")
     if ledger.get("schema_version") != "execution-ledger.v1":
         raise ValidationError("unsupported ledger schema")
-    if not 0.5 <= train_fraction < 1.0:
-        raise ValidationError("train_fraction must be at least 0.5 and below 1")
-    if not 0 < confirmation_fraction < 0.5:
-        raise ValidationError("confirmation_fraction must be between 0 and 0.5")
+    if not (0.5 <= train_fraction < 1.0 and 0 < confirmation_fraction < 0.5):
+        raise ValidationError("invalid train_fraction or confirmation_fraction")
     rows = baseline.get("daily")
     if not isinstance(rows, list) or len(rows) < 10:
         raise ValidationError("at least ten chronological baseline rows are required")
@@ -141,21 +161,7 @@ def build_validation(
         "validation": _segment(rows, train_end, confirmation_start),
         "sealed_confirmation": _segment(rows, confirmation_start, n),
     }
-    blockers = []
-    if ledger.get("summary", {}).get("executable_value_available") is not True:
-        blockers.append("historical executable quotes and fills are unavailable")
-    if baseline.get("costs", {}).get("status") == "unknown":
-        blockers.append("required trading and funding costs are unknown")
-    elif baseline.get("costs", {}).get("status") != "verified":
-        blockers.append("cost profile is illustrative or otherwise unverified")
-    if baseline.get("economics", {}).get("contract_terms_status") != "historical_evidence":
-        blockers.append("dated historical contract terms are not evidenced")
-    if baseline.get("execution_evidence_status") != "historical_bid_ask_available":
-        blockers.append("execution evidence status is not historical bid/ask available")
-    if any(row.get("benchmark_source_kind") != "observed" for row in rows):
-        blockers.append("benchmark includes a proxy period")
-    if ledger.get("portfolio", {}).get("actual_account_reconciliation") is not True:
-        blockers.append("actual account and collateral reconciliation is unavailable")
+    blockers = _conclusion_blockers(baseline, ledger, rows)
     sensitivity = [_sensitivity(path) for path in (sensitivity_paths or [])]
     result = {
         "schema_version": VALIDATION_SCHEMA,

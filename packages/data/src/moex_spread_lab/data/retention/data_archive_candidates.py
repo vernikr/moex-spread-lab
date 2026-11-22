@@ -133,31 +133,40 @@ def _validate(plan: dict, root: Path) -> None:
     _outside_data(root, Path(plan["archive"]))
 
 
+def _verify_tar_member(
+    tar: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    expected: dict[str, dict],
+    manifest_bytes: bytes,
+) -> None:
+    body = tar.extractfile(member)
+    if body is None:
+        raise DataRetentionError("cannot read regular archive member")
+    if member.name == "manifest.json":
+        if member.size != len(manifest_bytes) or body.read() != manifest_bytes:
+            raise DataRetentionError("embedded manifest mismatch")
+        return
+    entry = expected.get(member.name)
+    if entry is None or member.size != entry["logical_bytes"]:
+        raise DataRetentionError("unexpected archive member or size")
+    digest = hashlib.sha256()
+    while block := body.read(1024 * 1024):
+        digest.update(block)
+    if digest.hexdigest() != entry["sha256"]:
+        raise DataRetentionError("archive member hash mismatch")
+
+
 def verify_archive(path: Path, manifest: dict) -> None:
     expected = {"data/" + e["path"]: e for e in manifest["files"]}
-    seen = set()
+    manifest_bytes = canonical_bytes(manifest)
+    seen: set[str] = set()
     with path.open("rb") as raw, zstd.ZstdDecompressor().stream_reader(raw) as stream:
         with tarfile.open(fileobj=stream, mode="r|") as tar:
             for member in tar:
                 if member.name in seen or not member.isfile():
                     raise DataRetentionError("duplicate or non-regular archive member")
                 seen.add(member.name)
-                body = tar.extractfile(member)
-                if member.name == "manifest.json":
-                    if member.size != len(
-                        canonical_bytes(manifest)
-                    ) or body.read() != canonical_bytes(manifest):
-                        raise DataRetentionError("embedded manifest mismatch")
-                else:
-                    entry = expected.get(member.name)
-                    if entry is None or member.size != entry["logical_bytes"]:
-                        raise DataRetentionError("unexpected archive member or size")
-                    digest = hashlib.sha256()
-                    for block in iter(lambda: body.read(1024 * 1024), b""):
-                        digest.update(block)
-                    if digest.hexdigest() != entry["sha256"]:
-                        raise DataRetentionError("archive member hash mismatch")
-        # Drain the frame to detect compression checksum/truncation errors.
+                _verify_tar_member(tar, member, expected, manifest_bytes)
         while stream.read(1024 * 1024):
             pass
     if seen != set(expected) | {"manifest.json"}:
@@ -201,13 +210,68 @@ def _publish(root: Path, plan: dict, archive: Path, *, validate_sources=None) ->
     return manifest
 
 
+def _archive_only_candidates(root: Path, plan: dict, archive: Path, receipt: Path) -> dict:
+    if receipt.exists() or receipt.is_symlink():
+        raise DataRetentionError("verification receipt already exists")
+    manifest = _publish(root, plan, archive)
+    result = {
+        "status": "verified",
+        "archive_sha256": sha256_file(archive),
+        "manifest": manifest,
+    }
+    _json_new(receipt, result)
+    return result
+
+
+def _delete_verified_sources(root: Path, files: list[dict], deleted: list[str]) -> None:
+    for entry in files:
+        source = _safe_data_path(root, entry["path"])
+        if sha256_file(source) != entry["sha256"]:
+            raise DataRetentionError("source changed during apply; stop concurrent writers")
+        source.unlink()
+        deleted.append(entry["path"])
+    _prune_empty_parents(root, files)
+
+
+def _apply_candidates(root: Path, plan: dict, archive: Path, receipt: Path, report: Path) -> dict:
+    record = json.loads(receipt.read_text(encoding="utf-8"))
+    manifest = record["manifest"]
+    if (
+        record.get("status") != "verified"
+        or any(manifest.get(k) != v for k, v in plan.items())
+        or sha256_file(archive) != record["archive_sha256"]
+    ):
+        raise DataRetentionError("verified archive does not match plan")
+    verify_archive(archive, manifest)
+    _validate(plan, root)
+    result: dict = {
+        "status": "prepared",
+        "archive": str(archive),
+        "archive_sha256": record["archive_sha256"],
+        "source_fingerprint": plan["source_fingerprint"],
+        "deleted": [],
+    }
+    _json_new(report, result)
+    try:
+        _delete_verified_sources(root, plan["files"], result["deleted"])
+        result["status"] = "applied"
+    except Exception:
+        result["status"] = "interrupted"
+        raise
+    finally:
+        temporary = report.with_name(report.name + ".tmp")
+        _json_new(temporary, result)
+        os.replace(temporary, report)
+    return result
+
+
 def execute(root: Path, plan_path: Path, mode: str, archive: Path | None = None) -> dict:
     """Create a deterministic plan, publish only, or explicitly remove verified sources."""
-    root = root.resolve()
-    plan_path = _outside_data(root, plan_path)
-    if (root / "data").is_symlink():
+    resolved_root = root.resolve()
+    plan_path = _outside_data(resolved_root, plan_path)
+    if (resolved_root / "data").is_symlink():
         raise DataRetentionError("symlink data root is not supported")
-    with (root / ".data-archive-candidates.lock").open("a") as lock:
+    with (resolved_root / ".data-archive-candidates.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -215,61 +279,18 @@ def execute(root: Path, plan_path: Path, mode: str, archive: Path | None = None)
         if mode == "dry-run":
             if archive is None:
                 raise DataRetentionError("--archive is required for dry-run")
-            plan = build_plan(root, archive)
+            plan = build_plan(resolved_root, archive)
             _json_new(plan_path, plan)
             return {"status": "planned", **plan}
         if mode not in {"archive-only", "apply"}:
             raise DataRetentionError("unknown archive mode")
-        plan = json.loads(plan_path.read_text())
-        _validate(plan, root)
-        archive = Path(plan["archive"])
-        receipt = archive.with_name(archive.name + ".verified.json")
-        report = archive.with_name(archive.name + ".apply.json")
-        if plan_path in {archive, receipt, report}:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        _validate(plan, resolved_root)
+        archive_path = Path(plan["archive"])
+        receipt = archive_path.with_name(archive_path.name + ".verified.json")
+        report = archive_path.with_name(archive_path.name + ".apply.json")
+        if plan_path in {archive_path, receipt, report}:
             raise DataRetentionError("plan and archive output paths must be distinct")
         if mode == "archive-only":
-            if receipt.exists() or receipt.is_symlink():
-                raise DataRetentionError("verification receipt already exists")
-            manifest = _publish(root, plan, archive)
-            result = {
-                "status": "verified",
-                "archive_sha256": sha256_file(archive),
-                "manifest": manifest,
-            }
-            _json_new(receipt, result)
-            return result
-        record = json.loads(receipt.read_text())
-        manifest = record["manifest"]
-        if (
-            record.get("status") != "verified"
-            or any(manifest.get(k) != v for k, v in plan.items())
-            or sha256_file(archive) != record["archive_sha256"]
-        ):
-            raise DataRetentionError("verified archive does not match plan")
-        verify_archive(archive, manifest)
-        _validate(plan, root)  # Check ALL sources before the first unlink.
-        result = {
-            "status": "prepared",
-            "archive": str(archive),
-            "archive_sha256": record["archive_sha256"],
-            "source_fingerprint": plan["source_fingerprint"],
-            "deleted": [],
-        }
-        _json_new(report, result)  # Refuse duplicate apply; establish writable journal first.
-        try:
-            for entry in plan["files"]:
-                source = _safe_data_path(root, entry["path"])
-                if sha256_file(source) != entry["sha256"]:
-                    raise DataRetentionError("source changed during apply; stop concurrent writers")
-                source.unlink()
-                result["deleted"].append(entry["path"])
-            _prune_empty_parents(root, plan["files"])
-            result["status"] = "applied"
-        except Exception:
-            result["status"] = "interrupted"
-            raise
-        finally:
-            temporary = report.with_name(report.name + ".tmp")
-            _json_new(temporary, result)
-            os.replace(temporary, report)
-        return result
+            return _archive_only_candidates(resolved_root, plan, archive_path, receipt)
+        return _apply_candidates(resolved_root, plan, archive_path, receipt, report)

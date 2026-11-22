@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from moex_spread_lab.accounting.research import run_research_pipeline
 from moex_spread_lab.core.w0 import W0Error, write_json
 
 
-def register(subparsers):
+def register(subparsers: Any) -> None:
     artifact_import = subparsers.add_parser(
         "run-artifact-import",
         help="verify and import legacy analytical-baseline.v1 JSON without deleting it",
@@ -98,164 +99,182 @@ def register(subparsers):
     account_risk_parser.set_defaults(_msl_cli_handler=run)
 
 
-def run(args):
-    if args.command == "run-artifact-import":
-        from moex_spread_lab.accounting.run_artifact_import import import_baseline_artifact
+def _run_artifact_import_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.run_artifact_import import import_baseline_artifact
 
+    try:
+        result = import_baseline_artifact(
+            args.legacy,
+            args.output_dir,
+            expected_sha256=args.expected_sha256,
+            retention_days=args.retention_days,
+            pin=args.pin,
+        )
+    except OSError as exc:
+        raise W0Error(f"legacy import failed: {exc}") from exc
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_artifact_pin_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.run_artifacts import pin_run_artifact
+
+    manifest = pin_run_artifact(args.artifact_dir, pinned=not args.unpin)
+    status = "pinned" if not args.unpin else "unpinned"
+    payload = (
+        {"status": status, "manifest": manifest}
+        if args.format == "json"
+        else {
+            "status": status,
+            "artifact_id": manifest["artifact_id"],
+            "pinned": manifest["retention"]["pinned"],
+            "expires_at": manifest["retention"]["expires_at"],
+        }
+    )
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_artifact_gc_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.run_artifacts import gc_run_artifacts
+
+    root = args.root.resolve()
+    runs_root = args.runs_root if args.runs_root.is_absolute() else root / args.runs_root
+    output = gc_run_artifacts(runs_root, dry_run=not args.apply)
+    payload = (
+        output
+        if args.format == "json"
+        else {
+            key: output[key]
+            for key in ("status", "expired_artifact_count", "retained_artifact_count")
+        }
+    )
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_research_pipeline_cmd(args: Any) -> int:
+    result = run_research_pipeline(args.manifest, args.fixture)
+    write_json(args.output, result)
+    print(
+        json.dumps(
+            {
+                "all_fixture_gates_passed": result["all_fixture_gates_passed"],
+                "release_state": result["release_state"],
+                "report_hash": result["report_hash"],
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _run_execution_ledger_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.ledger import build_ledger
+
+    result = build_ledger(args.baseline)
+    write_json(args.output, result)
+    print(
+        json.dumps(
+            {
+                "release_state": result["release_state"],
+                "timeframe": result["timeframe"],
+                "execution_attempt_count": result["summary"]["execution_attempt_count"],
+                "final_X": result["summary"]["final_X"],
+                "executable_value_available": result["summary"]["executable_value_available"],
+                "output": str(args.output),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _run_validate_analytics_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.validation import build_validation
+
+    result = build_validation(
+        args.baseline,
+        args.ledger,
+        args.sensitivity,
+        train_fraction=args.train_fraction,
+        confirmation_fraction=args.confirmation_fraction,
+    )
+    write_json(args.output, result)
+    print(
+        json.dumps(
+            {
+                "release_state": result["release_state"],
+                "verdict": result["verdict"],
+                "timeframe": result["timeframe"],
+                "sealed_confirmation_rows": result["splits"]["sealed_confirmation"]["row_count"],
+                "final_X": result["splits"]["sealed_confirmation"]["final_X"],
+                "blocker_count": len(result["conclusion_blockers"]),
+                "output": str(args.output),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _run_account_risk_cmd(args: Any) -> int:
+    from moex_spread_lab.accounting.account_risk import assess_vtb_pair
+
+    observed_daily_pnl: list[float] | None = None
+    if args.carry_study:
         try:
-            result = import_baseline_artifact(
-                args.legacy,
-                args.output_dir,
-                expected_sha256=args.expected_sha256,
-                retention_days=args.retention_days,
-                pin=args.pin,
-            )
-        except OSError as exc:
-            raise W0Error(f"legacy import failed: {exc}") from exc
-        print(json.dumps(result, sort_keys=True))
-        return 0
-    if args.command == "run-artifact-pin":
-        from moex_spread_lab.accounting.run_artifacts import pin_run_artifact
+            carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
+            observed_daily_pnl = [
+                float(row["daily_gross_carry_pnl"]) for row in carry_study.get("rows", [])[1:]
+            ]
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            raise W0Error(f"cannot read carry study for risk screen: {exc}") from exc
+    result = assess_vtb_pair(
+        args.contracts,
+        args.near,
+        args.far,
+        initial_capital=args.initial_capital,
+        stress_vm_buffer=args.stress_vm_buffer,
+        uncertainty_buffer=args.uncertainty_buffer,
+        key_rate=args.key_rate,
+        observed_daily_pnl=observed_daily_pnl,
+    )
+    write_json(args.output, result)
+    print(
+        json.dumps(
+            {
+                "schema_version": result["schema_version"],
+                "current_snapshot_passed": result["summary"]["current_snapshot_passed"],
+                "all_working_scenarios_passed": result["summary"]["all_scenarios_passed"],
+                "pair_margin_no_offset_rub": result["pair"]["pair_margin_no_offset_rub"],
+                "most_severe_remaining_capital_rub": result["summary"][
+                    "most_severe_remaining_capital_rub"
+                ],
+                "output": str(args.output),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return 0
 
-        manifest = pin_run_artifact(args.artifact_dir, pinned=not args.unpin)
-        output = {"status": "pinned" if not args.unpin else "unpinned", "manifest": manifest}
-        if args.format == "json":
-            print(json.dumps(output, ensure_ascii=False, sort_keys=True))
-        else:
-            print(
-                json.dumps(
-                    {
-                        "status": output["status"],
-                        "artifact_id": manifest["artifact_id"],
-                        "pinned": manifest["retention"]["pinned"],
-                        "expires_at": manifest["retention"]["expires_at"],
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-        return 0
-    if args.command == "run-artifact-gc":
-        from moex_spread_lab.accounting.run_artifacts import gc_run_artifacts
 
-        root = args.root.resolve()
-        runs_root = args.runs_root if args.runs_root.is_absolute() else root / args.runs_root
-        output = gc_run_artifacts(runs_root, dry_run=not args.apply)
-        if args.format == "json":
-            print(json.dumps(output, ensure_ascii=False, sort_keys=True))
-        else:
-            print(
-                json.dumps(
-                    {
-                        key: output[key]
-                        for key in ("status", "expired_artifact_count", "retained_artifact_count")
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-        return 0
-    if args.command == "research-pipeline":
-        result = run_research_pipeline(args.manifest, args.fixture)
-        write_json(args.output, result)
-        print(
-            json.dumps(
-                {
-                    "all_fixture_gates_passed": result["all_fixture_gates_passed"],
-                    "release_state": result["release_state"],
-                    "report_hash": result["report_hash"],
-                },
-                sort_keys=True,
-            )
-        )
-        return 0
-    if args.command == "execution-ledger":
-        from moex_spread_lab.accounting.ledger import build_ledger
+_DISPATCH = {
+    "run-artifact-import": _run_artifact_import_cmd,
+    "run-artifact-pin": _run_artifact_pin_cmd,
+    "run-artifact-gc": _run_artifact_gc_cmd,
+    "research-pipeline": _run_research_pipeline_cmd,
+    "execution-ledger": _run_execution_ledger_cmd,
+    "validate-analytics": _run_validate_analytics_cmd,
+    "account-risk-check": _run_account_risk_cmd,
+}
 
-        result = build_ledger(args.baseline)
-        write_json(args.output, result)
-        print(
-            json.dumps(
-                {
-                    "release_state": result["release_state"],
-                    "timeframe": result["timeframe"],
-                    "execution_attempt_count": result["summary"]["execution_attempt_count"],
-                    "final_X": result["summary"]["final_X"],
-                    "executable_value_available": result["summary"]["executable_value_available"],
-                    "output": str(args.output),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-        return 0
-    if args.command == "validate-analytics":
-        from moex_spread_lab.accounting.validation import build_validation
 
-        result = build_validation(
-            args.baseline,
-            args.ledger,
-            args.sensitivity,
-            train_fraction=args.train_fraction,
-            confirmation_fraction=args.confirmation_fraction,
-        )
-        write_json(args.output, result)
-        print(
-            json.dumps(
-                {
-                    "release_state": result["release_state"],
-                    "verdict": result["verdict"],
-                    "timeframe": result["timeframe"],
-                    "sealed_confirmation_rows": result["splits"]["sealed_confirmation"][
-                        "row_count"
-                    ],
-                    "final_X": result["splits"]["sealed_confirmation"]["final_X"],
-                    "blocker_count": len(result["conclusion_blockers"]),
-                    "output": str(args.output),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-        return 0
-    if args.command == "account-risk-check":
-        from moex_spread_lab.accounting.account_risk import assess_vtb_pair
-
-        observed_daily_pnl = None
-        if args.carry_study:
-            try:
-                carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
-                observed_daily_pnl = [
-                    float(row["daily_gross_carry_pnl"]) for row in carry_study.get("rows", [])[1:]
-                ]
-            except (OSError, KeyError, TypeError, ValueError) as exc:
-                raise W0Error(f"cannot read carry study for risk screen: {exc}") from exc
-        result = assess_vtb_pair(
-            args.contracts,
-            args.near,
-            args.far,
-            initial_capital=args.initial_capital,
-            stress_vm_buffer=args.stress_vm_buffer,
-            uncertainty_buffer=args.uncertainty_buffer,
-            key_rate=args.key_rate,
-            observed_daily_pnl=observed_daily_pnl,
-        )
-        write_json(args.output, result)
-        print(
-            json.dumps(
-                {
-                    "schema_version": result["schema_version"],
-                    "current_snapshot_passed": result["summary"]["current_snapshot_passed"],
-                    "all_working_scenarios_passed": result["summary"]["all_scenarios_passed"],
-                    "pair_margin_no_offset_rub": result["pair"]["pair_margin_no_offset_rub"],
-                    "most_severe_remaining_capital_rub": result["summary"][
-                        "most_severe_remaining_capital_rub"
-                    ],
-                    "output": str(args.output),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-        )
-        return 0
+def run(args: Any) -> int:
+    handler = _DISPATCH.get(args.command)
+    if handler is not None:
+        return handler(args)
     return 2

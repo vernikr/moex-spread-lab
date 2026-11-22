@@ -2,170 +2,234 @@
 
 from __future__ import annotations
 
-import fcntl
-import hashlib
-import json
-import os
-import tempfile
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from contextlib import ExitStack
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.core.w0 import sha256_file
-
 from ..iss.catalog import (
-    CANDLE_INTERVAL_LABELS,
     DEFAULT_BOARD,
     DEFAULT_ISS_BASE_URL,
     fetch_candle_series,
 )
-from .data_lake import DataLakeError, ParquetBarStore
+from .data_lake import ParquetBarStore
+from .refresh_merge import (
+    REFRESH_SCHEMA,
+    DataRefreshError,
+    RefreshConfig,
+    RefreshTarget,
+    _atomic_write_json,
+    _chunks,
+    _dataset_writer_lock,
+    _date,
+    _TargetState,
+    _timestamp_date,
+    build_merged_payload,
+    plan_single_target,
+)
 
-REFRESH_SCHEMA = "market-data-refresh.v1"
-
-
-@dataclass(frozen=True)
-class RefreshTarget:
-    secid: str
-    interval: int
-
-    @property
-    def timeframe(self) -> str:
-        return CANDLE_INTERVAL_LABELS.get(self.interval, f"interval_{self.interval}")
-
-    @property
-    def id(self) -> str:
-        return f"{self.timeframe}/{self.secid}"
-
-
-@dataclass
-class _TargetState:
-    target: RefreshTarget
-    legacy_path: Path
-    payload: dict[str, Any] | None
-    watermark: date | None
-    requested_from: date | None
-
-
-class DataRefreshError(DataLakeError):
-    """Raised when an incremental candle refresh cannot preserve the lake contract."""
-
-
-def _date(value: str, label: str) -> date:
-    try:
-        return date.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
-        raise DataRefreshError(f"{label} must be an ISO date: {value!r}") from exc
-
-
-def _timestamp_date(value: Any) -> date | None:
-    if not isinstance(value, str) or len(value) < 10:
-        return None
-    try:
-        return date.fromisoformat(value[:10])
-    except ValueError:
-        return None
+_REFRESH_OPTIONS = frozenset(
+    {
+        "from_date",
+        "output_dir",
+        "lake_root",
+        "board",
+        "base_url",
+        "overlap_sessions",
+        "chunk_days",
+        "workers",
+        "full_refresh",
+        "raw_ttl_days",
+        "pin_raw",
+        "timeout",
+        "delay_seconds",
+        "retries",
+        "cache_dir",
+        "fetcher",
+    }
+)
+CapturedRaw = tuple[str, bytes, str, str]
+ChunkFetchResult = tuple[date, dict[str, Any], list[CapturedRaw]]
 
 
-def _read_legacy_payload(path: Path, target: RefreshTarget) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DataRefreshError(f"cannot read existing candle series {path}: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != "iss-candles.v1":
-        raise DataRefreshError(f"existing candle file is not iss-candles.v1: {path}")
-    if payload.get("secid") != target.secid or payload.get("interval") != target.interval:
-        raise DataRefreshError(
-            f"existing candle file does not match refresh target {target.id}: {path}"
+def _parse_refresh_config(
+    resolved_root: Path, till_date: str, options: dict[str, Any]
+) -> tuple[RefreshConfig, Path | None]:
+    unknown = set(options) - _REFRESH_OPTIONS
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    workers = int(options.get("workers", 2))
+    if not 1 <= workers <= 4:
+        raise DataRefreshError("refresh workers must be between 1 and 4")
+    overlap_sessions = int(options.get("overlap_sessions", 5))
+    raw_ttl_days = int(options.get("raw_ttl_days", 30))
+    if overlap_sessions < 0 or raw_ttl_days < 0:
+        raise DataRefreshError("overlap_sessions and raw_ttl_days must not be negative")
+    until = _date(till_date, "till_date")
+    from_date = options.get("from_date")
+    initial_from = _date(from_date, "from_date") if from_date else None
+    if initial_from is not None and initial_from > until:
+        raise DataRefreshError("from_date must not be after till_date")
+    raw_output: Path = options.get("output_dir", Path("data/w1/candles"))
+    output_dir = raw_output if raw_output.is_absolute() else resolved_root / raw_output
+    raw_cache: Path | None = options.get("cache_dir")
+    cache_dir = (
+        raw_cache if raw_cache is None or raw_cache.is_absolute() else resolved_root / raw_cache
+    )
+    cfg = RefreshConfig(
+        until=until,
+        till_date=till_date,
+        initial_from=initial_from,
+        output_dir=output_dir,
+        cache_dir=cache_dir,
+        board=options.get("board", DEFAULT_BOARD),
+        base_url=options.get("base_url", DEFAULT_ISS_BASE_URL),
+        overlap_sessions=overlap_sessions,
+        chunk_days=int(options.get("chunk_days", 90)),
+        workers=workers,
+        full_refresh=bool(options.get("full_refresh", False)),
+        raw_ttl_days=raw_ttl_days,
+        pin_raw=bool(options.get("pin_raw", False)),
+        timeout=float(options.get("timeout", 20.0)),
+        delay_seconds=float(options.get("delay_seconds", 0.1)),
+        retries=int(options.get("retries", 3)),
+        fetcher=options.get("fetcher", fetch_candle_series),
+    )
+    return cfg, options.get("lake_root")
+
+
+def _run_single_chunk(
+    state: _TargetState, chunk_from: date, chunk_till: date, cfg: RefreshConfig
+) -> tuple[str, date, dict[str, Any], list[CapturedRaw]]:
+    captured: list[CapturedRaw] = []
+
+    def raw_sink(url: str, raw: bytes, received_at: str, raw_sha256: str) -> None:
+        captured.append((url, raw, received_at, raw_sha256))
+
+    result = cfg.fetcher(
+        secid=state.target.secid,
+        interval=state.target.interval,
+        from_date=chunk_from.isoformat(),
+        till_date=chunk_till.isoformat(),
+        base_url=cfg.base_url,
+        board=cfg.board,
+        timeout=cfg.timeout,
+        delay_seconds=cfg.delay_seconds,
+        cache_dir=cfg.cache_dir,
+        retries=cfg.retries,
+        raw_sink=raw_sink,
+    )
+    return state.target.id, chunk_from, result, captured
+
+
+def _fetch_target_chunks(
+    states: list[_TargetState], cfg: RefreshConfig
+) -> tuple[dict[str, list[ChunkFetchResult]], int]:
+    fetched: dict[str, list[ChunkFetchResult]] = {state.target.id: [] for state in states}
+    task_count = 0
+    with ThreadPoolExecutor(max_workers=cfg.workers) as executor:
+        futures = []
+        for state in states:
+            for chunk_from, chunk_till in _chunks(state.requested_from, cfg.until, cfg.chunk_days):
+                task_count += 1
+                futures.append(
+                    executor.submit(_run_single_chunk, state, chunk_from, chunk_till, cfg)
+                )
+        for future in as_completed(futures):
+            target_id, chunk_from, result, captured = future.result()
+            fetched[target_id].append((chunk_from, result, captured))
+    return fetched, task_count
+
+
+def _archive_captured_raw(
+    captured: list[CapturedRaw], store: ParquetBarStore, cfg: RefreshConfig
+) -> list[str]:
+    entry_ids: list[str] = []
+    for url, raw, received_at, raw_sha256 in captured:
+        entry = store.raw_archive.archive(
+            url=url,
+            raw=raw,
+            received_at=received_at,
+            ttl_days=cfg.raw_ttl_days,
+            pin=cfg.pin_raw,
         )
-    if not isinstance(payload.get("rows"), list):
-        raise DataRefreshError(f"existing candle file rows are invalid: {path}")
-    return payload
+        if entry["raw_response_sha256"] != raw_sha256:
+            raise DataRefreshError("raw response hash changed before archival")
+        entry_ids.append(str(entry["id"]))
+    return entry_ids
 
 
-def _payload_watermark(payload: dict[str, Any] | None) -> date | None:
-    if not payload:
-        return None
-    dates = [
-        _timestamp_date(row.get("begin"))
-        for row in payload.get("rows", [])
-        if isinstance(row, dict)
-    ]
-    return max((item for item in dates if item is not None), default=None)
+def _merge_chunk_rows(
+    result: dict[str, Any], target_id: str, secid: str, rows_by_begin: dict[str, dict[str, Any]]
+) -> int:
+    if result.get("schema_version") != "iss-candles.v1" or result.get("secid") != secid:
+        raise DataRefreshError(f"fetcher returned an invalid series for {target_id}")
+    for row in result.get("rows", []):
+        if not isinstance(row, dict) or not isinstance(row.get("begin"), str):
+            raise DataRefreshError(f"fetcher returned an invalid candle row for {target_id}")
+        rows_by_begin[row["begin"]] = dict(row)
+    return int(result.get("page_count", 0))
 
 
-def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sessions: int) -> date:
-    """Return the Nth preceding observed session date, not a weekday heuristic."""
-    if payload:
-        sessions = sorted(
-            {
-                item
-                for row in payload.get("rows", [])
-                if isinstance(row, dict)
-                for item in [_timestamp_date(row.get("begin"))]
-                if item is not None and item <= watermark
-            }
-        )
-        if sessions:
-            return sessions[max(0, len(sessions) - 1 - overlap_sessions)]
-    # A retained compatibility series should normally supply the observed dates.
-    # Keep a conservative date fallback for a malformed/partial external import.
-    return watermark - timedelta(days=overlap_sessions * 2)
+def _ingest_chunk_rows_and_raw(
+    state: _TargetState,
+    chunks: list[ChunkFetchResult],
+    store: ParquetBarStore,
+    cfg: RefreshConfig,
+) -> tuple[list[dict[str, Any]], list[str], int]:
+    old_rows = state.payload.get("rows", []) if state.payload else []
+    rows_by_begin: dict[str, dict[str, Any]] = {
+        row["begin"]: dict(row)
+        for row in old_rows
+        if isinstance(row, dict) and isinstance(row.get("begin"), str)
+    }
+    raw_entries: list[str] = []
+    page_count = 0
+    for _, result, captured in chunks:
+        page_count += _merge_chunk_rows(result, state.target.id, state.target.secid, rows_by_begin)
+        raw_entries.extend(_archive_captured_raw(captured, store, cfg))
+    rows = [rows_by_begin[key] for key in sorted(rows_by_begin)]
+    if not rows:
+        raise DataRefreshError(f"refresh produced no rows for {state.target.id}")
+    return rows, raw_entries, page_count
 
 
-@contextmanager
-def _dataset_writer_lock(lake_root: Path, target: RefreshTarget):
-    # Serialize a dataset from watermark read through verified publication.
-    lock_name = hashlib.sha256(target.id.encode("utf-8")).hexdigest() + ".lock"
-    lock_path = lake_root / "locks" / lock_name
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            temporary.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def _chunks(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
-    if chunk_days < 1:
-        raise DataRefreshError("chunk_days must be positive")
-    result = []
-    current = start
-    while current <= end:
-        chunk_end = min(current + timedelta(days=chunk_days - 1), end)
-        result.append((current, chunk_end))
-        current = chunk_end + timedelta(days=1)
-    return result
-
-
-def _target_path(output_dir: Path, target: RefreshTarget) -> Path:
-    return output_dir / f"{target.secid}_{target.timeframe}.json"
+def _publish_refreshed_target(
+    state: _TargetState,
+    chunks: list[ChunkFetchResult],
+    store: ParquetBarStore,
+    cfg: RefreshConfig,
+) -> dict[str, Any]:
+    ordered_chunks = sorted(chunks, key=lambda item: item[0])
+    rows, raw_entries, page_count = _ingest_chunk_rows_and_raw(state, ordered_chunks, store, cfg)
+    payload = build_merged_payload(
+        state,
+        cfg,
+        rows=rows,
+        page_count=page_count,
+        chunk_count=len(ordered_chunks),
+        raw_entry_count=len(raw_entries),
+    )
+    _atomic_write_json(state.legacy_path, payload)
+    record = store.upsert_legacy(state.legacy_path)
+    store.verify_legacy(state.legacy_path)
+    last_date = _timestamp_date(rows[-1]["begin"])
+    if last_date is None:
+        raise DataRefreshError(f"invalid final timestamp for {state.target.id}")
+    return {
+        "dataset_id": state.target.id,
+        "status": "refreshed",
+        "watermark_before": state.watermark.isoformat() if state.watermark else None,
+        "watermark_after": last_date.isoformat(),
+        "requested_from": state.requested_from.isoformat(),
+        "requested_till": cfg.till_date,
+        "chunk_count": len(ordered_chunks),
+        "network_requests": sum(int(item[1].get("page_count", 0)) for item in ordered_chunks),
+        "raw_entry_count": len(raw_entries),
+        "row_count": record["row_count"],
+        "legacy_path": str(state.legacy_path),
+    }
 
 
 def refresh_candle_datasets(
@@ -173,255 +237,53 @@ def refresh_candle_datasets(
     root: Path,
     targets: list[RefreshTarget],
     till_date: str,
-    from_date: str | None = None,
-    output_dir: Path = Path("data/w1/candles"),
-    lake_root: Path | None = None,
-    board: str = DEFAULT_BOARD,
-    base_url: str = DEFAULT_ISS_BASE_URL,
-    overlap_sessions: int = 5,
-    chunk_days: int = 90,
-    workers: int = 2,
-    full_refresh: bool = False,
-    raw_ttl_days: int = 30,
-    pin_raw: bool = False,
-    timeout: float = 20.0,
-    delay_seconds: float = 0.1,
-    retries: int = 3,
-    cache_dir: Path | None = None,
-    fetcher: Callable[..., dict[str, Any]] = fetch_candle_series,
+    **options: Any,
 ) -> dict[str, Any]:
-    """Fetch only ``watermark - overlap`` through ``till_date`` and upsert safely.
-
-    The retained JSON compatibility input is atomically merged first. The Parquet
-    lake is then replaced and verified from that exact file, retaining the
-    Phase-3 read-path identity contract.
-    """
-    root = root.resolve()
+    """Fetch only ``watermark - overlap`` through ``till_date`` and upsert safely."""
+    resolved_root = root.resolve()
     from .h1_seal import SealedH1Reader
 
     if (
         any(target.interval == 60 for target in targets)
-        and SealedH1Reader(root).payload() is not None
+        and SealedH1Reader(resolved_root).payload() is not None
     ):
         raise DataRefreshError("deactivate the H1 seal with restored JSON before refreshing H1")
     if not targets:
         raise DataRefreshError("at least one refresh target is required")
-    if not 1 <= workers <= 4:
-        raise DataRefreshError("refresh workers must be between 1 and 4")
-    if overlap_sessions < 0 or raw_ttl_days < 0:
-        raise DataRefreshError("overlap_sessions and raw_ttl_days must not be negative")
-    until = _date(till_date, "till_date")
-    initial_from = _date(from_date, "from_date") if from_date else None
-    if initial_from is not None and initial_from > until:
-        raise DataRefreshError("from_date must not be after till_date")
-    output_dir = output_dir if output_dir.is_absolute() else root / output_dir
-    cache_dir = cache_dir if cache_dir is None or cache_dir.is_absolute() else root / cache_dir
-    store = ParquetBarStore(root, lake_root)
-    unique = {(target.secid, target.interval): target for target in targets}
-    # Keep locks throughout planning, network work and publication so a second
-    # refresh cannot plan from a stale watermark and overwrite a newer dataset.
+    cfg, lake_root = _parse_refresh_config(resolved_root, till_date, options)
+    store = ParquetBarStore(resolved_root, lake_root)
+    ordered_targets = sorted(
+        {(target.secid, target.interval): target for target in targets}.values(),
+        key=lambda item: (item.secid, item.interval),
+    )
     with ExitStack() as locks:
-        for target in sorted(unique.values(), key=lambda item: (item.secid, item.interval)):
+        for target in ordered_targets:
             locks.enter_context(_dataset_writer_lock(store.lake_root, target))
-
         states: list[_TargetState] = []
         skipped: list[dict[str, Any]] = []
-        for target in sorted(unique.values(), key=lambda item: (item.secid, item.interval)):
-            if not target.secid or target.interval <= 0:
-                raise DataRefreshError(f"invalid refresh target: {target}")
-            legacy_path = _target_path(output_dir, target)
-            payload = _read_legacy_payload(legacy_path, target)
-            watermark = _payload_watermark(payload)
-            try:
-                record = store.record_for_legacy_path(legacy_path)
-            except DataLakeError:
-                record = None
-            if (
-                record
-                and legacy_path.is_file()
-                and sha256_file(legacy_path) == record.get("legacy_sha256")
-            ):
-                record_date = _timestamp_date(record.get("last_begin"))
-                if record_date is not None:
-                    watermark = record_date
-            if not full_refresh and watermark is not None and watermark >= until:
-                skipped.append(
-                    {
-                        "dataset_id": target.id,
-                        "status": "up_to_date",
-                        "watermark": watermark.isoformat(),
-                        "requested_till": till_date,
-                        "network_requests": 0,
-                    }
-                )
-                continue
-            if full_refresh:
-                requested_from = (
-                    initial_from or _date(payload.get("from"), "existing payload from")
-                    if payload
-                    else initial_from
-                )
-            elif watermark is not None:
-                requested_from = _overlap_start(payload, watermark, overlap_sessions)
-            else:
-                requested_from = initial_from
-            if requested_from is None:
-                raise DataRefreshError(
-                    f"from_date is required for the first refresh of {target.id}"
-                )
-            if requested_from > until:
-                raise DataRefreshError(f"refresh range is invalid for {target.id}")
-            states.append(_TargetState(target, legacy_path, payload, watermark, requested_from))
+        for target in ordered_targets:
+            state, skip_entry = plan_single_target(target, store, cfg)
+            if skip_entry is not None:
+                skipped.append(skip_entry)
+            elif state is not None:
+                states.append(state)
+        fetched, task_count = _fetch_target_chunks(states, cfg)
+        refreshed = [
+            _publish_refreshed_target(state, fetched[state.target.id], store, cfg)
+            for state in states
+        ]
+    return {
+        "schema_version": REFRESH_SCHEMA,
+        "status": "refreshed" if refreshed else "up_to_date",
+        "workers": cfg.workers,
+        "scheduled_chunk_count": task_count,
+        "datasets": [*skipped, *refreshed],
+    }
 
-        fetched: dict[str, list[tuple[date, dict[str, Any], list[tuple[str, bytes, str, str]]]]] = {
-            state.target.id: [] for state in states
-        }
-        task_count = 0
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {}
-            for state in states:
-                assert state.requested_from is not None
-                for chunk_from, chunk_till in _chunks(state.requested_from, until, chunk_days):
-                    task_count += 1
 
-                    def run_chunk(
-                        state: _TargetState = state,
-                        chunk_from: date = chunk_from,
-                        chunk_till: date = chunk_till,
-                    ) -> tuple[str, date, dict[str, Any], list[tuple[str, bytes, str, str]]]:
-                        captured: list[tuple[str, bytes, str, str]] = []
-
-                        def raw_sink(
-                            url: str, raw: bytes, received_at: str, raw_sha256: str
-                        ) -> None:
-                            captured.append((url, raw, received_at, raw_sha256))
-
-                        result = fetcher(
-                            secid=state.target.secid,
-                            interval=state.target.interval,
-                            from_date=chunk_from.isoformat(),
-                            till_date=chunk_till.isoformat(),
-                            base_url=base_url,
-                            board=board,
-                            timeout=timeout,
-                            delay_seconds=delay_seconds,
-                            cache_dir=cache_dir,
-                            retries=retries,
-                            raw_sink=raw_sink,
-                        )
-                        return state.target.id, chunk_from, result, captured
-
-                    future = executor.submit(run_chunk)
-                    futures[future] = state.target.id
-            for future in as_completed(futures):
-                target_id, chunk_from, result, captured = future.result()
-                fetched[target_id].append((chunk_from, result, captured))
-
-        refreshed: list[dict[str, Any]] = []
-        raw_archive = store.raw_archive
-        for state in states:
-            chunks = sorted(fetched[state.target.id], key=lambda item: item[0])
-            old_rows = state.payload.get("rows", []) if state.payload else []
-            rows_by_begin: dict[str, dict[str, Any]] = {
-                row["begin"]: dict(row)
-                for row in old_rows
-                if isinstance(row, dict) and isinstance(row.get("begin"), str)
-            }
-            raw_entries = []
-            page_count = 0
-            for _, result, captured in chunks:
-                if (
-                    result.get("schema_version") != "iss-candles.v1"
-                    or result.get("secid") != state.target.secid
-                ):
-                    raise DataRefreshError(
-                        f"fetcher returned an invalid series for {state.target.id}"
-                    )
-                page_count += int(result.get("page_count", 0))
-                for row in result.get("rows", []):
-                    if not isinstance(row, dict) or not isinstance(row.get("begin"), str):
-                        raise DataRefreshError(
-                            f"fetcher returned an invalid candle row for {state.target.id}"
-                        )
-                    rows_by_begin[row["begin"]] = dict(row)
-                for url, raw, received_at, raw_sha256 in captured:
-                    entry = raw_archive.archive(
-                        url=url,
-                        raw=raw,
-                        received_at=received_at,
-                        ttl_days=raw_ttl_days,
-                        pin=pin_raw,
-                    )
-                    if entry["raw_response_sha256"] != raw_sha256:
-                        raise DataRefreshError("raw response hash changed before archival")
-                    raw_entries.append(entry["id"])
-            rows = [rows_by_begin[key] for key in sorted(rows_by_begin)]
-            if not rows:
-                raise DataRefreshError(f"refresh produced no rows for {state.target.id}")
-            existing_from = (
-                _date(state.payload["from"], "existing payload from")
-                if state.payload and isinstance(state.payload.get("from"), str)
-                else None
-            )
-            payload = dict(state.payload or {})
-            payload.update(
-                {
-                    "schema_version": "iss-candles.v1",
-                    "secid": state.target.secid,
-                    "board": board,
-                    "interval": state.target.interval,
-                    "timeframe": state.target.timeframe,
-                    "from": min(
-                        item for item in (existing_from, state.requested_from) if item is not None
-                    ).isoformat(),
-                    "till": till_date,
-                    "page_count": page_count,
-                    "raw_row_count": len(rows),
-                    "row_count": len(rows),
-                    "duplicate_count": 0,
-                    "coverage_status": "available",
-                    "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
-                    "rows": rows,
-                    "refresh": {
-                        "schema_version": REFRESH_SCHEMA,
-                        "refreshed_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                        "watermark_before": state.watermark.isoformat()
-                        if state.watermark
-                        else None,
-                        "requested_from": state.requested_from.isoformat()
-                        if state.requested_from
-                        else None,
-                        "requested_till": till_date,
-                        "overlap_sessions": overlap_sessions,
-                        "chunk_count": len(chunks),
-                        "raw_entry_count": len(raw_entries),
-                    },
-                }
-            )
-            _atomic_write_json(state.legacy_path, payload)
-            record = store.upsert_legacy(state.legacy_path)
-            store.verify_legacy(state.legacy_path)
-            refreshed.append(
-                {
-                    "dataset_id": state.target.id,
-                    "status": "refreshed",
-                    "watermark_before": state.watermark.isoformat() if state.watermark else None,
-                    "watermark_after": _timestamp_date(rows[-1]["begin"]).isoformat(),
-                    "requested_from": state.requested_from.isoformat()
-                    if state.requested_from
-                    else None,
-                    "requested_till": till_date,
-                    "chunk_count": len(chunks),
-                    "network_requests": sum(item[1].get("page_count", 0) for item in chunks),
-                    "raw_entry_count": len(raw_entries),
-                    "row_count": record["row_count"],
-                    "legacy_path": str(state.legacy_path),
-                }
-            )
-        return {
-            "schema_version": REFRESH_SCHEMA,
-            "status": "refreshed" if refreshed else "up_to_date",
-            "workers": workers,
-            "scheduled_chunk_count": task_count,
-            "datasets": [*skipped, *refreshed],
-        }
+__all__ = [
+    "REFRESH_SCHEMA",
+    "DataRefreshError",
+    "RefreshTarget",
+    "refresh_candle_datasets",
+]

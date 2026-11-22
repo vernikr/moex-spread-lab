@@ -154,6 +154,21 @@ def _add_manifest(handle: tarfile.TarFile, manifest: dict[str, Any]) -> None:
     handle.addfile(info, io.BytesIO(body))
 
 
+def _verify_archive_member(handle: tarfile.TarFile, name: str, expected_hash: str) -> None:
+    import hashlib
+
+    member = handle.getmember(name)
+    source = handle.extractfile(member)
+    if source is None:
+        raise DataRetentionError(f"cannot read archived member: {name}")
+    digest = hashlib.sha256()
+    with source as reader:
+        while block := reader.read(1024 * 1024):
+            digest.update(block)
+    if digest.hexdigest() != expected_hash:
+        raise DataRetentionError(f"archived member hash mismatch: {name}")
+
+
 def _verify_archive(archive_path: Path, files: list[dict[str, Any]]) -> None:
     expected = {f"data/{entry['path']}": entry["sha256"] for entry in files}
     with tarfile.open(archive_path, "r:gz") as handle:
@@ -164,18 +179,7 @@ def _verify_archive(archive_path: Path, files: list[dict[str, Any]]) -> None:
         if missing:
             raise DataRetentionError(f"archive is missing expected members: {missing[:3]}")
         for name, expected_hash in expected.items():
-            member = handle.getmember(name)
-            source = handle.extractfile(member)
-            if source is None:
-                raise DataRetentionError(f"cannot read archived member: {name}")
-            import hashlib
-
-            digest = hashlib.sha256()
-            with source:
-                for block in iter(lambda: source.read(1024 * 1024), b""):
-                    digest.update(block)
-            if digest.hexdigest() != expected_hash:
-                raise DataRetentionError(f"archived member hash mismatch: {name}")
+            _verify_archive_member(handle, name, expected_hash)
 
 
 def _prune_empty_parents(root: Path, files: list[dict[str, Any]]) -> None:

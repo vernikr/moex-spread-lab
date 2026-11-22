@@ -46,17 +46,23 @@ def _observed_loss(observed_daily_pnl: Iterable[float] | None) -> float:
     return max(0.0, -min(values))
 
 
+_ASSESS_OPTIONS = frozenset(
+    {
+        "initial_capital",
+        "stress_vm_buffer",
+        "uncertainty_buffer",
+        "key_rate",
+        "observed_daily_pnl",
+        "quantity",
+    }
+)
+
+
 def assess_vtb_pair(
     contracts_path: Path,
     near: str,
     far: str,
-    *,
-    initial_capital: float = DEFAULT_INITIAL_CAPITAL,
-    stress_vm_buffer: float = DEFAULT_STRESS_VM_BUFFER,
-    uncertainty_buffer: float = DEFAULT_UNCERTAINTY_BUFFER,
-    key_rate: float = DEFAULT_KEY_RATE,
-    observed_daily_pnl: Iterable[float] | None = None,
-    quantity: int = 1,
+    **options: Any,
 ) -> dict[str, Any]:
     """Assess minimum-lot capital under the project's working VTB profile.
 
@@ -64,6 +70,15 @@ def assess_vtb_pair(
     client-specific margin or offset calculation and never credits LQDT as
     strategy cash.
     """
+    unknown = set(options) - _ASSESS_OPTIONS
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    initial_capital = float(options.get("initial_capital", DEFAULT_INITIAL_CAPITAL))
+    stress_vm_buffer = float(options.get("stress_vm_buffer", DEFAULT_STRESS_VM_BUFFER))
+    uncertainty_buffer = float(options.get("uncertainty_buffer", DEFAULT_UNCERTAINTY_BUFFER))
+    key_rate = float(options.get("key_rate", DEFAULT_KEY_RATE))
+    observed_daily_pnl: Iterable[float] | None = options.get("observed_daily_pnl")
+    quantity = int(options.get("quantity", 1))
     if initial_capital <= 0 or stress_vm_buffer < 0 or uncertainty_buffer < 0:
         raise AccountRiskError("capital and buffers must be positive or zero")
     if key_rate < 0:

@@ -116,113 +116,148 @@ def _gain(root: Path, plan: dict):
     }
 
 
+def _rehearse_h1_restore(archive: Path, plan: dict, manifest: dict) -> None:
+    with tempfile.TemporaryDirectory(prefix="h1-restore-", dir=archive.parent) as temp:
+        destination = Path(temp)
+        with (
+            archive.open("rb") as raw,
+            zstd.ZstdDecompressor().stream_reader(raw) as stream,
+            tarfile.open(fileobj=stream, mode="r|") as tar,
+        ):
+            tar.extractall(destination, filter="data")
+        for e in plan["files"]:
+            path = destination / "data" / e["path"]
+            if path.stat().st_size != e["logical_bytes"] or sha256_file(path) != e["sha256"]:
+                raise DataLakeError("H1 restore rehearsal mismatch")
+        if json.loads((destination / "manifest.json").read_text(encoding="utf-8")) != manifest:
+            raise DataLakeError("restored manifest mismatch")
+
+
+def _archive_only_h1(root: Path, plan: dict, archive: Path, receipt: Path) -> dict:
+    if receipt.exists():
+        raise DataLakeError("verification receipt exists")
+    manifest = _publish(root, plan, archive, validate_sources=_validate)
+    _rehearse_h1_restore(archive, plan, manifest)
+    _validate(plan, root)
+    result = {
+        "status": "verified",
+        "archive_sha256": sha256_file(archive),
+        "manifest": manifest,
+        "restore_verified_files": len(plan["files"]),
+        "storage": _gain(root, plan),
+    }
+    _json_new(receipt, result)
+    return {k: v for k, v in result.items() if k != "manifest"}
+
+
+def _prepare_retry_journal(journal: Path, archive_sha: str, fingerprint: str) -> str:
+    if not journal.is_file() or journal.is_symlink():
+        raise DataLakeError("restored retry requires a regular previous apply journal")
+    previous = json.loads(journal.read_text(encoding="utf-8"))
+    if (
+        previous.get("status") not in ("applied", "interrupted", "prepared")
+        or previous.get("archive_sha256") != archive_sha
+        or previous.get("source_fingerprint") != fingerprint
+    ):
+        raise DataLakeError("previous apply journal does not match restored plan")
+    saved = journal.with_name(journal.name + ".attempt-" + uuid.uuid4().hex)
+    os.link(journal, saved)
+    journal.unlink()
+    return str(saved)
+
+
+def _unlink_h1_sources(root: Path, files: list[dict], journal: Path, result: dict) -> None:
+    for e in files:
+        path = _safe_data_path(root, e["path"])
+        if sha256_file(path) != e["sha256"]:
+            raise DataLakeError("H1 source changed during apply")
+        path.unlink()
+        result["deleted"].append(e["path"])
+        _atomic_write_json(journal, result)
+    _prune_empty_parents(root, files)
+
+
+def _apply_h1_archive(
+    root: Path,
+    plan: dict,
+    archive: Path,
+    receipt: Path,
+    journal: Path,
+    *,
+    retry_restored: bool,
+) -> dict:
+    record = json.loads(receipt.read_text(encoding="utf-8"))
+    manifest = record["manifest"]
+    if (
+        record.get("status") != "verified"
+        or record.get("restore_verified_files") != len(plan["files"])
+        or any(manifest.get(k) != v for k, v in plan.items())
+        or sha256_file(archive) != record["archive_sha256"]
+    ):
+        raise DataLakeError("H1 verified archive/restore receipt mismatch")
+    verify_archive(archive, manifest)
+    storage = _gain(root, plan)
+    _validate(plan, root)
+    result: dict = {
+        "status": "prepared",
+        "archive_sha256": record["archive_sha256"],
+        "source_fingerprint": plan["source_fingerprint"],
+        "storage": storage,
+        "deleted": [],
+    }
+    if retry_restored:
+        result["previous_attempt_journal"] = _prepare_retry_journal(
+            journal, record["archive_sha256"], plan["source_fingerprint"]
+        )
+    _json_new(journal, result)
+    try:
+        _unlink_h1_sources(root, plan["files"], journal, result)
+        result["verification"] = verify_sealed_h1(root)
+        result["status"] = "applied"
+    except Exception:
+        result["status"] = "interrupted"
+        raise
+    finally:
+        _atomic_write_json(journal, result)
+    return result
+
+
 def execute(
-    root: Path, plan_path: Path, mode: str, *, archive=None, evidence=None, retry_restored=False
-):
-    root = root.resolve()
-    with (root / ".data-archive-candidates.lock").open("a") as lock:
+    root: Path,
+    plan_path: Path,
+    mode: str,
+    *,
+    archive: Path | None = None,
+    evidence: Path | None = None,
+    retry_restored: bool = False,
+) -> dict:
+    resolved_root = root.resolve()
+    with (resolved_root / ".data-archive-candidates.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if mode == "dry-run":
             if archive is None or evidence is None:
                 raise DataLakeError("planning requires archive and evidence")
-            plan = build_plan(root, archive, evidence)
+            plan = build_plan(resolved_root, archive, evidence)
             _json_new(plan_path, plan)
             return {
                 "status": "planned",
                 "source_count": len(plan["files"]),
                 "source_fingerprint": plan["source_fingerprint"],
             }
-        plan = json.loads(plan_path.read_text())
-        _validate(plan, root)
-        archive = Path(plan["archive"])
-        receipt = archive.with_name(archive.name + ".verified.json")
-        journal = archive.with_name(archive.name + ".apply.json")
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        _validate(plan, resolved_root)
+        archive_path = Path(plan["archive"])
+        receipt = archive_path.with_name(archive_path.name + ".verified.json")
+        journal = archive_path.with_name(archive_path.name + ".apply.json")
         if mode == "archive-only":
-            if receipt.exists():
-                raise DataLakeError("verification receipt exists")
-            manifest = _publish(root, plan, archive, validate_sources=_validate)
-            with tempfile.TemporaryDirectory(prefix="h1-restore-", dir=archive.parent) as temp:
-                destination = Path(temp)
-                with (
-                    archive.open("rb") as raw,
-                    zstd.ZstdDecompressor().stream_reader(raw) as stream,
-                ):
-                    with tarfile.open(fileobj=stream, mode="r|") as tar:
-                        tar.extractall(destination, filter="data")
-                for e in plan["files"]:
-                    path = destination / "data" / e["path"]
-                    if (
-                        path.stat().st_size != e["logical_bytes"]
-                        or sha256_file(path) != e["sha256"]
-                    ):
-                        raise DataLakeError("H1 restore rehearsal mismatch")
-                if json.loads((destination / "manifest.json").read_text()) != manifest:
-                    raise DataLakeError("restored manifest mismatch")
-            _validate(plan, root)
-            result = {
-                "status": "verified",
-                "archive_sha256": sha256_file(archive),
-                "manifest": manifest,
-                "restore_verified_files": len(plan["files"]),
-                "storage": _gain(root, plan),
-            }
-            _json_new(receipt, result)
-            return {k: v for k, v in result.items() if k != "manifest"}
+            return _archive_only_h1(resolved_root, plan, archive_path, receipt)
         if mode != "apply":
             raise DataLakeError("unknown H1 archive mode")
-        record = json.loads(receipt.read_text())
-        manifest = record["manifest"]
-        if (
-            record.get("status") != "verified"
-            or record.get("restore_verified_files") != len(plan["files"])
-            or any(manifest.get(k) != v for k, v in plan.items())
-            or sha256_file(archive) != record["archive_sha256"]
-        ):
-            raise DataLakeError("H1 verified archive/restore receipt mismatch")
-        verify_archive(archive, manifest)
-        storage = _gain(root, plan)
-        _validate(
-            plan, root
-        )  # All sources, source selection, seal and evidence before first unlink.
-        result = {
-            "status": "prepared",
-            "archive_sha256": record["archive_sha256"],
-            "source_fingerprint": plan["source_fingerprint"],
-            "storage": storage,
-            "deleted": [],
-        }
-        if retry_restored:
-            # Explicit retry only after _validate proved every original restored.
-            # Never silently resume a partial deletion or overwrite its journal.
-            if not journal.is_file() or journal.is_symlink():
-                raise DataLakeError("restored retry requires a regular previous apply journal")
-            previous = json.loads(journal.read_text())
-            if (
-                previous.get("status") not in ("applied", "interrupted", "prepared")
-                or previous.get("archive_sha256") != record["archive_sha256"]
-                or previous.get("source_fingerprint") != plan["source_fingerprint"]
-            ):
-                raise DataLakeError("previous apply journal does not match restored plan")
-            saved = journal.with_name(journal.name + ".attempt-" + uuid.uuid4().hex)
-            os.link(journal, saved)
-            journal.unlink()
-            result["previous_attempt_journal"] = str(saved)
-        _json_new(journal, result)
-        try:
-            for e in plan["files"]:
-                path = _safe_data_path(root, e["path"])
-                if sha256_file(path) != e["sha256"]:
-                    raise DataLakeError("H1 source changed during apply")
-                path.unlink()
-                result["deleted"].append(e["path"])
-                # Durable per-file journal. Interrupted apply is reconciled, never blindly resumed.
-                _atomic_write_json(journal, result)
-            _prune_empty_parents(root, plan["files"])
-            result["verification"] = verify_sealed_h1(root)
-            result["status"] = "applied"
-        except Exception:
-            result["status"] = "interrupted"
-            raise
-        finally:
-            _atomic_write_json(journal, result)
-        return result
+        return _apply_h1_archive(
+            resolved_root,
+            plan,
+            archive_path,
+            receipt,
+            journal,
+            retry_restored=retry_restored,
+        )

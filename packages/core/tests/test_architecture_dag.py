@@ -1,18 +1,10 @@
 """Architectural DAG and 6-layer dependency boundary tests (Phase 0 & Phase 1+ guardrails).
 
-Enforces static invariants across every Python module in both ``packages/*/src/moex_spread_lab/``
-and ``src/moex_spread_lab/`` using AST inspection (including function-level / lazy imports):
-
-1. Explicit layer assignment for every module across the workspace.
-2. Zero internal import cycles (Tarjan max strongly-connected-component size == 1).
-3. Strict 6-layer dependency DAG compliance matching ``docs/development/modular-architecture-plan.md``:
-   - L0 ``core``       -> ``core`` only (stdlib / C extension only; never imports umbrella shims)
-   - L1a ``data``      -> ``core``, ``data``
-   - L1b ``accounting``-> ``core``, ``accounting``  (disjoint sibling of ``data``)
-   - L2 ``strategies`` -> ``core``, ``data``, ``accounting``, ``strategies``
-   - L3 ``proof``      -> ``core``, ``data``, ``accounting``, ``strategies``, ``proof``
-   - L4 ``web``        -> ``core``, ``data``, ``accounting``, ``strategies``, ``proof``, ``web``
-   - L5 ``cli``        -> ``core``, ``data``, ``accounting``, ``strategies``, ``proof``, ``web``, ``cli``
+Enforces static invariants across ``packages/*/src/moex_spread_lab/`` and ``src/moex_spread_lab/``:
+- Explicit layer assignment for every module across the workspace.
+- Zero internal import cycles (Tarjan max strongly-connected-component size == 1).
+- Strict 6-layer dependency DAG compliance: L0 ``core`` -> L1a ``data`` / L1b ``accounting`` ->
+  L2 ``strategies`` -> L3 ``proof`` -> L4 ``web`` -> L5 ``cli``.
 """
 
 from __future__ import annotations
@@ -28,60 +20,48 @@ UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
 _LAYER_SPECS: dict[str, str] = {
-    "core": (
-        "core core._fastcore_loader core.contracts core.evaluation_periods core.settings "
-        "core.timeframes core.universe core.w0 "
-        "_fastcore_loader w0 timeframes evaluation_periods universe"
-    ),
+    "core": "core core._fastcore_loader core.contracts core.evaluation_periods core.settings core.timeframes core.universe core.w0 _fastcore_loader w0 timeframes evaluation_periods universe",
     "data": (
-        "data data.iss data.iss.catalog data.lake data.lake.bar_types data.lake.data_lake "
-        "data.lake.data_refresh data.lake.h1_migration data.lake.h1_seal data.lake.legacy_series "
-        "data.lake.market_store data.lake.parquet_catalog data.lake.parquet_store "
-        "data.lake.raw_archive data.retention data.retention.data_inventory "
-        "data.retention.data_retention data.retention.data_archive_candidates "
-        "data.retention.h1_archive data.retention.storage_policy data.benchmark "
-        "data.benchmark.lineage data.universe bar_types data_lake h1_migration h1_seal "
-        "h1_archive iss benchmark data_inventory data_retention data_archive_candidates "
-        "data_refresh storage_policy"
+        "data data.cli_parsers data.cli_storage_handlers data.iss data.iss.catalog data.iss.iss_candles "
+        "data.iss.iss_coverage data.iss.iss_history data.iss.iss_http data.iss.iss_snapshot data.lake "
+        "data.lake.bar_types data.lake.data_lake data.lake.data_refresh data.lake.h1_migration data.lake.h1_seal "
+        "data.lake.legacy_series data.lake.market_store data.lake.parquet_catalog data.lake.parquet_store "
+        "data.lake.raw_archive data.lake.refresh_merge data.retention data.retention.data_inventory "
+        "data.retention.data_retention data.retention.data_archive_candidates data.retention.h1_archive "
+        "data.retention.inventory_policy data.retention.storage_policy data.benchmark data.benchmark.lineage "
+        "data.benchmark.lineage_math data.benchmark.ruonia_xlsx data.universe bar_types data_lake h1_migration h1_seal h1_archive iss "
+        "benchmark data_inventory data_retention data_archive_candidates data_refresh storage_policy"
     ),
     "accounting": (
-        "accounting accounting.costs accounting.portfolio accounting.account_risk "
-        "accounting.position_sizing accounting.sizing_fast accounting.sizing_replay "
-        "accounting.sizing_report accounting.sizing_terms accounting.ledger "
-        "accounting.run_artifacts accounting.run_artifact_import accounting.validation "
-        "accounting.research costs portfolio account_risk position_sizing ledger "
-        "run_artifacts run_artifact_import validation research"
+        "accounting accounting.costs accounting.portfolio accounting.account_risk accounting.position_sizing "
+        "accounting.sizing_fast accounting.sizing_replay accounting.sizing_report accounting.sizing_terms "
+        "accounting.ledger accounting.run_artifacts accounting.run_artifact_import accounting.run_artifact_store "
+        "accounting.validation accounting.research accounting.research_intake accounting.research_simulation "
+        "costs portfolio account_risk position_sizing ledger run_artifacts run_artifact_import validation research"
     ),
     "strategies": (
-        "strategies strategies.base strategies.conformance strategies.signals "
-        "strategies.pair_mean_reversion strategies.pair_mean_reversion.analytics "
-        "strategies.pair_mean_reversion.engine strategies.pair_mean_reversion.plugin "
-        "strategies.funding_carry strategies.funding_carry.carry "
+        "strategies strategies.base strategies.conformance strategies.signals strategies.pair_mean_reversion "
+        "strategies.pair_mean_reversion.analytics strategies.pair_mean_reversion.engine "
+        "strategies.pair_mean_reversion.plugin strategies.funding_carry strategies.funding_carry.carry "
         "strategies.funding_carry.proof_funding strategies.funding_carry.funding_recheck "
-        "strategies.funding_carry.funding_screen strategies.funding_carry.engine "
-        "strategies.funding_carry.plugin strategies.funding_carry.intents "
-        "strategies.calendar_zscore strategies.calendar_zscore.engine "
-        "strategies.calendar_zscore.plugin strategies.calendar_ruonia "
-        "strategies.calendar_ruonia.engine strategies.calendar_ruonia.plugin "
-        "strategies.s3_reference strategies.s3_reference.engine strategies.calendar "
-        "strategies.calendar.calendar_spreads strategies.calendar.intents "
-        "strategies.pair_screener strategies.pair_screener.screener "
-        "strategies.pair_screener.pair_screener strategies.pair_screener.intents "
-        "analytics carry funding_screen funding_recheck proof_funding proof_signals "
-        "calendar_spreads s3_reference screener pair_screener"
+        "strategies.funding_carry.funding_screen strategies.funding_carry.engine strategies.funding_carry.plugin "
+        "strategies.funding_carry.intents strategies.calendar_zscore strategies.calendar_zscore.engine "
+        "strategies.calendar_zscore.plugin strategies.calendar_ruonia strategies.calendar_ruonia.engine "
+        "strategies.calendar_ruonia.plugin strategies.s3_reference strategies.s3_reference.engine "
+        "strategies.calendar strategies.calendar.calendar_spreads strategies.calendar.intents "
+        "strategies.pair_screener strategies.pair_screener.screener strategies.pair_screener.pair_screener "
+        "strategies.pair_screener.intents analytics carry funding_screen funding_recheck proof_funding "
+        "proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
     "proof": (
         "proof_runtime proof_runtime.service proof_runtime.pair_funding_replay "
-        "proof_runtime.pair_plugin_accounting proof_runtime.carry_intent_accounting "
-        "proof_runtime.proof_kernel proof_runtime.proof_windows proof_runtime.proof_search "
-        "proof_runtime.proof_batch proof_runtime.proof_strategy_search proof_runtime.proof_pool "
-        "proof_runtime.screener_search proof_runtime.audit audit screener_search proof "
-        "proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search"
+        "proof_runtime.pair_plugin_accounting proof_runtime.carry_intent_accounting proof_runtime.proof_kernel "
+        "proof_runtime.proof_windows proof_runtime.proof_search proof_runtime.proof_batch "
+        "proof_runtime.proof_strategy_search proof_runtime.proof_pool proof_runtime.screener_search "
+        "proof_runtime.audit audit screener_search proof proof_kernel proof_pool proof_windows proof_batch "
+        "proof_strategy_search proof_search"
     ),
-    "web": (
-        "web web.store web.server web.routes_proof web.routes_settings web.routes_legacy "
-        "screener_app"
-    ),
+    "web": "web web.store web.server web.routes_proof web.routes_settings web.routes_legacy screener_app",
     "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
 }
 LAYER_ASSIGNMENTS: dict[str, str] = {
@@ -170,7 +150,6 @@ def _resolve_internal_target(
 
 
 def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, int]]]:
-    """Return ``{module_key: {(imported_key, lineno), ...}}`` including lazy imports."""
     known = set(modules)
     edges: dict[str, set[tuple[str, int]]] = {name: set() for name in modules}
     for name, path in modules.items():
@@ -302,8 +281,6 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_frontend_es_module_import_dag_is_acyclic(self) -> None:
-        import re
-
         js_dir = PACKAGES_DIR / "web" / "src" / "moex_spread_lab" / "web" / "static" / "js"
         js_files = sorted(js_dir.glob("*.js"))
         self.assertGreaterEqual(len(js_files), 9)
@@ -411,10 +388,8 @@ class ArchitectureDagTests(unittest.TestCase):
         self.assertEqual(
             violations,
             [],
-            "Workspace internals must import canonical package modules, not root compatibility shims:"
-            + chr(10)
-            + "  "
-            + chr(10).join(violations),
+            "Workspace internals must import canonical package modules, not root compatibility shims:\n  "
+            + "\n  ".join(violations),
         )
 
 

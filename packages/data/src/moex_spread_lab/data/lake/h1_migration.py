@@ -101,33 +101,36 @@ def _candidate_path(root: Path, output: Path) -> Path:
     return output
 
 
+def _verify_candidate_entry(root: Path, store: ParquetBarStore, group: str, entry: dict) -> dict:
+    source = root / entry["legacy_path"]
+    record = store.record_for_legacy_path(source)
+    if record is None or record["legacy_sha256"] != entry["legacy_sha256"]:
+        raise DataLakeError(f"candidate source identity mismatch: {source}")
+    result = store.verify_legacy(source)
+    for field in ("row_count", "first_begin", "last_begin", "source_page_count"):
+        if record[field] != entry[field]:
+            raise DataLakeError(f"candidate metadata mismatch: {field}")
+    return {
+        "source_group": group,
+        "legacy_path": entry["legacy_path"],
+        **result,
+        "first_begin": record["first_begin"],
+        "last_begin": record["last_begin"],
+        "sources_sha256": record["sources_sha256"],
+    }
+
+
 def _verify_files(root: Path, plan: dict, output: Path) -> list[dict]:
     verified = []
     for group in GROUPS:
         store = ParquetBarStore(root, output / group)
-        expected = {e["legacy_path"] for e in plan["files"] if e["source_group"] == group}
+        group_entries = [e for e in plan["files"] if e["source_group"] == group]
+        expected = {e["legacy_path"] for e in group_entries}
         records = store._read_manifest()["datasets"]
         if len(records) != len(expected) or {r["legacy_path"] for r in records} != expected:
             raise DataLakeError(f"candidate lake membership differs from plan: {group}")
-        for entry in (e for e in plan["files"] if e["source_group"] == group):
-            source = root / entry["legacy_path"]
-            record = store.record_for_legacy_path(source)
-            if record is None or record["legacy_sha256"] != entry["legacy_sha256"]:
-                raise DataLakeError(f"candidate source identity mismatch: {source}")
-            result = store.verify_legacy(source)
-            for field in ("row_count", "first_begin", "last_begin", "source_page_count"):
-                if record[field] != entry[field]:
-                    raise DataLakeError(f"candidate metadata mismatch: {field}")
-            verified.append(
-                {
-                    "source_group": group,
-                    "legacy_path": entry["legacy_path"],
-                    **result,
-                    "first_begin": record["first_begin"],
-                    "last_begin": record["last_begin"],
-                    "sources_sha256": record["sources_sha256"],
-                }
-            )
+        for entry in group_entries:
+            verified.append(_verify_candidate_entry(root, store, group, entry))
     return verified
 
 

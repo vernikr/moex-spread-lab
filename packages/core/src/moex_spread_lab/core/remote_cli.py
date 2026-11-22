@@ -77,6 +77,7 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
                     "payload": payload,
                     "settings_override": settings,
                     "profile": args.profile,
+                    "sample_worker_rss": getattr(args, "sample_worker_rss", False),
                     "repeat": args.repeat,
                     "warmup": args.warmup,
                     "response_mode": "full" if args.full else "summary",
@@ -165,6 +166,11 @@ def register(subparsers: SubparserRegistry) -> None:
     probe.add_argument("--repeat", type=int, default=1)
     probe.add_argument("--warmup", type=int, default=0)
     probe.add_argument("--profile", action="store_true")
+    probe.add_argument(
+        "--sample-worker-rss",
+        action="store_true",
+        help="sample aggregate worker RSS during the request",
+    )
     probe.add_argument(
         "--full", action="store_true", help="return full result rather than compact summary"
     )

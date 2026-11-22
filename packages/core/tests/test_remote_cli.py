@@ -112,12 +112,14 @@ def test_probe_command_validates_json_and_keeps_credentials_out(monkeypatch):
         settings='{"random_seed":41}',
         action="run",
         profile=False,
+        sample_worker_rss=True,
         repeat=1,
         warmup=0,
         full=False,
     )
     command = remote_cli._workstation_command(args, "pass")
     assert "checkout with spaces" in command and "random_seed" in command
+    assert '"sample_worker_rss": true' in command
     args.json = "[]"
     with pytest.raises(ValueError, match="JSON objects"):
         remote_cli._workstation_command(args, "pass")

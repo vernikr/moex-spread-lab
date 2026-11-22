@@ -30,6 +30,7 @@ from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 from moex_spread_lab.proof_runtime.worker_metrics import collect_worker_metrics
 
 from .dev_pool_metrics import pool_snapshot
+from .dev_worker_rss import sample_worker_rss
 
 _STARTED = time.monotonic()
 _STARTED_AT = datetime.now(UTC).isoformat()
@@ -173,7 +174,7 @@ def _summary(result: Any) -> dict[str, Any]:
     return bounded
 
 
-def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, str]:
+def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, str, bool]:
     if not isinstance(request, dict):
         raise W0Error("probe body must be an object")
     action = request.get("action")
@@ -181,6 +182,7 @@ def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, st
     settings = request.get("settings_override", {})
     repeat, warmup = request.get("repeat", 1), request.get("warmup", 0)
     profile, mode = request.get("profile", False), request.get("response_mode", "summary")
+    sample_rss = request.get("sample_worker_rss", False)
     if (
         not isinstance(action, str)
         or action not in {"run", "optimize", "plateau", "windows", "catalog"}
@@ -197,7 +199,9 @@ def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, st
         raise W0Error("repeat must be 1–10 and warmup 0–3")
     if type(profile) is not bool or not isinstance(mode, str) or mode not in {"summary", "full"}:
         raise W0Error("invalid probe response_mode or profile")
-    return action, payload, settings, repeat, warmup, profile, mode
+    if type(sample_rss) is not bool:
+        raise W0Error("sample_worker_rss must be boolean")
+    return action, payload, settings, repeat, warmup, profile, mode, sample_rss
 
 
 def _merge_phases(total: dict[str, float], elapsed: dict[str, float]) -> None:
@@ -207,7 +211,7 @@ def _merge_phases(total: dict[str, float], elapsed: dict[str, float]) -> None:
 
 
 def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
-    action, payload, override, repeat, warmup, profile, mode = _options(request)
+    action, payload, override, repeat, warmup, profile, mode, sample_rss = _options(request)
     settings = settings_with_override(store.inputs.root, override)
     for _ in range(warmup):
         _execute(store, action, payload, settings, check)
@@ -224,6 +228,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
             collect_cache_metrics() as cache_metrics,
             collect_phase_metrics() as phase_metrics,
             collect_worker_metrics() as worker_metrics,
+            sample_worker_rss(store, sample_rss) as rss_sampler,
         ):
             for _ in range(repeat):
                 started = time.perf_counter()
@@ -253,6 +258,8 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
         else usage.ru_maxrss,
         "cpu_process_ms": round((time.process_time() - cpu_start) * 1000, 2),
     }
+    if rss_sampler is not None:
+        telemetry["worker_rss_sampling"] = rss_sampler.snapshot()
     if profiler:
         stream = io.StringIO()
         pstats.Stats(profiler, stream=stream).strip_dirs().sort_stats("cumulative").print_stats(10)

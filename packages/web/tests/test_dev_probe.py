@@ -90,6 +90,7 @@ def test_validation_rejects_invalid_types_and_override(server):
         {"action": []},
         {"action": "catalog", "response_mode": []},
         {"action": "catalog", "repeat": 0},
+        {"action": "catalog", "sample_worker_rss": 1},
         {"action": "catalog", "settings_override": {"random_seed": -1}},
     ):
         status, _ = request(port, "POST", "/api/dev/probe", body)
@@ -219,14 +220,28 @@ def test_pool_probe_worker_metrics_and_exact_windows_parity(server, monkeypatch)
             "payload": payload,
             "response_mode": "full",
             "repeat": 2,
+            "sample_worker_rss": True,
         },
     )
     assert status == 200, raw
     probe = json.loads(raw)
     assert probe["result"] == normal
+    sampled = probe["telemetry"]["worker_rss_sampling"]
+    assert sampled["sampler_stopped"] and sampled["samples"] >= 1
+    assert sampled["max_workers_sampled"] == 2 and sampled["peak_sampled_pool_rss_kb"] > 0
     workers = probe["telemetry"]["worker_task_metrics"]
     assert workers["tasks"] >= 4 and workers["workers"] == 2
     assert sum(workers["cache"].values()) > 0
     assert workers["cpu_user_ms"] >= 0 and workers["cpu_sys_ms"] >= 0
     after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
     assert after == before
+
+
+def test_optional_rss_sampling_keeps_simple_probe_compact(server):
+    port, _ = server
+    status, raw = request(
+        port, "POST", "/api/dev/probe", {"action": "catalog", "sample_worker_rss": True}
+    )
+    assert status == 200 and len(raw) < 2048
+    sampled = json.loads(raw)["telemetry"]["worker_rss_sampling"]
+    assert sampled["sampler_stopped"] and sampled["samples"] >= 1

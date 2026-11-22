@@ -166,3 +166,24 @@ def test_probe_reports_real_request_thread_cache_lookups(server):
     assert counts["json_hits"] + counts["json_misses"] > 0
     assert counts["zscore_hits"] + counts["zscore_misses"] > 0
     assert telemetry["pool"]["active_pool_workers"] == 0
+
+
+def test_worker_resource_sampling_is_labeled_and_handles_process_exit(monkeypatch):
+    from types import SimpleNamespace
+
+    from moex_spread_lab.web import dev_pool_resources as resources
+
+    assert resources._cpu_seconds("1-02:03:04.5") == 93784.5
+    monkeypatch.setattr(
+        resources.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=" 10 1234 01:02.50\n"),
+    )
+    result = resources.worker_resources({10, 11})
+    assert result == {
+        "sampled_workers": 1,
+        "rss_kb": 1234,
+        "cpu_lifetime_ms": 62500,
+        "complete": False,
+    }
+    assert resources.worker_resources(set())["complete"] is True

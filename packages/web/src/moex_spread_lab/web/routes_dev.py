@@ -233,7 +233,7 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     telemetry: dict[str, Any] = {
         "wall_ms": durations,
         "cache_metrics_main_thread": cache_metrics,
-        "pool": pool_snapshot(store),
+        "pool": pool_snapshot(store, resources=True),
         "progress_phase_ms": phases,
         "min_ms": min(durations),
         "median_ms": statistics.median(durations),

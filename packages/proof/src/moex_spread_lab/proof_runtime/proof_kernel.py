@@ -10,8 +10,6 @@ import math
 from datetime import date, datetime, time
 from functools import cached_property
 
-import optuna
-
 from moex_spread_lab.accounting.position_sizing import automatic
 from moex_spread_lab.core.evaluation_periods import (
     EvaluationSplit,
@@ -28,7 +26,8 @@ from .landscape import Landscape as Landscape
 from .landscape import _lamps as _lamps
 from .phase_metrics import measure_phase
 from .proof_seed import SEED as SEED
-from .proof_seed import derive_seed, resolve_seed
+from .proof_seed import derive_seed as derive_seed
+from .proof_seed import resolve_seed as resolve_seed
 from .request_validation import EXECUTION_AXES as EXECUTION_AXES
 from .request_validation import _identity as _identity
 from .request_validation import _validate as _validate
@@ -36,6 +35,7 @@ from .request_validation import compact_result as compact_result
 from .request_validation import execution_axes
 from .service import _mark, _run_id, reference_eval
 from .strategy_catalog import get_proof_adapter_ids, get_strategy_axes, get_strategy_registry
+from .tuning import TuningOptions, run_tuning
 
 TRIALS = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
@@ -281,48 +281,13 @@ def _tune(
     seed_label=None,
 ):
     """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
-    base = resolve_seed(random_seed)
-    if seed_label is not None:
-        base = derive_seed(base, seed_label)
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=base, n_startup_trials=8),
+    return run_tuning(
+        land,
+        seed,
+        strategy_axes,
+        train_size,
+        TuningOptions(trials, on_progress, random_seed, seed_label),
     )
-    bounds = {
-        name: min(axis.high, train_size - 2) if name in ("lookback", "window") else axis.high
-        for name, axis in strategy_axes.items()
-    }
-    if all(
-        a.contains(seed[k])
-        and seed[k] <= bounds[k]
-        and math.isclose((seed[k] - a.low) / a.step, round((seed[k] - a.low) / a.step))
-        for k, a in strategy_axes.items()
-    ):
-        study.enqueue_trial({k: seed[k] for k in strategy_axes})
-    best, best_score = None, -math.inf
-    attempts = []
-    for idx in range(trials):
-        trial = study.ask()
-        point = dict(seed)
-        for name, axis in strategy_axes.items():
-            high = (
-                min(bounds[name], round(point["entry_z"] - axis.step, 6))
-                if name == "exit_z"
-                else bounds[name]
-            )
-            point[name] = axis.suggest(trial, name, high)
-        measured = land.measure(point)
-        score = measured.get("rank_score", measured["utility"])
-        if score is None:
-            study.tell(trial, state=optuna.trial.TrialState.PRUNED)
-        else:
-            study.tell(trial, score)
-            if score > best_score or (score == best_score and point == seed):
-                best, best_score = point, score
-        attempts.append(point)
-        if on_progress is not None:
-            on_progress(idx + 1, trials)
-    return best, len(study.trials), attempts
 
 
 class StudyWindow:

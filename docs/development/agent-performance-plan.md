@@ -176,6 +176,8 @@ The roadmap is organized into **five concrete work packages (`P0`–`P4`)**, ord
 2. **Ban fixed-duration `sleep` polling in `AGENTS.md`:**
    - **Rule:** Never run `nohup <cmd> & sleep <N>` to wait on tests or probes. Run bounded commands synchronously with `timeout <max_sec> <cmd>` so execution returns the instant the process exits (e.g., at `2.1 s` on failure or `120 s` on pass, never waiting `285–401 s`), or use native background-process tools (`start_process` / `Bash` `run_in_background`) when available.
 
+**Implementation status (2026-11-22):** The runner and CI integration are in place; standalone suites remain isolated in separate processes, with CPU-aware concurrency capped at one or two. The existing `AGENTS.md` rule already bans `nohup`/`sleep` polling. All 11 suites passed offline on a 2-vCPU sandbox with `--jobs 1` in 189.1 s; the <2 min target is not yet met there, and CI timing remains to be verified.
+
 **Acceptance Gate:**
 - `uv run --with playwright python scripts/run_browser_smokes.py` executes cleanly both locally and in `.github/workflows/browser-smoke.yml` within `< 2 min` (after P0).
 
@@ -252,7 +254,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 
 - [x] **Step 1 (`P0` — Offline `CalendarData` & fast catalog fixture, delivered 2026-11-22):** Make `CalendarData` offline-by-default (`offline: bool = True`), pre-filter `fetch_inputs` by existing cache filenames in offline mode, add `packages/web/tests/browser/_harness.py` (`MOEX_OFFLINE_ONLY="1"` + clean `store.close()`). Verify `/api/proof/catalog` `< 1.0 s` on synthetic fixtures.
 - [x] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
-- [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Add single-command sequential/CPU-aware Playwright smoke runner with `--filter` and wire into `.github/workflows/browser-smoke.yml`.
+- [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Runner, `--filter`, and CI wiring delivered; <2 min acceptance remains open (189.1 s on 2-vCPU sandbox; CI timing not yet verified).
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).
 - [ ] **Step 5 (`P3` — Workstation `remote` CLI & `launchd` daemon):** Deliver Phases 1, 3, and 4 of [`remote-agent-testing.md`](remote-agent-testing.md) so Mac sync and benchmarking take `< 2 s` via `moex-spread-lab remote sync` with zero orphaned processes.
 

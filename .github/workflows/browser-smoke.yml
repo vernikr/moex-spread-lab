@@ -42,11 +42,4 @@ jobs:
         run: uv run --with playwright python -m playwright install --with-deps chromium
 
       - name: Run every browser smoke suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd packages/web/tests/browser
-          for f in *_smoke.py; do
-            echo "=== $f"
-            uv run --with playwright --project "$GITHUB_WORKSPACE" python "$f"
-          done
+        run: uv run --with playwright python scripts/run_browser_smokes.py

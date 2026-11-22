@@ -143,13 +143,21 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
 
     class Handler(LoopbackHandler):
         def do_GET(self) -> None:
-            if not self.local_request() or not self.local_origin():
+            if (
+                (self.path.startswith("/api/dev/") and not self.local_dev_request())
+                or not self.local_request()
+                or not self.local_origin()
+            ):
                 self.send_json(403, {"error": "local host only"})
                 return
             dispatch_get(self, store, split_path(self.path), catalog)
 
         def do_POST(self) -> None:
-            if not self.local_request() or not self.local_origin():
+            if (
+                (self.path.startswith("/api/dev/") and not self.local_dev_request())
+                or not self.local_request()
+                or not self.local_origin()
+            ):
                 self.send_json(403, {"error": "local origin only"})
                 return
             dispatch_post(self, store, split_path(self.path), build_result)
@@ -164,9 +172,15 @@ def serve(inputs: ScreenerInputs, port: int = 8765, host: str = "127.0.0.1") -> 
         raise ScreenerError("host должен быть 127.0.0.1 или 0.0.0.0")
     store = ScreenerStore(inputs)
     server = ThreadingHTTPServer((host, port), make_handler(store))
-    print(f"Local research screener: http://{host}:{server.server_port}", flush=True)
+    from .server_instance import remove_instance, write_instance
+
+    identity = None
     try:
+        identity = write_instance(inputs.root, server.server_port)
+        print(f"Local research screener: http://{host}:{server.server_port}", flush=True)
         server.serve_forever()
     finally:
         server.server_close()
         store.close()
+        if identity:
+            remove_instance(inputs.root, identity)

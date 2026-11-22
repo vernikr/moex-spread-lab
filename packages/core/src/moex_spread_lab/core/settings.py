@@ -124,6 +124,16 @@ def _validated_patch(value: object) -> dict[str, object]:
     return patch
 
 
+def settings_with_override(
+    root: Path, override: dict[str, object] | None = None
+) -> ResearchSettings:
+    """Build a validated in-memory snapshot without persisting research preferences."""
+    settings = read_settings(root)
+    if override:
+        settings = cast(dict[str, float | bool | str], settings | _validated_patch(override))
+    return ResearchSettings(**cast(dict[str, Any], settings))
+
+
 def settings_path(root: Path) -> Path:
     return root / "data/analytics/research-settings.json"
 

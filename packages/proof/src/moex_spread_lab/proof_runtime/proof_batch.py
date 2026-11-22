@@ -560,7 +560,9 @@ def _prepare_cohort(
     return _Cohort(active, axes, seed, members, land)
 
 
-def checked_plateau(service, request, *, check_cancelled=lambda: None, on_progress=None):
+def checked_plateau(
+    service, request, *, settings_override=None, check_cancelled=lambda: None, on_progress=None
+):
     """Read-only probes at one shared point. No focus, Optuna trials, logs or implicit exclusions."""
     request = {
         k: request[k]
@@ -579,13 +581,12 @@ def checked_plateau(service, request, *, check_cancelled=lambda: None, on_progre
     if not request.get("targets"):
         raise W0Error("Для группового светофора нужны отмеченные окна.")
     targets = _targets(request)
-    # All live editor values are explicit; never infer the point from a highlighted asset/default.
     active = request.get("strategy")
     if active not in STRATEGY_AXES or set(request.get("parameters", {})) != set(
         STRATEGY_AXES[active]
     ):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
-    settings = ResearchSettings.load(service.root)
+    settings = settings_override or ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     if on_progress is not None:
         on_progress(
@@ -796,7 +797,6 @@ def _cohort_result(
         "training_mean_pp": land.measure(best)["rank_score"] if best else None,
         "result_mean_pp": fmean(rates) if best and all(v is not None for v in rates) else None,
     }
-    # Same fixed-cohort diagnostic used by the live form, only after the final choice.
     native_single = len(members) == 1 and first.request["strategy"] == group.active
     if best or native_single:
         if on_progress is not None:

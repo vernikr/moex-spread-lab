@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
 
+from .routes_dev import health, probe
 from .routes_legacy import LEGACY_POST_ROUTES, handle_get_legacy, handle_post_legacy
 from .routes_proof import (
     LARGE_PROOF_POST_ROUTES,
@@ -22,13 +23,18 @@ from .routes_proof import (
 )
 from .routes_settings import handle_get_settings, handle_post_settings
 
-ALL_POST_ROUTES = frozenset({"/api/settings"}) | LEGACY_POST_ROUTES | PROOF_POST_ROUTES
+ALL_POST_ROUTES = (
+    frozenset({"/api/settings", "/api/dev/probe"}) | LEGACY_POST_ROUTES | PROOF_POST_ROUTES
+)
 _MAX_BODY = 192 * 1024
 _SMALL_BODY = 8192
 
 
 def dispatch_get(handler: Any, store: Any, path: str, catalog_fn: Any) -> None:
     """Answer one GET: static asset, then settings/proof/legacy API reads."""
+    if path == "/api/dev/health":
+        handler.send_json(200, health(store, handler.server_port()))
+        return
     if handler.serve_static(path):
         return
     try:
@@ -51,7 +57,9 @@ def _read_selection(handler: Any, path: str) -> Any:
     if handler.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
         raise _UnsupportedMediaType
     size = int(handler.headers.get("Content-Length", "0"))
-    limit = _MAX_BODY if path in LARGE_PROOF_POST_ROUTES else _SMALL_BODY
+    limit = (
+        _MAX_BODY if path in LARGE_PROOF_POST_ROUTES or path == "/api/dev/probe" else _SMALL_BODY
+    )
     if not 0 < size <= limit:
         handler.drain_body(size)
         raise ScreenerError(f"размер запроса должен быть 1–{limit} байт")
@@ -64,6 +72,8 @@ class _UnsupportedMediaType(Exception):
 
 def _post_result(handler: Any, store: Any, path: str, selection: Any, build_result: Any):
     """Run the matching route module; returns `(already_sent, result)`."""
+    if path == "/api/dev/probe":
+        return False, probe(store, selection, handler.check_connected)
     handled, result = handle_post_settings(path, selection, store)
     if handled:
         return False, result

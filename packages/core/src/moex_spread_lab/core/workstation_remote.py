@@ -38,13 +38,18 @@ def service(root: Path) -> dict[str, Any]:
 
 def status(root: Path) -> dict[str, Any]:
     tracked = command(root, "git", "status", "--porcelain", "--untracked-files=no")
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8765/api/dev/health", timeout=5) as response:
+            dev_health = json.load(response)
+    except (OSError, urllib.error.URLError, ValueError):
+        dev_health = None
     return {
         "head": command(root, "git", "rev-parse", "HEAD"),
         "branch": command(root, "git", "branch", "--show-current"),
         "tracked_dirty": bool(tracked),
         "loadavg": list(os.getloadavg()) if hasattr(os, "getloadavg") else None,
         "server": service(root),
-        "dev_health": "not yet implemented",
+        "dev_health": dev_health,
     }
 
 
@@ -82,6 +87,21 @@ def sync(root: Path) -> dict[str, Any]:
     }
 
 
+def probe(payload: dict[str, Any]) -> dict[str, Any]:
+    request = urllib.request.Request(
+        "http://127.0.0.1:8765/api/dev/probe",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=150) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"probe HTTP {exc.code}: {exc.read(2000).decode('utf-8', errors='replace')}"
+        ) from None
+
+
 def main() -> int:
     action = sys.argv[1]
     root = (
@@ -90,9 +110,14 @@ def main() -> int:
         else Path.home() / "Downloads/projects/moex-spread-lab"
     )
     try:
-        if action not in {"status", "sync"}:
+        if action not in {"status", "sync", "probe"}:
             raise ValueError("unknown action")
-        result = status(root) if action == "status" else sync(root)
+        if action == "status":
+            result = status(root)
+        elif action == "sync":
+            result = sync(root)
+        else:
+            result = probe(json.loads(sys.argv[3]))
         print(json.dumps(result, sort_keys=True))
         return 0
     except (OSError, RuntimeError, ValueError) as exc:

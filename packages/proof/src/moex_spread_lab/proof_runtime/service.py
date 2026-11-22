@@ -148,10 +148,8 @@ class ProofService:
             self._pool = self._pool_factory(self)
         return self._pool
 
-    # ------------------------------------------------------------------ catalog
-
-    def catalog(self) -> dict[str, Any]:
-        settings = ResearchSettings.load(self.root)
+    def catalog(self, override: ResearchSettings | None = None) -> dict[str, Any]:
+        settings = override if override is not None else ResearchSettings.load(self.root)
         spec = get_timeframe(settings.timeframe)
         try:
             if not spec.supports_calendar:
@@ -208,8 +206,6 @@ class ProofService:
             "universes": [CALENDAR_UNIVERSE, PAIR_UNIVERSE],
             "pair_screen": pair,
         }
-
-    # ------------------------------------------------------------------- proof
 
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
         saved = ResearchSettings.load(self.root)

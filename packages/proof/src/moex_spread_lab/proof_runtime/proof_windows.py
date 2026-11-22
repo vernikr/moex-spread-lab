@@ -18,7 +18,13 @@ MAX_WINDOW_REQUESTS = 128
 _DEFAULT_STUDY_WINDOW = StudyWindow
 
 
-def window_summaries(service, request, *, check_cancelled=lambda: None, on_progress=None):
+def _settings(root, override):
+    return override or ResearchSettings.load(root)
+
+
+def window_summaries(
+    service, request, *, settings_override=None, check_cancelled=lambda: None, on_progress=None
+):
     if not isinstance(request, dict) or request.keys() != {"requests"}:
         raise W0Error("Для таблицы нужен список requests.")
     requests = request["requests"]
@@ -45,7 +51,7 @@ def window_summaries(service, request, *, check_cancelled=lambda: None, on_progr
                 "label": f"Окна: 0/{total_windows}",
             }
         )
-    settings = ResearchSettings.load(service.root)
+    settings = _settings(service.root, settings_override)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
     if StudyWindow is _DEFAULT_STUDY_WINDOW and type(calendar) is CalendarData:

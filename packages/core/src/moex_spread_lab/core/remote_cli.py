@@ -44,6 +44,33 @@ def request(url: str, token: str, *, body: dict[str, Any] | None = None) -> dict
     return cast(dict[str, Any], result)
 
 
+def _workstation_command(args: argparse.Namespace, code: str) -> str:
+    parts = ["python3", "-c", code, args.remote_command]
+    root = os.environ.get("MOEX_WORKSTATION_ROOT")
+    if args.remote_command == "probe":
+        parts.append(root or "~/Downloads/projects/moex-spread-lab")
+        payload = json.loads(args.json)
+        settings = json.loads(args.settings)
+        if not isinstance(payload, dict) or not isinstance(settings, dict):
+            raise ValueError("--json and --settings must be JSON objects")
+        parts.append(
+            json.dumps(
+                {
+                    "action": args.action,
+                    "payload": payload,
+                    "settings_override": settings,
+                    "profile": args.profile,
+                    "repeat": args.repeat,
+                    "warmup": args.warmup,
+                    "response_mode": "full" if args.full else "summary",
+                }
+            )
+        )
+    elif root:
+        parts.append(root)
+    return " ".join(shlex.quote(part) for part in parts)
+
+
 def run(args: argparse.Namespace) -> int:
     token = os.environ.get("ARENA_BRIDGE_TOKEN", "")
     base = os.environ.get("ARENA_BRIDGE_URL", "").rstrip("/")
@@ -70,11 +97,7 @@ def run(args: argparse.Namespace) -> int:
         source = (Path(__file__).parent / "workstation_remote.py").read_bytes()
         encoded = base64.b64encode(source).decode("ascii")
         code = f"import base64;exec(compile(base64.b64decode('{encoded}'),'<workstation_remote>','exec'))"
-        parts = ["python3", "-c", code, args.remote_command]
-        root = os.environ.get("MOEX_WORKSTATION_ROOT")
-        if root:
-            parts.append(root)
-        command = " ".join(shlex.quote(part) for part in parts)
+        command = _workstation_command(args, code)
         result = request(base + "/exec", token, body={"command": command, "timeout_sec": 160})
         if not result.get("ok") or result.get("exit_code") != 0:
             detail = result.get("stderr") or result.get("error") or "workstation command failed"
@@ -95,4 +118,16 @@ def register(subparsers: SubparserRegistry) -> None:
     commands = parser.add_subparsers(dest="remote_command", required=True)
     commands.add_parser("status", help="show workstation checkout and server status")
     commands.add_parser("sync", help="fast-forward workstation main and restart its launch agent")
+    probe = commands.add_parser("probe", help="run a non-persisting loopback diagnostic")
+    probe.add_argument(
+        "--action", required=True, choices=("catalog", "run", "optimize", "plateau", "windows")
+    )
+    probe.add_argument("--json", default="{}", help="proof request JSON object")
+    probe.add_argument("--settings", default="{}", help="in-memory settings overrides")
+    probe.add_argument("--repeat", type=int, default=1)
+    probe.add_argument("--warmup", type=int, default=0)
+    probe.add_argument("--profile", action="store_true")
+    probe.add_argument(
+        "--full", action="store_true", help="return full result rather than compact summary"
+    )
     parser.set_defaults(_msl_cli_handler=run)

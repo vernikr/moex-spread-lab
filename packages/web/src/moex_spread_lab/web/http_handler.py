@@ -97,6 +97,19 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         allowed |= {f"https://{host}" for host in extra}
         return origin in allowed
 
+    def local_dev_request(self) -> bool:
+        """Development endpoints never inherit preview-host opt-ins."""
+        port = self.server_port()
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        return (
+            self.client_address[0] in {"127.0.0.1", "::1"}
+            and host in {f"127.0.0.1:{port}", f"localhost:{port}"}
+            and (
+                origin is None or origin in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+            )
+        )
+
     def check_connected(self) -> None:
         """Abort an expensive replay after its browser fetch has been cancelled."""
         if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(

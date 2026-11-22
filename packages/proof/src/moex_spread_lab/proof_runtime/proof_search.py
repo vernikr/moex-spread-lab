@@ -91,12 +91,13 @@ def research_run(
     request: dict[str, Any],
     *,
     optimize: bool,
+    settings_override: ResearchSettings | None = None,
     include_plateau: bool = True,
     check_cancelled=lambda: None,
     on_progress=None,
 ):
     _validate(request)
-    settings = ResearchSettings.load(service.root)
+    settings = settings_override or ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     if optimize:
         if request.get("optimize_strategy"):

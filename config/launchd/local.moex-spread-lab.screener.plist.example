@@ -4,7 +4,7 @@
 <dict>
     <key>Label</key><string>local.moex-spread-lab.screener</string>
     <key>ProgramArguments</key><array>
-        <string>CHECKOUT/.venv/bin/python3</string><string>-m</string><string>moex_spread_lab.cli</string>
+        <string>CHECKOUT/scripts/moex-spread-lab-screener</string><string>-m</string><string>moex_spread_lab.cli</string>
         <string>screener</string><string>--root</string><string>CHECKOUT</string><string>--port</string><string>8765</string>
     </array>
     <key>WorkingDirectory</key><string>CHECKOUT</string>

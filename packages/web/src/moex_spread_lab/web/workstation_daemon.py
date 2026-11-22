@@ -14,8 +14,8 @@ PORT = 8765
 
 
 def agent_definition(root: Path, home: Path) -> dict:
-    """Use the checkout's locked interpreter and avoid shell quoting or network binds."""
-    python = root / ".venv/bin/python3"
+    """Use a named launcher for macOS Background Items and the locked interpreter."""
+    python = root / "scripts/moex-spread-lab-screener"
     logs = home / "Library/Logs"
     return {
         "Label": LABEL,
@@ -49,6 +49,10 @@ def _preflight(root: Path, destination: Path) -> bool:
         print(
             "Checkout virtual environment is missing; run uv sync --frozen first", file=sys.stderr
         )
+        return False
+    launcher = root / "scripts/moex-spread-lab-screener"
+    if not os.access(launcher, os.X_OK):
+        print("Named screener launcher is missing or not executable", file=sys.stderr)
         return False
     with socket.socket() as probe:
         if probe.connect_ex(("127.0.0.1", PORT)) == 0:

@@ -18,7 +18,7 @@ def test_dry_run_never_writes(tmp_path, capsys):
 def test_definition_uses_checkout_interpreter_and_loopback_server(tmp_path):
     config = daemon.agent_definition(tmp_path, tmp_path)
     assert config["ProgramArguments"] == [
-        str(tmp_path / ".venv/bin/python3"),
+        str(tmp_path / "scripts/moex-spread-lab-screener"),
         "-m",
         "moex_spread_lab.cli",
         "screener",
@@ -42,6 +42,10 @@ def test_apply_refuses_existing_plist_and_port(tmp_path, monkeypatch):
     python = tmp_path / ".venv/bin/python3"
     python.parent.mkdir(parents=True)
     python.write_text("")
+    launcher = tmp_path / "scripts/moex-spread-lab-screener"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("")
+    launcher.chmod(0o755)
     sock = Mock()
     sock.__enter__ = Mock(return_value=sock)
     sock.__exit__ = Mock(return_value=False)
@@ -56,6 +60,10 @@ def test_apply_bootstrap_and_rollback(tmp_path, monkeypatch):
     python = tmp_path / ".venv/bin/python3"
     python.parent.mkdir(parents=True)
     python.write_text("")
+    launcher = tmp_path / "scripts/moex-spread-lab-screener"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("")
+    launcher.chmod(0o755)
     sock = Mock()
     sock.__enter__ = Mock(return_value=sock)
     sock.__exit__ = Mock(return_value=False)

@@ -27,158 +27,65 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
+_LAYER_SPECS: dict[str, str] = {
+    "core": (
+        "core core._fastcore_loader core.contracts core.evaluation_periods core.settings "
+        "core.timeframes core.universe core.w0 "
+        "_fastcore_loader w0 timeframes evaluation_periods universe"
+    ),
+    "data": (
+        "data data.iss data.iss.catalog data.lake data.lake.bar_types data.lake.data_lake "
+        "data.lake.data_refresh data.lake.h1_migration data.lake.h1_seal data.lake.legacy_series "
+        "data.lake.market_store data.lake.parquet_catalog data.lake.parquet_store "
+        "data.lake.raw_archive data.retention data.retention.data_inventory "
+        "data.retention.data_retention data.retention.data_archive_candidates "
+        "data.retention.h1_archive data.retention.storage_policy data.benchmark "
+        "data.benchmark.lineage data.universe bar_types data_lake h1_migration h1_seal "
+        "h1_archive iss benchmark data_inventory data_retention data_archive_candidates "
+        "data_refresh storage_policy"
+    ),
+    "accounting": (
+        "accounting accounting.costs accounting.portfolio accounting.account_risk "
+        "accounting.position_sizing accounting.sizing_fast accounting.sizing_replay "
+        "accounting.sizing_report accounting.sizing_terms accounting.ledger "
+        "accounting.run_artifacts accounting.run_artifact_import accounting.validation "
+        "accounting.research costs portfolio account_risk position_sizing ledger "
+        "run_artifacts run_artifact_import validation research"
+    ),
+    "strategies": (
+        "strategies strategies.base strategies.conformance strategies.signals "
+        "strategies.pair_mean_reversion strategies.pair_mean_reversion.analytics "
+        "strategies.pair_mean_reversion.engine strategies.pair_mean_reversion.plugin "
+        "strategies.funding_carry strategies.funding_carry.carry "
+        "strategies.funding_carry.proof_funding strategies.funding_carry.funding_recheck "
+        "strategies.funding_carry.funding_screen strategies.funding_carry.engine "
+        "strategies.funding_carry.plugin strategies.funding_carry.intents "
+        "strategies.calendar_zscore strategies.calendar_zscore.engine "
+        "strategies.calendar_zscore.plugin strategies.calendar_ruonia "
+        "strategies.calendar_ruonia.engine strategies.calendar_ruonia.plugin "
+        "strategies.s3_reference strategies.s3_reference.engine strategies.calendar "
+        "strategies.calendar.calendar_spreads strategies.calendar.intents "
+        "strategies.pair_screener strategies.pair_screener.screener "
+        "strategies.pair_screener.pair_screener strategies.pair_screener.intents "
+        "analytics carry funding_screen funding_recheck proof_funding proof_signals "
+        "calendar_spreads s3_reference screener pair_screener"
+    ),
+    "proof": (
+        "proof_runtime proof_runtime.service proof_runtime.pair_funding_replay "
+        "proof_runtime.pair_plugin_accounting proof_runtime.carry_intent_accounting "
+        "proof_runtime.proof_kernel proof_runtime.proof_windows proof_runtime.proof_search "
+        "proof_runtime.proof_batch proof_runtime.proof_strategy_search proof_runtime.proof_pool "
+        "proof_runtime.screener_search proof_runtime.audit audit screener_search proof "
+        "proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search"
+    ),
+    "web": (
+        "web web.store web.server web.routes_proof web.routes_settings web.routes_legacy "
+        "screener_app"
+    ),
+    "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
+}
 LAYER_ASSIGNMENTS: dict[str, str] = {
-    # L0: packages/core (`msl-core`)
-    "core": "core",
-    "core._fastcore_loader": "core",
-    "core.contracts": "core",
-    "core.evaluation_periods": "core",
-    "core.settings": "core",
-    "core.timeframes": "core",
-    "core.universe": "core",
-    "core.w0": "core",
-    # L0 backward-compatibility shims in src/moex_spread_lab/
-    "_fastcore_loader": "core",
-    "w0": "core",
-    "timeframes": "core",
-    "evaluation_periods": "core",
-    "universe": "core",
-    # L1a: packages/data (`msl-data`)
-    "data": "data",
-    "data.iss": "data",
-    "data.iss.catalog": "data",
-    "data.lake": "data",
-    "data.lake.bar_types": "data",
-    "data.lake.data_lake": "data",
-    "data.lake.data_refresh": "data",
-    "data.lake.h1_migration": "data",
-    "data.lake.h1_seal": "data",
-    "data.retention": "data",
-    "data.retention.data_inventory": "data",
-    "data.retention.data_retention": "data",
-    "data.retention.data_archive_candidates": "data",
-    "data.retention.h1_archive": "data",
-    "data.retention.storage_policy": "data",
-    "data.benchmark": "data",
-    "data.benchmark.lineage": "data",
-    "data.universe": "data",
-    # L1a backward-compatibility shims in src/moex_spread_lab/
-    "bar_types": "data",
-    "data_lake": "data",
-    "h1_migration": "data",
-    "h1_seal": "data",
-    "h1_archive": "data",
-    "iss": "data",
-    "benchmark": "data",
-    "data_inventory": "data",
-    "data_retention": "data",
-    "data_archive_candidates": "data",
-    "data_refresh": "data",
-    "storage_policy": "data",
-    # L1b: packages/accounting (`msl-accounting`)
-    "accounting": "accounting",
-    "accounting.costs": "accounting",
-    "accounting.portfolio": "accounting",
-    "accounting.account_risk": "accounting",
-    "accounting.position_sizing": "accounting",
-    "accounting.ledger": "accounting",
-    "accounting.run_artifacts": "accounting",
-    "accounting.run_artifact_import": "accounting",
-    "accounting.validation": "accounting",
-    "accounting.research": "accounting",
-    # L1b backward-compatibility shims in src/moex_spread_lab/
-    "costs": "accounting",
-    "portfolio": "accounting",
-    "account_risk": "accounting",
-    "position_sizing": "accounting",
-    "ledger": "accounting",
-    "run_artifacts": "accounting",
-    "run_artifact_import": "accounting",
-    "validation": "accounting",
-    "research": "accounting",
-    # L2: packages/strategies (`msl-strategies`)
-    "strategies": "strategies",
-    "strategies.base": "strategies",
-    "strategies.conformance": "strategies",
-    "strategies.signals": "strategies",
-    "strategies.pair_mean_reversion": "strategies",
-    "strategies.pair_mean_reversion.analytics": "strategies",
-    "strategies.pair_mean_reversion.engine": "strategies",
-    "strategies.pair_mean_reversion.plugin": "strategies",
-    "strategies.funding_carry": "strategies",
-    "strategies.funding_carry.carry": "strategies",
-    "strategies.funding_carry.proof_funding": "strategies",
-    "strategies.funding_carry.funding_recheck": "strategies",
-    "strategies.funding_carry.funding_screen": "strategies",
-    "strategies.funding_carry.engine": "strategies",
-    "strategies.funding_carry.plugin": "strategies",
-    "strategies.funding_carry.intents": "strategies",
-    "strategies.calendar_zscore": "strategies",
-    "strategies.calendar_zscore.engine": "strategies",
-    "strategies.calendar_zscore.plugin": "strategies",
-    "strategies.calendar_ruonia": "strategies",
-    "strategies.calendar_ruonia.engine": "strategies",
-    "strategies.calendar_ruonia.plugin": "strategies",
-    "strategies.s3_reference": "strategies",
-    "strategies.s3_reference.engine": "strategies",
-    "strategies.calendar": "strategies",
-    "strategies.calendar.calendar_spreads": "strategies",
-    "strategies.calendar.intents": "strategies",
-    "strategies.pair_screener": "strategies",
-    "strategies.pair_screener.screener": "strategies",
-    "strategies.pair_screener.pair_screener": "strategies",
-    "strategies.pair_screener.intents": "strategies",
-    # L2 backward-compatibility shims in src/moex_spread_lab/
-    "analytics": "strategies",
-    "carry": "strategies",
-    "funding_screen": "strategies",
-    "funding_recheck": "strategies",
-    "proof_funding": "strategies",
-    "proof_signals": "strategies",
-    "calendar_spreads": "strategies",
-    "s3_reference": "strategies",
-    "screener": "strategies",
-    "pair_screener": "strategies",
-    # L3: proof
-    "proof_runtime": "proof",
-    "proof_runtime.service": "proof",
-    "proof_runtime.pair_funding_replay": "proof",
-    "proof_runtime.pair_plugin_accounting": "proof",
-    "proof_runtime.carry_intent_accounting": "proof",
-    "proof_runtime.proof_kernel": "proof",
-    "proof_runtime.proof_windows": "proof",
-    "proof_runtime.proof_search": "proof",
-    "proof_runtime.proof_batch": "proof",
-    "proof_runtime.proof_strategy_search": "proof",
-    "proof_runtime.proof_pool": "proof",
-    "proof_runtime.screener_search": "proof",
-    "proof_runtime.audit": "proof",
-    "audit": "proof",
-    "screener_search": "proof",
-    "proof": "proof",
-    "proof_kernel": "proof",
-    "proof_pool": "proof",
-    "proof_windows": "proof",
-    "proof_batch": "proof",
-    "proof_strategy_search": "proof",
-    "proof_search": "proof",
-    # L4: packages/web (`msl-web`) + umbrella shim
-    "web": "web",
-    "web.store": "web",
-    "web.server": "web",
-    "web.routes_proof": "web",
-    "web.routes_settings": "web",
-    "web.routes_legacy": "web",
-    "screener_app": "web",
-    # L5: cli
-    "core.cli": "cli",
-    "data.cli": "cli",
-    "accounting.cli": "cli",
-    "strategies.cli": "cli",
-    "proof_runtime.cli": "cli",
-    "web.cli": "cli",
-    "cli_web": "cli",
-    "cli": "cli",
+    module: layer for layer, spec in _LAYER_SPECS.items() for module in spec.split()
 }
 
 ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {

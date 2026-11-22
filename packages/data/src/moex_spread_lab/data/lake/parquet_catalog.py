@@ -1,0 +1,277 @@
+"""DuckDB catalog, Parquet schemas, and manifest helpers for `ParquetBarStore`."""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from moex_spread_lab.core.w0 import sha256_file
+
+from .bar_types import DataLakeError, _atomic_write_json
+from .legacy_series import LegacyCandleSeries
+
+DATA_LAKE_SCHEMA = "market-data-lake.v1"
+BAR_DATASET_SCHEMA = "market-data-bars.v1"
+
+BAR_SCHEMA = pa.schema(
+    (
+        pa.field("begin", pa.string(), nullable=False),
+        pa.field("end", pa.string(), nullable=False),
+        pa.field("open", pa.float64()),
+        pa.field("high", pa.float64()),
+        pa.field("low", pa.float64()),
+        pa.field("close", pa.float64(), nullable=False),
+        pa.field("value", pa.float64()),
+        pa.field("volume", pa.int64()),
+        pa.field("source_page_id", pa.int32()),
+    )
+)
+SOURCE_SCHEMA = pa.schema(
+    (
+        pa.field("source_page_id", pa.int32(), nullable=False),
+        pa.field("url", pa.string()),
+        pa.field("received_at", pa.string()),
+        pa.field("raw_response_sha256", pa.string()),
+        pa.field("first_begin", pa.string(), nullable=False),
+        pa.field("last_begin", pa.string(), nullable=False),
+        pa.field("row_count", pa.int32(), nullable=False),
+    )
+)
+
+
+def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+        pq.write_table(table, temporary, compression="zstd", version="2.6")
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def parse_lake_manifest(manifest_path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DataLakeError(f"cannot read data-lake manifest: {exc}") from exc
+    if not isinstance(value, dict) or value.get("schema_version") != DATA_LAKE_SCHEMA:
+        raise DataLakeError("unsupported data-lake manifest schema")
+    if not isinstance(value.get("datasets"), list):
+        raise DataLakeError("data-lake manifest datasets must be a list")
+    return value
+
+
+def upsert_catalog(
+    lake_root: Path, catalog_path: Path, record: dict[str, Any], sources: list[dict[str, Any]]
+) -> None:
+    lake_root.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(str(catalog_path)) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bar_datasets (
+                dataset_id VARCHAR PRIMARY KEY,
+                secid VARCHAR NOT NULL,
+                board VARCHAR,
+                interval INTEGER NOT NULL,
+                timeframe VARCHAR NOT NULL,
+                bars_path VARCHAR NOT NULL,
+                sources_path VARCHAR NOT NULL,
+                row_count BIGINT NOT NULL,
+                first_begin VARCHAR NOT NULL,
+                last_begin VARCHAR NOT NULL,
+                legacy_path VARCHAR NOT NULL,
+                legacy_sha256 VARCHAR NOT NULL,
+                parquet_sha256 VARCHAR NOT NULL,
+                sources_sha256 VARCHAR NOT NULL,
+                created_at VARCHAR NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_pages (
+                dataset_id VARCHAR NOT NULL,
+                source_page_id INTEGER NOT NULL,
+                url VARCHAR,
+                received_at VARCHAR,
+                raw_response_sha256 VARCHAR,
+                first_begin VARCHAR NOT NULL,
+                last_begin VARCHAR NOT NULL,
+                row_count BIGINT NOT NULL,
+                PRIMARY KEY(dataset_id, source_page_id)
+            )
+            """
+        )
+        connection.execute("DELETE FROM source_pages WHERE dataset_id = ?", [record["dataset_id"]])
+        connection.execute("DELETE FROM bar_datasets WHERE dataset_id = ?", [record["dataset_id"]])
+        connection.execute(
+            "INSERT INTO bar_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                record[key]
+                for key in (
+                    "dataset_id",
+                    "secid",
+                    "board",
+                    "interval",
+                    "timeframe",
+                    "bars_path",
+                    "sources_path",
+                    "row_count",
+                    "first_begin",
+                    "last_begin",
+                    "legacy_path",
+                    "legacy_sha256",
+                    "parquet_sha256",
+                    "sources_sha256",
+                    "created_at",
+                )
+            ],
+        )
+        if sources:
+            connection.executemany(
+                "INSERT INTO source_pages VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    [
+                        record["dataset_id"],
+                        *[
+                            source[key]
+                            for key in (
+                                "source_page_id",
+                                "url",
+                                "received_at",
+                                "raw_response_sha256",
+                                "first_begin",
+                                "last_begin",
+                                "row_count",
+                            )
+                        ],
+                    ]
+                    for source in sources
+                ],
+            )
+
+
+def upsert_manifest(
+    manifest_path: Path, current_manifest: dict[str, Any], record: dict[str, Any]
+) -> None:
+    manifest = dict(current_manifest)
+    datasets = list(manifest["datasets"])
+    previous = next(
+        (
+            entry
+            for entry in datasets
+            if isinstance(entry, dict) and entry.get("dataset_id") == record["dataset_id"]
+        ),
+        None,
+    )
+    if previous is not None and previous != record:
+        revisions = manifest.setdefault("dataset_revisions", [])
+        if not isinstance(revisions, list):
+            raise DataLakeError("data-lake manifest dataset_revisions must be a list")
+        revisions.append(
+            {
+                "dataset_id": record["dataset_id"],
+                "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "record": previous,
+            }
+        )
+    entries = [entry for entry in datasets if entry.get("dataset_id") != record["dataset_id"]]
+    entries.append(record)
+    manifest["datasets"] = sorted(entries, key=lambda item: item["dataset_id"])
+    manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    _atomic_write_json(manifest_path, manifest)
+
+
+def build_import_record(
+    root: Path, series: LegacyCandleSeries, bars_path: Path, sources_path: Path
+) -> dict[str, Any]:
+    return {
+        "dataset_id": series.dataset_id,
+        "schema_version": BAR_DATASET_SCHEMA,
+        "secid": series.secid,
+        "board": series.board,
+        "interval": series.interval,
+        "timeframe": series.timeframe,
+        "row_count": len(series.bars),
+        "first_begin": series.bars[0]["begin"],
+        "last_begin": series.bars[-1]["begin"],
+        "from": series.from_date,
+        "till": series.till_date,
+        "legacy_path": str(series.path.relative_to(root))
+        if series.path.is_relative_to(root)
+        else str(series.path),
+        "legacy_sha256": series.sha256,
+        "legacy_metadata": series.legacy_metadata,
+        "row_semantics": series.row_semantics,
+        "bars_path": str(bars_path.relative_to(root))
+        if bars_path.is_relative_to(root)
+        else str(bars_path),
+        "sources_path": str(sources_path.relative_to(root))
+        if sources_path.is_relative_to(root)
+        else str(sources_path),
+        "parquet_sha256": sha256_file(bars_path),
+        "sources_sha256": sha256_file(sources_path),
+        "source_page_count": len(series.sources),
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+
+
+def verify_dataset_against_legacy(
+    root: Path, catalog_path: Path, series: LegacyCandleSeries, record: dict[str, Any]
+) -> dict[str, Any]:
+    if record.get("legacy_sha256") != series.sha256:
+        raise DataLakeError(f"legacy SHA-256 differs from imported dataset: {series.dataset_id}")
+    if record.get("legacy_metadata") != series.legacy_metadata:
+        raise DataLakeError(f"legacy metadata differs from imported dataset: {series.dataset_id}")
+    if record.get("row_semantics") != series.row_semantics:
+        raise DataLakeError(
+            f"legacy row semantics differ from imported dataset: {series.dataset_id}"
+        )
+    bars_path = root / record["bars_path"]
+    sources_path = root / record["sources_path"]
+    if sha256_file(bars_path) != record.get("parquet_sha256"):
+        raise DataLakeError(f"bars Parquet SHA-256 differs from manifest: {series.dataset_id}")
+    if sha256_file(sources_path) != record.get("sources_sha256"):
+        raise DataLakeError(f"sources Parquet SHA-256 differs from manifest: {series.dataset_id}")
+    if pq.ParquetFile(bars_path).read().to_pylist() != series.bars:
+        raise DataLakeError(f"Parquet bars differ from legacy rows: {series.dataset_id}")
+    if pq.ParquetFile(sources_path).read().to_pylist() != series.sources:
+        raise DataLakeError(
+            f"Parquet source manifest differs from legacy provenance: {series.dataset_id}"
+        )
+    with duckdb.connect(str(catalog_path), read_only=True) as connection:
+        catalog = connection.execute(
+            "SELECT row_count, legacy_sha256, parquet_sha256, sources_sha256 "
+            "FROM bar_datasets WHERE dataset_id = ?",
+            [series.dataset_id],
+        ).fetchone()
+    if catalog != (
+        len(series.bars),
+        series.sha256,
+        record["parquet_sha256"],
+        record["sources_sha256"],
+    ):
+        raise DataLakeError(f"DuckDB catalog differs from manifest: {series.dataset_id}")
+    return {
+        "schema_version": BAR_DATASET_SCHEMA,
+        "status": "verified",
+        "dataset_id": series.dataset_id,
+        "row_count": len(series.bars),
+        "source_page_count": len(series.sources),
+        "legacy_sha256": series.sha256,
+        "parquet_sha256": record["parquet_sha256"],
+    }

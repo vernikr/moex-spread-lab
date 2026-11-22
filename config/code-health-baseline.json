@@ -38,8 +38,6 @@
   },
   "complexity": {
     "packages/accounting/src/moex_spread_lab/accounting/cli.py::run": 21,
-    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py::_size_proof_fast_c": 37,
-    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py::size_proof": 149,
     "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w1_catalog": 37,
     "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w2_corporate_actions": 18,
     "packages/accounting/src/moex_spread_lab/accounting/research.py::run_w3_economics": 20,
@@ -67,7 +65,6 @@
     "packages/data/src/moex_spread_lab/data/iss/catalog.py::fetch_history": 50,
     "packages/data/src/moex_spread_lab/data/lake/bar_types.py::SealedH1Reader::payload": 19,
     "packages/data/src/moex_spread_lab/data/lake/bar_types.py::SealedH1Reader::read": 39,
-    "packages/data/src/moex_spread_lab/data/lake/data_lake.py::_read_legacy_series": 53,
     "packages/data/src/moex_spread_lab/data/lake/data_refresh.py::refresh_candle_datasets": 101,
     "packages/data/src/moex_spread_lab/data/lake/h1_migration.py::_verify_files": 17,
     "packages/data/src/moex_spread_lab/data/retention/data_archive_candidates.py::execute": 28,
@@ -156,10 +153,6 @@
     "packages/web/tests/browser/group_lamps_smoke.py::run": 20
   },
   "files": {
-    "packages/accounting/src/moex_spread_lab/accounting/position_sizing.py": {
-      "baseline_loc": 699,
-      "baseline_tokens": 8485
-    },
     "packages/accounting/src/moex_spread_lab/accounting/research.py": {
       "baseline_loc": 604,
       "baseline_tokens": 7455
@@ -181,8 +174,8 @@
       "baseline_tokens": 3996
     },
     "packages/core/tests/test_architecture_dag.py": {
-      "baseline_loc": 481,
-      "baseline_tokens": 5863
+      "baseline_loc": 388,
+      "baseline_tokens": 5300
     },
     "packages/data/src/moex_spread_lab/data/benchmark/lineage.py": {
       "baseline_loc": 457,
@@ -195,10 +188,6 @@
     "packages/data/src/moex_spread_lab/data/iss/catalog.py": {
       "baseline_loc": 853,
       "baseline_tokens": 9353
-    },
-    "packages/data/src/moex_spread_lab/data/lake/data_lake.py": {
-      "baseline_loc": 1050,
-      "baseline_tokens": 13078
     },
     "packages/data/src/moex_spread_lab/data/lake/data_refresh.py": {
       "baseline_loc": 385,
@@ -363,10 +352,6 @@
     "packages/web/tests/test_screener_app.py": {
       "baseline_loc": 456,
       "baseline_tokens": 5752
-    },
-    "src/moex_spread_lab/proof.py": {
-      "baseline_loc": 4,
-      "baseline_tokens": 50
     }
   },
   "guard_files": [

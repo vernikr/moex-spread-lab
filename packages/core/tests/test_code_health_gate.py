@@ -111,7 +111,10 @@ def test_fastcore_exports_require_a_python_parity_inventory(tmp_path, monkeypatc
 
 def test_baseline_update_only_lowers_or_removes_existing_entries():
     baseline = _baseline()
-    baseline["files"] = {"old.py": {"baseline_loc": 100, "baseline_tokens": 200}}
+    baseline["files"] = {
+        "old.py": {"baseline_loc": 500, "baseline_tokens": 4200},
+        "resolved.py": {"baseline_loc": 450, "baseline_tokens": 3800},
+    }
     baseline["complexity"] = {"old.py::still_high": 20, "old.py::resolved": 18}
     baseline["c_functions"] = {
         "old.c::still_high": {"baseline_nloc": 120, "baseline_ccn": 18, "baseline_parameters": 8},
@@ -120,7 +123,11 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
 
     updated = rules._updated_baseline(
         baseline,
-        {"old.py": {"loc": 90, "tokens": 170}, "new.py": {"loc": 10, "tokens": 20}},
+        {
+            "old.py": {"loc": 460, "tokens": 3900},
+            "resolved.py": {"loc": 90, "tokens": 700},
+            "new.py": {"loc": 10, "tokens": 20},
+        },
         {"old.py::still_high": 17, "old.py::resolved": 15},
         {
             "old.c::still_high": {"nloc": 110, "ccn": 17, "parameters": 8},
@@ -128,7 +135,7 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
         },
     )
 
-    assert updated["files"] == {"old.py": {"baseline_loc": 90, "baseline_tokens": 170}}
+    assert updated["files"] == {"old.py": {"baseline_loc": 460, "baseline_tokens": 3900}}
     assert updated["complexity"] == {"old.py::still_high": 17}
     assert updated["c_functions"] == {
         "old.c::still_high": {"baseline_nloc": 110, "baseline_ccn": 17, "baseline_parameters": 8}

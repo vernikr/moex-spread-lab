@@ -151,7 +151,6 @@ max-statements = 50
 # have no ignores and must be clean. Burn down per Step 4 of the plan.
 "packages/accounting/src/moex_spread_lab/accounting/account_risk.py" = ["PLR0913"]
 "packages/accounting/src/moex_spread_lab/accounting/cli.py" = ["PLR0911", "PLR0912"]
-"packages/accounting/src/moex_spread_lab/accounting/position_sizing.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
 "packages/accounting/src/moex_spread_lab/accounting/research.py" = ["C901", "PLR0912", "PLR0915"]
 "packages/accounting/src/moex_spread_lab/accounting/run_artifact_import.py" = ["PLR0915"]
 "packages/accounting/src/moex_spread_lab/accounting/run_artifacts.py" = ["C901", "PLR0912"]
@@ -167,7 +166,6 @@ max-statements = 50
 "packages/data/src/moex_spread_lab/data/cli.py" = ["C901", "PLR0911", "PLR0912", "PLR0915"]
 "packages/data/src/moex_spread_lab/data/iss/catalog.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915", "RUF007"]
 "packages/data/src/moex_spread_lab/data/lake/bar_types.py" = ["PLR0912"]
-"packages/data/src/moex_spread_lab/data/lake/data_lake.py" = ["B904", "B905", "C901", "F811", "PLR0912", "PLR0915", "RUF007", "SIM105"]
 "packages/data/src/moex_spread_lab/data/lake/data_refresh.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "packages/data/src/moex_spread_lab/data/retention/data_archive_candidates.py" = ["B023", "PLR0912", "PLR0915"]
 "packages/data/src/moex_spread_lab/data/retention/data_inventory.py" = ["C901", "PIE810", "PLR0911", "PLR0912"]

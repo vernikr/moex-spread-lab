@@ -280,14 +280,20 @@ def _updated_baseline(
     c_functions: dict[str, dict[str, int]],
 ) -> dict[str, Any]:
     updated = dict(baseline)
-    updated["files"] = {
-        path: {
-            "baseline_loc": min(int(old["baseline_loc"]), file_metrics[path]["loc"]),
-            "baseline_tokens": min(int(old["baseline_tokens"]), file_metrics[path]["tokens"]),
+    updated["files"] = {}
+    for path, old in baseline["files"].items():
+        if path not in file_metrics:
+            continue
+        is_c = path.lower().endswith(".c")
+        loc_limit = POLICY["new_c_file_max_loc"] if is_c else POLICY["new_file_max_loc"]
+        new_loc = min(int(old["baseline_loc"]), file_metrics[path]["loc"])
+        new_tokens = min(int(old["baseline_tokens"]), file_metrics[path]["tokens"])
+        if new_loc <= loc_limit and (is_c or new_tokens <= POLICY["new_file_max_tokens"]):
+            continue
+        updated["files"][path] = {
+            "baseline_loc": new_loc,
+            "baseline_tokens": new_tokens,
         }
-        for path, old in baseline["files"].items()
-        if path in file_metrics
-    }
     limit = POLICY["max_cognitive_complexity"]
     updated["complexity"] = {
         key: min(int(old), complexity[key])

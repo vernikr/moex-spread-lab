@@ -1,6 +1,6 @@
 # Remote agent testing and benchmarking via workstation bridge
 
-Status: **Proposal** (design, stack, architecture and implementation plan; no runtime changes delivered in this turn).
+Status: **Partially implemented**: the macOS launch agent installer is available; the probe API, remote CLI and benchmark phases remain proposals.
 
 ## 1. Current capabilities vs actual friction
 
@@ -183,6 +183,9 @@ Each slice is independently testable, backward-compatible and covered by unit te
 - **Verification:** mock-HTTP unit tests for `remote_cli.py` (auth header handling, no token leakage on error, timeout/approval handling) + live end-to-end run against the workstation checkout.
 
 ### Phase 4 — Workstation daemonization & optional read-only bridge tool (workstation ops)
+
+**Delivered slice:** `moex-spread-lab install-workstation-daemon --root <checkout> --dry-run` previews the user agent; replace `--dry-run` with `--apply` to install and bootstrap it on macOS. The installer refuses to overwrite an existing plist or use an occupied port. It runs the checkout's `.venv/bin/python3` on port 8765, logs under `~/Library/Logs/`, and does not sync dependencies. After an update, restart with `launchctl kickstart -k gui/$(id -u)/local.moex-spread-lab.screener`. Remove the agent with `launchctl bootout gui/$(id -u)/local.moex-spread-lab.screener` and delete its plist only if intentional. The CLI handles SIGTERM so server shutdown invokes store cleanup. Workstation installation and process cleanup must be verified separately; this is not the full P3 implementation.
+
 - Add template `config/launchd/local.moex-spread-lab.screener.plist.example` (no hardcoded user paths) and a setup helper `moex-spread-lab install-workstation-daemon --dry-run|--apply` to keep `127.0.0.1:8765` running cleanly with `CohortWorkerPool` cleanup on restart.
 - Optional: add `moex_dev_probe` read-only tool to Arena Bridge so cloud agents can benchmark without opening a shell trust window.
 - **Verification:** verify single canonical process on port `8765`, zero orphaned multiprocessing workers across restarts, and <2 s end-to-end cloud-to-workstation probe round-trip.

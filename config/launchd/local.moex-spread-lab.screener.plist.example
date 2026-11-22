@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>local.moex-spread-lab.screener</string>
+    <key>ProgramArguments</key><array>
+        <string>CHECKOUT/.venv/bin/python3</string><string>-m</string><string>moex_spread_lab.cli</string>
+        <string>screener</string><string>--root</string><string>CHECKOUT</string><string>--port</string><string>8765</string>
+    </array>
+    <key>WorkingDirectory</key><string>CHECKOUT</string>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ProcessType</key><string>Interactive</string>
+    <key>StandardOutPath</key><string>HOME/Library/Logs/local.moex-spread-lab.screener.out.log</string>
+    <key>StandardErrorPath</key><string>HOME/Library/Logs/local.moex-spread-lab.screener.err.log</string>
+</dict>
+</plist>

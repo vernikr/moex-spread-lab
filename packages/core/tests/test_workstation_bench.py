@@ -104,3 +104,36 @@ def test_full_result_hash_is_deterministic_and_detects_nested_drift():
     assert first["result"]["sha256"] != second["result"]["sha256"]
     assert first["result"]["ledger_reconciliation_rub"] == 0
     assert "ledger" not in first["result"]
+
+
+def test_seal_copy_rebound_only_after_integrity_validation(tmp_path):
+    from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
+
+    root = repository(tmp_path)
+    lake = root / "data-lake"
+    lake.mkdir()
+    seal = {
+        "schema_version": "h1-sealed-read.v1",
+        "root": str(root.resolve()),
+        "plan": {},
+        "records": {},
+    }
+    marker = {
+        "schema_version": seal["schema_version"],
+        "seal_sha256": sha256_bytes(canonical_bytes(seal)),
+    }
+    import json
+
+    (lake / "h1-seal.json").write_text(json.dumps(seal))
+    (lake / "h1-seal.enabled.json").write_text(json.dumps(marker))
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    bench._copy_data(root, candidate)
+    bench._relocate_copied_seal(root, candidate)
+    copy = json.loads((candidate / "data-lake/h1-seal.json").read_text())
+    activation = json.loads((candidate / "data-lake/h1-seal.enabled.json").read_text())
+    assert copy["root"] == str(candidate.resolve())
+    assert activation["seal_sha256"] == sha256_bytes(canonical_bytes(copy))
+    assert json.loads((lake / "h1-seal.json").read_text()) == seal
+    with pytest.raises(RuntimeError, match="invalid source"):
+        bench._relocate_copied_seal(root, candidate)

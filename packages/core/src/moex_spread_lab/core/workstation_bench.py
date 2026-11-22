@@ -21,6 +21,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
+from .w0 import canonical_bytes, sha256_bytes
+
 
 def _cmd(root: Path, *args: str, input_text: str | None = None) -> str:
     proc = subprocess.run(
@@ -66,6 +68,33 @@ def _compact(value: dict[str, Any]) -> dict[str, Any]:
     return {"action": value["action"], "result": result, "telemetry": value["telemetry"]}
 
 
+def _relocate_copied_seal(root: Path, candidate: Path) -> None:
+    """Rebind only an integrity-checked private seal copy to its temporary root."""
+    seal = candidate / "data-lake/h1-seal.json"
+    marker = candidate / "data-lake/h1-seal.enabled.json"
+    if not seal.exists() and not marker.exists():
+        return
+    if not seal.is_file() or not marker.is_file():
+        raise RuntimeError("incomplete H1 seal; refusing candidate benchmark")
+    value = json.loads(seal.read_text(encoding="utf-8"))
+    activation = json.loads(marker.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or not isinstance(activation, dict):
+        raise RuntimeError("invalid source H1 seal; refusing candidate benchmark")
+    value = cast(dict[str, Any], value)
+    activation = cast(dict[str, Any], activation)
+    if (
+        value.get("root") != str(root.resolve())
+        or value.get("schema_version") != "h1-sealed-read.v1"
+        or activation.get("schema_version") != value.get("schema_version")
+        or activation.get("seal_sha256") != sha256_bytes(canonical_bytes(value))
+    ):
+        raise RuntimeError("invalid source H1 seal; refusing candidate benchmark")
+    value["root"] = str(candidate.resolve())
+    activation["seal_sha256"] = sha256_bytes(canonical_bytes(value))
+    seal.write_text(json.dumps(value, sort_keys=True, indent=2), encoding="utf-8")
+    marker.write_text(json.dumps(activation, sort_keys=True, indent=2), encoding="utf-8")
+
+
 def _copy_data(root: Path, candidate: Path) -> None:
     for name in ("data", "data-lake"):
         src = root / name
@@ -91,6 +120,7 @@ def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[Path]
             if patch:
                 _cmd(candidate, "git", "apply", "--binary", "-", input_text=patch)
             _copy_data(root, candidate)
+            _relocate_copied_seal(root, candidate)
             _cmd(candidate, "uv", "sync", "--frozen")
             yield candidate
         finally:

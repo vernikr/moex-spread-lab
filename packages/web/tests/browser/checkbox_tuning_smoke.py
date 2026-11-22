@@ -1,11 +1,8 @@
 """Optional Chromium regression: focus, tri-state selection, compatibility, application and fallback."""
 
 import json
-import tempfile
-import threading
-from http.server import ThreadingHTTPServer
-from pathlib import Path
 
+from _harness import serve_fixture, temporary_root
 from period_settings_smoke import (
     apply,
     expect_api_json,
@@ -14,8 +11,6 @@ from period_settings_smoke import (
     ready,
 )
 from playwright.sync_api import expect, sync_playwright
-
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 PAIR = "pair_screen||CNYRUBF/CRZ6"
 CAL = "calendar_native|SR|SRH3/SRM3"
@@ -202,20 +197,12 @@ def run(browser, url):
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
-        root = Path(tmp)
-        fixture(root)
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-        )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
         browser = pw.chromium.launch()
         try:
-            run(browser, "http://127.0.0.1:" + str(server.server_port))
+            run(browser, url)
             print(
                 "Checkbox hierarchy, focus, scoped All, modal/cancel/confirm, cross-universe application, holdout and fallback: OK"
             )
         finally:
             browser.close()
-            server.shutdown()
-            server.server_close()

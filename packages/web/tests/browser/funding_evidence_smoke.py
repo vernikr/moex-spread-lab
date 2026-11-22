@@ -1,15 +1,11 @@
 """Journal, CSV, zero-valued estimates, documented non-clearing, and no silent pruning."""
 
 import csv
-import tempfile
-import threading
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from _harness import serve, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
-
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 
 
 def download(page):
@@ -80,31 +76,20 @@ def run(page, url, root, days):
 if __name__ == "__main__":
     from funding_fixtures import change, fixture, weekend
 
-    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
-        root = Path(tmp)
-        ds = fixture(root)
+    def build(root):
+        days = fixture(root)
         weekend(root)
         change(
             root,
             "CNYRUBF",
-            {ds[16]: 0, ds[17]: -0.04, ds[18]: None, ds[19]: None, ds[20]: 0.04},
+            {days[16]: 0, days[17]: -0.04, days[18]: None, days[19]: None, days[20]: 0.04},
         )
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-        )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        browser = pw.chromium.launch()
-        try:
+        return days
+
+    with sync_playwright() as pw, temporary_root() as root:
+        days = build(root)
+        with serve(root) as url, pw.chromium.launch() as browser:
             pg = browser.new_page(viewport={"width": 1440, "height": 900})
             install_stream_spy(pg)
-            run(
-                pg,
-                f"http://127.0.0.1:{server.server_port}",
-                root,
-                ds,
-            )
+            run(pg, url, root, days)
             print("Funding journal, CSV, dated reasons, unchanged checked cohort: OK")
-        finally:
-            browser.close()
-            server.shutdown()
-            server.server_close()

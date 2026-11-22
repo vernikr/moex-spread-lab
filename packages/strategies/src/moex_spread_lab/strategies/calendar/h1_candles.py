@@ -141,12 +141,16 @@ def fetch_h1_candles(
     secid: str,
     cache: dict[str, tuple[tuple[Any, ...], tuple[dict[str, Any] | None, str | None]]],
     attempted: set[str],
+    *,
+    offline: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     target = root / "data/w1/candles/1h" / f"{secid}_1h.json"
     local_res = _read_local_h1_fallback(target, secid, cache)
     if local_res is not None:
         return local_res
-    offline = os.environ.get("MOEX_OFFLINE_ONLY") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+    offline = (
+        offline or os.environ.get("MOEX_OFFLINE_ONLY") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+    )
     if offline or secid in attempted:
         return None, "no_local_h1_file"
     attempted.add(secid)
@@ -182,11 +186,12 @@ def read_h1_candles(
     attempted: set[str],
     *,
     allow_fetch: bool = True,
+    offline: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     path = bar_store.select_h1(secid)
     if not bar_store.source_available(path):
         if allow_fetch or (root / "data/w1/candles/1h" / f"{secid}_1h.json").exists():
-            return fetch_h1_candles(root, secid, cache, attempted)
+            return fetch_h1_candles(root, secid, cache, attempted, offline=offline)
         return None, "no_local_h1_file"
     try:
         source = bar_store.read(path, columns=("begin", "open", "close", "volume"))

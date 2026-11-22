@@ -6,22 +6,21 @@ Synthetic offline inputs exercise the actual optimizer and funded account, not m
 import json
 import re
 import sys
-import tempfile
-import threading
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from _harness import serve, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 
 from proof_fixtures import funding_winner, rising_calendar, two_calendar_windows
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(_REPO_ROOT / "packages" / "accounting" / "tests"))
-sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
+_ACCOUNTING_TESTS = str(_REPO_ROOT / "packages" / "accounting" / "tests")
+if _ACCOUNTING_TESTS not in sys.path:
+    sys.path.insert(0, _ACCOUNTING_TESTS)
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.web.server import ScreenerStore
 from test_global_capital import PAIR
 
 PAIR_URL = "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
@@ -216,8 +215,7 @@ def run_dash(browser, url, expected):
 
 
 if __name__ == "__main__":
-    servers = []
-    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
+    with sync_playwright() as pw, temporary_root() as tmp:
         browser = pw.chromium.launch()
         try:
             for label, build, run in (
@@ -225,23 +223,16 @@ if __name__ == "__main__":
                 ("convergence", two_calendar_windows, run_calendar),
                 ("shortfall", shortfall_inputs, run_dash),
             ):
-                root = Path(tmp) / label
+                root = tmp / label
                 root.mkdir()
                 result = build(root)
                 if label == "convergence":
                     rising_calendar(root)
-                server = ThreadingHTTPServer(
-                    ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-                )
-                servers.append(server)
-                threading.Thread(target=server.serve_forever, daemon=True).start()
-                args = (result,) if label == "shortfall" else ()
-                run(browser, f"http://127.0.0.1:{server.server_port}", *args)
+                with serve(root, store_factory=ScreenerStore) as url:
+                    args = (result,) if label == "shortfall" else ()
+                    run(browser, url, *args)
             print(
                 "Strategy/fill replacement in solo/shared forms, 80 trials per family, newest periods, borders, removed hints and real funded-shortfall dash evidence: OK"
             )
         finally:
             browser.close()
-            for server in servers:
-                server.shutdown()
-                server.server_close()

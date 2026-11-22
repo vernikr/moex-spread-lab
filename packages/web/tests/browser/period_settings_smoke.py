@@ -3,24 +3,13 @@
 After installing Chromium for Playwright: uv run --with playwright python packages/web/tests/browser/period_settings_smoke.py
 """
 
-import os
 import re
-import sys
-import tempfile
-import threading
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-os.environ.setdefault("MOEX_OFFLINE_ONLY", "1")
-
+from _harness import serve_fixture, temporary_root
 from playwright.sync_api import expect, sync_playwright
 
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(_REPO_ROOT / "packages" / "proof" / "tests"))
-sys.path.insert(0, str(_REPO_ROOT / "tests"))
 from proof_fixtures import fixture
 
 _STREAM_SPY = """
@@ -183,18 +172,10 @@ def run(browser, url):
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
-        root = Path(tmp)
-        fixture(root)
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-        )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
         browser = pw.chromium.launch()
         try:
-            run(browser, "http://127.0.0.1:" + str(server.server_port))
+            run(browser, url)
             print("Global settings, both routes/universes, holdout, chart, journal and CSV: OK")
         finally:
             browser.close()
-            server.shutdown()
-            server.server_close()

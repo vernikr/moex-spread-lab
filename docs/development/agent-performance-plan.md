@@ -117,6 +117,24 @@ The roadmap is organized into **five concrete work packages (`P0`–`P4`)**, ord
 - Benchmark `ScreenerStore(ScreenerInputs(root)).proof.catalog()` on `two_calendar_windows(root)` in a clean subprocess **without** `PYTEST_CURRENT_TEST` or `MOEX_OFFLINE_ONLY`: must complete in **`< 1.0 s`** with `0` outbound socket attempts.
 - All 11 `packages/web/tests/browser/*_smoke.py` scripts complete sequentially in **`< 60–90 s` total** (down from `~45+ minutes`).
 
+**Delivered (2026-11-22):**
+- `CalendarData(root, *, offline=True)`: the offline contract is now a constructor default, not an
+  environment variable. `_load`/`_load_asset` and the H1 candle path (`read_h1_candles`,
+  `fetch_h1_candles`) honour it, so `ScreenerStore`, `ProofService` and the cohort worker pool can
+  never open a MOEX ISS connection; only `run_calendar_study`/`fetch_inputs` may opt into network.
+- `contracts.cached_secids()`: one `os.scandir` of the cache intersects the requested range with
+  the 1,050 theoretical contract/spread secids, so offline `fetch_inputs` opens 4 cache files
+  instead of building 1,050 urls, sleeping `0.05 s` each and firing 1,050 HTTP requests.
+- `packages/web/tests/browser/_harness.py`: single bootstrap (`MOEX_OFFLINE_ONLY=1` + `sys.path`,
+  `temporary_root()`, `serve()`/`serve_fixture()` with clean `store.close()` teardown, standard
+  page/timeouts). All 11 smoke scripts now use it; the per-script `ThreadingHTTPServer` +
+  `TemporaryDirectory` boilerplate and the late `setdefault("MOEX_OFFLINE_ONLY")` are gone.
+- Measured on this Linux sandbox: cold `/api/proof/catalog` data path **181.02 s -> 0.05 s**;
+  `window_table_smoke.py` **~240 s -> 16 s**. Guard: `packages/web/tests/test_offline_catalog.py`
+  (default flag, cache-only offline fetch, warm catalog budget, clean-subprocess acceptance gate).
+- Data-locality follow-up (workstation cache vs cloud agents, git/artifact transport) is recorded in
+  [`data-locality.md`](data-locality.md); it does not change P1–P4.
+
 ---
 
 ### P1 — Sub-Second Static Verification for Frontend ES Modules (`static/js/*.js`)
@@ -214,7 +232,7 @@ When assigning large backlog items (such as [`phase7-backlog.md`](phase7-backlog
 
 ## 4. Implementation Checklist & Expected End-State
 
-- [ ] **Step 1 (`P0` — Offline `CalendarData` & fast catalog fixture):** Make `CalendarData` offline-by-default (`offline: bool = True`), pre-filter `fetch_inputs` by existing cache filenames in offline mode, add `packages/web/tests/browser/_harness.py` (`MOEX_OFFLINE_ONLY="1"` + clean `store.close()`). Verify `/api/proof/catalog` `< 1.0 s` on synthetic fixtures.
+- [x] **Step 1 (`P0` — Offline `CalendarData` & fast catalog fixture, delivered 2026-11-22):** Make `CalendarData` offline-by-default (`offline: bool = True`), pre-filter `fetch_inputs` by existing cache filenames in offline mode, add `packages/web/tests/browser/_harness.py` (`MOEX_OFFLINE_ONLY="1"` + clean `store.close()`). Verify `/api/proof/catalog` `< 1.0 s` on synthetic fixtures.
 - [ ] **Step 2 (`P1` — `scripts/check_js_modules.py`):** Enforce static export/import resolution, `node --check` syntax validation, and cross-module undefined-symbol detection on `static/js/*.js` inside `./scripts/check_health.sh`.
 - [ ] **Step 3 (`P2` — `scripts/run_browser_smokes.py`):** Add single-command sequential/CPU-aware Playwright smoke runner with `--filter` and wire into `.github/workflows/browser-smoke.yml`.
 - [ ] **Step 4 (`P4` — `AGENTS.md` guardrails):** Add concise rules for the 4-stage verification pyramid, ban `nohup + sleep` polling and temporary secret-extraction CI workflows, and enforce single-slice per-turn checkpoints (**applied in initial form alongside this plan**).

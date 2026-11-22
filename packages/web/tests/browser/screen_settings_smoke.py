@@ -1,15 +1,11 @@
 """Actual controls and research API: allow or require each screen without changing the checked cohort."""
 
 import re
-import tempfile
-import threading
-from http.server import ThreadingHTTPServer
-from pathlib import Path
 
+from _harness import serve_fixture, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from proof_fixtures import screen_failures
 
 
@@ -116,20 +112,16 @@ def run(browser, url):
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
-        root = Path(tmp)
-        screen_failures(root)
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-        )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+    with (
+        sync_playwright() as pw,
+        temporary_root() as root,
+        serve_fixture(root, screen_failures) as url,
+    ):
         browser = pw.chromium.launch()
         try:
-            run(browser, "http://127.0.0.1:" + str(server.server_port))
+            run(browser, url)
             print(
                 "Default checks, cancel/save, four combinations, modal and group lamps, two tabs, reload and reports: OK"
             )
         finally:
             browser.close()
-            server.shutdown()
-            server.server_close()

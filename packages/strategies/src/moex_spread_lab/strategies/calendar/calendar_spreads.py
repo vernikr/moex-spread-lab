@@ -12,10 +12,10 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import MarketDataStore
 
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
+from . import adjacent
 from .data_cache import (
     _is_offline,
     asset_eod_signature,
-    asset_h1_signature,
     build_loaded_dict,
     load_shared_metadata,
     resolve_intraday_till,
@@ -27,12 +27,10 @@ from .data_cache import (
 )
 from .h1_windows import (
     asof_before,
-    build_intraday_window,
     candle_timestamp,
-    fetch_h1_candles,
     finite_num,
-    read_h1_candles,
 )
+from .loaders import cached_till_date, fetch_inputs
 from .proof_ledger import elapsed_days as _elapsed_days
 from .proof_payload import _clean, _proof_payload, _rel_pct
 from .proof_runner import build_1d_catalog, build_h1_catalog
@@ -62,9 +60,7 @@ from .study import (
     _terms,
     _zscore_options,
     build_windows,
-    cached_till_date,
     contract_chain,
-    fetch_inputs,
     spread_id,
 )
 from .study import run_calendar_study as _run_calendar_study
@@ -93,10 +89,15 @@ def run_calendar_study(
 
 
 class CalendarData:
-    """Offline view of cached daily and hourly calendar-spread inputs."""
+    """Offline view of cached daily and hourly calendar-spread inputs.
 
-    def __init__(self, root: Path) -> None:
+    Reads cached EOD history, H1 candles and benchmark files; ``offline=False`` (explicit intake
+    commands only) is the sole way to allow MOEX ISS connections.
+    """
+
+    def __init__(self, root: Path, *, offline: bool = True) -> None:
         self.root = root.resolve()
+        self.offline = offline
         self.cache = self.root / "data/spread-history-cache"
         self._loaded: dict[str, Any] | None = None
         self._loaded_sig: tuple[Any, ...] | None = None
@@ -156,7 +157,9 @@ class CalendarData:
         sig = asset_eod_signature(self.cache, asset, meta["till"], meta["extras_sig"])
         if asset in self._loaded_assets and self._loaded_assets_sig.get(asset) == sig:
             return self._loaded_assets[asset]
-        offline = _is_offline(asset in self._asset_fetched_once, self._eod_fetched_once)
+        offline = self.offline or _is_offline(
+            asset in self._asset_fetched_once, self._eod_fetched_once
+        )
         histories = fetch_inputs(
             self.cache,
             (asset,),
@@ -178,7 +181,7 @@ class CalendarData:
         if self._loaded is not None and self._loaded_sig == sig:
             return self._loaded
         meta = self._shared_metadata()
-        offline = _is_offline(self._eod_fetched_once)
+        offline = self.offline or _is_offline(self._eod_fetched_once)
         histories = fetch_inputs(
             self.cache,
             tuple(ASSETS),
@@ -203,19 +206,12 @@ class CalendarData:
     _through = staticmethod(slice_window_through)
 
     def _fetch_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
-        return fetch_h1_candles(self.root, secid, self._h1_candle_cache, self._h1_fetch_attempted)
+        return adjacent.fetch_h1(self.root, secid, self)
 
     def _read_h1_candles(
         self, secid: str, *, allow_fetch: bool = True
     ) -> tuple[dict[str, Any] | None, str | None]:
-        return read_h1_candles(
-            self.root,
-            self.bar_store,
-            secid,
-            self._h1_candle_cache,
-            self._h1_fetch_attempted,
-            allow_fetch=allow_fetch,
-        )
+        return adjacent.read_h1(self, secid, allow_fetch)
 
     def _intraday_window(
         self,
@@ -225,46 +221,12 @@ class CalendarData:
         *,
         allow_fetch: bool = True,
     ) -> dict[str, Any] | None:
-        near, far = daily_window["near"], daily_window["far"]
-        near_src, _ = self._read_h1_candles(near, allow_fetch=allow_fetch)
-        far_src, _ = self._read_h1_candles(far, allow_fetch=allow_fetch)
-        if near_src is None or far_src is None:
-            return None
-        nat_src, nat_err = self._read_h1_candles(spread_id(near, far), allow_fetch=allow_fetch)
-        return build_intraday_window(
-            asset, daily_window, data, (near_src, far_src, nat_src, nat_err)
-        )
+        return adjacent.intraday_window(self, asset, daily_window, data, allow_fetch)
 
     def _intraday_windows_for(
         self, asset: str, *, allow_fetch: bool = True
     ) -> list[dict[str, Any]]:
-        data = self._load_asset(asset) if asset in ASSETS else self._load()
-        eod_sig = self._loaded_assets_sig.get(asset) or self._loaded_sig
-        sig = asset_h1_signature(self.root, self.bar_store, asset, data, eod_sig)
-        fkey = f"_fetched_{asset}"
-        if (
-            asset in self._h1_windows
-            and self._h1_windows_sig.get(asset) == sig
-            and (not allow_fetch or bool(self._h1_windows_sig.get(fkey)))
-        ):
-            return self._h1_windows[asset]
-        wins = (
-            [
-                win
-                for dw in data["windows"].get(asset, [])
-                if (win := self._intraday_window(asset, dw, data, allow_fetch=allow_fetch))
-                is not None
-            ]
-            if asset in ASSETS and asset in data["terms"]
-            else []
-        )
-        self._h1_windows[asset] = wins
-        self._h1_windows_sig[asset] = asset_h1_signature(
-            self.root, self.bar_store, asset, data, eod_sig
-        )
-        if allow_fetch:
-            self._h1_windows_sig[fkey] = (True,)
-        return wins
+        return adjacent.intraday_windows_for(self, asset, allow_fetch)
 
     def catalog(
         self, *, initial_capital: float = INITIAL_CAPITAL, timeframe: str = "1d"

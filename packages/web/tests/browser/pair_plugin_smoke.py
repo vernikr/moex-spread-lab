@@ -75,31 +75,20 @@ CALENDAR = DemoCalendar()
         }
         raise SystemExit(subprocess.call([sys.executable, __file__], env=env))
 
-import threading
-from http.server import ThreadingHTTPServer
-
+from _harness import serve_fixture, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect, sync_playwright
 
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from proof_fixtures import funding_winner
 
-with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
-    root = Path(tmp)
-    funding_winner(root)
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-    )
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, funding_winner) as url:
     browser = pw.chromium.launch()
     try:
         page = browser.new_page(viewport={"width": 1450, "height": 950})
         install_stream_spy(page)
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(
-            f"http://127.0.0.1:{server.server_port}/?universe=pair_screen&pair=CNYRUBF%2FCRZ6"
-        )
+        page.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6")
         ready(page, "training")
         expect(page.locator('#strategy option[value="demo_ui_pair"]')).to_be_enabled()
         page.locator("#strategy").select_option("demo_ui_pair")
@@ -143,9 +132,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
         cal_page = browser.new_page(viewport={"width": 1450, "height": 950})
         install_stream_spy(cal_page)
         cal_page.on("pageerror", lambda e: errors.append(str(e)))
-        cal_page.goto(
-            f"http://127.0.0.1:{server.server_port}/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3"
-        )
+        cal_page.goto(url + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
         ready(cal_page, "training")
         expect(cal_page.locator('#cstrategy option[value="demo_ui_calendar"]')).to_be_enabled()
         cal_page.locator("#cstrategy").select_option("demo_ui_calendar")
@@ -168,5 +155,3 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
         )
     finally:
         browser.close()
-        server.shutdown()
-        server.server_close()

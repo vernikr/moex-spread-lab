@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import itertools
 import json
 import math
-import re
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +13,6 @@ from moex_spread_lab.accounting.account_risk import (
 )
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.iss.catalog import IssHistoryError, fetch_history
 
 from ..base import ZSCORE_CALENDAR_OPTIONS
 from ..calendar_eval import FILLS, strategy_runner
@@ -115,56 +111,6 @@ def contract_chain(asset: str, first_year: int = 3, last_year: int = 7) -> list[
 
 def spread_id(near: str, far: str) -> str:
     return near + far
-
-
-def fetch_inputs(
-    cache_dir: Path,
-    assets: tuple[str, ...],
-    till_date: str,
-    *,
-    delay_seconds: float = 0.05,
-    opener: Any = None,
-) -> dict[str, dict[str, dict[str, Any]]]:
-    """EOD history of every leg and consecutive native spread (plus FX sources), keyed by secid then date."""
-    needed = set(assets) | {FX_SOURCE[ASSETS[a]["fx"]] for a in assets if ASSETS[a].get("fx")}
-    extra: dict[str, Any] = {"opener": opener} if opener is not None else {}
-    secids: list[str] = []
-    for asset in sorted(needed):
-        chain = contract_chain(asset)
-        secids += [*chain, *(spread_id(n, f) for n, f in itertools.pairwise(chain))]
-
-    def load(secid: str) -> tuple[str, dict[str, dict[str, Any]] | None]:
-        try:
-            source = fetch_history(
-                secid,
-                HISTORY_FROM,
-                till_date,
-                cache_dir=cache_dir,
-                delay_seconds=delay_seconds,
-                fields=HISTORY_FIELDS,
-                **extra,
-            )
-        except IssHistoryError:
-            return secid, None
-        return secid, {str(row["TRADEDATE"]): row for row in source["rows"]}
-
-    if opener is not None:
-        return {secid: rows for secid in secids if (rows := load(secid)[1])}
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        return {secid: rows for secid, rows in pool.map(load, secids) if rows}
-
-
-def cached_till_date(cache_dir: Path) -> str | None:
-    found = {
-        m.group(1)
-        for path in cache_dir.glob("*.json")
-        if (m := re.search(rf"-{HISTORY_FROM}-(\d{{4}}-\d{{2}}-\d{{2}})-\d+\.json$", path.name))
-    }
-    return max(found) if found else None
-
-
-def _offline(*_args: Any, **_kwargs: Any) -> Any:
-    raise OSError("offline: calendar history is read from the local cache only")
 
 
 def _ruonia(benchmark_cache: Path) -> tuple[list[str], dict[str, float]]:

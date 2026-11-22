@@ -70,5 +70,5 @@ Do this only alongside F2, because both edit the same import edges.
 ## Known environment caveats
 
 - Tier 2 (`clang-tidy` + ASan/UBSan) needs `clang`; the Linux sandbox has none, so Tier 2 evidence comes from CI only.
-- `/api/proof/catalog` takes ~185 s on the synthetic fixtures, both on `83d9c1d` and after Phase 5. Browser smokes must use `wait_until="load"` and per-call timeouts of 120 s+; `networkidle` never settles and the default 5 s Playwright assertion timeout will produce spurious failures.
+- ~~`/api/proof/catalog` takes ~185 s on the synthetic fixtures~~ — **fixed by P0 of [`agent-performance-plan.md`](agent-performance-plan.md)**: cold catalog on `two_calendar_windows` is now ~0.05 s with no outbound sockets (`packages/web/tests/test_offline_catalog.py` guards it). Browser smokes still use `wait_until="load"` and generous per-call timeouts; `networkidle` may never settle.
 - The bridge `bash` tool kills its process tree when a call times out, so long-lived servers must be started with the bridge `start_process` tool.

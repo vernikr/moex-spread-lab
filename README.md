@@ -85,3 +85,4 @@ uv run pytest -q -n auto --dist loadfile        # full package-scoped suite
 - [Pair intent boundary and remaining accounting work](packages/strategies/docs/pair-intent-boundary.md)
 - [Automated code health and AI-readability plan](docs/development/code-health-plan.md)
 - [Agent session latency and context-bloat prevention plan](docs/development/agent-performance-plan.md)
+- [Market data locality for cloud agents](docs/development/data-locality.md)

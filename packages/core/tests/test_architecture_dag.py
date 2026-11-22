@@ -50,7 +50,7 @@ _LAYER_SPECS: dict[str, str] = {
         "strategies.funding_carry.{,carry,study,strategy_costs,strategy_report,strategy_runner,timeline,proof_funding,funding_recheck,funding_screen,engine,plugin,intents} "
         "strategies.calendar_zscore.{,engine,plugin} strategies.calendar_ruonia.{,engine,plugin} "
         "strategies.s3_reference.{,engine} "
-        "strategies.calendar.{,calendar_spreads,contracts,data_cache,study,h1_candles,h1_windows,proof_ledger,proof_payload,catalog_builder,proof_runner,intents} "
+        "strategies.calendar.{,calendar_spreads,adjacent,contracts,data_cache,loaders,study,h1_candles,h1_windows,proof_ledger,proof_payload,catalog_builder,proof_runner,intents} "
         "strategies.pair_screener.{,normalization,screener,pair_screener,inputs,catalog,result_builder,runner,intents} "
         "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
     ),
@@ -61,7 +61,7 @@ _LAYER_SPECS: dict[str, str] = {
 LAYER_ASSIGNMENTS: dict[str, str] = {
     module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
 }
-# Modules inherit their package layer; no entry above.
+# Modules inherit the layer.
 for _layer, _prefix in (("proof", "proof_runtime"), ("web", "web")):
     _dir = f"{_prefix.split('_')[0]}/src/moex_spread_lab/{_prefix}"
     _mods = (PACKAGES_DIR / _dir).glob("*.py")

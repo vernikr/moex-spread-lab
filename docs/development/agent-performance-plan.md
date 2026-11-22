@@ -129,6 +129,12 @@ The roadmap is organized into **five concrete work packages (`P0`–`P4`)**, ord
   `temporary_root()`, `serve()`/`serve_fixture()` with clean `store.close()` teardown, standard
   page/timeouts). All 11 smoke scripts now use it; the per-script `ThreadingHTTPServer` +
   `TemporaryDirectory` boilerplate and the late `setdefault("MOEX_OFFLINE_ONLY")` are gone.
+- Evidence on the user's workstation (`/Users/vernikr/Downloads/projects/moex-spread-lab`,
+  `f924663`): synthetic fixture catalog **0.15 s with 0 outbound socket connects** (traced);
+  real-data cold `/api/proof/catalog` **~10 s -> 0.7-0.8 s warm**, of which ~3.4 s is local
+  cache JSON parsing (`_load`) and ~3.0 s the 1h calendar catalog - no network involved, so
+  P0 is done but a follow-up (persist the built catalog / build 1h lazily) would cut the cold
+  first paint on real data.
 - Measured on this Linux sandbox: cold `/api/proof/catalog` data path **181.02 s -> 0.05 s**;
   `window_table_smoke.py` **~240 s -> 16 s**. Guard: `packages/web/tests/test_offline_catalog.py`
   (default flag, cache-only offline fetch, warm catalog budget, clean-subprocess acceptance gate).

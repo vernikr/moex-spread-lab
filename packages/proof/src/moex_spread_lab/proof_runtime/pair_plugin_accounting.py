@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from datetime import date as date
+from datetime import datetime as datetime
 from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, Unpack, cast
 
 from moex_spread_lab.accounting.position_sizing import size_proof
@@ -19,6 +21,7 @@ from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 
 from . import pair_funding_replay
+from .compat_hooks_p72_138 import choose_hook as _choose_hook
 from .pair_plugin_accounting_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting import (
     eligible_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting as _eligible,
 )
@@ -62,6 +65,12 @@ _ATTACH_DAILY_UNIT_FUNDING: _DailyUnitFundingAttacher = cast(
 )
 
 
+# Preserve both the historical public binding and the newer private hook.
+attach_daily_unit_funding = _ATTACH_DAILY_UNIT_FUNDING
+_original_attach = _ATTACH_DAILY_UNIT_FUNDING
+_run_id = _original_run_id = run_id
+
+
 def _daily_funding_journal(
     window: WindowSnapshot,
     funding_window: FundingWindow,
@@ -88,9 +97,9 @@ def _daily_funding_journal(
     ):
         raise W0Error("История фондирования не соответствует ближней ноге пары.")
     eligible_rows = [row for row in rows if row["volume_eligible"]]
-    prepared = _ATTACH_DAILY_UNIT_FUNDING(
-        eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot
-    )
+    prepared = _choose_hook(
+        attach_daily_unit_funding, _ATTACH_DAILY_UNIT_FUNDING, _original_attach
+    )(eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot)
     prepared_series = cast(list[dict[str, Any]], prepared["series"])
     by_date: dict[str, dict[str, Any]] = {cast(str, row["date"]): row for row in prepared_series}
     journal = [
@@ -210,7 +219,7 @@ def prepare_daily_pair_unit(
         "parameters": validated,
     }
     try:
-        identity = run_id(
+        identity = _choose_hook(run_id, _run_id, _original_run_id)(
             {
                 "selection": selection,
                 "series": journal,

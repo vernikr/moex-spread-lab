@@ -13,6 +13,7 @@ from typing import Any, cast
 import optuna
 
 from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
@@ -24,6 +25,8 @@ from . import (
 from . import proof_batch as _proof_batch
 from . import proof_kernel as _proof_kernel
 from . import strategy_search_prepare as _strategy_search_prepare
+from .compat_hooks_p72_138 import choose_hook as _choose_hook
+from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import resolve_strategy_registry
 from .trial_budget import budget
 
@@ -44,8 +47,7 @@ _SettingsLike = _surface.SettingsLike
 _Run = _surface.Run
 _families = _surface.families
 
-# Imported by name so the search does not depend on another leaf's annotations:
-# those modules are outside this file's write ownership and stay untyped for now.
+# Preserve facade hook identities across module boundaries.
 _call_with_optional_progress = cast(
     Callable[..., Any], _proof_batch.__dict__["_call_with_optional_progress"]
 )
@@ -68,6 +70,20 @@ _winner_is_better = cast(Callable[..., bool], _strategy_search_prepare.__dict__[
 _no_prepared_result = cast(
     Callable[..., _Obj], _strategy_search_prepare.__dict__["no_prepared_result"]
 )
+
+
+# Public pre-P7.2 names and current private patch points share their originals.
+prepare_candidates = _original_prepare = _prepare_candidates
+record_trials = _original_record = _record_trials
+winner_is_better = _original_winner = _winner_is_better
+no_prepared_result = _original_empty = _no_prepared_result
+
+
+def _family_hooks() -> tuple[Callable[..., frozenset[str]], str]:
+    return get_proof_adapter_ids, CALENDAR_UNIVERSE
+
+
+_surface.set_family_hook_provider(_family_hooks)
 
 
 def _same_family(a: Any, b: Any, registry: StrategyRegistry) -> bool:
@@ -157,9 +173,11 @@ def _search_family(run: _Run, p_idx: int, prepared: list[_Prepared], total_budge
         status="measured" if best is not None else "no_admissible_candidate",
         training_best_pp=score,
     )
-    _record_trials(run.records, group, proposed, attempts)
+    _choose_hook(record_trials, _record_trials, _original_record)(
+        run.records, group, proposed, attempts
+    )
     # Holdout, trade count and plateau never break cross-family ties.
-    if _winner_is_better(
+    if _choose_hook(winner_is_better, _winner_is_better, _original_winner)(
         best,
         score,
         (run.top, run.winner),
@@ -258,7 +276,9 @@ def strategy_search(
         base_seed=resolve_seed(settings.random_seed),
         on_progress=on_progress,
     )
-    prepared, alternatives, failures = _prepare_candidates(
+    prepared, alternatives, failures = _choose_hook(
+        prepare_candidates, _prepare_candidates, _original_prepare
+    )(
         {
             "service": service,
             "request": request,
@@ -289,7 +309,9 @@ def strategy_search(
     }
     run.base = _base_payload(run, targets, policy)
     if not prepared:
-        return _no_prepared_result(run.base, failures, request, targets, _run_id)
+        return _choose_hook(no_prepared_result, _no_prepared_result, _original_empty)(
+            run.base, failures, request, targets, _run_id
+        )
 
     total_budget = len(prepared) * budget()
     try:

@@ -129,6 +129,7 @@ __all__ = [
     "W0Error",
     "_identity",
     "_validate",
+    "annotations",
     "automatic",
     "compact_result",
     "execution_axes",

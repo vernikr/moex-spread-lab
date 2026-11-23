@@ -36,6 +36,7 @@ from .cohort_scores import combine_shards as combine_shards
 from .cohort_scores import failure_payload as failure_payload
 from .cohort_scores import point_result as point_result
 from .cohort_scores import score_payload as score_payload
+from .compat_hooks_p72_138 import choose_hook as _choose_hook
 from .pool_reports import await_futures, canary_failure, report_cohort, should_use_pool
 from .pool_reports import configured_workers as choose_worker_count
 from .pool_reports import shutdown_weak as _shutdown_weak
@@ -45,7 +46,10 @@ from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .worker_metrics import submit_worker
 from .worker_metrics import unwrap_worker_result as unwrap_worker_result
 
-# Facade hooks that ``pool_reports`` resolves through this module at call time.
+window_summaries = _window_summaries
+_original_window_summaries = _window_summaries
+
+# Facade hooks resolved by pool_reports at call time.
 _WORKER_COHORTS = _tasks.WORKER_COHORTS
 _worker_report_cohort = _tasks.report_cohort_task
 _worker_window_summaries = _tasks.window_summaries_task
@@ -54,10 +58,10 @@ _worker_init_cohort = _tasks.init_cohort_task
 _worker_eval_indices = _tasks.eval_indices_task
 _worker_release_cohort = _tasks.release_cohort_task
 _worker_eval_plateau_batch = _tasks.eval_plateau_task
-# Re-exported hook: worker-weight estimation stays patchable through this facade.
+# Worker-weight estimation remains patchable.
 _estimate_weight = _tasks.estimate_weight
 
-# Sticky shards only ever expose their canonical window index to the pool.
+# Shards expose canonical window indices.
 type _Shards = list[list[tuple[Any, ...]]]
 
 MIN_POOL_WINDOWS = 3
@@ -183,7 +187,7 @@ class CohortWorkerPool:
         shards = cast(_Shards, cohort_state["shards"])
 
         if not cohort_state.get("canary_active"):
-            # Optimistic single-roundtrip fan-out across all active shards simultaneously.
+            # Fan out across active shards in one roundtrip.
             active_slots = sorted(set(owner_of.values()))
             return point_result(
                 cohort_state,
@@ -221,7 +225,7 @@ class CohortWorkerPool:
                 cohort_state, point_by_strategy, canary_box, fail, check_cancelled
             )
 
-        # Canary passed on this point; switch back to single-roundtrip fan-out for subsequent passing trials.
+        # Restore one-roundtrip fan-out after the canary passes.
         cohort_state["canary_active"] = False
 
         # Phase 2: canary passed; evaluate all remaining windows across active shards.
@@ -319,7 +323,7 @@ class CohortWorkerPool:
         check_cancelled: CheckCancelled,
         on_progress: ProgressCallback | None = None,
     ) -> list[Obj]:
-        return _window_summaries(
+        return _choose_hook(window_summaries, _window_summaries, _original_window_summaries)(
             (self, sys.modules[__name__]),
             root,
             settings,

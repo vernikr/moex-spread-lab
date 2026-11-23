@@ -9,6 +9,9 @@ from __future__ import annotations
 import math as _math
 import sys
 from collections.abc import Callable, Mapping
+from datetime import date as date
+from datetime import datetime as datetime
+from datetime import time as time
 from functools import cached_property
 from typing import Any, cast
 
@@ -46,9 +49,7 @@ _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
 _Marks = dict[str, float]
 
-# Facade hooks: other modules read these through `sys.modules[__name__]` and the
-# documented monkey-patch boundary, and their source packages are not strict yet,
-# so the callable types are bound explicitly instead of inferred.
+# Callable facade types retain the documented monkeypatch boundary.
 _RunId = Callable[[_Obj], str]
 _Ordered = Callable[[Mapping[str, float]], bool]
 _AnnualizedReturns = Callable[[_Obj, _Marks, EvaluationSplit], dict[str, Any]]

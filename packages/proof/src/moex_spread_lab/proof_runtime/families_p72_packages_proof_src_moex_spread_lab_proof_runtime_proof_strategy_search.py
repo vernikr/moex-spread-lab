@@ -17,7 +17,21 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.strategies.base import StrategyRegistry
 
 from .axis import Axis
+from .compat_hooks_p72_138 import choose_hook as _choose_hook
 from .strategy_catalog import get_proof_adapter_ids
+
+_original_adapter_ids = get_proof_adapter_ids
+_original_calendar_universe = CALENDAR_UNIVERSE
+_family_hook_provider: Callable[[], tuple[Callable[..., frozenset[str]], str]] | None = None
+
+
+def set_family_hook_provider(
+    provider: Callable[[], tuple[Callable[..., frozenset[str]], str]],
+) -> None:
+    """Supply the owning facade hooks without a reverse import cycle."""
+    global _family_hook_provider
+    _family_hook_provider = provider
+
 
 Obj = dict[str, Any]
 Target = dict[str, Any]
@@ -117,14 +131,21 @@ def plugins(registry: StrategyRegistry) -> Iterator[PluginLike]:
     return iter(registry.values())
 
 
-def _preferred_universe(active: Any, kinds: set[str], registry: StrategyRegistry) -> str:
+def _preferred_universe(
+    active: Any, kinds: set[str], registry: StrategyRegistry, calendar: str | None = None
+) -> str:
     """A mixed cohort follows the active editor when it can span both universes."""
     active_plugin = registry.get(active) if isinstance(active, str) and active in registry else None
-    if kinds == {CALENDAR_UNIVERSE}:
-        return CALENDAR_UNIVERSE
-    if active_plugin is not None and CALENDAR_UNIVERSE in active_plugin.supported_universes:
-        return CALENDAR_UNIVERSE
-    return next((u for u in sorted(kinds) if u != CALENDAR_UNIVERSE), CALENDAR_UNIVERSE)
+    selected = CALENDAR_UNIVERSE if calendar is None else calendar
+    if kinds == {selected}:
+        return selected
+    if (
+        len(kinds) > 1
+        and active_plugin is not None
+        and selected in active_plugin.supported_universes
+    ):
+        return selected
+    return next((u for u in sorted(kinds) if u != selected), selected)
 
 
 def _group_families(
@@ -152,9 +173,16 @@ def families(
     The allowlist is intentional: a plugin alone may lack the accounting adapter
     needed to replay it safely; a mixed cohort prefers the active editor's universe.
     """
-    adapter_ids = get_proof_adapter_ids(registry)
+    # Resolve the historical search facade globals at call time.
+    facade_ids, facade_calendar = (
+        _family_hook_provider()
+        if _family_hook_provider is not None
+        else (get_proof_adapter_ids, CALENDAR_UNIVERSE)
+    )
+    adapter_ids = _choose_hook(facade_ids, get_proof_adapter_ids, _original_adapter_ids)(registry)
+    calendar = _choose_hook(facade_calendar, CALENDAR_UNIVERSE, _original_calendar_universe)
     kinds = {str(target["universe"]) for target in targets}
-    preferred = _preferred_universe(request.get("strategy"), kinds, registry)
+    preferred = _preferred_universe(request.get("strategy"), kinds, registry, calendar)
     result: list[str] = []
     for group in _group_families(registry, adapter_ids, timeframe).values():
         covered: set[str] = set[str]().union(*(p.supported_universes for p in group))

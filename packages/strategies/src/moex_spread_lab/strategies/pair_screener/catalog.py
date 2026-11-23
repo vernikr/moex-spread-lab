@@ -4,46 +4,74 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 from moex_spread_lab.accounting.account_risk import (
     DEFAULT_STRESS_VM_BUFFER,
     DEFAULT_UNCERTAINTY_BUFFER,
 )
+from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, TimeframeSpec, get_timeframe
-from moex_spread_lab.core.universe import (
-    HISTORY_WINDOWS,
-    INITIAL_CAPITAL,
-    MIN_DAILY_VOLUME,
-    PAIRS,
-    STRATEGIES,
-)
+from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
 
 from ..funding_carry.carry import fetch_history
 from .inputs import ScreenerInputs, _candle_summary, _make_proof_funding
 
+# Typed aliases of the core research registry: same objects, precise static types.
+HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
+    dict[str, tuple[str, str]], _universe.HISTORY_WINDOWS
+)
+PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+STRATEGIES: dict[str, dict[str, Any]] = cast(dict[str, dict[str, Any]], _universe.STRATEGIES)
+INITIAL_CAPITAL = _universe.INITIAL_CAPITAL
 
-def _load_instruments(inputs: ScreenerInputs) -> dict[str, dict[str, Any]]:
+InstrumentRow = dict[str, Any]
+Instruments = dict[str, InstrumentRow]
+PairEntry = dict[str, Any]
+FileSet = tuple[Path, ...]
+
+
+class FundingStatuses(Protocol):
+    """The narrow funding-evidence surface the catalog needs."""
+
+    def statuses(
+        self,
+        pair: Mapping[str, str],
+        positive_days: set[str],
+        price_files: Sequence[Path],
+        funding_files: Sequence[Path],
+    ) -> tuple[dict[str, bool], dict[str, str]]: ...
+
+
+def _instrument_rows(payload: object) -> Iterable[InstrumentRow]:
+    """Yield well-formed instrument rows from an already parsed intake document."""
+    if not isinstance(payload, dict):
+        return
+    source = cast(dict[str, Any], payload)
+    rows = source.get("instruments")
+    if not isinstance(rows, list):
+        return
+    for row in cast(list[Any], rows):
+        if isinstance(row, dict) and cast(dict[str, Any], row).get("secid"):
+            yield cast(dict[str, Any], row)
+
+
+def _read_instruments(path: Path) -> Instruments:
+    """Read one intake document; an unreadable, malformed or rowless file yields no rows."""
     try:
-        instruments = {
-            row["secid"]: row
-            for row in json.loads(inputs.contracts.read_text(encoding="utf-8"))["instruments"]
-            if isinstance(row, dict) and row.get("secid")
-        }
-    except (OSError, ValueError, KeyError, TypeError):
-        instruments = {}
-    historical_terms = inputs.root / "data/w1/historical-contracts.json"
-    if historical_terms.is_file():
-        try:
-            rows = json.loads(historical_terms.read_text(encoding="utf-8")).get("instruments", [])
-            instruments.update(
-                {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
-            )
-        except (OSError, ValueError, TypeError):
-            pass
+        payload: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {cast(str, row["secid"]): row for row in _instrument_rows(payload)}
+
+
+def _load_instruments(inputs: ScreenerInputs) -> Instruments:
+    """Current intake first, then historical terms layered on top (unknown keys kept)."""
+    instruments = _read_instruments(inputs.contracts)
+    instruments.update(_read_instruments(inputs.root / "data/w1/historical-contracts.json"))
     return instruments
 
 
@@ -87,17 +115,19 @@ def _resolve_proof_availability(
     inputs: ScreenerInputs,
     pair: dict[str, str],
     spec: TimeframeSpec,
-    funding: Any,
+    funding: FundingStatuses,
     pos_days: set[str],
     obs: int,
-    file_sets: tuple[tuple[Path, ...], tuple[Path, ...]],
+    file_sets: tuple[FileSet, FileSet],
 ) -> tuple[dict[str, bool], dict[str, str]]:
     price_files, funding_files = file_sets
-    days = (
+    days: set[str] = (
         pos_days
         if pair["family"] == "perpetual_quarterly_same_asset" and spec.supports_funding_strategy
         else set()
     )
+    proof_available: dict[str, bool]
+    reasons: dict[str, str]
     if spec.supports_funding_strategy:
         proof_available, reasons = funding.statuses(pair, days, price_files, funding_files)
     else:
@@ -126,10 +156,10 @@ def _resolve_proof_availability(
 
 
 def _pair_margin_metrics(
-    near_terms: dict[str, Any], far_terms: dict[str, Any], initial_capital: float
+    near_terms: InstrumentRow, far_terms: InstrumentRow, initial_capital: float
 ) -> tuple[float | None, float | None, bool | None]:
-    m_near = near_terms.get("initial_margin")
-    m_far = far_terms.get("initial_margin")
+    m_near: object = near_terms.get("initial_margin")
+    m_far: object = far_terms.get("initial_margin")
     margin_pct = (
         round((float(m_near) + float(m_far)) / initial_capital * 100, 2)
         if isinstance(m_near, (int, float)) and isinstance(m_far, (int, float))
@@ -160,10 +190,10 @@ def _catalog_pair_entry(
     pair: dict[str, str],
     spec: TimeframeSpec,
     timeframe: str,
-    funding: Any,
-    instruments: dict[str, dict[str, Any]],
+    funding: FundingStatuses,
+    instruments: Instruments,
     initial_capital: float,
-) -> dict[str, Any]:
+) -> PairEntry:
     pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
     h_from, h_to, obs, pos_days, volumes = _pair_bar_stats(inputs, pair_id, near, far, timeframe)
     price_files = (
@@ -187,8 +217,10 @@ def _catalog_pair_entry(
         "mean_reversion": tradable and proof_available["mean_reversion"],
         "funding_only": tradable and proof_available["funding_only"],
     }
-    near_terms, far_terms = instruments.get(near, {}), instruments.get(far, {})
-    margin_pct, margin, passes_cap = _pair_margin_metrics(near_terms, far_terms, initial_capital)
+    absent_terms: InstrumentRow = {}
+    margin_pct, margin, passes_cap = _pair_margin_metrics(
+        instruments.get(near, absent_terms), instruments.get(far, absent_terms), initial_capital
+    )
     status = (
         "excluded_thin_leg"
         if volumes is not None and not tradable
@@ -198,7 +230,7 @@ def _catalog_pair_entry(
         if any(proof_available.values())
         else "intake_required"
     )
-    return {
+    entry: PairEntry = {
         "id": pair_id,
         "timeframe": timeframe,
         "near": near,
@@ -207,7 +239,7 @@ def _catalog_pair_entry(
         "from": h_from,
         "to": h_to,
         "observations": obs,
-        "expiry": far_terms.get("expiry"),
+        "expiry": instruments.get(far, absent_terms).get("expiry"),
         "current_margin_pct": margin_pct,
         "max_pair_margin_rub": margin,
         "passes_capital_screen": passes_cap,
@@ -219,13 +251,14 @@ def _catalog_pair_entry(
         "data_reasons": reasons,
         "status": status,
     }
+    return entry
 
 
 def catalog(
     inputs: ScreenerInputs,
     *,
     registry: Sequence[dict[str, str]] = PAIRS,
-    funding: Any = None,
+    funding: FundingStatuses | None = None,
     initial_capital: float = INITIAL_CAPITAL,
     timeframe: str = DEFAULT_TIMEFRAME,
     fetch_fn: Callable[..., dict[str, Any]] = fetch_history,

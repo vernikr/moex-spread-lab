@@ -11,7 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from scripts import shadow_regressions, shadow_runner  # noqa: E402
+from scripts import shadow_core, shadow_regressions, shadow_runner  # noqa: E402
 
 # ---------- Output parsing ----------
 
@@ -209,19 +209,19 @@ def test_js_injection_adds_break(tmp_path):
 
 def test_append_log_writes_valid_json(tmp_path, monkeypatch):
     log = tmp_path / "shadow.jsonl"
-    monkeypatch.setattr(shadow_runner, "SHADOW_LOG", log)
+    monkeypatch.setattr(shadow_core, "SHADOW_LOG", log)
     aff = _r("PASSED", {"h": "passed"})
     full = _r("PASSED", {"h": "passed"})
     r = shadow_runner.ShadowResult(
-        "abc",
-        "commit",
-        {"profile": "packages"},
-        aff,
-        full,
-        [],
-        ["n"],
-        "2026-01-01T00:00:00+00:00",
-        1.0,
+        subject="abc",
+        subject_kind="commit",
+        decision={"profile": "packages"},
+        affected=aff,
+        full=full,
+        missed_failures=[],
+        notes=["n"],
+        started="2026-01-01T00:00:00+00:00",
+        wall_s=1.0,
     )
     shadow_runner.append_log(r)
     rec = json.loads(log.read_text().strip())
@@ -235,7 +235,12 @@ def test_summary_prints_miss(capsys):
     shadow_runner.print_summary(
         [
             shadow_runner.ShadowResult(
-                "s1", "commit", {"profile": "docs"}, aff, full, ["h: miss"], [], "", 0.0
+                subject="s1",
+                subject_kind="commit",
+                decision={"profile": "docs"},
+                affected=aff,
+                full=full,
+                missed_failures=["h: miss"],
             )
         ]
     )

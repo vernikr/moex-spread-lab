@@ -9,25 +9,38 @@ import math
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.contracts import StrategyIntentRun, StrategyPlugin, WindowSnapshot
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
+
+_NO_STUDY_ROWS = "Нет пригодного ряда расчётных цен carry."
 
 
 def _is_pos_finite(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(float(value)) and float(value) > 0
 
 
-def _validate_study_rows(rows: Any) -> list[str]:
-    if not isinstance(rows, list) or not rows or any(not isinstance(r, Mapping) for r in rows):
-        raise W0Error("Нет пригодного ряда расчётных цен carry.")
+def _carry_rows(study: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Return the carry-study rows as typed mappings; a malformed prefix is unusable."""
+    rows: Any = study.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise W0Error(_NO_STUDY_ROWS)
+    typed: list[Mapping[str, Any]] = []
+    for row in cast(list[Any], rows):
+        if not isinstance(row, Mapping):
+            raise W0Error(_NO_STUDY_ROWS)
+        typed.append(cast(Mapping[str, Any], row))
+    return typed
+
+
+def _validate_study_rows(rows: list[Mapping[str, Any]]) -> list[str]:
     try:
-        days = [r["date"] for r in rows]
+        days = [row["date"] for row in rows]
         if any(
-            not isinstance(d, str) or len(d) != 10 or date.fromisoformat(d).isoformat() != d
-            for d in days
+            not isinstance(day, str) or len(day) != 10 or date.fromisoformat(day).isoformat() != day
+            for day in days
         ) or days != sorted(set(days)):
             raise ValueError
         for row in rows:
@@ -35,7 +48,7 @@ def _validate_study_rows(rows: Any) -> list[str]:
                 raise ValueError
     except (ValueError, TypeError, OverflowError, KeyError):
         raise W0Error("Некорректные расчётные цены или порядок дат carry.") from None
-    return days
+    return cast(list[str], days)
 
 
 def _check_intent_order(
@@ -81,16 +94,17 @@ def _validate_carry_intent(
 ) -> tuple[dict[str, Any], int]:
     if not isinstance(item, Mapping):
         raise W0Error("Некорректная сделка carry.")
+    trade = cast(Mapping[str, Any], item)
     try:
         entry, exit_, signal = (
-            indices[item[k]] for k in ("entry_date", "exit_date", "signal_date")
+            indices[trade[k]] for k in ("entry_date", "exit_date", "signal_date")
         )
-        side, reason, terminal = item["side"], item["reason"], item["open_at_end"]
+        side, reason, terminal = trade["side"], trade["reason"], trade["open_at_end"]
     except (KeyError, TypeError):
         raise W0Error("Даты или поля carry-сделки отсутствуют в окне.") from None
     _check_intent_order(side, reason, terminal, signal, entry, exit_, (previous_exit, len(days)))
     _check_intent_volumes(rows, signal, entry, exit_, terminal)
-    entry_reason = item.get("entry_reason")
+    entry_reason: Any = trade.get("entry_reason")
     if entry_reason is not None and (not isinstance(entry_reason, str) or not entry_reason):
         raise W0Error("Некорректная причина входа carry.")
     return (
@@ -111,31 +125,31 @@ def carry_settlement_intents(
     plugin: StrategyPlugin, window: WindowSnapshot, params: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """Validate short-near/long-far settlement decisions against the study prefix."""
+    study: Mapping[str, Any] | None = window.carry_study
     if (
-        not isinstance(window, WindowSnapshot)
-        or window.universe != PAIR_UNIVERSE
+        window.universe != PAIR_UNIVERSE
         or window.timeframe != "1d"
         or "same_day_settlement" not in plugin.supported_fills
-        or not isinstance(params, dict)
-        or not isinstance(window.carry_study, Mapping)
+        or not isinstance(study, Mapping)
     ):
         raise W0Error("Некорректное окно или исполнение carry-стратегии.")
-    raw_rows = window.carry_study.get("rows")
-    days = _validate_study_rows(raw_rows)
-    assert isinstance(raw_rows, list)
+    rows = _carry_rows(study)
+    days = _validate_study_rows(rows)
     indices = {d: i for i, d in enumerate(days)}
-    result = plugin.evaluate_intents(deepcopy(window), deepcopy(params), "same_day_settlement")
+    result: Any = plugin.evaluate_intents(deepcopy(window), deepcopy(params), "same_day_settlement")
     if (
         not isinstance(result, StrategyIntentRun)
         or result.strategy_id != plugin.strategy_id
         or result.fill != "same_day_settlement"
         or result.parameters != params
-        or not isinstance(result.intents, tuple)
     ):
+        raise W0Error("Плагин вернул несогласованный набор сигналов carry.")
+    intents: Any = result.intents
+    if not isinstance(intents, tuple):
         raise W0Error("Плагин вернул несогласованный набор сигналов carry.")
     trades: list[dict[str, Any]] = []
     previous_exit = -1
-    for item in result.intents:
-        trade, previous_exit = _validate_carry_intent(item, raw_rows, days, indices, previous_exit)
+    for item in cast(tuple[Any, ...], intents):
+        trade, previous_exit = _validate_carry_intent(item, rows, days, indices, previous_exit)
         trades.append(trade)
     return trades

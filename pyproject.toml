@@ -247,6 +247,8 @@ strict = [
     "packages/strategies/src/moex_spread_lab/strategies/calendar/loaders.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar/contracts.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar/data_cache.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/study.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/proof_runner.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/engine.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/engine.py",
     "packages/strategies/src/moex_spread_lab/strategies/signals.py",

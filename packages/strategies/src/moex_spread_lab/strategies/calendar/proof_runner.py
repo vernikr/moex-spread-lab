@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import tariff_profile
 from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
@@ -15,7 +15,9 @@ from moex_spread_lab.core.w0 import W0Error
 from ..base import StrategyRegistry
 from ..calendar_eval import FILLS, account_trades, strategy_runner
 from .catalog_builder import build_1d_catalog, build_h1_catalog, enrich_proof_window_and_notes
-from .contracts import ASSETS, _positive_spread_volume_rows, _zscore_options
+from .contracts import ASSETS
+from .contracts import positive_spread_volume_rows as _positive_spread_volume_rows
+from .contracts import zscore_options as _zscore_options
 from .intents import calendar_intent_trades
 from .proof_payload import build_proof_payload
 
@@ -47,11 +49,12 @@ def _validate_plugin_params(
         or set(raw_params) - set(names)
     ):
         raise W0Error("Некорректная схема параметров плагина.")
-    plugin_params = plugin.validate_parameters(dict(raw_params), context)
-    if (
-        not isinstance(plugin_params, dict)
-        or set(plugin_params) != set(names)
-        or any(not spec.contains(plugin_params[spec.name]) for spec in schema)
+    plugin_params: Any = plugin.validate_parameters(dict(raw_params), context)
+    if not isinstance(plugin_params, dict):
+        raise W0Error("Некорректные параметры плагина.")
+    plugin_params = cast(dict[str, Any], plugin_params)
+    if set(plugin_params) != set(names) or any(
+        not spec.contains(plugin_params[spec.name]) for spec in schema
     ):
         raise W0Error("Некорректные параметры плагина.")
     return plugin_params
@@ -68,6 +71,7 @@ def _validate_proof_params(
 ) -> tuple[dict[str, Any], float, dict[str, Any] | None]:
     if not isinstance(raw_params, dict):
         raise W0Error("unknown strategy parameter")
+    raw_params = cast(dict[str, Any], raw_params)
     options: dict[str, Any] = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
     if generic:
         plugin_params = _validate_plugin_params(

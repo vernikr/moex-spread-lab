@@ -210,3 +210,4 @@ fx_factors = _fx_factors
 positive_spread_volume_rows = _positive_spread_volume_rows
 stress_ok = _stress_ok
 zscore_options = _zscore_options
+calendar_strategy_runner = _calendar_strategy_runner

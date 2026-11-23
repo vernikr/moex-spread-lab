@@ -14,10 +14,13 @@ from moex_spread_lab.core.settings import (
 )
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import TRIALS, _tune, research_run
+from moex_spread_lab.proof_runtime.proof_search import _tune, research_run
 from moex_spread_lab.proof_runtime.service import ProofService
 from proof_fixtures import screen_failures
 from test_proof_batch import ACTIVE, C, P
+from tuning_screen_waiver_helpers_p72_packages_proof_tests_test_tuning_screens import (
+    assert_screen_waivers,
+)
 
 
 class TuningScreenTests(unittest.TestCase):
@@ -75,65 +78,9 @@ class TuningScreenTests(unittest.TestCase):
             svc = ProofService(root)
             req = {**ACTIVE, "targets": [P, C]}
             thin, capital = (C, P) if thin_calendar else (P, C)
-            for v, c in ((True, True), (False, True), (True, False), (False, False)):
-                with self.subTest(thin_calendar=thin_calendar, allow_volume=v, allow_capital=c):
-                    cfg = save_settings(
-                        root,
-                        {
-                            "validation_percent": share,
-                            "allow_failed_volume": v,
-                            "allow_failed_capital": c,
-                        },
-                    )
-                    excluded = {t["pair"] for t, ok in [(thin, v), (capital, c)] if not ok}
-                    preview = checked_plateau(svc, req)
-                    r = research_run(svc, req, optimize=True)
-                    self.assertEqual(preview["member_count"], 2)
-                    for k, val in cfg.items():
-                        self.assertEqual(preview[k], val)
-                    if excluded:
-                        self.assertEqual(r["status"], "selection_requires_confirmation")
-                        self.assertEqual(r["trial_count"], 0)
-                        self.assertEqual(r["remaining_count"], 2 - len(excluded))
-                        self.assertIsNone(preview["plateau"])
-                        self.assertEqual(preview["excluded"], r["excluded"])
-                        self.assertEqual({x["target"]["pair"] for x in r["excluded"]}, excluded)
-                        # A rejected member does not imply the other, waived (but failing) gate is enforced.
-                        if len(excluded) == 1:
-                            remaining = thin if v else capital
-                            single = research_run(
-                                svc, {**req, "targets": [remaining]}, optimize=True
-                            )
-                            self.assertEqual(single["status"], "maximum_found")
-                    else:
-                        self.assertEqual(r["status"], "maximum_found")
-                        self.assertEqual(r["trial_count"], TRIALS)
-                        self.assertEqual(r["group"]["member_count"], 2)
-                        self.assertIsNotNone(r["group"]["result_mean_pp"])
-                        self.assertEqual(
-                            checked_plateau(svc, {**req, "parameters": r["selected_parameters"]})[
-                                "plateau"
-                            ],
-                            r["plateau"],
-                        )
-                        for m in r["group"]["members"]:
-                            expected = "volume" if m["target"] == thin else "capital"
-                            e = m["evaluation"]
-                            self.assertEqual(e["failed_screens"], [expected])
-                            self.assertEqual(e["validation_percent"], share)
-                            rerun = research_run(svc, m["selection"], optimize=False)
-                            self.assertEqual(rerun["evaluation"], e)
-                            self.assertEqual(rerun["run_id"], m["run_id"])
-                            self.assertFalse(
-                                rerun["window"][
-                                    "tradable_every_day"
-                                    if expected == "volume"
-                                    else "passes_capital_screen"
-                                ]
-                            )
-                        # Original stricter raw proof consumer is unaffected by the research settings.
-                        with self.assertRaises(W0Error):
-                            svc.proof(ACTIVE)
+            assert_screen_waivers(
+                self, root, svc, req, thin, capital, share, thin_calendar=thin_calendar
+            )
 
     def test_mid_search_settings_change_only_affects_next_request(self):
         root = self.root()

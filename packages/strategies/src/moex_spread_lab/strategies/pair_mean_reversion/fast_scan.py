@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
-
-from moex_spread_lab.core._fastcore_loader import load_fastcore
+from importlib import import_module
+from typing import Any, cast
 
 from ..base import population_rolling_stats as _rolling_stats
-from .costs_helper import AnalyticsError, _round
+from .costs_helper import AnalyticsError
+from .costs_helper import round_value as _round
+
+_fastcore_loader = import_module("moex_spread_lab.core._fastcore_loader")
+load_fastcore = cast(Callable[[], Any], _fastcore_loader.load_fastcore)
 
 _ACTION_NAMES = (
     "hold_flat",
@@ -126,7 +130,8 @@ def try_fast_intents_scan(
         bool(params.funding_swaprates),
     )
     trades: list[dict[str, Any]] = []
-    for e_idx, x_idx, pos_val, sig_z, forced in trade_tuples:
+    typed_trade_tuples = cast(list[tuple[int, int, int, float, bool]], trade_tuples)
+    for e_idx, x_idx, pos_val, sig_z, forced in typed_trade_tuples:
         e_row, x_row = rows[e_idx], rows[x_idx]
         e_near, e_far = (
             (e_row["near_open"], e_row["far_open"])
@@ -171,6 +176,8 @@ def try_fast_intents_scan(
                 if (pos_val and (sw := params.funding_swaprates.get(d)) is not None)
                 else 0.0,
             }
-            for row, (act, pos_val) in zip(rows, action_pairs, strict=True)
+            for row, (act, pos_val) in zip(
+                rows, cast(list[tuple[int, int]], action_pairs), strict=True
+            )
         ]
     return {"trades": trades, "daily": daily}

@@ -21,18 +21,17 @@ from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_t
 from .pair_funding_replay import attach_daily_unit_funding
 
 
-def prepare_daily_pair_unit(
-    plugin, window, params, fill, funding_window, benchmark_marks, settings, *, through=None
-):
-    """Validate decisions and size them against resolved funding and one account.
+def _eligible(row):
+    values = [row.get("near_volume"), row.get("far_volume")]
+    if any(
+        v is not None and (type(v) not in (int, float) or not math.isfinite(v) or v < 0)
+        for v in values
+    ):
+        raise ValueError
+    return all(v is not None and v > 0 for v in values)
 
-    Zero-volume rows stay in the journal without revaluation or funding. Only the
-    eligible prefix reaches the plugin; no later bars or benchmark marks are used.
-    Inputs are not mutated; plugin-supplied money fields are ignored.
-    Daily perpetual funding evidence must match the near contract. Missing daily
-    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
-    prices follow native proof and omit funding rather than invent clearing times.
-    """
+
+def _validated_rows(window, params, benchmark_marks, settings, through):
     if (
         not isinstance(window, WindowSnapshot)
         or window.timeframe not in ("1d", "1h")
@@ -72,44 +71,15 @@ def prepare_daily_pair_unit(
             or (row["date"][:10] if len(through) == 10 else row["date"]) <= through
         ]
 
-        def eligible(row):
-            values = [row.get("near_volume"), row.get("far_volume")]
-            if any(
-                v is not None and (type(v) not in (int, float) or not math.isfinite(v) or v < 0)
-                for v in values
-            ):
-                raise ValueError
-            return all(v is not None and v > 0 for v in values)
-
-        analysis_rows = [row for row in prefix if eligible(row)]
+        analysis_rows = [row for row in prefix if _eligible(row)]
         if len(analysis_rows) < 2:
             raise ValueError
     except (ValueError, KeyError, TypeError, OverflowError):
         raise W0Error("Некорректный дневной период или объём пары.") from None
-    # Do not hand a plugin the original snapshot: benchmark/funding/extra fields
-    # may contain future observations or unvalidated external data.
-    analysis_window = WindowSnapshot(
-        universe=window.universe,
-        pair=window.pair,
-        timeframe=window.timeframe,
-        asset=window.asset,
-        rows=deepcopy(analysis_rows),
-        contracts=deepcopy(window.contracts),
-        near=window.near,
-        far=window.far,
-        initial_capital_rub=settings.initial_capital_rub,
-        slippage_ticks=settings.slippage_ticks,
-    )
-    context = InstrumentContext(
-        universe=window.universe, pair=window.pair, timeframe=window.timeframe
-    )
-    validated = plugin.validate_parameters(deepcopy(params), context)
-    if not isinstance(validated, dict):
-        raise W0Error("Плагин вернул некорректные параметры.")
-    verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
-    if not verdict.compatible:
-        raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
-    trades = pair_price_intent_trades(plugin, analysis_window, validated, fill)
+    return prefix, analysis_rows
+
+
+def _priced_rows(window, prefix, benchmark_marks):
     try:
         legs = [window.contracts[window.near], window.contracts[window.far]]
 
@@ -143,15 +113,40 @@ def prepare_daily_pair_unit(
                     "near_open": near_open,
                     "far_open": far_open,
                     "spread": round(spread, 8),
-                    "volume_eligible": eligible(raw),
+                    "volume_eligible": _eligible(raw),
                 }
             )
     except (TypeError, KeyError, ValueError, OverflowError, ZeroDivisionError):
         raise W0Error("Нет достоверных цен или параметров обеих ног пары.") from None
-    if any(
-        not math.isfinite(t[event]["spread_fill"]) for t in trades for event in ("entry", "exit")
+    return rows, lot
+
+
+def _daily_funding_journal(window, funding_window, rows, trades, through, lot):
+    from moex_spread_lab.core.universe import PAIRS
+    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
+
+    declared = next((p for p in PAIRS if p["pair_id"] == window.pair), None)
+    if declared is not None and (
+        declared["near"] != window.near
+        or declared["far"] != window.far
+        or declared["family"] != "perpetual_quarterly_same_asset"
     ):
-        raise W0Error("Переполнение цены исполнения пары.")
+        raise W0Error("История фондирования неприменима к этой паре.")
+    if not isinstance(funding_window, FundingWindow) or funding_window.book.secid != window.near:
+        raise W0Error("История фондирования не соответствует ближней ноге пары.")
+    eligible_rows = [row for row in rows if row["volume_eligible"]]
+    prepared = attach_daily_unit_funding(
+        eligible_rows, trades, funding_window, through=through, near_lot_size=lot
+    )
+    by_date = {row["date"]: row for row in prepared["series"]}
+    journal = [
+        by_date.get(row["date"], {**row, "funding_rub": None, "funding_contracts": 0})
+        for row in rows
+    ]
+    return prepared, journal
+
+
+def _funding_journal(window, funding_window, rows, trades, through, lot):
     if window.timeframe == "1h":
         if funding_window is not None:
             raise W0Error("Дневную ставку нельзя применять к каждому часовому бару.")
@@ -177,30 +172,53 @@ def prepare_daily_pair_unit(
         prepared = {"provenance": {"funding_applicability": "no_perpetual_leg"}}
         journal = [{**row, "funding_rub": None, "funding_contracts": 0} for row in rows]
     else:
-        from moex_spread_lab.core.universe import PAIRS
-        from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
+        return _daily_funding_journal(window, funding_window, rows, trades, through, lot)
+    return prepared, journal
 
-        declared = next((p for p in PAIRS if p["pair_id"] == window.pair), None)
-        if declared is not None and (
-            declared["near"] != window.near
-            or declared["far"] != window.far
-            or declared["family"] != "perpetual_quarterly_same_asset"
-        ):
-            raise W0Error("История фондирования неприменима к этой паре.")
-        if (
-            not isinstance(funding_window, FundingWindow)
-            or funding_window.book.secid != window.near
-        ):
-            raise W0Error("История фондирования не соответствует ближней ноге пары.")
-        eligible_rows = [row for row in rows if row["volume_eligible"]]
-        prepared = attach_daily_unit_funding(
-            eligible_rows, trades, funding_window, through=through, near_lot_size=lot
-        )
-        by_date = {row["date"]: row for row in prepared["series"]}
-        journal = [
-            by_date.get(row["date"], {**row, "funding_rub": None, "funding_contracts": 0})
-            for row in rows
-        ]
+
+def prepare_daily_pair_unit(
+    plugin, window, params, fill, funding_window, benchmark_marks, settings, *, through=None
+):
+    """Validate decisions and size them against resolved funding and one account.
+
+    Zero-volume rows stay in the journal without revaluation or funding. Only the
+    eligible prefix reaches the plugin; no later bars or benchmark marks are used.
+    Inputs are not mutated; plugin-supplied money fields are ignored.
+    Daily perpetual funding evidence must match the near contract. Missing daily
+    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
+    prices follow native proof and omit funding rather than invent clearing times.
+    """
+    prefix, analysis_rows = _validated_rows(window, params, benchmark_marks, settings, through)
+    # Do not hand a plugin the original snapshot: benchmark/funding/extra fields
+    # may contain future observations or unvalidated external data.
+    analysis_window = WindowSnapshot(
+        universe=window.universe,
+        pair=window.pair,
+        timeframe=window.timeframe,
+        asset=window.asset,
+        rows=deepcopy(analysis_rows),
+        contracts=deepcopy(window.contracts),
+        near=window.near,
+        far=window.far,
+        initial_capital_rub=settings.initial_capital_rub,
+        slippage_ticks=settings.slippage_ticks,
+    )
+    context = InstrumentContext(
+        universe=window.universe, pair=window.pair, timeframe=window.timeframe
+    )
+    validated = plugin.validate_parameters(deepcopy(params), context)
+    if not isinstance(validated, dict):
+        raise W0Error("Плагин вернул некорректные параметры.")
+    verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
+    if not verdict.compatible:
+        raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
+    trades = pair_price_intent_trades(plugin, analysis_window, validated, fill)
+    rows, lot = _priced_rows(window, prefix, benchmark_marks)
+    if any(
+        not math.isfinite(t[event]["spread_fill"]) for t in trades for event in ("entry", "exit")
+    ):
+        raise W0Error("Переполнение цены исполнения пары.")
+    prepared, journal = _funding_journal(window, funding_window, rows, trades, through, lot)
     marks = {row["date"]: benchmark_marks[row["date"]] for row in rows}
     selection = {
         "universe": window.universe,

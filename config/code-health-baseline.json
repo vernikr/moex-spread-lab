@@ -46,7 +46,6 @@
     "packages/core/tests/test_architecture_dag.py::_tarjan_sccs": 18,
     "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
     "packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py::replay_carry_intents": 22,
-    "packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py::prepare_daily_pair_unit": 52,
     "packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py::strategy_search": 35,
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py::optimize": 37,
     "packages/proof/src/moex_spread_lab/proof_runtime/service.py::ProofService::_prepare_pair": 29,

@@ -14,13 +14,13 @@ from moex_spread_lab.strategies.calendar_zscore.engine import zscore_trades
 # The gate compares these keys to FastCoreMethods and verifies that every named
 # test exists, so a new C export cannot silently miss the Python parity suite.
 FASTCORE_EXPORT_PARITY_TESTS = {
-    "compute_rolling_z": "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
+    "compute_rolling_z": "packages/proof/tests/test_perf_equivalence_full.py::ProofPerfEquivalenceFastcoreTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
     "calendar_sample_z": "packages/proof/tests/test_fastcore_parity.py::test_calendar_zscore_matches_python_fallback",
     "calendar_zscore_scan": "packages/proof/tests/test_fastcore_parity.py::test_calendar_zscore_matches_python_fallback",
     "calendar_convergence_scan": "packages/proof/tests/test_fastcore_parity.py::test_calendar_convergence_matches_python_fallback",
-    "clean_obj": "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
-    "mean_reversion_scan": "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
-    "size_proof_metrics": "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
+    "clean_obj": "packages/proof/tests/test_perf_equivalence_full.py::ProofPerfEquivalenceFastcoreTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
+    "mean_reversion_scan": "packages/proof/tests/test_perf_equivalence_full.py::ProofPerfEquivalenceFastcoreTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
+    "size_proof_metrics": "packages/proof/tests/test_perf_equivalence_full.py::ProofPerfEquivalenceFastcoreTests.test_fastcore_c_matches_python_fallback_bit_for_bit",
 }
 
 

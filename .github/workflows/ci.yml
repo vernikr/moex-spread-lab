@@ -118,8 +118,12 @@ jobs:
       - name: Run ASan + UBSan equivalence & parity gate (Tier 2)
         if: steps.tier2.outputs.run_tier2 == 'true'
         run: >-
-          uv run python scripts/run_sanitized_pytest.py -v --tb=short
+          uv run python scripts/run_sanitized_pytest.py -v --tb=short -m ""
           packages/proof/tests/test_perf_equivalence.py
+          packages/proof/tests/test_perf_equivalence_pair.py
+          packages/proof/tests/test_perf_equivalence_pool.py
+          packages/proof/tests/test_perf_equivalence_stream.py
+          packages/proof/tests/test_perf_equivalence_full.py
           packages/proof/tests/test_fastcore_parity.py
 
   package-tests:
@@ -189,12 +193,16 @@ jobs:
           uv run python -c "from moex_spread_lab.core._fastcore_loader import load_fastcore;
           import sys; sys.exit(0 if load_fastcore() is not None else 1)"
 
-      - name: Run bit-for-bit equivalence tests
+      - name: Run bit-for-bit equivalence tests (canary + full-resolution tiers)
         shell: bash
         run: >-
           set -o pipefail;
-          uv run pytest -q -n auto --dist loadfile
+          uv run pytest -q -n auto --dist loadfile -m ""
           packages/proof/tests/test_perf_equivalence.py
+          packages/proof/tests/test_perf_equivalence_pair.py
+          packages/proof/tests/test_perf_equivalence_pool.py
+          packages/proof/tests/test_perf_equivalence_stream.py
+          packages/proof/tests/test_perf_equivalence_full.py
           --durations=15 | tee durations-perf.log
 
       - name: Upload duration report

@@ -17,6 +17,13 @@ def test_matches_c_tier2_filters_c_and_python_paths() -> None:
     assert tier2.matches_c_tier2(["packages/core/src/moex_spread_lab/core/_fastcore_loader.py"])
     assert tier2.matches_c_tier2([".clang-tidy"])
     assert tier2.matches_c_tier2(["scripts/run_sanitized_pytest.py"])
+    for tier in (
+        "test_perf_equivalence_pair.py",
+        "test_perf_equivalence_pool.py",
+        "test_perf_equivalence_stream.py",
+        "test_perf_equivalence_full.py",
+    ):
+        assert tier2.matches_c_tier2([f"packages/proof/tests/{tier}"])
     assert not tier2.matches_c_tier2(
         [
             "packages/web/src/moex_spread_lab/web/server.py",
@@ -144,6 +151,17 @@ def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
     assert "scope:" in ci_yml
     assert "has_packages" in ci_yml
     assert "ci-ok" in ci_yml
+    # S4a: the perf-equivalence job must run every tier with the default
+    # `addopts` marker deselection overridden, or parity silently thins out.
+    for tier in (
+        "test_perf_equivalence.py",
+        "test_perf_equivalence_pair.py",
+        "test_perf_equivalence_pool.py",
+        "test_perf_equivalence_stream.py",
+        "test_perf_equivalence_full.py",
+    ):
+        assert f"packages/proof/tests/{tier}" in ci_yml, tier
+    assert 'pytest -q -n auto --dist loadfile -m ""' in ci_yml
 
     assert 'cron: "30 4 * * 1"' in weekly_yml
     assert "jscpd" in weekly_yml

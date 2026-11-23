@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.util
+import os
 import pkgutil
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -12,6 +13,11 @@ from pathlib import Path
 from moex_spread_lab.core.contracts import StrategyPlugin
 from moex_spread_lab.core.w0 import W0Error
 
+_STRATEGIES_DIR = Path(__file__).resolve().parent
+# One memo entry: ``(key, registry)``. The key is the strategies-directory listing
+# plus the current ``entry_points`` function object, so a patched discovery source
+# (tests) or a new plugin folder is never served from a stale cache.
+_DISCOVERY_CACHE: dict[str, object] = {}
 _PRICE_FILL_KEYS = frozenset({"next_open", "next_close", "reference_same_bar"})
 _NON_PLUGIN_SUBPACKAGES = frozenset({"calendar", "pair_screener", "s3_reference"})
 _CANONICAL_ORDER = (
@@ -179,9 +185,52 @@ def _load_subpackage_plugin(
     return plugin if isinstance(plugin, StrategyPlugin) else None
 
 
+def _strategies_dir_signature(strategies_dir: Path) -> tuple[str, ...] | None:
+    """Names of entries beside this module; ``None`` when the directory is unreadable.
+
+    A strategy is a new folder, so this snapshot changes exactly when a plugin folder
+    is added, removed or renamed. Any error degrades to "do not cache" instead of
+    hiding a plugin.
+    """
+    try:
+        with os.scandir(strategies_dir) as entries:
+            return tuple(sorted(entry.name for entry in entries))
+    except OSError:
+        return None
+
+
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
-    """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points."""
-    strategies_dir = Path(__file__).resolve().parent
+    """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points.
+
+    Results are memoized per process (plan S4a): a workspace proof search calls this
+    thousands of times, and every call re-scans all installed distributions for entry
+    points (~5 ms each, the single largest term in the offline proof suite). The memo
+    key is the ``strategies`` directory listing plus the ``entry_points`` function
+    object, so a new plugin folder or a patched discovery source invalidates it.
+    Callers that install an entry point at runtime (``refresh=True``) call
+    :func:`clear_discovery_cache` first. ``extra_paths`` callers always scan directly.
+    """
+    if extra_paths:
+        return _discover_uncached(extra_paths)
+    signature = _strategies_dir_signature(_STRATEGIES_DIR)
+    if signature is None:
+        return _discover_uncached(())
+    key = (signature, importlib.metadata.entry_points)
+    cached = _DISCOVERY_CACHE.get("registry")
+    if _DISCOVERY_CACHE.get("key") != key or not isinstance(cached, StrategyRegistry):
+        cached = _discover_uncached(())
+        _DISCOVERY_CACHE["registry"] = cached
+        _DISCOVERY_CACHE["key"] = key
+    return cached
+
+
+def clear_discovery_cache() -> None:
+    """Drop memoized discovery so the next call re-scans folders and entry points."""
+    _DISCOVERY_CACHE.clear()
+
+
+def _discover_uncached(extra_paths: tuple[Path, ...]) -> StrategyRegistry:
+    strategies_dir = _STRATEGIES_DIR
     discovered: dict[str, StrategyPlugin] = {}
     search_paths = [str(strategies_dir), *(str(p) for p in extra_paths)]
     for _finder, name, ispkg in sorted(

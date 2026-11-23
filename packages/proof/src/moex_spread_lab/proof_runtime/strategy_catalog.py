@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from moex_spread_lab.strategies import StrategyRegistry, discover_strategies
+from moex_spread_lab.strategies import (
+    StrategyRegistry,
+    clear_discovery_cache,
+    discover_strategies,
+)
 from moex_spread_lab.strategies.base import (
     calendar_proof_plugin_ids,
     carry_proof_plugin_ids,
@@ -56,17 +60,18 @@ def _derive(registry: StrategyRegistry) -> Derived:
 
 
 def clear_strategy_registry_cache() -> None:
-    """Drop the cached discovery so the next accessor call sees a newly installed plugin."""
+    """Drop cached discovery so the next accessor sees a newly installed plugin."""
     global _registry
     _registry = None
     _derive.cache_clear()
+    clear_discovery_cache()
 
 
 def get_strategy_registry(*, refresh: bool = False) -> StrategyRegistry:
     """Return the process-wide registry, discovering it on first use."""
     global _registry
     if refresh:
-        _registry = None
+        clear_strategy_registry_cache()
     if _registry is None:
         _registry = discover_strategies()
     return _registry

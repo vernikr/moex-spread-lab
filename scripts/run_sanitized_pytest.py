@@ -12,7 +12,15 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TARGETS = ("packages/proof/tests/test_perf_equivalence.py",)
+# Plan S4a splits the equivalence suite by trial tier; the sanitizer gate is a
+# full-resolution gate, so its default target list is every tier.
+DEFAULT_TARGETS = (
+    "packages/proof/tests/test_perf_equivalence.py",
+    "packages/proof/tests/test_perf_equivalence_pair.py",
+    "packages/proof/tests/test_perf_equivalence_pool.py",
+    "packages/proof/tests/test_perf_equivalence_stream.py",
+    "packages/proof/tests/test_perf_equivalence_full.py",
+)
 
 # CPython/DuckDB/NumPy retain intentional interpreter-lifetime allocations across exit.
 # Suppressing only those allocators keeps LSan (`detect_leaks=1`) armed for any leak in `_fastcore`.
@@ -119,10 +127,20 @@ def build_sanitized_env(
     return env
 
 
+def _deselection_overridden(args: list[str]) -> bool:
+    """``-m ""`` (or any ``-m`` value) overrides pytest's ``addopts`` expression."""
+    return any(a == "-m" or a.startswith("-m=") or a == "--markers" for a in args)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not any(not a.startswith("-") for a in args):
         args.extend(DEFAULT_TARGETS)
+    if not _deselection_overridden(args):
+        # Plan S4a: pyproject deselects the slow_equiv tier by default. A
+        # sanitizer run is a full-resolution gate, so the marker expression is
+        # cleared unless the caller passes its own ``-m``.
+        args = ["-m", "", *args]
     asan_runtime = discover_asan_runtime()
     with tempfile.TemporaryDirectory(prefix="moex_fastcore_san_") as tmp_dir:
         supp_path = Path(tmp_dir) / "lsan.supp"

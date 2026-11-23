@@ -39,3 +39,6 @@ compile_commands.json
 .repowise/
 reports/code-health/
 
+
+# Verification measurement records (plan S0, local only)
+reports/perf/

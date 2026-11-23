@@ -1,6 +1,6 @@
 # Agent task-latency plan, generation 2: consolidated
 
-**Status:** Proposed, 2026-11-23. Consolidated from the two independent reviews of the same three agent exports (`plan1`, `plan2`), reconciled against `origin/main` at `370a95e` (code unchanged since `e12bb51`). This plan supersedes both source reviews, which are deleted in the same change. It extends the [first-generation plan](../agent-performance-plan.md) and does **not** authorize weaker gates, unattended deployment, or changes to the proof/accounting/research contracts. Scope is agent **task completion time**, not only screener runtime.
+**Status:** S0–S1 implemented 2026-11-23 (measurement wrapper `scripts/verify_record.py`, quiet/CPU-capped/change-aware `check_health.sh` with filesystem layer classification; see [baseline-2026-11-23.md](baseline-2026-11-23.md)). S2 onwards remain proposed. Originally Proposed, 2026-11-23. Consolidated from the two independent reviews of the same three agent exports (`plan1`, `plan2`), reconciled against `origin/main` at `370a95e` (code unchanged since `e12bb51`). This plan supersedes both source reviews, which are deleted in the same change. It extends the [first-generation plan](../agent-performance-plan.md) and does **not** authorize weaker gates, unattended deployment, or changes to the proof/accounting/research contracts. Scope is agent **task completion time**, not only screener runtime.
 
 ---
 

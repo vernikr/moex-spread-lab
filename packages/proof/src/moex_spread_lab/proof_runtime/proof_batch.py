@@ -2,38 +2,37 @@
 
 import inspect
 from dataclasses import dataclass as dataclass
-from statistics import fmean
+from statistics import fmean as fmean
 
 import optuna as optuna
 
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.core.w0 import _run_id as _run_id
-from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
+from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
-from .cohort_models import _Cohort, _RemoteCohort
+from .cohort_models import _Cohort as _Cohort
+from .cohort_models import _RemoteCohort as _RemoteCohort
+from .cohort_prepare import PreparationInputs, prepare_cohort
 from .cohort_prepare_helpers import MAX_TARGETS as MAX_TARGETS
+from .cohort_prepare_helpers import _active_seed as _active_seed
+from .cohort_prepare_helpers import _confirmation as _confirmation
+from .cohort_prepare_helpers import _filter_training as _filter_training
+from .cohort_prepare_helpers import _intersect_axes as _intersect_axes
+from .cohort_prepare_helpers import _native_request as _native_request
 from .cohort_prepare_helpers import (
-    _active_seed,
-    _confirmation,
-    _filter_training,
-    _intersect_axes,
-    _native_request,
     _targets,
-    _translate,
 )
+from .cohort_prepare_helpers import _translate as _translate
 from .cohort_reporting import CohortReport, build_cohort_result
 from .cohort_reporting import _unavailable as _unavailable
 from .phase_metrics import measure_phase
 from .proof_kernel import (
     TRIALS,
-    Landscape,
     StudyWindow,
     _tune,
     _validate,
-    execution_axes,
     resolve_seed,
 )
 from .proof_kernel import (
@@ -42,7 +41,9 @@ from .proof_kernel import (
 from .proof_kernel import _lamps as _lamps
 from .proof_kernel import _ordered as _ordered
 from .proof_pool import _estimate_weight, get_worker_pool
-from .remote_cohort_types import _RemoteCase, _RemoteSplit, _TrainingSlice
+from .remote_cohort_types import _RemoteCase as _RemoteCase
+from .remote_cohort_types import _RemoteSplit as _RemoteSplit
+from .remote_cohort_types import _TrainingSlice as _TrainingSlice
 from .request_validation import _identity as _identity
 from .service import _benchmark_marks
 from .strategy_catalog import get_strategy_axes
@@ -86,177 +87,22 @@ def _prepare_cohort(
     on_progress=None,
     registry=None,
 ):
-    from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-
-    targets = _targets(request)
-    checked = bool(request.get("targets"))
-    active = request.get("strategy", "zscore_mean_reversion")
-    strategy_axes = get_strategy_axes(registry)
-    axes = dict(strategy_axes[active])
-    seed = _active_seed(request, active, registry=registry)
-    proposed = {**request, "parameters": {k: seed[k] for k in axes}}
-    calendar = calendar if calendar is not None else CalendarData(service.root)
-
-    early_rejected = {}
-    valid_specs = []
-    for idx, target in enumerate(targets):
-        check_cancelled()
-        try:
-            native = _native_request(
-                proposed, target, default_price_fill=settings.price_fill, registry=registry
-            )
-            valid_specs.append((idx, target, native))
-        except (W0Error, OSError) as exc:
-            if not checked:
-                raise
-            early_rejected[idx] = {"target": target, "reason": str(exc)}
-
-    if _can_use_pool(service, calendar, valid_specs, settings.timeframe):
-        pool = get_worker_pool(service)
-        items = [(idx, target, native, checked) for idx, target, native in valid_specs]
-        cohort_state = pool.init_cohort(
-            service.root,
+    return prepare_cohort(
+        PreparationInputs(
+            service,
+            request,
             settings,
             benchmark,
-            items,
             check_cancelled,
-            on_progress=on_progress,
+            calendar,
+            on_progress,
+            registry,
+            StudyWindow,
+            _can_use_pool,
+            get_worker_pool,
+            _unavailable,
         )
-        worker_by_idx = {idx: (status, info) for idx, status, info in cohort_state["results"]}
-        members, rejected = [], []
-        for idx, target in enumerate(targets):
-            if idx in early_rejected:
-                rejected.append(early_rejected[idx])
-                continue
-            status, info = worker_by_idx[idx]
-            if status != "ok":
-                rejected.append({"target": target, "reason": info["reason"]})
-                continue
-            case = _RemoteCase(
-                request={"strategy": info["strategy"]},
-                strategy_axes=info["strategy_axes"],
-                execution_axes=info["execution_axes"],
-                axes=info["axes"],
-                seed=info["seed"],
-                split=_RemoteSplit(
-                    _TrainingSlice(
-                        info["training_first"],
-                        info["training_last"],
-                        info["training_count"],
-                    )
-                ),
-                _lamp_warning=info["lamp_warning"],
-            )
-            members.append((target, case))
-            _intersect_axes(axes, case.strategy_axes, active)
-        members = _filter_training(members, axes, rejected)
-        if rejected:
-            pool.release_cohort(cohort_state["cohort_id"], cohort_state["owner_of"])
-            return _confirmation(settings, rejected, members)
-
-        distinct_strategies = tuple(dict.fromkeys(case.request["strategy"] for _, case in members))
-        canary_box = [0]
-        total_members = len(members)
-
-        def mean(point):
-            point_by_strat = {strat: _translate(point, strat) for strat in distinct_strategies}
-            return pool.eval_point(
-                cohort_state, point_by_strat, canary_box, total_members, check_cancelled
-            )
-
-        land = Landscape(axes | execution_axes(request), mean)
-        return _RemoteCohort(
-            active=active,
-            axes=axes,
-            seed=seed,
-            members=members,
-            land=land,
-            pool=pool,
-            cohort_state=cohort_state,
-            distinct_strategies=distinct_strategies,
-            check_cancelled=check_cancelled,
-        )
-
-    members, rejected = [], []
-    spec_by_idx = {idx: native for idx, _, native in valid_specs}
-    total_targets = len(targets)
-    for idx, target in enumerate(targets):
-        check_cancelled()
-        if idx in early_rejected:
-            rejected.append(early_rejected[idx])
-            if on_progress is not None:
-                on_progress(idx + 1, total_targets)
-            continue
-        native = spec_by_idx[idx]
-        try:
-            if checked and target["universe"] == CALENDAR_UNIVERSE:
-                calendar.check_training_window(
-                    target["asset"], target["pair"], native.get("quantity", 1), settings
-                )
-            # Initialization is not a trial; a clamped seed must not drop a window.
-            initial = dict(native["parameters"])
-            for name, axis in strategy_axes[native["strategy"]].items():
-                if name in initial:
-                    initial[name] = min(axis.high, max(axis.low, initial[name]))
-            try:
-                case = StudyWindow(
-                    service,
-                    {**native, "parameters": initial},
-                    settings,
-                    benchmark,
-                    calendar,
-                )
-            except CarryStrategyError:
-                if native["strategy"] != "funding_only" or initial["lookback"] == 5:
-                    raise
-                case = StudyWindow(
-                    service,
-                    {**native, "parameters": {"lookback": 5}},
-                    settings,
-                    benchmark,
-                    calendar,
-                )
-            reason = case.admission()
-            if reason:
-                if not checked:
-                    return _unavailable(case, reason)
-                raise W0Error(reason)
-            members.append((target, case))
-            _intersect_axes(axes, case.strategy_axes, active)
-        except (W0Error, OSError) as exc:
-            if not checked:
-                raise
-            rejected.append({"target": target, "reason": str(exc)})
-        if on_progress is not None:
-            on_progress(idx + 1, total_targets)
-    members = _filter_training(members, axes, rejected)
-    if rejected:
-        # Never change the denominator without explicit confirmation.
-        return _confirmation(settings, rejected, members)
-
-    def average(point):
-        scores, exposed = [], False
-        for target, case in members:
-            check_cancelled()
-            m = case.fit.measure(_translate(point, case.request["strategy"]))
-            if m.get("rank_score") is None:
-                return {
-                    "utility": None,
-                    "rank_score": None,
-                    "reason": f"{target['pair']}: {m.get('reason', 'нет допустимого результата')}",
-                }
-            scores.append(m["rank_score"])
-            exposed |= m["utility"] is not None
-        score = fmean(scores)
-        return {
-            "rank_score": score,
-            "by_window_pp": scores,
-            "utility": score if exposed else None,
-            **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
-        }
-
-    land = Landscape(axes | execution_axes(request), average)
-    return _Cohort(active, axes, seed, members, land)
+    )
 
 
 def checked_plateau(

@@ -1,58 +1,46 @@
-"""Exact signal boundaries, explicit same-bar reference and compact table results."""
+"""Exact signal boundaries, explicit same-bar reference and compact table results.
+
+Shared requests and service scaffolding live in
+``proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows``; the
+detailed band, fill and compact-row expectations live in
+``proof_windows_expectations_p72_packages_proof_tests_test_proof_windows``.
+"""
 
 import http.client
 import json
 import math
-import statistics
-import tempfile
 import threading
-import unittest
 from copy import deepcopy
 from http.server import ThreadingHTTPServer
-from pathlib import Path
 from unittest.mock import patch
 
 from moex_spread_lab.core.settings import save_settings, settings_path
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_search import StudyWindow, research_run
 from moex_spread_lab.proof_runtime.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
-from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     AnalyticsError,
     run_mean_reversion_baseline,
 )
-from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
+from moex_spread_lab.strategies.signals import pair_fill
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
-from proof_fixtures import two_calendar_windows
-
-PAIR = {
-    "universe": "pair_screen",
-    "pair": "CNYRUBF/CRZ6",
-    "strategy": "mean_reversion",
-    "parameters": {"lookback": 6, "entry_z": 0.8, "exit_z": 0.1},
-    "sizing": "max_affordable",
-}
-CAL = {
-    "universe": "calendar_native",
-    "asset": "SR",
-    "pair": "SRH3/SRM3",
-    "strategy": "zscore_mean_reversion",
-    "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
-    "sizing": "max_affordable",
-}
-FLAT = {**CAL, "pair": "SRM3/SRU3"}
-
-
-class FixtureCase(unittest.TestCase):
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
-        two_calendar_windows(self.root)
-        self.service = ProofService(self.root)
-
-    def run_proof(self, req):
-        return research_run(self.service, req, optimize=False, include_plateau=False)
+from proof_windows_expectations_p72_packages_proof_tests_test_proof_windows import (
+    assert_bands_are_prefix_causal,
+    assert_bands_follow_point_value,
+    assert_compact_row_matches_proof,
+    assert_entry_matches_signal_band,
+    assert_fill_selection,
+    assert_zero_volume_row_is_ignored,
+    band_levels,
+)
+from proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows import (
+    CAL,
+    FILLS,
+    FLAT,
+    PAIR,
+    FixtureCase,
+    group_request,
+)
 
 
 class ReferenceAndBandsTests(FixtureCase):
@@ -61,32 +49,11 @@ class ReferenceAndBandsTests(FixtureCase):
     ):
         for base in (PAIR, CAL):
             ids = []
-            for fill in ("next_open", "next_close", "reference_same_bar"):
+            for fill in FILLS:
                 with self.subTest(universe=base["universe"], fill=fill):
                     p = self.run_proof({**base, "fill": fill})
                     ids.append(p["run_id"])
-                    self.assertEqual(p["selection"]["fill"], fill)
-                    self.assertEqual(p["execution_reference"], fill == "reference_same_bar")
-                    self.assertEqual(
-                        p["evaluation"]["execution_reference"],
-                        fill == "reference_same_bar",
-                    )
-                    self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-                    self.assertEqual(self.run_proof(p["selection"])["run_id"], p["run_id"])
-                    self.assertTrue(p["trades"])
-                    rows = {r["date"]: r for r in p["series"]}
-                    for trade in p["trades"]:
-                        row = rows[trade["entry"]["date"]]
-                        self.assertEqual(
-                            trade["entry"]["near_price"],
-                            row["near_open" if fill == "next_open" else "near"],
-                        )
-                        if fill == "reference_same_bar":
-                            self.assertEqual(trade["signal"]["date"], trade["entry"]["date"])
-                    if fill == "reference_same_bar":
-                        self.assertTrue(
-                            any("не является проверкой исполнимой" in n for n in p["notes"])
-                        )
+                    assert_fill_selection(self, p, fill)
             self.assertEqual(len(set(ids)), 3)
         self.assertEqual(
             self.run_proof(PAIR)["run_id"],
@@ -95,19 +62,12 @@ class ReferenceAndBandsTests(FixtureCase):
 
     def test_every_entry_agrees_with_its_signal_date_band_not_the_later_fill(self):
         for base in (PAIR, CAL):
-            for fill in ("next_open", "next_close", "reference_same_bar"):
+            for fill in FILLS:
                 with self.subTest(base=base["universe"], fill=fill):
                     p = self.run_proof({**base, "fill": fill})
                     rows = {r["date"]: r for r in p["series"]}
                     for t in p["trades"]:
-                        signal = rows[t["signal"]["date"]]
-                        bound = signal["buy_level" if t["side"] == "long_spread" else "sell_level"]
-                        self.assertIsNotNone(bound)
-                        self.assertLessEqual(signal["spread"] - bound, 1e-6) if t[
-                            "side"
-                        ] == "long_spread" else self.assertGreaterEqual(
-                            signal["spread"] - bound, -1e-6
-                        )
+                        assert_entry_matches_signal_band(self, t, rows[t["signal"]["date"]])
                         if fill != "reference_same_bar":
                             self.assertLess(t["signal"]["date"], t["entry"]["date"])
 
@@ -118,57 +78,17 @@ class ReferenceAndBandsTests(FixtureCase):
             for fill in ("next_open", "reference_same_bar"):
                 with self.subTest(universe=base["universe"], fill=fill):
                     p = self.run_proof({**base, "fill": fill})
-                    native = base["universe"] == "calendar_native"
-                    rows = [r for r in p["series"] if r.get("volume_eligible", True)]
-                    window = base["parameters"]["window" if native else "lookback"]
-                    i = window + 1
-                    end = i + 1 if native and fill == "reference_same_bar" else i
-                    sample = [
-                        r["spread"] * (r["point_value_rub"] if native else 1)
-                        for r in rows[end - window : end]
-                    ]
-                    mean = statistics.mean(sample)
-                    deviation = statistics.stdev(sample) if native else statistics.pstdev(sample)
-                    point = rows[i]["point_value_rub"] if native else 1
-                    self.assertAlmostEqual(
-                        rows[i]["buy_level"],
-                        (mean - base["parameters"]["entry_z"] * deviation) / point,
-                        places=7,
-                    )
-                    self.assertAlmostEqual(
-                        rows[i]["sell_level"],
-                        (mean + base["parameters"]["entry_z"] * deviation) / point,
-                        places=7,
-                    )
+                    row, buy, sell = band_levels(base, fill, p["series"])
+                    self.assertAlmostEqual(row["buy_level"], buy, places=7)
+                    self.assertAlmostEqual(row["sell_level"], sell, places=7)
 
     def test_bands_are_prefix_causal_and_zero_volume_poison_cannot_enter_the_window(
         self,
     ):
         p = self.run_proof(CAL)
-        original = deepcopy(p)
-        altered = deepcopy(p)
-        altered["series"][0]["volume_eligible"] = False
-        altered["series"][0]["spread"] = 1e10
-        attach_entry_levels(altered)
-        without = deepcopy(p)
-        without["series"] = without["series"][1:]
-        attach_entry_levels(without)
-        self.assertEqual(
-            [(r["buy_level"], r["sell_level"]) for r in altered["series"]][1:],
-            [(r["buy_level"], r["sell_level"]) for r in without["series"]],
-        )
-        prefix = deepcopy(original)
-        prefix["series"] = prefix["series"][:30]
-        attach_entry_levels(prefix)
-        self.assertEqual(
-            [(r["buy_level"], r["sell_level"]) for r in original["series"]][:30],
-            [(r["buy_level"], r["sell_level"]) for r in prefix["series"]],
-        )
-        fx = deepcopy(p)
-        for i, row in enumerate(fx["series"]):
-            row["point_value_rub"] = 2 + i / 10
-        attach_entry_levels(fx)
-        self.assertNotEqual(fx["series"][20]["buy_level"], p["series"][20]["buy_level"])
+        assert_zero_volume_row_is_ignored(self, p)
+        assert_bands_are_prefix_causal(self, p)
+        assert_bands_follow_point_value(self, p)
 
     def test_ruonia_lines_invert_exactly_to_the_two_rate_thresholds(self):
         p = self.run_proof(
@@ -215,18 +135,7 @@ class ReferenceAndBandsTests(FixtureCase):
 
     def test_checked_pair_and_calendar_no_longer_reject_common_close_fills(self):
         for fill in ("next_close", "reference_same_bar"):
-            result = research_run(
-                self.service,
-                {
-                    **PAIR,
-                    "fill": fill,
-                    "targets": [
-                        {k: v for k, v in r.items() if k in ("universe", "asset", "pair")}
-                        for r in (PAIR, CAL)
-                    ],
-                },
-                optimize=True,
-            )
+            result = research_run(self.service, group_request(fill), optimize=True)
             self.assertEqual(result["status"], "maximum_found")
             self.assertEqual(result["group"]["member_count"], 2)
             self.assertEqual(result["group"]["execution_reference"], fill == "reference_same_bar")
@@ -249,18 +158,8 @@ class WindowSummaryTests(FixtureCase):
             save_settings(self.root, {"validation_percent": share, "slippage_ticks": 2.5})
             result = window_summaries(self.service, {"requests": requests})
             self.assertEqual(result["validation_percent"], share)
-            for req, row in zip(requests, result["rows"]):
-                proof = self.run_proof(req)
-                self.assertEqual(row["status"], "measured")
-                self.assertEqual(row["run_id"], proof["run_id"])
-                self.assertEqual(row["trades"], proof["summary"]["trades"])
-                self.assertEqual(
-                    row["annualized_excess_pp"],
-                    proof["evaluation"]["result"].get("annualized_excess_pp"),
-                )
-                self.assertEqual(row["evaluation"], proof["evaluation"])
-                self.assertNotIn("ledger", row)
-                self.assertNotIn("plateau", row)
+            for req, row in zip(requests, result["rows"], strict=True):
+                assert_compact_row_matches_proof(self, row, self.run_proof(req))
             self.assertEqual(result["rows"][-1]["trades"], 0)
             self.assertEqual(result["rows"][-1]["annualized_excess_pp"], 0)
         self.assertEqual(requests, original)

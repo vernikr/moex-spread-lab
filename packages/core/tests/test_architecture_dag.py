@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from architecture_frozen_head import FROZEN_LAYER_ASSIGNMENTS
-from architecture_layers import derive_layer
+from architecture_layers import check_package_test_layers, derive_layer
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
@@ -298,6 +298,17 @@ class ArchitectureDagTests(unittest.TestCase):
                                 f"{rel}:{node.lineno} -> from moex_spread_lab import {alias.name}"
                             )
         self.assertFalse(violations, "Root shim imports forbidden:\n  " + "\n  ".join(violations))
+
+    def test_package_tests_do_not_import_upward_layers(self) -> None:
+        violations = [
+            v
+            for pkg_dir in sorted(PACKAGES_DIR.glob("*"))
+            for v in check_package_test_layers(pkg_dir, REPO_ROOT, ALLOWED_LAYER_TARGETS)
+        ]
+        self.assertFalse(
+            violations,
+            "Package test-layer upward import violations:\n  " + "\n  ".join(violations),
+        )
 
 
 if __name__ == "__main__":

@@ -8,11 +8,11 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 
-from .bar_types import DataLakeError, _atomic_write_json
+from .bar_types import DataLakeError
 
 RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
 
@@ -31,6 +31,18 @@ def _atomic_write_bytes(path: Path, value: bytes) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def _as_object_map(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise DataLakeError("raw response manifest entry is invalid")
+    return cast(dict[str, Any], value)
+
+
+def _as_object_list(value: object) -> list[object]:
+    if not isinstance(value, list):
+        raise DataLakeError("raw response manifest entries must be a list")
+    return list(cast(list[object], value))
 
 
 def _is_entry_expired(entry: dict[str, Any], now: datetime) -> bool:
@@ -79,20 +91,27 @@ class RawResponseArchive:
 
     def _read_manifest(self) -> dict[str, Any]:
         if not self.manifest_path.is_file():
-            return {"schema_version": RAW_ARCHIVE_SCHEMA, "entries": []}
+            empty: dict[str, Any] = {"schema_version": RAW_ARCHIVE_SCHEMA, "entries": []}
+            return empty
         try:
-            value = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            loaded: object = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DataLakeError(f"cannot read raw response manifest: {exc}") from exc
-        if not isinstance(value, dict) or value.get("schema_version") != RAW_ARCHIVE_SCHEMA:
+        if not isinstance(loaded, dict):
             raise DataLakeError("unsupported raw response manifest schema")
-        if not isinstance(value.get("entries"), list):
+        manifest = cast(dict[str, Any], loaded)
+        if manifest.get("schema_version") != RAW_ARCHIVE_SCHEMA:
+            raise DataLakeError("unsupported raw response manifest schema")
+        if not isinstance(manifest.get("entries"), list):
             raise DataLakeError("raw response manifest entries must be a list")
-        return value
+        return manifest
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
         manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-        _atomic_write_json(self.manifest_path, manifest)
+        payload = (
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        _atomic_write_bytes(self.manifest_path, payload)
 
     @staticmethod
     def _entry_path(entry: dict[str, Any]) -> str:
@@ -114,36 +133,38 @@ class RawResponseArchive:
         ttl_days: int = 30,
         pin: bool = False,
     ) -> dict[str, Any]:
-        if not isinstance(url, str) or not url or not isinstance(raw, bytes):
+        url_value = cast(object, url)
+        raw_value = cast(object, raw)
+        if not isinstance(url_value, str) or not url_value or not isinstance(raw_value, bytes):
             raise DataLakeError("raw response requires a URL and exact bytes")
         if ttl_days < 0:
             raise DataLakeError("raw response TTL must not be negative")
         now = datetime.now(UTC)
-        request_sha256 = hashlib.sha256(url.encode("utf-8")).hexdigest()
-        raw_sha256 = hashlib.sha256(raw).hexdigest()
+        request_sha256 = hashlib.sha256(url_value.encode("utf-8")).hexdigest()
+        raw_sha256 = hashlib.sha256(raw_value).hexdigest()
         received_sha256 = hashlib.sha256(received_at.encode("utf-8")).hexdigest()
         entry_id = f"{request_sha256}-{raw_sha256}-{received_sha256}"
         filename = f"{entry_id}.json.zst"
-        compressed = self._codec.compress(raw).to_pybytes()
+        compressed = self._codec.compress(raw_value).to_pybytes()
         _atomic_write_bytes(self.root / filename, compressed)
         manifest = self._read_manifest()
-        old = next(
-            (
-                item
-                for item in manifest["entries"]
-                if isinstance(item, dict) and item.get("id") == entry_id
-            ),
-            None,
-        )
+        manifest_entries_obj = _as_object_list(manifest["entries"])
+        old: dict[str, Any] | None = None
+        for item in manifest_entries_obj:
+            if isinstance(item, dict):
+                candidate = cast(dict[str, Any], item)
+                if candidate.get("id") == entry_id:
+                    old = candidate
+                    break
         pinned = bool(pin or (old and old.get("pinned") is True))
         stored_at = now.isoformat(timespec="seconds")
-        entry = {
+        entry: dict[str, Any] = {
             "id": entry_id,
             "path": filename,
             "request_sha256": request_sha256,
             "raw_response_sha256": raw_sha256,
             "received_at_sha256": received_sha256,
-            "url": url,
+            "url": url_value,
             "received_at": received_at,
             "stored_at": stored_at,
             "last_seen_at": stored_at,
@@ -151,36 +172,50 @@ class RawResponseArchive:
             if pinned
             else (now + timedelta(days=ttl_days)).isoformat(timespec="seconds"),
             "pinned": pinned,
-            "raw_bytes": len(raw),
+            "raw_bytes": len(raw_value),
             "compressed_bytes": len(compressed),
         }
-        entries = [
+        entries: list[object] = [
             item
-            for item in manifest["entries"]
-            if not (isinstance(item, dict) and item.get("id") == entry_id)
+            for item in manifest_entries_obj
+            if not (isinstance(item, dict) and cast(dict[str, Any], item).get("id") == entry_id)
         ]
         entries.append(entry)
-        manifest["entries"] = sorted(entries, key=lambda item: item["id"])
+
+        def _sort_id(item: object) -> str:
+            identity = _as_object_map(item)["id"]
+            if isinstance(identity, str):
+                return identity
+            return str(identity)
+
+        manifest["entries"] = sorted(entries, key=_sort_id)
         self._write_manifest(manifest)
         return entry
 
     def pin(self, entry_id: str, *, pinned: bool = True) -> dict[str, Any]:
         manifest = self._read_manifest()
-        for entry in manifest["entries"]:
-            if isinstance(entry, dict) and entry.get("id") == entry_id:
-                entry["pinned"] = pinned
-                entry["expires_at"] = (
-                    None
-                    if pinned
-                    else entry.get("expires_at") or datetime.now(UTC).isoformat(timespec="seconds")
-                )
-                self._write_manifest(manifest)
-                return entry
+        for item in _as_object_list(manifest["entries"]):
+            if isinstance(item, dict):
+                entry = cast(dict[str, Any], item)
+                if entry.get("id") == entry_id:
+                    entry["pinned"] = pinned
+                    entry["expires_at"] = (
+                        None
+                        if pinned
+                        else entry.get("expires_at")
+                        or datetime.now(UTC).isoformat(timespec="seconds")
+                    )
+                    self._write_manifest(manifest)
+                    return entry
         raise DataLakeError(f"raw response entry is not registered: {entry_id}")
 
     def verify(self) -> dict[str, Any]:
         manifest = self._read_manifest()
-        entries = [item for item in manifest["entries"] if isinstance(item, dict)]
+        entries: list[dict[str, Any]] = [
+            cast(dict[str, Any], item)
+            for item in _as_object_list(manifest["entries"])
+            if isinstance(item, dict)
+        ]
         verified_bytes = 0
         registered_paths: set[str] = set()
         for entry in entries:
@@ -201,11 +236,14 @@ class RawResponseArchive:
         now = datetime.now(UTC)
         expired: list[dict[str, Any]] = []
         keep: list[dict[str, Any]] = []
-        for entry in manifest["entries"]:
-            if not isinstance(entry, dict):
+        typed_entries: list[dict[str, Any]] = []
+        for item in _as_object_list(manifest["entries"]):
+            if not isinstance(item, dict):
                 raise DataLakeError("raw response manifest entry is invalid")
+            typed_entries.append(cast(dict[str, Any], item))
+        for entry in typed_entries:
             (expired if _is_entry_expired(entry, now) else keep).append(entry)
-        registered_paths = {self._entry_path(entry) for entry in manifest["entries"]}
+        registered_paths = {self._entry_path(entry) for entry in typed_entries}
         orphans = sorted(
             path for path in self.root.glob("*.json.zst") if path.name not in registered_paths
         )

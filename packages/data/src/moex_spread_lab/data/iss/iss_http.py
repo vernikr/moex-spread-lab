@@ -189,3 +189,7 @@ def _fetch_json(
     if return_raw:
         return payload, received_at, raw_sha256, raw
     return payload, received_at, raw_sha256
+
+
+# Public alias preserves the historical private entry point.
+fetch_json = _fetch_json

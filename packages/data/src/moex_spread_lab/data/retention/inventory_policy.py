@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 DATA_INVENTORY_SCHEMA = "data-inventory.v1"
 _ACTIVE_TIMEFRAMES = frozenset(("1d", "1h"))
@@ -238,8 +238,9 @@ def _extract_rows_timestamps(rows: list[Any]) -> list[str]:
     for row in rows:
         if not isinstance(row, dict):
             continue
+        typed_row = cast(dict[str, Any], row)
         for timestamp_key in ("begin", "timestamp", "date"):
-            value = row.get(timestamp_key)
+            value = typed_row.get(timestamp_key)
             if isinstance(value, str) and value:
                 values.append(value)
                 break
@@ -257,7 +258,7 @@ def _json_time_range(payload: dict[str, Any]) -> dict[str, str] | None:
         rows = payload.get(key)
         if not isinstance(rows, list):
             continue
-        values = _extract_rows_timestamps(rows)
+        values = _extract_rows_timestamps(cast(list[Any], rows))
         if values:
             return {"from": min(values), "till": max(values)}
     return None
@@ -270,7 +271,7 @@ def _resolve_payload_row_count(payload: dict[str, Any]) -> int | None:
     for key in ("rows", "daily", "trades", "records"):
         value = payload.get(key)
         if isinstance(value, list):
-            return len(value)
+            return len(cast(list[Any], value))
     return None
 
 
@@ -281,20 +282,22 @@ def _inspect_json_file(path: Path) -> dict[str, Any]:
         return {"inspection_error": type(exc).__name__}
     if not isinstance(payload, dict):
         return {"json_root": type(payload).__name__}
+    data = cast(dict[str, Any], payload)
     metadata: dict[str, Any] = {}
-    if isinstance(payload.get("schema_version"), str):
-        metadata["schema_version"] = payload["schema_version"]
-    if isinstance(payload.get("timeframe"), str):
-        metadata["timeframe"] = payload["timeframe"]
-    row_count = _resolve_payload_row_count(payload)
+    if isinstance(data.get("schema_version"), str):
+        metadata["schema_version"] = data["schema_version"]
+    if isinstance(data.get("timeframe"), str):
+        metadata["timeframe"] = data["timeframe"]
+    row_count = _resolve_payload_row_count(data)
     if row_count is not None:
         metadata["row_count"] = row_count
-    time_range = _json_time_range(payload)
+    time_range = _json_time_range(data)
     if time_range is not None:
         metadata["time_range"] = time_range
-    source = payload.get("source")
+    source = data.get("source")
     if isinstance(source, dict):
-        metadata["source_metadata_keys"] = sorted(str(key) for key in source)
+        source_metadata = cast(dict[str, Any], source)
+        metadata["source_metadata_keys"] = sorted(str(key) for key in source_metadata)
     return metadata
 
 
@@ -308,3 +311,14 @@ def _inspect_file(path: Path) -> dict[str, Any]:
         except OSError as exc:
             return {"inspection_error": type(exc).__name__}
     return {}
+
+
+# ``data_inventory`` re-exports these helpers, so they are declared surface of
+# this module even though their names stay private.
+__all__ = [
+    "DATA_INVENTORY_SCHEMA",
+    "_Policy",
+    "_inspect_file",
+    "_path_timeframe",
+    "_policy",
+]

@@ -4,41 +4,58 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIRS
+from moex_spread_lab.core import universe as _universe
+from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import BarSeries
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
 
+PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
 SLIPPAGE_GRID = (0.0, 1.0, 2.0)
+_INDEPENDENT_GROSS_OPTS = frozenset({"lookback", "entry_z", "exit_z", "delay", "fill"})
 
 
 def _candles(series: BarSeries) -> dict[str, dict[str, Any]]:
     return {row["begin"]: row for row in series.rows if isinstance(row.get("begin"), str)}
 
 
+def _parse_independent_gross_options(
+    options: dict[str, Any],
+) -> tuple[int, float, float, int, str]:
+    unknown = set(options) - _INDEPENDENT_GROSS_OPTS
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+    return (
+        options.get("lookback", 20),
+        options.get("entry_z", 2.0),
+        options.get("exit_z", 0.5),
+        options.get("delay", 1),
+        options.get("fill", "close"),
+    )
+
+
 def independent_gross(
-    near: dict,
-    far: dict,
+    near: Mapping[str, Mapping[str, Any]],
+    far: Mapping[str, Mapping[str, Any]],
     near_mult: float,
     far_mult: float,
-    *,
-    lookback: int = 20,
-    entry_z: float = 2.0,
-    exit_z: float = 0.5,
-    delay: int = 1,
-    fill: str = "close",
+    **options: Any,
 ) -> tuple[float, int]:
     """Re-implement the zero-cost mean-reversion control from raw candles (signal on closes)."""
+    lookback, entry_z, exit_z, delay, fill = _parse_independent_gross_options(options)
     stamps = sorted(set(near) & set(far))
     price = "open" if fill == "open" else "close"
-    spread = [near[t]["close"] * near_mult - far[t]["close"] * far_mult for t in stamps]
-    filled = [near[t][price] * near_mult - far[t][price] * far_mult for t in stamps]
+    spread: list[float] = [
+        near[t]["close"] * near_mult - far[t]["close"] * far_mult for t in stamps
+    ]
+    filled: list[float] = [near[t][price] * near_mult - far[t][price] * far_mult for t in stamps]
     position, entry, gross, trades = 0, 0.0, 0.0, 0
     for index, value in enumerate(filled):
         signal = index - delay
@@ -60,11 +77,11 @@ def independent_gross(
 
 
 def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
-    contracts = {
+    contracts: dict[str, dict[str, Any]] = {
         row["secid"]: row
         for row in json.loads(inputs.contracts.read_text(encoding="utf-8"))["instruments"]
     }
-    rows = []
+    rows: list[dict[str, Any]] = []
     for pair in PAIRS:
         near_id, far_id = pair["near"], pair["far"]
         near_path, far_path = (
@@ -89,10 +106,10 @@ def audit_pairs(inputs: ScreenerInputs) -> dict[str, Any]:
             continue
         near, far = _candles(near_source), _candles(far_source)
         common = set(near) & set(far)
-        mult = {
+        mult: dict[str, float] = {
             s: contracts[s]["tick_value"] / contracts[s]["tick_size"] for s in (near_id, far_id)
         }
-        min_volume = {
+        min_volume: dict[str, float] = {
             s: min(r["volume"] for t, r in c.items() if t in common)
             for s, c in ((near_id, near), (far_id, far))
         }

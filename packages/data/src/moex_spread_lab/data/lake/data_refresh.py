@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Iterable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from datetime import date
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -14,17 +16,31 @@ from ..iss.catalog import (
     fetch_candle_series,
 )
 from .data_lake import ParquetBarStore
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    PayloadBuilder,
+    TargetStateProtocol,
+    parse_candle_row,
+)
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    atomic_write_json as _atomic_write_json,
+)
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    dataset_writer_lock as _dataset_writer_lock,
+)
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    date_chunks as _chunks,
+)
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    parse_iso_date as _date,
+)
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh import (
+    parse_timestamp_date as _timestamp_date,
+)
 from .refresh_merge import (
     REFRESH_SCHEMA,
     DataRefreshError,
     RefreshConfig,
     RefreshTarget,
-    _atomic_write_json,
-    _chunks,
-    _dataset_writer_lock,
-    _date,
-    _TargetState,
-    _timestamp_date,
     build_merged_payload,
     plan_single_target,
 )
@@ -51,6 +67,7 @@ _REFRESH_OPTIONS = frozenset(
 )
 CapturedRaw = tuple[str, bytes, str, str]
 ChunkFetchResult = tuple[date, dict[str, Any], list[CapturedRaw]]
+ChunkFutureResult = tuple[str, date, dict[str, Any], list[CapturedRaw]]
 
 
 def _parse_refresh_config(
@@ -100,8 +117,8 @@ def _parse_refresh_config(
 
 
 def _run_single_chunk(
-    state: _TargetState, chunk_from: date, chunk_till: date, cfg: RefreshConfig
-) -> tuple[str, date, dict[str, Any], list[CapturedRaw]]:
+    state: TargetStateProtocol, chunk_from: date, chunk_till: date, cfg: RefreshConfig
+) -> ChunkFutureResult:
     captured: list[CapturedRaw] = []
 
     def raw_sink(url: str, raw: bytes, received_at: str, raw_sha256: str) -> None:
@@ -124,12 +141,12 @@ def _run_single_chunk(
 
 
 def _fetch_target_chunks(
-    states: list[_TargetState], cfg: RefreshConfig
+    states: Sequence[TargetStateProtocol], cfg: RefreshConfig
 ) -> tuple[dict[str, list[ChunkFetchResult]], int]:
     fetched: dict[str, list[ChunkFetchResult]] = {state.target.id: [] for state in states}
     task_count = 0
     with ThreadPoolExecutor(max_workers=cfg.workers) as executor:
-        futures = []
+        futures: list[Future[ChunkFutureResult]] = []
         for state in states:
             for chunk_from, chunk_till in _chunks(state.requested_from, cfg.until, cfg.chunk_days):
                 task_count += 1
@@ -165,25 +182,29 @@ def _merge_chunk_rows(
 ) -> int:
     if result.get("schema_version") != "iss-candles.v1" or result.get("secid") != secid:
         raise DataRefreshError(f"fetcher returned an invalid series for {target_id}")
-    for row in result.get("rows", []):
-        if not isinstance(row, dict) or not isinstance(row.get("begin"), str):
+    raw_rows: Iterable[object] = result.get("rows", ())
+    for row in raw_rows:
+        parsed = parse_candle_row(row)
+        if parsed is None:
             raise DataRefreshError(f"fetcher returned an invalid candle row for {target_id}")
-        rows_by_begin[row["begin"]] = dict(row)
+        begin, copied_row = parsed
+        rows_by_begin[begin] = copied_row
     return int(result.get("page_count", 0))
 
 
 def _ingest_chunk_rows_and_raw(
-    state: _TargetState,
+    state: TargetStateProtocol,
     chunks: list[ChunkFetchResult],
     store: ParquetBarStore,
     cfg: RefreshConfig,
 ) -> tuple[list[dict[str, Any]], list[str], int]:
-    old_rows = state.payload.get("rows", []) if state.payload else []
-    rows_by_begin: dict[str, dict[str, Any]] = {
-        row["begin"]: dict(row)
-        for row in old_rows
-        if isinstance(row, dict) and isinstance(row.get("begin"), str)
-    }
+    old_rows: Iterable[object] = state.payload.get("rows", ()) if state.payload else ()
+    rows_by_begin: dict[str, dict[str, Any]] = {}
+    for row in old_rows:
+        parsed = parse_candle_row(row)
+        if parsed is not None:
+            begin, copied_row = parsed
+            rows_by_begin[begin] = copied_row
     raw_entries: list[str] = []
     page_count = 0
     for _, result, captured in chunks:
@@ -196,16 +217,16 @@ def _ingest_chunk_rows_and_raw(
 
 
 def _publish_refreshed_target(
-    state: _TargetState,
+    state: TargetStateProtocol,
     chunks: list[ChunkFetchResult],
     store: ParquetBarStore,
     cfg: RefreshConfig,
+    *,
+    build_payload: PayloadBuilder,
 ) -> dict[str, Any]:
     ordered_chunks = sorted(chunks, key=lambda item: item[0])
     rows, raw_entries, page_count = _ingest_chunk_rows_and_raw(state, ordered_chunks, store, cfg)
-    payload = build_merged_payload(
-        state,
-        cfg,
+    payload = build_payload(
         rows=rows,
         page_count=page_count,
         chunk_count=len(ordered_chunks),
@@ -259,17 +280,20 @@ def refresh_candle_datasets(
     with ExitStack() as locks:
         for target in ordered_targets:
             locks.enter_context(_dataset_writer_lock(store.lake_root, target))
-        states: list[_TargetState] = []
-        skipped: list[dict[str, Any]] = []
-        for target in ordered_targets:
-            state, skip_entry = plan_single_target(target, store, cfg)
-            if skip_entry is not None:
-                skipped.append(skip_entry)
-            elif state is not None:
-                states.append(state)
+        planned = [plan_single_target(target, store, cfg) for target in ordered_targets]
+        skipped = [skip_entry for _, skip_entry in planned if skip_entry is not None]
+        states = [
+            state for state, skip_entry in planned if skip_entry is None and state is not None
+        ]
         fetched, task_count = _fetch_target_chunks(states, cfg)
         refreshed = [
-            _publish_refreshed_target(state, fetched[state.target.id], store, cfg)
+            _publish_refreshed_target(
+                state,
+                fetched[state.target.id],
+                store,
+                cfg,
+                build_payload=partial(build_merged_payload, state, cfg),
+            )
             for state in states
         ]
     return {

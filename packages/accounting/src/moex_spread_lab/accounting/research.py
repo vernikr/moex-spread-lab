@@ -16,11 +16,15 @@ from .research_intake import (
     RESEARCH_FIXTURE_SCHEMA,
     RESEARCH_REPORT_SCHEMA,
     ResearchError,
-    _positive_number,
-    _require,
     load_research_fixture,
     run_w1_catalog,
     run_w2_corporate_actions,
+)
+from .research_intake import (
+    positive_number as _positive_number,
+)
+from .research_intake import (
+    require as _require,
 )
 from .research_simulation import (
     run_w3_economics,

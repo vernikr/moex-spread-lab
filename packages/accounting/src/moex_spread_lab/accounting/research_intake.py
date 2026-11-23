@@ -38,13 +38,13 @@ class ResearchError(W0Error):
     """Raised when a research fixture fails a domain gate."""
 
 
-def _require(mapping: dict[str, Any], key: str, context: str) -> Any:
+def require(mapping: dict[str, Any], key: str, context: str) -> Any:
     if key not in mapping:
         raise ResearchError(f"missing {key!r} in {context}")
     return mapping[key]
 
 
-def _positive_number(value: Any, context: str) -> float:
+def positive_number(value: Any, context: str) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:
@@ -54,7 +54,7 @@ def _positive_number(value: Any, context: str) -> float:
     return number
 
 
-def _timestamp(value: Any, context: str) -> datetime:
+def timestamp(value: Any, context: str) -> datetime:
     if not isinstance(value, str) or not value:
         raise ResearchError(f"{context} must be an ISO timestamp")
     try:
@@ -63,11 +63,16 @@ def _timestamp(value: Any, context: str) -> datetime:
         raise ResearchError(f"{context} is not an ISO timestamp: {value}") from exc
 
 
+_positive_number = positive_number
+_require = require
+_timestamp = timestamp
+
+
 def load_research_fixture(path: Path) -> dict[str, Any]:
     fixture = load_json(path)
-    if _require(fixture, "schema_version", "research fixture") != RESEARCH_FIXTURE_SCHEMA:
+    if require(fixture, "schema_version", "research fixture") != RESEARCH_FIXTURE_SCHEMA:
         raise ResearchError("unsupported research fixture schema")
-    source = _require(fixture, "source", "research fixture")
+    source = require(fixture, "source", "research fixture")
     if (
         source.get("rights_status") != "synthetic_test_data"
         or source.get("network_required") is not False
@@ -76,14 +81,14 @@ def load_research_fixture(path: Path) -> dict[str, Any]:
             "research fixture must declare synthetic_test_data and network_required=false"
         )
     for section in _REQUIRED_FIXTURE_SECTIONS:
-        _require(fixture, section, "research fixture")
+        require(fixture, section, "research fixture")
     return fixture
 
 
 def _validate_catalog_instrument(
     instrument: dict[str, Any], seen: dict[str, dict[str, Any]]
 ) -> None:
-    stable_id = str(_require(instrument, "stable_id", "catalog instrument"))
+    stable_id = str(require(instrument, "stable_id", "catalog instrument"))
     if stable_id in seen:
         raise ResearchError(f"duplicate stable instrument identity: {stable_id}")
     for field in (
@@ -95,10 +100,10 @@ def _validate_catalog_instrument(
         "tick_size",
         "settlement_type",
     ):
-        _require(instrument, field, f"catalog instrument {stable_id}")
+        require(instrument, field, f"catalog instrument {stable_id}")
     if not isinstance(instrument["lot_size"], int) or instrument["lot_size"] <= 0:
         raise ResearchError(f"invalid lot size for {stable_id}")
-    _timestamp(instrument["expiry"], f"expiry for {stable_id}")
+    timestamp(instrument["expiry"], f"expiry for {stable_id}")
     if instrument.get("historical_status") == "current_snapshot":
         raise ResearchError(
             f"current snapshot cannot stand in for historical evidence: {stable_id}"
@@ -112,14 +117,14 @@ def _collect_catalog_pages(
     instruments: dict[str, dict[str, Any]] = {}
     page_numbers: list[int] = []
     for page in pages:
-        page_no = int(_require(page, "page_no", "catalog page"))
+        page_no = int(require(page, "page_no", "catalog page"))
         page_numbers.append(page_no)
-        _require(page, "received_at", "catalog page")
-        _require(page, "raw_response_sha256", "catalog page")
+        require(page, "received_at", "catalog page")
+        require(page, "raw_response_sha256", "catalog page")
         next_page = page.get("next_page")
         if next_page is not None and next_page != page_no + 1:
             raise ResearchError(f"catalog pagination jump after page {page_no}")
-        items = _require(page, "items", "catalog page")
+        items = require(page, "items", "catalog page")
         if not items:
             raise ResearchError("catalog page cannot be empty")
         for instrument in items:
@@ -133,21 +138,21 @@ def _validate_catalog_aliases(
     aliases: list[dict[str, Any]], instruments: dict[str, dict[str, Any]]
 ) -> None:
     for alias in aliases:
-        stable_id = _require(alias, "stable_id", "catalog alias")
+        stable_id = require(alias, "stable_id", "catalog alias")
         if stable_id not in instruments:
             raise ResearchError(f"alias points to unknown stable identity: {stable_id}")
-        _require(alias, "source_code", "catalog alias")
+        require(alias, "source_code", "catalog alias")
 
 
 def _validate_price_rows(
     prices: list[dict[str, Any]], instruments: dict[str, dict[str, Any]]
 ) -> int:
     for row in prices:
-        stable_id = _require(row, "stable_id", "price row")
+        stable_id = require(row, "stable_id", "price row")
         if stable_id not in instruments:
             raise ResearchError(f"price row points to unknown instrument: {stable_id}")
-        _timestamp(row.get("event_time"), f"event_time for {stable_id}")
-        _timestamp(row.get("receipt_at"), f"receipt_at for {stable_id}")
+        timestamp(row.get("event_time"), f"event_time for {stable_id}")
+        timestamp(row.get("receipt_at"), f"receipt_at for {stable_id}")
         if row.get("source_vintage") in (None, ""):
             raise ResearchError(f"price row has no source vintage: {stable_id}")
         missing = _REQUIRED_PRICE_ROLES - set(row)
@@ -163,12 +168,12 @@ def _evaluate_catalog_candidates(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for candidate in candidates:
-        near = _require(candidate, "near_stable_id", "candidate")
-        far = _require(candidate, "far_stable_id", "candidate")
+        near = require(candidate, "near_stable_id", "candidate")
+        far = require(candidate, "far_stable_id", "candidate")
         admitted = near in instruments and far in instruments and near != far
         results.append(
             {
-                "candidate_id": _require(candidate, "candidate_id", "candidate"),
+                "candidate_id": require(candidate, "candidate_id", "candidate"),
                 "near_stable_id": near,
                 "far_stable_id": far,
                 "status": "admitted" if admitted else "not_admitted",
@@ -184,11 +189,11 @@ def _evaluate_catalog_candidates(
 
 def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
     catalog = fixture["catalog"]
-    instruments, page_numbers = _collect_catalog_pages(_require(catalog, "pages", "catalog"))
-    _validate_catalog_aliases(_require(catalog, "aliases", "catalog"), instruments)
+    instruments, page_numbers = _collect_catalog_pages(require(catalog, "pages", "catalog"))
+    _validate_catalog_aliases(require(catalog, "aliases", "catalog"), instruments)
     price_rows = _validate_price_rows(fixture["prices"], instruments)
     candidate_results = _evaluate_catalog_candidates(
-        _require(catalog, "candidates", "catalog"), instruments
+        require(catalog, "candidates", "catalog"), instruments
     )
     return {
         "wave": "W1",
@@ -203,12 +208,12 @@ def run_w1_catalog(fixture: dict[str, Any]) -> dict[str, Any]:
 
 
 def _classify_corporate_action(action: dict[str, Any]) -> tuple[str, bool, bool]:
-    action_id = str(_require(action, "action_id", "corporate action"))
+    action_id = str(require(action, "action_id", "corporate action"))
     for field in ("source_role", "evidence_locator", "content_sha256", "event_type"):
-        _require(action, field, f"corporate action {action_id}")
+        require(action, field, f"corporate action {action_id}")
     available_at = action.get("available_at")
     if available_at is not None:
-        _timestamp(available_at, f"available_at for {action_id}")
+        timestamp(available_at, f"available_at for {action_id}")
     is_conflict = action.get("conflict_status") == "conflict"
     signal_eligible = (
         available_at is not None
@@ -220,9 +225,9 @@ def _classify_corporate_action(action: dict[str, Any]) -> tuple[str, bool, bool]
 
 def _validate_price_gap_checks(gap_checks: list[dict[str, Any]]) -> None:
     for check in gap_checks:
-        if _require(check, "diagnostic_type", "price gap check") != "price_gap":
+        if require(check, "diagnostic_type", "price gap check") != "price_gap":
             raise ResearchError("unknown price-gap diagnostic type")
-        if _require(check, "derived_only", "price gap check") is not True:
+        if require(check, "derived_only", "price gap check") is not True:
             raise ResearchError("price gap diagnostic must remain derived_only")
         if "action_id" in check:
             raise ResearchError("price gap diagnostic cannot overwrite a factual action")

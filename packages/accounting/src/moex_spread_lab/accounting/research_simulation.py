@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .research_intake import ResearchError, _positive_number, _require, _timestamp
+from .research_intake import ResearchError
+from .research_intake import positive_number as _positive_number
+from .research_intake import require as _require
+from .research_intake import timestamp as _timestamp
 
 _COST_COMPONENTS = ("exchange", "clearing", "broker", "slippage", "funding", "exit")
 _EXECUTION_FIELDS = (

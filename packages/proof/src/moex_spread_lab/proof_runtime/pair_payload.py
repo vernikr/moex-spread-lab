@@ -12,11 +12,13 @@ from typing import Any
 from moex_spread_lab.accounting.costs import (
     CONTRACT_GROUP,
     TAKER_RATE_PERCENT,
-    _cost_totals,
+)
+from moex_spread_lab.accounting.costs import (
+    cost_totals as _cost_totals,
 )
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIR_UNIVERSE
-from moex_spread_lab.core.w0 import _run_id
+from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .payload_tools import PROOF_SCHEMA, clean, observed_min_leg_volume, point_value
@@ -216,7 +218,7 @@ def pair_payload(spec: PairPayloadSpec) -> dict[str, Any]:
         "parameters": spec.params,
         "initial_capital_rub": spec.risk["stress_inputs"]["initial_capital_rub"],
     }
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": PROOF_SCHEMA,
         "universe": PAIR_UNIVERSE,
         "status": "exploratory_proxy_not_live",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .payload_tools import events
 
@@ -32,7 +32,11 @@ def _exit_step(
         if exiting is not None
         else (row["near"], row["far"])
     )
-    step_cost = sum((exiting["exit"]["costs"] or {}).values()) if exiting is not None else 0.0
+    step_cost = (
+        sum(cast(dict[str, float], exiting["exit"]["costs"] or {}).values())
+        if exiting is not None
+        else 0.0
+    )
     held = None if exiting is not None else {**position, "near": end_near, "far": end_far}
     return _mark_step(position, end_near, end_far, mults, quantity), step_cost, held
 
@@ -53,7 +57,7 @@ def _entry_step(
     )
     return (
         step_mark,
-        sum((entry["costs"] or {}).values()),
+        sum(cast(dict[str, float], entry["costs"] or {}).values()),
         {
             "sign": sign,
             "near": row["near"],
@@ -142,10 +146,10 @@ def funding_ledger(
         step_cost = 0.0
         entering = by_entry.get(day)
         if entering is not None:
-            step_cost += sum((entering["entry"]["costs"] or {}).values())
+            step_cost += sum(cast(dict[str, float], entering["entry"]["costs"] or {}).values())
         exiting = by_exit.get(day)
         if exiting is not None and not exiting["open_at_end"]:
-            step_cost += sum((exiting["exit"]["costs"] or {}).values())
+            step_cost += sum(cast(dict[str, float], exiting["exit"]["costs"] or {}).values())
         cumulative += step_mark - step_cost
         ledger.append(
             {

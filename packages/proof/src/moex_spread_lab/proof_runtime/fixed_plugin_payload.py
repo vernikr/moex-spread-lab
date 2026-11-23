@@ -8,9 +8,11 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from moex_spread_lab.accounting.costs import _cost_totals, side_cost, tariff_profile
+from moex_spread_lab.accounting.costs import cost_totals as _cost_totals
+from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
-from moex_spread_lab.core.w0 import W0Error, _run_id
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .fixed_plugin_series import scaled_series as _scaled_series
@@ -32,7 +34,7 @@ def _trade_blocks(
 ) -> list[dict[str, Any]]:
     """Fill blocks per intent; costs recomputed on each fill's own prices."""
     quantity, slippage, far_mult = scaling
-    blocks = []
+    blocks: list[dict[str, Any]] = []
     for intent in unit["trades"]:
         events: dict[str, dict[str, Any]] = {}
         for event in ("entry", "exit"):
@@ -67,7 +69,7 @@ def _trade_rows(
 ) -> list[dict[str, Any]]:
     """Trade rows: gross includes funding, costs come from the recomputed fill blocks."""
     near_mult, far_mult, quantity, margin, benchmark = scaling
-    trades = []
+    trades: list[dict[str, Any]] = []
     for number, (intent, events) in enumerate(zip(unit["trades"], blocks, strict=True), 1):
         entry, exit_ = intent["entry"], intent["exit"]
         funding = sum(
@@ -190,7 +192,7 @@ def _account_curve(
     funding_by_date = {row["date"]: float(row["funding_rub"] or 0.0) for row in unit["series"]}
     position: dict[str, Any] | None = None
     cumulative = 0.0
-    precise_pnl = []
+    precise_pnl: list[float] = []
     for row in rows:
         day = row["date"]
         change = fee = 0.0

@@ -8,7 +8,11 @@ from typing import Any
 from moex_spread_lab.accounting.costs import TAKER_RATE_PERCENT
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 
-from .contracts import ASSETS, _stress_ok
+from ._notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload import (
+    PROOF_NOTES as _PROOF_NOTES,
+)
+from .contracts import ASSETS
+from .contracts import stress_ok as _stress_ok
 from .proof_ledger import (
     clean_payload,
     compact_series,
@@ -19,16 +23,6 @@ from .proof_ledger import (
     simulate_marked_ledger,
     sizing_intents_trades,
 )
-
-_PROOF_NOTES = [
-    "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
-    "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцениваются.",
-    "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
-    "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс проскальзывание один раз на сторону.",
-    "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
-    "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
-    "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,10 +107,10 @@ def _metrics_only_payload(
             "ledger": [],
             "summary": {},
         }
-    trades = [
+    trades: list[dict[str, Any]] = [
         {
             "number": number,
-            "side": "short_spread" if trade["direction"] < 0 else "long_spread",
+            "side": "short_spread" if int(trade["direction"]) < 0 else "long_spread",
             "quantity": ctx.quantity,
             "signal": trade["signal"],
             "entry": {
@@ -135,24 +129,27 @@ def _metrics_only_payload(
             },
             "reason": trade["reason"],
             "margin_rub": trade["margin_rub"],
-            "gross_rub": trade["gross_rub"],
-            "costs_rub": trade["costs_rub"],
-            "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
-            "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
+            "gross_rub": float(trade["gross_rub"]),
+            "costs_rub": float(trade["costs_rub"]),
+            "net_rub": round(float(trade["gross_rub"]) - float(trade["costs_rub"]), 2),
+            "lqdt_on_margin_rub": float(trade["lqdt_on_margin_rub"]),
             "excess_rub": round(
-                trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2
+                float(trade["gross_rub"])
+                - float(trade["costs_rub"])
+                - float(trade["lqdt_on_margin_rub"]),
+                2,
             ),
         }
         for number, trade in enumerate(ctx.account["trade_list"], start=1)
     ]
     ledger, marked, _ = simulate_marked_ledger(rows, trades, ctx.quantity, compact=True)
     for t in trades:
-        t["gross_rub"] = round(marked[t["number"]], 2)
-        t["net_rub"] = round(t["gross_rub"] - t["costs_rub"], 2)
-        t["excess_rub"] = round(t["net_rub"] - t["lqdt_on_margin_rub"], 2)
-    gross = sum(t["gross_rub"] for t in trades)
-    net = sum(t["net_rub"] for t in trades)
-    lqdt_m = ctx.account["lqdt_on_pair_margin_while_open_rub"]
+        t["gross_rub"] = round(float(marked[int(t["number"])]), 2)
+        t["net_rub"] = round(float(t["gross_rub"]) - float(t["costs_rub"]), 2)
+        t["excess_rub"] = round(float(t["net_rub"]) - float(t["lqdt_on_margin_rub"]), 2)
+    gross = sum(float(t["gross_rub"]) for t in trades)
+    net = sum(float(t["net_rub"]) for t in trades)
+    lqdt_m = float(ctx.account["lqdt_on_pair_margin_while_open_rub"])
     return {
         "schema_version": "calendar-proof.v1",
         "initial_capital_rub": ctx.initial_capital,
@@ -169,7 +166,7 @@ def _metrics_only_payload(
             "net_rub": round(net, 2),
             "lqdt_on_margin_rub": lqdt_m,
             "excess_over_lqdt_rub": round(net - lqdt_m, 2),
-            "winners": sum(t["net_rub"] > 0 for t in trades),
+            "winners": sum(1 for t in trades if float(t["net_rub"]) > 0),
         },
     }
 
@@ -206,24 +203,29 @@ def build_proof_payload(
     rows = window["rows"]
     tf = window.get("timeframe", "1d")
     is_open = ctx.fill_label == "next_open"
-    trades = [
+    trades: list[dict[str, Any]] = [
         {
             "number": number,
-            "side": "short_spread" if trade["direction"] < 0 else "long_spread",
-            "legs": "sell far, buy near" if trade["direction"] < 0 else "buy far, sell near",
+            "side": "short_spread" if int(trade["direction"]) < 0 else "long_spread",
+            "legs": "sell far, buy near" if int(trade["direction"]) < 0 else "buy far, sell near",
             "quantity": ctx.quantity,
             "signal": trade["signal"],
             "entry": full_event_dict(trade["entry_row"], trade["entry_costs"], is_open),
             "exit": full_event_dict(trade["exit_row"], trade["exit_costs"], is_open),
             "reason": trade["reason"],
-            "days_held": elapsed_days(trade["entry_row"]["date"], trade["exit_row"]["date"]),
+            "days_held": elapsed_days(
+                str(trade["entry_row"]["date"]), str(trade["exit_row"]["date"])
+            ),
             "margin_rub": trade["margin_rub"],
-            "gross_rub": trade["gross_rub"],
-            "costs_rub": trade["costs_rub"],
-            "net_rub": round(trade["gross_rub"] - trade["costs_rub"], 2),
-            "lqdt_on_margin_rub": trade["lqdt_on_margin_rub"],
+            "gross_rub": float(trade["gross_rub"]),
+            "costs_rub": float(trade["costs_rub"]),
+            "net_rub": round(float(trade["gross_rub"]) - float(trade["costs_rub"]), 2),
+            "lqdt_on_margin_rub": float(trade["lqdt_on_margin_rub"]),
             "excess_rub": round(
-                trade["gross_rub"] - trade["costs_rub"] - trade["lqdt_on_margin_rub"], 2
+                float(trade["gross_rub"])
+                - float(trade["costs_rub"])
+                - float(trade["lqdt_on_margin_rub"]),
+                2,
             ),
         }
         for number, trade in enumerate(account["trade_list"], start=1)
@@ -231,15 +233,15 @@ def build_proof_payload(
     ledger, marked, cumulative = simulate_marked_ledger(rows, trades, ctx.quantity, compact=False)
     fx_drift = 0.0
     for t in trades:
-        static = t["gross_rub"]
+        static = float(t["gross_rub"])
         t["gross_rub_static"] = static
-        t["gross_rub"] = round(marked[t["number"]], 2)
-        t["net_rub"] = round(t["gross_rub"] - t["costs_rub"], 2)
-        t["excess_rub"] = round(t["net_rub"] - t["lqdt_on_margin_rub"], 2)
-        fx_drift += t["gross_rub"] - static
-    gross = sum(t["gross_rub"] for t in trades)
-    net = sum(t["net_rub"] for t in trades)
-    lqdt_m = account["lqdt_on_pair_margin_while_open_rub"]
+        t["gross_rub"] = round(float(marked[int(t["number"])]), 2)
+        t["net_rub"] = round(float(t["gross_rub"]) - float(t["costs_rub"]), 2)
+        t["excess_rub"] = round(float(t["net_rub"]) - float(t["lqdt_on_margin_rub"]), 2)
+        fx_drift += float(t["gross_rub"]) - static
+    gross = sum(float(t["gross_rub"]) for t in trades)
+    net = sum(float(t["net_rub"]) for t in trades)
+    lqdt_m = float(account["lqdt_on_pair_margin_while_open_rub"])
     win_meta.update(
         {
             "min_spread_volume": window.get("min_spread_volume"),
@@ -267,7 +269,7 @@ def build_proof_payload(
                 "net_rub": round(net, 2),
                 "lqdt_on_margin_rub": lqdt_m,
                 "excess_over_lqdt_rub": round(net - lqdt_m, 2),
-                "winners": sum(t["net_rub"] > 0 for t in trades),
+                "winners": sum(1 for t in trades if float(t["net_rub"]) > 0),
                 "ledger_reconciliation_rub": round(net - cumulative, 2),
                 "fx_point_value_drift_rub": round(fx_drift, 2),
             },

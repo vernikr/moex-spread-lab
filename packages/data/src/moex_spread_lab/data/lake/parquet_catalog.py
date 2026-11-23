@@ -8,6 +8,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from typing import cast as _cast  # Narrow partially unknown pyarrow-stub callables.
 
 import duckdb
 import pyarrow as pa
@@ -15,7 +16,8 @@ import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import sha256_file
 
-from .bar_types import DataLakeError, _atomic_write_json
+from .bar_types import DataLakeError
+from .bar_types import atomic_write_json as _atomic_write_json
 from .legacy_series import LegacyCandleSeries
 
 DATA_LAKE_SCHEMA = "market-data-lake.v1"
@@ -55,7 +57,7 @@ def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
             prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
         ) as handle:
             temporary = Path(handle.name)
-        pq.write_table(table, temporary, compression="zstd", version="2.6")
+        _cast(Any, pq.write_table)(table, temporary, compression="zstd", version="2.6")
         os.replace(temporary, path)
         temporary = None
     finally:
@@ -65,10 +67,13 @@ def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
 
 def parse_lake_manifest(manifest_path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+        value: object = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise DataLakeError(f"cannot read data-lake manifest: {exc}") from exc
-    if not isinstance(value, dict) or value.get("schema_version") != DATA_LAKE_SCHEMA:
+    if not isinstance(value, dict):
+        raise DataLakeError("unsupported data-lake manifest schema")
+    value = _cast(dict[str, Any], value)
+    if value.get("schema_version") != DATA_LAKE_SCHEMA:
         raise DataLakeError("unsupported data-lake manifest schema")
     if not isinstance(value.get("datasets"), list):
         raise DataLakeError("data-lake manifest datasets must be a list")
@@ -169,12 +174,13 @@ def upsert_manifest(
     manifest_path: Path, current_manifest: dict[str, Any], record: dict[str, Any]
 ) -> None:
     manifest = dict(current_manifest)
-    datasets = list(manifest["datasets"])
+    datasets: list[Any] = list(manifest["datasets"])
     previous = next(
         (
-            entry
+            _cast(dict[str, Any], entry)
             for entry in datasets
-            if isinstance(entry, dict) and entry.get("dataset_id") == record["dataset_id"]
+            if isinstance(entry, dict)
+            and _cast(dict[str, Any], entry).get("dataset_id") == record["dataset_id"]
         ),
         None,
     )
@@ -182,7 +188,7 @@ def upsert_manifest(
         revisions = manifest.setdefault("dataset_revisions", [])
         if not isinstance(revisions, list):
             raise DataLakeError("data-lake manifest dataset_revisions must be a list")
-        revisions.append(
+        _cast(list[Any], revisions).append(
             {
                 "dataset_id": record["dataset_id"],
                 "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -247,9 +253,9 @@ def verify_dataset_against_legacy(
         raise DataLakeError(f"bars Parquet SHA-256 differs from manifest: {series.dataset_id}")
     if sha256_file(sources_path) != record.get("sources_sha256"):
         raise DataLakeError(f"sources Parquet SHA-256 differs from manifest: {series.dataset_id}")
-    if pq.ParquetFile(bars_path).read().to_pylist() != series.bars:
+    if _cast(Any, pq.ParquetFile(bars_path).read)().to_pylist() != series.bars:
         raise DataLakeError(f"Parquet bars differ from legacy rows: {series.dataset_id}")
-    if pq.ParquetFile(sources_path).read().to_pylist() != series.sources:
+    if _cast(Any, pq.ParquetFile(sources_path).read)().to_pylist() != series.sources:
         raise DataLakeError(
             f"Parquet source manifest differs from legacy provenance: {series.dataset_id}"
         )
@@ -275,3 +281,31 @@ def verify_dataset_against_legacy(
         "legacy_sha256": series.sha256,
         "parquet_sha256": record["parquet_sha256"],
     }
+
+
+__all__ = [
+    "BAR_DATASET_SCHEMA",
+    "BAR_SCHEMA",
+    "DATA_LAKE_SCHEMA",
+    "SOURCE_SCHEMA",
+    "UTC",
+    "Any",
+    "DataLakeError",
+    "LegacyCandleSeries",
+    "Path",
+    "annotations",
+    "build_import_record",
+    "datetime",
+    "duckdb",
+    "json",
+    "os",
+    "pa",
+    "parse_lake_manifest",
+    "pq",
+    "sha256_file",
+    "tempfile",
+    "upsert_catalog",
+    "upsert_manifest",
+    "verify_dataset_against_legacy",
+]
+atomic_write_parquet = _atomic_write_parquet

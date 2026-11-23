@@ -9,10 +9,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+from typing import cast as _cast  # Narrow partially unknown pyarrow-stub callables.
 
 import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_bytes, sha256_file
+
+from .seal_identity_p72_57 import check_no_symlink_ancestors as _check_ancestors
+from .seal_identity_p72_57 import validate_seal_record_identity as _validate_identity
+from .seal_identity_p72_57 import verify_sealed_hashes as _verify_hashes
 
 LEGACY_CANDLE_SCHEMA = "iss-candles.v1"
 H1_SEAL_SCHEMA = "h1-sealed-read.v1"
@@ -71,17 +76,7 @@ def _signature(path: Path) -> tuple[int, int, int, int]:
 
 
 def _validate_seal_record_identity(relative: str, record: dict[str, Any]) -> None:
-    p = Path(relative)
-    if (
-        p.is_absolute()
-        or ".." in p.parts
-        or len(p.parts) != 4
-        or p.parts[:2] != ("data", "w1")
-        or p.parts[2] not in ("candles", "candles-screen")
-        or record["legacy_path"] != relative
-        or record["timeframe"] != "1h"
-    ):
-        raise DataLakeError("unsafe H1 seal source identity")
+    _validate_identity(relative, record, Path, DataLakeError)
 
 
 def _validate_seal_payload(root: Path, value: dict[str, Any], marker: dict[str, Any]) -> None:
@@ -103,11 +98,7 @@ def _validate_seal_payload(root: Path, value: dict[str, Any], marker: dict[str, 
 
 
 def _check_no_symlink_ancestors(root: Path, legacy_path: Path) -> None:
-    for p in (legacy_path, *legacy_path.parents):
-        if p == root:
-            break
-        if p.is_symlink():
-            raise DataLakeError("symlink H1 source is not allowed")
+    _check_ancestors(root, legacy_path, DataLakeError)
 
 
 def _resolve_sealed_table_paths(root: Path, record: dict[str, Any]) -> tuple[Path, Path]:
@@ -127,13 +118,7 @@ def _verify_sealed_hashes(
     sources: Path,
     record: dict[str, Any],
 ) -> None:
-    if legacy_signature is not None and sha256_file(legacy_path) != record["legacy_sha256"]:
-        raise DataLakeError("retained H1 JSON changed after sealing; refusing stale Parquet")
-    if (
-        sha256_file(bars) != record["parquet_sha256"]
-        or sha256_file(sources) != record["sources_sha256"]
-    ):
-        raise DataLakeError("sealed H1 table hash mismatch; refusing fallback")
+    _verify_hashes(legacy_path, legacy_signature, bars, sources, record, sha256_file, DataLakeError)
 
 
 def _load_sealed_bar_series(
@@ -143,7 +128,9 @@ def _load_sealed_bar_series(
     key: tuple[Any, ...],
     columns: Iterable[str] | None,
 ) -> BarSeries:
-    table = pq.ParquetFile(bars).read(columns=list(columns) if columns is not None else None)
+    table = _cast(Any, pq.ParquetFile(bars).read)(
+        columns=list(columns) if columns is not None else None
+    )
     rows = table.to_pylist()
     proxy_kind = record.get("row_semantics", {}).get("price_proxy_kind")
     if proxy_kind is not None:
@@ -267,10 +254,8 @@ def _check_archived_mirror_tables(
         path = store._record_path(record[path_key])
         if sha256_file(path) != record[hash_key]:
             raise DataLakeError("archived mirror file hash mismatch")
-        if (
-            not pq.ParquetFile(path)
-            .read()
-            .equals(pq.ParquetFile(store.root / sealed[path_key]).read())
+        if not _cast(Any, pq.ParquetFile(path).read)().equals(
+            _cast(Any, pq.ParquetFile(store.root / sealed[path_key]).read)()
         ):
             raise DataLakeError("archived mirror differs from sealed semantics")
 
@@ -326,3 +311,30 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
         "row_count": record["row_count"],
         "legacy_sha256": record["legacy_sha256"],
     }
+
+
+__all__ = [
+    "H1_SEAL_SCHEMA",
+    "LEGACY_CANDLE_SCHEMA",
+    "Any",
+    "BarSeries",
+    "BarStore",
+    "DataLakeError",
+    "Iterable",
+    "Path",
+    "Protocol",
+    "SealedH1Reader",
+    "W0Error",
+    "annotations",
+    "canonical_bytes",
+    "dataclass",
+    "json",
+    "os",
+    "pq",
+    "reject_sealed_table_write",
+    "sha256_bytes",
+    "sha256_file",
+    "tempfile",
+    "verify_archived_record",
+]
+atomic_write_json = _atomic_write_json

@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from moex_spread_lab.core import candidate_data
 from moex_spread_lab.core import workstation_bench as bench
 
 
@@ -46,16 +47,43 @@ def test_worktree_isolated_copies_patch_and_cleanup(tmp_path, monkeypatch):
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(bench, "_cmd", command)
+    monkeypatch.setattr(bench, "assert_candidate_python", lambda *args: None)
     with (
         pytest.raises(RuntimeError, match="trigger cleanup"),
         bench.candidate_worktree(root, revision, patch) as candidate,
     ):
-        assert (candidate / "code.txt").read_text() == "new\n"
-        assert not (candidate / "data/analytics/private-history.jsonl").exists()
-        (candidate / "data/input.txt").write_text("changed")
+        assert candidate.isolated_venv is False
+        assert str(candidate.path) in (candidate.pythonpath or "")
+        assert (candidate.path / "code.txt").read_text() == "new\n"
+        assert not (candidate.path / "data/analytics/private-history.jsonl").exists()
+        (candidate.path / "data/input.txt").write_text("changed")
         raise RuntimeError("trigger cleanup")
     assert (root / "data/input.txt").read_text() == "original"
     assert len(git(root, "worktree", "list", "--porcelain").strip().split("\n\n")) == 1
+
+
+def test_patch_touching_dependency_inputs_forces_isolated_venv(tmp_path, monkeypatch):
+    root = repository(tmp_path)
+    revision = git(root, "rev-parse", "HEAD").strip()
+    commands = []
+    _original_cmd = bench._cmd
+
+    def command(path, *args, **kwargs):
+        commands.append(args)
+        if args[:2] in (("uv", "sync"), ("git", "apply")):
+            return ""
+        return _original_cmd(path, *args, **kwargs)
+
+    monkeypatch.setattr(bench, "_cmd", command)
+    monkeypatch.setattr(
+        bench, "assert_candidate_python", lambda *a: pytest.fail("reuse must not be attempted")
+    )
+    patch = "diff --git a/uv.lock b/uv.lock\nindex 0000000..1111111 100644\n--- a/uv.lock\n+++ b/uv.lock\n@@ -1 +1 @@\n-old\n+new\n"
+    with bench.candidate_worktree(root, revision, patch) as candidate:
+        assert candidate.isolated_venv is True
+        assert candidate.pythonpath is None
+        assert candidate.python == candidate.path / ".venv/bin/python3"
+    assert any(args[:2] == ("uv", "sync") for args in commands)
 
 
 def test_copy_rejects_symlinks(tmp_path):
@@ -64,7 +92,7 @@ def test_copy_rejects_symlinks(tmp_path):
     target = tmp_path / "target"
     target.mkdir()
     with pytest.raises(RuntimeError, match="symlinks"):
-        bench._copy_data(root, target)
+        candidate_data.copy_data(root, target)
 
 
 def test_benchmark_reports_exact_match_and_refuses_drift(tmp_path, monkeypatch):
@@ -73,10 +101,10 @@ def test_benchmark_reports_exact_match_and_refuses_drift(tmp_path, monkeypatch):
 
     @contextmanager
     def worktree(*args):
-        yield tmp_path
+        yield bench.CandidateWorktree(tmp_path, tmp_path / "python", None, "copy", True)
 
     @contextmanager
-    def server(*args):
+    def server(*args, **kwargs):
         yield 8766
 
     monkeypatch.setattr(bench, "candidate_worktree", worktree)
@@ -136,15 +164,15 @@ def test_seal_copy_rebound_only_after_integrity_validation(tmp_path):
     (lake / "h1-seal.enabled.json").write_text(json.dumps(marker))
     candidate = tmp_path / "candidate"
     candidate.mkdir()
-    bench._copy_data(root, candidate)
-    bench._relocate_copied_seal(root, candidate)
+    candidate_data.copy_data(root, candidate)
+    candidate_data.relocate_copied_seal(root, candidate)
     copy = json.loads((candidate / "data-lake/h1-seal.json").read_text())
     activation = json.loads((candidate / "data-lake/h1-seal.enabled.json").read_text())
     assert copy["root"] == str(candidate.resolve())
     assert activation["seal_sha256"] == sha256_bytes(canonical_bytes(copy))
     assert json.loads((lake / "h1-seal.json").read_text()) == seal
     with pytest.raises(RuntimeError, match="invalid source"):
-        bench._relocate_copied_seal(root, candidate)
+        candidate_data.relocate_copied_seal(root, candidate)
 
 
 def test_concurrent_benchmarks_are_refused(tmp_path, monkeypatch):
@@ -189,7 +217,7 @@ def test_fastcore_comparison_uses_isolated_servers_and_fails_on_drift(tmp_path, 
 
     @contextmanager
     def worktree(*args):
-        yield tmp_path
+        yield bench.CandidateWorktree(tmp_path, tmp_path / "python", None, "copy", True)
 
     @contextmanager
     def server(candidate, overrides):

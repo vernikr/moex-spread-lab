@@ -24,10 +24,9 @@ from typing import Any
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic, size_proof
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
-from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
+from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
     CALENDAR_UNIVERSE,
-    MIN_DAILY_VOLUME,
     PAIR_UNIVERSE,
     STRATEGIES,
 )
@@ -149,65 +148,10 @@ class ProofService:
         return self._pool
 
     def catalog(self, override: ResearchSettings | None = None) -> dict[str, Any]:
+        from .catalog_payload import catalog_payload
+
         settings = override if override is not None else ResearchSettings.load(self.root)
-        spec = get_timeframe(settings.timeframe)
-        try:
-            if not spec.supports_calendar:
-                raise W0Error(
-                    f"{spec.label}: календарный proof не поддерживается на выбранном интервале."
-                )
-            calendar = self.calendar_data.catalog(
-                initial_capital=settings.initial_capital_rub, timeframe=settings.timeframe
-            )
-        except (W0Error, OSError) as exc:
-            calendar = {
-                "till": None,
-                "min_daily_volume": MIN_DAILY_VOLUME,
-                "strategies": [],
-                "fills": [],
-                "assets": [],
-                "error": str(exc),
-            }
-        pair = _pair_catalog(
-            self.screener_inputs,
-            initial_capital=settings.initial_capital_rub,
-            timeframe=settings.timeframe,
-        )
-        # Expose only explicitly adapted plugins without changing the legacy
-        # screener's fixed strategy controls. Availability is per timeframe; pair
-        # data/volume/contract compatibility remains a proof-time decision.
-        from moex_spread_lab.strategies.base import (
-            carry_proof_plugin_ids,
-            daily_pair_proof_plugin_ids,
-        )
-
-        from .strategy_catalog import get_strategy_registry
-
-        # UI discovery surface: refresh sees a plugin installed at runtime.
-        registry = get_strategy_registry(refresh=True)
-        adapted = daily_pair_proof_plugin_ids(registry) | carry_proof_plugin_ids(registry)
-        pair["proof_plugins"] = [
-            {
-                "id": p.strategy_id,
-                "family_id": p.family_id,
-                "label": p.label_ru,
-                "adapter": p.proof_adapter,
-                "supported_fills": list(p.supported_fills),
-                "requires_daily_bars": p.requires_daily_bars,
-                "timeframe_supported": settings.timeframe == "1d" or not p.requires_daily_bars,
-                "parameters": [spec.to_dict() for spec in p.parameter_schema()],
-            }
-            for p in registry
-            if p.strategy_id in adapted
-        ]
-        return {
-            **calendar,
-            "initial_capital_rub": settings.initial_capital_rub,
-            "timeframe": settings.timeframe,
-            "timeframes": timeframe_options(),
-            "universes": [CALENDAR_UNIVERSE, PAIR_UNIVERSE],
-            "pair_screen": pair,
-        }
+        return catalog_payload(self, settings)
 
     def proof(self, selection: dict[str, Any]) -> dict[str, Any]:
         saved = ResearchSettings.load(self.root)

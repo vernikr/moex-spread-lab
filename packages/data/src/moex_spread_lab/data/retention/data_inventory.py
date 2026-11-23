@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
 
@@ -86,10 +86,13 @@ def _collect_entry_bounds(metadata: dict[str, Any], starts: list[str], ends: lis
     time_range = metadata.get("time_range")
     if not isinstance(time_range, dict):
         return
-    if isinstance(time_range.get("from"), str):
-        starts.append(time_range["from"])
-    if isinstance(time_range.get("till"), str):
-        ends.append(time_range["till"])
+    bounds = cast("dict[str, Any]", time_range)
+    window_start = bounds.get("from")
+    if isinstance(window_start, str):
+        starts.append(window_start)
+    window_end = bounds.get("till")
+    if isinstance(window_end, str):
+        ends.append(window_end)
 
 
 def _aggregate_dataset_metadata(

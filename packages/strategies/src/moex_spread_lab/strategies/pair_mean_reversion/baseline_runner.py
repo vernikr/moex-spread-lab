@@ -10,9 +10,13 @@ from moex_spread_lab.accounting.costs import side_cost
 from ..base import population_rolling_stats as _rolling_stats
 from .costs_helper import (
     SimContext,
-    _round,
-    _trade_cost_breakdown,
     build_sim_context,
+)
+from .costs_helper import (
+    round_value as _round,
+)
+from .costs_helper import (
+    trade_cost_breakdown as _trade_cost_breakdown,
 )
 from .fast_scan import (
     BaselineParams,

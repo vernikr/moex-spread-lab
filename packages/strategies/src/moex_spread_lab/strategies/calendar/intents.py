@@ -10,7 +10,7 @@ import math
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.contracts import StrategyIntentRun, StrategyPlugin, WindowSnapshot
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
@@ -36,9 +36,11 @@ def _lookup_intent_indices(
     signal = item.get("signal")
     if not isinstance(entry_day, str) or not isinstance(exit_day, str):
         raise W0Error("Даты сигнала или сделки отсутствуют в окне.")
+    if not isinstance(signal, Mapping):
+        raise W0Error("Сигнал плагина должен содержать тип и дату.")
+    signal = cast(Mapping[str, Any], signal)
     if (
-        not isinstance(signal, Mapping)
-        or not isinstance(signal.get("kind"), str)
+        not isinstance(signal.get("kind"), str)
         or not signal["kind"]
         or not isinstance(signal.get("date"), str)
     ):
@@ -134,14 +136,13 @@ def calendar_intent_trades(
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
     rows = list(window.rows)
     dates = [r.get("date") for r in rows]
-    if (
-        not rows
-        or any(not isinstance(d, str) or not d for d in dates)
-        or dates != sorted(set(dates))  # type: ignore[type-var]
-    ):
+    if not rows or any(not isinstance(d, str) or not d for d in dates):
+        raise W0Error("Окно плагина должно содержать уникальные упорядоченные даты.")
+    dates = cast(list[str], dates)
+    if dates != sorted(set(dates)):
         raise W0Error("Окно плагина должно содержать уникальные упорядоченные даты.")
     lookup = {str(day): i for i, day in enumerate(dates)}
-    result = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
+    result: Any = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
     if (
         not isinstance(result, StrategyIntentRun)
         or result.strategy_id != plugin.strategy_id
@@ -149,13 +150,14 @@ def calendar_intent_trades(
         or result.parameters != params
     ):
         raise W0Error("Плагин вернул несогласованный набор сигналов.")
-    if not isinstance(result.intents, tuple):
+    intents: Any = result.intents
+    if not isinstance(intents, tuple):
         raise W0Error("Плагин должен вернуть неизменяемый список сигналов.")
     delay, quote = PRICE_FILLS[fill]
     st = _IntentScanState(rows=rows, lookup=lookup, delay=delay, quote=quote)
     trades: list[dict[str, Any]] = []
-    for item in result.intents:
+    for item in cast(tuple[Any, ...], intents):
         if not isinstance(item, Mapping):
             raise W0Error("Некорректный сигнал плагина.")
-        trades.append(_validate_calendar_intent(item, st))
+        trades.append(_validate_calendar_intent(cast(Mapping[str, Any], item), st))
     return trades

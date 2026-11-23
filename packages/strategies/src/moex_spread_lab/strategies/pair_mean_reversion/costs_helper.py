@@ -6,7 +6,7 @@ import math
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import COST_COMPONENTS, COST_SCHEMA
 from moex_spread_lab.core.w0 import W0Error
@@ -82,6 +82,7 @@ def _validate_cost_profile(profile: dict[str, Any]) -> dict[str, Any]:
         item = normalized["components"].get(component)
         if not isinstance(item, dict):
             raise AnalyticsError(f"cost profile is missing {component}")
+        item = cast(dict[str, Any], item)
         value = _number(item.get("value"), f"cost profile {component}")
         if value < 0:
             raise AnalyticsError(f"cost profile {component} cannot be negative")
@@ -180,3 +181,8 @@ def build_sim_context(series: dict[str, Any], params: Any) -> SimContext:
         cost_status=cost_status,
         fast_intents=fast_intents,
     )
+
+
+# Shared names inside the pair strategy; retain private entry points.
+round_value = _round
+trade_cost_breakdown = _trade_cost_breakdown

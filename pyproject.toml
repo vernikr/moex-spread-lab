@@ -219,6 +219,7 @@ extraPaths = [
     "scripts",
     "scripts/typings",
     "packages/core/tests",
+    "tests",
     "packages/strategies/tests/contract",
     "packages/web/tests/browser",
 ]

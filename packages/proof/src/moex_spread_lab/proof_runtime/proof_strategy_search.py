@@ -7,7 +7,7 @@ funding carry keeps its mandatory same-day settlement (explicit user decision).
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 import optuna
 
@@ -25,6 +25,12 @@ from .proof_batch import (
 )
 from .proof_kernel import _tune, resolve_seed
 from .strategy_catalog import get_proof_adapter_ids, resolve_strategy_registry
+from .strategy_search_prepare import (
+    no_prepared_result,
+    prepare_candidates,
+    record_trials,
+    winner_is_better,
+)
 from .trial_budget import budget
 
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
@@ -106,72 +112,25 @@ def strategy_search(
     # One base seed per run; each family derives its own child seed from it.
     base_seed = resolve_seed(settings.random_seed)
     families = _families(request, targets, spec, registry)
-    total_families = max(len(families), 1)
-    prepared, alternatives, failures = [], [], []
-    for f_idx, name in enumerate(families):
-        check_cancelled()
-        proposed = _candidate_request(request, name, targets, price_fill, registry)
-        s_label = labels.get(name, name)
-        if on_progress is not None:
-            on_progress(
-                {
-                    "stage": "prepare",
-                    "done": f_idx * len(targets),
-                    "total": total_families * len(targets),
-                    "percent": round(2.0 + 10.0 * (f_idx / total_families), 1),
-                    "label": f"Подготовка окон ({s_label}, {f_idx + 1}/{total_families}): 0/{len(targets)}…",
-                }
-            )
-        group = _call_with_optional_progress(
-            _prepare_cohort,
-            service,
-            proposed,
-            settings,
-            benchmark,
-            check_cancelled,
-            calendar=calendar,
-            registry=registry,
-            on_progress=(
-                None
-                if on_progress is None
-                else lambda done, total, fi=f_idx, sl=s_label: on_progress(
-                    {
-                        "stage": "prepare",
-                        "done": fi * total + done,
-                        "total": total_families * total,
-                        "percent": round(
-                            2.0 + 10.0 * ((fi + done / max(total, 1)) / total_families),
-                            1,
-                        ),
-                        "label": f"Подготовка окон ({sl}, {fi + 1}/{total_families}): {done}/{total}",
-                    }
-                )
-            ),
-        )
-        item = {
-            "strategy": name,
-            "fill": proposed["fill"],
-            "trial_count": 0,
-            "training_best_pp": None,
-        }
-        alternatives.append(item)
-        if isinstance(group, dict):
-            excluded = group["excluded"]
-            item.update(status="incompatible", excluded=excluded)
-            failures.append({tuple(sorted(x["target"].items())): x for x in excluded})
-        else:
-            item.update(
-                status="ready",
-                training_periods=[
-                    {
-                        "target": target,
-                        "dates": [case.split.training[0], case.split.training[-1]],
-                        "observations": len(case.split.training),
-                    }
-                    for target, case in group.members
-                ],
-            )
-            prepared.append((proposed, group, item))
+    prepared, alternatives, failures = prepare_candidates(
+        {
+            "service": service,
+            "request": request,
+            "settings": settings,
+            "benchmark": benchmark,
+            "check_cancelled": check_cancelled,
+            "calendar": calendar,
+            "registry": registry,
+            "on_progress": on_progress,
+            "labels": labels,
+            "targets": targets,
+            "price_fill": price_fill,
+        },
+        families,
+        _candidate_request,
+        _prepare_cohort,
+        _call_with_optional_progress,
+    )
 
     policy = {
         "policy": "common-strategy.v1",
@@ -201,32 +160,7 @@ def strategy_search(
         "strategy_search": policy,
     }
     if not prepared:
-        # Only universally inadmissible windows may be proposed for removal. If
-        # different families fail different members, there is no common strategy;
-        # never pick a smaller/favorable denominator or trim a strategy's cohort.
-        common = set.intersection(*(set(f) for f in failures)) if failures else set()
-        if common and request.get("targets"):
-            excluded = []
-            for key in sorted(common):
-                messages = list(dict.fromkeys(f[key]["reason"] for f in failures))
-                excluded.append(
-                    {
-                        "target": failures[0][key]["target"],
-                        "reason": "Ни одна общая стратегия не проходит: " + " ".join(messages),
-                    }
-                )
-            return {
-                **base,
-                "status": "selection_requires_confirmation",
-                "excluded": excluded,
-                "remaining_count": len(targets) - len(excluded),
-            }
-        result = {
-            **base,
-            "status": "no_common_strategy",
-            "reason": "Нет стратегии, допустимой сразу для всех выбранных окон. Отметки и параметры сохранены.",
-        }
-        return {**result, "run_id": _run_id(result)}
+        return no_prepared_result(base, failures, request, targets, _run_id)
 
     winner, top, records = None, -float("inf"), []
     total_prepared = len(prepared)
@@ -268,26 +202,10 @@ def strategy_search(
                 status="measured" if best is not None else "no_admissible_candidate",
                 training_best_pp=score,
             )
-            for i, point in enumerate(attempts):
-                records.append(
-                    {
-                        "trial": len(records),
-                        "strategy_trial": i,
-                        "strategy": group.active,
-                        "fill": proposed["fill"],
-                        "parameters": {k: point[k] for k in group.axes},
-                        **group.land.measure(point),
-                    }
-                )
-            # On a cross-family exact tie retain the current family, then the first
-            # declared family. Holdout, trade count and plateau never break ties.
-            if best is not None and (
-                cast(float, score) > top
-                or (
-                    score == top
-                    and _same_family(group.active, active, registry)
-                    and not _same_family(cast(Any, winner)[1].active, active, registry)
-                )
+            record_trials(records, group, proposed, attempts)
+            # Holdout, trade count and plateau never break cross-family ties.
+            if winner_is_better(
+                best, score, (top, winner), (group, active, registry), _same_family
             ):
                 winner, top = (proposed, group, best, count, attempts), cast(float, score)
 

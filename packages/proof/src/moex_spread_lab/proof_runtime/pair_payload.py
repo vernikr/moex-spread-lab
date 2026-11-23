@@ -108,7 +108,7 @@ def _contract_block(spec: PairPayloadSpec, near: str, far: str) -> dict[str, Any
         "tick_size": terms.get("tick_size") if terms else None,
         "tariff_group": common_group,
         "taker_rate_percent": TAKER_RATE_PERCENT.get(common_group)
-        if common_group != "mixed"
+        if common_group is not None and common_group != "mixed"
         else None,
         "broker_fee_rub": 0.0,
     }
@@ -174,7 +174,7 @@ def _notes_block(spec: PairPayloadSpec, far: str) -> list[str]:
     ]
 
 
-def _run_identity(spec: PairPayloadSpec, payload: dict[str, Any]) -> dict[str, Any]:
+def _run_identity(spec: PairPayloadSpec, payload: dict[str, Any]) -> str:
     funding_evidence = (
         {
             "funding_evidence": {

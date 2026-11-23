@@ -12,7 +12,9 @@ from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, read_hashed_json
 
 from .study import CarryStrategyError, _round
 
-_BENCHMARK_PARSED_CACHE = _HashedJSONCache(64)
+_BENCHMARK_PARSED_CACHE: _HashedJSONCache[
+    tuple[str, int, int], tuple[dict[str, dict[str, Any]], str]
+] = _HashedJSONCache(64)
 
 
 def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:

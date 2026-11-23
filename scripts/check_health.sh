@@ -75,7 +75,6 @@ case "$NCPUS" in (*[!0-9]*|"") NCPUS=2 ;; esac
 
 if [ -x "$ROOT/.venv/bin/python" ]; then PY_BIN="$ROOT/.venv/bin/python"; PY_USE_VENV=1; else PY_BIN="uv run --no-sync python"; PY_USE_VENV=0; fi
 if [ -x "$ROOT/.venv/bin/ruff" ]; then RUFF_BIN="$ROOT/.venv/bin/ruff"; RUFF_USE_VENV=1; else RUFF_BIN="uv run --no-sync ruff"; RUFF_USE_VENV=0; fi
-if [ -x "$ROOT/.venv/bin/basedpyright" ]; then PYRIGHT_BIN="$ROOT/.venv/bin/basedpyright"; PYRIGHT_USE_VENV=1; else PYRIGHT_BIN="uv run --no-sync basedpyright"; PYRIGHT_USE_VENV=0; fi
 if [ -x "$ROOT/.venv/bin/vulture" ]; then VULTURE_BIN="$ROOT/.venv/bin/vulture"; VULTURE_USE_VENV=1; else VULTURE_BIN="uv run --no-sync vulture"; VULTURE_USE_VENV=0; fi
 
 # --- touched files (changed mode only) ---------------------------------------
@@ -120,7 +119,7 @@ fi
 # rc 77 means "skipped"; every command writes to $logs/<name>.log.
 # This function is also exported to `bash -c` children when a timeout wrapper is
 # used, so it must only rely on exported scalars: MODE, BASE, ROOT, HAS_STATIC_JS,
-# IMPORTS_CHANGED, PY_BIN, RUFF_BIN, PYRIGHT_BIN, VULTURE_BIN, PY_LIST (newline
+# IMPORTS_CHANGED, PY_BIN, RUFF_BIN, VULTURE_BIN, PY_LIST (newline
 # separated), and on tool fallbacks via `uv run --no-sync` when the venv lacks a tool.
 run_check_command() {
     local line
@@ -144,9 +143,9 @@ run_check_command() {
         basedpyright)
             if [ "$MODE" = changed ]; then
                 [ "${#py_files[@]}" -eq 0 ] && return 77
-                if [ "$PYRIGHT_USE_VENV" = 1 ]; then "$PYRIGHT_BIN" "${py_files[@]}"; else uv run --no-sync basedpyright "${py_files[@]}"; fi
+                if [ "$PY_USE_VENV" = 1 ]; then "$PY_BIN" scripts/typecheck_workspace.py "${py_files[@]}"; else uv run --no-sync python scripts/typecheck_workspace.py "${py_files[@]}"; fi
             else
-                if [ "$PYRIGHT_USE_VENV" = 1 ]; then "$PYRIGHT_BIN"; else uv run --no-sync basedpyright; fi
+                if [ "$PY_USE_VENV" = 1 ]; then "$PY_BIN" scripts/typecheck_workspace.py; else uv run --no-sync python scripts/typecheck_workspace.py; fi
             fi ;;
         vulture)
             if [ "$MODE" = changed ]; then return 77; fi
@@ -288,8 +287,8 @@ build_status_json() {
 # timeout wrapper is available; only scalars survive the boundary.
 export -f run_check_command
 export MODE BASE ROOT HAS_STATIC_JS IMPORTS_CHANGED
-export PY_BIN RUFF_BIN PYRIGHT_BIN VULTURE_BIN
-export PY_USE_VENV RUFF_USE_VENV PYRIGHT_USE_VENV VULTURE_USE_VENV
+export PY_BIN RUFF_BIN VULTURE_BIN
+export PY_USE_VENV RUFF_USE_VENV VULTURE_USE_VENV
 export PY_LIST
 
 TASKS=(ruff-check ruff-format basedpyright vulture custom-gate architecture js-modules)

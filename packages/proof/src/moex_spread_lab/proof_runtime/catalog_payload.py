@@ -85,7 +85,7 @@ def _build_catalog(service: CatalogService, settings: ResearchSettings) -> dict[
             "id": p.strategy_id,
             "family_id": p.family_id,
             "label": p.label_ru,
-            "adapter": p.proof_adapter,
+            "adapter": getattr(p, "proof_adapter", None),
             "supported_fills": list(p.supported_fills),
             "requires_daily_bars": p.requires_daily_bars,
             "timeframe_supported": settings.timeframe == "1d" or not p.requires_daily_bars,

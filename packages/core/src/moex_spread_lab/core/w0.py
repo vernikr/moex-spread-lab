@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .hashed_json_cache import HashedJSONCache as _HashedJSONCache
+from .json_types import as_str_dict, load_object
 
 MANIFEST_SCHEMA = "run-manifest.v1"
 FIXTURE_SCHEMA = "w0.fixture.v1"
@@ -56,12 +57,11 @@ def sha256_file(path: Path) -> str:
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
-        value: Any = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return cast(dict[str, Any], load_object(path, label=f"JSON: {path}", error=W0Error))
+    except FileNotFoundError as exc:
         raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise W0Error(f"JSON root must be an object: {path}")
-    return cast(dict[str, Any], value)
+    except W0Error as exc:
+        raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
 
 
 # Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
@@ -71,7 +71,9 @@ def load_json(path: Path) -> dict[str, Any]:
 _HASHED_JSON_CACHE_CAPACITY = int(os.environ.get("MOEX_HASHED_JSON_CACHE_CAPACITY", "256"))
 
 
-_HASHED_JSON_CACHE = _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)
+_HASHED_JSON_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[dict[str, Any], str]] = (
+    _HashedJSONCache(_HASHED_JSON_CACHE_CAPACITY)
+)
 
 
 def read_hashed_json(
@@ -91,11 +93,9 @@ def read_hashed_json(
         return cached
     try:
         raw = resolved.read_bytes()
-        value: Any = json.loads(raw.decode("utf-8"))
+        value = as_str_dict(json.loads(raw.decode("utf-8")), label=label, error=error)
     except (OSError, ValueError) as exc:
         raise error(f"cannot read {label} {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise error(f"{label} is not an object: {path}")
     result = (cast(dict[str, Any], value), sha256_bytes(raw))
     _HASHED_JSON_CACHE.put(key, result)
     return result

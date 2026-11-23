@@ -215,23 +215,21 @@ include = [
 ]
 exclude = ["**/vendor/**", "**/__pycache__/**"]
 extraPaths = [
-    "packages/core/src",
-    "packages/data/src",
-    "packages/accounting/src",
-    "packages/strategies/src",
-    "packages/proof/src",
-    "packages/web/src",
-    "src",
+    ".typecheck_typings",
     "scripts",
+    "scripts/typings",
+    "packages/core/tests",
+    "packages/strategies/tests/contract",
+    "packages/web/tests/browser",
 ]
 baselineFile = ".basedpyright/baseline.json"
 typeCheckingMode = "standard"
-strict = ["packages/core/src"]
+strict = [
+    "packages/core/src",
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage_math.py",
+]
 reportMissingTypeStubs = false
-# Namespace-package false positives (verified via --verbose: imports resolve
-# but the diagnostic persists). Missing imports are caught by the test suite
-# and the architecture DAG instead.
-reportMissingImports = "none"
+reportMissingImports = "error"
 
 [tool.complexipy]
 paths = ["packages", "src", "scripts"]

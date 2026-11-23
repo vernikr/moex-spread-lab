@@ -51,7 +51,8 @@ def handle_get_proof(path: str, store: Any) -> tuple[bool, Any]:
         return True, store.proof.catalog()
     if path == "/api/strategies":
         try:
-            tf = read_settings(store.inputs.root)["timeframe"]
+            timeframe = read_settings(store.inputs.root)["timeframe"]
+            tf = timeframe if isinstance(timeframe, str) else DEFAULT_TIMEFRAME
         except (ValueError, OSError, KeyError):
             tf = DEFAULT_TIMEFRAME
         return True, strategy_registry_payload(timeframe=tf)

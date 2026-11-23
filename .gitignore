@@ -46,5 +46,8 @@ reports/perf/
 # pytest-testmon databases (plan S2, per worktree)
 .testmondata*
 
+# Generated unified namespace view for basedpyright (plan S5)
+.typecheck_typings/
+
 # S3 shadow worktrees (disposable)
 .shadow-worktrees/

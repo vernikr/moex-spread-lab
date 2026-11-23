@@ -219,7 +219,7 @@ def optimize(
 ) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise ScreenerError("search request must be an object")
-    percent = read_settings(inputs.root)["validation_percent"]
+    percent = float(read_settings(inputs.root)["validation_percent"])
     selected = request.get("pairs")
     if (
         not isinstance(selected, list)
@@ -294,8 +294,7 @@ def optimize(
                     "worst_shortfall_pct": round(worst_shortfall, 2),
                 }
             )
-            # The benchmark-relative drawdown/shortfall limits are reported, not
-            # enforced: a candidate is no longer vetoed for crossing them.
+            # Benchmark-relative limits are reported, not enforced.
         except (W0Error, OSError, ValueError) as exc:
             trial.update({"status": "rejected", "reason": str(exc)})
         trials.append(trial)

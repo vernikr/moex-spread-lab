@@ -40,7 +40,9 @@ class IssHistoryError(W0Error):
     """Raised when an ISS EOD history request or response fails validation."""
 
 
-_HISTORY_JSON_CACHE = _HashedJSONCache(4096)
+_HISTORY_JSON_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[dict[str, Any], str]] = (
+    _HashedJSONCache(4096)
+)
 
 
 @dataclass(frozen=True)

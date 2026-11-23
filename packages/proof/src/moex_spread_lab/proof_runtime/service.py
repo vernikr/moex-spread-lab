@@ -64,9 +64,13 @@ PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
     {"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"}
 )
-_BENCHMARK_MARKS_CACHE = _HashedJSONCache(32)
-_INSTRUMENTS_CACHE = _HashedJSONCache(32)
-_SHA256_CACHE = _HashedJSONCache(512)
+_BENCHMARK_MARKS_CACHE: _HashedJSONCache[
+    tuple[str, int, int], tuple[tuple[list[str], dict[str, float]], str]
+] = _HashedJSONCache(32)
+_INSTRUMENTS_CACHE: _HashedJSONCache[
+    tuple[str, int, int, int | None, int | None], tuple[dict[str, dict[str, Any]], str]
+] = _HashedJSONCache(32)
+_SHA256_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[None, str]] = _HashedJSONCache(512)
 
 # Backwards-compatible private aliases used by the proof tests and older callers.
 _benchmark_marks = benchmark_marks

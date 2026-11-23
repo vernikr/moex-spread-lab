@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
 
+from .json_types import load_object
 from .timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from .w0 import W0Error
 
@@ -140,7 +141,9 @@ def settings_path(root: Path) -> Path:
 
 def read_settings(root: Path) -> dict[str, float | bool | str]:
     try:
-        stored = _validated_patch(json.loads(settings_path(root).read_text(encoding="utf-8")))
+        stored = _validated_patch(
+            load_object(settings_path(root), label="research settings", error=W0Error)
+        )
         if "validation_percent" not in stored:
             raise W0Error("В настройках отсутствует доля проверки.")
         # Older files omit newer preferences. GET supplies defaults without rewriting them.

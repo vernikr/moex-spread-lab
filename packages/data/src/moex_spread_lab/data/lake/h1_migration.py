@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
 
@@ -13,7 +15,7 @@ SCHEMA = "h1-source-plan.v1"
 GROUPS = ("candles", "candles-screen")
 
 
-def _source_files(root: Path):
+def _source_files(root: Path) -> Iterator[tuple[str, Path]]:
     for group in GROUPS:
         folder = root / "data/w1" / group
         for parent in (root / "data", root / "data/w1", folder):
@@ -27,9 +29,13 @@ def _source_files(root: Path):
             yield group, path
 
 
-def build_h1_plan(root: Path) -> dict:
+def _entry_legacy_path(entry: dict[str, Any]) -> str:
+    return str(entry["legacy_path"])
+
+
+def build_h1_plan(root: Path) -> dict[str, Any]:
     root = root.resolve()
-    files = []
+    files: list[dict[str, Any]] = []
     for group, path in _source_files(root):
         series = _read_legacy_series(path)
         if (
@@ -56,15 +62,15 @@ def build_h1_plan(root: Path) -> dict:
         )
     if not files:
         raise DataLakeError("no runtime-named H1 source files found")
-    files.sort(key=lambda e: e["legacy_path"])
-    by_secid = {}
+    files.sort(key=_entry_legacy_path)
+    by_secid: dict[str, dict[str, str]] = {}
     for entry in files:
         by_secid.setdefault(entry["secid"], {})[entry["source_group"]] = entry["legacy_path"]
-    selection = {
+    selection: dict[str, str | None] = {
         secid: paths.get("candles-screen", paths.get("candles"))
         for secid, paths in sorted(by_secid.items())
     }
-    content = {"files": files, "screen_selection": selection}
+    content: dict[str, Any] = {"files": files, "screen_selection": selection}
     return {
         "schema_version": SCHEMA,
         "root": str(root),
@@ -72,11 +78,11 @@ def build_h1_plan(root: Path) -> dict:
         "source_fingerprint": sha256_bytes(canonical_bytes(content)),
         "source_count": len(files),
         "selected_count": len(selection),
-        "logical_bytes": sum(e["logical_bytes"] for e in files),
+        "logical_bytes": sum(int(e["logical_bytes"]) for e in files),
     }
 
 
-def write_h1_plan(root: Path, path: Path) -> dict:
+def write_h1_plan(root: Path, path: Path) -> dict[str, Any]:
     result = build_h1_plan(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as handle:
@@ -85,8 +91,8 @@ def write_h1_plan(root: Path, path: Path) -> dict:
     return result
 
 
-def _load_current_plan(root: Path, plan_path: Path) -> dict:
-    supplied = json.loads(plan_path.read_text())
+def _load_current_plan(root: Path, plan_path: Path) -> dict[str, Any]:
+    supplied: Any = json.loads(plan_path.read_text())
     # Re-enumerate, not just rehash supplied entries: a new screened source changes priority.
     current = build_h1_plan(root)
     if supplied != current:
@@ -101,8 +107,11 @@ def _candidate_path(root: Path, output: Path) -> Path:
     return output
 
 
-def _verify_candidate_entry(root: Path, store: ParquetBarStore, group: str, entry: dict) -> dict:
-    source = root / entry["legacy_path"]
+def _verify_candidate_entry(
+    root: Path, store: ParquetBarStore, group: str, entry: dict[str, Any]
+) -> dict[str, Any]:
+    legacy_path: str = entry["legacy_path"]
+    source = root / legacy_path
     record = store.record_for_legacy_path(source)
     if record is None or record["legacy_sha256"] != entry["legacy_sha256"]:
         raise DataLakeError(f"candidate source identity mismatch: {source}")
@@ -112,7 +121,7 @@ def _verify_candidate_entry(root: Path, store: ParquetBarStore, group: str, entr
             raise DataLakeError(f"candidate metadata mismatch: {field}")
     return {
         "source_group": group,
-        "legacy_path": entry["legacy_path"],
+        "legacy_path": legacy_path,
         **result,
         "first_begin": record["first_begin"],
         "last_begin": record["last_begin"],
@@ -120,13 +129,14 @@ def _verify_candidate_entry(root: Path, store: ParquetBarStore, group: str, entr
     }
 
 
-def _verify_files(root: Path, plan: dict, output: Path) -> list[dict]:
-    verified = []
+def _verify_files(root: Path, plan: dict[str, Any], output: Path) -> list[dict[str, Any]]:
+    verified: list[dict[str, Any]] = []
+    plan_files: list[dict[str, Any]] = plan["files"]
     for group in GROUPS:
         store = ParquetBarStore(root, output / group)
-        group_entries = [e for e in plan["files"] if e["source_group"] == group]
-        expected = {e["legacy_path"] for e in group_entries}
-        records = store._read_manifest()["datasets"]
+        group_entries = [e for e in plan_files if e["source_group"] == group]
+        expected: set[str] = {e["legacy_path"] for e in group_entries}
+        records: list[dict[str, Any]] = store.read_manifest()["datasets"]
         if len(records) != len(expected) or {r["legacy_path"] for r in records} != expected:
             raise DataLakeError(f"candidate lake membership differs from plan: {group}")
         for entry in group_entries:
@@ -134,7 +144,7 @@ def _verify_files(root: Path, plan: dict, output: Path) -> list[dict]:
     return verified
 
 
-def stage_h1(root: Path, plan_path: Path, output: Path) -> dict:
+def stage_h1(root: Path, plan_path: Path, output: Path) -> dict[str, Any]:
     root = root.resolve()
     output = _candidate_path(root, output)
     plan = _load_current_plan(root, plan_path)
@@ -142,30 +152,34 @@ def stage_h1(root: Path, plan_path: Path, output: Path) -> dict:
     # never discoverable by the production MarketDataStore and never resumed implicitly.
     output.mkdir(parents=True, exist_ok=False)
     report_path = output / "h1-stage.json"
-    report = {
+    datasets: list[dict[str, Any]] = []
+    report: dict[str, Any] = {
         "schema_version": "h1-candidate-stage.v1",
         "status": "staging",
         "source_fingerprint": plan["source_fingerprint"],
         "plan": plan,
         "runtime_activated": False,
         "source_deletion_allowed": False,
-        "datasets": [],
+        "datasets": datasets,
     }
     _atomic_write_json(report_path, report)
     try:
-        for entry in plan["files"]:
-            source = root / entry["legacy_path"]
+        plan_files: list[dict[str, Any]] = plan["files"]
+        for entry in plan_files:
+            legacy_path: str = entry["legacy_path"]
+            source_group: str = entry["source_group"]
+            source = root / legacy_path
             if sha256_file(source) != entry["legacy_sha256"]:
                 raise DataLakeError(f"source changed before import: {source}")
-            store = ParquetBarStore(root, output / entry["source_group"])
+            store = ParquetBarStore(root, output / source_group)
             record = store.import_legacy(source)
             if record["legacy_sha256"] != entry["legacy_sha256"]:
                 raise DataLakeError(f"source changed during import: {source}")
             store.verify_legacy(source)
-            report["datasets"].append(
+            datasets.append(
                 {
-                    "source_group": entry["source_group"],
-                    "legacy_path": entry["legacy_path"],
+                    "source_group": source_group,
+                    "legacy_path": legacy_path,
                     "dataset_id": record["dataset_id"],
                 }
             )
@@ -187,11 +201,11 @@ def stage_h1(root: Path, plan_path: Path, output: Path) -> dict:
     return report
 
 
-def verify_h1_stage(root: Path, plan_path: Path, output: Path) -> dict:
+def verify_h1_stage(root: Path, plan_path: Path, output: Path) -> dict[str, Any]:
     root = root.resolve()
     plan = _load_current_plan(root, plan_path)
     output = _candidate_path(root, output)
-    report = json.loads((output / "h1-stage.json").read_text())
+    report: dict[str, Any] = json.loads((output / "h1-stage.json").read_text())
     if (
         report.get("schema_version") != "h1-candidate-stage.v1"
         or report.get("status") != "verified_candidate"

@@ -43,9 +43,7 @@ from .parquet_catalog import (
 )
 from .raw_archive import RawResponseArchive
 
-# Facade hooks of other-owned modules: bound at import like the historical
-# `from .legacy_series import _component` form; re-typed since their owners'
-# `__all__` does not declare them.
+# Typed import-time bindings for private hooks of other-owned modules.
 _component: Callable[[Any, str], str] = cast(
     "Callable[[Any, str], str]", facade_hook(_legacy_module, "_component")
 )
@@ -113,6 +111,10 @@ class ParquetBarStore:
         self._manifest_sig = sig
         self._manifest_cache = value
         return value
+
+    def read_manifest(self) -> dict[str, Any]:
+        """Public manifest accessor."""
+        return self._read_manifest()
 
     def _upsert_catalog(self, record: dict[str, Any], sources: list[dict[str, Any]]) -> None:
         upsert_catalog(self.lake_root, self.catalog_path, record, sources)

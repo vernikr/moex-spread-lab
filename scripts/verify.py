@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Documented launcher for agent task verification (plan S2, work item 1).
+"""Documented launcher for agent task verification (plans S2 item 1, S4a item 1).
 
-Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-scan for
-docs-only; router-scoped package legs under testmon as an *advisory* signal +
-the always-run set otherwise, full fallback on unmatched paths), ``full``
-(unchanged full gate + full suite). stdlib only; does not replace the health
-ratchet. Steps run through ``scripts/verify_record.py`` (plan S0 record).
-Browser smokes run as a separate scheduled job (``scripts/run_browser_smokes.py``) and are reported as ``not run`` here.
-pytest runs ``-n <cpu_count> --dist loadfile -q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``;
+Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-only
+scan or router-scoped legs with advisory testmon and the always-run set; full
+fallback when no path matches), and ``full``/``pre-push`` (full health gate and
+whole suite, including every parity tier). stdlib-only launcher; it does not
+replace the health ratchet. Steps run through ``scripts/verify_record.py``.
+Browser smokes are run separately by the scheduled ``scripts/run_browser_smokes.py``
+job and are reported as not run here. pytest uses ``-n <cpu_count> --dist loadfile
+-q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``; ``TESTMON_DATAFILE`` defaults to
+``<repo>/.testmondata`` (gitignored).
 ``TESTMON_DATAFILE`` defaults to ``<repo>/.testmondata`` (gitignored).
 """
 
@@ -26,10 +28,20 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts import change_scope  # noqa: E402  (path inserted above)
+from scripts.verify_workers import worker_count  # noqa: E402
 
-PERF_EQUIVALENCE = "packages/proof/tests/test_perf_equivalence.py"
+EQUIVALENCE_TIERS = (
+    "packages/proof/tests/test_perf_equivalence.py",
+    "packages/proof/tests/test_perf_equivalence_full.py",
+    "packages/proof/tests/test_perf_equivalence_pair.py",
+    "packages/proof/tests/test_perf_equivalence_pool.py",
+    "packages/proof/tests/test_perf_equivalence_stream.py",
+)
 FASTCORE_PARITY = "packages/proof/tests/test_fastcore_parity.py"
 PARITY_TRIGGER_PACKAGES = frozenset({"core", "proof", "accounting"})
+PROFILES = ("quick", "affected", "full", "pre-push")
+TIMEOUT_CODES = frozenset({124, 137, 143})
+BROWSER_SKIPPED = "browser smokes (separate scheduled job; not run by verify profiles)"
 ALWAYS_RUN_RE = re.compile(
     r"(subprocess|proof_pool|moex_spread_lab[._]cli|cli\.main|moex-spread-lab)"
 )
@@ -42,11 +54,16 @@ def python_cmd() -> list[str]:
     return ["uv", "run", "--no-sync", "python"]
 
 
-def worker_count() -> int:
-    override = os.environ.get("MSL_VERIFY_WORKERS")
-    if override and override.isdigit() and int(override) > 0:
-        return int(override)
-    return os.cpu_count() or 1
+HEALTH_CMD = ["bash", "scripts/check_health.sh"]
+STEP_META = {
+    "docs-scan": ("docs-check", "docs-scan"),
+    "health-changed": ("changed-gate", "check_health.sh"),
+    "health-full": ("full-gate", "check_health.sh"),
+    "architecture": ("architecture-gate", "architecture_gate.py"),
+    "always-run": ("always-run-suite", "pytest"),
+    "pytest-affected": ("affected-suite", "pytest"),
+    "suite-full": ("full-suite", "pytest"),
+}
 
 
 @dataclass(frozen=True)
@@ -58,6 +75,11 @@ class Step:
     command: list[str]
 
 
+def step(key: str, reason: str, command: list[str]) -> Step:
+    task_class, check = STEP_META[key]
+    return Step(key, task_class, check, reason, command)
+
+
 @dataclass
 class StepResult:
     key: str
@@ -66,13 +88,10 @@ class StepResult:
 
 
 def _status_of(returncode: int) -> str:
-    if returncode == 0:
-        return "passed"
-    if returncode in (124, 137, 143):
+    """Exit code -> reported status (124/137/143 are the runner's timeout codes)."""
+    if returncode in TIMEOUT_CODES:
         return "timeout"
-    if returncode == 127:
-        return "unavailable"
-    return "failed"
+    return {0: "passed", 127: "unavailable"}.get(returncode, "failed")
 
 
 def run_step(*, step: Step, records: str | None, dry_run: bool) -> StepResult:
@@ -83,6 +102,7 @@ def run_step(*, step: Step, records: str | None, dry_run: bool) -> StepResult:
     env = os.environ.copy()
     if records:
         env["MSL_VERIFICATION_RECORDS"] = records
+    label = f"{step.check}:{step.reason}"
     cmd = [
         *python_cmd(),
         str(ROOT / "scripts" / "verify_record.py"),
@@ -91,7 +111,7 @@ def run_step(*, step: Step, records: str | None, dry_run: bool) -> StepResult:
         "--phase",
         "S2",
         "--check",
-        f"{step.check}:{step.reason}",
+        label,
         *(["--records", records] if records else []),
         "--",
         *step.command,
@@ -104,19 +124,14 @@ def run_step(*, step: Step, records: str | None, dry_run: bool) -> StepResult:
     return StepResult(step.key, _status_of(rc), time.monotonic() - started)
 
 
-def pytest_cmd(extra: list[str]) -> list[str]:
-    return [
-        *python_cmd(),
-        "-m",
-        "pytest",
-        "-n",
-        str(worker_count()),
-        "--dist",
-        "loadfile",
-        "-q",
-        "--tb=short",
-        *extra,
-    ]
+def pytest_cmd(extra: list[str], marker: str = "not slow_equiv") -> list[str]:
+    """pytest command with an explicit marker selection.
+
+    ``pyproject.toml`` deselects ``slow_equiv`` (plan S4a), so ``marker=""`` must reach
+    pytest as ``-m ""``; omitting the flag lets ``addopts`` drop parity tests silently.
+    """
+    flags = ["-m", "pytest", "-m", marker, "-n", str(worker_count()), "--dist", "loadfile"]
+    return [*python_cmd(), *flags, "-q", "--tb=short", *extra]
 
 
 def always_run_files(legs: list[str]) -> list[str]:
@@ -124,15 +139,10 @@ def always_run_files(legs: list[str]) -> list[str]:
     files: list[str] = []
     for leg in legs:
         tests_dir = ROOT / "packages" / leg / "tests"
-        if not tests_dir.is_dir():
-            continue
-        for file in sorted(tests_dir.rglob("test_*.py")):
+        for file in sorted(tests_dir.rglob("test_*.py")) if tests_dir.is_dir() else ():
             if "browser" in file.relative_to(tests_dir).parts:
                 continue
-            try:
-                text = file.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
+            text = file.read_text(encoding="utf-8", errors="ignore")
             if ALWAYS_RUN_RE.search(text):
                 files.append(str(file.relative_to(ROOT)))
     return files
@@ -150,11 +160,7 @@ def plan_affected(base: str) -> tuple[change_scope.ScopeDecision, list[str]]:
 def _testmon_available() -> bool:
     try:
         probe = subprocess.run(
-            [*python_cmd(), "-c", "import testmon"],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            timeout=60,
+            [*python_cmd(), "-c", "import testmon"], cwd=ROOT, capture_output=True, timeout=60
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -168,20 +174,18 @@ def _affected_steps(
     touched = change_scope.touched_packages(paths)
     legs = list(decision.packages)
     os.environ["TESTMON_DATAFILE"] = os.environ.get("TESTMON_DATAFILE", str(ROOT / ".testmondata"))
-    skipped = ["browser smokes (separate scheduled job)"]
+    skipped = [BROWSER_SKIPPED]
 
     if decision.profile == "docs":
         docs_changed = [p for p in paths if change_scope.is_docs_path(p)]
         steps = [
-            Step(
-                key="docs-scan",
-                task_class="docs-check",
-                check="docs-scan",
-                reason=(
+            step(
+                "docs-scan",
+                (
                     f"docs-only change ({len(docs_changed)} file(s)): whitespace, "
                     "conflict markers, credential tokens"
                 ),
-                command=[*python_cmd(), "scripts/docs_scan.py", *docs_changed],
+                [*python_cmd(), "scripts/docs_scan.py", *docs_changed],
             )
         ]
         return (
@@ -203,9 +207,7 @@ def _affected_steps(
 
     always = always_run_files(legs)
     parity_triggered = bool(PARITY_TRIGGER_PACKAGES.intersection(touched))
-    parity: list[str] = [
-        rel for rel in (PERF_EQUIVALENCE, FASTCORE_PARITY) if (ROOT / rel).is_file()
-    ]
+    parity = [rel for rel in (*EQUIVALENCE_TIERS, FASTCORE_PARITY) if (ROOT / rel).is_file()]
     triggered_parity: list[str] = parity if parity_triggered else []
     always_files: list[str] = list(dict.fromkeys([*always, *triggered_parity]))
     browser_dirs = [
@@ -218,19 +220,15 @@ def _affected_steps(
     ]
 
     steps = [
-        Step(
-            key="health-changed",
-            task_class="changed-gate",
-            check="check_health.sh",
-            reason=f"affected profile (--changed --base {base})",
-            command=["bash", "scripts/check_health.sh", "--changed", "--base", base],
+        step(
+            "health-changed",
+            f"affected profile (--changed --base {base})",
+            [*HEALTH_CMD, "--changed", "--base", base],
         ),
-        Step(
-            key="architecture",
-            task_class="architecture-gate",
-            check="architecture_gate.py",
-            reason="affected profile always runs the architecture gate",
-            command=[*python_cmd(), "scripts/architecture_gate.py"],
+        step(
+            "architecture",
+            "affected profile always runs the architecture gate",
+            [*python_cmd(), "scripts/architecture_gate.py"],
         ),
     ]
     if always_files:
@@ -242,23 +240,19 @@ def _affected_steps(
             else ""
         )
         steps.append(
-            Step(
-                key="always-run",
-                task_class="always-run-suite",
-                check="pytest",
-                reason=f"subprocess/CLI/proof_pool and {trigger}{len(always_files)} file(s), testmon disabled",
-                command=pytest_cmd(["-p", "no:testmon", *always_files]),
+            step(
+                "always-run",
+                f"subprocess/CLI/proof_pool and {trigger}{len(always_files)} file(s), testmon disabled",
+                pytest_cmd(["-p", "no:testmon", *always_files]),
             )
         )
     leg_dirs = [f"packages/{leg}/tests" for leg in legs]
     if decision.testmon and _testmon_available():
         steps.append(
-            Step(
-                key="pytest-affected",
-                task_class="affected-suite",
-                check="pytest-testmon",
-                reason=f"affected (advisory) selection over legs: {','.join(legs)}",
-                command=pytest_cmd(["--testmon", *leg_dirs, *ignore_args]),
+            step(
+                "pytest-affected",
+                f"affected (advisory) selection over legs: {','.join(legs)}",
+                pytest_cmd(["--testmon", *leg_dirs, *ignore_args]),
             )
         )
     else:
@@ -267,12 +261,10 @@ def _affected_steps(
         else:
             print(f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full")
         steps.append(
-            Step(
-                key="pytest-affected",
-                task_class="affected-suite",
-                check="pytest",
-                reason=f"full legs (no deselection): {','.join(legs)}",
-                command=pytest_cmd(leg_dirs),
+            step(
+                "pytest-affected",
+                f"full legs (no deselection): {','.join(legs)}",
+                pytest_cmd(leg_dirs, marker=""),
             )
         )
     skipped += ["vulture (full gate only)", "full suite (use --profile full)", *decision.skipped]
@@ -284,55 +276,44 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
     if profile == "quick":
         return (
             [
-                Step(
-                    key="health-changed",
-                    task_class="changed-gate",
-                    check="check_health.sh",
-                    reason=f"quick profile (--changed --base {base})",
-                    command=["bash", "scripts/check_health.sh", "--changed", "--base", base],
+                step(
+                    "health-changed",
+                    f"quick profile (--changed --base {base})",
+                    [*HEALTH_CMD, "--changed", "--base", base],
                 )
             ],
             [
-                "browser smokes (separate scheduled job)",
+                BROWSER_SKIPPED,
                 "pytest (quick profile)",
                 "vulture (full gate only)",
             ],
             "quick",
         )
-    if profile == "full":
+    if profile in ("pre-push", "full"):
+        extra = (
+            ["testmon deselection (never on the pre-push path)"] if profile == "pre-push" else []
+        )
         return (
             [
-                Step(
-                    key="health-full",
-                    task_class="full-gate",
-                    check="check_health.sh",
-                    reason="full profile",
-                    command=["bash", "scripts/check_health.sh"],
-                ),
-                Step(
-                    key="suite-full",
-                    task_class="full-suite",
-                    check="pytest",
-                    reason="full profile: whole suite, -n <cpu_count> --dist loadfile",
-                    command=pytest_cmd([]),
+                step("health-full", f"{profile} profile (full gate)", list(HEALTH_CMD)),
+                step(
+                    "suite-full",
+                    f"{profile}: whole suite, every parity tier (no deselection)",
+                    pytest_cmd([], marker=""),
                 ),
             ],
-            ["browser smokes (separate scheduled job)"],
-            "full",
+            [BROWSER_SKIPPED, *extra],
+            profile,
         )
     return _affected_steps(base)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("quick", "affected", "full"), required=True)
-    parser.add_argument(
-        "--base", default="HEAD", help="base revision for the change set (default: HEAD)"
-    )
+    parser.add_argument("--profile", choices=PROFILES, required=True)
+    parser.add_argument("--base", default="HEAD", help="base revision for the change set")
     parser.add_argument("--records", default=None, help="JSONL path for measurement records")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="print the planned steps, run nothing"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="print steps, run nothing")
     args = parser.parse_args(argv)
 
     if args.records:
@@ -342,28 +323,23 @@ def main(argv: list[str] | None = None) -> int:
     results = [run_step(step=step, records=args.records, dry_run=args.dry_run) for step in steps]
     wall = time.monotonic() - started
 
-    failures = [r for r in results if r.status in ("failed", "timeout")]
-    unavailable = [r for r in results if r.status == "unavailable"]
-    if failures:
+    statuses = {result.status for result in results}
+    if statuses & {"failed", "timeout"}:
         overall, rc = "FAILED", 1
-    elif unavailable:
+    elif "unavailable" in statuses:
         overall, rc = "UNAVAILABLE", 2
     else:
         overall, rc = "PASSED", 0
 
-    advisory = (
-        " — affected (advisory) selection, NOT full verification"
-        if label.startswith("affected")
-        else ""
-    )
+    advisory = label.startswith("affected")
     print()
-    print(f"verify ({label}): {overall} in {wall:.1f}s{advisory}")
+    print(f"verify ({label}): {overall} in {wall:.1f}s")
+    if advisory:
+        print("note: affected is advisory, NOT full verification")
     for result in results:
         print(f"  {result.status:<12} {result.key:<16} {result.secs:.1f}s")
     if not args.dry_run and skipped:
         print(f"skipped: {'; '.join(dict.fromkeys(skipped))}")
-    if label.startswith("affected"):
-        print("note: affected is advisory; run `./scripts/verify.py --profile full` before push")
     return rc
 
 

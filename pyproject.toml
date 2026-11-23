@@ -47,6 +47,15 @@ where = ["src"]
 namespaces = true
 
 [tool.pytest.ini_options]
+# Plan S4a: the equivalence suite ships in two trial tiers. `slow_equiv` is the
+# full-resolution parity tier (worker pool, C fallback, streaming progress, the
+# 1h calendar cohort); it is deselected from default discovery and runs in
+# `scripts/verify.py --profile pre-push`, the CI perf-equivalence job and the
+# ASan/UBSan gate. No test is deleted and no parity trial count is trimmed.
+addopts = ["-m", "not slow_equiv"]
+markers = [
+    "slow_equiv: full-resolution bit-for-bit parity; runs in --pre-push, CI and the sanitizer gate",
+]
 pythonpath = [
     "packages/core/src",
     "packages/data/src",
@@ -174,7 +183,9 @@ max-statements = 50
 "packages/proof/src/moex_spread_lab/proof_runtime/service.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
 "packages/proof/tests/test_global_capital.py" = ["B905"]
 "packages/proof/tests/test_pair_funding_replay.py" = ["B905", "RUF005"]
+"packages/proof/tests/perf_equivalence_fixtures.py" = ["C901", "PLR0912", "PLR0915"]
 "packages/proof/tests/test_perf_equivalence.py" = ["C408", "C901", "PLR0912"]
+"packages/proof/tests/test_perf_equivalence_full.py" = ["C408", "C901", "PLR0912"]
 "packages/proof/tests/test_proof_batch.py" = ["B905"]
 "packages/proof/tests/test_proof_funding.py" = ["B905", "E741"]
 "packages/proof/tests/test_proof_search.py" = ["B905"]

@@ -16,6 +16,7 @@ from .base import (
     StrategyRegistry,
     discover_strategies,
 )
+from .registry import clear_discovery_cache
 from .signals import attach_entry_levels, pair_fill
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "StrategyRegistry",
     "WindowSnapshot",
     "attach_entry_levels",
+    "clear_discovery_cache",
     "discover_strategies",
     "pair_fill",
 ]

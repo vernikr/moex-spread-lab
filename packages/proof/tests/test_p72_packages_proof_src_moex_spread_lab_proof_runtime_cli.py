@@ -9,14 +9,15 @@ and return codes) without changing any runtime behavior.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from types import SimpleNamespace
 
 import moex_spread_lab.proof_runtime.cli as cli
 
 __all__ = [
     "test_register_wires_audit_pairs_handler_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli",
-    "test_run_unknown_command_returns_2_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli",
     "test_run_audit_pairs_dispatch_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli",
+    "test_run_unknown_command_returns_2_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli",
 ]
 
 
@@ -35,7 +36,9 @@ def test_run_unknown_command_returns_2_p72_packages_proof_src_moex_spread_lab_pr
     assert cli.run(SimpleNamespace(command="unknown")) == 2
 
 
-def test_run_audit_pairs_dispatch_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli(monkeypatch):
+def test_run_audit_pairs_dispatch_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli(
+    monkeypatch,
+):
     import moex_spread_lab.proof_runtime.audit as audit_mod
     import moex_spread_lab.strategies.pair_screener.pair_screener as screener_mod
 
@@ -55,7 +58,7 @@ def test_run_audit_pairs_dispatch_p72_packages_proof_src_moex_spread_lab_proof_r
     args = SimpleNamespace(
         command="audit-pairs",
         root=SimpleNamespace(resolve=lambda: "/resolved/root"),
-        output="/tmp/out.json",
+        output=Path("/tmp/out.json"),
     )
 
     assert cli.run(args) == 0

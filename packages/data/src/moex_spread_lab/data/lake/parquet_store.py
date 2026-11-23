@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import sha256_file
 
+from . import legacy_series as _legacy_module
+from . import parquet_catalog as _catalog_module
 from .bar_types import (
     LEGACY_CANDLE_SCHEMA,
     BarSeries,
@@ -20,13 +21,20 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
-from .legacy_series import LegacyCandleSeries, _component, _read_legacy_series
+from .helpers_p72_packages_data_src_moex_spread_lab_data_lake_parquet_store import (
+    as_dict,
+    facade_hook,
+    manifest_records,
+    read_table,
+    table_from_rows,
+    table_rows,
+)
+from .legacy_series import LegacyCandleSeries
 from .parquet_catalog import (
     BAR_DATASET_SCHEMA,
     BAR_SCHEMA,
     DATA_LAKE_SCHEMA,
     SOURCE_SCHEMA,
-    _atomic_write_parquet,
     build_import_record,
     parse_lake_manifest,
     upsert_catalog,
@@ -34,6 +42,21 @@ from .parquet_catalog import (
     verify_dataset_against_legacy,
 )
 from .raw_archive import RawResponseArchive
+
+# Facade hooks of other-owned modules: bound at import like the historical
+# `from .legacy_series import _component` form; re-typed since their owners'
+# `__all__` does not declare them.
+_component: Callable[[Any, str], str] = cast(
+    "Callable[[Any, str], str]", facade_hook(_legacy_module, "_component")
+)
+_read_legacy_series: Callable[[Path], LegacyCandleSeries] = cast(
+    "Callable[[Path], LegacyCandleSeries]",
+    facade_hook(_legacy_module, "_read_legacy_series"),
+)
+_atomic_write_parquet: Callable[[Path, pa.Table], None] = cast(
+    "Callable[[Path, pa.Table], None]",
+    facade_hook(_catalog_module, "_atomic_write_parquet"),
+)
 
 
 class ParquetBarStore:
@@ -62,9 +85,7 @@ class ParquetBarStore:
     def _index_manifest(self, value: dict[str, Any]) -> None:
         by_id: dict[str, dict[str, Any]] = {}
         by_legacy: dict[Path, dict[str, Any]] = {}
-        for record in value["datasets"]:
-            if not isinstance(record, dict):
-                continue
+        for record in manifest_records(value):
             ds_id = record.get("dataset_id")
             if isinstance(ds_id, str):
                 by_id[ds_id] = record
@@ -107,10 +128,8 @@ class ParquetBarStore:
             raise DataLakeError(
                 f"data-lake dataset already exists: {series.dataset_id}; use --replace"
             )
-        _atomic_write_parquet(bars_path, pa.Table.from_pylist(series.bars, schema=BAR_SCHEMA))
-        _atomic_write_parquet(
-            sources_path, pa.Table.from_pylist(series.sources, schema=SOURCE_SCHEMA)
-        )
+        _atomic_write_parquet(bars_path, table_from_rows(series.bars, BAR_SCHEMA))
+        _atomic_write_parquet(sources_path, table_from_rows(series.sources, SOURCE_SCHEMA))
         record = build_import_record(self.root, series, bars_path, sources_path)
         self._upsert_catalog(record, series.sources)
         self._upsert_manifest(record)
@@ -129,7 +148,7 @@ class ParquetBarStore:
         return candidate if candidate.is_absolute() else self.root / candidate
 
     def record_path(self, value: str) -> Path:
-        """Resolve a manifest path, preserving the private override hook."""
+        """Resolve a manifest path; keeps the private override hook."""
         return self._record_path(value)
 
     def record_for_legacy_path(self, legacy_path: Path) -> dict[str, Any] | None:
@@ -150,18 +169,13 @@ class ParquetBarStore:
         source_path: Path | None = None,
         source_sha256: str | None = None,
     ) -> BarSeries:
-        """Read a registered Parquet dataset as rows consumed by research logic."""
+        """Read a registered dataset as rows consumed by research logic."""
         record = self._record(secid, timeframe)
         bars_path = self._record_path(record["bars_path"])
-        table = pq.ParquetFile(bars_path).read(
-            columns=list(columns) if columns is not None else None
-        )
-        semantics = record.get("row_semantics")
-        price_proxy_kind = (
-            semantics.get("price_proxy_kind") if isinstance(semantics, dict) else None
-        )
-        rows = []
-        for row in table.to_pylist():
+        semantics = as_dict(record.get("row_semantics"))
+        price_proxy_kind = semantics.get("price_proxy_kind") if semantics is not None else None
+        rows: list[dict[str, Any]] = []
+        for row in table_rows(read_table(bars_path, columns)):
             if price_proxy_kind is not None:
                 row["price_proxy_kind"] = price_proxy_kind
             rows.append(row)
@@ -205,9 +219,7 @@ class ParquetBarStore:
     ) -> pa.Table:
         record = self._record(secid, timeframe)
         bars_path = self.root / record["bars_path"]
-        table = pq.ParquetFile(bars_path).read(
-            columns=list(columns) if columns is not None else None
-        )
+        table = read_table(bars_path, columns)
         if start is not None or end is not None:
             if "begin" not in table.column_names:
                 raise DataLakeError("date filtering requires the begin column")
@@ -216,12 +228,7 @@ class ParquetBarStore:
                 filters.append(("begin", ">=", start))
             if end is not None:
                 filters.append(("begin", "<=", end))
-            return pq.read_table(
-                bars_path,
-                columns=list(columns) if columns is not None else None,
-                # Stub 19.4 rejects valid string comparison filters.
-                filters=cast(Any, filters),
-            )
+            return read_table(bars_path, columns, filters)
         return table
 
     def verify_legacy(self, legacy_path: Path) -> dict[str, Any]:
@@ -236,7 +243,7 @@ class ParquetBarStore:
         return RawResponseArchive(self.lake_root)
 
     def upsert_legacy(self, legacy_path: Path) -> dict[str, Any]:
-        """Atomically replace a dataset from a merged legacy series without duplicate keys."""
+        """Atomically replace a dataset from a merged series without duplicate keys."""
         series = _read_legacy_series(legacy_path)
         try:
             self._record(series.secid, series.timeframe)
@@ -246,7 +253,7 @@ class ParquetBarStore:
         return self.import_legacy(series.path, replace=replace)
 
     def verify_all(self) -> dict[str, Any]:
-        records = [item for item in self._read_manifest()["datasets"] if isinstance(item, dict)]
+        records = manifest_records(self._read_manifest())
         datasets = [
             self.verify_legacy(self._record_path(str(record.get("legacy_path", ""))))
             for record in sorted(records, key=lambda item: str(item.get("dataset_id")))
@@ -260,8 +267,8 @@ class ParquetBarStore:
 
     def compact(self, *, force: bool = False) -> dict[str, Any]:
         """Keep each registered dataset as one Zstd bars file and one source file."""
-        records = [item for item in self._read_manifest()["datasets"] if isinstance(item, dict)]
-        results = []
+        records = manifest_records(self._read_manifest())
+        results: list[dict[str, Any]] = []
         for record in sorted(records, key=lambda item: str(item.get("dataset_id"))):
             dataset_id = str(record.get("dataset_id"))
             if not force:
@@ -270,15 +277,15 @@ class ParquetBarStore:
             bars_path = self._record_path(str(record["bars_path"]))
             reject_sealed_table_write(self.root, bars_path)
             sources_path = self._record_path(str(record["sources_path"]))
-            bars = pq.ParquetFile(bars_path).read()
-            sources = pq.ParquetFile(sources_path).read()
+            bars = read_table(bars_path, None)
+            sources = read_table(sources_path, None)
             _atomic_write_parquet(bars_path, bars)
             _atomic_write_parquet(sources_path, sources)
             updated = dict(record)
             updated["parquet_sha256"] = sha256_file(bars_path)
             updated["sources_sha256"] = sha256_file(sources_path)
             updated["compacted_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-            self._upsert_catalog(updated, sources.to_pylist())
+            self._upsert_catalog(updated, table_rows(sources))
             self._upsert_manifest(updated)
             self.verify_legacy(self._record_path(str(updated["legacy_path"])))
             results.append(

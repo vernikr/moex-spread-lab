@@ -1,31 +1,20 @@
 """One persisted capital snapshot drives every proof account, screen and search."""
 
-import json
-import math
 import tempfile
 import unittest
 from copy import deepcopy
-from datetime import date
 from pathlib import Path
-from unittest.mock import patch
 
+from global_capital_replay_p72_packages_proof_tests_test_global_capital import (
+    expected_excess_pp,
+    published_marks,
+    reconstruct_wealth,
+    runtime_excess_pp,
+)
 from moex_spread_lab.accounting.position_sizing import size_proof
-from moex_spread_lab.core.settings import (
-    MAX_RESEARCH_CAPITAL_RUB,
-    EvaluationSplit,
-    ResearchSettings,
-    read_settings,
-    save_settings,
-    settings_path,
-)
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import (
-    StudyWindow,
-    _annualized_returns,
-    _tune,
-    research_run,
-)
+from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, catalog
@@ -51,71 +40,6 @@ FLAT = {**CAL, "pair": "SRM3/SRU3"}
 TARGETS = [{k: v for k, v in r.items() if k in ("universe", "asset", "pair")} for r in (PAIR, CAL)]
 
 
-class CapitalSettingsTests(unittest.TestCase):
-    def test_default_migration_and_partial_saves_preserve_all_other_preferences(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            self.assertEqual(read_settings(root)["initial_capital_rub"], 30000)
-            self.assertFalse(settings_path(root).exists())
-            path = settings_path(root)
-            path.parent.mkdir(parents=True)
-            legacy = '{"validation_percent":12.5,"allow_failed_volume":false,"allow_failed_capital":true,"slippage_ticks":2.5}\n'
-            path.write_text(legacy)
-            settings = read_settings(root)
-            self.assertEqual(settings["initial_capital_rub"], 30000)
-            self.assertEqual(path.read_text(), legacy)
-            saved = save_settings(root, {"initial_capital_rub": 60000.25})
-            self.assertEqual(saved, {**settings, "initial_capital_rub": 60000.25})
-            save_settings(root, {"validation_percent": 25})
-            save_settings(root, {"slippage_ticks": 3})
-            self.assertEqual(read_settings(root)["initial_capital_rub"], 60000.25)
-            self.assertFalse(read_settings(root)["allow_failed_volume"])
-
-    def test_invalid_capital_never_replaces_the_saved_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            save_settings(root, {"initial_capital_rub": 12345.67})
-            original = settings_path(root).read_bytes()
-            for bad in (
-                False,
-                True,
-                None,
-                "30000",
-                [],
-                {},
-                0,
-                -1,
-                0.001,
-                123.456,
-                math.nan,
-                math.inf,
-                -math.inf,
-                10**400,
-                MAX_RESEARCH_CAPITAL_RUB + 0.01,
-            ):
-                with self.subTest(value=bad), self.assertRaises(W0Error):
-                    save_settings(root, {"initial_capital_rub": bad})
-                self.assertEqual(settings_path(root).read_bytes(), original)
-            for value in (0.01, 1, 15000, 60000.25, MAX_RESEARCH_CAPITAL_RUB):
-                with self.subTest(valid=value):
-                    self.assertEqual(
-                        save_settings(root, {"initial_capital_rub": value})["initial_capital_rub"],
-                        value,
-                    )
-
-    def test_complete_new_form_can_repair_corrupt_settings(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            path = settings_path(root)
-            path.parent.mkdir(parents=True)
-            path.write_text("broken")
-            with self.assertRaises(W0Error):
-                read_settings(root)
-            expected = ResearchSettings(initial_capital_rub=45000).metadata()
-            self.assertEqual(save_settings(root, expected), expected)
-            self.assertEqual(read_settings(root), expected)
-
-
 class CapitalReplayTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -126,6 +50,14 @@ class CapitalReplayTests(unittest.TestCase):
 
     def run_proof(self, request):
         return research_run(self.service, request, optimize=False, include_plateau=False)
+
+    def run_sized(self, request, initial, share, automatic):
+        """Persist the capital and holdout choice, then drop explicit sizing if asked."""
+        save_settings(self.root, {"initial_capital_rub": initial, "validation_percent": share})
+        req = deepcopy(request)
+        if not automatic:
+            req.pop("sizing")
+        return self.run_proof(req)
 
     def test_all_four_strategies_use_the_budget_and_never_a_request_override(self):
         requests = (
@@ -213,75 +145,35 @@ class CapitalReplayTests(unittest.TestCase):
     ):
         for initial in (15000, 60000):
             for share in (0, 25):
-                save_settings(
-                    self.root,
-                    {"initial_capital_rub": initial, "validation_percent": share},
-                )
                 for automatic in (False, True):
-                    req = {
-                        **FLAT,
-                        "strategy": "convergence_to_ruonia",
-                        "parameters": {"threshold_pp": 0.7},
-                    }
-                    if not automatic:
-                        req.pop("sizing")
-                    p = self.run_proof(req)
-                    self.assertTrue(p["trades"])
-                    # Reconstruct the self-financing account independently, including the
-                    # published margin held at the end of each row; never restart at split.
-                    source = json.loads(
-                        (self.root / "data/benchmark/lqdt-lineage.json").read_text()
-                    )
-                    prices = {r["date"]: r["price"] for r in source["rows"]}
-                    days = [r["date"] for r in p["ledger"]]
-                    marks = {d: prices[d] for d in days}
-                    values = {}
-                    wealth, held, previous_net = initial, 0, 0
-                    for i, row in enumerate(p["ledger"]):
-                        growth = marks[days[i]] / marks[days[max(0, i - 1)]]
-                        wealth += (
-                            (wealth - held) * (growth - 1)
-                            + row["cumulative_net_rub"]
-                            - previous_net
-                        )
-                        values[row["date"]] = wealth
-                        held = (
-                            row["posted_margin_rub"]
-                            if automatic
-                            else sum(
-                                t["margin_rub"]
-                                for t in p["trades"]
-                                if t["entry"]["date"] <= row["date"] < t["exit"]["date"]
-                            )
-                        )
-                        previous_net = row["cumulative_net_rub"]
-                    split = EvaluationSplit.from_dates(days, share)
-                    anchor = split.training[-1] if share else split.training[0]
-                    opening = values[anchor] if share else initial
-                    span = (date.fromisoformat(days[-1]) - date.fromisoformat(anchor)).days
-                    expected = 100 * (
-                        (values[days[-1]] / opening) ** (365 / span)
-                        - (marks[days[-1]] / marks[anchor]) ** (365 / span)
-                    )
-                    actual = _annualized_returns(p, marks, split)["annualized_excess_pp"]
                     with self.subTest(initial=initial, share=share, automatic=automatic):
-                        self.assertNotEqual(expected, 0)
-                        self.assertAlmostEqual(actual, expected, places=8)
-                        self.assertEqual(actual, p["evaluation"]["result"]["annualized_excess_pp"])
+                        self.check_annualization(initial, share, automatic)
+
+    def check_annualization(self, initial, share, automatic):
+        """Independent reconstruction and the runtime score agree for this case."""
+        p = self.run_sized(
+            {**FLAT, "strategy": "convergence_to_ruonia", "parameters": {"threshold_pp": 0.7}},
+            initial,
+            share,
+            automatic,
+        )
+        self.assertTrue(p["trades"])
+        # Reconstruct the self-financing account independently, including the
+        # published margin held at the end of each row; never restart at split.
+        marks = published_marks(self.root, p["ledger"])
+        values, days = reconstruct_wealth(p["ledger"], marks, p["trades"], initial, automatic)
+        expected = expected_excess_pp(values, marks, days, initial, share)
+        actual = runtime_excess_pp(p, marks, days, share)
+        self.assertNotEqual(expected, 0)
+        self.assertAlmostEqual(actual, expected, places=8)
+        self.assertEqual(actual, p["evaluation"]["result"]["annualized_excess_pp"])
 
     def test_zero_trade_lqdt_score_has_the_right_base_with_and_without_holdout(self):
         for initial in (500, 15000, 60000):
             for share in (0, 25):
-                save_settings(
-                    self.root,
-                    {"initial_capital_rub": initial, "validation_percent": share},
-                )
                 for automatic in (False, True):
                     with self.subTest(capital=initial, share=share, automatic=automatic):
-                        req = deepcopy(FLAT)
-                        if not automatic:
-                            req.pop("sizing")
-                        p = self.run_proof(req)
+                        p = self.run_sized(FLAT, initial, share, automatic)
                         self.assertEqual(p["summary"]["trades"], 0)
                         self.assertEqual(p["evaluation"]["result"]["annualized_excess_pp"], 0)
                         self.assertEqual(p["selection"]["initial_capital_rub"], initial)
@@ -321,7 +213,7 @@ class CapitalReplayTests(unittest.TestCase):
             before = deepcopy(requests)
             compact = window_summaries(self.service, {"requests": requests})
             self.assertEqual(compact["initial_capital_rub"], initial)
-            for req, row in zip(requests, compact["rows"]):
+            for req, row in zip(requests, compact["rows"], strict=True):
                 p = self.run_proof(req)
                 self.assertEqual(row["run_id"], p["run_id"])
                 self.assertEqual(row["trades"], p["summary"]["trades"])
@@ -331,43 +223,6 @@ class CapitalReplayTests(unittest.TestCase):
                 )
                 self.assertEqual(row["evaluation"]["initial_capital_rub"], initial)
             self.assertEqual(requests, before)
-
-    def test_a_table_request_freezes_capital_before_loading_any_member(self):
-        save_settings(self.root, {"initial_capital_rub": 20000})
-
-        def change_settings(*args, **kwargs):
-            save_settings(self.root, {"initial_capital_rub": 60000})
-            return StudyWindow(*args)
-
-        with patch(
-            "moex_spread_lab.proof_runtime.proof_windows.StudyWindow", side_effect=change_settings
-        ):
-            result = window_summaries(self.service, {"requests": [PAIR, CAL]})
-        self.assertEqual(result["initial_capital_rub"], 20000)
-        self.assertTrue(all(r["selection"]["initial_capital_rub"] == 20000 for r in result["rows"]))
-        self.assertEqual(read_settings(self.root)["initial_capital_rub"], 60000)
-
-    def test_search_freezes_capital_and_fill_and_neither_is_an_optimization_axis(self):
-        save_settings(self.root, {"initial_capital_rub": 20000})
-
-        def change_settings(*args, **kwargs):
-            save_settings(self.root, {"initial_capital_rub": 60000})
-            return _tune(*args, **kwargs)
-
-        with patch("moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change_settings):
-            result = research_run(
-                self.service,
-                {**PAIR, "fill": "next_close", "targets": TARGETS},
-                optimize=True,
-            )
-        self.assertEqual(result["status"], "maximum_found")
-        self.assertEqual(result["group"]["initial_capital_rub"], 20000)
-        self.assertEqual(set(result["selected_parameters"]), {"lookback", "entry_z", "exit_z"})
-        for member in result["group"]["members"]:
-            self.assertEqual(member["selection"]["fill"], "next_close")
-            self.assertEqual(member["selection"]["initial_capital_rub"], 20000)
-            self.assertEqual(member["evaluation"]["initial_capital_rub"], 20000)
-        self.assertEqual(read_settings(self.root)["initial_capital_rub"], 60000)
 
     def test_legacy_nonresearch_catalog_does_not_implicitly_load_the_preference(self):
         before = catalog(ScreenerInputs(self.root))

@@ -9,7 +9,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .iss_http import (
     CANDLE_FIELDS,
@@ -18,9 +18,13 @@ from .iss_http import (
     DEFAULT_BOARD,
     DEFAULT_ISS_BASE_URL,
     IssIntakeError,
-    _candles_url,
-    _rows,
     fetch_json_with_raw,
+)
+from .iss_http import (
+    candles_url as _candles_url,
+)
+from .iss_http import (
+    rows as _rows,
 )
 
 RawSinkCallback = Callable[[str, bytes, str, str], None]
@@ -110,15 +114,13 @@ def _try_load_cached_page(cache_path: Path | None, url: str) -> dict[str, Any] |
     if cache_path is None or not cache_path.exists():
         return None
     try:
-        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        cached: object = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if (
-        isinstance(cached, dict)
-        and cached.get("url") == url
-        and isinstance(cached.get("rows"), list)
-    ):
-        return cached
+    if isinstance(cached, dict):
+        page = cast(dict[str, Any], cached)
+        if page.get("url") == url and isinstance(page.get("rows"), list):
+            return page
     return None
 
 
@@ -169,7 +171,7 @@ def _load_or_fetch_page_rows(
                 json.dumps(page_result, ensure_ascii=False, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-    return page_result["rows"]
+    return cast(list[dict[str, Any]], page_result["rows"])
 
 
 def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any]], int]:

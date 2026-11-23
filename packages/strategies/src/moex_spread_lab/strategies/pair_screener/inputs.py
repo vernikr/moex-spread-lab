@@ -7,16 +7,39 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
-from moex_spread_lab.core.universe import HISTORY_WINDOWS, PAIRS
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
 
 from ..funding_carry.carry import fetch_history
 from ..funding_carry.proof_funding import ProofFunding
 from .screener import _normalized_series
+
+HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
+    "dict[str, tuple[str, str]]", _universe.HISTORY_WINDOWS
+)
+PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+
+__all__ = [
+    "HISTORY_WINDOWS",
+    "PAIRS",
+    "_CANDLE_SUMMARY_CACHE",
+    "ScreenerError",
+    "ScreenerInputs",
+    "_candle_summary",
+    "_history_source",
+    "_leg_volumes",
+    "_make_proof_funding",
+    "_offline_only",
+    "_pair",
+    "_pair_history_span",
+    "_positive_leg_volume_dates",
+    "_session_volumes",
+    "pair_price_inputs",
+]
 
 
 class ScreenerError(W0Error):
@@ -169,10 +192,7 @@ def _leg_volumes(
     eligible = [day for day in days if _is_positive_day(legs, pair, day)]
     if not eligible:
         return None
-    return {
-        secid: min(float(legs[secid][day]) for day in eligible)  # type: ignore[arg-type]
-        for secid in legs
-    }
+    return {secid: min(float(cast(float, legs[secid][day])) for day in eligible) for secid in legs}
 
 
 def _positive_leg_volume_dates(
@@ -229,9 +249,12 @@ def _make_proof_funding(
     *,
     fetch_fn: Callable[..., dict[str, Any]] = fetch_history,
 ) -> ProofFunding:
+    def _history(inp: ScreenerInputs, pid: str, secid: str) -> dict[str, Any]:
+        return _history_source(inp, pid, secid, fetch_fn=fetch_fn)
+
     return ProofFunding(
         inputs,
-        history_fn=lambda inp, pid, secid: _history_source(inp, pid, secid, fetch_fn=fetch_fn),
+        history_fn=_history,
         positive_volume_dates_fn=_positive_leg_volume_dates,
     )
 

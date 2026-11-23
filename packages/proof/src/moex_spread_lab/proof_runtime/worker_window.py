@@ -17,7 +17,17 @@ if TYPE_CHECKING:
 
     from .service import ProofService
 
-__all__ = ["_worker_service", "_worker_window_summaries"]
+# Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
+# bindings they exposed before the strict-typing pass, including the ``compact_result``
+# kernel hook this module binds.
+__all__ = [
+    "Any",
+    "Path",
+    "ResearchSettings",
+    "StudyWindow",
+    "W0Error",
+    "compact_result",
+]
 
 _WORKER_SERVICES: dict[str, ProofService] = {}
 _KERNEL_EXPORTS = vars(_proof_kernel)
@@ -72,3 +82,7 @@ def _worker_window_summaries(
             }
         rows.append((idx, {"target": target, **result}))
     return rows
+
+
+# ``worker_cohort`` and the pool facade resolve these through this module at call time.
+_worker_tasks = (_worker_service, _worker_window_summaries)

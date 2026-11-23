@@ -62,7 +62,9 @@ def _axes_patch():
 
 
 def test_cohort_facade_names_stay_shared_with_proof_pool():
-    assert set(worker_cohort.__all__) == {"_prepare_worker_case", *_FACADE_NAMES}
+    # ``__all__`` is frozen to the pre-P7.2 wildcard surface; the task hooks stay shared
+    # as module attributes and must not be enumerated through it.
+    assert set(_FACADE_NAMES) | {"_prepare_worker_case"} <= set(vars(worker_cohort)) - {"__all__"}
     for name in _FACADE_NAMES:
         assert getattr(proof_pool, name) is getattr(worker_cohort, name)
 

@@ -16,14 +16,21 @@ from .axis import Axis
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
 
+# Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
+# bindings they exposed before the strict-typing pass. ``_WORKER_COHORTS`` and the task
+# functions stay module attributes under their historical names because the pool facade and
+# ``spawn`` subprocess targets resolve them here.
 __all__ = [
-    "_WORKER_COHORTS",
-    "_prepare_worker_case",
-    "_worker_eval_indices",
-    "_worker_eval_plateau_batch",
-    "_worker_init_cohort",
-    "_worker_release_cohort",
-    "_worker_report_cohort",
+    "CALENDAR_UNIVERSE",
+    "Any",
+    "CalendarData",
+    "CarryStrategyError",
+    "ResearchSettings",
+    "StudyWindow",
+    "W0Error",
+    "annotations",
+    "cast",
+    "get_strategy_axes",
 ]
 
 _Obj = dict[str, Any]
@@ -280,3 +287,17 @@ def _worker_report_cohort(
                 )
             )
     return rows
+
+
+# These task functions are spawn entry points the pool facade resolves out of this module
+# by name; ``_WORKER_COHORTS`` is the sticky bucket it reads. Referencing them keeps that
+# surface live without widening ``__all__``.
+_worker_tasks = (
+    _WORKER_COHORTS,
+    _prepare_worker_case,
+    _worker_eval_indices,
+    _worker_eval_plateau_batch,
+    _worker_init_cohort,
+    _worker_release_cohort,
+    _worker_report_cohort,
+)

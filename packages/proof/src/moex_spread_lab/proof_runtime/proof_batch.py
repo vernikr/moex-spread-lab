@@ -1,61 +1,160 @@
 """One Optuna objective on a fixed, equally weighted cohort of independent proof windows."""
 
+from __future__ import annotations
+
 import inspect
+from collections.abc import Callable, Iterable, Mapping, Sequence, Sized
 from dataclasses import dataclass as dataclass
+from pathlib import Path
 from statistics import fmean as fmean
+from typing import Any, Protocol, cast
 
 import optuna as optuna
 
+from moex_spread_lab.core import w0 as _w0
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.core.w0 import _run_id as _run_id
-from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
+from moex_spread_lab.strategies import StrategyRegistry
+from moex_spread_lab.strategies.funding_carry.carry import (
+    CarryStrategyError as CarryStrategyError,
+)
 
-from .cohort_models import _Cohort as _Cohort
-from .cohort_models import _RemoteCohort as _RemoteCohort
+from . import cohort_models as _cohort_models
+from . import cohort_prepare_helpers as _cohort_prepare_helpers
+from . import cohort_reporting as _cohort_reporting
+from . import proof_kernel as _proof_kernel
+from . import proof_pool as _proof_pool
+from . import remote_cohort_types as _remote_cohort_types
+from . import request_validation as _request_validation
+from . import service as _service
 from .cohort_prepare import PreparationInputs, prepare_cohort
 from .cohort_prepare_helpers import MAX_TARGETS as MAX_TARGETS
-from .cohort_prepare_helpers import _active_seed as _active_seed
-from .cohort_prepare_helpers import _confirmation as _confirmation
-from .cohort_prepare_helpers import _filter_training as _filter_training
-from .cohort_prepare_helpers import _intersect_axes as _intersect_axes
-from .cohort_prepare_helpers import _native_request as _native_request
-from .cohort_prepare_helpers import (
-    _targets,
-)
-from .cohort_prepare_helpers import _translate as _translate
 from .cohort_reporting import CohortReport, build_cohort_result
-from .cohort_reporting import _unavailable as _unavailable
 from .phase_metrics import measure_phase
-from .proof_kernel import (
-    TRIALS,
-    StudyWindow,
-    _tune,
-    _validate,
-    resolve_seed,
-)
-from .proof_kernel import (
-    Axis as Axis,
-)
-from .proof_kernel import _lamps as _lamps
-from .proof_kernel import _ordered as _ordered
-from .proof_pool import _estimate_weight, get_worker_pool
-from .remote_cohort_types import _RemoteCase as _RemoteCase
-from .remote_cohort_types import _RemoteSplit as _RemoteSplit
-from .remote_cohort_types import _TrainingSlice as _TrainingSlice
-from .request_validation import _identity as _identity
-from .service import _benchmark_marks
+from .proof_kernel import TRIALS, StudyWindow, resolve_seed
+from .proof_kernel import Axis as Axis
+from .proof_pool import get_worker_pool
 from .strategy_catalog import get_strategy_axes
 from .strategy_catalog import resolve_strategy_registry as resolve_strategy_registry
+
+_Obj = dict[str, Any]
+_Progress = Callable[[_Obj], Any]
+_Step = Callable[[int, int], Any]
+_Cancel = Callable[[], None]
+_ValidSpec = tuple[int, _Obj, _Obj]
+
+_CALENDAR_ATTR = "_calendar"
+_PREPARE_OPTS = frozenset({"calendar", "registry"})
+_RESULT_OPTS = frozenset({"on_progress"})
+
+
+class _ServiceLike(Protocol):
+    root: Path
+
+
+class _SplitLike(Protocol):
+    training: Sized
+
+
+class _MemberCaseLike(Protocol):
+    split: _SplitLike
+
+
+class _CohortLike(Protocol):
+    active: str
+    axes: dict[str, Axis]
+    seed: _Obj
+    members: list[tuple[_Obj, _MemberCaseLike]]
+    land: Any
+
+    def close(self) -> None: ...
+    def plateau(self, point: _Obj, *, on_progress: _Step | None = None) -> Any: ...
+
+
+_ch, _pk, _rc = (
+    _cohort_prepare_helpers.__dict__,
+    _proof_kernel.__dict__,
+    _remote_cohort_types.__dict__,
+)
+_run_id: Any = _w0.__dict__["_run_id"]
+_Cohort: Any = _cohort_models.__dict__["_Cohort"]
+_RemoteCohort: Any = _cohort_models.__dict__["_RemoteCohort"]
+_active_seed: Any = _ch["_active_seed"]
+_confirmation: Any = _ch["_confirmation"]
+_filter_training: Any = _ch["_filter_training"]
+_intersect_axes: Any = _ch["_intersect_axes"]
+_native_request: Any = _ch["_native_request"]
+_targets = cast(Callable[[Mapping[str, Any]], list[_Obj]], _ch["_targets"])
+_translate = cast(Callable[[Mapping[str, Any], str], _Obj], _ch["_translate"])
+_unavailable = cast(Callable[[Any, str], _Obj], _cohort_reporting.__dict__["_unavailable"])
+_tune = cast(Callable[..., tuple[_Obj | None, int, list[_Obj]]], _pk["_tune"])
+_validate = cast(Callable[..., None], _pk["_validate"])
+_lamps: Any = _pk["_lamps"]
+_ordered: Any = _pk["_ordered"]
+_estimate_weight = cast(Callable[[Path, _Obj, str], int], _proof_pool.__dict__["_estimate_weight"])
+_RemoteCase: Any = _rc["_RemoteCase"]
+_RemoteSplit: Any = _rc["_RemoteSplit"]
+_TrainingSlice: Any = _rc["_TrainingSlice"]
+_identity: Any = _request_validation.__dict__["_identity"]
+_benchmark_marks = cast(Callable[[Path], dict[str, float]], _service.__dict__["_benchmark_marks"])
 
 _DEFAULT_STUDY_WINDOW = StudyWindow
 
 
-def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
+def _noop_cancel() -> None:
+    return None
+
+
+def _parse_options(options: Mapping[str, Any], allowed: frozenset[str]) -> None:
+    unknown = set(options) - allowed
+    if unknown:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
+
+
+def _emit_stage(
+    on_progress: _Progress | None, stage: str, total: int, percent: float, label: str
+) -> None:
+    if on_progress is not None:
+        on_progress({"stage": stage, "done": 0, "total": total, "percent": percent, "label": label})
+
+
+def _step_progress(
+    on_progress: _Progress | None,
+    stage: str,
+    start_pct: float,
+    span_pct: float,
+    label_prefix: str,
+    *,
+    default_total: int | None = None,
+) -> _Step | None:
+    if on_progress is None:
+        return None
+
+    def report(done: int, total: int) -> None:
+        effective = (total or default_total) if default_total is not None else total
+        on_progress(
+            {
+                "stage": stage,
+                "done": done,
+                "total": effective,
+                "percent": round(start_pct + span_pct * (done / max(effective, 1)), 1),
+                "label": f"{label_prefix} {done}/{total}",
+            }
+        )
+
+    return report
+
+
+def _call_with_optional_progress[R](
+    fn: Callable[..., R],
+    *args: Any,
+    on_progress: Any = None,
+    **kwargs: Any,
+) -> R:
     if on_progress is not None:
         try:
-            params = inspect.signature(fn).parameters.values()
+            params: Iterable[inspect.Parameter] = inspect.signature(fn).parameters.values()
         except (TypeError, ValueError):
             params = ()
         if any(p.name == "on_progress" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
@@ -63,12 +162,15 @@ def _call_with_optional_progress(fn, *args, on_progress=None, **kwargs):
     return fn(*args, **kwargs)
 
 
-def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
+def _can_use_pool(
+    service: _ServiceLike,
+    calendar: Any,
+    valid_specs: Sequence[_ValidSpec],
+    timeframe: str,
+) -> bool:
     from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
-    if StudyWindow is not _DEFAULT_STUDY_WINDOW:
-        return False
-    if type(calendar) is not CalendarData:
+    if StudyWindow is not _DEFAULT_STUDY_WINDOW or type(calendar) is not CalendarData:
         return False
     pool = get_worker_pool(service)
     est = sum(_estimate_weight(service.root, t, timeframe) for _, t, _ in valid_specs)
@@ -77,45 +179,48 @@ def _can_use_pool(service, calendar, valid_specs, timeframe: str) -> bool:
 
 @measure_phase("prepare_cohort")
 def _prepare_cohort(
-    service,
-    request,
-    settings,
-    benchmark,
-    check_cancelled,
+    service: _ServiceLike,
+    request: Mapping[str, Any],
+    settings: ResearchSettings,
+    benchmark: Any,
+    check_cancelled: _Cancel,
     *,
-    calendar=None,
-    on_progress=None,
-    registry=None,
-):
-    return prepare_cohort(
-        PreparationInputs(
-            service,
-            request,
-            settings,
-            benchmark,
-            check_cancelled,
-            calendar,
-            on_progress,
-            registry,
-            StudyWindow,
-            _can_use_pool,
-            get_worker_pool,
-            _unavailable,
-        )
+    on_progress: _Step | None = None,
+    **options: Any,
+) -> _CohortLike | _Obj:
+    _parse_options(options, _PREPARE_OPTS)
+    return cast(
+        _CohortLike | _Obj,
+        prepare_cohort(
+            PreparationInputs(
+                service,
+                request,
+                settings,
+                benchmark,
+                check_cancelled,
+                options.get("calendar"),
+                on_progress,
+                options.get("registry"),
+                StudyWindow,
+                _can_use_pool,
+                get_worker_pool,
+                _unavailable,
+            )
+        ),
     )
 
 
 def checked_plateau(
-    service,
-    request,
+    service: _ServiceLike,
+    request: Mapping[str, Any],
     *,
-    settings_override=None,
-    check_cancelled=lambda: None,
-    on_progress=None,
-    registry=None,
-):
+    settings_override: ResearchSettings | None = None,
+    check_cancelled: _Cancel = _noop_cancel,
+    on_progress: _Progress | None = None,
+    registry: StrategyRegistry | None = None,
+) -> _Obj:
     """Read-only probes at one shared point. No focus, Optuna trials, logs or implicit exclusions."""
-    request = {
+    filtered: _Obj = {
         k: request[k]
         for k in (
             "targets",
@@ -128,93 +233,54 @@ def checked_plateau(
         )
         if k in request
     }
-    _validate(request, registry=registry)
-    if not request.get("targets"):
+    _validate(filtered, registry=registry)
+    if not filtered.get("targets"):
         raise W0Error("Для группового светофора нужны отмеченные окна.")
-    targets = _targets(request)
+    targets = _targets(filtered)
     strategy_axes = get_strategy_axes(registry)
-    active = request.get("strategy")
-    if active not in strategy_axes or set(request.get("parameters", {})) != set(
-        strategy_axes[active]
+    active = filtered.get("strategy")
+    if (
+        not isinstance(active, str)
+        or active not in strategy_axes
+        or set(cast(Iterable[Any], filtered.get("parameters", {}))) != set(strategy_axes[active])
     ):
         raise W0Error("Для светофора укажите стратегию и все её общие параметры.")
     settings = settings_override or ResearchSettings.load(service.root)
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    if on_progress is not None:
-        on_progress(
-            {
-                "stage": "prepare",
-                "done": 0,
-                "total": len(targets),
-                "percent": 5.0,
-                "label": f"Светофор группы: подготовка 0/{len(targets)}…",
-            }
-        )
+    _emit_stage(
+        on_progress, "prepare", len(targets), 5.0, f"Светофор группы: подготовка 0/{len(targets)}…"
+    )
     group = _call_with_optional_progress(
         _prepare_cohort,
         service,
-        request,
+        filtered,
         settings,
         benchmark,
         check_cancelled,
-        calendar=service._calendar,
+        calendar=getattr(service, _CALENDAR_ATTR),
         registry=registry,
-        on_progress=(
-            None
-            if on_progress is None
-            else lambda done, total: on_progress(
-                {
-                    "stage": "prepare",
-                    "done": done,
-                    "total": total,
-                    "percent": round(5.0 + 40.0 * (done / max(total, 1)), 1),
-                    "label": f"Светофор группы: подготовка {done}/{total}",
-                }
-            )
+        on_progress=_step_progress(
+            on_progress, "prepare", 5.0, 40.0, "Светофор группы: подготовка"
         ),
     )
-    base = {
+    base: _Obj = {
         "scope": "checked",
         "member_count": len(targets),
         **settings.metadata(),
         "execution_reference": (
-            request.get("strategy") != "funding_only"
-            and request.get("fill", settings.price_fill) == "reference_same_bar"
+            filtered.get("strategy") != "funding_only"
+            and filtered.get("fill", settings.price_fill) == "reference_same_bar"
         ),
         "basis": "training",
     }
     if isinstance(group, dict):
-        return {
-            **base,
-            "status": "unavailable",
-            "excluded": group["excluded"],
-            "plateau": None,
-        }
+        return {**base, "status": "unavailable", "excluded": group["excluded"], "plateau": None}
     try:
-        if on_progress is not None:
-            on_progress(
-                {
-                    "stage": "plateau",
-                    "done": 0,
-                    "total": 1,
-                    "percent": 45.0,
-                    "label": "Светофор группы: расчёт плато…",
-                }
-            )
+        _emit_stage(on_progress, "plateau", 1, 45.0, "Светофор группы: расчёт плато…")
         plateau = group.plateau(
             group.seed,
-            on_progress=(
-                None
-                if on_progress is None
-                else lambda done, total: on_progress(
-                    {
-                        "stage": "plateau",
-                        "done": done,
-                        "total": total,
-                        "percent": round(45.0 + 53.0 * (done / max(total, 1)), 1),
-                        "label": f"Светофор группы: проверка плато {done}/{total}",
-                    }
-                )
+            on_progress=_step_progress(
+                on_progress, "plateau", 45.0, 53.0, "Светофор группы: проверка плато"
             ),
         )
         return {**base, "status": "measured", "plateau": plateau}
@@ -223,19 +289,17 @@ def checked_plateau(
 
 
 def batch_search(
-    service, request, settings, benchmark, check_cancelled, *, on_progress=None, registry=None
-):
+    service: _ServiceLike,
+    request: Mapping[str, Any],
+    settings: ResearchSettings,
+    benchmark: Any,
+    check_cancelled: _Cancel,
+    *,
+    on_progress: _Progress | None = None,
+    registry: StrategyRegistry | None = None,
+) -> _Obj:
     targets = _targets(request)
-    if on_progress is not None:
-        on_progress(
-            {
-                "stage": "prepare",
-                "done": 0,
-                "total": len(targets),
-                "percent": 2.0,
-                "label": f"Подготовка окон: 0/{len(targets)}…",
-            }
-        )
+    _emit_stage(on_progress, "prepare", len(targets), 2.0, f"Подготовка окон: 0/{len(targets)}…")
     group = _call_with_optional_progress(
         _prepare_cohort,
         service,
@@ -243,26 +307,13 @@ def batch_search(
         settings,
         benchmark,
         check_cancelled,
-        calendar=service._calendar,
-        on_progress=(
-            None
-            if on_progress is None
-            else lambda done, total: on_progress(
-                {
-                    "stage": "prepare",
-                    "done": done,
-                    "total": total,
-                    "percent": round(2.0 + 10.0 * (done / max(total, 1)), 1),
-                    "label": f"Подготовка окон: {done}/{total}",
-                }
-            )
-        ),
+        calendar=getattr(service, _CALENDAR_ATTR),
+        on_progress=_step_progress(on_progress, "prepare", 2.0, 10.0, "Подготовка окон:"),
     )
     if isinstance(group, dict):
         return group
     try:
         axes, seed, members, land = group.axes, group.seed, group.members, group.land
-
         best, trials, attempts = _call_with_optional_progress(
             _tune,
             land,
@@ -273,18 +324,8 @@ def batch_search(
             # different while one run stays internally consistent.
             random_seed=resolve_seed(settings.random_seed),
             seed_label="cohort",
-            on_progress=(
-                None
-                if on_progress is None
-                else lambda done, total: on_progress(
-                    {
-                        "stage": "search",
-                        "done": done,
-                        "total": total or TRIALS,
-                        "percent": round(12.0 + 76.0 * (done / max(total or TRIALS, 1)), 1),
-                        "label": f"Optuna: испытание {done}/{total}",
-                    }
-                )
+            on_progress=_step_progress(
+                on_progress, "search", 12.0, 76.0, "Optuna: испытание", default_total=TRIALS
             ),
         )
         return _cohort_result(
@@ -302,9 +343,27 @@ def batch_search(
 
 
 def _cohort_result(
-    request, settings, group, best, trials, attempts, check_cancelled, *, on_progress=None
-):
+    request: Mapping[str, Any],
+    settings: Any,
+    group: Any,
+    best: _Obj | None,
+    trials: int,
+    attempts: list[_Obj],
+    check_cancelled: _Cancel,
+    **options: Any,
+) -> _Obj:
     """Compatibility facade for the final cohort report."""
+    _parse_options(options, _RESULT_OPTS)
+    on_progress = cast(Callable[[_Obj], None] | None, options.get("on_progress"))
     return build_cohort_result(
-        CohortReport(request, settings, group, best, trials, attempts, check_cancelled, on_progress)
+        CohortReport(
+            cast(_Obj, request),
+            settings,
+            group,
+            best,
+            trials,
+            attempts,
+            check_cancelled,
+            on_progress,
+        )
     )

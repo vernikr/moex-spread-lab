@@ -201,3 +201,12 @@ def _stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIA
 
 def _zscore_options(asset: str) -> dict[str, Any]:
     return dict(ZSCORE_OPTIONS["monthly" if ASSETS[asset].get("monthly") else "quarterly"])
+
+
+# Public intra-package names preserve existing private aliases for callers.
+ruonia = _ruonia
+terms = _terms
+fx_factors = _fx_factors
+positive_spread_volume_rows = _positive_spread_volume_rows
+stress_ok = _stress_ok
+zscore_options = _zscore_options

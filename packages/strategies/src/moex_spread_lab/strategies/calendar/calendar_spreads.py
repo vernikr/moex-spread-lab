@@ -14,7 +14,6 @@ from moex_spread_lab.data.lake.data_lake import MarketDataStore
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
 from . import adjacent
 from .data_cache import (
-    _is_offline,
     asset_eod_signature,
     build_loaded_dict,
     load_shared_metadata,
@@ -24,6 +23,9 @@ from .data_cache import (
     slice_window_through,
     stat_extras,
     validate_training_window,
+)
+from .data_cache import (
+    is_offline as _is_offline,
 )
 from .h1_windows import (
     asof_before,

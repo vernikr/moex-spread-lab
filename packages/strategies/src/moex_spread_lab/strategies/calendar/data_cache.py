@@ -18,12 +18,20 @@ from .contracts import (
     FX_SOURCE,
     HISTORY_FROM,
     STRATEGIES,
-    _positive_spread_volume_rows,
-    _ruonia,
-    _stress_ok,
-    _terms,
     contract_chain,
     spread_id,
+)
+from .contracts import (
+    positive_spread_volume_rows as _positive_spread_volume_rows,
+)
+from .contracts import (
+    ruonia as _ruonia,
+)
+from .contracts import (
+    stress_ok as _stress_ok,
+)
+from .contracts import (
+    terms as _terms,
 )
 from .proof_runner import execute_calendar_proof
 from .study import cached_till_date
@@ -333,3 +341,7 @@ def load_shared_metadata(root: Path, cache: Path, read_benchmark_fn: Any) -> dic
         "benchmark_dates": sorted(benchmark),
         "extras_sig": tuple(extras),
     }
+
+
+# Public intra-package name; retain the private alias.
+is_offline = _is_offline

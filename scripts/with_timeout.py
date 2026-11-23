@@ -82,7 +82,11 @@ def main() -> int:
         except OSError as exc:
             print(f"with_timeout: cannot exec {cmd[0]}: {exc}", file=sys.stderr)
             os._exit(127)
-    os.setpgid(pid, pid)  # race-safe: whoever runs first wins
+    # The child sets its own pgid before exec, so whoever runs first wins. Once
+    # the child has exec'd (or exited), the parent's setpgid is rejected with
+    # EPERM/EACCES (or ESRCH) — the process group is already in place; keep going.
+    with contextlib.suppress(PermissionError, ProcessLookupError):
+        os.setpgid(pid, pid)
 
     def _forward(signum: int, _frame: object) -> None:
         _kill_group(pid, signal.SIGTERM)

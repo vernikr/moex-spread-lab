@@ -129,3 +129,33 @@ The live and candidate cache states differed; these are workload-specific
 behavioral checks, not general equivalence or performance evidence. P7.2 is
 still open: strict coverage of proof, data and strategies is incomplete, and
 proof baseline and Ruff exceptions remain.
+
+## Data strict slices and Linux sanitizer — 2026-11-23
+
+Strict checking now also covers the data CLI, ISS package facade, snapshot and
+candle intake, benchmark lineage, and the market store. Existing private ISS
+aliases are preserved; `ParquetBarStore.record_path` delegates to the existing
+private hook, with a regression test for overrides. No strict rules or baselines
+were suppressed or increased.
+
+A diagnostic-only whole-package strict check at `4e3d1d0` reported 3,893 errors:
+proof 3,111, data 551, strategies 231 and accounting 0. The normal strict
+configuration was restored after measurement; this is not a passing whole-package
+gate. This remains a substantial unfinished P7.2 scope.
+
+Workstation A/B compared `0c5af46` to a candidate with the eight modified data
+source files through `4e3d1d0` (not the configuration or test changes). All four
+suites, `catalog_boot`, `calendar_proof`, `cohort_optimize` and
+`single_proof_1d_1h`, matched normalized full payloads exactly. Calendar run IDs
+were `06fb9bd340da3ccb` and `1af0fb578e35154a`; cohort run ID was
+`381ff296b49b5c52` (seed 41, 80 trials); all proof ledger reconciliations
+reported zero. One iteration, no warmup and different cache states mean this is
+not performance evidence. These offline workloads do not establish parity for
+network intake, all data files, or all proof scenarios.
+
+Debian clang 19.1.7 and its sanitizer runtime were installed into the ephemeral
+Linux sandbox. On `4e3d1d0`, the project ASan/UBSan full-resolution equivalence
+suite passed 9 tests (19.65 seconds), with LeakSanitizer enabled and the project's
+existing interpreter/library allocation suppressions applied. This does not
+establish that every sanitizer or workload works in every sandbox, and system
+packages may need reinstalling after environment recreation.

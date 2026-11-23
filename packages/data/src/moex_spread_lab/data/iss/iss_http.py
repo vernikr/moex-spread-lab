@@ -7,7 +7,7 @@ import json
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 from moex_spread_lab.core.w0 import W0Error
@@ -118,16 +118,16 @@ def _candles_url(
 def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     if (
         not isinstance(block, dict)
-        or not isinstance(block.get("columns"), list)
-        or not isinstance(block.get("data"), list)
+        or not isinstance(cast(dict[str, Any], block).get("columns"), list)
+        or not isinstance(cast(dict[str, Any], block).get("data"), list)
     ):
         raise IssIntakeError(f"ISS block is malformed: {name}")
-    columns: list[str] = block["columns"]
+    columns = cast(list[str], block["columns"])
     rows: list[dict[str, Any]] = []
-    for index, values in enumerate(block["data"]):
-        if not isinstance(values, list) or len(values) != len(columns):
+    for index, values in enumerate(cast(list[Any], block["data"])):
+        if not isinstance(values, list) or len(cast(list[Any], values)) != len(columns):
             raise IssIntakeError(f"ISS row has invalid width: {name}[{index}]")
-        rows.append(dict(zip(columns, values, strict=True)))
+        rows.append(dict(zip(columns, cast(list[Any], values), strict=True)))
     return rows
 
 
@@ -172,7 +172,7 @@ def fetch_json_with_raw(
     if not isinstance(payload, dict):
         raise IssIntakeError("ISS JSON root is not an object")
     raw_sha256 = hashlib.sha256(raw).hexdigest()
-    return payload, received_at, raw_sha256, raw
+    return cast(dict[str, Any], payload), received_at, raw_sha256, raw
 
 
 def _fetch_json(

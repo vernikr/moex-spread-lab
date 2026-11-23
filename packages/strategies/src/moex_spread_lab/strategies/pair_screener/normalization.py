@@ -14,6 +14,15 @@ from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, Legacy
 
 from ..pair_mean_reversion.analytics import load_contracts
 
+# Facade consumed by the screener entry points; private names are part of it.
+__all__ = [
+    "ScreenError",
+    "_bar_series",
+    "_normalized_series",
+    "_read_json",
+    "_round",
+]
+
 _NORM_EXTRA_OPTS = frozenset({"prior_benchmark_dates", "timeframe"})
 _NORMALIZED_BY_TS_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
 
@@ -29,15 +38,21 @@ def _round(value: float) -> float:
 _read_json = partial(read_hashed_json, error=ScreenError, label="screen input")
 
 
+def _path_source(value: object) -> Path | None:
+    """Return ``value`` when it is a filesystem path; callers may pass other payloads."""
+    return value if isinstance(value, Path) else None
+
+
 def _bar_series(source: BarSeries | Path) -> BarSeries:
     if isinstance(source, BarSeries):
         return source
-    if isinstance(source, Path):
-        try:
-            return LegacyJsonBarStore().read(source)
-        except DataLakeError as exc:
-            raise ScreenError(str(exc)) from exc
-    raise ScreenError("screen candle source must be a BarSeries or Path")
+    path = _path_source(source)
+    if path is None:
+        raise ScreenError("screen candle source must be a BarSeries or Path")
+    try:
+        return LegacyJsonBarStore().read(path)
+    except DataLakeError as exc:
+        raise ScreenError(str(exc)) from exc
 
 
 def _canonical_timestamp(row: dict[str, Any]) -> str | None:
@@ -154,7 +169,7 @@ def _normalized_series(
         spec = (
             get_timeframe(timeframe)
             if timeframe is not None
-            else timeframe_for_interval(near_series.interval)  # type: ignore[arg-type]
+            else timeframe_for_interval(near_series.interval)
         )
     except ValueError as exc:
         raise ScreenError(str(exc)) from exc

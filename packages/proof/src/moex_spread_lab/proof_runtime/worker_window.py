@@ -1,17 +1,42 @@
 """Worker-local service and compact window table tasks."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
-from .proof_kernel import StudyWindow, _validate, compact_result
+from . import proof_kernel as _proof_kernel
+from .proof_kernel import StudyWindow
 
-_WORKER_SERVICES: dict[str, Any] = {}
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+
+    from .service import ProofService
+
+__all__ = ["_worker_service", "_worker_window_summaries"]
+
+_WORKER_SERVICES: dict[str, ProofService] = {}
+_KERNEL_EXPORTS = vars(_proof_kernel)
+_validate = cast(Callable[[dict[str, Any]], None], _KERNEL_EXPORTS["_validate"])
+compact_result = cast(Callable[[dict[str, Any]], dict[str, Any]], _KERNEL_EXPORTS["compact_result"])
 
 
-def _worker_service(root_str: str):
+class _WorkerServiceLike(Protocol):
+    @property
+    def calendar_data(self) -> CalendarData: ...
+
+
+class _StudyWindowLike(Protocol):
+    seed: dict[str, Any]
+
+    def report(self, point: dict[str, Any]) -> dict[str, Any]: ...
+
+
+def _worker_service(root_str: str) -> ProofService:
     svc = _WORKER_SERVICES.get(root_str)
     if svc is None:
         from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
@@ -31,12 +56,12 @@ def _worker_window_summaries(
     items: list[tuple[int, dict[str, Any], dict[str, Any]]],
 ) -> list[tuple[int, dict[str, Any]]]:
     svc = _worker_service(root_str)
-    calendar = svc._calendar
+    calendar = cast(_WorkerServiceLike, svc).calendar_data
     rows: list[tuple[int, dict[str, Any]]] = []
     for idx, item, target in items:
         try:
             _validate(item)
-            case = StudyWindow(svc, item, settings, benchmark, calendar)
+            case = cast(_StudyWindowLike, StudyWindow(svc, item, settings, benchmark, calendar))
             result = compact_result(case.report(case.seed))
         except (W0Error, OSError) as exc:
             result = {

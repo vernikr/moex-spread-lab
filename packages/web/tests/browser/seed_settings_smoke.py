@@ -3,9 +3,9 @@
 Run: uv run --with playwright python tests/browser/seed_settings_smoke.py
 """
 
-from _harness import serve_fixture, temporary_root
+from _harness import scenario_isolation, serve_fixture, temporary_root, ui_only_trials
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 from proof_fixtures import two_calendar_windows
 
@@ -62,17 +62,21 @@ def run(browser, url):
     ctx.close()
 
 
-if __name__ == "__main__":
+MESSAGE = "Global seed: default 0, validated save, reported base seed, badge, rejection of invalid values: OK"
+
+
+def scenario(browser):
+    # UI-only assertions: the seed echo and badge are read; the chosen parameters are not.
     with (
-        sync_playwright() as pw,
+        ui_only_trials(),
         temporary_root() as root,
         serve_fixture(root, two_calendar_windows) as url,
+        scenario_isolation(browser),
     ):
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print(
-                "Global seed: default 0, validated save, reported base seed, badge, rejection of invalid values: OK"
-            )
-        finally:
-            browser.close()
+        run(browser, url)
+
+
+if __name__ == "__main__":
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

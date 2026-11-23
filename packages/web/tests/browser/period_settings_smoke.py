@@ -7,8 +7,8 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 
-from _harness import serve_fixture, temporary_root
-from playwright.sync_api import expect, sync_playwright
+from _harness import note_app_startup, scenario_isolation, serve_fixture, temporary_root
+from playwright.sync_api import expect
 
 from proof_fixtures import fixture
 
@@ -66,6 +66,7 @@ def expect_api_json(page, suffix, timeout=120000):
 
 def ready(page, basis):
     expect(page.locator("#period-result")).to_be_visible(timeout=20000)
+    note_app_startup(page)  # first payload per page = the app-startup phase term
     expect(page.locator("#period-result")).to_have_attribute("data-basis", basis, timeout=20000)
     expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
     expect(page.locator("#render-progress")).to_have_attribute("aria-hidden", "true", timeout=20000)
@@ -123,10 +124,10 @@ def run(browser, url):
     apply(pair, 25)
     ready(cal, "validation")  # open tab, same server preference
     assert pair.locator("#ev-runid").text_content() != run
-    assert pair.evaluate("payload.evaluation.observations") == {
-        "training": 42,
-        "validation": 13,
-    }
+    # Split sizes, the 1-observation floor and the persisted split are payload contracts
+    # (packages/proof/tests/test_proof_search.py::test_0_and_50_share_change_result_not_history_or_signals,
+    # packages/proof/tests/test_global_capital.py::test_default_migration_and_partial_saves_preserve_all_other_preferences);
+    # the browser keeps the rendered journal split and the dashed chart line.
     expect(pair.locator("#chart-h-spread .validation-line")).to_be_visible()
     expect(pair.locator("#chart-scope")).to_contain_text("пунктир")
     pair.locator("#tab-table").click()
@@ -153,14 +154,12 @@ def run(browser, url):
         and ",validation," in csv
     )
     cal.reload()
-    ready(cal, "validation")
-    assert cal.evaluate("payload.evaluation.validation_percent") == 25
+    ready(cal, "validation")  # the reloaded tab renders the saved split
     cal.set_viewport_size({"width": 400, "height": 850})
     apply(cal, 50)
     assert cal.evaluate("document.documentElement.scrollWidth <= innerWidth")
     expect(pair.locator("#period-result")).to_contain_text("Проверка 50%")
     apply(cal, 0.5)
-    assert cal.evaluate("payload.evaluation.observations.validation") == 1
     apply(cal, 0)
     ready(pair, "training")
     assert (
@@ -171,11 +170,15 @@ def run(browser, url):
     context.close()
 
 
+MESSAGE = "Global settings, both routes/universes, holdout, chart, journal and CSV: OK"
+
+
+def scenario(browser):
+    with temporary_root() as root, serve_fixture(root, fixture) as url, scenario_isolation(browser):
+        run(browser, url)
+
+
 if __name__ == "__main__":
-    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print("Global settings, both routes/universes, holdout, chart, journal and CSV: OK")
-        finally:
-            browser.close()
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

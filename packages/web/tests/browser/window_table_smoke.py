@@ -6,9 +6,9 @@ Run with Chromium installed: uv run --with playwright python tests/browser/windo
 import tempfile
 from pathlib import Path
 
-from _harness import serve_fixture, temporary_root
+from _harness import exact_trials, scenario_isolation, serve_fixture, temporary_root
 from period_settings_smoke import apply, expect_api_json, install_stream_spy, ready
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 from proof_fixtures import two_calendar_windows
 
@@ -189,17 +189,21 @@ def run(browser, url):
     ctx.close()
 
 
-if __name__ == "__main__":
+MESSAGE = "Window table, V/C tooltips, exact metrics, raw bands, reference CNY/cohort, races and validation: OK"
+
+
+def scenario(browser):
+    # Exact trials: the assertions read search-derived UI state (selection, lamps, ledger).
     with (
-        sync_playwright() as pw,
+        exact_trials(),
         temporary_root() as root,
         serve_fixture(root, two_calendar_windows) as url,
+        scenario_isolation(browser),
     ):
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print(
-                "Window table, V/C tooltips, exact metrics, raw bands, reference CNY/cohort, races and validation: OK"
-            )
-        finally:
-            browser.close()
+        run(browser, url)
+
+
+if __name__ == "__main__":
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

@@ -13,9 +13,9 @@ from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_search import _measure, _tune, _validate, research_run
-from moex_spread_lab.proof_runtime.proof_strategy_search import TRIALS_PER_STRATEGY
 from moex_spread_lab.proof_runtime.proof_windows import compact_result
 from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof_runtime.trial_budget import TRIALS_PER_STRATEGY
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from proof_fixtures import (
     funding_winner,

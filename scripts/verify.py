@@ -6,7 +6,7 @@ docs-only; router-scoped package legs under testmon as an *advisory* signal +
 the always-run set otherwise, full fallback on unmatched paths), ``full``
 (unchanged full gate + full suite). stdlib only; does not replace the health
 ratchet. Steps run through ``scripts/verify_record.py`` (plan S0 record).
-Browser smokes are out of scope (plan S4b) and reported as ``not run``.
+Browser smokes run as a separate scheduled job (``scripts/run_browser_smokes.py``) and are reported as ``not run`` here.
 pytest runs ``-n <cpu_count> --dist loadfile -q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``;
 ``TESTMON_DATAFILE`` defaults to ``<repo>/.testmondata`` (gitignored).
 """
@@ -168,7 +168,7 @@ def _affected_steps(
     touched = change_scope.touched_packages(paths)
     legs = list(decision.packages)
     os.environ["TESTMON_DATAFILE"] = os.environ.get("TESTMON_DATAFILE", str(ROOT / ".testmondata"))
-    skipped = ["browser smokes (out of scope; plan S4b)"]
+    skipped = ["browser smokes (separate scheduled job)"]
 
     if decision.profile == "docs":
         docs_changed = [p for p in paths if change_scope.is_docs_path(p)]
@@ -293,7 +293,7 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
                 )
             ],
             [
-                "browser smokes (out of scope; plan S4b)",
+                "browser smokes (separate scheduled job)",
                 "pytest (quick profile)",
                 "vulture (full gate only)",
             ],
@@ -317,7 +317,7 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
                     command=pytest_cmd([]),
                 ),
             ],
-            ["browser smokes (out of scope; plan S4b)"],
+            ["browser smokes (separate scheduled job)"],
             "full",
         )
     return _affected_steps(base)

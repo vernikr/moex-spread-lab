@@ -45,3 +45,6 @@ reports/perf/
 
 # pytest-testmon databases (plan S2, per worktree)
 .testmondata*
+
+# S3 shadow worktrees (disposable)
+.shadow-worktrees/

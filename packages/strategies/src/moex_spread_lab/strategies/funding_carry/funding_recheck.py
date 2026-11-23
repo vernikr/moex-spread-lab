@@ -2,9 +2,11 @@
 
 import argparse
 import json
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any, cast
 
 from moex_spread_lab.core.universe import PERPETUAL_HISTORY_STARTS
 from moex_spread_lab.core.w0 import W0Error
@@ -17,11 +19,13 @@ def format_evidence_notes(provenance: dict[str, object]) -> list[str]:
     notes: list[str] = []
     if days := provenance.get("funding_estimated_dates"):
         assert isinstance(days, list)
+        days = cast(list[str], days)
         notes.append(
             f"Расчётных ставок: {len(days)}. Для серии из 1–3 пропущенных расчётных сессий на каждый день взято одно среднее двух соседних ставок. Это оценка платежа, не публикация MOEX; для сигнала она доступна только после публикации правой границы."
         )
     if days := provenance.get("funding_no_clearing_dates"):
         assert isinstance(days, list)
+        days = cast(list[str], days)
         notes.append(
             "Без отдельного клиринга: "
             + ", ".join(days)
@@ -35,17 +39,25 @@ def format_evidence_notes(provenance: dict[str, object]) -> list[str]:
     return notes
 
 
-def recheck(root, secid, first, last, *, apply=False, fetch=fetch_history):
+def recheck(
+    root: Path | str,
+    secid: str,
+    first: str,
+    last: str,
+    *,
+    apply: bool = False,
+    fetch: Callable[..., dict[str, Any]] = fetch_history,
+) -> dict[str, Any]:
     if secid not in PERPETUAL_HISTORY_STARTS or date.fromisoformat(first) > date.fromisoformat(
         last
     ):
         raise W0Error("Ожидается известный вечный фьючерс и упорядоченный интервал дат.")
     # No cache_dir: force a fresh ISS request, not a replay of the original pages.
-    source = fetch(secid, first, last, cache_dir=None, allow_empty=True)
-    rates = published_rates(secid, source["rows"])
+    source: dict[str, Any] = fetch(secid, first, last, cache_dir=None, allow_empty=True)
+    rates: dict[str, float | None] = published_rates(secid, source["rows"])
     if not all(first <= d <= last for d in rates) or source["secid"] != secid:
         raise W0Error("Повторная выгрузка не соответствует запросу.")
-    hashes = source["source"]["raw_response_sha256"]
+    hashes: list[str] = source["source"]["raw_response_sha256"]
     good = {d: v for d, v in rates.items() if v is not None}
     if apply:
         records = read_supplement(root, secid)

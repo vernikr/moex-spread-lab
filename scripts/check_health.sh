@@ -192,8 +192,10 @@ declare -a LAUNCH_NAME=() LAUNCH_PID=() LAUNCH_START=()
 launch_bg() { # name
     local name=$1
     local start=$SECONDS
-    $PY_BIN scripts/with_timeout.py "$TIMEOUT" -- bash -c 'run_check_command "$1"' _ "$name" \
-        >"$logs/$name.log" 2>&1 &
+    # the child times itself: durations reflect the check, not the harvest order
+    $PY_BIN scripts/with_timeout.py "$TIMEOUT" -- \
+        bash -c 'start=$SECONDS; run_check_command "$1"; rc=$?; echo $((SECONDS-start)) > "$2"; exit $rc' \
+        _ "$name" "$logs/$name.dur" >"$logs/$name.log" 2>&1 &
     local pid=$!
     BG_PIDS+=("$pid"); LAUNCH_NAME+=("$name"); LAUNCH_PID+=("$pid"); LAUNCH_START+=("$start")
 }
@@ -204,7 +206,9 @@ collect_launched() {
         local name="${LAUNCH_NAME[$i]}" pid="${LAUNCH_PID[$i]}" start="${LAUNCH_START[$i]}"
         local rc=0
         wait "$pid" || rc=$?
-        local dur=$((SECONDS - start))
+        local dur=""
+        [ -f "$logs/$name.dur" ] && dur=$(cat "$logs/$name.dur" 2>/dev/null || true)
+        case "$dur" in (*[!0-9]*|"") dur=$((SECONDS - start)) ;; esac
         case "$rc" in
             0) record_status "$name" passed "$dur" ;;
             77) record_status "$name" skipped "$dur" ;;

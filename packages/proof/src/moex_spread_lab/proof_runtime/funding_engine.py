@@ -6,6 +6,7 @@ carry study and emits the `execution-proof.v1` payload with settlement-priced fi
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,8 @@ from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, build_carry_study
 from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
+from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 from .carry_intent_accounting import replay_carry_intents
 from .payload_tools import (
@@ -41,7 +44,12 @@ class FundingSpec:
     benchmark_prices: dict[str, float] | None = None
 
 
-def funding_inputs(inputs, pair, funding, validation_percent) -> tuple[Any, ...]:
+def funding_inputs(
+    inputs: ScreenerInputs,
+    pair: Mapping[str, str],
+    funding: ProofFunding,
+    validation_percent: float,
+) -> tuple[Any, ...]:
     """Carry study, leg provenance and the funding window for one pair."""
     pair_id, near, far = pair["pair_id"], pair["near"], pair["far"]
     window = funding.carry_window(pair, validation_percent)
@@ -178,7 +186,7 @@ def _pluginreport_for(
         raise W0Error(verdict.reason or "Несовместимое окно carry.")
     intents = carry_settlement_intents(plugin, snapshot, spec.params)
     leg_contracts = load_contracts_for_side_cost(spec.inputs.contracts, near, far)
-    full = (
+    full: dict[str, Any] = (
         {}
         if metrics_only
         else {

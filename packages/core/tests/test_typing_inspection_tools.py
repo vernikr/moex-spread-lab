@@ -48,6 +48,20 @@ def test_typecheck_view_unifies_namespace_roots_and_is_reproducible(tmp_path: Pa
     assert not stale.exists()
 
 
+def test_typecheck_view_ignores_macos_metadata_files(tmp_path: Path) -> None:
+    _namespace_fixture(tmp_path)
+    for relative in (
+        "packages/core/src/moex_spread_lab/.DS_Store",
+        "src/moex_spread_lab/.DS_Store",
+    ):
+        (tmp_path / relative).write_bytes(b"macOS metadata")
+
+    view = typecheck_workspace.build_view(tmp_path)
+
+    assert (view / "moex_spread_lab/core").is_symlink()
+    assert not (view / "moex_spread_lab/.DS_Store").exists()
+
+
 def test_typecheck_view_refuses_to_delete_unmanaged_directory(tmp_path: Path) -> None:
     _namespace_fixture(tmp_path)
     generated = tmp_path / ".typecheck_typings"

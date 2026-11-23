@@ -56,7 +56,7 @@ def build_view(root: Path = ROOT) -> Path:
     entries: dict[str, Path] = {}
     for source_root in package_roots:
         for child in sorted(source_root.iterdir()):
-            if child.name == "__pycache__":
+            if child.name in {"__pycache__", ".DS_Store"}:
                 continue
             previous = entries.get(child.name)
             if previous is not None:

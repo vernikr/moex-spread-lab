@@ -1,0 +1,36 @@
+name: Bug / Parity Regression
+description: Numerical/hash drift, broken invariant, test failure, or UI regression
+title: "[Bug] "
+labels: ["bug"]
+type: Bug
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Observed vs expected behavior
+      description: Exact failure, `run_id` / SHA-256 mismatch, exception, or broken contract.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Deterministic reproduction
+      description: Offline command (`MOEX_OFFLINE_ONLY=1 ...`), seed, fixture, and revision SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Affected package & invariants
+      description: Which `packages/<name>/` owns the root cause and which Stage-9 gate (`G1`–`G12`) is affected.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Fix acceptance & regression guard
+      value: |
+        - [ ] Failing regression test added in `packages/<name>/tests/`.
+        - [ ] `./scripts/verify.py --profile full` passes on the integrated tree.
+    validations:
+      required: true

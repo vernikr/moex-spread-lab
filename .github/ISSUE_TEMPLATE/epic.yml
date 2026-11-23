@@ -1,0 +1,45 @@
+name: Epic (multi-slice plan or stage gate)
+description: Parent container for a multi-package refactor, performance campaign, or Stage-9 slice
+title: "[Epic] "
+labels: ["epic"]
+type: Task
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: Business or architectural outcome when this epic completes.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source & authority
+      description: Link to canonical plan/decision/blocker doc in `docs/` (do not duplicate plan prose here).
+      placeholder: "`docs/development/<plan>.md`, `docs/decisions.md` (A-xx)"
+    validations:
+      required: true
+  - type: textarea
+    id: exit_criteria
+    attributes:
+      label: Exit criteria & Stage-9 invariants
+      description: Measurable completion conditions and invariants (`run_id` parity, `test_perf_equivalence.py`, code-health baselines).
+      value: |
+        - [ ] Every sub-issue is closed as `completed`, or explicitly `deferred` / closed as `not_planned` with recorded rationale.
+        - [ ] Stage-9 invariants hold (`run_id` parity, equivalence tiers, code-health baselines only decrease).
+        - [ ] Canonical docs in `docs/` reflect final status and link this epic instead of keeping a separate checklist.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Explicit scope boundaries (e.g., no accounting/proof contract drift, no live broker authority).
+    validations:
+      required: true
+  - type: textarea
+    id: breakdown
+    attributes:
+      label: Work breakdown & ordering
+      description: Execution order across sub-issues (attach children via `addSubIssue` or `<!-- issue-parent: #N -->`).
+      value: "Work packages are tracked as native sub-issues (see the sub-issues panel)."

@@ -1,7 +1,10 @@
 """Offline benchmark helpers for a workstation and disposable candidate worktree.
 
-Candidate data is copied, not linked, so candidate code cannot mutate the live data
-through the benchmark root. The candidate is trusted code, not a security sandbox.
+Candidate data is provisioned privately by default (APFS copy-on-write clone on
+macOS, a byte copy elsewhere), so candidate code cannot mutate the live data
+through the benchmark root. A read-only-by-convention symlink farm exists as an
+explicit opt-in (``MOEX_BENCH_DATA=symlink``). The candidate is trusted code, not
+a security sandbox; the trust boundary is documented in ``core.candidate_data``.
 """
 
 from __future__ import annotations
@@ -11,10 +14,10 @@ import hashlib
 import json
 import os
 import select
-import shutil
 import signal
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
@@ -22,7 +25,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
-from .w0 import canonical_bytes, sha256_bytes
+from .candidate_data import provision_data
+from .candidate_data import relocate_copied_seal as _relocate_copied_seal
+from .candidate_python import (
+    CandidateWorktree,
+    assert_candidate_python,
+    candidate_pythonpath,
+    deps_inputs_touched,
+)
+from .workstation_remote import patch_paths as _patch_paths
 from .workstation_results import normalize_provenance
 from .workstation_suites import suite as _suite
 
@@ -72,83 +83,69 @@ def _compact(value: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     return {"action": value["action"], "result": result, "telemetry": value["telemetry"]}
 
 
-def _relocate_copied_seal(root: Path, candidate: Path) -> None:
-    """Rebind only an integrity-checked private seal copy to its temporary root."""
-    seal = candidate / "data-lake/h1-seal.json"
-    marker = candidate / "data-lake/h1-seal.enabled.json"
-    if not seal.exists() and not marker.exists():
-        return
-    if not seal.is_file() or not marker.is_file():
-        raise RuntimeError("incomplete H1 seal; refusing candidate benchmark")
-    value = json.loads(seal.read_text(encoding="utf-8"))
-    activation = json.loads(marker.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or not isinstance(activation, dict):
-        raise RuntimeError("invalid source H1 seal; refusing candidate benchmark")
-    value = cast(dict[str, Any], value)
-    activation = cast(dict[str, Any], activation)
-    if (
-        value.get("root") != str(root.resolve())
-        or value.get("schema_version") != "h1-sealed-read.v1"
-        or activation.get("schema_version") != value.get("schema_version")
-        or activation.get("seal_sha256") != sha256_bytes(canonical_bytes(value))
-    ):
-        raise RuntimeError("invalid source H1 seal; refusing candidate benchmark")
-    value["root"] = str(candidate.resolve())
-    activation["seal_sha256"] = sha256_bytes(canonical_bytes(value))
-    seal.write_text(json.dumps(value, sort_keys=True, indent=2), encoding="utf-8")
-    marker.write_text(json.dumps(activation, sort_keys=True, indent=2), encoding="utf-8")
-
-
-def _copy_data(root: Path, candidate: Path) -> None:
-    for name in ("data", "data-lake"):
-        src = root / name
-        if not src.exists():
-            continue
-        if src.is_symlink() or any(path.is_symlink() for path in src.rglob("*")):
-            raise RuntimeError(f"{name} contains symlinks; refusing to copy external targets")
-        ignored = shutil.ignore_patterns("analytics") if name == "data" else None
-        shutil.copytree(src, candidate / name, ignore=ignored)
-    original = root / "data/analytics/research-settings.json"
-    if original.is_file():
-        target = candidate / "data/analytics/research-settings.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(original, target)
-
-
 @contextmanager
-def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[Path]:
+def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[CandidateWorktree]:
+    """Detached worktree + provisioned data + a ready-to-import candidate.
+
+    Reuses the root ``.venv`` with ``PYTHONPATH`` shadowing when the patch does
+    not touch dependency or native-build inputs; falls back to an isolated
+    ``uv sync --frozen`` candidate environment otherwise.
+    """
     with tempfile.TemporaryDirectory(prefix="moex-bench-") as directory:
-        candidate = Path(directory) / "checkout"
-        _cmd(root, "git", "worktree", "add", "--detach", str(candidate), revision)
+        path = Path(directory) / "checkout"
+        _cmd(root, "git", "worktree", "add", "--detach", str(path), revision)
         try:
             if patch:
-                _cmd(candidate, "git", "apply", "--binary", "-", input_text=patch)
-            _copy_data(root, candidate)
-            _relocate_copied_seal(root, candidate)
-            _cmd(candidate, "uv", "sync", "--frozen")
+                _cmd(path, "git", "apply", "--binary", "-", input_text=patch)
+            data_mode = provision_data(root, path)
+            _relocate_copied_seal(root, path)
+            if deps_inputs_touched(_patch_paths(patch)):
+                _cmd(path, "uv", "sync", "--frozen")
+                candidate = CandidateWorktree(
+                    path=path,
+                    python=path / ".venv/bin/python3",
+                    pythonpath=None,
+                    data_mode=data_mode,
+                    isolated_venv=True,
+                )
+            else:
+                python = root / ".venv/bin/python3"
+                pythonpath = candidate_pythonpath(path)
+                assert_candidate_python(python, pythonpath, path)
+                candidate = CandidateWorktree(
+                    path=path,
+                    python=python,
+                    pythonpath=pythonpath,
+                    data_mode=data_mode,
+                    isolated_venv=False,
+                )
             yield candidate
         finally:
-            _cmd(root, "git", "worktree", "remove", "--force", str(candidate))
+            _cmd(root, "git", "worktree", "remove", "--force", str(path))
 
 
 @contextmanager
-def candidate_server(candidate: Path, overrides: dict[str, str] | None = None) -> Generator[int]:
+def candidate_server(
+    candidate: CandidateWorktree, overrides: dict[str, str] | None = None
+) -> Generator[int]:
     env = dict(os.environ, MOEX_OFFLINE_ONLY="1")
+    if candidate.pythonpath:
+        env["PYTHONPATH"] = candidate.pythonpath
     if overrides is not None:
         env.update(overrides)
     with tempfile.TemporaryFile(mode="w+") as stderr:
         process = subprocess.Popen(
             [
-                str(candidate / ".venv/bin/python3"),
+                str(candidate.python),
                 "-m",
                 "moex_spread_lab.cli",
                 "screener",
                 "--root",
-                str(candidate),
+                str(candidate.path),
                 "--port",
                 "0",
             ],
-            cwd=candidate,
+            cwd=candidate.path,
             env=env,
             stdout=subprocess.PIPE,
             stderr=stderr,
@@ -232,11 +229,15 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
         "baseline": baseline,
     }
     if revision:
+        setup_start = time.perf_counter()
         with (
             candidate_worktree(root, revision, options.get("patch", "")) as candidate,
             candidate_server(candidate) as port,
         ):
-            comparison = [_post(port, job, candidate) for job in jobs]
+            result["candidate_setup_ms"] = round((time.perf_counter() - setup_start) * 1000, 1)
+            result["candidate_data_mode"] = candidate.data_mode
+            result["candidate_isolated_venv"] = candidate.isolated_venv
+            comparison = [_post(port, job, candidate.path) for job in jobs]
         result["candidate"] = comparison
         result["exact_match"] = [a["result"] for a in baseline] == [b["result"] for b in comparison]
         result["speedup_x"] = [
@@ -260,15 +261,17 @@ def _benchmark_fastcore(
 ) -> dict[str, Any]:
     # Both servers use the same isolated copied checkout, never the live daemon.
     # Explicit worker counts avoid inheriting ambient user settings.
+    setup_start = time.perf_counter()
     with candidate_worktree(root, revision, patch) as candidate:
+        setup_ms = round((time.perf_counter() - setup_start) * 1000, 1)
         with candidate_server(
             candidate, {"MOEX_PROOF_DISABLE_C": "0", "MOEX_PROOF_WORKERS": "6"}
         ) as port:
-            baseline = [_post(port, job, candidate) for job in jobs]
+            baseline = [_post(port, job, candidate.path) for job in jobs]
         with candidate_server(
             candidate, {"MOEX_PROOF_DISABLE_C": "1", "MOEX_PROOF_WORKERS": "1"}
         ) as port:
-            comparison = [_post(port, job, candidate) for job in jobs]
+            comparison = [_post(port, job, candidate.path) for job in jobs]
     exact = [a["result"] for a in baseline] == [b["result"] for b in comparison]
     if not exact:
         raise RuntimeError("fastcore A/B benchmark results differ")
@@ -276,6 +279,9 @@ def _benchmark_fastcore(
         "suite": "ab_fastcore",
         "warmup": warmup,
         "loadavg_1m": health.get("loadavg_1m"),
+        "candidate_setup_ms": setup_ms,
+        "candidate_data_mode": candidate.data_mode,
+        "candidate_isolated_venv": candidate.isolated_venv,
         "baseline": baseline,
         "candidate": comparison,
         "exact_match": exact,

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Documented launcher for agent task verification (plans S2 item 1, S4a item 1).
 
-Profiles: ``quick`` (``check_health.sh --changed``); ``affected`` (docs-scan for
-docs-only, else router-scoped legs under advisory testmon plus the always-run
-set, full fallback when no path matches); ``full``/``pre-push`` (full gate + whole
-suite, every parity tier). stdlib only; does not replace the health ratchet.
-Steps run through ``scripts/verify_record.py`` (plan S0). Browser smokes are out
-of scope (plan S4b) and reported as ``not run``. pytest runs
-``-n <cpu_count> --dist loadfile -q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``;
+Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-only
+scan or router-scoped legs with advisory testmon and the always-run set; full
+fallback when no path matches), and ``full``/``pre-push`` (full health gate and
+whole suite, including every parity tier). stdlib-only launcher; it does not
+replace the health ratchet. Steps run through ``scripts/verify_record.py``.
+Browser smokes are run separately by the scheduled ``scripts/run_browser_smokes.py``
+job and are reported as not run here. pytest uses ``-n <cpu_count> --dist loadfile
+-q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``; ``TESTMON_DATAFILE`` defaults to
+``<repo>/.testmondata`` (gitignored).
 ``TESTMON_DATAFILE`` defaults to ``<repo>/.testmondata`` (gitignored).
 """
 
@@ -39,7 +41,7 @@ FASTCORE_PARITY = "packages/proof/tests/test_fastcore_parity.py"
 PARITY_TRIGGER_PACKAGES = frozenset({"core", "proof", "accounting"})
 PROFILES = ("quick", "affected", "full", "pre-push")
 TIMEOUT_CODES = frozenset({124, 137, 143})
-BROWSER_SKIPPED = "browser smokes (out of scope; plan S4b)"
+BROWSER_SKIPPED = "browser smokes (separate scheduled job; not run by verify profiles)"
 ALWAYS_RUN_RE = re.compile(
     r"(subprocess|proof_pool|moex_spread_lab[._]cli|cli\.main|moex-spread-lab)"
 )

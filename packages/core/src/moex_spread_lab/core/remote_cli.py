@@ -15,6 +15,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from .workstation_remote import patch_paths
+
 
 class SubparserRegistry(Protocol):
     def add_parser(self, name: str, **kwargs: Any) -> argparse.ArgumentParser: ...
@@ -58,6 +60,10 @@ def _candidate_options(include_patch: bool) -> dict[str, str]:
     )
     if len(patch.encode()) > 16000:
         raise ValueError("tracked patch exceeds the 16 KB bridge limit")
+    # Defense in depth: market data must never leave the workstation in a patch.
+    for path in patch_paths(patch):
+        if path == "data" or path == "data-lake" or path.startswith(("data/", "data-lake/")):
+            raise ValueError(f"patch touches market data ({path}); refusing to send it")
     return {"revision": revision, "patch": patch}
 
 

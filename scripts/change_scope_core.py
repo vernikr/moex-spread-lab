@@ -257,6 +257,15 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
             run_tier2=run_tier2,
             check_js_modules=check_js,
         )
+    if run_tier2:
+        return _full(
+            [
+                "C99/sanitizer/CI tier2 path(s) changed -> full",
+                *_summary(docs, package_py, package_other),
+            ],
+            run_tier2=True,
+            check_js_modules=check_js,
+        )
     touched = sorted(set(package_py) | set(package_other), key=PACKAGES.index)
     if not touched:
         skipped = (

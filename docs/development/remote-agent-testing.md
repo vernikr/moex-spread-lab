@@ -1,6 +1,6 @@
 # Remote agent testing and benchmarking via workstation bridge
 
-Status: **Partially implemented**: the macOS launch agent, remote status/sync/probe/bench, discovery file and initial loopback diagnostics are implemented; progress-stage and instrumented operation wall timings, request-thread and worker-task cache counters, and a best-effort pool census are available.
+Status: **Partially implemented**: the macOS launch agent, remote status/sync/probe/bench, discovery file and initial loopback diagnostics are implemented; progress-stage and instrumented operation wall timings, request-thread and worker-task cache counters, and a best-effort pool census are available. S4c (2026-11-23) added conditional workstation sync (no-op on an unchanged head, `uv sync` only on dependency inputs, restart only on runtime paths, loopback readiness confirmed in the same call), copy-on-write candidate worktrees (APFS `cp -cR`, private byte-copy fallback, opt-in symlink farm), reuse of the root `.venv` with `PYTHONPATH` shadowing for bench candidates that do not touch dependency or native-build inputs, a fingerprint-keyed derived catalog cache, and explicit handoff outcomes (`published`, `synced`, `health-confirmed`). On-workstation acceptance timings remain pending; see [agent-performance-2/s4c-2026-11-23.md](agent-performance-2/s4c-2026-11-23.md).
 
 ## 1. Current capabilities vs actual friction
 

@@ -76,9 +76,10 @@ def run(browser, url):
         pg.locator("#all-windows").check()
     together = result["data"]
     validate_ui(together)
-    assert together["member_count"] == 2 and not searches
-    entry = together["plateau"]["fields"]["entry_z"]["center"]
-    assert entry["by_window_pp"][1] == 0 and entry["utility"] == sum(entry["by_window_pp"]) / 2
+    # Plateau arithmetic (mean at center, per-window zero, utility) is a payload contract in
+    # packages/proof/tests/test_proof_plateau.py::test_mean_at_center_and_every_neighbour_precedes_the_stability_ratio;
+    # the browser only binds the lamp to the score it was given (validate_ui) and must not start a search.
+    assert not searches
     assert pg.evaluate("checked.size") == 2
     expect(pg.locator("#group-count")).to_have_count(0)
     expect(pg.locator("#focus-editor")).to_be_hidden()
@@ -111,8 +112,7 @@ def run(browser, url):
     # Changes to the persistent split re-evaluate the entire fixed cohort, not its current chart.
     with expect_api_json(pg, "/api/proof/plateau") as res:
         apply(pg, 25)
-    assert res["data"]["validation_percent"] == 25
-    validate_ui(res["data"])
+    validate_ui(res["data"])  # apply() already asserted the split reached the payload
     open_row(branch("calendar_native|SR"), "validation")
     open_row(leaf(a), "validation")
     # Deliver a stale profile after its successor. A one-window result or its focus metadata
@@ -144,17 +144,17 @@ def run(browser, url):
             pg.evaluate("window.releaseTune()")
         ready(pg, "validation")
     expect(pg.locator("#tune-state")).to_be_empty()
-    answer = optimized["data"]
-    assert answer["status"] == "maximum_found"
-    validate_ui(answer)
+    # The search status itself is asserted in packages/proof/tests/test_strategy_search.py.
+    validate_ui(optimized["data"])
     adopted = snapshot()
     count = len(profiles)
     open_row(leaf(a), "validation")
     assert snapshot() == adopted and count == len(profiles)
     # Incompatible fixed denominator -> unknown, no silent pruning, no unsolicited modal.
-    with expect_api_json(pg, "/api/proof/plateau") as excluded:
+    with expect_api_json(pg, "/api/proof/plateau"):
         pg.locator("#group-strategy").select_option("funding_only")
-    assert len(excluded["data"]["excluded"]) == 2
+    # Exclusion reasons for an incompatible denominator: packages/proof/tests/test_proof_plateau.py::
+    # test_incompatible_or_invalid_center_is_not_profiled_on_a_subset_or_clamped.
     expect(pg.locator("#group-profile-state")).to_contain_text("2 из 2")
     expect(pg.locator("#compatibility")).not_to_be_visible()
     assert (

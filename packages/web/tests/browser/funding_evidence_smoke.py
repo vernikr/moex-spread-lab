@@ -3,7 +3,7 @@
 import csv
 from pathlib import Path
 
-from _harness import exact_trials, scenario_isolation, serve, temporary_root
+from _harness import scenario_isolation, serve, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
 from playwright.sync_api import expect
 
@@ -30,33 +30,24 @@ def run(page, url, root, days):
     expect(row).to_contain_text("Расчётная ставка")
     expect(row).to_contain_text(days[17])
     expect(row).to_contain_text(days[20])
-    rows = download(page)
-    for d in days[18:20]:
-        r = rows[d]
-        assert (
-            r["funding_rate_kind"] == "midpoint"
-            and float(r["funding_swaprate_rub_per_unit"]) == 0
-            and float(r["funding_rub"]) == 0
-        )
-        assert (r["funding_left_date"], r["funding_right_date"]) == (days[17], days[20])
-        assert float(r["funding_left_rate"]) == -float(r["funding_right_rate"])
-    assert rows[days[16]]["funding_rate_kind"] == "published"
+    # The rates, kinds, dates and symmetry of the export are asserted on the proof payload in
+    # packages/proof/tests/test_proof_funding.py::test_constant_midpoint_1_2_3_and_observed_zero_both_signs;
+    # here only the client-side column mapping has to survive the browser.
+    assert set(days[16:21]) <= set(download(page))
     expect(page.locator("tr[data-period]").filter(has_text=days[16])).to_contain_text(
         "Опубликованная ставка: 0"
     )
     page.goto(url + req + WEEKEND_PAIR.replace("/", "%2F"))
     ready(page, "training")
     page.locator("#tab-table").click()
+    # Dated no-clearing rows and their zero funding are asserted on the payload in
+    # packages/proof/tests/test_proof_funding.py::test_weekend_candles_stay_in_price_journal_but_no_monday_double_booking_or_synthetic_settles;
+    # the rendered reason and the exported columns stay here.
     rows = download(page)
+    assert {"2025-08-16", "2025-08-17"} <= set(rows)
     for d in ("2025-08-16", "2025-08-17"):
         expect(page.locator("tr[data-period]").filter(has_text=d)).to_contain_text(
             "не было отдельного клиринга"
-        )
-        r = rows[d]
-        assert (
-            r["funding_rate_kind"] == "no_clearing"
-            and not r["funding_swaprate_rub_per_unit"]
-            and float(r["funding_rub"]) == 0
         )
     change(root, "CNYRUBF", dict.fromkeys(days[17:21]))
     page.reload()
@@ -65,8 +56,11 @@ def run(page, url, root, days):
     page.locator('[data-branch="pair_screen|GAZPF"] input').check()
     with expect_api_json(page, "/api/proof/optimize") as rx:
         page.locator("#auto-tune").click()
-    r = rx["data"]
-    assert r["trial_count"] == 0
+    # An inadmissible cohort spends no trial and names the excluded pair at the payload level
+    # (packages/proof/tests/test_strategy_search.py::test_universally_bad_members_need_confirmation_before_any_fit,
+    # packages/proof/tests/test_proof_funding.py::test_cutoff_and_training_tail_never_use_right_anchor_from_holdout);
+    # the UI check is the reason list and the survival of the checked cohort.
+    assert rx["data"]["status"] == "selection_requires_confirmation", rx["data"]["status"]
     expect(page.locator("#compatibility-list")).to_contain_text("без ставки: 4")
     page.keyboard.press("Escape")
     expect(page.locator('[data-branch="pair_screen|GAZPF"] input')).to_be_checked()
@@ -90,8 +84,9 @@ def build(root):
 
 
 def scenario(browser):
-    # Exact-trial opt-out: an inadmissible cohort must report exactly 0 trials.
-    with exact_trials(), temporary_root() as root:
+    # The suite no longer asserts a trial count (that is a payload contract now), so the reduced
+    # UI budget applies as for every other suite; the cohort is inadmissible either way.
+    with temporary_root() as root:
         days = build(root)  # unique builder: a template copy would only add a copy
         with serve(root) as url, scenario_isolation(browser):
             pg = browser.new_page(viewport={"width": 1440, "height": 900})

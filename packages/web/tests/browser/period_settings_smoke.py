@@ -124,10 +124,10 @@ def run(browser, url):
     apply(pair, 25)
     ready(cal, "validation")  # open tab, same server preference
     assert pair.locator("#ev-runid").text_content() != run
-    assert pair.evaluate("payload.evaluation.observations") == {
-        "training": 42,
-        "validation": 13,
-    }
+    # Split sizes, the 1-observation floor and the persisted split are payload contracts
+    # (packages/proof/tests/test_proof_search.py::test_0_and_50_share_change_result_not_history_or_signals,
+    # packages/proof/tests/test_global_capital.py::test_default_migration_and_partial_saves_preserve_all_other_preferences);
+    # the browser keeps the rendered journal split and the dashed chart line.
     expect(pair.locator("#chart-h-spread .validation-line")).to_be_visible()
     expect(pair.locator("#chart-scope")).to_contain_text("пунктир")
     pair.locator("#tab-table").click()
@@ -154,14 +154,12 @@ def run(browser, url):
         and ",validation," in csv
     )
     cal.reload()
-    ready(cal, "validation")
-    assert cal.evaluate("payload.evaluation.validation_percent") == 25
+    ready(cal, "validation")  # the reloaded tab renders the saved split
     cal.set_viewport_size({"width": 400, "height": 850})
     apply(cal, 50)
     assert cal.evaluate("document.documentElement.scrollWidth <= innerWidth")
     expect(pair.locator("#period-result")).to_contain_text("Проверка 50%")
     apply(cal, 0.5)
-    assert cal.evaluate("payload.evaluation.observations.validation") == 1
     apply(cal, 0)
     ready(pair, "training")
     assert (

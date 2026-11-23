@@ -29,7 +29,7 @@ CONTRACT_GROUP = {
 }
 
 
-def tariff_profile(slippage_ticks: float = 1.0) -> dict[str, Any]:
+def tariff_profile(slippage_ticks: object = 1.0) -> dict[str, Any]:
     if (
         not isinstance(slippage_ticks, (int, float))
         or isinstance(slippage_ticks, bool)
@@ -72,11 +72,16 @@ def side_cost(
     return {"exchange_clearing": exchange, "broker": 0.0, "slippage": slippage}
 
 
-def _cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
+def cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
     totals = {"exchange_clearing": 0.0, "broker": 0.0, "slippage": 0.0}
     for trade in trades:
         for side in ("entry", "exit"):
-            for key, value in (trade[side].get("costs") or {}).items():
+            costs: dict[str, Any] = trade[side].get("costs") or {}
+            for key, value in costs.items():
                 if key in totals:
                     totals[key] += float(value)
     return {key: round(value, 2) for key, value in totals.items()}
+
+
+# Compatibility for existing private imports.
+_cost_totals = cost_totals

@@ -234,6 +234,7 @@ strict = [
     "packages/accounting/src/moex_spread_lab/accounting/research_simulation.py",
     "packages/accounting/src/moex_spread_lab/accounting/portfolio.py",
     "packages/accounting/src/moex_spread_lab/accounting/ledger.py",
+    "packages/accounting/src/moex_spread_lab/accounting/costs.py",
     "packages/accounting/src/moex_spread_lab/accounting/validation.py",
 ]
 reportMissingTypeStubs = false

@@ -4,29 +4,36 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time
+from typing import Any
 
 from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 from moex_spread_lab.accounting.position_sizing import automatic
-from moex_spread_lab.core.evaluation_periods import DEFAULT_INITIAL_CAPITAL_RUB
+from moex_spread_lab.core.evaluation_periods import (
+    DEFAULT_INITIAL_CAPITAL_RUB,
+    EvaluationSplit,
+)
 from moex_spread_lab.core.w0 import W0Error
 
+__all__ = ["_annualized_returns", "_excess_curve", "_missing_exposure", "account_checks"]
 
-def _excess_curve(proof, marks):
+
+def _excess_curve(proof: dict[str, Any], marks: dict[str, float]) -> dict[str, float]:
     """Daily proof ledger minus the accrued LQDT hurdle on each open trade's entry margin.
 
     Allocate the *published* hurdle exactly at exit, including rounding. Unlike using
     realized trades alone this marks positions crossing a split and intra-trade losses.
     """
-    ledger = proof["ledger"]
+    ledger: list[dict[str, Any]] = proof["ledger"]
     if automatic(proof.get("selection", {})):
-        initial = proof["sizing"]["initial_capital_rub"]
-        start = marks[ledger[0]["date"]]
+        initial: float = proof["sizing"]["initial_capital_rub"]
+        start: float = marks[ledger[0]["date"]]
         return {
             r["date"]: r["account_value_rub"] - initial * marks[r["date"]] / start for r in ledger
         }
     index = {row["date"]: i for i, row in enumerate(ledger)}
     hurdle_changes = [0.0] * len(ledger)
-    for trade in proof["trades"]:
+    trades: list[dict[str, Any]] = proof["trades"]
+    for trade in trades:
         entry, exit_ = trade["entry"]["date"], trade["exit"]["date"]
         previous = 0.0
         for i in range(index[entry] + 1, index[exit_] + 1):
@@ -37,16 +44,17 @@ def _excess_curve(proof, marks):
             )
             hurdle_changes[i] += accrued - previous
             previous = accrued
-    hurdle, curve = 0.0, {}
+    hurdle = 0.0
+    curve: dict[str, float] = {}
     for row, delta in zip(ledger, hurdle_changes, strict=True):
         hurdle += delta
         curve[row["date"]] = row["cumulative_net_rub"] - hurdle
     return curve
 
 
-def account_checks(proof):
+def account_checks(proof: dict[str, Any]) -> dict[str, Any]:
     """Descriptive cash-path evidence; it never waives a failed annualization/ranking gate."""
-    rows = proof["ledger"]
+    rows: list[dict[str, Any]] = proof["ledger"]
     failed = [r for r in rows if r["cash_shortfall"]]
     return {
         "cash_shortfall_rows": len(failed),
@@ -55,7 +63,9 @@ def account_checks(proof):
     }
 
 
-def _held_margins(rows, idx, trades):
+def _held_margins(
+    rows: list[dict[str, Any]], idx: dict[str, int], trades: list[dict[str, Any]]
+) -> list[float]:
     changes = [0.0] * len(rows)
     for t in trades:
         # Entry margin is posted after entry and released at exit; account wealth
@@ -65,24 +75,29 @@ def _held_margins(rows, idx, trades):
             changes[idx[a]] += t["margin_rub"]
         if b in idx:
             changes[idx[b]] -= t["margin_rub"]
-    margin, margins = 0.0, []
+    margin = 0.0
+    margins: list[float] = []
     for delta in changes:
         margin += delta
         margins.append(margin)
     return margins
 
 
-def _annualized_returns(proof, marks, split):
+def _annualized_returns(
+    proof: dict[str, Any], marks: dict[str, float], split: EvaluationSplit
+) -> dict[str, Any]:
     """Two independently annualized wealth returns on the same dates, in percentage points."""
-    initial = proof.get("sizing", {}).get(
+    initial: float = proof.get("sizing", {}).get(
         "initial_capital_rub", proof.get("initial_capital_rub", DEFAULT_INITIAL_CAPITAL_RUB)
     )
 
     start, train_end = split.training[0], split.training[-1]
     end = split.validation[-1] if split.validation else train_end
-    rows = [r for r in proof["ledger"] if start <= r["date"] <= end]
+    ledger: list[dict[str, Any]] = proof["ledger"]
+    rows = [r for r in ledger if start <= r["date"] <= end]
     idx = {r["date"]: i for i, r in enumerate(rows)}
-    margins = _held_margins(rows, idx, proof["trades"])
+    trades: list[dict[str, Any]] = proof["trades"]
+    margins = _held_margins(rows, idx, trades)
     prices = [marks[r["date"]] for r in rows]
     if not all(math.isfinite(v) and v > 0 for v in prices):
         raise W0Error("Непригодная отметка LQDT в расчётном периоде.")
@@ -90,12 +105,11 @@ def _annualized_returns(proof, marks, split):
         values = [r["account_value_rub"] for r in rows]
         shortfalls = any(r["cash_shortfall"] for r in rows)
     else:
-        values, shortfalls = lqdt_overlay_values(
-            initial, [r["cumulative_net_rub"] for r in rows], margins, prices
-        )
+        cumulative_net = [r["cumulative_net_rub"] for r in rows]
+        values, shortfalls = lqdt_overlay_values(initial, cumulative_net, margins, prices)
     anchor = train_end if split.validation else start
 
-    def as_datetime(value):
+    def as_datetime(value: str) -> datetime:
         try:
             return datetime.fromisoformat(value.replace("Z", ""))
         except ValueError:
@@ -125,15 +139,18 @@ def _annualized_returns(proof, marks, split):
     }
 
 
-def _missing_exposure(proof, segments, split):
+def _missing_exposure(
+    proof: dict[str, Any],
+    segments: list[tuple[str, tuple[str, ...]]],
+    split: EvaluationSplit,
+) -> tuple[list[str], list[str]]:
+    trades: list[dict[str, Any]] = proof["trades"]
     missing = [
         label
         for label, days in segments
-        if not any(
-            t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0] for t in proof["trades"]
-        )
+        if not any(t["entry"]["date"] <= days[-1] and t["exit"]["date"] >= days[0] for t in trades)
     ]
-    reasons = []
+    reasons: list[str] = []
     if missing:
         where = (
             "ни на обучении, ни на проверке"

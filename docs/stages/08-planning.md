@@ -1,12 +1,12 @@
-# Stage 8 — Delivery and validation plan
+# Stage 8 — Delivery and validation scope (formal artifact)
 
 Date: 2026-10-27
 
 ## Status and authority
 
-Stage 8 was delivered for the offline vertical slice and is revised 2026-11-08 for the user-confirmed screener-first direction. W0–W7 mechanics and S1–S2 local screener/search slices now exist. The next separate packages are the SBRF reference reproduction and shared-capital basket evaluation/search. This plan does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
+This formal Stage-8 artifact preserves the approved product scope, boundaries and acceptance gates; it is not the live project plan or status record. GitHub Project #2 and its Issues are the sole source for current plans, work-package checklists, delivery status and execution reports. Historical records are filed under W0 #31, W1–W7 #32, S1 #33 and S2 #34; current Phase 7/S4 queue scope is tracked in Issues #12 and #17. This artifact does not create a strategy approval, broker authorization, data-use permission, deployment approval or live-trading permission.
 
-The plan preserves the current business boundaries:
+The approved product scope preserves these business boundaries:
 
 - one finite-capital virtual portfolio;
 - all eligible signals attempted under a frozen priority rule, with non-execution reasons recorded;
@@ -21,7 +21,7 @@ The S1 user-visible result answers a configurable research question:
 
 > For a chosen futures pair, strategy and parameter set, what did one finite-capital virtual portfolio do relative to matched LQDT, how did risk and capital needs evolve, and which assumptions make that result uncertain?
 
-The following slices must let the user search a bounded parameter space for a chosen pair and then a selected basket, showing honest later-period validation rather than only a best historical curve. The result is a private research workbench and replayable artifacts, not an order recommendation.
+The research workbench lets the user search a bounded parameter space for a chosen pair and then a selected basket, showing honest later-period validation rather than only a best historical curve. The result is a private research workbench and replayable artifacts, not an order recommendation.
 
 ## First visible screener scope
 
@@ -42,9 +42,9 @@ The following pair-search slice adds a bounded, declared parameter grid, a trial
 - current ГО or tariff values silently backfilled into expired periods;
 - a claim that a free public endpoint permits unattended collection or redistribution.
 
-## Delivered W0–W7 foundation
+## W0–W7 foundation and acceptance contract
 
-See [W0](../development/w0.md), the [offline pipeline and replay command](../../packages/accounting/docs/w1-w7.md) and the [analytical validation](../../packages/accounting/docs/w7-validation.md). Fixtures verify mechanics, not live readiness. Production-facing acceptance still requires the following evidence:
+See the historical [W0 report](https://github.com/vernikr/moex-spread-lab/issues/31), the reusable [offline pipeline and replay procedure](../../packages/accounting/docs/w1-w7.md), and the [analytical validation](../../packages/accounting/docs/w7-validation.md). Fixtures verify mechanics, not live readiness. Production-facing acceptance still requires the following evidence:
 
 | Wave | Gate |
 |---|---|
@@ -57,22 +57,22 @@ See [W0](../development/w0.md), the [offline pipeline and replay command](../../
 | W6 | Every exposure increase fits the original envelope without emergency funding and passes stress; otherwise no trade. |
 | W7 | No pass depends on later events, backfilled terms, fabricated fills, incomplete costs or an unresolved benchmark. The old sealed split is for W7 reproduction only. |
 
-## Next Stage-9 delivery slices
+## Stage-9 product scope (not the live project plan)
 
-These are new work packages within Stage 9, not a reset of W0–W7 or a new stage. Each produces a working artifact and a separate review before the next slice.
+The rows below record the original product-scope definitions and acceptance boundaries, not current scheduling or status. Project #2 is authoritative for active work packages, their order, checklists and evidence. The slices remain within Stage 9; this does not reset W0–W7 or create a new stage.
 
 | Order | Deliverable | Acceptance evidence |
 |---|---|---|
-| S1 — Visible local screener (delivered 2026-11-08) | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
-| S2 — Table-first common-parameter laboratory (delivered 2026-11-08) | One strategy/parameter set updates all compatible pair rows with percentage-only performance and risk. Checkboxes select independent pairs; a bounded grid around the current settings logs all trials and searches training dates for a stable positive neighborhood. | No isolated peak is promoted; an inconclusive/no-plateau result is valid. Report on the optional final validation share (0–50%; at 0% report on all training data). Previously viewed history is not a prospective test. Independent pair scores are not basket wealth. See [S2](../development/screener-s2.md). |
-| Execution proof (delivered) | Unified pair/calendar workbench with common-strategy search and the same starting-capital setting for each independent account. | [Proof contract and evidence](../development/execution-proof.md). |
-| S3 — SBRF reference reproduction (reproduced and not accepted 2026-11-08; see [profit audit](../development/profit-audit.md)) | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
+| S1 — Visible local screener (scope; history in Issue #33) | Dark-only local view backed by existing CLI/research results. At least two data-backed pair choices from the already screened universe, at least two compatible strategy choices across those pairs, editable validated parameters, run/compare, dated `V` versus `B` and `X`/drawdown charts, return/risk/capital and trade summaries. Unsupported combinations show a reason. | A changed pair, strategy or parameter produces a distinct replayable result; the same run from CLI and view agrees; no proxy chart claims a real fill or a clean account-level return. If a second pair lacks usable local inputs, intake it first rather than substituting mock numbers. |
+| S2 — Table-first common-parameter laboratory (scope; history in Issue #34) | One strategy/parameter set updates all compatible pair rows with percentage-only performance and risk. Checkboxes select independent pairs; a bounded grid around the current settings logs all trials and searches training dates for a stable positive neighborhood. | No isolated peak is promoted; an inconclusive/no-plateau result is valid. Report on the optional final validation share (0–50%; at 0% report on all training data). Previously viewed history is not a prospective test. Independent pair scores are not basket wealth. Historical delivery evidence: [GitHub Issue #34](https://github.com/vernikr/moex-spread-lab/issues/34). |
+| Execution proof workbench (scope) | Unified pair/calendar workbench with common-strategy search and the same starting-capital setting for each independent account. | [Proof contract and evidence](../development/execution-proof.md). |
+| S3 — SBRF reference reproduction (scope; see [durable profit audit](../development/profit-audit.md)) | Admit dated near/far SBRF calendars, dividends, costs and expiry rules from source evidence. Re-run the old `calendar-spread` ideas under this project's LQDT, capital and delay accounting; keep old and new reports separate. | Explain any divergence from the reference's positive backtest, including selection, historical margin assumptions and missed signals; no historical gain is imported as current evidence. |
 | S4 — Basket evaluation and search | Select a finite set of admitted pairs and compatible strategies, run concurrent proposals through one portfolio with frozen priority, shared RUB/margin/VM headroom and concentration checks; then search bounded per-pair and shared parameters on earlier periods only. | The basket `V/B/X/D` and risk path is not a sum of stand-alone curves; every blocked competing signal is logged. Selection across pairs/trials is included in the trial count and later-period checks. |
 | Later | Pair dossier, broader pool ranking, persistent experiment views, monitoring, Telegram, richer optimization methods and broker adapters. | Separate evidence, resource and live-authorization gates. |
 
-S1 and S2 are documented in the [local screener guide](../development/screener-s1.md) and [table/search record](../development/screener-s2.md). They display incomplete inputs as exploratory or blocked, never as fabricated performance or permission to trade. A checked set of independent pair studies is not the S4 shared-capital basket. SBRF reproduction remains a separate priority because the reference contains a concrete testable strategy, but its old result must pass this project's accounting independently.
+S1 and S2 delivery histories are preserved in [Issue #33](https://github.com/vernikr/moex-spread-lab/issues/33) and [Issue #34](https://github.com/vernikr/moex-spread-lab/issues/34). The durable product boundary remains: incomplete inputs are exploratory or blocked, never fabricated performance or permission to trade. A checked set of independent pair studies is not the S4 shared-capital basket. SBRF reproduction is a separate audited research question because the reference contains a concrete testable strategy; any reproduced result must pass this project's accounting independently.
 
-## Business priority order
+## Durable product-priority principle (live queue is in Project #2)
 
 When resources or evidence are limited, use this order:
 
@@ -84,7 +84,7 @@ When resources or evidence are limited, use this order:
 
 At every step, contract identity, price roles, delayed execution and cost/margin completeness are non-negotiable gates, not work to skip for a quicker chart.
 
-The plan deliberately accepts a narrower or zero-trade result in preference to a broad but weak conclusion.
+The product definition deliberately accepts a narrower or zero-trade result in preference to a broad but weak conclusion.
 
 ## Deferred research — LLM skills and agent setups
 
@@ -149,4 +149,4 @@ These inputs are gates for stronger conclusions, not prerequisites for building 
 
 ## Definition of done for Stage 8
 
-Stage 8 remains complete as a stage artifact. This revision defines S1–S4 as the next separate Stage-9 work packages with user-visible acceptance outcomes. They do not include broker access or deployment.
+Stage 8 is complete as a formal specification. The S1–S4 rows above preserve product scope and acceptance boundaries, not the live work plan; current sequencing, checklists and status are maintained in GitHub Project #2. This artifact grants no broker access or deployment authority.

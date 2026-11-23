@@ -40,10 +40,14 @@ compile_commands.json
 reports/code-health/
 
 
-# Verification measurement records (plan S0, local only)
+# Verification measurement records (Agent Performance Issue #19, S0), local only
 reports/perf/
 
-# pytest-testmon databases (plan S2, per worktree)
+# Reproducible execution outputs; dated canonical reports are in Issues #31/#32
+reports/w0/
+reports/waves/
+
+# pytest-testmon databases (Agent Performance Issue #19, S2, per worktree)
 .testmondata*
 
 # Generated unified namespace view for basedpyright (plan S5)

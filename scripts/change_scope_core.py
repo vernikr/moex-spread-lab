@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Core of the S2 change-scope router (docs/development/agent-performance-2/plan.md).
+"""Core of the S2 change-scope router (Agent Performance Issue #19).
 
 Pure decision logic shared by ``scripts/change_scope.py`` (CLI) and the local
 launcher ``scripts/verify.py``. Rules, evaluated per changed path; any unmatched

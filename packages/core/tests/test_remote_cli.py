@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -169,7 +168,7 @@ def test_sync_docs_only_fast_forwards_without_restart(monkeypatch, tmp_path):
         tmp_path,
         new_head="c" * 40,
         changed=[
-            "docs/development/agent-performance-2/plan.md",
+            "docs/development/github-project.md",
             "AGENTS.md",
             ".github/workflows/ci.yml",
         ],
@@ -296,7 +295,7 @@ def test_await_readiness_requires_matching_head_and_is_bounded(monkeypatch, tmp_
 def test_environment_validation(monkeypatch, capsys):
     monkeypatch.setenv("ARENA_BRIDGE_URL", "http://example.test")
     monkeypatch.setenv("ARENA_BRIDGE_TOKEN", "secret")
-    assert remote_cli.run(SimpleNamespace(remote_command="sync")) == 2
+    assert remote_cli.run(argparse.Namespace(remote_command="sync")) == 2
     assert "secret" not in capsys.readouterr().err
 
 

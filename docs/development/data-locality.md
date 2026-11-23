@@ -1,17 +1,17 @@
 # Market data locality for cloud agents
 
-Status: **Delivered guidance** (2026-11-22). Answers the recurring question "the trading data is
+Scope: **Durable data-governance guidance** (not a live work plan). Current workstation work is tracked in GitHub Issues #30 and #51. This page answers the recurring question "the trading data is
 already on my workstation — does that help the cloud agent, and how should the plan change if
 `iss.moex.com` is slow or blocked from outside Russia?".
 
 ## 1. Short answer
 
-- **For P0 correctness and speed: no.** The bottleneck was not missing data, it was a *silent
-  network fallback*: `CalendarData` had `offline=False` semantics whenever `MOEX_OFFLINE_ONLY` /
-  `PYTEST_CURRENT_TEST` were unset. Every cold catalog call therefore tried ~1,050 uncached contract
-  secids against ISS (0.05 s rate-limit sleep each) before falling back to the cache. Fixing the
-  default (P0) makes the local workstation data irrelevant for latency: the same synthetic fixture
-  catalog went **181.02 s -> 0.05 s** with zero sockets opened.
+- **For offline-fixture correctness and cold-catalog behavior: no.** The bottleneck was not missing
+  workstation data but a silent network fallback: web/proof paths now use the offline-by-default
+  `CalendarData` contract, so a cache miss fails closed rather than querying ISS. The regression
+  test `packages/web/tests/test_offline_catalog.py` guards the no-socket behavior. Historical
+  investigation and performance evidence are archived with the Agent Performance history in
+  [GitHub Issue #19](https://github.com/vernikr/moex-spread-lab/issues/19).
 - **For real research runs: yes, it matters a lot.** A cloud agent cannot produce a real
   wealth/risk path without the real cache; MOEX ISS may throttle or refuse non-RU origins. So the
   data must reach the compute exactly once and then be treated as a read-only input.
@@ -37,12 +37,7 @@ Only the first three matter to a cloud agent that re-runs the screener; `data-la
 
 Ranked by fit for this repository (private repo, single researcher, no SaaS upload allowed):
 
-1. **Keep compute on the workstation (default, zero copies).** `docs/development/remote-agent-testing.md`
-   already specifies this: the loopback server is the only data holder, the cloud agent talks to it
-   through the authenticated Arena Bridge, and P3 adds `moex-spread-lab remote sync|status` plus a
-   `launchd` screener so the agent never spawns its own data-holding process. This is the cheapest
-   and the only option with no redistribution question at all. Remaining gap: a cloud agent still
-   cannot *unit-test* real data paths — it tests synthetic fixtures instead.
+1. **Keep compute on the workstation (default, zero copies).** The workstation handoff and benchmark design/history are archived in [GitHub Epic #30](https://github.com/vernikr/moex-spread-lab/issues/30); the remaining standalone benchmark scope is tracked in [Issue #51](https://github.com/vernikr/moex-spread-lab/issues/51). The loopback server remains the only data holder, and the cloud agent talks to it through the authenticated Arena Bridge so it never spawns its own data-holding process. This is the cheapest option and avoids a data-redistribution question. A cloud agent still cannot unit-test real data paths without the workstation; it tests synthetic fixtures instead.
 2. **A separately authenticated private artifact store, not git.** Standard industry pattern:
    `dvc push`/`dvc pull`, an S3/R2 bucket, or GitHub Actions artifacts + cache. Data objects live
    outside the commit graph; the repo stores only a small manifest (sha256 + row count + date
@@ -76,14 +71,6 @@ forever), committing `*.sqlite`, "temporary" workflows that dump data/secrets in
 - **`MOEX_OFFLINE_ONLY=1` remains the belt-and-braces flag** for harnesses and for anyone who wants a
   hard guarantee; it is now an override, not the primary mechanism.
 
-## 5. Recommendation
+## 5. Work tracking and durable recommendation
 
-Keep P0–P2 as planned (no plan surgery needed for data locality). Add, in priority order:
-
-1. **P3 first** — `remote sync`/`status` + `launchd` screener: measured real data with zero copies.
-2. **`inputs-manifest.json` + `scripts/fetch_inputs.py`** (new, ~1 slice): verify local inputs
-   against a manifest, and later pull them from a private artifact/release when a cloud agent must
-   run real numbers. Blocked on a user decision about where that store lives; recorded in
-   `docs/blockers/b02-research-and-workflow.md` rather than guessed here.
-3. Only if a specific task demands cloud-side real-data runs, evaluate option 4/5 with an explicit
-   written decision in `docs/decisions.md`.
+The durable recommendation remains: keep compute on the workstation by default, do not commit or upload private market data without an explicit decision, and require a manifest/hash check before any future data-sharing path. The workstation CLI/benchmark implementation and remaining acceptance scope are tracked in [GitHub Epic #30](https://github.com/vernikr/moex-spread-lab/issues/30) and [Issue #51](https://github.com/vernikr/moex-spread-lab/issues/51). Any future input-manifest or artifact-store work must first resolve the owner decision in [`docs/blockers/b02-research-and-workflow.md`](../blockers/b02-research-and-workflow.md). Current execution plans, progress and dated measurements belong only in those Issues, not in this guidance document.

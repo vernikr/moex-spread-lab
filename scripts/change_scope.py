@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI for the S2 change-scope router (docs/development/agent-performance-2/plan.md).
+"""CLI for the S2 change-scope router (Agent Performance Issue #19).
 
 Shared by the local launcher (``scripts/verify.py``) and the ``scope`` job in
 ``.github/workflows/ci.yml``. Without ``--event`` it routes the working-tree change

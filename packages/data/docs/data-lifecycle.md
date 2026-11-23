@@ -201,14 +201,12 @@ before copying back to the original paths. Keep the archive, verification
 receipt, plan and apply journal together; schedule a review before any archive
 retention decision. Moving an archive within one disk is not itself a saving.
 
-Validation: isolated-fixture archive/apply/restore, protected inputs, stale
+Validation covers isolated-fixture archive/apply/restore, protected inputs, stale
 sources, path traversal, symlinks, corruption, malformed members and publication
-races are covered. The approved workstation operation is recorded in
-[Package A application evidence, 2026-11-21](data-archive-2026-11-21.md): 1,169
-files archived, fully restore-verified and removed; 634.35 MiB conservative net
-allocated reduction. The old plan's inventory control file was deliberately
-excluded. Package B's importer is described below; active H1 Parquet-only
-cutover (package C) is not implemented.
+races. The dated Package A operation and its measured outcome are recorded in
+[GitHub Issue #37](https://github.com/vernikr/moex-spread-lab/issues/37); this
+runbook intentionally does not duplicate that execution report. Package B's
+importer is described below; the C1–C3 H1 safety and maintenance procedures follow.
 
 ## Package B: verified legacy baseline import (0.5.0)
 
@@ -257,12 +255,12 @@ Default detail retention is 30 days, unpinned. Use `--pin` only for selected
 important evidence; `--retention-days` is explicit. Original reports remain
 recoverable from the verified archive regardless of compact-detail TTL.
 
-This migration adds convenient compact research detail back alongside package
-A's archive; it is **not additional disk reclamation** relative to archive-only
-storage. Measure the resulting size and do not count the already-removed JSON
-a second time. [Workstation migration evidence, 2026-11-21](../../accounting/docs/baseline-import-2026-11-21.md)
-records 16 verified imports, 5.06 MiB added allocation, unchanged existing data
-and identical production smoke results. Package C remains separately gated.
+This migration adds convenient compact research detail alongside package A's
+archive; it is **not additional disk reclamation** relative to archive-only
+storage. Measure the resulting size and do not count the already-removed JSON a
+second time. The dated Package B execution evidence is preserved in [GitHub
+Issue #38](https://github.com/vernikr/moex-spread-lab/issues/38); exact import
+counts, allocation and smoke-test results belong to that Issue.
 
 ## Package C1: complete H1 inventory and isolated candidate lakes (0.6.0)
 
@@ -307,17 +305,18 @@ replacement, cleanup of evidence, or activation. Use a fresh output directory
 after resolving a failed run. Concurrent source writers should be stopped for a
 stable snapshot; even a completed candidate is revalidated by `--verify`.
 
-This phase **adds temporary mirror storage** while retaining every JSON. It does
-not implement the later sealed Parquet-only reader or make source deletion safe.
-C2 must support exact-path source identity and fail-closed source selection when
-JSON is absent, integrate all production readers, test rollback extraction and
-fixed regression selections, and measure net gain before any active JSON
-archival/removal. A good compression ratio alone is insufficient authorization.
+Candidate staging **adds temporary mirror storage** while retaining every JSON.
+It does not by itself activate Parquet reads or make source deletion safe. Any
+sealed reader must preserve exact-path source identity and fail-closed selection
+when JSON is absent, integrate all production readers, and pass rollback and
+fixed-regression checks. Any later archival/removal is a separate supervised
+operation that must demonstrate net gain; a compression ratio alone is never
+authorization.
 
-[Workstation C1 evidence, 2026-11-21](h1-candidates-2026-11-21.md) records all 120
-H1 sources / 448,565 rows verified, 14.11 MiB candidate allocation, unchanged
-original data/default lake, and matching fixed shadow-read smoke results. C2
-production selection/sealing and active JSON archival/removal remain pending.
+The dated C1 inventory, parity and allocation results are recorded in [GitHub
+Issue #39](https://github.com/vernikr/moex-spread-lab/issues/39). This procedure
+is limited to the candidate-staging contract; activation and any source archival
+are separate, explicitly gated operations described below.
 
 ## Package C2: explicit sealed H1 reads (0.7.0)
 
@@ -374,15 +373,13 @@ Tests cover missing JSON, distinct preferred/nonpreferred copies, calendar
 reader equality, provenance, projection, warm-cache corruption, missing controls,
 source changes, new screened sources, unknown inputs, symlinks, immutable copied
 records and repeated activate/deactivate rehearsals. Production fixed cases,
-search/plateau performance and active-JSON archive/restore gates remain separately
-evidenced; fixture success alone is not authority to remove originals.
+search/plateau performance and active-JSON archive/restore each require separate
+Issue-backed evidence; fixture success alone is not authority to remove originals.
 
-[Workstation C2 activation evidence, 2026-11-21](h1-seal-2026-11-21.md) records
-120 active sealed sources with all JSON retained, matching fixed smoke outputs
-in sealed and rollback modes, then successful reactivation. The C1 directory
-`data-lake/candidates/h1-0fb843b/` is now active storage and must not be cleaned
-as staging. Default maintenance adaptation, broader cutover/performance checks
-and the dedicated active-H1 archive/extraction/apply gates remain C3 work.
+The dated C2 activation, parity, rollback and reactivation evidence is preserved
+in [GitHub Issue #40](https://github.com/vernikr/moex-spread-lab/issues/40).
+C3's separate archive/extraction/apply contract is described in the next section;
+its dated operation and recovery record are in [GitHub Issue #41](https://github.com/vernikr/moex-spread-lab/issues/41).
 
 ## Package C3: reviewed active-H1 archival (0.8.0)
 
@@ -507,3 +504,6 @@ Do not overwrite old catalogs: retain dated snapshots beside the archives.
 - During supervised applies, stop writers, retain before/after evidence, verify
   runtime, then restart service. Existing explicit GC/apply commands are the only
   mutation paths; these monitoring/catalog commands have no `--apply` mode.
+
+The dated Package D storage-budget/catalog execution report is preserved in
+[GitHub Issue #42](https://github.com/vernikr/moex-spread-lab/issues/42).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tier-1 repository gate (docs/development/agent-performance-2/plan.md, slice S1).
+# Tier-1 repository gate (Agent Performance Issue #19, S1).
 #
 # Full mode (default): all seven checks, capped parallelism, quiet on pass — one
 # line per check, no log bodies unless --verbose. On failure, prints the failing

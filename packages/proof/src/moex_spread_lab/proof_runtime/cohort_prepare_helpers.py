@@ -2,18 +2,64 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sized
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
 from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
+from . import request_validation as _request_validation
 from .axis import Axis
-from .request_validation import _identity, execution_axes
 from .strategy_catalog import get_strategy_axes, resolve_strategy_registry
+
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies import StrategyRegistry
 
 MAX_TARGETS = 1024
 
+# Facade surface: ``proof_batch`` re-exports these names and ``cohort_prepare`` /
+# ``cohort_models`` bind the private hooks, so they are declared as exports even though most
+# of them are not called inside this module.
+__all__ = [
+    "MAX_TARGETS",
+    "_active_seed",
+    "_confirmation",
+    "_filter_training",
+    "_intersect_axes",
+    "_native_request",
+    "_targets",
+    "_translate",
+]
 
-def _translate(params, strategy):
+_Obj = dict[str, Any]
+
+
+class _SplitLike(Protocol):
+    @property
+    def training(self) -> Sized: ...
+
+
+class _CaseLike(Protocol):
+    @property
+    def split(self) -> _SplitLike: ...
+
+
+class _SettingsLike(Protocol):
+    def metadata(self) -> Mapping[str, Any]: ...
+
+
+# ``request_validation`` keeps its untyped definitions (it is owned elsewhere), so rebind
+# the two hooks to the original callables with explicit signatures; this module keeps both
+# names and their runtime identity under whole-package strict typing.
+_identity = cast(Callable[[Mapping[str, Any]], _Obj], _request_validation.__dict__["_identity"])
+execution_axes = cast(
+    Callable[[Mapping[str, Any]], Mapping[str, Axis]],
+    _request_validation.__dict__["execution_axes"],
+)
+
+
+def _translate[ValueT](params: Mapping[str, ValueT], strategy: str) -> dict[str, ValueT]:
     result = dict(params)
     if strategy == "mean_reversion" and "window" in result:
         result["lookback"] = result.pop("window")
@@ -22,7 +68,13 @@ def _translate(params, strategy):
     return result
 
 
-def _native_request(active, target, *, default_price_fill="reference_same_bar", registry=None):
+def _native_request(
+    active: Mapping[str, Any],
+    target: Mapping[str, Any],
+    *,
+    default_price_fill: str = "reference_same_bar",
+    registry: StrategyRegistry | None = None,
+) -> _Obj:
     from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
     registry = resolve_strategy_registry(registry)
@@ -55,17 +107,21 @@ def _native_request(active, target, *, default_price_fill="reference_same_bar", 
     }
 
 
-def _targets(request):
+def _targets(request: Mapping[str, Any]) -> list[_Obj]:
     raw = request.get("targets")
     if "targets" not in request or raw == []:
         return [_identity(request)]
-    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_TARGETS:
+    # Typed up front only to avoid ``list[Unknown]`` narrowing; the guard below still
+    # decides, at runtime, whether ``raw`` is a list of an admissible size.
+    items = cast(list[object], raw)
+    if not isinstance(raw, list) or not 1 <= len(items) <= MAX_TARGETS:
         raise W0Error(f"Выберите от 1 до {MAX_TARGETS} окон.")
-    unique = {}
-    for item in raw:
-        if not isinstance(item, dict) or item.keys() - {"universe", "asset", "pair"}:
+    unique: dict[tuple[Any, Any, Any], _Obj] = {}
+    for item in items:
+        window = cast(_Obj, item)
+        if not isinstance(item, dict) or window.keys() - {"universe", "asset", "pair"}:
             raise W0Error("Ожидается список идентификаторов окон.")
-        t = _identity(item)
+        t = _identity(window)
         key = t["universe"], t.get("asset", ""), t["pair"]
         if key in unique:
             raise W0Error("Окно указано дважды.")
@@ -73,14 +129,17 @@ def _targets(request):
     return [unique[k] for k in sorted(unique)]
 
 
-def _active_seed(request, active, *, registry=None):
+def _active_seed(
+    request: Mapping[str, Any], active: str, *, registry: StrategyRegistry | None = None
+) -> _Obj:
     from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
 
+    asset: Any = request.get("asset")
     context = InstrumentContext(
         universe=request.get("universe", CALENDAR_UNIVERSE),
         pair=request.get("pair", ""),
-        asset=request.get("asset"),
-        monthly=bool(ASSETS.get(request.get("asset"), {}).get("monthly")),
+        asset=asset,
+        monthly=bool(ASSETS.get(asset, {}).get("monthly")),
     )
     plugin = resolve_strategy_registry(registry).get(active)
     defaults = {
@@ -100,16 +159,20 @@ def _active_seed(request, active, *, registry=None):
     }
 
 
-def _intersect_axes(axes, strategy_axes, active):
+def _intersect_axes(
+    axes: MutableMapping[str, Axis], strategy_axes: Mapping[str, Axis], active: str
+) -> None:
     for name, other in _translate(strategy_axes, active).items():
         a = axes[name]
         axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
 
 
-def _filter_training(members, axes, rejected):
+def _filter_training[CaseT: _CaseLike](
+    members: Iterable[tuple[_Obj, CaseT]], axes: Mapping[str, Axis], rejected: list[_Obj]
+) -> list[tuple[_Obj, CaseT]]:
     # Every window must fit the intersection, not merely its individual domain.
     minimum = max((a.low + 2 for k, a in axes.items() if k in ("window", "lookback")), default=2)
-    compatible = []
+    compatible: list[tuple[_Obj, CaseT]] = []
     for target, case in members:
         if len(case.split.training) >= minimum:
             compatible.append((target, case))
@@ -123,7 +186,7 @@ def _filter_training(members, axes, rejected):
     return compatible
 
 
-def _confirmation(settings, rejected, members):
+def _confirmation(settings: _SettingsLike, rejected: list[_Obj], members: Sized) -> _Obj:
     return {
         "status": "selection_requires_confirmation",
         **settings.metadata(),

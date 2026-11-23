@@ -314,7 +314,12 @@ def _inspect_file(path: Path) -> dict[str, Any]:
 
 
 # ``data_inventory`` re-exports these helpers, so they are declared surface of
-# this module even though their names stay private.
+# this module even though their names stay private. The declaration is not
+# optional: without it strict mode reports the re-exported helpers as unused.
+# Measured at ``9e53597^`` (immediate pre-leaf revision of #71) this module
+# already shipped exactly this ``__all__``, so the wildcard surface (and the
+# imported ``Any``/``Path``/``annotations``/``dataclass``/``json`` names the P7.2
+# lead listed) is unchanged and needs no repair here.
 __all__ = [
     "DATA_INVENTORY_SCHEMA",
     "_Policy",

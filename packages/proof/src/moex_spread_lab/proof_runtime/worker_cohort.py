@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from collections.abc import Callable, Sequence
+from typing import Any, Protocol, cast
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
@@ -10,37 +11,105 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
+from . import worker_window as _worker_window
+from .axis import Axis
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
-from .worker_window import _worker_service
 
-_WORKER_COHORTS: dict[str, dict[int, tuple[dict[str, Any], StudyWindow]]] = {}
+__all__ = [
+    "_WORKER_COHORTS",
+    "_prepare_worker_case",
+    "_worker_eval_indices",
+    "_worker_eval_plateau_batch",
+    "_worker_init_cohort",
+    "_worker_release_cohort",
+    "_worker_report_cohort",
+]
+
+_Obj = dict[str, Any]
+_Axes = dict[str, Axis]
+_Failure = tuple[int, str, str]
+_Scores = list[tuple[int, float, bool]]
+_Evaluation = tuple[_Failure | None, _Scores]
+_ReportRow = tuple[int, _Obj, bool, _Obj | None]
+
+# The service factory stays private to `worker_window`; resolving it through the
+# module facade keeps this file off that module's protected surface.
+_worker_service = cast(Callable[[str], Any], _worker_window.__dict__["_worker_service"])
 
 
-def _prepare_worker_case(svc, native, settings, benchmark, calendar):
+class _SplitLike(Protocol):
+    training: Sequence[str]
+
+    def metadata(self) -> _Obj: ...
+
+
+class _WorkerService(Protocol):
+    """Proof service handed to worker windows; the factory always installs its calendar."""
+
+    calendar_data: CalendarData
+
+
+class _FitLike(Protocol):
+    def measure(self, values: _Obj) -> _Obj: ...
+
+
+class _CaseLike(Protocol):
+    """Structural view of the untyped `StudyWindow` case used by worker tasks."""
+
+    request: _Obj
+    strategy_axes: _Axes
+    execution_axes: _Axes
+    axes: _Axes
+    seed: _Obj
+    split: _SplitLike
+    fit: _FitLike
+    full: _Obj
+
+    def admission(self) -> str | None: ...
+    def lamp_warning(self) -> str | None: ...
+    def report(self, point: _Obj) -> _Obj: ...
+
+
+_WORKER_COHORTS: dict[str, dict[int, tuple[_Obj, _CaseLike]]] = {}
+
+
+def _prepare_worker_case(
+    svc: _WorkerService | None,
+    native: _Obj,
+    settings: ResearchSettings,
+    benchmark: tuple[list[str], dict[str, float]],
+    calendar: CalendarData | None,
+) -> _CaseLike:
     # Worker startup is lazy: discovery happens here, not at import time.
     strategy_axes = get_strategy_axes()
-    initial = dict(native["parameters"])
-    for name, axis in strategy_axes[native["strategy"]].items():
+    initial: _Obj = dict(cast(_Obj, native["parameters"]))
+    for name, axis in strategy_axes[cast(str, native["strategy"])].items():
         if name in initial:
             initial[name] = min(axis.high, max(axis.low, initial[name]))
     try:
-        case = StudyWindow(
-            svc,
-            {**native, "parameters": initial},
-            settings,
-            benchmark,
-            calendar,
+        case = cast(
+            _CaseLike,
+            StudyWindow(
+                svc,
+                {**native, "parameters": initial},
+                settings,
+                benchmark,
+                calendar,
+            ),
         )
     except CarryStrategyError:
         if native["strategy"] != "funding_only" or initial["lookback"] == 5:
             raise
-        case = StudyWindow(
-            svc,
-            {**native, "parameters": {"lookback": 5}},
-            settings,
-            benchmark,
-            calendar,
+        case = cast(
+            _CaseLike,
+            StudyWindow(
+                svc,
+                {**native, "parameters": {"lookback": 5}},
+                settings,
+                benchmark,
+                calendar,
+            ),
         )
     return case
 
@@ -50,19 +119,22 @@ def _worker_init_cohort(
     root_str: str,
     settings: ResearchSettings,
     benchmark: tuple[list[str], dict[str, float]],
-    items: list[tuple[int, dict[str, Any], dict[str, Any], bool]],
-) -> list[tuple[int, str, dict[str, Any]]]:
+    items: list[tuple[int, _Obj, _Obj, bool]],
+) -> list[tuple[int, str, _Obj]]:
     """Initialize assigned StudyWindows inside the worker and keep them sticky."""
-    svc = _worker_service(root_str)
+    svc = cast(_WorkerService, _worker_service(root_str))
     # The worker-service factory always installs CalendarData for this process.
-    calendar = cast(CalendarData, svc._calendar)
+    calendar = svc.calendar_data
     bucket = _WORKER_COHORTS.setdefault(cohort_id, {})
-    results: list[tuple[int, str, dict[str, Any]]] = []
+    results: list[tuple[int, str, _Obj]] = []
     for idx, target, native, checked in items:
         try:
             if checked and target["universe"] == CALENDAR_UNIVERSE:
                 calendar.check_training_window(
-                    target["asset"], target["pair"], native.get("quantity", 1), settings
+                    cast(str, target["asset"]),
+                    cast(str, target["pair"]),
+                    cast(int, native.get("quantity", 1)),
+                    settings,
                 )
             case = _prepare_worker_case(svc, native, settings, benchmark, calendar)
             reason = case.admission()
@@ -98,19 +170,19 @@ def _worker_release_cohort(cohort_id: str) -> None:
 
 def _worker_eval_indices(
     cohort_id: str,
-    point_by_strategy: dict[str, dict[str, Any]],
+    point_by_strategy: dict[str, _Obj],
     indices: list[int] | None = None,
     exclude_idx: int | None = None,
-) -> tuple[tuple[int, str, str] | None, list[tuple[int, float, bool]]]:
+) -> _Evaluation:
     """Evaluate `indices` (or all shard indices) in canonical order; short-circuit on fail."""
     bucket = _WORKER_COHORTS.get(cohort_id, {})
     target_indices = sorted(indices) if indices is not None else sorted(bucket)
-    scores: list[tuple[int, float, bool]] = []
+    scores: _Scores = []
     for idx in target_indices:
         if exclude_idx is not None and idx == exclude_idx:
             continue
         target, case = bucket[idx]
-        m = case.fit.measure(point_by_strategy[case.request["strategy"]])
+        m = case.fit.measure(point_by_strategy[cast(str, case.request["strategy"])])
         score = m.get("rank_score")
         if score is None:
             return (idx, target["pair"], m.get("reason", "нет допустимого результата")), scores
@@ -120,18 +192,18 @@ def _worker_eval_indices(
 
 def _worker_eval_plateau_batch(
     cohort_id: str,
-    points: list[tuple[int, dict[str, dict[str, Any]]]],
-) -> dict[int, tuple[tuple[int, str, str] | None, list[tuple[int, float, bool]]]]:
+    points: list[tuple[int, dict[str, _Obj]]],
+) -> dict[int, _Evaluation]:
     """Evaluate all uncached plateau neighbor points across this shard's windows."""
     bucket = _WORKER_COHORTS.get(cohort_id, {})
     ordered_indices = sorted(bucket)
-    out: dict[int, tuple[tuple[int, str, str] | None, list[tuple[int, float, bool]]]] = {}
+    out: dict[int, _Evaluation] = {}
     for p_idx, point_by_strategy in points:
-        scores: list[tuple[int, float, bool]] = []
-        failure = None
+        scores: _Scores = []
+        failure: _Failure | None = None
         for idx in ordered_indices:
             target, case = bucket[idx]
-            m = case.fit.measure(point_by_strategy[case.request["strategy"]])
+            m = case.fit.measure(point_by_strategy[cast(str, case.request["strategy"])])
             score = m.get("rank_score")
             if score is None:
                 failure = (idx, target["pair"], m.get("reason", "нет допустимого результата"))
@@ -143,20 +215,20 @@ def _worker_eval_plateau_batch(
 
 def _worker_report_cohort(
     cohort_id: str,
-    point_by_strategy: dict[str, dict[str, Any]],
+    point_by_strategy: dict[str, _Obj],
     best_is_none: bool,
     settings: ResearchSettings,
-) -> list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]]:
+) -> list[_ReportRow]:
     """Build final member evaluations and report payloads in parallel."""
     bucket = _WORKER_COHORTS.get(cohort_id, {})
-    rows: list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]] = []
+    rows: list[_ReportRow] = []
     for idx in sorted(bucket):
         target, case = bucket[idx]
-        local = point_by_strategy[case.request["strategy"]]
+        local = point_by_strategy[cast(str, case.request["strategy"])]
         full = case.full
         exec_ref = bool(full.get("execution_reference", False))
-        selection = {
-            **full["selection"],
+        selection: _Obj = {
+            **cast(_Obj, full["selection"]),
             **{k: local[k] for k in case.execution_axes},
             "parameters": {k: local[k] for k in case.strategy_axes},
         }
@@ -174,7 +246,7 @@ def _worker_report_cohort(
             )
             continue
         training_rate = case.fit.measure(local).get("rank_score")
-        row = {
+        row: _Obj = {
             "target": target,
             "selection": selection,
             "input_run_id": full["run_id"],

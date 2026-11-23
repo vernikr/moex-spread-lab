@@ -112,6 +112,55 @@ def _plugin_parameters(plugin, request, pair, settings) -> dict[str, Any]:
     return params
 
 
+def _calendar_sizing_unit(root, request, unit, through, metrics_only):
+    if unit.get("schema_version") == "calendar-proof.v1":
+        if through is None:
+            unit = calendar_proof(root, request, unit)
+        else:
+            # Partial (training) replays skip the full _calendar_proof
+            # enrichment (run_id, notes, summary) to save per-trial work,
+            # but the structural markers size_proof/_Terms need must still
+            # be present. `universe` routes _Terms to the native branch;
+            # `run_id` is the unit identity fed into proof run_id (unused
+            # by _measure, only needed when metrics_only is False).
+            unit.setdefault("universe", CALENDAR_UNIVERSE)
+            if not metrics_only:
+                unit.setdefault(
+                    "run_id",
+                    _run_id(
+                        {
+                            "selection": unit.get("selection", {}),
+                            "daily": unit.get("series", []),
+                            "source_hashes": {
+                                k: v
+                                for k, v in (unit.get("provenance") or {}).items()
+                                if isinstance(v, str) and "sha256" in k
+                            },
+                        }
+                    ),
+                )
+    return unit
+
+
+def _intent_request(request, registry, settings):
+    strategy = request.get("strategy", "zscore_mean_reversion")
+    selected_plugin = (
+        registry.get(strategy) if isinstance(strategy, str) and strategy in registry else None
+    )
+    default_fill = (
+        "same_day_settlement"
+        if selected_plugin is not None
+        and selected_plugin.supported_fills == ("same_day_settlement",)
+        else settings.price_fill
+    )
+    return {
+        **request,
+        "quantity": 1,
+        "slippage_ticks": settings.slippage_ticks,
+        **({} if "fill" in request else {"fill": default_fill}),
+    }
+
+
 class ProofService:
     """Single entry point for /api/proof/*; dispatches on the `universe` field."""
 
@@ -196,28 +245,14 @@ class ProofService:
         if not automatic(selection):
             return self._prepare_fixed(selection, calendar=calendar, settings=settings)
 
-        def intent_request(request):
-            strategy = request.get("strategy", "zscore_mean_reversion")
-            selected_plugin = (
-                registry.get(strategy)
-                if isinstance(strategy, str) and strategy in registry
-                else None
-            )
-            default_fill = (
-                "same_day_settlement"
-                if selected_plugin is not None
-                and selected_plugin.supported_fills == ("same_day_settlement",)
-                else settings.price_fill
-            )
-            return {
-                **request,
-                "quantity": 1,
-                "slippage_ticks": settings.slippage_ticks,
-                **({} if "fill" in request else {"fill": default_fill}),
-            }
+        return self._prepare_automatic(selection, calendar, settings, registry, strategy)
 
+    def _prepare_automatic(self, selection, calendar, settings, registry, strategy):
         replay = self._prepare_fixed(
-            intent_request(selection), calendar=calendar, settings=settings, sizing_intents=True
+            _intent_request(selection, registry, settings),
+            calendar=calendar,
+            settings=settings,
+            sizing_intents=True,
         )
         dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
         contracts = _load_instruments(self.root / "data/w1/current-intake.json")
@@ -241,33 +276,12 @@ class ProofService:
                 raise W0Error(
                     "Запрос не соответствует подготовленному автоматическому размеру carry."
                 )
-            unit = replay(intent_request(request), through=through, metrics_only=metrics_only)
-            if unit.get("schema_version") == "calendar-proof.v1":
-                if through is None:
-                    unit = calendar_proof(self.root, request, unit)
-                else:
-                    # Partial (training) replays skip the full _calendar_proof
-                    # enrichment (run_id, notes, summary) to save per-trial work,
-                    # but the structural markers size_proof/_Terms need must still
-                    # be present. `universe` routes _Terms to the native branch;
-                    # `run_id` is the unit identity fed into proof run_id (unused
-                    # by _measure, only needed when metrics_only is False).
-                    unit.setdefault("universe", CALENDAR_UNIVERSE)
-                    if not metrics_only:
-                        unit.setdefault(
-                            "run_id",
-                            _run_id(
-                                {
-                                    "selection": unit.get("selection", {}),
-                                    "daily": unit.get("series", []),
-                                    "source_hashes": {
-                                        k: v
-                                        for k, v in (unit.get("provenance") or {}).items()
-                                        if isinstance(v, str) and "sha256" in k
-                                    },
-                                }
-                            ),
-                        )
+            unit = replay(
+                _intent_request(request, registry, settings),
+                through=through,
+                metrics_only=metrics_only,
+            )
+            unit = _calendar_sizing_unit(self.root, request, unit, through, metrics_only)
             marks = marks_cache.get(through)
             if marks is None:
                 if not dates or dates[0] > unit["series"][0]["date"]:

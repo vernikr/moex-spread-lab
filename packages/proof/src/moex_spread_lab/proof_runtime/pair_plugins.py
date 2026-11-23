@@ -6,17 +6,19 @@ ledger and capital accounting are calculated here, independently of the plugin.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from moex_spread_lab.accounting.position_sizing import automatic
 from moex_spread_lab.core.contracts import WindowSnapshot
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
-from moex_spread_lab.core.w0 import W0Error, _run_id
+from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import attach_entry_levels, pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_screener.pair_screener import _pair, execution_settings
 
+from . import pair_plugin_accounting as _pair_plugin_accounting
 from .fixed_plugin_payload import fixed_daily_pair_plugin_payload
 from .payload_tools import (
     TradeSpec,
@@ -26,6 +28,19 @@ from .payload_tools import (
     trade_block,
 )
 from .plugin_notes import OPEN_POSITION_NOTE, OPEN_POSITION_PREFIX, PLUGIN_SOURCE_NOTE
+
+_Obj = dict[str, Any]
+
+# ``pair_plugin_accounting`` is not yet on the strict list; bind its callables
+# through explicit signatures so this strict file sees fully-typed calls without
+# changing runtime behavior or the lazy-import contract of the accounting module.
+_prepare_daily_pair_unit = cast(
+    Callable[..., tuple[_Obj, dict[str, float]]],
+    _pair_plugin_accounting.__dict__["prepare_daily_pair_unit"],
+)
+_size_daily_pair_plugin = cast(
+    Callable[..., _Obj], _pair_plugin_accounting.__dict__["size_daily_pair_plugin"]
+)
 
 
 class PairPluginRoute:
@@ -70,17 +85,15 @@ class PairPluginRoute:
         through: str | None,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
         """Run the plugin's intents for this trial: sized in automatic mode, unit otherwise."""
-        from .pair_plugin_accounting import prepare_daily_pair_unit, size_daily_pair_plugin
-
         snapshot, funding_window, marks, settings = prepared
         params = request.get("parameters", {})
         if automatic(request):
-            actual = size_daily_pair_plugin(
+            actual = _size_daily_pair_plugin(
                 plugin, snapshot, params, fill, funding_window, marks, settings, through=through
             )
             return None, None, actual
         execution = execution_settings(request)
-        unit, _ = prepare_daily_pair_unit(
+        unit, _ = _prepare_daily_pair_unit(
             plugin,
             snapshot,
             params,
@@ -92,11 +105,15 @@ class PairPluginRoute:
         )
         return unit, execution, None
 
-    def prepare(self):
+    def prepare(self) -> Callable[..., dict[str, Any]]:
         """Return the request-scoped replay callable for this plugin window."""
         pair = self._validate_window()
         # Native pair preflight owns data, funding, liquidity and capital screens.
-        native_selection = {**self.selection, "strategy": "mean_reversion", "parameters": {}}
+        native_selection: dict[str, Any] = {
+            **self.selection,
+            "strategy": "mean_reversion",
+            "parameters": {},
+        }
         native = self.service.prepare(native_selection, settings=self.settings)
         series, funding_window, provenance, inputs = self._prepared_inputs(pair)
         snapshot = WindowSnapshot(
@@ -112,26 +129,33 @@ class PairPluginRoute:
         benchmark = benchmark_marks(inputs.benchmark)
         plugin_prepared = (snapshot, funding_window, marks, self.settings)
 
-        def replay(request, through=None, *, metrics_only=False, scalar_summary=None):
+        def replay(
+            request: Any,
+            through: str | None = None,
+            *,
+            metrics_only: bool = False,
+            scalar_summary: Any | None = None,
+        ) -> dict[str, Any]:
+            req = cast(dict[str, Any], request)
             if (
                 not isinstance(request, dict)
-                or request.get("strategy") != self.plugin.strategy_id
-                or request.get("universe") != PAIR_UNIVERSE
-                or request.get("pair") != pair["pair_id"]
-                or automatic(request) != automatic(self.selection)
-                or (automatic(request) and request.get("quantity") is not None)
+                or req.get("strategy") != self.plugin.strategy_id
+                or req.get("universe") != PAIR_UNIVERSE
+                or req.get("pair") != pair["pair_id"]
+                or automatic(req) != automatic(self.selection)
+                or (automatic(req) and req.get("quantity") is not None)
             ):
                 raise W0Error("Запрос не соответствует подготовленному окну плагина.")
             fill = pair_fill(
-                request, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
+                req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
             )
             unit, execution, actual = self._unit_or_actual(
-                self.plugin, request, plugin_prepared, fill, through
+                self.plugin, req, plugin_prepared, fill, through
             )
             # The native proof supplies trusted market/chart/screen metadata only;
             # never retain its decisions, ledger or indicator values.
             template = native(
-                {**request, "strategy": "mean_reversion", "parameters": {}, "fill": fill},
+                {**req, "strategy": "mean_reversion", "parameters": {}, "fill": fill},
                 through=through,
             )
             if actual is None:
@@ -164,9 +188,11 @@ def enrich_sized_plugin_payload(
     Only plugin trades, ledger, summary and sizing cross into the payload; the series
     keeps its native chart/screen columns with `signal_z` cleared.
     """
-    by_date = {row["date"]: row for row in template["series"]}
-    enriched_rows = [{**by_date[row["date"]], **row, "signal_z": None} for row in actual["series"]]
-    indexed = {row["date"]: row for row in enriched_rows}
+    by_date: dict[str, dict[str, Any]] = {row["date"]: row for row in template["series"]}
+    enriched_rows: list[dict[str, Any]] = [
+        {**by_date[row["date"]], **row, "signal_z": None} for row in actual["series"]
+    ]
+    indexed: dict[str, dict[str, Any]] = {row["date"]: row for row in enriched_rows}
     far_mult = point_value(series["contracts"][pair["far"]])
     enriched_trades = [
         _enriched_trade(trade, indexed, far_mult, benchmark) for trade in actual["trades"]
@@ -191,7 +217,7 @@ def enrich_sized_plugin_payload(
         template["notes"].append(OPEN_POSITION_NOTE)
     template["notes"].append(PLUGIN_SOURCE_NOTE)
     attach_entry_levels(template)
-    template["run_id"] = _run_id(
+    template["run_id"] = run_id(
         {
             "selection": template["selection"],
             "series": template["series"],
@@ -211,7 +237,7 @@ def _enriched_trade(
     benchmark: tuple[list[str], dict[str, float]],
 ) -> dict[str, Any]:
     """Trade row with real fill blocks rebuilt against the enriched series."""
-    blocks = {}
+    blocks: dict[str, dict[str, Any]] = {}
     for event in ("entry", "exit"):
         raw = trade[event]
         blocks[event] = fill_block(

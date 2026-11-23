@@ -146,9 +146,7 @@ def test_facade_identity_and_exports_119() -> None:
     assert pair_screener._parameters is _parameters
     assert pair_screener.build_result is build_result
     assert pair_screener.execution_settings is execution_settings
-    assert {"STRATEGIES", "_parameters", "build_result", "execution_settings"} <= set(
-        runner.__all__
-    )
+    assert {"STRATEGIES", "build_result", "execution_settings"} <= set(runner.__all__)
 
 
 def test_parameters_validation_and_runtime_guards_119() -> None:

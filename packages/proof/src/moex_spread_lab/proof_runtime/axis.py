@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+__all__ = ["Axis", "Mapping", "Protocol", "annotations", "dataclass", "math"]
+
 
 class _SuggestTrial(Protocol):
     def suggest_int(self, name: str, low: int, high: int) -> int: ...
@@ -38,7 +40,7 @@ class Axis:
         return round(trial.suggest_float(name, self.low, high, step=self.step), 6)
 
 
-def ordered(values: Mapping[str, float]) -> bool:
+def _ordered(values: Mapping[str, float]) -> bool:
     """Threshold values keep the exit level strictly below the entry level."""
     return "exit_z" not in values or "entry_z" not in values or values["exit_z"] < values["entry_z"]
 
@@ -48,6 +50,5 @@ def ordered(values: Mapping[str, float]) -> bool:
 # (``request_validation``, ``proof_kernel``), and tests assert ``is`` identity
 # across the whole facade chain. The public ``ordered`` name above is the
 # supported export that keeps strict mode's ``reportUnusedFunction`` quiet; both
-# names are the same function object. No ``__all__`` is added: the wildcard
-# surface grows by ``ordered`` only, so existing star-import behavior is intact.
-_ordered = ordered
+# names are the same function object. Wildcard exports are frozen to the original set.
+ordered = _ordered

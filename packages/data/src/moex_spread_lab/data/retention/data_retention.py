@@ -20,14 +20,33 @@ from .data_inventory import DATA_INVENTORY_SCHEMA
 DATA_ARCHIVE_SCHEMA = "data-archive.v1"
 _ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
 _REBUILDABLE_CACHE = "rebuildable_cache"
-# Path-safety and empty-parent hooks stay private by name but are declared surface
-# of this module: ``data_archive_candidates`` imports them (issue #67). Declaring
-# them in ``__all__`` keeps the contract explicit without changing the callables.
+# Preserve the wildcard surface that preceded #67.
 __all__ = [
     "DATA_ARCHIVE_SCHEMA",
-    "_prune_empty_parents",
-    "_safe_data_path",
-    "_validate_archive_path",
+    "DATA_INVENTORY_SCHEMA",
+    "UTC",
+    "Any",
+    "DataRetentionError",
+    "JsonObject",
+    "JsonValue",
+    "Mapping",
+    "Path",
+    "Sequence",
+    "TypedDict",
+    "W0Error",
+    "annotations",
+    "archive_rebuildable_caches",
+    "as_str_dict",
+    "canonical_bytes",
+    "cast",
+    "datetime",
+    "io",
+    "json",
+    "os",
+    "plan_rebuildable_cache_archive",
+    "sha256_file",
+    "tarfile",
+    "tempfile",
 ]
 
 
@@ -308,3 +327,8 @@ def archive_rebuildable_caches(
         "archive_logical_bytes": archive.stat().st_size,
         "deleted_file_count": len(files),
     }
+
+
+def archive_candidate_hooks():
+    """Return the current path hooks, preserving late-bound monkeypatch points."""
+    return _safe_data_path, _validate_archive_path, _prune_empty_parents

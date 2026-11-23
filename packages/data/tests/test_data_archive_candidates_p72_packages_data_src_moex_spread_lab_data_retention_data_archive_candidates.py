@@ -121,7 +121,7 @@ def test_facade_surface_stays_resolvable_and_typed():
 
 def test_retention_hooks_are_declared_surface_and_identity_preserved():
     for hook in ("_prune_empty_parents", "_safe_data_path", "_validate_archive_path"):
-        assert hook in data_retention.__all__
+        assert hook not in data_retention.__all__
         assert getattr(data_archive_candidates, hook) is getattr(data_retention, hook)
     assert "DATA_ARCHIVE_SCHEMA" in data_retention.__all__
 
@@ -283,3 +283,42 @@ def test_write_once_plans_and_receipts_are_never_overwritten(setup, tmp_path):
     other_plan = tmp_path / "other-plan.json"
     with pytest.raises(DataRetentionError, match="archive destination already exists"):
         execute(root, other_plan, "dry-run", archive)
+
+
+def test_retention_wildcard_and_late_bound_hooks_p72_integration(monkeypatch):
+    from moex_spread_lab.data.retention.helpers_p72_packages_data_src_moex_spread_lab_data_retention_data_archive_candidates import (
+        retention_hooks,
+    )
+
+    namespace = {}
+    exec("from moex_spread_lab.data.retention.data_retention import *", namespace)
+    assert set(namespace) - {"__builtins__"} == {
+        "Any",
+        "DATA_ARCHIVE_SCHEMA",
+        "DATA_INVENTORY_SCHEMA",
+        "DataRetentionError",
+        "JsonObject",
+        "JsonValue",
+        "Mapping",
+        "Path",
+        "Sequence",
+        "TypedDict",
+        "UTC",
+        "W0Error",
+        "annotations",
+        "archive_rebuildable_caches",
+        "as_str_dict",
+        "canonical_bytes",
+        "cast",
+        "datetime",
+        "io",
+        "json",
+        "os",
+        "plan_rebuildable_cache_archive",
+        "sha256_file",
+        "tarfile",
+        "tempfile",
+    }
+    sentinel = object()
+    monkeypatch.setattr(data_retention, "_safe_data_path", sentinel)
+    assert retention_hooks()[0] is sentinel

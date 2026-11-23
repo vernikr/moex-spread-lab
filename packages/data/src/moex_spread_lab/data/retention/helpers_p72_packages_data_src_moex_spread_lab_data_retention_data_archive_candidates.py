@@ -35,11 +35,7 @@ __all__ = ["_CandidateEntry", "read_payload_object", "retention_hooks"]
 
 def retention_hooks() -> tuple[_SafeDataPath, _ValidateArchivePath, _PruneEmptyParents]:
     """Return the owning module's path-safety hooks in their historical order."""
-    return (
-        _data_retention._safe_data_path,
-        _data_retention._validate_archive_path,
-        _data_retention._prune_empty_parents,
-    )
+    return _data_retention.archive_candidate_hooks()
 
 
 def read_payload_object(path: Path, label: str) -> JsonObject:

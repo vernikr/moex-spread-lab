@@ -14,7 +14,18 @@ from moex_spread_lab.core.evaluation_periods import (
 )
 from moex_spread_lab.core.w0 import W0Error
 
-__all__ = ["_annualized_returns", "_excess_curve", "_missing_exposure", "account_checks"]
+__all__ = [
+    "DEFAULT_INITIAL_CAPITAL_RUB",
+    "W0Error",
+    "account_checks",
+    "annotations",
+    "automatic",
+    "date",
+    "datetime",
+    "lqdt_overlay_values",
+    "math",
+    "time",
+]
 
 
 def _excess_curve(proof: dict[str, Any], marks: dict[str, float]) -> dict[str, float]:
@@ -161,3 +172,8 @@ def _missing_exposure(
         )
         reasons.append(f"Открытого спреда не было {where}.")
     return missing, reasons
+
+
+annualized_returns = _annualized_returns
+excess_curve = _excess_curve
+missing_exposure = _missing_exposure

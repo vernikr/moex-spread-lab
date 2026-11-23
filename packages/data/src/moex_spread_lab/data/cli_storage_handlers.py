@@ -3,19 +3,41 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol, cast
 
 from moex_spread_lab.core.w0 import W0Error, write_json
 
+# The producer modules below are still type-checked at ``standard`` level, so
+# their bare ``dict`` returns reach this strict module as ``dict[Unknown, ...]``.
+# These protocols pin the payload contract at the boundary; the producers gain
+# their own strict annotations in their own issues.
+
+
+class _ArchiveCandidatesApi(Protocol):
+    def execute(
+        self, root: Path, plan_path: Path, mode: str, archive: Path | None = None
+    ) -> dict[str, Any]: ...
+
+
+class _H1MigrationApi(Protocol):
+    def stage_h1(self, root: Path, plan_path: Path, output: Path) -> dict[str, Any]: ...
+
+    def verify_h1_stage(self, root: Path, plan_path: Path, output: Path) -> dict[str, Any]: ...
+
+    def write_h1_plan(self, root: Path, path: Path) -> dict[str, Any]: ...
+
 
 def _run_archive_candidates(args: Any) -> int:
-    from moex_spread_lab.data.retention.data_archive_candidates import execute
+    from moex_spread_lab.data.retention import data_archive_candidates
+
+    candidates = cast(_ArchiveCandidatesApi, data_archive_candidates)
 
     try:
         if args.archive and not args.dry_run:
             raise W0Error("--archive is only accepted for --dry-run; other modes use the plan")
         mode = "dry-run" if args.dry_run else "archive-only" if args.archive_only else "apply"
-        result = execute(args.root, args.plan, mode, args.archive)
+        result = candidates.execute(args.root, args.plan, mode, args.archive)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise W0Error(f"candidate archive failed: {exc}") from exc
     print(
@@ -69,13 +91,15 @@ def _run_h1_seal(args: Any) -> int:
 
 
 def _run_h1_stage(args: Any) -> int:
-    from moex_spread_lab.data.lake.h1_migration import stage_h1, verify_h1_stage, write_h1_plan
+    from moex_spread_lab.data.lake import h1_migration
+
+    migration = cast(_H1MigrationApi, h1_migration)
 
     try:
         if args.dry_run:
             if args.output_dir:
                 raise W0Error("--output-dir is only used for --stage or --verify")
-            raw = write_h1_plan(args.root, args.plan)
+            raw = migration.write_h1_plan(args.root, args.plan)
             result = {
                 key: value for key, value in raw.items() if key not in {"files", "screen_selection"}
             }
@@ -83,8 +107,11 @@ def _run_h1_stage(args: Any) -> int:
         else:
             if args.output_dir is None:
                 raise W0Error("--output-dir is required for --stage or --verify")
-            operation = stage_h1 if args.stage else verify_h1_stage
-            raw = operation(args.root, args.plan, args.output_dir)
+            raw = (
+                migration.stage_h1(args.root, args.plan, args.output_dir)
+                if args.stage
+                else migration.verify_h1_stage(args.root, args.plan, args.output_dir)
+            )
             result = {key: value for key, value in raw.items() if key not in {"datasets", "plan"}}
     except (OSError, KeyError, TypeError, ValueError) as exc:
         raise W0Error(f"H1 candidate operation failed: {exc}") from exc
@@ -249,6 +276,7 @@ def _run_lake_maintenance(args: Any) -> int:
     root = args.root.resolve()
     lake_root = args.lake_root if args.lake_root.is_absolute() else root / args.lake_root
     store = ParquetBarStore(root, lake_root)
+    output: dict[str, Any]
     if args.command == "data-verify":
         output = store.verify_all()
     elif args.command == "data-compact":

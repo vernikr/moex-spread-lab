@@ -172,25 +172,9 @@ max-statements = 50
 "packages/data/tests/test_h1_seal.py" = ["RUF005"]
 "packages/data/tests/test_iss.py" = ["RUF012"]
 "packages/data/tests/test_storage_policy.py" = ["SIM117"]
-"packages/proof/src/moex_spread_lab/proof_runtime/audit.py" = ["PLR0913"]
-"packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
-"packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
-"packages/proof/src/moex_spread_lab/proof_runtime/proof_batch.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
-"packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py" = ["PLR0911", "PLR0913"]
-"packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py" = ["BLE001", "PLR0911", "PLR0912", "PLR0915", "SIM102", "SIM105"]
-"packages/proof/src/moex_spread_lab/proof_runtime/proof_strategy_search.py" = ["PLR0912", "PLR0915"]
-"packages/proof/src/moex_spread_lab/proof_runtime/proof_windows.py" = ["B905"]
-"packages/proof/src/moex_spread_lab/proof_runtime/screener_search.py" = ["B905", "C901", "PLR0912", "PLR0915"]
-"packages/proof/src/moex_spread_lab/proof_runtime/service.py" = ["B905", "C901", "PLR0912", "PLR0913", "PLR0915"]
-"packages/proof/tests/test_global_capital.py" = ["B905"]
-"packages/proof/tests/test_pair_funding_replay.py" = ["B905", "RUF005"]
-"packages/proof/tests/perf_equivalence_fixtures.py" = ["C901", "PLR0912", "PLR0915"]
-"packages/proof/tests/test_perf_equivalence.py" = ["C408", "C901", "PLR0912"]
-"packages/proof/tests/test_perf_equivalence_full.py" = ["C408", "C901", "PLR0912"]
-"packages/proof/tests/test_proof_batch.py" = ["B905"]
-"packages/proof/tests/test_proof_funding.py" = ["B905", "E741"]
-"packages/proof/tests/test_proof_search.py" = ["B905"]
-"packages/proof/tests/test_proof_windows.py" = ["B905"]
+"packages/proof/src/moex_spread_lab/proof_runtime/carry_intent_accounting.py" = ["PLR0913"]
+"packages/proof/src/moex_spread_lab/proof_runtime/pair_plugin_accounting.py" = ["PLR0913"]
+"packages/proof/src/moex_spread_lab/proof_runtime/proof_kernel.py" = ["PLR0913"]
 "packages/strategies/tests/contract/test_strategy_conformance.py" = ["B023"]
 "packages/strategies/tests/test_carry.py" = ["B905", "C408"]
 "packages/web/src/moex_spread_lab/web/routes_proof.py" = ["PLR0913"]
@@ -228,75 +212,10 @@ baselineFile = ".basedpyright/baseline.json"
 typeCheckingMode = "standard"
 strict = [
     "packages/core/src",
-    "packages/data/src/moex_spread_lab/data/iss/__init__.py",
-    "packages/data/src/moex_spread_lab/data/iss/iss_snapshot.py",
-    "packages/data/src/moex_spread_lab/data/iss/iss_candles.py",
-    "packages/data/src/moex_spread_lab/data/cli.py",
-    "packages/data/src/moex_spread_lab/data/lake/market_store.py",
-    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py",
-    "packages/data/src/moex_spread_lab/data/benchmark/lineage_math.py",
-    "packages/data/src/moex_spread_lab/data/benchmark/ruonia_xlsx.py",
     "packages/accounting/src",
-    "packages/proof/src/moex_spread_lab/proof_runtime/funding_sizing_payload.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/funding_payloads.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/catalog_payload.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_blocks.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_engine.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_payloads.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_series.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/remote_cohort_types.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_spec.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/screener_math.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/strategy_search_prepare.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/service_sizing.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/service_pair.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/service_calendar.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/service_validation.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/pool_reports.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/measure_full.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/pair_payload.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_payload.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/ledger_blocks.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/payload_tools.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/screener_trial.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/screener_plateau.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/screener_grid.py",
-    "packages/proof/src/moex_spread_lab/proof_runtime/worker_weight.py",
-    "packages/strategies/src/moex_spread_lab/strategies/conformance.py",
-    "packages/strategies/src/moex_spread_lab/strategies/base.py",
-    "packages/strategies/src/moex_spread_lab/strategies/registry.py",
-    "packages/strategies/src/moex_spread_lab/strategies/cli.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/proof_ledger.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/h1_windows.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/loaders.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/contracts.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/data_cache.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/study.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/proof_runner.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/catalog_builder.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/calendar_spreads.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/intents.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/costs_helper.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/baseline_runner.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/engine.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/engine.py",
-    "packages/strategies/src/moex_spread_lab/strategies/signals.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar_eval.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/plugin.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/plugin.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/plugin.py",
-    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/plugin.py",
-    "packages/strategies/src/moex_spread_lab/strategies/cli_parsers.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/h1_candles.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/adjacent.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/report_builder.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/analytics.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_mean_reversion/engine.py",
-    "packages/strategies/src/moex_spread_lab/strategies/s3_reference/engine.py",
-    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/funding_screen.py",
-    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/strategy_report.py",
-    "packages/strategies/src/moex_spread_lab/strategies/funding_carry/study.py",
-    "packages/strategies/src/moex_spread_lab/strategies/pair_screener/result_builder.py",
+    "packages/data/src",
+    "packages/proof/src",
+    "packages/strategies/src",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "error"

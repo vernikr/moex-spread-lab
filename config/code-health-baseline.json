@@ -45,15 +45,6 @@
     "packages/core/tests/test_architecture_dag.py::_resolve_internal_target": 42,
     "packages/core/tests/test_architecture_dag.py::_tarjan_sccs": 18,
     "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
-    "packages/proof/tests/test_global_capital.py::CapitalReplayTests::test_nonzero_annualization_uses_configured_capital_and_continuous_validation": 27,
-    "packages/proof/tests/test_global_capital.py::CapitalReplayTests::test_zero_trade_lqdt_score_has_the_right_base_with_and_without_holdout": 16,
-    "packages/proof/tests/test_pair_plugin_real_proof_parity.py::test_loaded_pair_plugin_matches_native_accounting": 18,
-    "packages/proof/tests/test_perf_equivalence.py::ProofPerfEquivalenceTests::test_streaming_progress_is_monotonic_and_matches_json_bit_for_bit": 20,
-    "packages/proof/tests/test_perf_equivalence.py::_build_h1_workspace": 41,
-    "packages/proof/tests/test_proof_plateau.py::CheckedPlateauTests::test_mean_at_center_and_every_neighbour_precedes_the_stability_ratio": 18,
-    "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_pair_uses_population_deviation_and_calendar_uses_rub_sample_deviation": 16,
-    "packages/proof/tests/test_proof_windows.py::ReferenceAndBandsTests::test_same_bar_and_next_close_work_in_both_universes_and_replay_identically": 16,
-    "packages/proof/tests/test_tuning_screens.py::TuningScreenTests::test_all_four_combinations_in_preflight_search_report_and_live_lamps": 36,
     "packages/web/tests/browser/group_lamps_smoke.py::run": 20
   },
   "files": {
@@ -72,50 +63,6 @@
     "packages/core/tests/test_architecture_dag.py": {
       "baseline_loc": 297,
       "baseline_tokens": 4202
-    },
-    "packages/proof/tests/test_calendar_proof.py": {
-      "baseline_loc": 478,
-      "baseline_tokens": 5955
-    },
-    "packages/proof/tests/test_execution_proof.py": {
-      "baseline_loc": 475,
-      "baseline_tokens": 5803
-    },
-    "packages/proof/tests/test_global_capital.py": {
-      "baseline_loc": 352,
-      "baseline_tokens": 5037
-    },
-    "packages/proof/tests/test_pair_plugin_integration.py": {
-      "baseline_loc": 231,
-      "baseline_tokens": 3556
-    },
-    "packages/proof/tests/test_pair_plugin_pipeline.py": {
-      "baseline_loc": 297,
-      "baseline_tokens": 3557
-    },
-    "packages/proof/tests/test_perf_equivalence.py": {
-      "baseline_loc": 1206,
-      "baseline_tokens": 14496
-    },
-    "packages/proof/tests/test_proof_batch.py": {
-      "baseline_loc": 298,
-      "baseline_tokens": 4076
-    },
-    "packages/proof/tests/test_proof_funding.py": {
-      "baseline_loc": 303,
-      "baseline_tokens": 4406
-    },
-    "packages/proof/tests/test_proof_search.py": {
-      "baseline_loc": 460,
-      "baseline_tokens": 6203
-    },
-    "packages/proof/tests/test_proof_windows.py": {
-      "baseline_loc": 327,
-      "baseline_tokens": 4468
-    },
-    "packages/proof/tests/test_strategy_search.py": {
-      "baseline_loc": 384,
-      "baseline_tokens": 5121
     },
     "packages/strategies/tests/contract/test_strategy_conformance.py": {
       "baseline_loc": 654,

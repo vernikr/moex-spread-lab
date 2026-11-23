@@ -1,10 +1,7 @@
 """Regression coverage for the additive cost export surface (P7.2 leaf #103).
 
-``carry.py`` re-exports three historical private entry points from
-``strategy_costs``. Declaring them in ``strategy_costs.__all__`` clears the
-facade's ``reportPrivateUsage`` diagnostics without renaming or patching, so
-this test pins both the declared surface and the wildcard behaviour that goes
-with it.
+The facade retains its private identities while wildcard import matches the
+surface that existed before #103.
 """
 
 from __future__ import annotations
@@ -36,11 +33,10 @@ _PRIVATE_FACADE_EXPORTS_P72_103 = (
 
 
 class StrategyCostsDeclaredExportsP72_103Tests(unittest.TestCase):
-    def test_declared_surface_is_previous_wildcard_plus_facade_exports(self) -> None:
+    def test_declared_surface_is_previous_wildcard(self) -> None:
         from moex_spread_lab.strategies.funding_carry import strategy_costs
 
         expected = set(_PREVIOUS_WILDCARD_NAMES_P72_103)
-        expected.update(_PRIVATE_FACADE_EXPORTS_P72_103)
         self.assertEqual(set(strategy_costs.__all__), expected)
         for name in sorted(expected):
             self.assertIn(name, vars(strategy_costs), name)
@@ -56,7 +52,7 @@ class StrategyCostsDeclaredExportsP72_103Tests(unittest.TestCase):
         imported = {name for name in namespace if name != "__builtins__"}
         self.assertEqual(imported, set(strategy_costs.__all__))
         for name in _PRIVATE_FACADE_EXPORTS_P72_103:
-            self.assertIs(namespace[name], getattr(strategy_costs, name))
+            self.assertNotIn(name, namespace)
 
     def test_facade_keeps_origin_identity_for_private_exports(self) -> None:
         from moex_spread_lab.strategies.funding_carry import carry, strategy_costs

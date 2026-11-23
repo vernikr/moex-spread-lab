@@ -7,7 +7,7 @@ from moex_spread_lab.proof_runtime.pair_funding_replay import replay_pair_fundin
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
 DATES = [f"2026-01-0{i}" for i in range(1, 6)]
-RATES = dict(zip(DATES, [0.2, 0.3, 0.4, 0.5, 0.7]))
+RATES = dict(zip(DATES, [0.2, 0.3, 0.4, 0.5, 0.7], strict=False))
 
 
 def trade(side="long_spread", terminal=False):
@@ -79,7 +79,7 @@ def test_missing_rate_is_not_silently_zero():
     "changes",
     [
         {"dates": DATES[::-1]},
-        {"dates": DATES + [DATES[-1]]},
+        {"dates": [*DATES, DATES[-1]]},
         {"rates": {DATES[0]: float("nan")}},
         {"rates": {"unknown": 1}},
         {"near_lot_size": 0},

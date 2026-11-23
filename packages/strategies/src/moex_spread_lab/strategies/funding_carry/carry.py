@@ -11,9 +11,13 @@ from moex_spread_lab.data.iss.catalog import (
 )
 
 from .strategy_costs import (
-    _BENCHMARK_PARSED_CACHE,
-    _benchmark_rows,
-    _transaction_cost_profile,
+    BENCHMARK_PARSED_CACHE as _BENCHMARK_PARSED_CACHE,
+)
+from .strategy_costs import (
+    benchmark_rows as _benchmark_rows,
+)
+from .strategy_costs import (
+    transaction_cost_profile as _transaction_cost_profile,
 )
 from .strategy_runner import build_carry_strategy
 from .study import (

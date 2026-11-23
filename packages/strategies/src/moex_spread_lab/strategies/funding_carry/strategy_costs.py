@@ -13,18 +13,13 @@ from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
 from .study import CarryStrategyError, _round
 
-# Declared surface for the carry facade: the three private entry points below
-# stay available under their historical names, and the pre-existing wildcard
-# names remain exported, so this is purely additive.
+# Preserve the pre-#103 wildcard surface; public aliases below support the facade.
 __all__ = [
-    "_BENCHMARK_PARSED_CACHE",
     "Any",
     "Callable",
     "CarryStrategyError",
     "Path",
     "W0Error",
-    "_benchmark_rows",
-    "_transaction_cost_profile",
     "annotations",
     "bisect_left",
     "cast",
@@ -224,3 +219,8 @@ def resolve_carry_cost_profile(
         far_lot_size=int(far_contract["lot_size"]),
         far_tick_value=float(far_contract["tick_value"]),
     )
+
+
+BENCHMARK_PARSED_CACHE = _BENCHMARK_PARSED_CACHE
+benchmark_rows = _benchmark_rows
+transaction_cost_profile = _transaction_cost_profile

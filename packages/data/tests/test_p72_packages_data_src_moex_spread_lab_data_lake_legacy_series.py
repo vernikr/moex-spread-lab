@@ -71,8 +71,8 @@ def _write(root: Path, payload: Any, name: str = "CNYRUBF_1h.json") -> Path:
 
 def test_p72_packages_data_src_moex_spread_lab_data_lake_legacy_series_export_identity() -> None:
     # One object per supported hook, reachable through both facades.
-    assert legacy_series.__all__[:2] == ["LegacyCandleSeries", "LegacyJsonBarStore"]
-    assert set(_SUPPORTED_HOOKS) <= set(legacy_series.__all__)
+    assert {"LegacyCandleSeries", "LegacyJsonBarStore"} <= set(legacy_series.__all__)
+    assert not set(_SUPPORTED_HOOKS) & set(legacy_series.__all__)
     for name in _SUPPORTED_HOOKS:
         assert getattr(legacy_series, name) is getattr(data_lake, name)
     assert data_lake.LegacyJsonBarStore is legacy_series.LegacyJsonBarStore

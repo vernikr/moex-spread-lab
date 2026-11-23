@@ -197,9 +197,9 @@ def _settle_carry_exit(
     gross: float,
     funding: float,
     fee: float,
-    signals: list[dict[str, Any]],
-    trades: list[dict[str, Any]],
+    output: tuple[list[dict[str, Any]], list[dict[str, Any]]],
 ) -> float:
+    signals, trades = output
     if active is not trade:
         raise W0Error("Carry-выход без соответствующего входа.")
     gross -= funding
@@ -307,7 +307,7 @@ def replay_carry_intents(
         if i in exits:
             trade = exits[i]
             trade_gross = _settle_carry_exit(
-                active, trade, row, trade_gross, funding, fee, signals, trades
+                active, trade, row, trade_gross, funding, fee, (signals, trades)
             )
             increment -= funding
             funding = 0.0

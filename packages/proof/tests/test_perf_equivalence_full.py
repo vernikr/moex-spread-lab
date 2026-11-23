@@ -124,19 +124,19 @@ class ProofPerfEquivalenceFastcoreTests(unittest.TestCase):
             "rows": rows,
         }
         z_vals = compute_rolling_z([r["spread_ticks"] for r in rows], 8, 1)
-        kw = dict(
-            lookback=8,
-            entry_z=1.0,
-            exit_z=0.3,
-            initial_capital=100000.0,
-            decision_delay_bars=1,
-            analysis_role="diagnostic_only",
-            fill="open",
-            funding_swaprates=funding,
-            sizing_intents=True,
-            metrics_only=True,
-            precomputed_z=z_vals,
-        )
+        kw = {
+            "lookback": 8,
+            "entry_z": 1.0,
+            "exit_z": 0.3,
+            "initial_capital": 100000.0,
+            "decision_delay_bars": 1,
+            "analysis_role": "diagnostic_only",
+            "fill": "open",
+            "funding_swaprates": funding,
+            "sizing_intents": True,
+            "metrics_only": True,
+            "precomputed_z": z_vals,
+        }
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MOEX_PROOF_DISABLE_C", None)
             rep_c = run_mean_reversion_baseline(series_obj, **kw)

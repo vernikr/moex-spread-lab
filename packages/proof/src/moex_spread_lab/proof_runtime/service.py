@@ -297,10 +297,7 @@ class ProofService:
         self, selection: dict[str, Any], settings: ResearchSettings, plugin: Any
     ) -> Callable[..., dict[str, Any]]:
         """Pair-plugin route."""
-        return cast(
-            Callable[..., dict[str, Any]],
-            PairPluginRoute(self, selection, settings, plugin).prepare(),
-        )
+        return PairPluginRoute(self, selection, settings, plugin).prepare()
 
     def _price_inputs(
         self, inputs: Any, pair: Any, funding: Any, validation_percent: float, timeframe: str = "1d"

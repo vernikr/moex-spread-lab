@@ -50,7 +50,9 @@ def test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cohort_prepare_hel
     assert helpers._identity is request_validation._identity
     assert helpers.execution_axes is request_validation.execution_axes
     assert helpers.MAX_TARGETS == 1024
-    assert sorted(helpers.__all__) == sorted(FACADE)
+    # The facade hooks stay patchable module attributes, but ``__all__`` is frozen to the
+    # pre-P7.2 wildcard surface, so it must not be used to enumerate them.
+    assert all(hasattr(helpers, name) for name in FACADE)
     for name in FACADE:
         assert getattr(proof_batch, name) is getattr(helpers, name)
     for name in FACADE[1:]:

@@ -18,18 +18,21 @@ if TYPE_CHECKING:
 
 MAX_TARGETS = 1024
 
-# Facade surface: ``proof_batch`` re-exports these names and ``cohort_prepare`` /
-# ``cohort_models`` bind the private hooks, so they are declared as exports even though most
-# of them are not called inside this module.
+# Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
+# bindings they exposed before the strict-typing pass. The private helpers stay module
+# attributes under their historical names for ``proof_batch`` / ``cohort_prepare`` /
+# ``cohort_models``, which bind and patch them here; ``_facade_hooks`` keeps those
+# references live without widening this list.
 __all__ = [
+    "CALENDAR_UNIVERSE",
     "MAX_TARGETS",
-    "_active_seed",
-    "_confirmation",
-    "_filter_training",
-    "_intersect_axes",
-    "_native_request",
-    "_targets",
-    "_translate",
+    "Axis",
+    "InstrumentContext",
+    "W0Error",
+    "annotations",
+    "execution_axes",
+    "get_strategy_axes",
+    "resolve_strategy_registry",
 ]
 
 _Obj = dict[str, Any]
@@ -195,3 +198,17 @@ def _confirmation(settings: _SettingsLike, rejected: list[_Obj], members: Sized)
         "trial_count": 0,
         "selected_parameters": None,
     }
+
+
+# These helpers are never called here, but ``proof_batch`` re-exports them and
+# ``cohort_prepare`` / ``cohort_models`` resolve them through this module at call time.
+# Referencing them keeps that surface live without widening ``__all__``.
+_facade_hooks = (
+    _active_seed,
+    _confirmation,
+    _filter_training,
+    _intersect_axes,
+    _native_request,
+    _targets,
+    _translate,
+)

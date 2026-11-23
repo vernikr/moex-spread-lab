@@ -4,19 +4,25 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_bytes, sha256_file
 
 from ..lake.data_lake import RawResponseArchive
-from .data_archive_candidates import verify_archive
+from . import data_archive_candidates
 from .data_inventory import _policy
 
 RUN_ARTIFACT_SCHEMA = "research-run-artifact.v1"
 _RUN_DETAIL_NAMES = ("daily", "trades")
+# The provider still annotates its manifest as a bare ``dict``; re-binding the same
+# function object under a strict-safe signature keeps the public name and runtime
+# behaviour (import-time binding, monkeypatch semantics) unchanged.
+verify_archive: Callable[[Path, dict[str, Any]], None] = cast(
+    "Callable[[Path, dict[str, Any]], None]", data_archive_candidates.verify_archive
+)
 
 
 def _parse_manifest_expiry(expires_at: Any) -> datetime:
@@ -33,23 +39,31 @@ def _parse_manifest_expiry(expires_at: Any) -> datetime:
 
 def _inspect_run_manifest(manifest_path: Path, now: datetime) -> tuple[str, list[Path]]:
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        parsed: object = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise W0Error(f"cannot read run artifact manifest: {manifest_path}: {exc}") from exc
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != RUN_ARTIFACT_SCHEMA:
+    if not isinstance(parsed, dict):
         raise W0Error(f"unsupported run artifact schema: {manifest_path.parent}")
-    details = manifest.get("details")
-    retention = manifest.get("retention")
-    if not isinstance(details, dict) or not isinstance(retention, dict):
+    manifest = cast(dict[str, Any], parsed)
+    if manifest.get("schema_version") != RUN_ARTIFACT_SCHEMA:
+        raise W0Error(f"unsupported run artifact schema: {manifest_path.parent}")
+    details_obj: object = manifest.get("details")
+    retention_obj: object = manifest.get("retention")
+    if not isinstance(details_obj, dict) or not isinstance(retention_obj, dict):
         raise W0Error(f"run artifact manifest is incomplete: {manifest_path.parent}")
+    details = cast(dict[str, Any], details_obj)
+    retention = cast(dict[str, Any], retention_obj)
     if retention.get("detail_status") != "available":
         return "skip", []
     if retention.get("pinned") is True or _parse_manifest_expiry(retention.get("expires_at")) > now:
         return "retained", []
     files: list[Path] = []
     for name in _RUN_DETAIL_NAMES:
-        record = details.get(name)
-        if not isinstance(record, dict) or not isinstance(record.get("file"), str):
+        record_obj: object = details.get(name)
+        if not isinstance(record_obj, dict):
+            raise W0Error(f"run artifact {name} metadata is invalid: {manifest_path.parent}")
+        record = cast(dict[str, Any], record_obj)
+        if not isinstance(record.get("file"), str):
             raise W0Error(f"run artifact {name} metadata is invalid: {manifest_path.parent}")
         files.append(manifest_path.parent / record["file"])
     return "expired", files

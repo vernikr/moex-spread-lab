@@ -77,3 +77,30 @@ from `61dacf4` to those six files: a CNYRUBF/CRZ6 `funding_only`, 1d,
 ledger reconciliation zero). Each test used one call and no warmup. The
 candidate did not include the artifact or PyArrow-stub changes; these checks
 are workload-specific and do not establish general equivalence or latency.
+
+## Screener decomposition and calendar typing — 2026-11-23
+
+Screener search was split into grid/neighbor construction, trial evaluation and
+plateau selection while keeping the facade and its injectable collaborators.
+The size and `optimize` complexity exceptions for `screener_search.py` were
+removed. A synthetic two-pair validation case was run on both `b667fb7` and
+the refactor: the complete canonical result SHA-256 was
+`8a6d812c93c0ed288790129526c6acf50f716f641776948815e5046dcb2ebf27`,
+with `run_id` `f0b69e50b3ea3ce1` and 27 trials. This is now a regression
+test; it does not establish parity for every legacy screener scenario.
+
+A workstation A/B against `b667fb7` included the 12 changed strategy source
+files from `dae690e`, `aa95079` and `e5cba8b`, not the screener refactor.
+`calendar_proof` matched the full normalized payload and run ID for both
+calendar z-score (`06fb9bd340da3ccb`) and RUONIA convergence
+(`1af0fb578e35154a`); the ledger reconciliations were zero. The Si cohort also
+matched (`381ff296b49b5c52`, 80 trials, six workers). One call was made per
+workload without warmup; differing live/candidate cache states make this
+unsuitable for performance conclusions. The pure-Python/C equivalence suite
+passed; clang was unavailable in the sandbox, so the sanitizer was not run.
+
+A diagnostic-only whole-package strict measurement at `e5cba8b` reported
+3,955 errors: proof 3,111, data 576, strategies 268, accounting 0. The strict
+configuration used for this measurement was temporary; the normal gate still
+includes full accounting and selected modules of the other packages. The target
+remains all four packages, with no new baseline or rule suppression.

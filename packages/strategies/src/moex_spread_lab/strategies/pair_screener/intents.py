@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.contracts import StrategyIntentRun, StrategyPlugin, WindowSnapshot
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
@@ -118,18 +118,21 @@ def _verify_event_fills(
     return event_fills[0], event_fills[1]
 
 
-def _validate_pair_intent(item: Any, st: _PairIntentState) -> dict[str, Any]:
-    if not isinstance(item, Mapping) or not isinstance(item.get("signal"), Mapping):
+def _validate_pair_intent(item: object, st: _PairIntentState) -> dict[str, Any]:
+    if not isinstance(item, Mapping):
         raise W0Error("Некорректный сигнал пары.")
-    signal = item["signal"]
+    intent = cast(Mapping[str, Any], item)
+    if not isinstance(intent.get("signal"), Mapping):
+        raise W0Error("Некорректный сигнал пары.")
+    signal = cast(Mapping[str, Any], intent["signal"])
     try:
-        entry_day = _date(item.get("entry_date"), st.timeframe)
-        exit_day = _date(item.get("exit_date"), st.timeframe)
+        entry_day = _date(intent.get("entry_date"), st.timeframe)
+        exit_day = _date(intent.get("exit_date"), st.timeframe)
         signal_day = _date(signal.get("date"), st.timeframe)
         ei, xi, si = st.index[entry_day], st.index[exit_day], st.index[signal_day]
     except KeyError:
         raise W0Error("Даты сигнала или сделки отсутствуют в окне.") from None
-    side, reason = item.get("side"), item.get("reason")
+    side, reason = intent.get("side"), intent.get("reason")
     if (
         side not in ("long_spread", "short_spread")
         or not isinstance(reason, str)
@@ -156,7 +159,7 @@ def _validate_pair_intent(item: Any, st: _PairIntentState) -> dict[str, Any]:
     if not forced and not st.rows[xi].get("exit_eligible", True):
         raise W0Error("Выход на недопустимом баре.")
     ent_fill, ext_fill = _verify_event_fills(
-        item, (st.rows[ei], st.rows[xi]), (entry_day, exit_day), forced, st
+        intent, (st.rows[ei], st.rows[xi]), (entry_day, exit_day), forced, st
     )
     st.entries.add(entry_day)
     st.exits.add(exit_day)
@@ -190,15 +193,18 @@ def pair_price_intent_trades(
     for row in rows:
         if any(_number(row.get(f"{leg}_volume")) <= 0 for leg in ("near", "far")):
             raise W0Error("Строка пары не прошла проверку объёмов.")
-    result = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
+    result: Any = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
     if (
         not isinstance(result, StrategyIntentRun)
         or result.strategy_id != plugin.strategy_id
         or result.fill != fill
         or result.parameters != params
-        or not isinstance(result.intents, tuple)
     ):
         raise W0Error("Плагин вернул несогласованный набор сигналов.")
+    intents: Any = result.intents
+    if not isinstance(intents, tuple):
+        raise W0Error("Плагин вернул несогласованный набор сигналов.")
+    intent_items = cast(tuple[object, ...], intents)
     delay, quote = PRICE_FILLS[fill]
     st = _PairIntentState(
         rows=rows,
@@ -208,4 +214,4 @@ def pair_price_intent_trades(
         quote=quote,
         multipliers=multipliers,
     )
-    return [_validate_pair_intent(item, st) for item in result.intents]
+    return [_validate_pair_intent(item, st) for item in intent_items]

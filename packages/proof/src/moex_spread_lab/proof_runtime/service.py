@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from functools import cache
+from functools import cache as cache
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.accounting.account_risk import assess_vtb_pair
+from moex_spread_lab.accounting.account_risk import assess_vtb_pair as assess_vtb_pair
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.accounting.position_sizing import size_proof as size_proof
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
@@ -30,25 +30,35 @@ from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
     CALENDAR_UNIVERSE,
     PAIR_UNIVERSE,
-    STRATEGIES,
+)
+from moex_spread_lab.core.universe import (
+    STRATEGIES as STRATEGIES,
 )
 from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, _run_id
-from moex_spread_lab.strategies import pair_fill
-from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow, ProofFunding
+from moex_spread_lab.strategies import pair_fill as pair_fill
+from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
+from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding as ProofFunding
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerInputs,
-    _pair,
-    _parameters,
-    execution_settings,
     pair_price_inputs,
 )
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    _pair as _pair,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    _parameters as _parameters,
+)
 from moex_spread_lab.strategies.pair_screener.pair_screener import catalog as _pair_catalog
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    execution_settings as execution_settings,
+)
 
 from .calendar_adapter import calendar_proof
-from .funding_engine import FundingSpec, funding_inputs
-from .funding_payloads import run_funding
-from .mean_reversion_payloads import run_mean_reversion
-from .mean_reversion_spec import MeanReversionSpec
+from .funding_engine import FundingSpec as FundingSpec
+from .funding_engine import funding_inputs
+from .funding_payloads import run_funding as run_funding
+from .mean_reversion_payloads import run_mean_reversion as run_mean_reversion
+from .mean_reversion_spec import MeanReversionSpec as MeanReversionSpec
 from .pair_plugins import PairPluginRoute
 from .payload_tools import (
     benchmark_marks,
@@ -61,6 +71,7 @@ from .payload_tools import (
     result_label,
     sha256_bytes,
 )
+from .service_pair import prepare_pair
 from .service_sizing import prepare_automatic
 
 PROOF_SCHEMA = "execution-proof.v1"
@@ -364,96 +375,9 @@ class ProofService:
         sizing_intents=False,
         carry_plugin=None,
     ) -> Callable[..., dict[str, Any]]:
-        pair = _pair(selection.get("pair"))
-        near, far = pair["near"], pair["far"]
-        strategy = selection.get("strategy")
-        if not isinstance(strategy, str) or (strategy not in STRATEGIES and carry_plugin is None):
-            raise W0Error("неизвестная стратегия")
-        screen_strategy = "funding_only" if carry_plugin is not None else strategy
-        inputs = self.screener_inputs
-        funding = ProofFunding(inputs)
-        _validate_pair_screen(inputs, pair, funding, screen_strategy, settings)
-
-        @cache
-        def risk_for(quantity):
-            risk = assess_vtb_pair(
-                inputs.contracts,
-                near,
-                far,
-                quantity=quantity,
-                initial_capital=settings.initial_capital_rub,
-            )
-            if not settings.allow_failed_capital and not risk["summary"]["all_scenarios_passed"]:
-                raise W0Error("пара не проходит стресс-экран рабочего капитала")
-            return risk
-
-        risk_for(execution_settings(selection)["quantity"])
-        instruments = _load_instruments(inputs.contracts)
-        terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
-        dates, prices = _benchmark_marks(inputs.benchmark)
-        mean_reversion = strategy == "mean_reversion"
-        prepared = (
-            self._price_inputs(
-                inputs, pair, funding, settings.validation_percent, settings.timeframe
-            )
-            if mean_reversion
-            else self._funding_inputs(inputs, pair, funding, settings.validation_percent)
+        return prepare_pair(
+            self, selection, settings, sizing_intents, carry_plugin, sys.modules[__name__]
         )
-
-        # Reuse immutable input hashes throughout this request's Optuna trials.
-        source_hashes = {
-            "benchmark_sha256": _sha256_bytes(inputs.benchmark),
-            "contracts_sha256": _sha256_bytes(inputs.contracts),
-            "historical_contracts_sha256": _sha256_bytes(
-                inputs.contracts.parent / "historical-contracts.json"
-            ),
-        }
-        prepared = (*prepared, source_hashes)
-        pair_cache: dict[str, Any] = {
-            "through": {},
-            "signal_dates": {},
-            "z": {},
-            "series": {},
-            "window_meta": {},
-            "funding_through": {},
-            "carry_plugin": carry_plugin,
-        }
-
-        def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
-            execution = {
-                **execution_settings(request),
-                "sizing_intents": sizing_intents,
-                "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill),
-                "initial_capital_rub": settings.initial_capital_rub,
-            }
-            _validate_pair_request(request, strategy, pair, carry_plugin, sizing_intents)
-            params = (
-                _parameters(request, strategy)
-                if carry_plugin is None
-                else _plugin_parameters(carry_plugin, request, pair, settings)
-            )
-            common = {
-                "inputs": inputs,
-                "pair": pair,
-                "execution": execution,
-                "params": params,
-                "terms": terms,
-                "risk": risk_for(execution["quantity"]),
-                "prepared": prepared,
-                "through": through,
-                "cache": pair_cache,
-                "benchmark_dates": dates,
-                "benchmark_prices": prices,
-            }
-            result = (
-                run_mean_reversion(MeanReversionSpec(**common), metrics_only=metrics_only)
-                if mean_reversion
-                else run_funding(FundingSpec(**common), metrics_only=metrics_only)
-            )
-            _validate_carry_result(result, carry_plugin, metrics_only)
-            return result
-
-        return replay
 
     def _prepare_daily_pair_plugin(self, selection, settings, plugin):
         """Pair-plugin route: plugin intents, separate price and accounting calculation."""

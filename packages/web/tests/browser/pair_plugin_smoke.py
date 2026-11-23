@@ -75,15 +75,23 @@ CALENDAR = DemoCalendar()
         }
         raise SystemExit(subprocess.call([sys.executable, __file__], env=env))
 
-from _harness import serve_fixture, temporary_root
+from _harness import exact_trials, scenario_isolation, serve_fixture, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 from proof_fixtures import funding_winner
 
-with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, funding_winner) as url:
-    browser = pw.chromium.launch()
-    try:
+MESSAGE = "Drop-in pair, carry, and calendar plugin catalog, actual proof, parameter editing and cohort controls: OK"
+
+
+def scenario(browser):
+    # Exact-trial opt-out: the search must report 80 trials for the demo family.
+    with (
+        exact_trials(),
+        temporary_root() as root,
+        serve_fixture(root, funding_winner) as url,
+        scenario_isolation(browser),
+    ):
         page = browser.new_page(viewport={"width": 1450, "height": 950})
         install_stream_spy(page)
         errors = []
@@ -150,8 +158,9 @@ with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fund
         expect(cal_page.locator("#group-strategy")).to_have_value("demo_ui_calendar")
         expect(cal_page.locator("#group-cal_extra")).to_have_value("6")
         assert not errors, errors
-        print(
-            "Drop-in pair, carry, and calendar plugin catalog, actual proof, parameter editing and cohort controls: OK"
-        )
-    finally:
-        browser.close()
+
+
+if __name__ == "__main__":
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

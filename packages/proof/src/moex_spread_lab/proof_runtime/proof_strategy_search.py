@@ -25,8 +25,8 @@ from .proof_batch import (
 )
 from .proof_kernel import _tune, resolve_seed
 from .strategy_catalog import get_proof_adapter_ids, resolve_strategy_registry
+from .trial_budget import budget
 
-TRIALS_PER_STRATEGY = 80
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 
 
@@ -178,7 +178,7 @@ def strategy_search(
         "execution_policy": "native_rules",
         "targets": targets,
         "target_count": len(targets),
-        "trials_per_strategy": TRIALS_PER_STRATEGY,
+        "trials_per_strategy": budget(),
         "price_fill": price_fill,
         "funding_fill": "same_day_settlement",
         "alternatives": alternatives,
@@ -230,7 +230,7 @@ def strategy_search(
 
     winner, top, records = None, -float("inf"), []
     total_prepared = len(prepared)
-    total_budget = total_prepared * TRIALS_PER_STRATEGY
+    total_budget = total_prepared * budget()
     try:
         for p_idx, (proposed, group, item) in enumerate(prepared):
             check_cancelled()
@@ -241,7 +241,7 @@ def strategy_search(
                 group.seed,
                 group.axes,
                 min(len(case.split.training) for _, case in group.members),
-                trials=TRIALS_PER_STRATEGY,
+                trials=budget(),
                 random_seed=base_seed,
                 # Own derived seed per family: two families never share a sequence.
                 seed_label=group.active,
@@ -251,11 +251,10 @@ def strategy_search(
                     else lambda done, total, pi=p_idx, sl=s_label: on_progress(
                         {
                             "stage": "search",
-                            "done": pi * TRIALS_PER_STRATEGY + done,
+                            "done": pi * budget() + done,
                             "total": total_budget,
                             "percent": round(
-                                12.0
-                                + 76.0 * ((pi * TRIALS_PER_STRATEGY + done) / max(total_budget, 1)),
+                                12.0 + 76.0 * ((pi * budget() + done) / max(total_budget, 1)),
                                 1,
                             ),
                             "label": f"Optuna ({sl}, {pi + 1}/{total_prepared}): испытание {done}/{total}",

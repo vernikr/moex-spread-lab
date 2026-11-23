@@ -8,9 +8,9 @@ import csv
 import io
 from pathlib import Path
 
-from _harness import serve_fixture, temporary_root
+from _harness import exact_trials, scenario_isolation, serve_fixture, temporary_root
 from period_settings_smoke import ready
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 from proof_fixtures import fixture
 
@@ -119,13 +119,21 @@ def run(browser, url):
     context.close()
 
 
+MESSAGE = "Automatic size, shared slippage, migration, two tabs, group search, fills and CSV: OK"
+
+
+def scenario(browser):
+    # Exact trials: the assertions read search-derived UI state (selection, lamps, ledger).
+    with (
+        exact_trials(),
+        temporary_root() as root,
+        serve_fixture(root, fixture) as url,
+        scenario_isolation(browser),
+    ):
+        run(browser, url)
+
+
 if __name__ == "__main__":
-    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print(
-                "Automatic size, shared slippage, migration, two tabs, group search, fills and CSV: OK"
-            )
-        finally:
-            browser.close()
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

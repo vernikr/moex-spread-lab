@@ -7,8 +7,8 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 
-from _harness import serve_fixture, temporary_root
-from playwright.sync_api import expect, sync_playwright
+from _harness import note_app_startup, scenario_isolation, serve_fixture, temporary_root
+from playwright.sync_api import expect
 
 from proof_fixtures import fixture
 
@@ -66,6 +66,7 @@ def expect_api_json(page, suffix, timeout=120000):
 
 def ready(page, basis):
     expect(page.locator("#period-result")).to_be_visible(timeout=20000)
+    note_app_startup(page)  # first payload per page = the app-startup phase term
     expect(page.locator("#period-result")).to_have_attribute("data-basis", basis, timeout=20000)
     expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
     expect(page.locator("#render-progress")).to_have_attribute("aria-hidden", "true", timeout=20000)
@@ -171,11 +172,15 @@ def run(browser, url):
     context.close()
 
 
+MESSAGE = "Global settings, both routes/universes, holdout, chart, journal and CSV: OK"
+
+
+def scenario(browser):
+    with temporary_root() as root, serve_fixture(root, fixture) as url, scenario_isolation(browser):
+        run(browser, url)
+
+
 if __name__ == "__main__":
-    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print("Global settings, both routes/universes, holdout, chart, journal and CSV: OK")
-        finally:
-            browser.close()
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

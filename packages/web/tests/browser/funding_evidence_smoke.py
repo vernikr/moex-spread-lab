@@ -3,9 +3,9 @@
 import csv
 from pathlib import Path
 
-from _harness import serve, temporary_root
+from _harness import exact_trials, scenario_isolation, serve, temporary_root
 from period_settings_smoke import expect_api_json, install_stream_spy, ready
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 
 def download(page):
@@ -73,23 +73,33 @@ def run(page, url, root, days):
     assert not errors, errors
 
 
-if __name__ == "__main__":
+MESSAGE = "Funding journal, CSV, dated reasons, unchanged checked cohort: OK"
+
+
+def build(root):
     from funding_fixtures import change, fixture, weekend
 
-    def build(root):
-        days = fixture(root)
-        weekend(root)
-        change(
-            root,
-            "CNYRUBF",
-            {days[16]: 0, days[17]: -0.04, days[18]: None, days[19]: None, days[20]: 0.04},
-        )
-        return days
+    days = fixture(root)
+    weekend(root)
+    change(
+        root,
+        "CNYRUBF",
+        {days[16]: 0, days[17]: -0.04, days[18]: None, days[19]: None, days[20]: 0.04},
+    )
+    return days
 
-    with sync_playwright() as pw, temporary_root() as root:
-        days = build(root)
-        with serve(root) as url, pw.chromium.launch() as browser:
+
+def scenario(browser):
+    # Exact-trial opt-out: an inadmissible cohort must report exactly 0 trials.
+    with exact_trials(), temporary_root() as root:
+        days = build(root)  # unique builder: a template copy would only add a copy
+        with serve(root) as url, scenario_isolation(browser):
             pg = browser.new_page(viewport={"width": 1440, "height": 900})
             install_stream_spy(pg)
             run(pg, url, root, days)
-            print("Funding journal, CSV, dated reasons, unchanged checked cohort: OK")
+
+
+if __name__ == "__main__":
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

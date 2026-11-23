@@ -2,7 +2,7 @@
 
 import json
 
-from _harness import serve_fixture, temporary_root
+from _harness import exact_trials, scenario_isolation, serve_fixture, temporary_root
 from period_settings_smoke import (
     apply,
     expect_api_json,
@@ -10,7 +10,7 @@ from period_settings_smoke import (
     install_stream_spy,
     ready,
 )
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 PAIR = "pair_screen||CNYRUBF/CRZ6"
 CAL = "calendar_native|SR|SRH3/SRM3"
@@ -196,13 +196,21 @@ def run(browser, url):
     page.close()
 
 
+MESSAGE = "Checkbox hierarchy, focus, scoped All, modal/cancel/confirm, cross-universe application, holdout and fallback: OK"
+
+
+def scenario(browser):
+    # Exact-trial opt-out: the common winning strategy is asserted by name.
+    with (
+        exact_trials(),
+        temporary_root() as root,
+        serve_fixture(root, fixture) as url,
+        scenario_isolation(browser),
+    ):
+        run(browser, url)
+
+
 if __name__ == "__main__":
-    with sync_playwright() as pw, temporary_root() as root, serve_fixture(root, fixture) as url:
-        browser = pw.chromium.launch()
-        try:
-            run(browser, url)
-            print(
-                "Checkbox hierarchy, focus, scoped All, modal/cancel/confirm, cross-universe application, holdout and fallback: OK"
-            )
-        finally:
-            browser.close()
+    from _harness import standalone
+
+    standalone(scenario, MESSAGE)

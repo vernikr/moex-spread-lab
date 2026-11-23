@@ -6,13 +6,14 @@ import hashlib
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.costs import tariff_profile
+from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.settings import read_settings
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
-from moex_spread_lab.core.universe import MAX_QUANTITY, STRATEGIES
+from moex_spread_lab.core.universe import MAX_QUANTITY
 
 from ..funding_carry.carry import build_carry_strategy, build_carry_study, fetch_history
 from ..funding_carry.proof_funding import FundingWindow
@@ -25,11 +26,25 @@ from .result_builder import (
     mean_reversion_notes,
 )
 
+STRATEGIES: dict[str, dict[str, Any]] = cast(dict[str, dict[str, Any]], _universe.STRATEGIES)
+
+__all__ = [
+    "STRATEGIES",
+    "_parameters",
+    "build_result",
+    "execution_settings",
+]
+
+
+def _mapping_payload(value: object) -> dict[str, Any] | None:
+    """Return ``value`` when it is a runtime ``dict``; external callers may pass other types."""
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
 
 def _parameters(selection: dict[str, Any], strategy: str) -> dict[str, float | int]:
     defaults: dict[str, Any] = dict(STRATEGIES[strategy]["parameters"])
-    provided = selection.get("parameters", {})
-    if not isinstance(provided, dict) or set(provided) - set(defaults):
+    provided = _mapping_payload(selection.get("parameters", {}))
+    if provided is None or set(provided) - set(defaults):
         raise ScreenerError("неизвестный параметр стратегии")
     values: dict[str, Any] = {**defaults, **provided}
     lookback = values["lookback"]
@@ -216,14 +231,15 @@ def build_result(
     validation_share: float | None = None,
     fetch_fn: Callable[..., dict[str, Any]] = fetch_history,
 ) -> dict[str, Any]:
-    if not isinstance(selection, dict):
+    checked_selection = _mapping_payload(selection)
+    if checked_selection is None:
         raise ScreenerError("выбор должен быть объектом")
-    pair = _pair(selection.get("pair"))
-    strategy = selection.get("strategy")
+    pair = _pair(checked_selection.get("pair"))
+    strategy = checked_selection.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("неизвестная стратегия")
-    execution = execution_settings(selection)
-    params = _parameters(selection, strategy)
+    execution = execution_settings(checked_selection)
+    params = _parameters(checked_selection, strategy)
     settings = read_settings(inputs.root)
     timeframe = str(settings["timeframe"])
     spec = get_timeframe(timeframe)

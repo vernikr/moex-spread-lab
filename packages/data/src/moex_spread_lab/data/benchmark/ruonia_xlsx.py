@@ -27,7 +27,7 @@ def _extract_xlsx_pairs(rows_iter: Any, date_index: int, rate_index: int) -> lis
     return result
 
 
-def _read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
+def read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
     if not raw:
         return []
     try:
@@ -52,7 +52,7 @@ def _read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
         workbook.close()
 
 
-def _parse_ruonia_pair(
+def parse_ruonia_pair(
     date_text: Any, rate_text: Any, start: date, finish: date
 ) -> tuple[str, dict[str, Any]] | None:
     try:
@@ -74,3 +74,8 @@ def _parse_ruonia_pair(
         "source_ticker": "CBR_RUONIA",
         "source_kind": "synthetic_proxy",
     }
+
+
+# Preserve legacy private import names.
+_read_ruonia_xlsx = read_ruonia_xlsx
+_parse_ruonia_pair = parse_ruonia_pair

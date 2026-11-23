@@ -28,8 +28,12 @@ from .lineage_math import (
 )
 from .ruonia_xlsx import (
     RUONIA_HTML_PATTERN,
-    _parse_ruonia_pair,
-    _read_ruonia_xlsx,
+)
+from .ruonia_xlsx import (
+    parse_ruonia_pair as _parse_ruonia_pair,
+)
+from .ruonia_xlsx import (
+    read_ruonia_xlsx as _read_ruonia_xlsx,
 )
 
 TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())

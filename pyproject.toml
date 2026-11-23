@@ -228,6 +228,7 @@ typeCheckingMode = "standard"
 strict = [
     "packages/core/src",
     "packages/data/src/moex_spread_lab/data/benchmark/lineage_math.py",
+    "packages/data/src/moex_spread_lab/data/benchmark/ruonia_xlsx.py",
     "packages/accounting/src/moex_spread_lab/accounting/account_risk.py",
     "packages/accounting/src/moex_spread_lab/accounting/research.py",
     "packages/accounting/src/moex_spread_lab/accounting/research_intake.py",

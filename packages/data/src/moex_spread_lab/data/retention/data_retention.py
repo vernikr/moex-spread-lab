@@ -20,6 +20,15 @@ from .data_inventory import DATA_INVENTORY_SCHEMA
 DATA_ARCHIVE_SCHEMA = "data-archive.v1"
 _ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
 _REBUILDABLE_CACHE = "rebuildable_cache"
+# Path-safety and empty-parent hooks stay private by name but are declared surface
+# of this module: ``data_archive_candidates`` imports them (issue #67). Declaring
+# them in ``__all__`` keeps the contract explicit without changing the callables.
+__all__ = [
+    "DATA_ARCHIVE_SCHEMA",
+    "_prune_empty_parents",
+    "_safe_data_path",
+    "_validate_archive_path",
+]
 
 
 class _CacheEntry(TypedDict):

@@ -141,3 +141,9 @@ class _Terms:
             row = self.rows[index]
             return self.rate * (row["near"] + row["far"]) * self.point(index) * quantity
         return self.margin * quantity
+
+
+# Public internal-package names; the private names remain for compatibility.
+positive = _positive
+money = _money
+Terms = _Terms

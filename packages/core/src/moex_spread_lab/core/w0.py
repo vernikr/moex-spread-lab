@@ -109,11 +109,15 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
-def _run_id(  # pyright: ignore[reportUnusedFunction]  # Cross-package helper used by accounting/proof.
+def _run_id(
     identity: dict[str, Any],
 ) -> str:
     canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+# Public name for cross-package use; retain the existing private entry point.
+run_id = _run_id
 
 
 def _validate_contract_number(

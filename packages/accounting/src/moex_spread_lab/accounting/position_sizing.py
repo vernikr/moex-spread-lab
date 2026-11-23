@@ -7,16 +7,23 @@ from typing import Any
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 
-from .sizing_fast import _STD_COST_KEYS, _size_proof_fast_c
+from .sizing_fast import STD_COST_KEYS as _STD_COST_KEYS
+from .sizing_fast import size_proof_fast_c as _size_proof_fast_c
 from .sizing_replay import finalize_sized_proof, replay_sizing_series
 from .sizing_terms import (
     AUTO_SIZING,
     SIZING_POLICY,
-    _money,
-    _positive,
-    _Terms,
     automatic,
     maximum_quantity,
+)
+from .sizing_terms import (
+    Terms as _Terms,
+)
+from .sizing_terms import (
+    money as _money,
+)
+from .sizing_terms import (
+    positive as _positive,
 )
 
 

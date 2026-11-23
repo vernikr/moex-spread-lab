@@ -8,7 +8,10 @@ from typing import Any
 from moex_spread_lab.core.w0 import W0Error
 
 from .sizing_report import ReplayState, finalize_sized_proof
-from .sizing_terms import AUTO_SIZING, _money, _positive, _Terms, maximum_quantity
+from .sizing_terms import AUTO_SIZING, maximum_quantity
+from .sizing_terms import Terms as _Terms
+from .sizing_terms import money as _money
+from .sizing_terms import positive as _positive
 
 
 @dataclass(frozen=True)

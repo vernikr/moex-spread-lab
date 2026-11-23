@@ -8,9 +8,14 @@ from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error
 
-from .sizing_terms import AUTO_SIZING, _money, _positive, _Terms
+from .sizing_terms import AUTO_SIZING
+from .sizing_terms import Terms as _Terms
+from .sizing_terms import money as _money
+from .sizing_terms import positive as _positive
 
 _STD_COST_KEYS = frozenset({"exchange_clearing", "broker", "slippage"})
+
+type AcceptedTrade = tuple[int, int, float, float, float, float, float, float, float, float, int]
 
 type ScanColumns = tuple[
     list[str],
@@ -159,7 +164,7 @@ def _resolve_scalar_bounds(
 
 def _hydrate_accepted_trades(
     intent_list: list[dict[str, Any]],
-    acc_tuples: list[tuple[Any, ...]],
+    acc_tuples: list[AcceptedTrade],
     marks: dict[str, float],
 ) -> list[dict[str, Any]]:
     accepted: list[dict[str, Any]] = []
@@ -264,3 +269,8 @@ def _size_proof_fast_c(
     proof["ledger"] = ledger_or_summary
     proof["sizing"] = {"initial_capital_rub": initial}
     return proof
+
+
+# Public internal-package names; preserve the original private entry points.
+STD_COST_KEYS = _STD_COST_KEYS
+size_proof_fast_c = _size_proof_fast_c

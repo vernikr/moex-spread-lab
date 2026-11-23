@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from moex_spread_lab.core.w0 import _run_id
+from moex_spread_lab.core.w0 import run_id as _run_id
 
 from .costs import cost_totals as _cost_totals
-from .sizing_terms import AUTO_SIZING, SIZING_POLICY, _money, _Terms
+from .sizing_terms import AUTO_SIZING, SIZING_POLICY
+from .sizing_terms import Terms as _Terms
+from .sizing_terms import money as _money
 
 
 @dataclass

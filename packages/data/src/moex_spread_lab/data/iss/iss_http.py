@@ -131,6 +131,11 @@ def _rows(block: Any, name: str) -> list[dict[str, Any]]:
     return rows
 
 
+# Public aliases preserve the historical private entry points.
+rows = _rows
+url = _url
+
+
 def fetch_json_with_raw(
     url: str,
     *,

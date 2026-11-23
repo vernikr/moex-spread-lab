@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from moex_spread_lab.data.lake.data_lake import LegacyJsonBarStore, MarketDataStore, ParquetBarStore
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
@@ -11,6 +12,14 @@ from moex_spread_lab.web.server import ScreenerInputs
 
 
 class StoreCutoverTests(unittest.TestCase):
+    def test_record_path_preserves_private_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ParquetBarStore(Path(directory))
+            expected = Path(directory) / "override.parquet"
+            with patch.object(store, "_record_path", return_value=expected) as resolve:
+                self.assertEqual(store.record_path("bars.parquet"), expected)
+                resolve.assert_called_once_with("bars.parquet")
+
     def _write_series(
         self,
         root: Path,

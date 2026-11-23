@@ -128,6 +128,10 @@ class ParquetBarStore:
         candidate = Path(value)
         return candidate if candidate.is_absolute() else self.root / candidate
 
+    def record_path(self, value: str) -> Path:
+        """Resolve a manifest path, preserving the private override hook."""
+        return self._record_path(value)
+
     def record_for_legacy_path(self, legacy_path: Path) -> dict[str, Any] | None:
         """Return the registered record only for this exact legacy source path."""
         try:

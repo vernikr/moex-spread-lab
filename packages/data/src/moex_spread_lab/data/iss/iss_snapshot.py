@@ -15,9 +15,13 @@ from .iss_http import (
     ISS_MODULE_SCHEMA,
     PROJECT_RIGHTS_STATUS,
     IssIntakeError,
-    _rows,
-    _url,
     fetch_json_with_raw,
+)
+from .iss_http import (
+    rows as _rows,
+)
+from .iss_http import (
+    url as _url,
 )
 
 

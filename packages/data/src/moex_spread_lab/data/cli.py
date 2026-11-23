@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import write_json
 from moex_spread_lab.data.iss.catalog import (
@@ -165,7 +165,7 @@ def _load_or_fetch_benchmark_source(
 ) -> dict[str, Any]:
     path = cache_dir / f"{ticker}.json"
     try:
-        cached = json.loads(path.read_text(encoding="utf-8"))
+        cached = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         cached = None
     if (

@@ -77,7 +77,7 @@ class MarketDataStore:
         if record is None:
             return (*key, "legacy_json")
         try:
-            bars_path = self.parquet._record_path(str(record["bars_path"]))
+            bars_path = self.parquet.record_path(str(record["bars_path"]))
             bars_stat = bars_path.stat()
             manifest_stat = self.parquet.manifest_path.stat()
         except (KeyError, OSError):

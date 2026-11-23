@@ -7,10 +7,12 @@ import json
 import os
 import tarfile
 import tempfile
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
+from moex_spread_lab.core.json_types import JsonObject, JsonValue, as_str_dict
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_file
 
 from .data_inventory import DATA_INVENTORY_SCHEMA
@@ -20,16 +22,68 @@ _ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
 _REBUILDABLE_CACHE = "rebuildable_cache"
 
 
+class _CacheEntry(TypedDict):
+    """One verified rebuildable-cache file selected for archival."""
+
+    path: str
+    sha256: str
+    logical_bytes: int
+    allocated_bytes: int
+    dataset: JsonValue
+
+
+class _ArchivePlan(TypedDict):
+    """Side-effect-free description of the archive that would be written."""
+
+    schema_version: str
+    status: str
+    root: str
+    inventory_manifest: str
+    archive: str
+    classification: str
+    file_count: int
+    logical_bytes: int
+    allocated_bytes: int
+    requires_apply: bool
+    files: list[_CacheEntry]
+
+
 class DataRetentionError(W0Error):
     """Raised when a local-data archive cannot be safely created."""
 
 
-def _load_inventory_manifest(path: Path, root: Path) -> dict[str, Any]:
+def _manifest_files(manifest: JsonObject) -> list[JsonValue]:
+    """Return the validated ``files`` array of an inventory manifest."""
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise DataRetentionError("data inventory manifest files must be a list")
+    return files
+
+
+def _manifest_int(entry: JsonObject, key: str, default: int) -> int:
+    """Read an inventory counter with the exact semantics of ``int(entry.get(key, default))``.
+
+    Manifest counters are JSON scalars; the cast only restates that boundary so the
+    conversion stays identical for every value the decoder can produce.
+    """
+    value: JsonValue = entry.get(key, default)
+    return int(cast(bool | int | float | str, value))
+
+
+def _load_inventory_manifest(path: Path, root: Path) -> JsonObject:
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
+        decoded: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise DataRetentionError(f"cannot read data inventory manifest: {path}: {exc}") from exc
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != DATA_INVENTORY_SCHEMA:
+    if not isinstance(decoded, dict):
+        raise DataRetentionError("unsupported data inventory manifest schema")
+    # ``as_str_dict`` rejects non-string keys; decoded JSON objects always pass it.
+    manifest = as_str_dict(
+        cast(dict[object, object], decoded),
+        label="data inventory manifest",
+        error=DataRetentionError,
+    )
+    if manifest.get("schema_version") != DATA_INVENTORY_SCHEMA:
         raise DataRetentionError("unsupported data inventory manifest schema")
     if manifest.get("hashes_included") is not True:
         raise DataRetentionError("data inventory manifest must include SHA-256 hashes")
@@ -40,9 +94,7 @@ def _load_inventory_manifest(path: Path, root: Path) -> dict[str, Any]:
         raise DataRetentionError("data inventory manifest has no valid root") from exc
     if manifest_root != expected_root:
         raise DataRetentionError("data inventory manifest belongs to a different repository root")
-    files = manifest.get("files")
-    if not isinstance(files, list):
-        raise DataRetentionError("data inventory manifest files must be a list")
+    _manifest_files(manifest)
     return manifest
 
 
@@ -65,10 +117,10 @@ def _safe_data_path(root: Path, relative: str) -> Path:
     return path
 
 
-def _selected_entries(manifest: dict[str, Any], root: Path) -> list[dict[str, Any]]:
-    selected: list[dict[str, Any]] = []
+def _selected_entries(manifest: JsonObject, root: Path) -> list[_CacheEntry]:
+    selected: list[_CacheEntry] = []
     seen: set[str] = set()
-    for entry in manifest["files"]:
+    for entry in _manifest_files(manifest):
         if not isinstance(entry, dict) or entry.get("classification") != _REBUILDABLE_CACHE:
             continue
         relative = entry.get("path")
@@ -88,13 +140,13 @@ def _selected_entries(manifest: dict[str, Any], root: Path) -> list[dict[str, An
         if sha256_file(source) != digest:
             raise DataRetentionError(f"manifest cache hash no longer matches: {relative}")
         selected.append(
-            {
-                "path": relative,
-                "sha256": digest,
-                "logical_bytes": int(entry.get("logical_bytes", source.stat().st_size)),
-                "allocated_bytes": int(entry.get("allocated_bytes", source.stat().st_size)),
-                "dataset": entry.get("dataset"),
-            }
+            _CacheEntry(
+                path=relative,
+                sha256=digest,
+                logical_bytes=_manifest_int(entry, "logical_bytes", source.stat().st_size),
+                allocated_bytes=_manifest_int(entry, "allocated_bytes", source.stat().st_size),
+                dataset=entry.get("dataset"),
+            )
         )
         seen.add(relative)
     return sorted(selected, key=lambda item: item["path"])
@@ -110,10 +162,9 @@ def _validate_archive_path(root: Path, archive_path: Path) -> Path:
     raise DataRetentionError("archive path must be outside the repository data directory")
 
 
-def plan_rebuildable_cache_archive(
+def _plan_rebuildable_cache_archive(
     root: Path, manifest_path: Path, archive_path: Path
-) -> dict[str, Any]:
-    """Validate a pinned manifest and return a no-side-effect cache archive plan."""
+) -> _ArchivePlan:
     resolved_root = root.resolve()
     manifest = _load_inventory_manifest(manifest_path, resolved_root)
     archive = _validate_archive_path(resolved_root, archive_path)
@@ -135,7 +186,15 @@ def plan_rebuildable_cache_archive(
     }
 
 
-def _archive_manifest(plan: dict[str, Any]) -> dict[str, Any]:
+def plan_rebuildable_cache_archive(
+    root: Path, manifest_path: Path, archive_path: Path
+) -> dict[str, Any]:
+    """Validate a pinned manifest and return a no-side-effect cache archive plan."""
+    # The public facade keeps its ``dict[str, Any]`` contract, unchanged for callers.
+    return cast(dict[str, Any], _plan_rebuildable_cache_archive(root, manifest_path, archive_path))
+
+
+def _archive_manifest(plan: _ArchivePlan) -> dict[str, Any]:
     return {
         "schema_version": DATA_ARCHIVE_SCHEMA,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -169,7 +228,7 @@ def _verify_archive_member(handle: tarfile.TarFile, name: str, expected_hash: st
         raise DataRetentionError(f"archived member hash mismatch: {name}")
 
 
-def _verify_archive(archive_path: Path, files: list[dict[str, Any]]) -> None:
+def _verify_archive(archive_path: Path, files: Sequence[_CacheEntry]) -> None:
     expected = {f"data/{entry['path']}": entry["sha256"] for entry in files}
     with tarfile.open(archive_path, "r:gz") as handle:
         names = set(handle.getnames())
@@ -182,9 +241,10 @@ def _verify_archive(archive_path: Path, files: list[dict[str, Any]]) -> None:
             _verify_archive_member(handle, name, expected_hash)
 
 
-def _prune_empty_parents(root: Path, files: list[dict[str, Any]]) -> None:
+def _prune_empty_parents(root: Path, files: Sequence[Mapping[str, object]]) -> None:
+    """Remove now-empty cache directories; callers pass any entry carrying ``path``."""
     data_root = (root / "data").resolve()
-    candidates = {(_safe_data_path(root, entry["path"])).parent for entry in files}
+    candidates = {_safe_data_path(root, cast(str, entry["path"])).parent for entry in files}
     for directory in sorted(candidates, key=lambda item: len(item.parts), reverse=True):
         current = directory
         while current != data_root:
@@ -199,7 +259,7 @@ def archive_rebuildable_caches(
     root: Path, manifest_path: Path, archive_path: Path
 ) -> dict[str, Any]:
     """Archive verified page caches, then remove only the verified originals."""
-    plan = plan_rebuildable_cache_archive(root, manifest_path, archive_path)
+    plan: _ArchivePlan = _plan_rebuildable_cache_archive(root, manifest_path, archive_path)
     files = plan["files"]
     if not files:
         return {**plan, "status": "nothing_to_archive", "requires_apply": False}

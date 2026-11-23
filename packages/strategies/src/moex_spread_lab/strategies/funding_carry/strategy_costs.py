@@ -5,10 +5,11 @@ from __future__ import annotations
 from bisect import bisect_left
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, read_hashed_json
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
+from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
 from .study import CarryStrategyError, _round
 
@@ -28,19 +29,26 @@ def _benchmark_rows(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
     if cached is not None:
         return cached
     try:
-        payload, digest = read_hashed_json(
+        raw_payload, digest = read_hashed_json(
             resolved, error=CarryStrategyError, label="LQDT benchmark"
         )
     except CarryStrategyError:
         raise
     except W0Error as exc:
         raise CarryStrategyError(str(exc)) from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != "lqdt-lineage.v1":
+    payload = cast(Any, raw_payload)
+    if (
+        not isinstance(payload, dict)
+        or cast(dict[str, Any], payload).get("schema_version") != "lqdt-lineage.v1"
+    ):
         raise CarryStrategyError("unsupported LQDT benchmark schema")
     rows: dict[str, dict[str, Any]] = {}
-    for row in payload.get("rows", []):
-        if not isinstance(row, dict) or not isinstance(row.get("date"), str):
+    for raw_row in cast(dict[str, Any], payload).get("rows", []):
+        if not isinstance(raw_row, dict) or not isinstance(
+            cast(dict[str, Any], raw_row).get("date"), str
+        ):
             raise CarryStrategyError("malformed LQDT benchmark row")
+        row = cast(dict[str, Any], raw_row)
         try:
             price = float(row["price"])
         except (KeyError, TypeError, ValueError) as exc:

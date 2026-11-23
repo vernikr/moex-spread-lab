@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from scripts import change_scope, docs_scan
+from scripts import change_scope, docs_scan, verify_record
 
 from test_architecture_dag import ALLOWED_LAYER_TARGETS
 
@@ -321,3 +321,14 @@ def test_scan_docs_files_flags_problems(tmp_path: Path) -> None:
 
     findings_clean, _ = docs_scan.scan_docs_files([str(clean)])
     assert findings_clean == []
+
+
+def test_credential_scanner_does_not_match_sk_substrings_in_normal_prose(tmp_path: Path) -> None:
+    prose = tmp_path / "prose.md"
+    prose.write_text("task-to-verified-main is a workflow metric\n", encoding="utf-8")
+
+    findings, _ = docs_scan.scan_docs_files([str(prose)])
+
+    assert findings == []
+    assert verify_record.sanitize("task-to-verified-main") == "task-to-verified-main"
+    assert verify_record.sanitize("sk-1234567890abcdef") == "sk-<redacted>"

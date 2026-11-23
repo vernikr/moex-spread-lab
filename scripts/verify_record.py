@@ -42,7 +42,7 @@ _REDACTIONS = (
     (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "ghp_<redacted>"),
     (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "github_pat_<redacted>"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._~+/-]+=*", re.I), "Bearer <redacted>"),
-    (re.compile(r"sk-[A-Za-z0-9_-]{10,}"), "sk-<redacted>"),
+    (re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{10,}"), "sk-<redacted>"),
     (re.compile(r"AKIA[0-9A-Z]{16}"), "AKIA<redacted>"),
     (
         re.compile(r"((?:token|secret|password|api[_-]?key)\W{1,4})[^\s,;&]{8,}", re.I),

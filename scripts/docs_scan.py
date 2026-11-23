@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 2_000_000
 _CREDENTIAL_RE = re.compile(
-    r"(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{10,}"
+    r"(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{10,}"
     r"|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._~+/-]{16,})"
 )
 _CONFLICT_MARKERS = ("<<<<<<<", ">>>>>>>", "|||||||")

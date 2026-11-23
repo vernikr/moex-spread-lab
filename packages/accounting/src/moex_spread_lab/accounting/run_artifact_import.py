@@ -9,7 +9,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
 
@@ -81,7 +81,7 @@ def _validate_import_args(
     legacy: Path,
     output_dir: Path,
     expected_sha256: str | None,
-    retention_days: int,
+    retention_days: object,
 ) -> tuple[Path, Path, bytes, str, dict[str, Any], str]:
     if (
         isinstance(retention_days, bool)
@@ -103,6 +103,7 @@ def _validate_import_args(
         report = json.loads(raw, object_pairs_hook=_unique_object, parse_constant=_reject_constant)
         if not isinstance(report, dict):
             raise RunArtifactError("legacy report must be an object")
+        report = cast(dict[str, Any], report)
         _validate_report(report)
         report_digest = sha256_bytes(canonical_bytes(report))
     except (ValueError, TypeError, UnicodeDecodeError) as exc:

@@ -6,7 +6,7 @@ import contextlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -215,7 +215,8 @@ class ParquetBarStore:
             return pq.read_table(
                 bars_path,
                 columns=list(columns) if columns is not None else None,
-                filters=filters,
+                # Stub 19.4 rejects valid string comparison filters.
+                filters=cast(Any, filters),
             )
         return table
 

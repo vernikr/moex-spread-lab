@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -61,12 +62,16 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any]:
         raise RunArtifactError(f"cannot read {label}: {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise RunArtifactError(f"{label} root must be an object: {path}")
-    return value
+    return cast(dict[str, Any], value)
 
 
 def _write_parquet(path: Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    table = pa.Table.from_pylist(rows) if rows else pa.table({})
-    pq.write_table(table, path, compression="zstd", version="2.6")
+    # Narrow the stubs' partially unknown optional arguments to the calls we use.
+    from_rows = cast(Callable[[list[dict[str, Any]]], pa.Table], pa.Table.from_pylist)
+    empty_table = cast(Callable[[dict[str, Any]], pa.Table], pa.table)
+    write_table = cast(Callable[..., None], pq.write_table)
+    table = from_rows(rows) if rows else empty_table({})
+    write_table(table, path, compression="zstd", version="2.6")
     return {
         "file": path.name,
         "row_count": table.num_rows,
@@ -107,9 +112,12 @@ def _validate_report(
     details: dict[str, list[dict[str, Any]]] = {}
     for name in _DETAIL_NAMES:
         rows = report.get(name)
-        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        if not isinstance(rows, list):
             raise RunArtifactError(f"analytical baseline {name} must be a list of objects")
-        details[name] = [dict(row) for row in rows]
+        rows = cast(list[Any], rows)
+        if any(not isinstance(row, dict) for row in rows):
+            raise RunArtifactError(f"analytical baseline {name} must be a list of objects")
+        details[name] = [dict(row) for row in cast(list[dict[str, Any]], rows)]
     return summary, details
 
 
@@ -133,7 +141,10 @@ def _collect_detail_files(artifact_dir: Path, manifest: dict[str, Any]) -> list[
     files: list[Path] = []
     for name in _DETAIL_NAMES:
         record = manifest["details"].get(name)
-        if not isinstance(record, dict) or not isinstance(record.get("file"), str):
+        if not isinstance(record, dict):
+            raise RunArtifactError(f"run artifact {name} metadata is invalid: {artifact_dir}")
+        record = cast(dict[str, Any], record)
+        if not isinstance(record.get("file"), str):
             raise RunArtifactError(f"run artifact {name} metadata is invalid: {artifact_dir}")
         files.append(artifact_dir / record["file"])
     return files
@@ -192,3 +203,14 @@ def gc_run_artifacts(runs_root: Path, *, dry_run: bool = True) -> dict[str, Any]
         "retained_artifact_count": retained,
         "planned_detail_files": planned,
     }
+
+
+# Shared names within accounting; old private names remain importable.
+DETAIL_NAMES = _DETAIL_NAMES
+atomic_write_json = _atomic_write_json
+manifest = _manifest
+now = _now
+read_json = _read_json
+timestamp = _timestamp
+validate_report = _validate_report
+write_parquet = _write_parquet

@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import (
@@ -20,25 +22,42 @@ from moex_spread_lab.core.w0 import (
 )
 
 from .run_artifact_store import (
-    _DETAIL_NAMES,
     BASELINE_SCHEMA,
     RUN_ARTIFACT_SCHEMA,
     RunArtifactError,
-    _atomic_write_json,
-    _manifest,
-    _now,
-    _read_json,
-    _timestamp,
-    _validate_report,
-    _write_parquet,
     gc_run_artifacts,
     pin_run_artifact,
+)
+from .run_artifact_store import (
+    DETAIL_NAMES as _DETAIL_NAMES,
+)
+from .run_artifact_store import (
+    atomic_write_json as _atomic_write_json,
+)
+from .run_artifact_store import (
+    manifest as _manifest,
+)
+from .run_artifact_store import (
+    now as _now,
+)
+from .run_artifact_store import (
+    read_json as _read_json,
+)
+from .run_artifact_store import (
+    timestamp as _timestamp,
+)
+from .run_artifact_store import (
+    validate_report as _validate_report,
+)
+from .run_artifact_store import (
+    write_parquet as _write_parquet,
 )
 
 
 def _extract_input_hashes(input_provenance: Any) -> dict[str, str]:
     if not isinstance(input_provenance, dict):
         return {}
+    input_provenance = cast(dict[str, Any], input_provenance)
     return {
         key: value
         for key, value in input_provenance.items()
@@ -140,7 +159,12 @@ def _verify_manifest_identity(artifact_dir: Path, manifest: dict[str, Any]) -> N
     identity_details: dict[str, str] = {}
     for name in _DETAIL_NAMES:
         record = manifest["details"].get(name)
-        if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+        if not isinstance(record, dict):
+            raise RunArtifactError(
+                f"run artifact {name} identity metadata is invalid: {artifact_dir}"
+            )
+        record = cast(dict[str, Any], record)
+        if not isinstance(record.get("sha256"), str):
             raise RunArtifactError(
                 f"run artifact {name} identity metadata is invalid: {artifact_dir}"
             )
@@ -183,6 +207,7 @@ def _verify_single_detail_table(
     record = manifest["details"].get(name)
     if not isinstance(record, dict):
         raise RunArtifactError(f"run artifact is missing {name} metadata: {artifact_dir}")
+    record = cast(dict[str, Any], record)
     filename = record.get("file")
     if not isinstance(filename, str) or Path(filename).name != filename:
         raise RunArtifactError(f"run artifact {name} path is unsafe: {artifact_dir}")
@@ -191,7 +216,9 @@ def _verify_single_detail_table(
         raise RunArtifactError(f"run artifact {name} file is missing: {path}")
     if sha256_file(path) != record.get("sha256"):
         raise RunArtifactError(f"run artifact {name} SHA-256 differs from manifest: {artifact_dir}")
-    table = pq.ParquetFile(path).read()
+    # The stubs leave optional read columns unknown; this call uses no arguments.
+    read = cast(Callable[[], pa.Table], pq.ParquetFile(path).read)
+    table = read()
     if table.num_rows != record.get("row_count") or table.column_names != record.get("columns"):
         raise RunArtifactError(f"run artifact {name} table differs from manifest: {artifact_dir}")
     return table.to_pylist()

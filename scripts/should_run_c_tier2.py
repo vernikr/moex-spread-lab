@@ -1,72 +1,43 @@
 #!/usr/bin/env python3
-"""Determine whether C99 Tier 2 static-analysis & sanitizer checks should run in CI."""
+"""Determine whether C99 Tier 2 static-analysis & sanitizer checks should run in CI.
+
+Thin wrapper kept for backwards compatibility: the Tier 2 patterns and the
+decision logic live in ``scripts/change_scope.py`` (the S2 path router), this
+script keeps its CLI and delegates to it (plan S2: ``should_run_c_tier2.py``
+keeps its CLI and delegates).
+"""
 
 from __future__ import annotations
 
 import argparse
-import fnmatch
-import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # allow `from scripts...` when executed as a plain script
 
-TIER2_PATTERNS = (
-    ".clang-tidy",
-    "packages/core/src/moex_spread_lab/core/_fastcore.c",
-    "packages/core/src/moex_spread_lab/core/_fastcore_loader.py",
-    "packages/core/tests/test_fastcore_sanitizers.py",
-    "packages/proof/tests/test_fastcore_parity.py",
-    "scripts/gen_compile_commands.py",
-    "scripts/run_sanitized_pytest.py",
-    "scripts/should_run_c_tier2.py",
-    ".github/workflows/ci.yml",
+from scripts.change_scope import (  # noqa: E402
+    NULL_SHA,
+    TIER2_PATTERNS,
+    _conservative_ci_reason,  # re-exported for backwards compatibility
+    decide_tier2,
+    git_diff_names,
+    matches_c_tier2,
 )
 
-NULL_SHA = "0" * 40
+__all__ = [
+    "NULL_SHA",
+    "ROOT",
+    "TIER2_PATTERNS",
+    "_conservative_ci_reason",
+    "decide_tier2",
+    "git_diff_names",
+    "main",
+    "matches_c_tier2",
+]
 
-
-def matches_c_tier2(paths: list[str]) -> bool:
-    """Return True if any changed repository-relative path requires C99 Tier 2 checks."""
-    for raw in paths:
-        norm = raw.strip().replace("\\", "/").removeprefix("./").lstrip("/")
-        if not norm:
-            continue
-        if any(fnmatch.fnmatch(norm, pat) for pat in TIER2_PATTERNS):
-            return True
-    return False
-
-
-def _git_diff_names(base: str, head: str, root: Path) -> list[str] | None:
-    res = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}..{head}"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if res.returncode != 0:
-        return None
-    return [line for line in res.stdout.splitlines() if line.strip()]
-
-
-def decide_tier2(
-    *,
-    event_name: str,
-    base_sha: str = "",
-    head_sha: str = "HEAD",
-    root: Path = ROOT,
-) -> tuple[bool, str]:
-    """Return `(should_run, reason)` for GitHub Actions or local execution."""
-    if event_name in {"schedule", "workflow_dispatch"}:
-        return True, f"event={event_name} runs full Tier 2 unconditionally"
-    if not base_sha or base_sha == NULL_SHA:
-        return True, "missing base SHA; running Tier 2 conservatively"
-    changed = _git_diff_names(base_sha, head_sha, root)
-    if changed is None:
-        return True, f"git diff {base_sha}..{head_sha} unavailable; running Tier 2 conservatively"
-    if matches_c_tier2(changed):
-        return True, "C99 / sanitizer / CI paths changed"
-    return False, f"no C99 Tier 2 paths in {len(changed)} changed file(s)"
+# Backwards-compatible alias (was ``_git_diff_names`` in an earlier version).
+_git_diff_names = git_diff_names
 
 
 def main(argv: list[str] | None = None) -> int:

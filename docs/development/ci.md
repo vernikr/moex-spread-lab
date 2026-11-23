@@ -4,14 +4,17 @@ Continuous integration runs on every push to `main`, on pull requests, weekly (M
 
 ## Layout
 
-- `architecture-gate` (`ubuntu-latest`) runs first (`<2 s` script runtime). After syncing the locked workspace, `scripts/architecture_gate.py` checks the full package/import DAG, the no-legacy-shim rule for internal code/tests, built-in and synthetic strategy discovery, `validate-manifest`, and `secret-scan --tracked-only`.
-- `code-health` (`ubuntu-latest`, 5-minute timeout) runs in parallel with the test jobs so it adds `0 s` to critical-path CI wall time:
+- `scope` runs first (plan S2). On `ubuntu-latest` with system `python3`, no `uv sync`: `scripts/change_scope.py` routes the PR/push diff (or `git diff base..head`) and emits `docs_only`, the `packages` test-leg list, `has_packages`, `run_tier2` and `perf_equivalence`, plus a printed reason per decision. `schedule`, `workflow_dispatch`, a missing/null base SHA and any router or git error resolve to full (all six legs). Full logic lives in `scripts/change_scope.py` (stdlib only).
+- `architecture-gate` (`ubuntu-latest`) always runs (`<2 s` script runtime). After syncing the locked workspace, `scripts/architecture_gate.py` checks the full package/import DAG, the no-legacy-shim rule for internal code/tests, built-in and synthetic strategy discovery, `validate-manifest`, and `secret-scan --tracked-only`.
+- `code-health` (`ubuntu-latest`, 5-minute timeout) always runs, in parallel with the test jobs so it adds `0 s` to critical-path CI wall time:
   - Always runs Tier 1 (`./scripts/check_health.sh`: `ruff check`, `ruff format --check`, `basedpyright` strict/baselined typecheck, `vulture`, `scripts/code_health_gate.py` LOC/token/cognitive/C/parity/exception ratchets, and `scripts/architecture_gate.py`).
-  - Conditionally runs Tier 2 (`scripts/gen_compile_commands.py` + `clang-tidy` + `scripts/run_sanitized_pytest.py` under ASan + UBSan + LSan) whenever `scripts/should_run_c_tier2.py` detects changes to `_fastcore.c`, `_fastcore_loader.py`, `.clang-tidy`, sanitizer/parity scripts/tests, or on `schedule` / `workflow_dispatch`.
-- `package-tests` is a six-member matrix (`core`, `data`, `accounting`, `strategies`, `proof`, `web`). Each job runs only `packages/<member>/tests` with `pytest -n auto --dist loadfile`, and uploads its `--durations=15` report as a seven-day artifact. Parallel package jobs avoid a single shared duration JSON; xdist schedules whole files dynamically within each package.
-- `perf-equivalence` runs `packages/proof/tests/test_perf_equivalence.py` separately so bit-for-bit numerical and hash parity remains a merge gate.
-- Every job uses `astral-sh/setup-uv`, caches by `uv.lock`, and runs `uv sync --frozen`. Test jobs also fail if the C99 `_fastcore` extension cannot compile (there is no silent Python fallback in CI).
+  - Conditionally runs Tier 2 (`scripts/gen_compile_commands.py` + `clang-tidy` + `scripts/run_sanitized_pytest.py` under ASan + UBSan + LSan) whenever `scripts/should_run_c_tier2.py` detects changes to `_fastcore.c`, `_fastcore_loader.py`, `.clang-tidy`, sanitizer/parity scripts/tests, or on `schedule` / `workflow_dispatch`. (`should_run_c_tier2.py` keeps its CLI and delegates the pattern match to `scripts/change_scope.py`; the `scope` job emits its own `run_tier2` for consumers that want one.)
+- `package-tests` is a matrix over the legs selected by `scope` (`packages/<member>/tests` with `pytest -n auto --dist loadfile`, `--durations=15` artifact). Reverse-dependency closure: `core -> all six`, `data/accounting -> {self, strategies, proof, web}`, `strategies -> {self, proof, web}`, `proof -> {self, web}`, `web -> {web}` — the table lives in `scripts/change_scope.py` and is pinned to the architecture gate's layer DAG by `packages/core/tests/test_change_scope.py`. Docs-only changes run **zero** package legs (the matrix is skipped, `ci-ok` stays green). Non-`.py` package files and new/deleted files run full legs without testmon deselection; unmatched paths (`pyproject.toml`, `uv.lock`, `.github/`, `config/`, `fixtures/`, root `tests/`, `scripts/`, root `src/`, ...) resolve to all six legs.
+- `perf-equivalence` runs `packages/proof/tests/test_perf_equivalence.py` separately so bit-for-bit numerical and hash parity remains a merge gate. It is skipped only for docs-only and web-only changes (scope decides), never otherwise.
+- `ci-ok` is the final always-running job (`if: always()`). It fails when any needed job failed or was cancelled; skipped jobs are fine. It gives one stable required-check name for branch protection.
+- Every job except `scope` and `ci-ok` uses `astral-sh/setup-uv`, caches by `uv.lock`, and runs `uv sync --frozen`. Test jobs also fail if the C99 `_fastcore` extension cannot compile (there is no silent Python fallback in CI).
 - `concurrency` cancels superseded runs on the same ref.
+- Routing rules and the docs-only definition (`docs/**` plus root-level `*.md`; Markdown inside `packages/**` is not docs) live in `scripts/change_scope.py`; `packages/core/tests/test_change_scope.py` covers docs-only detection, package scoping, non-`.py` fallback, unknown-path -> full, and table drift. Routing is advisory only: the weekly scheduled run stays full as a backstop for routing mistakes.
 
 Pytest's `testpaths` includes only the six package test directories. Root `tests/` contains shared synthetic fixture modules used by package and browser tests; it is importable through pytest's `pythonpath` but is not independently collected.
 
@@ -25,12 +28,19 @@ Pytest's `testpaths` includes only the six package test directories. Root `tests
 
 ```sh
 uv sync --frozen
-./scripts/check_health.sh
+./scripts/check_health.sh                    # full Tier 1 gate
+uv run python scripts/verify.py --profile quick     # changed-files lint/type/ratchet only
+uv run python scripts/verify.py --profile affected  # docs-scan or router-scoped tests (advisory)
+uv run python scripts/verify.py --profile full      # full gate + full suite
+uv run python scripts/change_scope.py               # show the routing decision for the working tree
+uv run python scripts/change_scope.py --format json
 uv run python scripts/gen_compile_commands.py
 uv run python scripts/run_sanitized_pytest.py -v packages/proof/tests/test_perf_equivalence.py
 uv run pytest packages/proof/tests -q
 uv run pytest -q -n auto --dist loadfile
 ```
+
+`verify.py` composes the S0/S1 pieces instead of replacing them; every step is wrapped by `scripts/verify_record.py` (plan S0 measurement records). The `affected` profile is advisory: it labels its pytest leg `affected (advisory)`, runs the architecture gate and the always-run set (subprocess/CLI/`proof_pool` tests, plus `test_perf_equivalence.py`/`test_fastcore_parity.py` when `core`/`proof`/`accounting` changed) with testmon disabled, and never substitutes for the full gate before a push. Use `quick` for inner-loop feedback and `full` before pushing.
 
 Use a package-specific path for focused work (for example `packages/strategies/tests`). The full suite uses the six configured `testpaths`; no central duration file needs refreshing or committing. For the sequential reference path, run `uv run pytest -q`.
 

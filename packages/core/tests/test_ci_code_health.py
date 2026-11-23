@@ -138,6 +138,12 @@ def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
     assert "./scripts/check_health.sh" in ci_yml
     assert "scripts/should_run_c_tier2.py" in ci_yml
     assert "scripts/run_sanitized_pytest.py" in ci_yml
+    # S2 scoped CI: path router gates the package matrix and perf-equivalence;
+    # ci-ok gives one stable required-check name (plan agent-performance-2/S2).
+    assert "scripts/change_scope.py" in ci_yml
+    assert "scope:" in ci_yml
+    assert "has_packages" in ci_yml
+    assert "ci-ok" in ci_yml
 
     assert 'cron: "30 4 * * 1"' in weekly_yml
     assert "jscpd" in weekly_yml

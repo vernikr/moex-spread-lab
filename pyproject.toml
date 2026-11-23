@@ -81,6 +81,7 @@ dev = [
     "lizard>=1.17,<2",
     "pytest>=8.3,<10",
     "pytest-subtests>=0.14,<1",
+    "pytest-testmon>=2.3,<3",
     "pytest-xdist>=3.6,<4",
     "ruff>=0.9,<1",
     "vulture>=2.14,<3",

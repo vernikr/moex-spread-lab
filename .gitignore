@@ -42,3 +42,6 @@ reports/code-health/
 
 # Verification measurement records (plan S0, local only)
 reports/perf/
+
+# pytest-testmon databases (plan S2, per worktree)
+.testmondata*

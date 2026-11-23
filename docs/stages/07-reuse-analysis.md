@@ -19,7 +19,7 @@ The assessment changed the Stage-6 baseline in price roles, ISS ingestion, divid
 
 The original compilation is stored at [`docs/research/reuse/СКРИНЕР_epub.md`](../research/reuse/СКРИНЕР_epub.md). It is intentionally preserved in Russian and was not converted into a product specification. The repository copy is an intake artifact, not proof that the described product exists.
 
-The inspected `moex-tool` also contains a concrete money-market lineage in `data/fetcher.py` and its README: `CBR_RUONIA → FXMM → VTBM → LQDT`, with RUSFAR as an overlapping rate source. It corrects the VTBM 1000:1 internal split and stitches daily returns backwards from the latest LQDT price. This is reusable benchmark methodology, not observed LQDT history before the fund/ticker existed; the new project records the layers separately in `docs/development/benchmark-lineage.md`.
+The inspected `moex-tool` also contains a concrete money-market lineage in `data/fetcher.py` and its README: `CBR_RUONIA → FXMM → VTBM → LQDT`, with RUSFAR as an overlapping rate source. It corrects the VTBM 1000:1 internal split and stitches daily returns backwards from the latest LQDT price. This is reusable benchmark methodology, not observed LQDT history before the fund/ticker existed; the new project records the layers separately in [benchmark lineage](../../packages/data/docs/benchmark-lineage.md).
 
 `calendar-spread` declares MIT licensing. No license file was found in the inspected `moex-tool` or `futures-screener-ui-2` snapshots; their code is therefore not copied into this repository and is treated as reference material unless a separate reuse permission is established.
 

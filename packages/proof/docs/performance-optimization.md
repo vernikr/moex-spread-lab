@@ -16,7 +16,7 @@
 
 ### 2.1 Точный файловый кэш по отпечатку `(resolved_path, st_mtime_ns, st_size)`
 
-Повторное чтение и разбор JSON-артефактов устранено с помощью ограниченных LRU-кэшей `_HashedJSONCache` (`src/moex_spread_lab/w0.py`), ключом которых выступает тройка `(resolved_path, st_mtime_ns, st_size)`:
+Повторное чтение и разбор JSON-артефактов устранено с помощью ограниченных LRU-кэшей `_HashedJSONCache` (`packages/core/src/moex_spread_lab/core/w0.py`), ключом которых выступает тройка `(resolved_path, st_mtime_ns, st_size)`:
 
 * `read_hashed_json` (`w0.py`) — кэширует разобранный JSON и его SHA-256 (`_HASHED_JSON_CACHE`) для модулей `analytics.py`, `screener.py`, `validation.py`, `ledger.py` и `proof.py`;
 * `_BENCHMARK_MARKS_CACHE`, `_INSTRUMENTS_CACHE`, `_SHA256_CACHE` (`proof.py`) — исключают повторную загрузку и разбор `current-intake.json`, `historical-contracts.json`, `lqdt-lineage.json` и хэшей внутри когорты и воркеров;
@@ -55,7 +55,7 @@
 
 ## 5. C99-акселератор горячих циклов (`_fastcore`)
 
-Наиболее плотные числовые циклы и преобразования структур данных вынесены в автономный CPython C99-модуль `src/moex_spread_lab/_fastcore.c`, не требующий внешних сборочных зависимостей (`Cython`, `setuptools`).
+Наиболее плотные числовые циклы и преобразования структур данных вынесены в автономный CPython C99-модуль `packages/core/src/moex_spread_lab/core/_fastcore.c`, не требующий внешних сборочных зависимостей (`Cython`, `setuptools`).
 
 ### 5.1 Ленивая сборка и безопасный откат
 
@@ -72,7 +72,7 @@
 
 ## 6. Параллельный пул воркеров (`CohortWorkerPool`)
 
-Для пакетных расчётов (`batch_search`, `strategy_search`, `checked_plateau`, `window_summaries`) используется долгоживущий пул процессов `CohortWorkerPool` (`src/moex_spread_lab/proof_pool.py`), запускаемый в контексте `spawn`:
+Для пакетных расчётов (`batch_search`, `strategy_search`, `checked_plateau`, `window_summaries`) используется долгоживущий пул процессов `CohortWorkerPool` (`packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py`), запускаемый в контексте `spawn`:
 
 * **Слотовая архитектура и пороги активации** — для каждого слота создаётся отдельный `ProcessPoolExecutor(max_workers=1)` с явной адресацией шардов (на macOS по умолчанию ограничивается физическими ядрами `min(6, cpu // 2)` во избежание Hyper-Threading-конкуренции, на остальных платформах — до `min(8, cpu)`, переопределяется `MOEX_PROOF_WORKERS`). Пул подключается при наличии не менее `MIN_POOL_WINDOWS` (3) валидных окон и достаточного суммарного числа баров (`>= 1500` или `N >= 4`; либо принудительно через `MOEX_PROOF_FORCE_POOL=1`).
 * **LPT-балансировка и Sticky Sharding** — окна распределяются по воркерам жадным алгоритмом Longest Processing Time на основе закэшированного манифеста запечатанного H1-хранилища или размера файлов свечей, а внутри каждого шарда упорядочиваются по каноническому индексу `idx`. Экземпляры `StudyWindow` создаются внутри назначенных воркеров один раз при инициализации когорты (`_worker_init_cohort`) и сохраняются в памяти воркера (`_WORKER_COHORTS`) на весь цикл оптимизации, оценки плато и формирования финальных отчётов.

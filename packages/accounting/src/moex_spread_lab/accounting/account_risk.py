@@ -193,6 +193,6 @@ def assess_vtb_pair(
                 "docs/research/results/received/R01/R01.md",
                 "docs/research/results/received/R02/R02.md",
             ],
-            "working_profile": "docs/development/vtb-account-risk-profile.md",
+            "working_profile": "packages/accounting/docs/vtb-account-risk-profile.md",
         },
     }

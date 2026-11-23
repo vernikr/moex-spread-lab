@@ -6,7 +6,7 @@
 `NORM_QUALITY` / `NORM_BASE`, суффиксы `· 8.6` в опциях списка `#norm` и блок
 `#norm-score` под подсказкой. Сами трансформации нормализации (raw, rm/ols/ou,
 z-скоры, GARCH, Kalman, stochastic) остались; их контракт — в
-`docs/development/execution-proof.md`, раздел «Spread display & causal
+`packages/proof/docs/execution-proof.md`, раздел «Spread display & causal
 normalization».
 
 Что было снято (методика от 2026-11-16, для истории): оценка 0–10 считалась по

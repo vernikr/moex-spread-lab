@@ -5,6 +5,18 @@ Checks changed Markdown/docs files for trailing whitespace, unresolved merge
 conflict markers and credential-shaped tokens. Stdlib only; used by
 ``scripts/verify.py --profile affected`` for docs-only changes and runnable
 standalone. Exit 0 = clean, 1 = findings, 2 = usage error.
+
+``--links`` additionally verifies that every relative Markdown link and anchor
+resolves inside the repository. ``--repo --links`` checks the whole authored docs
+surface (``README.md``, ``AGENTS.md``, ``docs/**`` and ``packages/*/docs/**``) and
+skips the style scan, which is reserved for changed files. Run it standalone, as
+``uv run python scripts/docs_scan.py --repo --links``, before any move or rename;
+``packages/core/tests/test_change_scope.py`` pins the surface and the exclusions.
+
+Preserved evidence is excluded from link checking because it is reproduced as
+received and must not be rewritten: ``docs/inputs/`` (bytes pinned by
+``docs/inputs/manifest.json``), ``docs/research/results/received/`` and
+``docs/research/reuse/``.
 """
 
 from __future__ import annotations
@@ -20,6 +32,20 @@ _CREDENTIAL_RE = re.compile(
     r"|AKIA[0-9A-Z]{16}|Bearer\s+[A-Za-z0-9._~+/-]{16,})"
 )
 _CONFLICT_MARKERS = ("<<<<<<<", ">>>>>>>", "|||||||")
+_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+# Verbatim/redacted user inputs: pinned by docs/inputs/manifest.json, never edited.
+_EXCLUDED_PREFIXES = (
+    "docs/inputs/",
+    "docs/research/results/received/",
+    "docs/research/reuse/",
+)
+_REPO_DOC_GLOBS = (
+    "README.md",
+    "AGENTS.md",
+    "docs/**/*.md",
+    "packages/*/docs/**/*.md",
+)
 
 
 def _norm(path: str) -> str:
@@ -50,6 +76,62 @@ def _scan_text(display: str, text: str) -> list[str]:
     return findings
 
 
+def repo_doc_paths() -> list[str]:
+    """The repository-wide docs surface covered by ``--repo``."""
+    found: list[str] = []
+    for pattern in _REPO_DOC_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            display = path.relative_to(ROOT).as_posix()
+            if path.is_file() and not display.startswith(_EXCLUDED_PREFIXES):
+                found.append(display)
+    return list(dict.fromkeys(found))
+
+
+def _anchor_slug(heading: str) -> str:
+    slug = re.sub(r"[^\w\- ]", "", heading.strip().lower())
+    return slug.replace(" ", "-")
+
+
+def _anchors(path: Path) -> set[str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    return {_anchor_slug(match.group(1)) for match in _HEADING_RE.finditer(text)}
+
+
+def _is_external(target: str) -> bool:
+    return target.startswith(("http://", "https://", "mailto:"))
+
+
+def _resolve_link(path: Path, location: str) -> Path:
+    """Resolve a link target; an empty location means "this document"."""
+    return path if not location else (path.parent / location).resolve()
+
+
+def _anchor_missing(cache: dict[Path, set[str]], resolved: Path, anchor: str) -> bool:
+    if resolved not in cache:
+        cache[resolved] = _anchors(resolved) if resolved.is_file() else set()
+    return anchor.lower() not in cache[resolved]
+
+
+def _link_findings(display: str, path: Path, text: str) -> list[str]:
+    findings: list[str] = []
+    anchors: dict[Path, set[str]] = {}
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for match in _LINK_RE.finditer(line):
+            target = match.group(1)
+            if _is_external(target):
+                continue
+            location, _, anchor = target.partition("#")
+            resolved = _resolve_link(path, location)
+            if not resolved.exists():
+                findings.append(f"{display}:{lineno}: unresolved link target {target}")
+            elif anchor and _anchor_missing(anchors, resolved, anchor):
+                findings.append(f"{display}:{lineno}: unresolved link anchor {target}")
+    return findings
+
+
 def scan_docs_files(paths: list[str]) -> tuple[list[str], list[str]]:
     """Return ``(findings, notes)`` for the given paths (``path[:line]: message``)."""
     findings: list[str] = []
@@ -71,11 +153,50 @@ def scan_docs_files(paths: list[str]) -> tuple[list[str], list[str]]:
     return findings, notes
 
 
+def scan_links(paths: list[str]) -> tuple[list[str], list[str]]:
+    """Return ``(findings, notes)`` for relative Markdown links in ``paths``."""
+    findings: list[str] = []
+    notes: list[str] = []
+    for raw in paths:
+        path, display = _resolve(raw)
+        if display.startswith(_EXCLUDED_PREFIXES):
+            notes.append(f"{display}: preserved as received; links not checked")
+            continue
+        if not path.is_file():
+            notes.append(f"{display}: not on disk (deleted?); skipped")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            notes.append(f"{display}: unreadable ({exc}); skipped")
+            continue
+        findings.extend(_link_findings(display, path, text))
+    return findings, notes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("paths", nargs="+", help="docs files to scan")
+    parser.add_argument("paths", nargs="*", help="docs files to scan")
+    parser.add_argument("--repo", action="store_true", help="scan the repository-wide docs surface")
+    parser.add_argument(
+        "--links", action="store_true", help="also verify relative links and anchors"
+    )
     args = parser.parse_args(argv)
-    findings, notes = scan_docs_files(args.paths)
+    if args.repo:
+        # Authored repository docs surface: link integrity only. Style findings are
+        # reported for changed files, so preserved evidence is never rewritten.
+        args.links = True
+        paths = repo_doc_paths()
+        findings, notes = [], []
+    else:
+        paths = list(args.paths)
+        if not paths:
+            parser.error("no paths given; pass files or --repo")
+        findings, notes = scan_docs_files(paths)
+    if args.links:
+        link_findings, link_notes = scan_links(paths)
+        findings.extend(link_findings)
+        notes.extend(link_notes)
     for note in notes:
         print(f"docs-scan: note: {note}")
     for finding in findings:

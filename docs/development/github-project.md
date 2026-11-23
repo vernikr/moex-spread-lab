@@ -22,9 +22,10 @@ Project board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com
 
 | Artifact | Canonical location | Owns | Must NOT duplicate |
 |---|---|---|---|
-| **Architecture, accounting & proof contracts** | `docs/stages/*`, `docs/development/execution-proof.md`, `packages/*/docs/*` | Stage-9 invariants (`G1`–`G12`), `run_id` / hash rules, module boundaries | Live task status (`in progress`, checkboxes) |
+| **Architecture, accounting & proof contracts** | `docs/stages/*`, `packages/proof/docs/execution-proof.md`, `packages/*/docs/*` | Stage-9 invariants (`G1`–`G12`), `run_id` / hash rules, module boundaries | Live task status (`in progress`, checkboxes) |
 | **Owner decisions & risk limits** | `docs/decisions.md`, `docs/risk/pilot-policy.md` | Confirmed `A-01..A-14`, `BR-10`, capital/slippage rules | Open engineering backlog |
 | **Cross-cutting external blockers** | `docs/blockers/bNN-*.md` | Multi-issue broker/tariff/account facts (`b01`, `b02`) | Per-issue execution status |
+| **Module guides** | `packages/<name>/docs/` | Durable guidance owned by one package (contracts, invariants, boundaries, verification) | Cross-cutting governance that belongs in root `docs/development/` |
 | **Durable technical references, runbooks, and formal stage artifacts** | `docs/`, `packages/*/docs/*` (only when retained as lasting engineering/research knowledge) | Stable contracts, reusable procedures, approved decisions, enduring research evidence | Project plans, active checklists, temporary execution reports, mutable delivery status |
 | **Project plans and work items** | **GitHub Issues** (`vernikr/moex-spread-lab`), including comments | Epic plan, goal/scope/non-goals, acceptance criteria, verification gate, work-package slices | Tracked Markdown/JSON copies of the plan or live checklist |
 | **Execution reports and delivery history** | **GitHub Issue bodies/comments** | Dated verification/bench evidence, completed work, checkpoints, deviations, deferrals and historical reports | Duplicate repository report files or generated result snapshots |

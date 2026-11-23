@@ -18,18 +18,21 @@ Project board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com
 
 ## 1. Source-of-truth boundaries
 
-`moex-spread-lab` separates durable engineering knowledge from live operational queue state so agents never maintain duplicate checklists across Markdown files and GitHub:
+`moex-spread-lab` separates durable engineering knowledge from project plans/reports and the live operational queue. GitHub is the sole source of truth for project plans and execution history; the repository must not keep a second copy of those records.
 
 | Artifact | Canonical location | Owns | Must NOT duplicate |
 |---|---|---|---|
 | **Architecture, accounting & proof contracts** | `docs/stages/*`, `docs/development/execution-proof.md`, `packages/*/docs/*` | Stage-9 invariants (`G1`–`G12`), `run_id` / hash rules, module boundaries | Live task status (`in progress`, checkboxes) |
 | **Owner decisions & risk limits** | `docs/decisions.md`, `docs/risk/pilot-policy.md` | Confirmed `A-01..A-14`, `BR-10`, capital/slippage rules | Open engineering backlog |
 | **Cross-cutting external blockers** | `docs/blockers/bNN-*.md` | Multi-issue broker/tariff/account facts (`b01`, `b02`) | Per-issue execution status |
-| **Multi-slice technical designs** | `docs/development/*.md` | Target architecture, measurements, rationale, trade-offs | Per-slice live status tables (link the `[Epic]` Issue instead) |
-| **Semantic work items** | **GitHub Issues** (`vernikr/moex-spread-lab`) | Goal, scope, non-goals, acceptance criteria, verification gate, sub-slice checklist, checkpoint/deviation/deferral comments | Long architectural prose already in `docs/` |
+| **Durable technical references, runbooks, and formal stage artifacts** | `docs/`, `packages/*/docs/*` (only when retained as lasting engineering/research knowledge) | Stable contracts, reusable procedures, approved decisions, enduring research evidence | Project plans, active checklists, temporary execution reports, mutable delivery status |
+| **Project plans and work items** | **GitHub Issues** (`vernikr/moex-spread-lab`), including comments | Epic plan, goal/scope/non-goals, acceptance criteria, verification gate, work-package slices | Tracked Markdown/JSON copies of the plan or live checklist |
+| **Execution reports and delivery history** | **GitHub Issue bodies/comments** | Dated verification/bench evidence, completed work, checkpoints, deviations, deferrals and historical reports | Duplicate repository report files or generated result snapshots |
 | **Operational queue** | **GitHub Project #2** (`orgs/vernikr/projects/2`) | Live `Status`, `Work Kind`, `Priority`, `Effort`, `Business Value`, `Verification Gate`, `Sub-issues progress` | Problem statements (use real Issues, never Project Draft items) |
 
-Never create a `TODO.md` or parallel master backlog. All repository artifacts, Issue titles, bodies, and comments are written in **English** (translate/reframe Russian user requests into concise English Issues while keeping chat replies in Russian).
+When a project plan/report contains enduring technical rules, keep only the durable rule in its owning reference and link to the Issue for plan/history; do not copy the project document. Archive existing plans/reports in the relevant Issue(s), update inbound links, then delete the repository copies. Never create a `TODO.md` or parallel master backlog. All repository artifacts, Issue titles, bodies, and comments are written in **English** (translate/reframe Russian user requests into concise English Issues while keeping chat replies in Russian).
+
+The current source-document migration and reference cleanup are tracked in [Epic #25](https://github.com/vernikr/moex-spread-lab/issues/25) and [work package #26](https://github.com/vernikr/moex-spread-lab/issues/26); do not restore the migrated copies.
 
 ---
 
@@ -95,8 +98,8 @@ Level 1: [Epic] Issue (label: epic, Type: Task)
 ### Rules of decomposition
 
 1. **Level 1 — `[Epic] <Plan or Stage-9 initiative>`**:
-   - Created when work spans multiple sessions, multiple `packages/*`, or a multi-package plan in `docs/development/*.md` (examples: `#12` Phase 7 follow-ups, `#17` Stage 9 S4 basket, `#19` Agent performance plan 2).
-   - Body states: `Goal`, `Source` (path in `docs/`), `Exit criteria`, `Non-goals`, and execution order.
+   - Created when work spans multiple sessions or packages. The Epic body/comments are the canonical plan; link only to durable repository contracts/evidence, not to a plan file (examples: `#12` Phase 7 follow-ups, `#17` Stage 9 S4 basket, `#19` Agent performance plan 2).
+   - Body states: `Goal`, durable `References` (if any), `Exit criteria`, `Non-goals`, and execution order. Preserve superseded or completed plans as clearly marked historical Issue comments, not repository copies.
 2. **Level 2 — Work Package (native sub-issue)**:
    - Represents **one coherent, independently verifiable deliverable** pushed to `origin/main` after `./scripts/verify.py --profile full` passes (typically 1–5 inner sub-slices, ideally scoped to one `packages/<name>/` subtree or one contract-first cross-package slice).
    - Attached to its parent `[Epic]` as a **native GitHub sub-issue** (never just a plain text link) so GitHub computes `Parent issue` and `Sub-issues progress` automatically.
@@ -177,13 +180,13 @@ When Work Package B must not start before Work Package A finishes (for example, 
      - **Remaining:** unchecked slices / modules still open.
      - **Next step:** exact file or command for the next agent session.
      ```
-   - If detailed benchmark tables or parity hashes were produced, record them in a repository evidence file (e.g. `docs/development/p7-2-evidence.md`) and link it from the Checkpoint comment rather than pasting 200-line logs into the Issue.
+   - Record detailed benchmark tables, parity hashes and dated verification evidence in the Issue body or a clearly titled Issue comment. Keep repository documentation only for durable contracts/runbooks; never create a project execution-report file as a mirror of an Issue.
 
 ---
 
 ## 6. Plan deviations, partial completion, deferrals, and blockers
 
-Real codebase constraints frequently invalidate parts of a written plan (for example: P7.1 discovering `_`-prefixed folders are skipped by discovery; P7.2 measuring 3,675 strict-mode diagnostics instead of 27 baseline errors; S4b proving <45 s browser smokes conflict with 12 full scenarios). Handle every such case **explicitly and structurally**, never silently:
+Real codebase constraints frequently invalidate parts of a written plan (for example: discovery rules, typing scope, or a latency target that conflicts with required browser coverage). Handle every such case **explicitly and structurally**, never silently; keep current measurements and the actual decision in the corresponding Issue(s), such as the Phase 7 work under #12/#13 and the S4b trade-off under #21/#48.
 
 ### 6.1 Minor implementation deviation (invariants & goal preserved)
 
@@ -197,7 +200,7 @@ Examples: helper signature adjusted to satisfy Ruff `PLR0913` (`<= 7` args); mod
    **Why:** <measured constraint / gate rule>.
    **Invariant check:** `run_id` parity, equivalence tiers, and code-health ceilings preserved.
    ```
-4. Update the canonical doc in `docs/development/` in the same deliverable so durable docs never lie.
+4. Update the canonical Issue body/comment in the same deliverable. Update affected durable repository references only; do not retain or recreate a tracked plan/report copy.
 
 ### 6.2 Material scope / contract / invariant conflict (owner decision required)
 
@@ -222,14 +225,14 @@ When part of a Work Package is complete, green, and valuable on `main`, while th
 ### 6.4 Deferring work (`Deferred`) vs retiring work (`not_planned`)
 
 - **Defer (`Status` = `Deferred` + label `deferred`, Issue stays OPEN)**:
-  Use when the idea remains valid conditionally (e.g., `#16` F5 deferred until `#15` F2 starts; `#24` S6 warm lane deferred until cold-lane dominance is proven). Leave a comment:
+  Use when the idea remains valid conditionally (e.g., a namespace cleanup deferred until its dependent pipeline is ready, or a warm verification lane deferred until measurements show the cold lane dominates). Record the current trigger in the Issue. Leave a comment:
   ```markdown
   **Deferred:** <measured or architectural reason>.
   **Revisit when:** <concrete trigger condition>.
   ```
   Deferred items stay out of the active `Queue` view (`-status:Deferred`) while remaining visible in `Blocked & Deferred` and `All work` and tracked in the parent `[Epic]` sub-issue rollup.
 - **Close as `not_planned` (`gh issue close N --reason "not planned"`, `Status` = `Done`)**:
-  Use when measurements or an owner decision permanently retire a target (e.g., a speculative optimization proven net-negative). Post the measured rationale before closing and note it in the plan doc.
+  Use when measurements or an owner decision permanently retire a target (e.g., a speculative optimization proven net-negative). Post the measured rationale in the Issue before closing; do not create a repository plan/report copy.
 
 ---
 
@@ -239,10 +242,10 @@ Before closing an Issue as `completed`:
 
 1. All acceptance criteria checkboxes are `[x]` (or explicitly split out per §6.3).
 2. `./scripts/verify.py --profile full` (plus the Issue's `Verification Gate`: `Browser Smokes`, `Parity + Bench`, or `C99 Sanitizers`) passed on the exact integrated tree pushed to `origin/main`.
-3. Relevant docs in `docs/` or `packages/*/docs/` are updated.
+3. Update affected durable contracts, runbooks and references in `docs/` or `packages/*/docs/`; temporary execution evidence remains in GitHub Issues only.
 4. Close the Issue with `Closes #N` in the final commit/PR or via `gh issue close N --reason completed --comment "..."` citing the pushed `main` SHA and gate summary; set Project `Status` = `Done`.
 5. **Unblock downstream work**: check the Issue's `blocking` list (`gh api graphql ...`); for any downstream Issue whose blockers are now all closed, remove its `blocked` label and move its Project `Status` to `Ready`.
-6. **Reconcile parent `[Epic]`**: when an epic's sub-issues are all closed (`completed` or `not_planned`) or only `Deferred` items remain that the owner chose not to include in the current milestone, verify epic exit criteria, update the plan's header status in `docs/development/`, and close the `[Epic]` (moving any still-open `Deferred` children to standalone or next-phase epic if appropriate, or keeping the `[Epic]` open in `Deferred` while deferred children remain).
+6. **Reconcile parent `[Epic]`**: when an epic's sub-issues are all closed (`completed` or `not_planned`) or only `Deferred` items remain that the owner chose not to include in the current milestone, verify exit criteria and update the Epic body/comments (the canonical plan record). Then close the `[Epic]` (moving any still-open `Deferred` children to standalone or next-phase epic if appropriate, or keeping the `[Epic]` open in `Deferred` while deferred children remain).
 
 ---
 

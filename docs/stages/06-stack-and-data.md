@@ -107,7 +107,7 @@ The project will not use an unrestricted all-pairs search. The existing research
 5. a simple statistical mean-reversion control, labelled as a falsification benchmark rather than an economic claim;
 6. later liquid index/calendar families as robustness comparisons.
 
-The S2 table extends the named research registry with SLVRUBF/S2Z6, EURRUBF/EuZ6, BTCUSDF/BTZ6, GLZ6/GLH7 and CRZ6/CRH7. The BTC row has short history and the EUR row fails the working capital screen; neither becomes a candidate through display alone. The two dated calendars use the price-only control, not perpetual funding. See [the S2 record](../development/screener-s2.md). Other commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. Common-parameter search across independently evaluated pairs is now a core research capability; true basket search still waits for shared-capital portfolio composition.
+The S2 table extends the named research registry with SLVRUBF/S2Z6, EURRUBF/EuZ6, BTCUSDF/BTZ6, GLZ6/GLH7 and CRZ6/CRH7. The BTC row has short history and the EUR row fails the working capital screen; neither becomes a candidate through display alone. The two dated calendars use the price-only control, not perpetual funding. See the historical [S2 delivery record in GitHub Issue #34](https://github.com/vernikr/moex-spread-lab/issues/34). Other commodity calendars, cross-asset pairs, equity ordinary/preferred relationships, regimes, text and neural modules remain later experiments. Common-parameter search across independently evaluated pairs is now a core research capability; true basket search still waits for shared-capital portfolio composition.
 
 The first data resolution is:
 

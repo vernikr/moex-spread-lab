@@ -97,7 +97,7 @@ dev = [
     "vulture>=2.14,<3",
 ]
 
-# Code-health gate (docs/development/code-health-plan.md, Step 1).
+# Code-health gate (completed rollout history: GitHub Issue #36).
 # Tier 1 runs via scripts/check_health.sh; baselines freeze legacy
 # violations so CI is green Day 1 while new violations fail.
 [tool.ruff]

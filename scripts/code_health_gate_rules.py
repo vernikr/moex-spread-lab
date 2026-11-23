@@ -173,13 +173,18 @@ def _source_exception_failures(path: Path) -> list[str]:
     return failures
 
 
-def _exception_failures() -> list[str]:
-    return [
-        failure
-        for root in PROTECTED_EXCEPTION_ROOTS
-        for path in sorted(root.rglob("*.py"))
-        for failure in _source_exception_failures(path)
-    ]
+def _is_protected(path: Path) -> bool:
+    return any(path == root or root in path.parents for root in PROTECTED_EXCEPTION_ROOTS)
+
+
+def _exception_failures(paths: list[Path] | None = None) -> list[str]:
+    if paths is None:
+        candidates = [
+            path for root in PROTECTED_EXCEPTION_ROOTS for path in sorted(root.rglob("*.py"))
+        ]
+    else:
+        candidates = [path for path in sorted(paths) if _is_protected(path)]
+    return [failure for path in candidates for failure in _source_exception_failures(path)]
 
 
 def _existing_file_failures(
@@ -212,7 +217,7 @@ def _new_file_failures(path: Path, relative: str, metrics: dict[str, int]) -> li
 
 
 def _check_files(
-    files: list[Path], baseline: dict[str, Any]
+    files: list[Path], baseline: dict[str, Any], check_guard: bool = True
 ) -> tuple[list[str], dict[str, dict[str, int]]]:
     failures = []
     current = {}
@@ -227,10 +232,11 @@ def _check_files(
             failures.extend(_new_file_failures(path, relative, metrics))
         else:
             failures.extend(_existing_file_failures(relative, metrics, old))
-    failures.extend(
-        f"guarded compatibility file is missing: {relative}"
-        for relative in sorted(guard_files - current.keys())
-    )
+    if check_guard:
+        failures.extend(
+            f"guarded compatibility file is missing: {relative}"
+            for relative in sorted(guard_files - current.keys())
+        )
     return failures, current
 
 

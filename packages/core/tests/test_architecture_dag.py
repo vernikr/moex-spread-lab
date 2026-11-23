@@ -8,58 +8,13 @@ import unittest
 from functools import lru_cache
 from pathlib import Path
 
+from architecture_frozen_head import FROZEN_LAYER_ASSIGNMENTS
+from architecture_layers import derive_layer
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
 PACKAGES_DIR = REPO_ROOT / "packages"
 
-
-def _expand(spec: str) -> list[str]:
-    out: list[str] = []
-    for token in spec.split():
-        if "{" in token:
-            prefix, rest = token.split("{", 1)
-            body = rest.rstrip("}")
-            out.extend(
-                f"{prefix}{item}" if item else prefix.rstrip(".") for item in body.split(",")
-            )
-        else:
-            out.append(token)
-    return out
-
-
-_LAYER_SPECS: dict[str, str] = {
-    "core": (
-        "core.{,_fastcore_loader,cache_metrics,contracts,evaluation_periods,hashed_json_cache,remote_cli,settings,timeframes,universe,w0,workstation_bench,workstation_remote,workstation_results,workstation_suites} "
-        "_fastcore_loader w0 timeframes evaluation_periods universe"
-    ),
-    "data": (
-        "data.{,cli_parsers,cli_storage_handlers,universe} "
-        "data.iss.{,catalog,iss_candles,iss_coverage,iss_history,iss_http,iss_snapshot} "
-        "data.lake.{,bar_types,data_lake,data_refresh,h1_migration,h1_seal,legacy_series,market_store,parquet_catalog,parquet_store,raw_archive,refresh_merge} "
-        "data.retention.{,data_inventory,data_retention,data_archive_candidates,h1_archive,inventory_policy,storage_policy} "
-        "data.benchmark.{,lineage,lineage_math,ruonia_xlsx} "
-        "bar_types data_lake h1_migration h1_seal h1_archive iss benchmark data_inventory data_retention data_archive_candidates data_refresh storage_policy"
-    ),
-    "accounting": (
-        "accounting.{,costs,portfolio,account_risk,position_sizing,sizing_fast,sizing_replay,sizing_report,sizing_terms,ledger,run_artifacts,run_artifact_import,run_artifact_store,validation,research,research_intake,research_simulation} "
-        "costs portfolio account_risk position_sizing ledger run_artifacts run_artifact_import validation research"
-    ),
-    # Strategy subfolders are classified from the filesystem below, not listed here.
-    "strategies": (
-        "strategies.{,base,registry,calendar_eval,cli_parsers,conformance,signals} "
-        "analytics carry funding_screen funding_recheck proof_funding proof_signals calendar_spreads s3_reference screener pair_screener"
-    ),
-    "proof": "proof_runtime audit screener_search proof proof_kernel proof_pool proof_windows proof_batch proof_strategy_search proof_search",
-    "web": "web screener_app",
-    "cli": "core.cli data.cli accounting.cli strategies.cli proof_runtime.cli web.cli cli_web cli",
-}
-LAYER_ASSIGNMENTS: dict[str, str] = {
-    module: layer for layer, spec in _LAYER_SPECS.items() for module in _expand(spec)
-}
-for _layer, _prefix in (("proof", "proof_runtime"), ("web", "web")):
-    _dir = f"{_prefix.split('_')[0]}/src/moex_spread_lab/{_prefix}"
-    _mods = (PACKAGES_DIR / _dir).glob("*.py")
-    LAYER_ASSIGNMENTS |= {f"{_prefix}.{m.stem}": _layer for m in _mods if m.stem != "__init__"}
 
 _LAYERS_ORDER = ("core", "data", "accounting", "strategies", "proof", "web", "cli")
 ALLOWED_LAYER_TARGETS: dict[str, frozenset[str]] = {
@@ -93,6 +48,13 @@ def _discover_modules() -> dict[str, Path]:
     return discovered
 
 
+# Live mapping: filesystem-derived (see architecture_layers.derive_layer). Splitting
+# a module never requires editing this test.
+LAYER_ASSIGNMENTS: dict[str, str] = {
+    key: layer for key in _discover_modules() if (layer := derive_layer(key)) is not None
+}
+
+
 # A new strategy is a new folder: it is classified and isolation-checked from disk,
 # so two branches adding strategies never edit this file.
 STRATEGIES_SRC = PACKAGES_DIR / "strategies/src/moex_spread_lab/strategies"
@@ -100,9 +62,6 @@ SHARED_STRATEGY_INFRA = frozenset({"calendar", "pair_screener"})
 STRATEGY_SUBPACKAGES = frozenset(
     path.name for path in STRATEGIES_SRC.glob("*") if path.is_dir() and path.name != "__pycache__"
 )
-LAYER_ASSIGNMENTS |= {
-    key: "strategies" for key in _discover_modules() if key.startswith("strategies.")
-}
 
 
 def _resolve_internal_target(
@@ -216,6 +175,20 @@ class ArchitectureDagTests(unittest.TestCase):
         stale = sorted(set(LAYER_ASSIGNMENTS) - set(modules))
         self.assertEqual(unclassified, [], f"Unclassified modules: {unclassified}")
         self.assertEqual(stale, [])
+
+    def test_derived_layers_match_frozen_head_table_for_existing_modules(self) -> None:
+        # The filesystem-derived mapping must reproduce the frozen hand-maintained
+        # HEAD table exactly wherever both apply; otherwise the architecture gate
+        # would silently weaken (plan S1, risk note). New modules are unconstrained
+        # by the frozen table and fail only the unclassified check above.
+        derived = LAYER_ASSIGNMENTS
+        mismatches = {
+            module: (FROZEN_LAYER_ASSIGNMENTS[module], derived[module])
+            for module in derived
+            if module in FROZEN_LAYER_ASSIGNMENTS
+            and FROZEN_LAYER_ASSIGNMENTS[module] != derived[module]
+        }
+        self.assertEqual(mismatches, {})
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
         _, detailed_edges = _workspace_analysis()

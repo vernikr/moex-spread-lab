@@ -1,0 +1,73 @@
+name: Work Package (deliverable slice, refactor, or feature)
+description: Coherent single-package or cross-package deliverable executed across atomic sub-slices
+title: ""
+type: Task
+body:
+  - type: input
+    id: parent
+    attributes:
+      label: Parent Epic (optional)
+      description: If part of an epic, put `#N` and also include `<!-- issue-parent: #N -->` on its own line when creating via non-GraphQL tools.
+      placeholder: "#12"
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: Concrete outcome of this work package.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: Plan section, decision entry, or audit finding (`docs/...`).
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope & boundaries
+      description: Owned `packages/<name>/` subtree(s), touched files, and explicit out-of-scope items.
+      placeholder: |
+        - Packages/paths: `packages/<name>/...`
+        - Out of scope: ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable, falsifiable conditions required before closing as `completed`.
+      value: |
+        - [ ] ...
+        - [ ] Code-health baselines (`config/code-health-baseline.json`, `.basedpyright/baseline.json`) unchanged or decreased.
+    validations:
+      required: true
+  - type: dropdown
+    id: verification
+    attributes:
+      label: Verification gate (before push)
+      description: Matches the `Verification Gate` field in the GitHub Project.
+      options:
+        - Full Suite (`./scripts/verify.py --profile full`)
+        - Parity + Bench (Full Suite + `run_id` parity + workstation probe)
+        - Browser Smokes (Full Suite + `scripts/run_browser_smokes.py`)
+        - C99 Sanitizers (Full Suite + `clang-tidy` + ASan/UBSan equivalence)
+        - Docs / Quick (`docs_scan.py` + `check_health.sh --changed`)
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: slices
+    attributes:
+      label: Inner sub-slices (optional)
+      description: Atomic commit checkpoints inside this single work package (do not spawn child issues for ~100-LOC commits).
+      placeholder: |
+        - [ ] Slice 1: ...
+        - [ ] Slice 2: ...
+  - type: input
+    id: blocked_by
+    attributes:
+      label: Dependencies / Blocked by
+      description: "`none`, upstream `#issue` (wire native `addBlockedBy`), or `owner decision` (`docs/blockers/bNN-*.md`)."
+      value: "none"

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project board (vernikr/projects/2)
+    url: https://github.com/orgs/vernikr/projects/2
+    about: Operational queue, hierarchy and status projection for moex-spread-lab
+  - name: GitHub Project & Issue regulation
+    url: https://github.com/vernikr/moex-spread-lab/blob/main/docs/development/github-project.md
+    about: How agents decompose plans, track progress, handle deviations and deferrals

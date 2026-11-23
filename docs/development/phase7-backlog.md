@@ -1,6 +1,6 @@
 # Phase 7 backlog (post-Phase-5 status)
 
-Status: **Step 1–5 of the code-health plan, Phases 0–6 of the modular-architecture plan and Phase 7 package P7.1 are complete (2026-11-23). What remains are Phase 7 packages P7.2–P7.6 from [`modular-architecture-review.md`](modular-architecture-review.md), re-measured after the Phase 4 / Phase 5 splits landed.**
+Status: **Step 1–5 of the code-health plan, Phases 0–6 of the modular-architecture plan and Phase 7 package P7.1 are complete (2026-11-23). What remains are Phase 7 packages P7.2–P7.6 from [`modular-architecture-review.md`](modular-architecture-review.md), re-measured after the Phase 4 / Phase 5 splits landed. Live operational queue: Epic [#12](https://github.com/vernikr/moex-spread-lab/issues/12) on [Project #2](https://github.com/orgs/vernikr/projects/2).**
 
 This file records what is *left*, with the measurements taken at `71c0411`, so the next agent does not have to re-derive scope from the pre-split review.
 

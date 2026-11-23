@@ -21,7 +21,8 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings,
 )
 
-from .screener_math import _annualized, _require_finite
+from .screener_math import annualized as _annualized
+from .screener_math import require_finite as _require_finite
 
 INITIAL_CAPITAL = 30_000.0
 PLATEAU_RATIO = 0.7

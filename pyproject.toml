@@ -237,6 +237,10 @@ strict = [
     "packages/accounting/src/moex_spread_lab/accounting/ledger.py",
     "packages/accounting/src/moex_spread_lab/accounting/costs.py",
     "packages/accounting/src/moex_spread_lab/accounting/validation.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/funding_sizing_payload.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_spec.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/screener_math.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/worker_weight.py",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "error"

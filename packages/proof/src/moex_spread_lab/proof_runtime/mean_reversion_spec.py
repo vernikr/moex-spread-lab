@@ -56,7 +56,7 @@ class MeanReversionWindow:
     series: dict[str, Any]
     analysis_rows: list[dict[str, Any]]
     analysis_series: dict[str, Any]
-    spread_ticks: array
+    spread_ticks: array[float]
     evidence: Any
     marks: dict[str, Any]
     funding_swaprates: dict[str, Any]

@@ -27,7 +27,7 @@ def sizing_intent_payload(state: Any, report: dict[str, Any], strategy_name: str
     quantity = int(spec.execution["quantity"])
     daily_by_date = {row["date"]: row for row in report["daily"]}
     last_date = report["daily"][-1]["date"]
-    trades = []
+    trades: list[dict[str, Any]] = []
     for row in report["trades"]:
         entry_date = row["entry_execution_date"]
         exit_date = row["exit_execution_date"] or last_date

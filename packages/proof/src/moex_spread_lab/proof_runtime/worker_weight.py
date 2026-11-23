@@ -34,7 +34,7 @@ def _pair_h1_weight(root: Path, contract: str, cache: dict[str, Any] | None) -> 
     return 1000
 
 
-def _estimate_weight(
+def estimate_weight(
     root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None
 ) -> int:
     if timeframe == "1h" and item.get("universe") == "pair_screen":
@@ -42,3 +42,7 @@ def _estimate_weight(
         if len(parts) == 2:
             return _pair_h1_weight(root, parts[1], _seal_cache)
     return 1000 if timeframe == "1h" else 200
+
+
+# Compatibility for earlier private consumers.
+_estimate_weight = estimate_weight

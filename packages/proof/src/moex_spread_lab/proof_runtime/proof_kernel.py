@@ -7,6 +7,7 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 from __future__ import annotations
 
 import math
+import sys
 from datetime import date, datetime, time
 from functools import cached_property
 
@@ -15,15 +16,19 @@ from moex_spread_lab.core.evaluation_periods import (
     EvaluationSplit,
     ResearchSettings,
 )
-from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
 from moex_spread_lab.core.w0 import W0Error, _run_id
 
 from .axis import Axis, _ordered
-from .evaluation import _annualized_returns, _excess_curve, _missing_exposure, account_checks
+from .evaluation import _annualized_returns as _annualized_returns
+from .evaluation import _excess_curve as _excess_curve
+from .evaluation import _missing_exposure as _missing_exposure
+from .evaluation import account_checks
 from .landscape import AMBER as AMBER
 from .landscape import GREEN as GREEN
 from .landscape import Landscape as Landscape
 from .landscape import _lamps as _lamps
+from .measure_full import admission, measure_full
 from .phase_metrics import measure_phase
 from .proof_seed import SEED as SEED
 from .proof_seed import derive_seed as derive_seed
@@ -56,20 +61,7 @@ def __getattr__(name: str):
 
 
 def _admission(proof, settings):
-    if "min_leg_volume" in proof["window"] and proof["window"]["min_leg_volume"] is None:
-        return "Нет наблюдений с положительным объёмом обеих ног."
-    if not settings.allow_failed_capital and not proof["window"]["passes_capital_screen"]:
-        return "Не пройден стресс-тест капитала."
-    if not settings.allow_failed_volume and not proof["window"]["tradable_every_day"]:
-        return "Не пройдено правило ликвидности."
-    if (
-        proof["selection"]["strategy"] == "mean_reversion"
-        and proof["instrument"]["family"] == "perpetual_quarterly_same_asset"
-        and get_timeframe(proof["selection"].get("timeframe", "1d")).supports_funding_strategy
-        and not proof["provenance"].get("near_funding_history_sha256")
-    ):
-        return "Нет полного ряда SWAPRATE."
-    return None
+    return admission(proof, settings, sys.modules[__name__])
 
 
 def _measure_scalar_train(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
@@ -188,68 +180,8 @@ def _active_measure(proof, marks, split: EvaluationSplit, settings: ResearchSett
 
 
 def _measure(proof, marks, split: EvaluationSplit, settings: ResearchSettings):
-    """Measure a continuous ledger; the last training mark is validation's opening balance."""
-    if "_scalar_train_summary" in proof and not split.validation:
-        return _measure_scalar_train(proof, marks, split, settings)
-    if reason := _admission(proof, settings):
-        return {"utility": None, "reason": reason}
-    curve = _excess_curve(proof, marks)
-    train_x = curve[split.training[-1]]
-    train_rate = train_x / len(split.training)
-    result_x, rate, validation_rate = train_x, train_rate, None
-    segments = [("на обучении", split.training)]
-    if split.validation:
-        result_x = curve[split.validation[-1]] - train_x
-        rate = validation_rate = result_x / len(split.validation)
-        segments.append(("на проверке", split.validation))
-    if not all(math.isfinite(v) for v in (train_rate, rate, result_x)):
-        return {"utility": None, "reason": "Нет конечной оценки результата."}
-    # Descriptive P&L is separate from eligibility: a flat, unexposed book is not a plateau.
-    net = {r["date"]: r["cumulative_net_rub"] for r in proof["ledger"]}
-    net_change = (
-        net[split.validation[-1]] - net[split.training[-1]]
-        if split.validation
-        else net[split.training[-1]]
-    )
-    metrics = {
-        "net_rub": round(net_change, 2),
-        "lqdt_on_margin_rub": round(net_change - result_x, 2),
-        "train": round(train_rate, 6),
-        "validation": round(validation_rate, 6) if validation_rate is not None else None,
-        "excess_rub": round(result_x, 2),
-        "rub_per_session": round(rate, 6),
-    }
-    missing, reasons = _missing_exposure(proof, segments, split)
-    try:
-        annual = _annualized_returns(proof, marks, split)
-    except W0Error as exc:
-        return {
-            **metrics,
-            "utility": None,
-            "rank_score": None,
-            "reason": " ".join([*reasons, str(exc)]),
-        }
-    if annual.pop("cash_shortfall"):
-        reasons.append("Свободные средства недостаточны для маржи.")
-        return {
-            **metrics,
-            "rank_score": None,
-            "utility": None,
-            "reason": " ".join(reasons),
-        }
-    # An honestly inactive book holds LQDT: include its zero in the fixed denominator.
-    # It is not evidence of a stable trading neighborhood. A risk/data failure is NOT zero.
-    # Benchmark-relative drawdown/shortfall limits no longer veto a candidate: the
-    # measured excess over LQDT is the score, and the risk path stays visible in the
-    # proof itself.
-    score = annual["annualized_excess_pp"]
-    return {
-        **metrics,
-        **annual,
-        "rank_score": score,
-        "utility": None if missing else score,
-        **({"reason": " ".join(reasons)} if reasons else {}),
-    }
+    """Measure a continuous ledger; validation starts at the last training mark."""
+    return measure_full(proof, marks, split, settings, sys.modules[__name__])
 
 
 @measure_phase("optuna_trials")

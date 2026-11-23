@@ -10,7 +10,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import write_json
 
@@ -20,9 +20,13 @@ from .iss_http import (
     DEFAULT_ISS_BASE_URL,
     PROJECT_RIGHTS_STATUS,
     IssIntakeError,
-    _candleborders_url,
-    _rows,
     fetch_json_with_raw,
+)
+from .iss_http import (
+    candleborders_url as _candleborders_url,
+)
+from .iss_http import (
+    rows as _rows,
 )
 
 CSV_COLUMNS = [
@@ -82,11 +86,12 @@ def _try_load_cached_coverage(
     if cache_path is None or not cache_path.exists():
         return None
     try:
-        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        loaded: object = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    if not isinstance(cached, dict):
+    if not isinstance(loaded, dict):
         return None
+    cached = cast("dict[str, Any]", loaded)
     if cached.get("secid") != secid or cached.get("source", {}).get("url") != url:
         return None
     for interval_row in cached.get("available_intervals", []):

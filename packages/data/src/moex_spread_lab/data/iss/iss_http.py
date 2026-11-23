@@ -135,6 +135,7 @@ def _rows(block: Any, name: str) -> list[dict[str, Any]]:
 rows = _rows
 url = _url
 candles_url = _candles_url
+candleborders_url = _candleborders_url
 
 
 def fetch_json_with_raw(

@@ -8,23 +8,57 @@ import os
 import tarfile
 import tempfile
 import uuid
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any, cast
 
 import zstandard as zstd
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
 
+from ..lake import h1_migration as _h1_migration
+from ..lake import h1_seal as _h1_seal
 from ..lake.data_lake import DataLakeError, _atomic_write_json
-from ..lake.h1_migration import build_h1_plan
-from ..lake.h1_seal import SealedH1Reader, verify_sealed_h1
-from .data_archive_candidates import _json_new, _publish, verify_archive
-from .data_retention import _prune_empty_parents, _safe_data_path, _validate_archive_path
+from ..lake.h1_seal import SealedH1Reader
+from . import data_archive_candidates as _data_archive_candidates
+from . import data_retention as _data_retention
 
 SCHEMA = "sealed-h1-archive.v1"
 
+# Rebind the existing cross-module hooks to their original callables. The owning
+# modules keep the untyped definitions (their strict conversions are separate
+# leaves), while this facade keeps its historical public/private names and
+# runtime identity under whole-package strict typing. ``__dict__`` lookup only
+# avoids importing names that are private to another module.
+build_h1_plan: Callable[[Path], dict[str, Any]] = cast(
+    Callable[[Path], dict[str, Any]], _h1_migration.__dict__["build_h1_plan"]
+)
+verify_sealed_h1: Callable[[Path], dict[str, Any]] = cast(
+    Callable[[Path], dict[str, Any]], _h1_seal.__dict__["verify_sealed_h1"]
+)
+_safe_data_path: Callable[[Path, str], Path] = cast(
+    Callable[[Path, str], Path], _data_retention.__dict__["_safe_data_path"]
+)
+_validate_archive_path: Callable[[Path, Path], Path] = cast(
+    Callable[[Path, Path], Path], _data_retention.__dict__["_validate_archive_path"]
+)
+_prune_empty_parents: Callable[[Path, Sequence[Mapping[str, object]]], None] = cast(
+    Callable[[Path, Sequence[Mapping[str, object]]], None],
+    _data_retention.__dict__["_prune_empty_parents"],
+)
+_json_new: Callable[[Path, dict[str, Any]], None] = cast(
+    Callable[[Path, dict[str, Any]], None], _data_archive_candidates.__dict__["_json_new"]
+)
+verify_archive: Callable[[Path, dict[str, Any]], None] = cast(
+    Callable[[Path, dict[str, Any]], None], _data_archive_candidates.__dict__["verify_archive"]
+)
+_publish: Callable[..., dict[str, Any]] = cast(
+    Callable[..., dict[str, Any]], _data_archive_candidates.__dict__["_publish"]
+)
 
-def _evidence(path: Path, seal: dict):
-    evidence = json.loads(path.read_text())
+
+def _evidence(path: Path, seal: dict[str, Any]) -> dict[str, Any]:
+    evidence: dict[str, Any] = json.loads(path.read_text())
     if (
         evidence.get("source_fingerprint") != seal["plan"]["source_fingerprint"]
         or evidence.get("seal_sha256") != sha256_bytes(canonical_bytes(seal))
@@ -37,7 +71,7 @@ def _evidence(path: Path, seal: dict):
     return evidence
 
 
-def build_plan(root: Path, archive: Path, evidence: Path) -> dict:
+def build_plan(root: Path, archive: Path, evidence: Path) -> dict[str, Any]:
     root = root.resolve()
     seal = SealedH1Reader(root).payload()
     if seal is None or build_h1_plan(root) != seal["plan"]:
@@ -67,7 +101,7 @@ def build_plan(root: Path, archive: Path, evidence: Path) -> dict:
     }
 
 
-def _validate(plan: dict, root: Path):
+def _validate(plan: dict[str, Any], root: Path) -> None:
     seal = SealedH1Reader(root).payload()
     if (
         plan.get("schema_version") != SCHEMA
@@ -96,11 +130,11 @@ def _validate(plan: dict, root: Path):
     verify_sealed_h1(root)
 
 
-def _allocated(folder: Path):
+def _allocated(folder: Path) -> int:
     return sum(p.stat().st_blocks * 512 for p in folder.rglob("*") if p.is_file())
 
 
-def _gain(root: Path, plan: dict):
+def _gain(root: Path, plan: dict[str, Any]) -> dict[str, Any]:
     sources = sum(_safe_data_path(root, e["path"]).stat().st_blocks * 512 for e in plan["files"])
     # Conservatively charge the entire retained lake and archive/evidence folder,
     # including previously existing archives; no optimistic compression estimate.
@@ -116,7 +150,7 @@ def _gain(root: Path, plan: dict):
     }
 
 
-def _rehearse_h1_restore(archive: Path, plan: dict, manifest: dict) -> None:
+def _rehearse_h1_restore(archive: Path, plan: dict[str, Any], manifest: dict[str, Any]) -> None:
     with tempfile.TemporaryDirectory(prefix="h1-restore-", dir=archive.parent) as temp:
         destination = Path(temp)
         with (
@@ -133,13 +167,15 @@ def _rehearse_h1_restore(archive: Path, plan: dict, manifest: dict) -> None:
             raise DataLakeError("restored manifest mismatch")
 
 
-def _archive_only_h1(root: Path, plan: dict, archive: Path, receipt: Path) -> dict:
+def _archive_only_h1(
+    root: Path, plan: dict[str, Any], archive: Path, receipt: Path
+) -> dict[str, Any]:
     if receipt.exists():
         raise DataLakeError("verification receipt exists")
     manifest = _publish(root, plan, archive, validate_sources=_validate)
     _rehearse_h1_restore(archive, plan, manifest)
     _validate(plan, root)
-    result = {
+    result: dict[str, Any] = {
         "status": "verified",
         "archive_sha256": sha256_file(archive),
         "manifest": manifest,
@@ -153,7 +189,7 @@ def _archive_only_h1(root: Path, plan: dict, archive: Path, receipt: Path) -> di
 def _prepare_retry_journal(journal: Path, archive_sha: str, fingerprint: str) -> str:
     if not journal.is_file() or journal.is_symlink():
         raise DataLakeError("restored retry requires a regular previous apply journal")
-    previous = json.loads(journal.read_text(encoding="utf-8"))
+    previous: dict[str, Any] = json.loads(journal.read_text(encoding="utf-8"))
     if (
         previous.get("status") not in ("applied", "interrupted", "prepared")
         or previous.get("archive_sha256") != archive_sha
@@ -166,7 +202,9 @@ def _prepare_retry_journal(journal: Path, archive_sha: str, fingerprint: str) ->
     return str(saved)
 
 
-def _unlink_h1_sources(root: Path, files: list[dict], journal: Path, result: dict) -> None:
+def _unlink_h1_sources(
+    root: Path, files: list[dict[str, Any]], journal: Path, result: dict[str, Any]
+) -> None:
     for e in files:
         path = _safe_data_path(root, e["path"])
         if sha256_file(path) != e["sha256"]:
@@ -179,14 +217,14 @@ def _unlink_h1_sources(root: Path, files: list[dict], journal: Path, result: dic
 
 def _apply_h1_archive(
     root: Path,
-    plan: dict,
+    plan: dict[str, Any],
     archive: Path,
     receipt: Path,
     journal: Path,
     *,
     retry_restored: bool,
-) -> dict:
-    record = json.loads(receipt.read_text(encoding="utf-8"))
+) -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(receipt.read_text(encoding="utf-8"))
     manifest = record["manifest"]
     if (
         record.get("status") != "verified"
@@ -198,7 +236,7 @@ def _apply_h1_archive(
     verify_archive(archive, manifest)
     storage = _gain(root, plan)
     _validate(plan, root)
-    result: dict = {
+    result: dict[str, Any] = {
         "status": "prepared",
         "archive_sha256": record["archive_sha256"],
         "source_fingerprint": plan["source_fingerprint"],
@@ -230,7 +268,7 @@ def execute(
     archive: Path | None = None,
     evidence: Path | None = None,
     retry_restored: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     resolved_root = root.resolve()
     with (resolved_root / ".data-archive-candidates.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -244,7 +282,7 @@ def execute(
                 "source_count": len(plan["files"]),
                 "source_fingerprint": plan["source_fingerprint"],
             }
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan: dict[str, Any] = json.loads(plan_path.read_text(encoding="utf-8"))
         _validate(plan, resolved_root)
         archive_path = Path(plan["archive"])
         receipt = archive_path.with_name(archive_path.name + ".verified.json")

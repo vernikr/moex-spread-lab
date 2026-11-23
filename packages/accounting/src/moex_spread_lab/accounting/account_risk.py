@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from moex_spread_lab.core.w0 import W0Error, load_contracts
 
@@ -13,6 +13,17 @@ DEFAULT_INITIAL_CAPITAL = 30_000.0
 DEFAULT_STRESS_VM_BUFFER = 5_000.0
 DEFAULT_UNCERTAINTY_BUFFER = 5_000.0
 DEFAULT_KEY_RATE = 0.14
+
+
+class _Scenario(TypedDict):
+    id: str
+    description: str
+    margin_requirement_rub: float
+    vm_buffer_rub: float
+    uncertainty_buffer_rub: float
+    total_required_rub: float
+    remaining_capital_rub: float
+    passed: bool
 
 
 class AccountRiskError(W0Error):
@@ -105,7 +116,7 @@ def assess_vtb_pair(
         ("two_times_margin_shock", pair_margin * 2.0, "2x pair margin shock"),
         ("three_times_margin_shock", pair_margin * 3.0, "3x pair margin shock"),
     )
-    scenarios = []
+    scenarios: list[_Scenario] = []
     for scenario_id, margin, description in scenario_specs:
         total_required = margin + effective_vm_buffer + uncertainty_buffer
         scenarios.append(

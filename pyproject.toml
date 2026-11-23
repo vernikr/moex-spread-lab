@@ -228,6 +228,7 @@ typeCheckingMode = "standard"
 strict = [
     "packages/core/src",
     "packages/data/src/moex_spread_lab/data/benchmark/lineage_math.py",
+    "packages/accounting/src/moex_spread_lab/accounting/account_risk.py",
 ]
 reportMissingTypeStubs = false
 reportMissingImports = "error"

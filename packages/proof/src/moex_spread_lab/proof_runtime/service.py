@@ -161,6 +161,43 @@ def _intent_request(request, registry, settings):
     }
 
 
+def _validate_pair_screen(inputs, pair, funding, screen_strategy, settings):
+    timeframe = get_timeframe(settings.timeframe)
+    if not timeframe.supports_pair_proof:
+        raise W0Error(f"{timeframe.label}: pair-proof не поддерживается.")
+    entry = _pair_catalog(
+        inputs,
+        registry=(pair,),
+        funding=funding,
+        initial_capital=settings.initial_capital_rub,
+        timeframe=settings.timeframe,
+    )["pairs"][0]
+    if not entry["proof_strategies"].get(screen_strategy):
+        raise W0Error(entry["data_reasons"][screen_strategy])
+    # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
+    if not (settings.validation_percent or settings.allow_failed_volume) and not entry[
+        "strategies"
+    ].get(screen_strategy):
+        raise W0Error("Не пройдено правило ликвидности пары.")
+
+
+def _validate_pair_request(request, strategy, pair, carry_plugin, sizing_intents):
+    if (
+        request.get("strategy") != strategy
+        or request.get("pair") != pair["pair_id"]
+        or request.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
+        or (carry_plugin is not None and automatic(request) != sizing_intents)
+    ):
+        raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
+
+
+def _validate_carry_result(result, carry_plugin, metrics_only):
+    if carry_plugin is not None:
+        result["accounting_policy"] = "carry_settlement.v1"
+        if not metrics_only and abs(result["summary"]["ledger_reconciliation_rub"]) > 0.02:
+            raise W0Error("Учёт carry-плагина не согласован с журналом сделок.")
+
+
 class ProofService:
     """Single entry point for /api/proof/*; dispatches on the `universe` field."""
 
@@ -385,23 +422,7 @@ class ProofService:
         screen_strategy = "funding_only" if carry_plugin is not None else strategy
         inputs = self.screener_inputs
         funding = ProofFunding(inputs)
-        timeframe = get_timeframe(settings.timeframe)
-        if not timeframe.supports_pair_proof:
-            raise W0Error(f"{timeframe.label}: pair-proof не поддерживается.")
-        entry = _pair_catalog(
-            inputs,
-            registry=(pair,),
-            funding=funding,
-            initial_capital=settings.initial_capital_rub,
-            timeframe=settings.timeframe,
-        )["pairs"][0]
-        if not entry["proof_strategies"].get(screen_strategy):
-            raise W0Error(entry["data_reasons"][screen_strategy])
-        # With a holdout, evaluate liquidity on the actual training replay, not the full catalog flag.
-        if not (settings.validation_percent or settings.allow_failed_volume) and not entry[
-            "strategies"
-        ].get(screen_strategy):
-            raise W0Error("Не пройдено правило ликвидности пары.")
+        _validate_pair_screen(inputs, pair, funding, screen_strategy, settings)
 
         @cache
         def risk_for(quantity):
@@ -455,13 +476,7 @@ class ProofService:
                 "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill),
                 "initial_capital_rub": settings.initial_capital_rub,
             }
-            if (
-                request.get("strategy") != strategy
-                or request.get("pair") != pair["pair_id"]
-                or request.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
-                or (carry_plugin is not None and automatic(request) != sizing_intents)
-            ):
-                raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
+            _validate_pair_request(request, strategy, pair, carry_plugin, sizing_intents)
             params = (
                 _parameters(request, strategy)
                 if carry_plugin is None
@@ -485,10 +500,7 @@ class ProofService:
                 if mean_reversion
                 else run_funding(FundingSpec(**common), metrics_only=metrics_only)
             )
-            if carry_plugin is not None:
-                result["accounting_policy"] = "carry_settlement.v1"
-                if not metrics_only and abs(result["summary"]["ledger_reconciliation_rub"]) > 0.02:
-                    raise W0Error("Учёт carry-плагина не согласован с журналом сделок.")
+            _validate_carry_result(result, carry_plugin, metrics_only)
             return result
 
         return replay

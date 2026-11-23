@@ -7,7 +7,6 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from statistics import fmean
 from unittest.mock import patch
 
 from moex_spread_lab.core.settings import save_settings
@@ -17,6 +16,13 @@ from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.service import ProofService
 from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
 from proof_fixtures import fixture
+from proof_plateau_checks_p72_packages_proof_tests_test_proof_plateau import (
+    assert_center_utility_is_member_mean,
+    assert_neighbours_are_member_means,
+    expected_stability_ratio,
+    lamp_differs_from_member_average,
+    member_fields,
+)
 from test_proof_batch import ACTIVE, C, P
 
 
@@ -67,33 +73,12 @@ class CheckedPlateauTests(unittest.TestCase):
         self.assertEqual(p["basis"], "training")
         differs = False
         for name, field in p["fields"].items():
-            fs = [solo[0]["window" if name == "lookback" else name], solo[1][name]]
-            center = fmean(f["center"]["rank_score"] for f in fs)
-            self.assertAlmostEqual(field["center"]["utility"], center)
-            expected = []
-            for n in field["neighbors"]:
-                rs = [next(x for x in f["neighbors"] if x["value"] == n["value"]) for f in fs]
-                vals = [r.get("rank_score") for r in rs]
-                if None in vals:
-                    self.assertIsNone(n["utility"])
-                    self.assertIn("reason", n)
-                    continue
-                self.assertEqual(n["by_window_pp"], vals)
-                avg = fmean(vals)
-                self.assertAlmostEqual(n["rank_score"], avg)
-                if any(r["utility"] is not None for r in rs):
-                    expected.append(avg)
-                    self.assertAlmostEqual(n["utility"], avg)
-            score = None
-            if expected:
-                score = (
-                    0
-                    if len(expected) != len(field["neighbors"]) or center <= 0
-                    else round(100 * max(0, min(1, min(expected) / center)), 2)
-                )
+            fs = member_fields(solo, name)
+            center = assert_center_utility_is_member_mean(self, field, fs)
+            expected = assert_neighbours_are_member_means(self, field, fs)
+            score = expected_stability_ratio(field, expected, center)
             self.assertEqual(field["score"], score)
-            if score is not None and all(f["score"] is not None for f in fs):
-                differs |= abs(score - fmean(f["score"] for f in fs)) > 0.1
+            differs |= lamp_differs_from_member_average(fs, score)
         self.assertTrue(
             differs, "fixture must detect an average-of-individual-lamps implementation"
         )

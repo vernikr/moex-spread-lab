@@ -117,6 +117,13 @@ def _history_url(
     return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
 
 
+# Public aliases preserve the historical private entry points.
+HISTORY_JSON_CACHE = _HISTORY_JSON_CACHE
+fetch_history_json = _fetch_history_json
+history_rows = _history_rows
+history_url = _history_url
+
+
 def _try_load_cached_history_page(
     cache_path: Path | None, url: str
 ) -> tuple[dict[str, Any], str] | None:

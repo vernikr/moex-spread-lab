@@ -157,6 +157,11 @@ def _candidate_status(
     }
 
 
+# Public aliases preserve the historical private entry points.
+candidate_status = _candidate_status
+quote_quality = _quote_quality
+
+
 def normalize_iss_intake(
     payload: dict[str, Any],
     *,

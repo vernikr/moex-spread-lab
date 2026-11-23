@@ -257,6 +257,7 @@ strict = [
     "packages/proof/src/moex_spread_lab/proof_runtime/pair_payload.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_payload.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/ledger_blocks.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/payload_tools.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_trial.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_plateau.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_grid.py",

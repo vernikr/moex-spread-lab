@@ -14,9 +14,10 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, read_hashed_json
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
+from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
@@ -42,9 +43,9 @@ def clean(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):
-        return {key: clean(item) for key, item in value.items()}
+        return {key: clean(item) for key, item in cast(dict[Any, Any], value).items()}
     if isinstance(value, (list, tuple)):
-        return [clean(item) for item in value]
+        return [clean(item) for item in cast(list[Any] | tuple[Any, ...], value)]
     return value
 
 
@@ -158,15 +159,19 @@ def load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
         return cached[0]
     try:
         main_payload, _ = read_hashed_json(resolved, error=W0Error, label="contracts")
-        rows = list(main_payload["instruments"])
+        rows = list(cast(list[Any], main_payload["instruments"]))
         if h_stat is not None:
             hist_payload, _ = read_hashed_json(
                 historical_path, error=W0Error, label="historical contracts"
             )
-            rows.extend(hist_payload.get("instruments", []))
+            rows.extend(cast(list[Any], hist_payload.get("instruments", [])))
     except (W0Error, OSError, ValueError, KeyError, TypeError):
         return {}
-    mapping = {row["secid"]: row for row in rows if isinstance(row, dict) and row.get("secid")}
+    mapping: dict[str, dict[str, Any]] = {
+        row["secid"]: row
+        for row in rows
+        if isinstance(row, dict) and cast(dict[str, Any], row).get("secid")
+    }
     _INSTRUMENTS_CACHE.put(key, (mapping, ""))
     return mapping
 
@@ -176,14 +181,14 @@ def load_contracts_for_side_cost(
 ) -> dict[str, dict[str, Any]]:
     """Uncached contract rows for the two legs, including historical specifications."""
     payload = json.loads(contracts_path.read_text(encoding="utf-8"))
-    rows = list(payload.get("instruments", []))
+    rows: list[Any] = list(payload.get("instruments", []))
     historical_path = contracts_path.parent / "historical-contracts.json"
     if historical_path.is_file():
         historical = json.loads(historical_path.read_text(encoding="utf-8"))
         rows.extend(historical.get("instruments", []))
     contracts: dict[str, dict[str, Any]] = {}
     for row in rows:
-        if isinstance(row, dict) and row.get("secid") in (near, far):
+        if isinstance(row, dict) and cast(dict[str, Any], row).get("secid") in (near, far):
             contracts[row["secid"]] = row
     return contracts
 

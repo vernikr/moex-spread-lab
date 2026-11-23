@@ -104,3 +104,28 @@ A diagnostic-only whole-package strict measurement at `e5cba8b` reported
 configuration used for this measurement was temporary; the normal gate still
 includes full accounting and selected modules of the other packages. The target
 remains all four packages, with no new baseline or rule suppression.
+
+## Additional calendar and pair typing — 2026-11-23
+
+The calendar study, proof runner, intents, catalog builder and facade, and pair
+cost and baseline runners were added to strict checking. Compatibility aliases
+and runtime validation remain in place. The full offline gate at `856d0cf`
+passed (757 tests and 232 subtests); browser smokes were not run.
+
+An isolated macOS worktree at `bba4ef1` passed the ASan/UBSan suite with Apple
+clang 17 (9 tests, 40.80 seconds). The subsequent `856d0cf` changes were not
+included in this sanitizer run.
+
+Workstation A/B compared `858f7a2` against a candidate containing the nine
+changed strategy source files through `856d0cf` (not the strict configuration).
+With one iteration and no warmup, all normalized full payloads matched exactly:
+
+- `catalog_boot`: SHA-256 `25d9f70c34d8c9e4c4413537c38ccac00cf5d9ad4e55ee8a45369892bfbb8452` and `48a3eab4cdd6f93010028b92aa61b2c1bfe5812044791ab720583eb26f40fa24`.
+- `calendar_proof`: z-score run ID `06fb9bd340da3ccb`, SHA-256 `a42de6913ca3a31d701473c868f91808df5af68c2fc4d2b47ca2c3ca03209d4c`; RUONIA run ID `1af0fb578e35154a`, SHA-256 `f77e8179ab6db7b38ff6fb0f7d5475f71eaea5279eb2a340361df343af25f928`. Both reconciled to zero.
+- `cohort_optimize`: run ID `381ff296b49b5c52`, SHA-256 `611ec85bdc1c3e91d8dacc64e4b105d6a84095c39cff13b89b98775e60386907`, seed 41, 80 trials.
+- Four `single_proof_1d_1h` workloads: run IDs `c482450df3e75137`, `e08e3bba6ec72fe4`, `d0956cd430893bd6`, `ac6095014a56351c`; all full hashes matched and all reconciled to zero.
+
+The live and candidate cache states differed; these are workload-specific
+behavioral checks, not general equivalence or performance evidence. P7.2 is
+still open: strict coverage of proof, data and strategies is incomplete, and
+proof baseline and Ruff exceptions remain.

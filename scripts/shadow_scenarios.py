@@ -85,6 +85,7 @@ W = ("web",)
 P_W = ("proof", "web")
 A_P_W = ("accounting", "strategies", "proof", "web")
 D_P_W = ("data", "strategies", "proof", "web")
+S_P_W = ("strategies", "proof", "web")
 S_D_P_W = D_P_W
 WEB_SRV = "packages/web/src/moex_spread_lab/web/server.py"
 WEB_TST = "packages/web/tests/test_screener_app.py"
@@ -151,7 +152,7 @@ SCENARIOS: tuple[Scenario, ...] = (
     _S(
         "strategies-py",
         "packages",
-        S_D_P_W,
+        S_P_W,
         True,
         "edit funding_carry engine",
         lambda r: _py(r, STRAT_ENG),

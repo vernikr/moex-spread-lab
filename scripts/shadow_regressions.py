@@ -35,25 +35,39 @@ def _find_first(dir_path: Path, glob: str) -> Path | None:
 
 
 def _inject_registry_break(root: Path) -> str:
-    """Break plugin/strategy registry discovery (import or contract attr)."""
+    """Break plugin/strategy registry discovery (import or contract attr).
+
+    Finds the first strategy __init__.py that imports from .engine and breaks
+    the import (ModuleNotFoundError on any test that loads that strategy).
+    Falls back to mutating STRATEGY_DISCOVERY_ATTR so registry lookup fails.
+    """
     strat = root / "packages/strategies/src/moex_spread_lab/strategies"
     if strat.is_dir():
         for sub in sorted(strat.iterdir()):
             init = sub / "__init__.py"
-            if init.is_file():
-                text = init.read_text(encoding="utf-8")
-                init.write_text(
-                    text.replace("from .engine import", "from .engin import  # shadow break"),
-                    encoding="utf-8",
-                )
-                return f"broke import in {sub.name}/__init__.py"
+            if not init.is_file():
+                continue
+            text = init.read_text(encoding="utf-8")
+            if "from .engine import" not in text:
+                continue
+            init.write_text(
+                text.replace("from .engine import", "from .engin import  # shadow break"),
+                encoding="utf-8",
+            )
+            return f"broke import in {sub.name}/__init__.py"
     contracts = root / "packages/core/src/moex_spread_lab/core/contracts.py"
     text = contracts.read_text(encoding="utf-8")
     broken = text.replace(
-        'STRATEGY_DISCOVERY_ATTR = "engine"', 'STRATEGY_DISCOVERY_ATTR = "engin"  # shadow break'
+        'STRATEGY_DISCOVERY_ATTR = "engine"',
+        'STRATEGY_DISCOVERY_ATTR = "engin"  # shadow break',
     )
     if broken == text:
-        broken = text + "\n# shadow-registry-injection\n"
+        # Last-resort: insert a syntax-breaking token into a known registry test
+        # target so conformance tests fail.
+        broken = text.replace(
+            "STRATEGY_DISCOVERY_ATTR =",
+            "STRATEGY_DISCOVERY_ATTR =  # shadow break\nSTRATEGY_DISCOVERY_ATTR_BROKEN =",
+        )
     contracts.write_text(broken, encoding="utf-8")
     return "broke STRATEGY_DISCOVERY_ATTR in core/contracts.py"
 

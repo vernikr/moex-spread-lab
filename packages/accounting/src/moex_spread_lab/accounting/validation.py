@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
@@ -50,7 +50,7 @@ def _sign_flip_null(rows: list[dict[str, Any]], initial_capital: float) -> dict[
     """
     baseline_strategy = float(rows[0]["strategy_value"])
     cumulative = 0.0
-    null_rows = []
+    null_rows: list[dict[str, float]] = []
     peak = 0.0
     for index, row in enumerate(rows):
         current_strategy = float(row["strategy_value"])
@@ -147,7 +147,10 @@ def build_validation(
     if not (0.5 <= train_fraction < 1.0 and 0 < confirmation_fraction < 0.5):
         raise ValidationError("invalid train_fraction or confirmation_fraction")
     rows = baseline.get("daily")
-    if not isinstance(rows, list) or len(rows) < 10:
+    if not isinstance(rows, list):
+        raise ValidationError("at least ten chronological baseline rows are required")
+    rows = cast(list[dict[str, Any]], rows)
+    if len(rows) < 10:
         raise ValidationError("at least ten chronological baseline rows are required")
     if ledger.get("summary", {}).get("final_X") != baseline.get("summary", {}).get("final_X"):
         raise ValidationError("ledger and baseline final X do not match")

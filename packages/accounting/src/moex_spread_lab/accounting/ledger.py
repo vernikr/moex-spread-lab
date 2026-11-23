@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
@@ -50,13 +50,14 @@ def _attempts(baseline: dict[str, Any]) -> list[dict[str, Any]]:
     rows = baseline.get("daily")
     if not isinstance(rows, list) or not rows:
         raise LedgerError("baseline daily projection is required")
+    rows = cast(list[dict[str, Any]], rows)
     row_by_time = {row.get("timestamp", row.get("date")): row for row in rows}
     timestamps = list(row_by_time)
     timestamp_index = {timestamp: index for index, timestamp in enumerate(timestamps)}
     delay = int(baseline.get("parameters", {}).get("decision_delay_bars", 1))
     if delay < 1:
         raise LedgerError("decision delay must be at least one bar")
-    attempts = []
+    attempts: list[dict[str, Any]] = []
     for number, trade in enumerate(baseline.get("trades", []), start=1):
         for lifecycle, field in (("entry", "entry_date"), ("exit", "exit_date")):
             decision_at = trade.get(field)
@@ -102,14 +103,17 @@ def _validate_daily(rows: list[dict[str, Any]]) -> None:
                 raise LedgerError(f"baseline daily row is missing {field}")
 
 
-def rebuild_projection(events: list[dict[str, Any]]) -> dict[str, Any]:
+def rebuild_projection(events: list[Any]) -> dict[str, Any]:
     if not events or events[0].get("kind") != "run_open":
         raise LedgerError("event stream must start with run_open")
-    marks = []
-    attempts = []
+    marks: list[dict[str, Any]] = []
+    attempts: list[dict[str, Any]] = []
     previous_time = None
-    for index, event in enumerate(events):
-        if not isinstance(event, dict) or not event.get("event_id") or not event.get("kind"):
+    for index, raw_event in enumerate(events):
+        if not isinstance(raw_event, dict):
+            raise LedgerError(f"malformed event at index {index}")
+        event = cast(dict[str, Any], raw_event)
+        if not event.get("event_id") or not event.get("kind"):
             raise LedgerError(f"malformed event at index {index}")
         event_time = event.get("event_time")
         _timestamp(event_time, f"event {index}.event_time")
@@ -136,6 +140,7 @@ def build_ledger(baseline_path: Path) -> dict[str, Any]:
     rows = baseline.get("daily")
     if not isinstance(rows, list) or not rows:
         raise LedgerError("analytical baseline has no daily rows")
+    rows = cast(list[dict[str, Any]], rows)
     _validate_daily(rows)
     near = baseline.get("near")
     far = baseline.get("far")

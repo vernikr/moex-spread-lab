@@ -6,10 +6,10 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import date
-from typing import Any
+from typing import Any, TypedDict, cast
 
+from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, read_settings
-from moex_spread_lab.core.universe import PAIRS, STRATEGIES
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
@@ -27,13 +27,29 @@ from .screener_math import require_finite as _require_finite
 from .screener_plateau import select_plateau
 from .screener_trial import TrialContext, evaluate_trials, validation_scores
 
+type _Payload = dict[str, Any]
+
+
+class _DateRow(TypedDict):
+    date: str
+
+
+PAIRS = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+STRATEGIES = cast(dict[str, _Payload], _universe.STRATEGIES)
+
 INITIAL_CAPITAL = 30_000.0
 PLATEAU_RATIO = 0.7
 MIN_COMMON_OBSERVATIONS = 80
 MIN_TABLE_OBSERVATIONS = 60
 
 
-def _projection(result: dict[str, Any]) -> dict[str, Any]:
+def _require_object(value: object, message: str) -> _Payload:
+    if not isinstance(value, dict):
+        raise ScreenerError(message)
+    return cast(_Payload, value)
+
+
+def _projection(result: _Payload) -> _Payload:
     rows = result["daily"]
     first, last = rows[0], rows[-1]
     days = (date.fromisoformat(last["date"]) - date.fromisoformat(first["date"])).days
@@ -97,18 +113,18 @@ def screen_table(
     inputs: ScreenerInputs,
     selection: dict[str, Any],
     *,
-    evaluator: Callable = build_result,
+    evaluator: Callable[..., dict[str, Any]] = build_result,
 ) -> dict[str, Any]:
     share = read_settings(inputs.root)["validation_percent"]
-    if not isinstance(selection, dict):
-        raise ScreenerError("screen selection must be an object")
+    selection = _require_object(selection, "screen selection must be an object")
     strategy = selection.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("unknown strategy")
     parameters = _parameters(selection, strategy)
     execution = execution_settings(selection)
-    pairs = []
-    for pair in catalog(inputs)["pairs"]:
+    pairs: list[_Payload] = []
+    catalog_pairs: list[_Payload] = catalog(inputs)["pairs"]
+    for pair in catalog_pairs:
         row = {key: pair[key] for key in ("id", "family", "expiry", "current_margin_pct")}
         row["min_leg_daily_volume"] = pair.get("min_leg_daily_volume")
         if pair["status"] == "excluded_thin_leg":
@@ -163,46 +179,46 @@ def screen_table(
     }
 
 
-def _segment(rows: list[dict[str, Any]], first: str, last: str) -> float | None:
+def _segment(rows: list[_Payload], first: str, last: str) -> float | None:
     return _annualized(rows, first, last)
 
 
-def _validate_search_selection(request):
-    selected = request.get("pairs")
-    if (
-        not isinstance(selected, list)
-        or not 1 <= len(selected) <= len(PAIRS)
-        or len(set(map(str, selected))) != len(selected)
-    ):
+def _validate_search_selection(request: _Payload) -> tuple[list[str], str]:
+    selected_value = request.get("pairs")
+    if not isinstance(selected_value, list):
         raise ScreenerError("select unique registered pairs")
-    ids = {pair["pair_id"] for pair in PAIRS}
-    if any(not isinstance(pair, str) or pair not in ids for pair in selected):
+    selected = cast(list[object], selected_value)
+    if not 1 <= len(selected) <= len(PAIRS) or len(set(map(str, selected))) != len(selected):
+        raise ScreenerError("select unique registered pairs")
+    pair_ids = {pair["pair_id"] for pair in PAIRS}
+    if any(not isinstance(pair, str) or pair not in pair_ids for pair in selected):
         raise ScreenerError("search includes an unknown pair")
     strategy = request.get("strategy")
     if not isinstance(strategy, str) or strategy not in STRATEGIES:
         raise ScreenerError("unknown strategy")
-    return selected, strategy
+    return cast(list[str], selected), strategy
 
 
 def optimize(
     inputs: ScreenerInputs,
     request: dict[str, Any],
     *,
-    evaluator: Callable = build_result,
+    evaluator: Callable[..., dict[str, Any]] = build_result,
     available: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not isinstance(request, dict):
-        raise ScreenerError("search request must be an object")
+    request = _require_object(request, "search request must be an object")
     percent = float(read_settings(inputs.root)["validation_percent"])
     selected, strategy = _validate_search_selection(request)
     execution = execution_settings(request)
     seed = _parameters(request, strategy)
-    catalog_by_id = {pair["id"]: pair for pair in (available or catalog(inputs))["pairs"]}
+    catalog_payload = available or catalog(inputs)
+    catalog_pairs: list[_Payload] = catalog_payload["pairs"]
+    catalog_by_id = {pair["id"]: pair for pair in catalog_pairs}
     invalid = [pair for pair in selected if not catalog_by_id[pair]["strategies"][strategy]]
     if invalid:
         raise ScreenerError("selected pairs lack compatible local inputs: " + ", ".join(invalid))
     axes, points = _grid(strategy, seed)
-    initial = {}
+    initial: dict[str, _Payload] = {}
     for pair in selected:
         try:
             initial[pair] = evaluator(
@@ -211,9 +227,11 @@ def optimize(
             )
         except (W0Error, OSError, ValueError) as exc:
             raise ScreenerError(f"{pair} cannot be searched: {exc}") from exc
-    dates = sorted(
-        set.intersection(*({row["date"] for row in result["daily"]} for result in initial.values()))
-    )
+    date_sets: list[set[str]] = [
+        {row["date"] for row in cast(list[_DateRow], result["daily"])}
+        for result in initial.values()
+    ]
+    dates = sorted(date_sets[0].intersection(*date_sets[1:]))
     if len(dates) < MIN_COMMON_OBSERVATIONS:
         raise ScreenerError(
             f"selected pairs have only {len(dates)} common dates; at least {MIN_COMMON_OBSERVATIONS} required"
@@ -237,9 +255,9 @@ def optimize(
     )
     trials = evaluate_trials(points, trial_context)
     by_point, chosen = select_plateau(strategy, axes, points, trials, _neighbors, PLATEAU_RATIO)
-    selected_params = dict(zip(axes, chosen[1])) if chosen else None
+    selected_params = dict(zip(axes, chosen[1], strict=False)) if chosen else None
     by_pair = validation_scores(trial_context, chosen, by_point, selected_params, split)
-    identity = {
+    identity: _Payload = {
         "pairs": selected,
         "strategy": strategy,
         "execution": execution,
@@ -274,7 +292,9 @@ def optimize(
         },
         **split.metadata(),
         "selected_parameters": selected_params,
-        "stable_neighbors": [dict(zip(axes, point)) for point in chosen[2]] if chosen else [],
+        "stable_neighbors": [dict(zip(axes, point, strict=False)) for point in chosen[2]]
+        if chosen
+        else [],
         "result_by_pair_pp": by_pair,
         "result_note": "Годовая оценка требует не менее 30 календарных дней в расчётном периоде."
         if by_pair and any(v is None for v in by_pair.values())

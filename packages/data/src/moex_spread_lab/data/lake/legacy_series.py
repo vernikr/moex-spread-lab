@@ -1,4 +1,9 @@
-"""Legacy `iss-candles.v1` JSON parser, validator, and compatibility reader."""
+"""Legacy `iss-candles.v1` JSON parser, validator, and compatibility reader.
+
+P7.2 (#62): JSON boundaries are narrowed with `cast`s placed after the existing
+runtime checks; payloads, error text and the `__all__` wildcard surface are
+unchanged.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import canonical_bytes
 
@@ -17,6 +22,18 @@ from .bar_types import LEGACY_CANDLE_SCHEMA, BarSeries, DataLakeError
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+
+# Supported identity-preserving exports for the `data.lake.data_lake` facade (#58).
+__all__ = [
+    "LegacyCandleSeries",
+    "LegacyJsonBarStore",
+    "_component",
+    "_integer",
+    "_number",
+    "_read_legacy_series",
+    "_source_key",
+    "_timestamp",
+]
 
 
 @dataclass(frozen=True)
@@ -88,9 +105,12 @@ def _load_legacy_payload(target: Path, display_path: Path) -> tuple[bytes, dict[
         payload = json.loads(raw)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise DataLakeError(f"cannot read legacy candle JSON: {display_path}: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != LEGACY_CANDLE_SCHEMA:
+    if not isinstance(payload, dict):
         raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {display_path}")
-    return raw, payload
+    document = cast("dict[str, Any]", payload)
+    if document.get("schema_version") != LEGACY_CANDLE_SCHEMA:
+        raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {display_path}")
+    return raw, document
 
 
 def _validate_semantics(
@@ -133,9 +153,10 @@ def _record_row_source(
         return None
     if not isinstance(source, dict):
         raise DataLakeError(f"legacy candle source is invalid: {path}[{index}]")
+    fields = cast("dict[str, Any]", source)
     page_provenance: dict[str, str | None] = {}
     for field in ("url", "received_at", "raw_response_sha256"):
-        value = source.get(field)
+        value = fields.get(field)
         if value is not None and not isinstance(value, str):
             raise DataLakeError(
                 f"legacy candle source {field} must be a string or null: {path}[{index}]"
@@ -175,21 +196,24 @@ def _parse_legacy_row(
 ) -> dict[str, Any]:
     if not isinstance(row, dict):
         raise DataLakeError(f"legacy candle row is not an object: {path}[{index}]")
-    begin = _timestamp(row.get("begin"), "begin")
-    end = _timestamp(row.get("end"), "end")
-    close = _number(row.get("close"), "close", required=True)
-    _validate_semantics(row, semantic_values, unset, path)
-    _validate_price_proxy(row, close, path, index)
-    source_page_id = _record_row_source(row.get("source"), begin, sources, source_ids, path, index)
+    values = cast("dict[str, Any]", row)
+    begin = _timestamp(values.get("begin"), "begin")
+    end = _timestamp(values.get("end"), "end")
+    close = _number(values.get("close"), "close", required=True)
+    _validate_semantics(values, semantic_values, unset, path)
+    _validate_price_proxy(values, close, path, index)
+    source_page_id = _record_row_source(
+        values.get("source"), begin, sources, source_ids, path, index
+    )
     return {
         "begin": begin,
         "end": end,
-        "open": _number(row.get("open"), "open"),
-        "high": _number(row.get("high"), "high"),
-        "low": _number(row.get("low"), "low"),
+        "open": _number(values.get("open"), "open"),
+        "high": _number(values.get("high"), "high"),
+        "low": _number(values.get("low"), "low"),
         "close": close,
-        "value": _number(row.get("value"), "value"),
-        "volume": _integer(row.get("volume"), "volume"),
+        "value": _number(values.get("value"), "value"),
+        "volume": _integer(values.get("volume"), "volume"),
         "source_page_id": source_page_id,
     }
 
@@ -208,7 +232,7 @@ def _validate_legacy_header(
     rows = payload.get("rows")
     if not isinstance(rows, list) or not rows:
         raise DataLakeError(f"legacy candle series has no rows: {path}")
-    return secid, timeframe, interval, board, rows
+    return secid, timeframe, interval, board, cast("list[Any]", rows)
 
 
 def _read_legacy_series(path: Path) -> LegacyCandleSeries:
@@ -268,28 +292,35 @@ class LegacyJsonBarStore:
             stat = legacy_path.stat()
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DataLakeError(f"cannot read legacy candle JSON: {legacy_path}: {exc}") from exc
-        if not isinstance(payload, dict) or payload.get("schema_version") != LEGACY_CANDLE_SCHEMA:
+        if not isinstance(payload, dict):
             raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {legacy_path}")
-        raw_rows = payload.get("rows")
+        document = cast("dict[str, Any]", payload)
+        if document.get("schema_version") != LEGACY_CANDLE_SCHEMA:
+            raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {legacy_path}")
+        raw_rows = document.get("rows")
         if not isinstance(raw_rows, list):
             raise DataLakeError(f"legacy candle rows must be a list: {legacy_path}")
-        if any(not isinstance(row, dict) for row in raw_rows):
+        body = cast("list[Any]", raw_rows)
+        if any(not isinstance(row, dict) for row in body):
             raise DataLakeError(f"legacy candle row is not an object: {legacy_path}")
-        interval = payload.get("interval")
+        rows = cast("list[dict[str, Any]]", body)
+        interval = document.get("interval")
         if isinstance(interval, bool) or not isinstance(interval, int):
             interval = None
-        secid = payload.get("secid") if isinstance(payload.get("secid"), str) else None
-        timeframe = payload.get("timeframe") if isinstance(payload.get("timeframe"), str) else None
+        secid = document.get("secid") if isinstance(document.get("secid"), str) else None
+        timeframe = (
+            document.get("timeframe") if isinstance(document.get("timeframe"), str) else None
+        )
         col_tuple = tuple(columns) if columns is not None else None
         return BarSeries(
             schema_version=LEGACY_CANDLE_SCHEMA,
             secid=secid,
             interval=interval,
             timeframe=timeframe,
-            rows=tuple(_project_legacy_row(row, col_tuple) for row in raw_rows),
+            rows=tuple(_project_legacy_row(row, col_tuple) for row in rows),
             source_path=str(legacy_path),
             source_sha256=hashlib.sha256(raw).hexdigest(),
             backend="legacy_json",
             cache_key=("legacy_json", str(legacy_path.resolve()), stat.st_mtime_ns, stat.st_size),
-            metadata={key: value for key, value in payload.items() if key != "rows"},
+            metadata={key: value for key, value in document.items() if key != "rows"},
         )

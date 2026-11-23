@@ -13,6 +13,28 @@ from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
 from .study import CarryStrategyError, _round
 
+# Declared surface for the carry facade: the three private entry points below
+# stay available under their historical names, and the pre-existing wildcard
+# names remain exported, so this is purely additive.
+__all__ = [
+    "_BENCHMARK_PARSED_CACHE",
+    "Any",
+    "Callable",
+    "CarryStrategyError",
+    "Path",
+    "W0Error",
+    "_benchmark_rows",
+    "_transaction_cost_profile",
+    "annotations",
+    "bisect_left",
+    "cast",
+    "make_benchmark_lookup",
+    "read_hashed_json",
+    "resolve_carry_cost_profile",
+    "side_cost",
+    "tariff_profile",
+]
+
 _BENCHMARK_PARSED_CACHE: _HashedJSONCache[
     tuple[str, int, int], tuple[dict[str, dict[str, Any]], str]
 ] = _HashedJSONCache(64)

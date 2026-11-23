@@ -84,5 +84,6 @@ def _worker_window_summaries(
     return rows
 
 
-# ``worker_cohort`` and the pool facade resolve these through this module at call time.
-_worker_tasks = (_worker_service, _worker_window_summaries)
+# Explicit aliases preserve identities without changing the historical wildcard surface.
+worker_service = _worker_service
+worker_window_summaries = _worker_window_summaries

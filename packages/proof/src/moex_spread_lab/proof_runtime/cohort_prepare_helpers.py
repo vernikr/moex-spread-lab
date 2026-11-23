@@ -21,8 +21,7 @@ MAX_TARGETS = 1024
 # Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
 # bindings they exposed before the strict-typing pass. The private helpers stay module
 # attributes under their historical names for ``proof_batch`` / ``cohort_prepare`` /
-# ``cohort_models``, which bind and patch them here; ``_facade_hooks`` keeps those
-# references live without widening this list.
+# ``cohort_models``, which bind and patch them here; supported aliases do not widen this list.
 __all__ = [
     "CALENDAR_UNIVERSE",
     "MAX_TARGETS",
@@ -200,15 +199,12 @@ def _confirmation(settings: _SettingsLike, rejected: list[_Obj], members: Sized)
     }
 
 
-# These helpers are never called here, but ``proof_batch`` re-exports them and
-# ``cohort_prepare`` / ``cohort_models`` resolve them through this module at call time.
-# Referencing them keeps that surface live without widening ``__all__``.
-_facade_hooks = (
-    _active_seed,
-    _confirmation,
-    _filter_training,
-    _intersect_axes,
-    _native_request,
-    _targets,
-    _translate,
-)
+# Supported explicit aliases keep the historical hook objects available without
+# changing the wildcard surface; private attributes remain the patch points.
+active_seed = _active_seed
+confirmation = _confirmation
+filter_training = _filter_training
+intersect_axes = _intersect_axes
+native_request = _native_request
+targets = _targets
+translate = _translate

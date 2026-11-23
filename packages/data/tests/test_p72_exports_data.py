@@ -143,12 +143,10 @@ def test_lake_helpers_are_live_callables(tmp_path: Path) -> None:
     refresh_merge._atomic_write_json(written, {"b": 2, "a": 1})
     assert json.loads(written.read_text(encoding="utf-8")) == {"a": 1, "b": 2}
     assert not list(written.parent.glob(".payload.json.*.tmp"))
-    # The frozen tuple documents ownership without shadowing the exports.
-    assert refresh_merge._refresh_merge_legacy_helpers == (
-        refresh_merge._dataset_writer_lock,
-        refresh_merge._atomic_write_json,
-        refresh_merge._chunks,
-    )
+    # Explicit aliases preserve the objects while private hooks stay patchable.
+    assert refresh_merge.dataset_writer_lock is refresh_merge._dataset_writer_lock
+    assert refresh_merge.atomic_write_json is refresh_merge._atomic_write_json
+    assert refresh_merge.chunks is refresh_merge._chunks
 
 
 def test_dataset_writer_lock_is_exclusive_and_releases(

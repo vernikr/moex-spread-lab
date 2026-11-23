@@ -289,15 +289,12 @@ def _worker_report_cohort(
     return rows
 
 
-# These task functions are spawn entry points the pool facade resolves out of this module
-# by name; ``_WORKER_COHORTS`` is the sticky bucket it reads. Referencing them keeps that
-# surface live without widening ``__all__``.
-_worker_tasks = (
-    _WORKER_COHORTS,
-    _prepare_worker_case,
-    _worker_eval_indices,
-    _worker_eval_plateau_batch,
-    _worker_init_cohort,
-    _worker_release_cohort,
-    _worker_report_cohort,
-)
+# Explicit aliases preserve the original spawn callables and shared state while
+# the historical private attributes remain the worker and facade patch points.
+WORKER_COHORTS = _WORKER_COHORTS
+prepare_worker_case = _prepare_worker_case
+worker_eval_indices = _worker_eval_indices
+worker_eval_plateau_batch = _worker_eval_plateau_batch
+worker_init_cohort = _worker_init_cohort
+worker_release_cohort = _worker_release_cohort
+worker_report_cohort = _worker_report_cohort

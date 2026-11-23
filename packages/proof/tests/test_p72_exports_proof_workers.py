@@ -133,6 +133,7 @@ def test_p72_exports_proof_workers_helper_hooks_keep_names_and_identity() -> Non
     # Every hook the facades resolve must still exist under its historical name.
     for name in _HELPER_HOOKS:
         assert callable(getattr(cohort_prepare_helpers, name))
+        assert getattr(cohort_prepare_helpers, name[1:]) is getattr(cohort_prepare_helpers, name)
 
 
 def test_p72_exports_proof_workers_helper_hooks_stay_reachable_through_facades() -> None:
@@ -164,6 +165,8 @@ def test_p72_exports_proof_workers_helper_hooks_stay_late_bound(
 
 
 def test_p72_exports_proof_workers_cohort_tasks_stay_shared_with_pool_facade() -> None:
+    for name in _COHORT_TASKS:
+        assert getattr(worker_cohort, name[1:]) is getattr(worker_cohort, name)
     # ``_prepare_worker_case`` is worker-internal; the pool shares the bucket and task hooks.
     for name in ("_WORKER_COHORTS", *_COHORT_TASKS[2:]):
         hook = getattr(worker_cohort, name)
@@ -182,6 +185,8 @@ def test_p72_exports_proof_workers_cohort_tasks_stay_shared_with_pool_facade() -
 
 
 def test_p72_exports_proof_workers_window_tasks_stay_shared_with_pool_facade() -> None:
+    assert worker_window.worker_service is worker_window._worker_service
+    assert worker_window.worker_window_summaries is worker_window._worker_window_summaries
     assert pool_tasks.worker_service is worker_window._worker_service
     assert pool_tasks.window_summaries_task is worker_window._worker_window_summaries
     assert proof_pool._worker_service is worker_window._worker_service

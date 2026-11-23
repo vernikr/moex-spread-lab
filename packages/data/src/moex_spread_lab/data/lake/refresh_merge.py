@@ -295,23 +295,19 @@ def build_merged_payload(
     return payload
 
 
-# Module-level reference to the writer/planning primitives. ``data_refresh``
-# reaches its production copies through the strict ``helpers_p72_...`` leaf, so
-# the in-module versions below have no in-module caller; this tuple keeps them
-# as live, importable callables and gives strict mode's ``reportUnusedFunction``
-# the module-level access it requires.
-_refresh_merge_legacy_helpers: tuple[object, ...] = (
-    _dataset_writer_lock,
-    _atomic_write_json,
-    _chunks,
-)
+# Supported named aliases preserve the original callable identities without
+# expanding the historical wildcard surface beyond the published private hooks.
+dataset_writer_lock = _dataset_writer_lock
+atomic_write_json = _atomic_write_json
+chunks = _chunks
 
 # Frozen pre-P7.2 wildcard surface, measured at ``5e97a62^`` (the immediate
 # pre-leaf revision of #66), not at the older ``545cf0c`` snapshot. Before the
 # strict pass this module declared no ``__all__``, so ``import *`` exposed the
 # public callables *and* the imported names above, including the module's own
 # ``DataRefreshError``. #66 declared only the owned callables and silently
-# removed the rest. The list below restores the measured set exactly: ``cast``
+# removed the rest. The list below restores the measured public set plus the six previously
+# declared private hooks: ``cast``
 # (added by #66) stays reachable by name but is deliberately not part of the
 # frozen surface, and ``Iterator`` is re-bound as a declaration-only import
 # because #66 replaced it with ``Generator`` in the annotations.

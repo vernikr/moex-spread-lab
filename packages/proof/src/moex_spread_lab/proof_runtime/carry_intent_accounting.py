@@ -172,6 +172,65 @@ def _expiry_cutoff(dates, expiry, expiry_buffer_days, assignment_window_trading_
     return cutoff
 
 
+def _settle_carry_exit(active, trade, row, trade_gross, funding, fee, signals, trades):
+    if active is not trade:
+        raise W0Error("Carry-выход без соответствующего входа.")
+    trade_gross -= funding
+    signals.append(
+        {
+            "date": row["date"],
+            "action": "exit",
+            "reason": trade["reason"],
+            "execution_available": True,
+        }
+    )
+    trades.append(
+        {
+            "entry_decision_date": trade["signal_date"],
+            "entry_execution_date": trade["entry_date"],
+            "exit_decision_date": row["date"],
+            "exit_execution_date": row["date"],
+            "status": "closed_proxy_round_trip",
+            "gross_pnl": round(trade_gross, 8),
+            "transaction_costs": 2 * fee,
+            "net_pnl": round(trade_gross - 2 * fee, 8),
+        }
+    )
+    return trade_gross
+
+
+def _begin_carry_entry(active, trade, signals):
+    if active is not None:
+        raise W0Error("Перекрывающиеся позиции carry.")
+    signals.append(
+        {
+            "date": trade["signal_date"],
+            "action": "entry",
+            "reason": trade.get("entry_reason"),
+            "execution_available": True,
+        }
+    )
+
+
+def _append_open_trade(active, trades, trade_gross, fee):
+    if active is None:
+        return
+    if not active["open_at_end"]:
+        raise W0Error("Незакрытая позиция carry не помечена как конечная.")
+    trades.append(
+        {
+            "entry_decision_date": active["signal_date"],
+            "entry_execution_date": active["entry_date"],
+            "exit_decision_date": None,
+            "exit_execution_date": None,
+            "status": "open_at_data_end_no_executable_exit",
+            "gross_pnl": round(trade_gross, 8),
+            "transaction_costs": fee,
+            "net_pnl": round(trade_gross - fee, 8),
+        }
+    )
+
+
 def replay_carry_intents(
     study,
     intents,
@@ -216,48 +275,19 @@ def replay_carry_intents(
             trade_gross += increment
         if i in exits:
             trade = exits[i]
-            if active is not trade:
-                raise W0Error("Carry-выход без соответствующего входа.")
+            trade_gross = _settle_carry_exit(
+                active, trade, row, trade_gross, funding, fee, signals, trades
+            )
             increment -= funding
-            trade_gross -= funding
             funding = 0.0
             cumulative_cost += fee
-            signals.append(
-                {
-                    "date": row["date"],
-                    "action": "exit",
-                    "reason": trade["reason"],
-                    "execution_available": True,
-                }
-            )
-            trades.append(
-                {
-                    "entry_decision_date": trade["signal_date"],
-                    "entry_execution_date": trade["entry_date"],
-                    "exit_decision_date": row["date"],
-                    "exit_execution_date": row["date"],
-                    "status": "closed_proxy_round_trip",
-                    "gross_pnl": round(trade_gross, 8),
-                    "transaction_costs": 2 * fee,
-                    "net_pnl": round(trade_gross - 2 * fee, 8),
-                }
-            )
             active = None
         if i in entries:
             trade = entries[i]
-            if active is not None:
-                raise W0Error("Перекрывающиеся позиции carry.")
+            _begin_carry_entry(active, trade, signals)
             active = trade
             trade_gross = 0.0
             cumulative_cost += fee
-            signals.append(
-                {
-                    "date": trade["signal_date"],
-                    "action": "entry",
-                    "reason": trade.get("entry_reason"),
-                    "execution_available": True,
-                }
-            )
         cumulative_gross += increment
         if not all(
             map(math.isfinite, (increment, funding, cumulative_gross, cumulative_cost, trade_gross))
@@ -279,19 +309,5 @@ def replay_carry_intents(
         )
     if account is not None:
         _apply_account(daily, quantity, account)
-    if active is not None:
-        if not active["open_at_end"]:
-            raise W0Error("Незакрытая позиция carry не помечена как конечная.")
-        trades.append(
-            {
-                "entry_decision_date": active["signal_date"],
-                "entry_execution_date": active["entry_date"],
-                "exit_decision_date": None,
-                "exit_execution_date": None,
-                "status": "open_at_data_end_no_executable_exit",
-                "gross_pnl": round(trade_gross, 8),
-                "transaction_costs": fee,
-                "net_pnl": round(trade_gross - fee, 8),
-            }
-        )
+    _append_open_trade(active, trades, trade_gross, fee)
     return {"daily": daily, "trades": trades, "signals": signals}

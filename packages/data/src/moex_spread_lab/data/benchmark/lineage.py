@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import certifi
@@ -59,7 +59,7 @@ def _request_json(url: str, timeout: float = 30.0) -> tuple[dict[str, Any], str]
         raise BenchmarkError(f"benchmark response is not JSON: {url}") from exc
     if not isinstance(value, dict):
         raise BenchmarkError(f"benchmark JSON root is not an object: {url}")
-    return value, hashlib.sha256(raw).hexdigest()
+    return cast(dict[str, Any], value), hashlib.sha256(raw).hexdigest()
 
 
 def _request_text(
@@ -114,10 +114,12 @@ def _table_rows(block: dict[str, Any], name: str) -> list[dict[str, Any]]:
     data = block.get("data")
     if not isinstance(columns, list) or not isinstance(data, list):
         raise BenchmarkError(f"invalid benchmark table: {name}")
+    typed_columns = cast(list[str], columns)
+    typed_data = cast(list[Any], data)
     return [
-        dict(zip(columns, row, strict=False))
-        for row in data
-        if isinstance(row, list) and len(row) == len(columns)
+        dict(zip(typed_columns, cast(list[Any], row), strict=False))
+        for row in typed_data
+        if isinstance(row, list) and len(cast(list[Any], row)) == len(typed_columns)
     ]
 
 

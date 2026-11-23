@@ -232,6 +232,7 @@ strict = [
     "packages/data/src/moex_spread_lab/data/iss/iss_snapshot.py",
     "packages/data/src/moex_spread_lab/data/cli.py",
     "packages/data/src/moex_spread_lab/data/lake/market_store.py",
+    "packages/data/src/moex_spread_lab/data/benchmark/lineage.py",
     "packages/data/src/moex_spread_lab/data/benchmark/lineage_math.py",
     "packages/data/src/moex_spread_lab/data/benchmark/ruonia_xlsx.py",
     "packages/accounting/src",

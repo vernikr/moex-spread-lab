@@ -248,6 +248,7 @@ strict = [
     "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_spec.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_math.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/strategy_search_prepare.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/service_sizing.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_trial.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_plateau.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/screener_grid.py",

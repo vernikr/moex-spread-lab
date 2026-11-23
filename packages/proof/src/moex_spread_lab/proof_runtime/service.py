@@ -16,13 +16,15 @@ executable fills. The screen is offline-only; it never downloads data.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic, size_proof
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
+from moex_spread_lab.accounting.position_sizing import size_proof as size_proof
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
@@ -59,6 +61,7 @@ from .payload_tools import (
     result_label,
     sha256_bytes,
 )
+from .service_sizing import prepare_automatic
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
@@ -285,62 +288,9 @@ class ProofService:
         return self._prepare_automatic(selection, calendar, settings, registry, strategy)
 
     def _prepare_automatic(self, selection, calendar, settings, registry, strategy):
-        replay = self._prepare_fixed(
-            _intent_request(selection, registry, settings),
-            calendar=calendar,
-            settings=settings,
-            sizing_intents=True,
+        return prepare_automatic(
+            self, selection, calendar, settings, registry, strategy, sys.modules[__name__]
         )
-        dates, prices = _benchmark_marks(self.root / "data/benchmark/lqdt-lineage.json")
-        contracts = _load_instruments(self.root / "data/w1/current-intake.json")
-        marks_cache: dict[str | None, dict[str, float]] = {}
-        scan_cols_cache: dict[str | None, Any] = {}
-
-        def sized_replay(
-            request,
-            through=None,
-            *,
-            metrics_only: bool = False,
-            scalar_summary: tuple[str, str] | None = None,
-        ):
-            from moex_spread_lab.strategies.base import carry_proof_plugin_ids
-
-            if strategy in carry_proof_plugin_ids(registry) and (
-                not isinstance(request, dict)
-                or not automatic(request)
-                or request.get("quantity") is not None
-            ):
-                raise W0Error(
-                    "Запрос не соответствует подготовленному автоматическому размеру carry."
-                )
-            unit = replay(
-                _intent_request(request, registry, settings),
-                through=through,
-                metrics_only=metrics_only,
-            )
-            unit = _calendar_sizing_unit(self.root, request, unit, through, metrics_only)
-            marks = marks_cache.get(through)
-            if marks is None:
-                if not dates or dates[0] > unit["series"][0]["date"]:
-                    raise W0Error("Нет отметки LQDT на начало истории.")
-                marks = {
-                    r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
-                    for r in unit["series"]
-                }
-                marks_cache[through] = marks
-            return size_proof(
-                unit,
-                marks,
-                settings,
-                contracts,
-                metrics_only=metrics_only,
-                copy_unit=False,
-                _scan_cache=scan_cols_cache if metrics_only else None,
-                _scan_key=through,
-                scalar_summary=scalar_summary if metrics_only else None,
-            )
-
-        return sized_replay
 
     def _prepare_fixed(
         self,

@@ -27,14 +27,15 @@ from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.accounting.position_sizing import size_proof as size_proof
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.universe import (
-    CALENDAR_UNIVERSE,
     PAIR_UNIVERSE,
 )
 from moex_spread_lab.core.universe import (
     STRATEGIES as STRATEGIES,
 )
-from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache, _run_id
+from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache
+from moex_spread_lab.core.w0 import _run_id as _run_id
 from moex_spread_lab.strategies import pair_fill as pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding as ProofFunding
@@ -53,7 +54,7 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings as execution_settings,
 )
 
-from .calendar_adapter import calendar_proof
+from .calendar_adapter import calendar_proof as calendar_proof
 from .funding_engine import FundingSpec as FundingSpec
 from .funding_engine import funding_inputs
 from .funding_payloads import run_funding as run_funding
@@ -71,8 +72,10 @@ from .payload_tools import (
     result_label,
     sha256_bytes,
 )
+from .service_calendar import calendar_sizing_unit, prepare_fixed
 from .service_pair import prepare_pair
 from .service_sizing import prepare_automatic
+from .service_validation import intent_request, plugin_parameters
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(
@@ -109,70 +112,15 @@ def reference_eval() -> bool:
 
 
 def _plugin_parameters(plugin, request, pair, settings) -> dict[str, Any]:
-    """Validate trusted-plugin parameters against the schema it declares."""
-    from copy import deepcopy
-
-    from moex_spread_lab.core.contracts import InstrumentContext
-    from moex_spread_lab.strategies.base import validate_parameter_map
-
-    context = InstrumentContext(
-        universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe
-    )
-    schema = plugin.parameter_schema(context)
-    clean = validate_parameter_map(request.get("parameters", {}), schema)
-    params = validate_parameter_map(plugin.validate_parameters(deepcopy(clean), context), schema)
-    if params != clean or any(not param.contains(params[param.name]) for param in schema):
-        raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
-    return params
+    return plugin_parameters(plugin, request, pair, settings, W0Error, PAIR_UNIVERSE)
 
 
 def _calendar_sizing_unit(root, request, unit, through, metrics_only):
-    if unit.get("schema_version") == "calendar-proof.v1":
-        if through is None:
-            unit = calendar_proof(root, request, unit)
-        else:
-            # Partial (training) replays skip the full _calendar_proof
-            # enrichment (run_id, notes, summary) to save per-trial work,
-            # but the structural markers size_proof/_Terms need must still
-            # be present. `universe` routes _Terms to the native branch;
-            # `run_id` is the unit identity fed into proof run_id (unused
-            # by _measure, only needed when metrics_only is False).
-            unit.setdefault("universe", CALENDAR_UNIVERSE)
-            if not metrics_only:
-                unit.setdefault(
-                    "run_id",
-                    _run_id(
-                        {
-                            "selection": unit.get("selection", {}),
-                            "daily": unit.get("series", []),
-                            "source_hashes": {
-                                k: v
-                                for k, v in (unit.get("provenance") or {}).items()
-                                if isinstance(v, str) and "sha256" in k
-                            },
-                        }
-                    ),
-                )
-    return unit
+    return calendar_sizing_unit(root, request, unit, through, metrics_only, sys.modules[__name__])
 
 
 def _intent_request(request, registry, settings):
-    strategy = request.get("strategy", "zscore_mean_reversion")
-    selected_plugin = (
-        registry.get(strategy) if isinstance(strategy, str) and strategy in registry else None
-    )
-    default_fill = (
-        "same_day_settlement"
-        if selected_plugin is not None
-        and selected_plugin.supported_fills == ("same_day_settlement",)
-        else settings.price_fill
-    )
-    return {
-        **request,
-        "quantity": 1,
-        "slippage_ticks": settings.slippage_ticks,
-        **({} if "fill" in request else {"fill": default_fill}),
-    }
+    return intent_request(request, registry, settings)
 
 
 def _validate_pair_screen(inputs, pair, funding, screen_strategy, settings):
@@ -311,59 +259,9 @@ class ProofService:
         settings: ResearchSettings = STRICT_SCREENS,
         sizing_intents=False,
     ) -> Callable[..., dict[str, Any]]:
-        """Request-scoped replay of one instrument/strategy with different numeric settings.
-
-        Load the selected inputs once, not the entire registry per trial. Outside this
-        request a new session sees refreshed local files. `through` cuts the actual
-        simulator input (including carry's tariff reference), not just its output.
-        """
-        if not isinstance(selection, dict):
-            raise W0Error("выбор должен быть объектом")
-        universe = selection.get("universe", CALENDAR_UNIVERSE)
-        if universe == PAIR_UNIVERSE:
-            from moex_spread_lab.strategies.base import carry_proof_plugin_ids
-
-            from .strategy_catalog import get_strategy_registry
-
-            registry = get_strategy_registry()
-            strategy = selection.get("strategy")
-            plugin = (
-                registry.get(strategy)
-                if isinstance(strategy, str) and strategy in carry_proof_plugin_ids(registry)
-                else None
-            )
-            return self._prepare_pair(
-                selection, settings, sizing_intents=sizing_intents, carry_plugin=plugin
-            )
-        if universe != CALENDAR_UNIVERSE:
-            raise W0Error("неизвестная вселенная")
-        spec = get_timeframe(settings.timeframe)
-        if not spec.supports_calendar:
-            raise W0Error(
-                f"{spec.label}: календарный proof не поддерживается на выбранном интервале."
-            )
-        calendar = calendar if calendar is not None else self.calendar_data
-        cal_cache: dict[str, Any] = {}
-
-        def replay(request, through=None, *, metrics_only: bool = False, scalar_summary=None):
-            effective = {
-                **request,
-                "timeframe": settings.timeframe,
-                **({} if "fill" in request else {"fill": settings.price_fill}),
-            }
-            payload = calendar.proof(
-                effective,
-                through=through,
-                initial_capital=settings.initial_capital_rub,
-                timeframe=settings.timeframe,
-                metrics_only=metrics_only,
-                sizing_intents=sizing_intents,
-                _cache=cal_cache,
-            )
-            # The search only needs trades, daily marks and admissions from partial replays.
-            return payload if through is not None else calendar_proof(self.root, effective, payload)
-
-        return replay
+        return prepare_fixed(
+            self, selection, calendar, settings, sizing_intents, sys.modules[__name__]
+        )
 
     # ----------------------------------------------------------- pair adapter
 

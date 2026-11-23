@@ -14,13 +14,27 @@ from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, Legacy
 
 from ..pair_mean_reversion.analytics import load_contracts
 
-# Facade consumed by the screener entry points; private names are part of it.
+# Preserve pre-leaf wildcard bindings as well as the declared screener hooks.
 __all__ = [
+    "Any",
+    "BarSeries",
+    "Collection",
+    "DataLakeError",
+    "LegacyJsonBarStore",
+    "Path",
     "ScreenError",
+    "W0Error",
     "_bar_series",
     "_normalized_series",
     "_read_json",
     "_round",
+    "annotations",
+    "bisect_left",
+    "get_timeframe",
+    "load_contracts",
+    "partial",
+    "read_hashed_json",
+    "timeframe_for_interval",
 ]
 
 _NORM_EXTRA_OPTS = frozenset({"prior_benchmark_dates", "timeframe"})

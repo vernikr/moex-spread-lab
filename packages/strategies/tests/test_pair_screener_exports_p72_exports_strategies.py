@@ -5,12 +5,9 @@ pre-leaf revision (not the historical ``545cf0c`` snapshot): ``inputs.py`` at
 ``128a79794bfe6827a2f0acd5dcb62aef658eb505`` and ``normalization.py`` at
 ``ad59ea6e3894b4a36729711ffe51fd4c10fdfc44``; both equal the ``545cf0c`` sets.
 
-Audit outcome: ``inputs`` restores the pre-leaf wildcard names alongside its
-private facade hooks (its leaf test only requires those hooks). ``normalization``
-keeps its five-name private facade: it is exactly what ``screener.py`` consumes
-(#117/#120), is pinned by #117's existing test, and the omitted names are
-incidental imports with no wildcard consumer; restoring them needs a cross-owned
-test edit. Every pre-leaf name stays a direct, importable module attribute.
+Both modules preserve their measured pre-leaf wildcard names alongside the
+private facade hooks explicitly exported in the intervening P7.2 leaves. This
+is an additive superset, not exact pre-leaf wildcard parity.
 """
 
 from __future__ import annotations
@@ -117,31 +114,12 @@ def test_inputs_wildcard_restores_the_pre_leaf_surface() -> None:
         assert hasattr(inputs, name), name
 
 
-def test_normalization_keeps_the_declared_private_facade() -> None:
-    expected = NORMALIZATION_FACADE_HOOKS | {"ScreenError"}
+def test_normalization_restores_pre_leaf_surface_and_declared_facade() -> None:
+    expected = NORMALIZATION_PRE_LEAF_WILDCARD | NORMALIZATION_FACADE_HOOKS
     assert _star_names("moex_spread_lab.strategies.pair_screener.normalization") == expected
     assert set(normalization.__all__) == expected
-    # The pre-leaf wildcard names stay importable directly; only the implicit
-    # star surface is deliberately narrowed (incidental imports, no consumer).
-    for name in NORMALIZATION_PRE_LEAF_WILDCARD:
+    for name in expected:
         assert hasattr(normalization, name), name
-    assert NORMALIZATION_PRE_LEAF_WILDCARD - expected == {
-        "Any",
-        "BarSeries",
-        "Collection",
-        "DataLakeError",
-        "LegacyJsonBarStore",
-        "Path",
-        "W0Error",
-        "annotations",
-        "bisect_left",
-        "get_timeframe",
-        "load_contracts",
-        "partial",
-        "read_hashed_json",
-        "timeframe_for_interval",
-    }
-    # The new leaf helper stays a direct attribute, not a wildcard export.
     assert "_path_source" not in normalization.__all__
     assert normalization._path_source is not None
 

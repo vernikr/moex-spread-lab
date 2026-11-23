@@ -79,7 +79,7 @@ def _contracts(root: Path) -> Path:
 
 class BarSeriesDispatchTests(unittest.TestCase):
     def test_module_all_declares_screener_facade(self):
-        self.assertEqual(set(normalization.__all__), FACADE)
+        self.assertTrue(set(normalization.__all__) >= FACADE)
         for name in FACADE:
             self.assertTrue(hasattr(normalization, name), name)
         self.assertEqual(_round(1.0 / 3.0), 0.33333333)

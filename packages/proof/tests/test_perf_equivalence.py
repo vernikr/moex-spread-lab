@@ -13,12 +13,18 @@ from __future__ import annotations
 
 import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
+from helpers_p72_packages_proof_tests_test_perf_equivalence import (
+    calendar_spread_request,
+    convergence_window_requests,
+    pair_screen_fixed_quantity_request,
+    pair_screen_request,
+    research_settings,
+    rewrite_same_size,
+)
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
@@ -66,15 +72,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         return actual
 
     def test_1h_calendar_proxy_and_native_cohort_and_mixed_universe(self):
-        settings = ResearchSettings(
-            timeframe="1h",
-            validation_percent=20,
-            allow_failed_volume=True,
-            allow_failed_capital=True,
-            initial_capital_rub=100000.0,
-            # Fixed seed: these tests compare two runs, which must stay comparable.
-            random_seed=41,
-        )
+        settings = research_settings(timeframe="1h", initial_capital_rub=100000.0)
         cal_targets = [
             {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
             {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRM3/SRU3"},
@@ -87,60 +85,24 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         def suite(service: ProofService):
             cal_opt = research_run(
                 service,
-                {
-                    "universe": CALENDAR_UNIVERSE,
-                    "asset": "SR",
-                    "pair": "SRH3/SRM3",
-                    "strategy": "zscore_mean_reversion",
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                    "optimize_strategy": True,
-                    "targets": cal_targets,
-                },
+                calendar_spread_request(optimize_strategy=True, targets=cal_targets),
                 optimize=True,
             )
             mixed_opt = research_run(
                 service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                    "optimize_strategy": True,
-                    "targets": mixed_targets,
-                },
+                pair_screen_request(optimize_strategy=True, targets=mixed_targets),
                 optimize=True,
             )
             plat = checked_plateau(
                 service,
-                {
-                    "universe": CALENDAR_UNIVERSE,
-                    "asset": "SR",
-                    "pair": "SRH3/SRM3",
-                    "strategy": "zscore_mean_reversion",
-                    "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                    "targets": cal_targets,
-                },
+                calendar_spread_request(
+                    parameters={"window": 10, "entry_z": 1.2, "exit_z": 0.3},
+                    targets=cal_targets,
+                ),
             )
             wins = window_summaries(
                 service,
-                {
-                    "requests": [
-                        {
-                            "universe": CALENDAR_UNIVERSE,
-                            "asset": "SR",
-                            "pair": t["pair"],
-                            "strategy": "convergence_to_ruonia",
-                            "parameters": {"threshold_pp": 0.5},
-                            "fill": "next_open",
-                            "sizing": AUTO_SIZING,
-                        }
-                        for t in cal_targets
-                    ]
-                },
+                {"requests": convergence_window_requests(cal_targets)},
             )
             return {
                 "cal_opt": cal_opt,
@@ -158,71 +120,38 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             funding_winner(root)
-            settings = ResearchSettings(
-                timeframe="1d",
-                validation_percent=20,
-                allow_failed_volume=True,
-                allow_failed_capital=True,
-                initial_capital_rub=30000.0,
-                # Fixed seed: these tests compare two runs, which must stay comparable.
-                random_seed=41,
-            )
+            settings = research_settings(timeframe="1d", initial_capital_rub=30000.0)
 
-            def run_for(env_flag: str):
-                with (
-                    patch.object(ResearchSettings, "load", return_value=settings),
-                    patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": env_flag}),
-                ):
-                    svc = ProofService(root)
-                    auto_pair = research_run(
-                        svc,
-                        {
-                            "universe": PAIR_UNIVERSE,
-                            "pair": "CNYRUBF/CRZ6",
-                            "strategy": "mean_reversion",
-                            "fill": "next_open",
-                            "sizing": AUTO_SIZING,
-                            "optimize_strategy": True,
-                            "targets": [{"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"}],
-                        },
-                        optimize=True,
-                    )
-                    fixed_pair = research_run(
-                        svc,
-                        {
-                            "universe": PAIR_UNIVERSE,
-                            "pair": "CNYRUBF/CRZ6",
-                            "strategy": "mean_reversion",
-                            "fill": "next_open",
-                            "quantity": 1,
-                            "slippage_ticks": 1.0,
-                            "optimize_strategy": False,
-                            "targets": [{"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"}],
-                        },
-                        optimize=True,
-                    )
-                    cal_1d = research_run(
-                        svc,
-                        {
-                            "universe": CALENDAR_UNIVERSE,
-                            "asset": "SR",
-                            "pair": "SRH3/SRM3",
-                            "strategy": "zscore_mean_reversion",
-                            "fill": "next_open",
-                            "sizing": AUTO_SIZING,
-                            "optimize_strategy": True,
-                            "targets": [
-                                {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"}
-                            ],
-                        },
-                        optimize=True,
-                    )
-                    return {"auto_pair": auto_pair, "fixed_pair": fixed_pair, "cal_1d": cal_1d}
+            def run_for(service: ProofService):
+                auto_pair = research_run(
+                    service,
+                    pair_screen_request(
+                        optimize_strategy=True,
+                        targets=[{"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"}],
+                    ),
+                    optimize=True,
+                )
+                fixed_pair = research_run(
+                    service,
+                    pair_screen_fixed_quantity_request(
+                        optimize_strategy=False,
+                        targets=[{"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"}],
+                    ),
+                    optimize=True,
+                )
+                cal_1d = research_run(
+                    service,
+                    calendar_spread_request(
+                        optimize_strategy=True,
+                        targets=[
+                            {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"}
+                        ],
+                    ),
+                    optimize=True,
+                )
+                return {"auto_pair": auto_pair, "fixed_pair": fixed_pair, "cal_1d": cal_1d}
 
-            expected = run_for("1")
-            actual = run_for("0")
-            self.assertEqual(_canon_sha(actual), _canon_sha(expected))
-            self.assertEqual(actual, expected)
+            self._compare_modes(settings, run_for)
 
     def test_file_caches_invalidate_immediately_on_in_place_same_size_edits(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -242,55 +171,21 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
 
             # 1. Warm pair + calendar caches via catalog and proof runs.
             cat_before = service.catalog()
+            pair_params = {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3}
+            cal_params = {"window": 10, "entry_z": 1.2, "exit_z": 0.3}
             pair_before = research_run(
-                service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                },
-                optimize=False,
+                service, pair_screen_request(parameters=pair_params), optimize=False
             )
             cal_before = research_run(
-                service,
-                {
-                    "universe": CALENDAR_UNIVERSE,
-                    "asset": "SR",
-                    "pair": "SRH3/SRM3",
-                    "strategy": "zscore_mean_reversion",
-                    "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                },
-                optimize=False,
+                service, calendar_spread_request(parameters=cal_params), optimize=False
             )
 
             # 2. Mutate CRZ6_1h.json with the EXACT same byte length. A fresh
             #    (path, st_mtime_ns, st_size) key must invalidate the cache.
             crz6_path = root / "data/w1/candles-screen/CRZ6_1h.json"
-            raw_crz6 = crz6_path.read_text(encoding="utf-8")
-            mutated_crz6 = raw_crz6.replace('"volume": 60', '"volume": 61', 1)
-            self.assertEqual(len(raw_crz6), len(mutated_crz6))
-            before_stat = crz6_path.stat()
-            time.sleep(0.02)  # guarantee a different st_mtime_ns on rewrite
-            crz6_path.write_text(mutated_crz6, encoding="utf-8")
-            after_stat = crz6_path.stat()
-            self.assertNotEqual(before_stat.st_mtime_ns, after_stat.st_mtime_ns)
-
+            rewrite_same_size(crz6_path, '"volume": 60', '"volume": 61')
             pair_after = research_run(
-                service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                },
-                optimize=False,
+                service, pair_screen_request(parameters=pair_params), optimize=False
             )
             self.assertNotEqual(
                 pair_before["provenance"]["far_candles_sha256"],
@@ -307,29 +202,11 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
             srh3_eod = eod_candidates[0]
             raw_srh3 = srh3_eod.read_text(encoding="utf-8")
             # Row 0 settles at 30000.0; replace the first occurrence with a
-            # same-length value so st_size is unchanged but raw bytes (and sha256)
-            # differ.
+            # same-length value so st_size is unchanged but raw bytes differ.
             self.assertIn("30000.0", raw_srh3)
-            mutated_srh3 = raw_srh3.replace("30000.0", "30001.0", 1)
-            self.assertEqual(len(raw_srh3), len(mutated_srh3))
-            before_stat = srh3_eod.stat()
-            time.sleep(0.02)  # guarantee a different st_mtime_ns on rewrite
-            srh3_eod.write_text(mutated_srh3, encoding="utf-8")
-            after_stat = srh3_eod.stat()
-            self.assertNotEqual(before_stat.st_mtime_ns, after_stat.st_mtime_ns)
-
+            mutated_srh3 = rewrite_same_size(srh3_eod, "30000.0", "30001.0")
             cal_after = research_run(
-                service,
-                {
-                    "universe": CALENDAR_UNIVERSE,
-                    "asset": "SR",
-                    "pair": "SRH3/SRM3",
-                    "strategy": "zscore_mean_reversion",
-                    "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                },
-                optimize=False,
+                service, calendar_spread_request(parameters=cal_params), optimize=False
             )
             self.assertNotEqual(
                 cal_before["provenance"]["near_history_sha256"],
@@ -342,8 +219,7 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
 
             # 4. Also verify carry.fetch_history's dedicated mtime/size cache
             #    observes a same-size in-place edit immediately.
-            till_match = srh3_eod.name.split("-")[4:7]
-            till_str = "-".join(till_match)
+            till_str = "-".join(srh3_eod.name.split("-")[4:7])
             before_hist = fetch_history(
                 "SRH3",
                 HISTORY_FROM,
@@ -352,10 +228,8 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
                 delay_seconds=0,
                 fields=HISTORY_FIELDS,
             )
-            mutated_srh3_2 = mutated_srh3.replace("30001.0", "30002.0", 1)
+            mutated_srh3_2 = rewrite_same_size(srh3_eod, "30001.0", "30002.0")
             self.assertEqual(len(mutated_srh3), len(mutated_srh3_2))
-            time.sleep(0.02)
-            srh3_eod.write_text(mutated_srh3_2, encoding="utf-8")
             after_hist = fetch_history(
                 "SRH3",
                 HISTORY_FROM,
@@ -376,33 +250,14 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _build_h1_workspace(root)
-            settings = ResearchSettings(
-                timeframe="1h",
-                validation_percent=20,
-                allow_failed_volume=True,
-                allow_failed_capital=True,
-                initial_capital_rub=100000.0,
-                # Fixed seed: this test compares two runs, which must stay comparable.
-                random_seed=41,
-            )
+            settings = research_settings(timeframe="1h", initial_capital_rub=100000.0)
             service = ProofService(root)
-            pair_req = {
-                "universe": PAIR_UNIVERSE,
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-            }
-            cal_req = {
-                "universe": CALENDAR_UNIVERSE,
-                "asset": "SR",
-                "pair": "SRH3/SRM3",
-                "strategy": "zscore_mean_reversion",
-                "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-            }
+            pair_req = pair_screen_request(
+                parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3}
+            )
+            cal_req = calendar_spread_request(
+                parameters={"window": 10, "entry_z": 1.2, "exit_z": 0.3}
+            )
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("MOEX_PROOF_REFERENCE_EVAL", None)
                 pair_replay = service.prepare(pair_req, settings=settings)(

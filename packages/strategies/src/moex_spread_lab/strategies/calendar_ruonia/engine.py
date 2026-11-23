@@ -138,7 +138,7 @@ def convergence_trades(
         _, dev_pp, _, dte, sig_el, ent_el, ext_el, _ = calendar_row_buffers(
             rows, z_cache=z_cache, z_cache_key=z_cache_key
         )
-        specs = fc.calendar_convergence_scan(
+        specs: list[tuple[int, int, int, int, int, float]] = fc.calendar_convergence_scan(
             dev_pp,
             dte,
             sig_el,

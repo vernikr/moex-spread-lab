@@ -9,6 +9,7 @@ import os
 import pkgutil
 from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 from moex_spread_lab.core.contracts import StrategyPlugin
 from moex_spread_lab.core.w0 import W0Error
@@ -89,7 +90,7 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         if getattr(p, "proof_adapter", None) == "calendar_price_intents.v1"
         and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
         and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
-        and set(p.supported_fills) == _PRICE_FILL_KEYS
+        and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
         and counts[p.family_id] == 1
     )
 
@@ -115,7 +116,7 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         )
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
-        and set(p.supported_fills) == _PRICE_FILL_KEYS
+        and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
         and counts[p.family_id] == 1
     )
 
@@ -140,7 +141,7 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
 
 
 def _register_plugin(discovered: dict[str, StrategyPlugin], plugin: StrategyPlugin) -> None:
-    strategy_id = plugin.strategy_id
+    strategy_id: Any = plugin.strategy_id
     if not isinstance(strategy_id, str) or not strategy_id.strip():
         raise W0Error("Стратегия должна иметь непустой строковый идентификатор.")
     previous = discovered.get(strategy_id)

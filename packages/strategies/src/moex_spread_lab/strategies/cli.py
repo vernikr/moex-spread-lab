@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error, write_json
 
@@ -25,7 +25,7 @@ def _load_cost_profile_arg(args: Any, get_scenario: Callable[[str], dict[str, An
             raise W0Error(f"cannot read cost profile {args.cost_profile}: {exc}") from exc
         if not isinstance(profile, dict):
             raise W0Error("cost profile must be a JSON object")
-        return profile
+        return cast(dict[str, Any], profile)
     return None
 
 

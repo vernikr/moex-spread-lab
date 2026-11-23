@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import importlib
-import importlib.metadata as _importlib_metadata  # noqa: F401
+import importlib.metadata
 import math
 from array import array
 from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.contracts import (
@@ -30,6 +30,8 @@ from .registry import (
     daily_pair_proof_plugin_ids,
     discover_strategies,
 )
+
+_importlib_metadata = importlib.metadata
 
 PRICE_FILLS: dict[str, tuple[int, str]] = {
     "next_open": (1, "open"),
@@ -190,7 +192,7 @@ def check_calendar_liquidity(
 
 
 def validate_parameter_map(
-    raw: Mapping[str, Any] | None,
+    raw: Any,
     schema: tuple[ParameterSpec, ...],
 ) -> dict[str, Any]:
     """Validate and merge raw parameter overrides against a ``ParameterSpec`` schema."""
@@ -198,6 +200,7 @@ def validate_parameter_map(
         raw = {}
     if not isinstance(raw, Mapping):
         raise W0Error("Переданы параметры другой стратегии")
+    raw = cast(Mapping[str, Any], raw)
     by_name = {spec.name: spec for spec in schema}
     if set(raw.keys()) - set(by_name.keys()):
         raise W0Error("Переданы параметры другой стратегии")
@@ -224,9 +227,9 @@ def clean_nonfinite_json(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):
-        return {k: clean_nonfinite_json(v) for k, v in value.items()}
+        return {k: clean_nonfinite_json(v) for k, v in cast(dict[Any, Any], value).items()}
     if isinstance(value, (list, tuple)):
-        return [clean_nonfinite_json(v) for v in value]
+        return [clean_nonfinite_json(v) for v in cast(list[Any] | tuple[Any, ...], value)]
     return value
 
 

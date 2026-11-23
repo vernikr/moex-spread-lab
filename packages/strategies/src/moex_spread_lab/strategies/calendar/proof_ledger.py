@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 
@@ -31,9 +31,9 @@ def clean_payload(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, dict):
-        return {k: clean_payload(v) for k, v in value.items()}
+        return {k: clean_payload(v) for k, v in cast(dict[Any, Any], value).items()}
     if isinstance(value, (list, tuple)):
-        return [clean_payload(v) for v in value]
+        return [clean_payload(v) for v in cast(list[Any] | tuple[Any, ...], value)]
     return value
 
 

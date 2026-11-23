@@ -222,7 +222,7 @@ def _zscore_fastcore(
         z = fc.calendar_sample_z(spreads, sig_el, elig_pref, cfg.window, include_current)
         if cache_id is not None and cfg.z_cache is not None:
             cfg.z_cache[cache_id] = z
-    specs = fc.calendar_zscore_scan(
+    specs: list[tuple[int, int, int, int, int, float]] = fc.calendar_zscore_scan(
         z,
         ts_days,
         dte,

@@ -240,7 +240,7 @@ def build_intraday_window(
     common = sorted(near_rows.keys() & far_rows.keys())
     if len(common) < 2:
         return None
-    native_rows = native_source["rows"] if native_source else {}
+    native_rows: dict[str, Any] = native_source["rows"] if native_source else {}
     native_common = [ts for ts in common if ts in native_rows]
     is_native, source_rows, fallback, gate, liq_src, liq_label, liq_rule = select_h1_source_mode(
         native_common, native_source, native_error
@@ -252,7 +252,7 @@ def build_intraday_window(
     expiry_date = date.fromisoformat(expiry)
     config = ASSETS[asset]
     fx_name = config.get("fx")
-    fx_vals = data["fx_factors"].get(fx_name, {}) if fx_name else {}
+    fx_vals: dict[str, float] = data["fx_factors"].get(fx_name, {}) if fx_name else {}
     ruonia_dates, rates = data["ruonia"]
     st = _H1BuildState(
         is_native=is_native,

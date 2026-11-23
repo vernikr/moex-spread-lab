@@ -240,6 +240,8 @@ strict = [
     "packages/strategies/src/moex_spread_lab/strategies/registry.py",
     "packages/strategies/src/moex_spread_lab/strategies/cli.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar/proof_ledger.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/h1_windows.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/loaders.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar_zscore/engine.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar_ruonia/engine.py",
     "packages/strategies/src/moex_spread_lab/strategies/signals.py",

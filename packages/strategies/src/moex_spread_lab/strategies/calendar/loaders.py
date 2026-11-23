@@ -94,3 +94,7 @@ def cached_till_date(cache_dir: Path) -> str | None:
 
 def _offline(*_args: Any, **_kwargs: Any) -> Any:
     raise OSError("offline: calendar history is read from the local cache only")
+
+
+# Shared calendar adapter name; retain the private alias for compatibility.
+offline_loader = _offline

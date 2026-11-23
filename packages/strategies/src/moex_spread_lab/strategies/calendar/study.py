@@ -40,7 +40,8 @@ from .contracts import (
     contract_chain,
     spread_id,
 )
-from .loaders import _offline, cached_till_date, fetch_inputs
+from .loaders import cached_till_date, fetch_inputs
+from .loaders import offline_loader as _offline
 
 
 def _build_daily_window_row(

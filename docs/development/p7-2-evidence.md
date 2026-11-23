@@ -27,7 +27,29 @@ claim replaces a complete P7.2 acceptance run.
 
 ## Remaining
 
-Strict typing is not enabled for the four complete packages; the first accounting
-risk module is strict. Proof size/complexity exceptions and decomposition remain,
+Strict typing is not enabled for the four complete packages; selected modules are strict. Proof size/complexity exceptions and decomposition remain,
 as do broader real-data parity checks and the final integrated acceptance gate.
 P7.3 remains a separate work package.
+
+## Incremental typing and workstation probes — 2026-11-23
+
+Strict enforcement was extended to selected accounting, data, proof and
+strategies files, without changing the typing baseline or disabling rules.
+A diagnostic-only whole-package strict run at `c08d4f4` reported 4,152 errors:
+proof 3,108, data 672, strategies 308 and accounting 64. This is not a passing
+gate. The earlier 3,995-error measurement predates new proof preparation code;
+the totals are not a like-for-like measure of strict progress.
+
+A candidate at `c0e42a9` included the changes to `accounting/costs.py`,
+`accounting/sizing_report.py`, and proof's `funding_sizing_payload.py`,
+`mean_reversion_spec.py`, `screener_math.py`, `screener_search.py` and
+`worker_weight.py` from `c08d4f4`. No other changes in the current series were
+included. Against the live server at `c0e42a9`, the workstation benchmark
+reported `exact_match: true` for all four `single_proof_1d_1h` cases (CNY and
+gold, 1d and 1h) and the `cohort_optimize` case. Full normalized payload hashes
+and run IDs matched; the single-proof reconciliations were zero. The cohort
+used six workers, seed 41 and 80 trials, with run ID `381ff296b49b5c52` and
+normalized SHA-256 `611ec85bdc1c3e91d8dacc64e4b105d6a84095c39cff13b89b98775e60386907`.
+Each case used one call with no warmup; live and new candidate cache states
+were different, so timings are not a performance comparison. These probes do
+not establish parity for untested changes, strategies or datasets.

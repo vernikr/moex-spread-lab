@@ -7,12 +7,12 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import sha256_file
 
@@ -90,10 +90,13 @@ def _read_legacy_payload(path: Path, target: RefreshTarget) -> dict[str, Any] | 
     if not path.is_file():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        decoded: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise DataRefreshError(f"cannot read existing candle series {path}: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != "iss-candles.v1":
+    if not isinstance(decoded, dict):
+        raise DataRefreshError(f"existing candle file is not iss-candles.v1: {path}")
+    payload = cast("dict[str, Any]", decoded)
+    if payload.get("schema_version") != "iss-candles.v1":
         raise DataRefreshError(f"existing candle file is not iss-candles.v1: {path}")
     if payload.get("secid") != target.secid or payload.get("interval") != target.interval:
         raise DataRefreshError(
@@ -104,14 +107,16 @@ def _read_legacy_payload(path: Path, target: RefreshTarget) -> dict[str, Any] | 
     return payload
 
 
+def _payload_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the object rows of a legacy payload, ignoring non-object entries."""
+    rows: list[dict[str, Any]] = [row for row in payload.get("rows", []) if isinstance(row, dict)]
+    return rows
+
+
 def _payload_watermark(payload: dict[str, Any] | None) -> date | None:
     if not payload:
         return None
-    dates = [
-        _timestamp_date(row.get("begin"))
-        for row in payload.get("rows", [])
-        if isinstance(row, dict)
-    ]
+    dates = [_timestamp_date(row.get("begin")) for row in _payload_rows(payload)]
     return max((item for item in dates if item is not None), default=None)
 
 
@@ -121,8 +126,7 @@ def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sess
         sessions = sorted(
             {
                 item
-                for row in payload.get("rows", [])
-                if isinstance(row, dict)
+                for row in _payload_rows(payload)
                 for item in [_timestamp_date(row.get("begin"))]
                 if item is not None and item <= watermark
             }
@@ -133,7 +137,7 @@ def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sess
 
 
 @contextmanager
-def _dataset_writer_lock(lake_root: Path, target: RefreshTarget) -> Iterator[None]:
+def _dataset_writer_lock(lake_root: Path, target: RefreshTarget) -> Generator[None, None, None]:
     lock_name = hashlib.sha256(target.id.encode("utf-8")).hexdigest() + ".lock"
     lock_path = lake_root / "locks" / lock_name
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,3 +292,19 @@ def build_merged_payload(
         }
     )
     return payload
+
+
+__all__ = [
+    "REFRESH_SCHEMA",
+    "DataRefreshError",
+    "RefreshConfig",
+    "RefreshTarget",
+    "_TargetState",
+    "_atomic_write_json",
+    "_chunks",
+    "_dataset_writer_lock",
+    "_date",
+    "_timestamp_date",
+    "build_merged_payload",
+    "plan_single_target",
+]

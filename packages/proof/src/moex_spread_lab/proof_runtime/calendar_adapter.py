@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from moex_spread_lab.accounting.costs import _cost_totals
+from moex_spread_lab.accounting.costs import cost_totals as _cost_totals
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import _run_id
+from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import REFERENCE_WARNING, attach_entry_levels
 
 from .payload_tools import (
@@ -49,9 +49,8 @@ def _summarize(summary: dict[str, Any], trades: list[dict[str, Any]]) -> None:
 def _price_role(
     payload: dict[str, Any], selection: dict[str, Any], timeframe: str, fill: str
 ) -> str:
-    price_source = (payload.get("window") or {}).get("price_source") or selection.get(
-        "price_source"
-    )
+    window: dict[str, Any] = payload.get("window") or {}
+    price_source = window.get("price_source") or selection.get("price_source")
     if price_source == "synthetic_leg_proxy":
         return f"Синтетический H1 proxy far − near по синхронным свечам ног; исполнение {fill}"
     if timeframe == "1h":
@@ -66,19 +65,22 @@ def calendar_proof(
     payload["universe"] = CALENDAR_UNIVERSE
     payload["schema_version"] = PROOF_SCHEMA
     embedded = payload.get("selection")
+    selection_out: dict[str, Any]
     if isinstance(embedded, dict):
-        embedded["universe"] = CALENDAR_UNIVERSE
-    trades = payload.get("trades", [])
+        selection_out = cast(dict[str, Any], embedded)
+        selection_out["universe"] = CALENDAR_UNIVERSE
+    else:
+        selection_out = {}
+    trades: list[dict[str, Any]] = payload.get("trades", [])
     labels = _label_trades(trades)
-    _label_ledger(payload.get("ledger") or [], labels)
-    for row in payload.get("series") or []:
+    ledger: list[dict[str, Any]] = payload.get("ledger") or []
+    _label_ledger(ledger, labels)
+    series: list[dict[str, Any]] = payload.get("series") or []
+    for row in series:
         row.setdefault("funding_rub", None)
         row.setdefault("signal_z", None)
     _summarize(payload["summary"], trades)
-    provenance = payload.get("provenance") or {}
-    selection_out = payload.get("selection")
-    if not isinstance(selection_out, dict):
-        selection_out = {}
+    provenance: dict[str, Any] = payload.get("provenance") or {}
     payload["provenance"] = {
         **calendar_provenance(root, selection_out),
         **provenance,
@@ -87,9 +89,8 @@ def calendar_proof(
     attach_entry_levels(payload)
     if payload["execution_reference"]:
         payload["notes"].append(REFERENCE_WARNING)
-    timeframe = (
-        selection_out.get("timeframe") or (payload.get("window") or {}).get("timeframe") or "1d"
-    )
+    window: dict[str, Any] = payload.get("window") or {}
+    timeframe: str = selection_out.get("timeframe") or window.get("timeframe") or "1d"
     selection_out.setdefault("timeframe", timeframe)
     fill = (selection.get("fill") or "next_open").replace("_", " ")
     payload["price_role"] = _price_role(payload, selection_out, timeframe, fill)
@@ -143,20 +144,21 @@ def calendar_provenance(root: Path, selection: dict[str, Any]) -> dict[str, str]
 def calendar_instrument(
     root: Path, selection: dict[str, Any], payload: dict[str, Any]
 ) -> dict[str, Any]:
-    window = payload.get("window") or {}
-    contract = payload.get("contract") or {}
+    window: dict[str, Any] = payload.get("window") or {}
+    contract: dict[str, Any] = payload.get("contract") or {}
     legs = str(selection.get("pair") or "").split("/")
     near = window.get("near") or (legs[0] if legs and legs[0] else None)
     far = window.get("far") or (legs[1] if len(legs) > 1 and legs[1] else None)
     instruments = load_instruments(root / "data/w1/current-intake.json")
     point_value_rub = contract.get("point_value_rub")
+    near_instrument: dict[str, Any] = instruments.get(near or "") or {}
+    far_instrument: dict[str, Any] = instruments.get(far or "") or {}
     return {
         "near": near,
         "far": far,
         "family": "calendar_spread",
-        "near_expiry": (instruments.get(near or "") or {}).get("expiry")
-        or window.get("near_expiry"),
-        "far_expiry": (instruments.get(far or "") or {}).get("expiry"),
+        "near_expiry": near_instrument.get("expiry") or window.get("near_expiry"),
+        "far_expiry": far_instrument.get("expiry"),
         "near_point_value_rub": point_value_rub,
         "far_point_value_rub": point_value_rub,
         "spread_instrument": selection.get("spread_instrument"),

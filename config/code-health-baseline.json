@@ -77,10 +77,6 @@
       "baseline_loc": 352,
       "baseline_tokens": 4289
     },
-    "packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py": {
-      "baseline_loc": 402,
-      "baseline_tokens": 4575
-    },
     "packages/proof/tests/test_calendar_proof.py": {
       "baseline_loc": 478,
       "baseline_tokens": 5955

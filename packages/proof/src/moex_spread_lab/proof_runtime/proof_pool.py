@@ -9,7 +9,9 @@ import sys
 import threading
 import uuid
 import weakref
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED as FIRST_COMPLETED
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import wait as wait
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,15 @@ from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
 from .cohort_scores import combine_shards, failure_payload, point_result, score_payload
+from .pool_reports import (
+    await_futures,
+    canary_failure,
+    report_cohort,
+    should_use_pool,
+    window_summaries,
+)
+from .pool_reports import configured_workers as choose_worker_count
+from .pool_reports import shutdown_weak as _shutdown_weak
 from .proof_kernel import StudyWindow as StudyWindow
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .worker_cohort import _WORKER_COHORTS as _WORKER_COHORTS
@@ -27,12 +38,15 @@ from .worker_cohort import (
     _worker_eval_plateau_batch,
     _worker_init_cohort,
     _worker_release_cohort,
-    _worker_report_cohort,
 )
-from .worker_metrics import submit_worker, unwrap_worker_result
+from .worker_cohort import (
+    _worker_report_cohort as _worker_report_cohort,
+)
+from .worker_metrics import submit_worker
+from .worker_metrics import unwrap_worker_result as unwrap_worker_result
 from .worker_weight import _estimate_weight
 from .worker_window import _worker_service as _worker_service
-from .worker_window import _worker_window_summaries
+from .worker_window import _worker_window_summaries as _worker_window_summaries
 
 MIN_POOL_WINDOWS = 3
 MIN_POOL_BARS = 1500
@@ -40,32 +54,11 @@ POLL_INTERVAL_SECONDS = 0.05
 
 
 def configured_workers() -> int:
-    raw = os.environ.get("MOEX_PROOF_WORKERS")
-    if raw is not None:
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            pass
-    cpu = os.cpu_count() or 6
-    if sys.platform == "darwin" and cpu > 4:
-        return max(2, min(6, cpu // 2))
-    return max(1, min(8, cpu))
+    return choose_worker_count(os, sys)
 
 
 def _await_futures(futures, check_cancelled, on_done=None):
-    pending = set(futures)
-    while pending:
-        try:
-            check_cancelled()
-        except BaseException:
-            for fut in pending:
-                fut.cancel()
-            raise
-        done, pending = wait(pending, timeout=POLL_INTERVAL_SECONDS, return_when=FIRST_COMPLETED)
-        if on_done is not None and done:
-            for fut in done:
-                on_done(fut)
-    return [unwrap_worker_result(fut.result()) for fut in futures]
+    return await_futures(futures, check_cancelled, on_done, sys.modules[__name__])
 
 
 class CohortWorkerPool:
@@ -91,11 +84,7 @@ class CohortWorkerPool:
             return list(self._worker_slots[:count])
 
     def should_use(self, count: int, estimated_bars: int) -> bool:
-        if self.max_workers <= 1 or count < MIN_POOL_WINDOWS:
-            return False
-        if os.environ.get("MOEX_PROOF_FORCE_POOL") == "1":
-            return True
-        return estimated_bars >= MIN_POOL_BARS or count >= 4
+        return should_use_pool(self, count, estimated_bars, sys.modules[__name__])
 
     def init_cohort(
         self,
@@ -259,31 +248,14 @@ class CohortWorkerPool:
         )
 
     def _canary_failure(self, cohort_state, point_by_strategy, canary_box, fail, check_cancelled):
-        canary = canary_box[0]
-        if canary == 0:
-            return failure_payload(fail)
-        owner_of = cohort_state["owner_of"]
-        slots = cohort_state["slots"]
-        shards = cohort_state["shards"]
-        cohort_id = cohort_state["cohort_id"]
-        # A lower canonical index may also fail; inspect only indices before the canary.
-        earlier_slots = sorted({owner_of[i] for i in range(canary)})
-        sub_futs = [
-            submit_worker(
-                slots[s_idx],
-                _worker_eval_indices,
-                cohort_id,
-                point_by_strategy,
-                [entry[0] for entry in shards[s_idx] if entry[0] < canary],
-            )
-            for s_idx in earlier_slots
-        ]
-        best_fail = fail
-        for sub_fail, _ in _await_futures(sub_futs, check_cancelled):
-            if sub_fail is not None and sub_fail[0] < best_fail[0]:
-                best_fail = sub_fail
-        canary_box[0] = best_fail[0]
-        return failure_payload(best_fail)
+        return canary_failure(
+            cohort_state,
+            point_by_strategy,
+            canary_box,
+            fail,
+            check_cancelled,
+            sys.modules[__name__],
+        )
 
     def eval_plateau_batch(
         self,
@@ -331,39 +303,15 @@ class CohortWorkerPool:
         check_cancelled,
         on_progress=None,
     ) -> list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]]:
-        cohort_id = cohort_state["cohort_id"]
-        slots = cohort_state["slots"]
-        shards = cohort_state["shards"]
-        active_slots = sorted(set(cohort_state["owner_of"].values()))
-        total_members = sum(len(shards[s_idx]) for s_idx in active_slots)
-        futs = []
-        fut_weights: dict[Any, int] = {}
-        for s_idx in active_slots:
-            fut = submit_worker(
-                slots[s_idx],
-                _worker_report_cohort,
-                cohort_id,
-                point_by_strategy,
-                best_is_none,
-                settings,
-            )
-            futs.append(fut)
-            fut_weights[fut] = len(shards[s_idx])
-        done_count = 0
-
-        def _on_done(fut) -> None:
-            nonlocal done_count
-            done_count += fut_weights.get(fut, 0)
-            if on_progress is not None:
-                on_progress(done_count, total_members)
-
-        combined: list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]] = []
-        for chunk in _await_futures(
-            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
-        ):
-            combined.extend(chunk)
-        combined.sort(key=lambda item: item[0])
-        return combined
+        return report_cohort(
+            cohort_state,
+            point_by_strategy,
+            best_is_none,
+            settings,
+            check_cancelled,
+            on_progress,
+            sys.modules[__name__],
+        )
 
     def window_summaries(
         self,
@@ -374,50 +322,15 @@ class CohortWorkerPool:
         check_cancelled,
         on_progress=None,
     ) -> list[dict[str, Any]]:
-        n = len(items)
-        w = min(self.max_workers, n)
-        slots = self._ensure_workers(w)
-        seal_cache: dict[str, Any] = {}
-        weights = {
-            entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache)
-            for entry in items
-        }
-        weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
-        # Split into up to 2 micro-batches per worker for larger sets so progress updates smoothly.
-        batches = min(n, w * 2) if n >= w * 2 else w
-        shards: list[list[tuple[int, dict[str, Any], dict[str, Any]]]] = [
-            [] for _ in range(batches)
-        ]
-        shard_loads = [0] * batches
-        for entry in weighted:
-            s_idx = min(range(batches), key=lambda k: shard_loads[k])
-            shards[s_idx].append(entry)
-            shard_loads[s_idx] += weights[entry[0]]
-        root_str = str(root.resolve())
-        futs = []
-        fut_weights: dict[Any, int] = {}
-        for b_idx, shard in enumerate(shards):
-            if shard:
-                fut = submit_worker(
-                    slots[b_idx % w], _worker_window_summaries, root_str, settings, benchmark, shard
-                )
-                futs.append(fut)
-                fut_weights[fut] = len(shard)
-        done_count = 0
-
-        def _on_done(fut) -> None:
-            nonlocal done_count
-            done_count += fut_weights.get(fut, 0)
-            if on_progress is not None:
-                on_progress(done_count, n)
-
-        combined: list[tuple[int, dict[str, Any]]] = []
-        for chunk in _await_futures(
-            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
-        ):
-            combined.extend(chunk)
-        combined.sort(key=lambda entry: entry[0])
-        return [entry[1] for entry in combined]
+        return window_summaries(
+            (self, sys.modules[__name__]),
+            root,
+            settings,
+            benchmark,
+            items,
+            check_cancelled,
+            on_progress,
+        )
 
     def shutdown(self, wait_for: bool = True) -> None:
         with self._lock:
@@ -429,12 +342,6 @@ class CohortWorkerPool:
                 slot.shutdown(wait=wait_for, cancel_futures=True)
             except Exception:
                 pass
-
-
-def _shutdown_weak(ref: weakref.ReferenceType[Any]) -> None:
-    pool = ref()
-    if pool is not None:
-        pool.shutdown(wait_for=False)
 
 
 def get_worker_pool(service: Any) -> CohortWorkerPool:

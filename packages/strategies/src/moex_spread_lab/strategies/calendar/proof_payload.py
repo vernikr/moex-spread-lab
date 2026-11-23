@@ -297,3 +297,6 @@ def _proof_payload(*args: Any, **kwargs: Any) -> dict[str, Any]:
 
 _clean = clean_payload
 _rel_pct = rel_pct
+
+# Public intra-package compatibility shim.
+proof_payload = _proof_payload

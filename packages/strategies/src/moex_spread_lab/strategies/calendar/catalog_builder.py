@@ -12,7 +12,9 @@ from .contracts import (
     FILL_LABELS,
     STRATEGIES,
     SYNTHETIC_TRIANGLE_PAIRS,
-    _stress_ok,
+)
+from .contracts import (
+    stress_ok as _stress_ok,
 )
 
 
@@ -90,7 +92,8 @@ def _cross_and_triangle_assets(
             secids = [f"{leg}{code}" for leg in legs]
             if not all(histories.get(s) for s in secids):
                 continue
-            common = sorted(set.intersection(*(set(histories[s]) for s in secids)))
+            day_sets: list[set[str]] = [set(histories[s]) for s in secids]
+            common = sorted(day_sets[0].intersection(*day_sets[1:]))
             if len(common) < 22:
                 continue
             pair_label = (
@@ -199,8 +202,9 @@ def enrich_proof_window_and_notes(
         }
     )
     if timeframe == "1h":
-        payload["provenance"] = payload.get("provenance") or {}
-        payload["provenance"].update(window.get("source_hashes", {}))
+        provenance: dict[str, Any] = payload.get("provenance") or {}
+        payload["provenance"] = provenance
+        provenance.update(window.get("source_hashes", {}))
         source_note = (
             "Цена — нативная свеча H1 календарного spread-инструмента; для комиссий, маржи и RUONIA синхронно используются цены обеих ног."
             if price_source == "native_h1_spread"

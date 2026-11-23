@@ -34,7 +34,9 @@ from .h1_windows import (
 )
 from .loaders import cached_till_date, fetch_inputs
 from .proof_ledger import elapsed_days as _elapsed_days
-from .proof_payload import _clean, _proof_payload, _rel_pct
+from .proof_payload import clean_payload as _clean
+from .proof_payload import proof_payload as _proof_payload
+from .proof_payload import rel_pct as _rel_pct
 from .proof_runner import build_1d_catalog, build_h1_catalog
 from .study import (
     ASSETS,

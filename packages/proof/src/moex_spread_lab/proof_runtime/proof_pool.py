@@ -3,50 +3,62 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import multiprocessing
 import os
 import sys
 import threading
 import uuid
 import weakref
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED as FIRST_COMPLETED
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures import wait as wait
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
-from .cohort_scores import combine_shards, failure_payload, point_result, score_payload
-from .pool_reports import (
-    await_futures,
-    canary_failure,
-    report_cohort,
-    should_use_pool,
-    window_summaries,
+from . import pool_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_pool as _tasks
+from .cohort_scores import (
+    CheckCancelled,
+    EvalFailure,
+    EvalResult,
+    InitItem,
+    Obj,
+    PointMap,
+    ProgressCallback,
 )
+from .cohort_scores import combine_shards as combine_shards
+from .cohort_scores import failure_payload as failure_payload
+from .cohort_scores import point_result as point_result
+from .cohort_scores import score_payload as score_payload
+from .pool_reports import await_futures, canary_failure, report_cohort, should_use_pool
 from .pool_reports import configured_workers as choose_worker_count
 from .pool_reports import shutdown_weak as _shutdown_weak
+from .pool_reports import window_summaries as _window_summaries
 from .proof_kernel import StudyWindow as StudyWindow
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
-from .worker_cohort import _WORKER_COHORTS as _WORKER_COHORTS
-from .worker_cohort import (
-    _worker_eval_indices,
-    _worker_eval_plateau_batch,
-    _worker_init_cohort,
-    _worker_release_cohort,
-)
-from .worker_cohort import (
-    _worker_report_cohort as _worker_report_cohort,
-)
 from .worker_metrics import submit_worker
 from .worker_metrics import unwrap_worker_result as unwrap_worker_result
-from .worker_weight import _estimate_weight
-from .worker_window import _worker_service as _worker_service
-from .worker_window import _worker_window_summaries as _worker_window_summaries
+
+# Facade hooks that ``pool_reports`` resolves through this module at call time.
+_WORKER_COHORTS = _tasks.WORKER_COHORTS
+_worker_report_cohort = _tasks.report_cohort_task
+_worker_window_summaries = _tasks.window_summaries_task
+_worker_service = _tasks.worker_service
+_worker_init_cohort = _tasks.init_cohort_task
+_worker_eval_indices = _tasks.eval_indices_task
+_worker_release_cohort = _tasks.release_cohort_task
+_worker_eval_plateau_batch = _tasks.eval_plateau_task
+# Re-exported hook: worker-weight estimation stays patchable through this facade.
+_estimate_weight = _tasks.estimate_weight
+
+# Sticky shards only ever expose their canonical window index to the pool.
+type _Shards = list[list[tuple[Any, ...]]]
 
 MIN_POOL_WINDOWS = 3
 MIN_POOL_BARS = 1500
@@ -57,14 +69,18 @@ def configured_workers() -> int:
     return choose_worker_count(os, sys)
 
 
-def _await_futures(futures, check_cancelled, on_done=None):
+def _await_futures(
+    futures: list[Future[Any]],
+    check_cancelled: CheckCancelled,
+    on_done: Callable[[Future[Any]], None] | None = None,
+) -> list[Any]:
     return await_futures(futures, check_cancelled, on_done, sys.modules[__name__])
 
 
 class CohortWorkerPool:
     """Long-lived spawn worker pool for cohort search, plateau, and window summaries."""
 
-    def __init__(self, max_workers: int | None = None):
+    def __init__(self, max_workers: int | None = None) -> None:
         self.max_workers = max_workers if max_workers is not None else configured_workers()
         self._lock = threading.Lock()
         self._executor: ProcessPoolExecutor | None = None
@@ -91,37 +107,25 @@ class CohortWorkerPool:
         root: Path,
         settings: ResearchSettings,
         benchmark: tuple[list[str], dict[str, float]],
-        items: list[tuple[int, dict[str, Any], dict[str, Any], bool]],
-        check_cancelled,
-        on_progress=None,
-    ) -> dict[str, Any]:
+        items: list[InitItem],
+        check_cancelled: CheckCancelled,
+        on_progress: ProgressCallback | None = None,
+    ) -> Obj:
         """Distribute windows LPT-wise across worker processes and initialize StudyWindows."""
         n = len(items)
         w = min(self.max_workers, n)
         slots = self._ensure_workers(w)
-        seal_cache: dict[str, Any] = {}
+        seal_cache: Obj = {}
         weights = {
             entry[0]: _estimate_weight(root, entry[1], settings.timeframe, _seal_cache=seal_cache)
             for entry in items
         }
-        weighted = sorted(items, key=lambda entry: weights[entry[0]], reverse=True)
-        shards: list[list[tuple[int, dict[str, Any], dict[str, Any], bool]]] = [
-            [] for _ in range(w)
-        ]
-        shard_loads = [0] * w
-        owner_of: dict[int, int] = {}
-        for entry in weighted:
-            s_idx = min(range(w), key=lambda k: shard_loads[k])
-            shards[s_idx].append(entry)
-            shard_loads[s_idx] += weights[entry[0]]
-            owner_of[entry[0]] = s_idx
-        for shard in shards:
-            shard.sort(key=lambda entry: entry[0])
+        shards, owner_of = _tasks.plan_shards(items, weights, w)
 
         cohort_id = uuid.uuid4().hex
         root_str = str(root.resolve())
-        futures = []
-        fut_weights: dict[Any, int] = {}
+        futures: list[Future[Any]] = []
+        fut_weights: dict[Future[Any], int] = {}
         for s_idx, shard in enumerate(shards):
             if shard:
                 fut = submit_worker(
@@ -137,7 +141,7 @@ class CohortWorkerPool:
                 fut_weights[fut] = len(shard)
         done_count = 0
 
-        def _on_done(fut) -> None:
+        def _on_done(fut: Future[Any]) -> None:
             nonlocal done_count
             done_count += fut_weights.get(fut, 0)
             if on_progress is not None:
@@ -152,17 +156,7 @@ class CohortWorkerPool:
         except BaseException:
             self.release_cohort(cohort_id, owner_of)
             raise
-        combined: list[tuple[int, str, dict[str, Any]]] = []
-        for chunk in chunks:
-            combined.extend(chunk)
-        combined.sort(key=lambda item: item[0])
-        return {
-            "cohort_id": cohort_id,
-            "slots": slots,
-            "shards": shards,
-            "owner_of": owner_of,
-            "results": combined,
-        }
+        return _tasks.cohort_state(cohort_id, slots, shards, owner_of, chunks)
 
     def release_cohort(self, cohort_id: str, owner_of: dict[int, int] | None = None) -> None:
         with self._lock:
@@ -172,51 +166,56 @@ class CohortWorkerPool:
         indices = (
             sorted(set(owner_of.values())) if owner_of is not None else list(range(len(slots)))
         )
-        for s_idx in indices:
-            if s_idx < len(slots):
-                try:
-                    slots[s_idx].submit(_worker_release_cohort, cohort_id)
-                except RuntimeError:
-                    pass
+        _tasks.release_cohort_tasks(slots, cohort_id, indices)
 
     def eval_point(
         self,
-        cohort_state: dict[str, Any],
-        point_by_strategy: dict[str, dict[str, Any]],
+        cohort_state: Obj,
+        point_by_strategy: PointMap,
         canary_box: list[int],
         total_members: int,
-        check_cancelled,
-    ) -> dict[str, Any]:
+        check_cancelled: Any,
+    ) -> Obj:
         """Adaptive Canary / Single-Roundtrip Fan-Out with guaranteed canonical minimum-index failure reason."""
-        cohort_id = cohort_state["cohort_id"]
-        slots = cohort_state["slots"]
-        owner_of = cohort_state["owner_of"]
-        shards = cohort_state["shards"]
-        use_canary = bool(cohort_state.get("canary_active"))
+        cohort_id = cast(str, cohort_state["cohort_id"])
+        slots = cast(list[Any], cohort_state["slots"])
+        owner_of = cast(dict[int, int], cohort_state["owner_of"])
+        shards = cast(_Shards, cohort_state["shards"])
 
-        if not use_canary:
+        if not cohort_state.get("canary_active"):
             # Optimistic single-roundtrip fan-out across all active shards simultaneously.
             active_slots = sorted(set(owner_of.values()))
-            futs = [
-                submit_worker(
-                    slots[s_idx], _worker_eval_indices, cohort_id, point_by_strategy, None, None
-                )
-                for s_idx in active_slots
-            ]
-            return point_result(cohort_state, canary_box, _await_futures(futs, check_cancelled))
+            return point_result(
+                cohort_state,
+                canary_box,
+                _tasks.fan_out(
+                    sys.modules[__name__],
+                    (cohort_id, point_by_strategy, slots),
+                    active_slots,
+                    None,
+                    None,
+                    check_cancelled,
+                ),
+            )
 
         canary = canary_box[0]
 
         # Phase 1: probe the canary window first (1 IPC round-trip).
-        canary_slot = slots[owner_of[canary]]
-        fail, canary_scores = _await_futures(
-            [
-                submit_worker(
-                    canary_slot, _worker_eval_indices, cohort_id, point_by_strategy, [canary]
-                )
-            ],
-            check_cancelled,
-        )[0]
+        fail, canary_scores = cast(
+            EvalResult,
+            _await_futures(
+                [
+                    submit_worker(
+                        slots[owner_of[canary]],
+                        _worker_eval_indices,
+                        cohort_id,
+                        point_by_strategy,
+                        [canary],
+                    )
+                ],
+                check_cancelled,
+            )[0],
+        )
         if fail is not None:
             return self._canary_failure(
                 cohort_state, point_by_strategy, canary_box, fail, check_cancelled
@@ -236,18 +235,31 @@ class CohortWorkerPool:
             }
 
         active_slots = sorted(set(owner_of.values()))
-        futs = [
-            submit_worker(
-                slots[s_idx], _worker_eval_indices, cohort_id, point_by_strategy, None, canary
-            )
-            for s_idx in active_slots
-            if any(entry[0] != canary for entry in shards[s_idx])
+        remaining = [
+            s_idx for s_idx in active_slots if any(entry[0] != canary for entry in shards[s_idx])
         ]
         return point_result(
-            cohort_state, canary_box, _await_futures(futs, check_cancelled), canary_scores
+            cohort_state,
+            canary_box,
+            _tasks.fan_out(
+                sys.modules[__name__],
+                (cohort_id, point_by_strategy, slots),
+                remaining,
+                None,
+                canary,
+                check_cancelled,
+            ),
+            canary_scores,
         )
 
-    def _canary_failure(self, cohort_state, point_by_strategy, canary_box, fail, check_cancelled):
+    def _canary_failure(
+        self,
+        cohort_state: Obj,
+        point_by_strategy: PointMap,
+        canary_box: list[int],
+        fail: EvalFailure,
+        check_cancelled: CheckCancelled,
+    ) -> Obj:
         return canary_failure(
             cohort_state,
             point_by_strategy,
@@ -259,50 +271,35 @@ class CohortWorkerPool:
 
     def eval_plateau_batch(
         self,
-        cohort_state: dict[str, Any],
-        points: list[tuple[int, dict[str, dict[str, Any]]]],
-        check_cancelled,
-        on_progress=None,
-    ) -> dict[int, dict[str, Any]]:
+        cohort_state: Obj,
+        points: list[tuple[int, PointMap]],
+        check_cancelled: Any,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[int, Obj]:
         """Evaluate multiple uncached neighbor points in a single parallel batch."""
         if not points:
             return {}
-        cohort_id = cohort_state["cohort_id"]
-        slots = cohort_state["slots"]
-        active_slots = sorted(set(cohort_state["owner_of"].values()))
-        futs = [
+        cohort_id = cast(str, cohort_state["cohort_id"])
+        slots = cast(list[Any], cohort_state["slots"])
+        active_slots = sorted(set(cast(dict[int, int], cohort_state["owner_of"]).values()))
+        futs: list[Future[Any]] = [
             submit_worker(slots[s_idx], _worker_eval_plateau_batch, cohort_id, points)
             for s_idx in active_slots
         ]
-        total_slots = len(futs)
-        done_slots = 0
-
-        def _on_done(_fut) -> None:
-            nonlocal done_slots
-            done_slots += 1
-            if on_progress is not None:
-                on_progress(done_slots, total_slots)
-
-        shard_maps = _await_futures(
-            futs, check_cancelled, on_done=_on_done if on_progress is not None else None
+        return _tasks.plateau_payloads(
+            points,
+            _tasks.collect_plateau_batches(futs, _await_futures, check_cancelled, on_progress),
         )
-        results: dict[int, dict[str, Any]] = {}
-        for p_idx, _ in points:
-            failure, scores = combine_shards(smap[p_idx] for smap in shard_maps)
-            results[p_idx] = (
-                failure_payload(failure) if failure is not None else score_payload(scores)
-            )
-        return results
 
     def report_cohort(
         self,
-        cohort_state: dict[str, Any],
-        point_by_strategy: dict[str, dict[str, Any]],
+        cohort_state: Obj,
+        point_by_strategy: PointMap,
         best_is_none: bool,
         settings: ResearchSettings,
-        check_cancelled,
-        on_progress=None,
-    ) -> list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]]:
+        check_cancelled: Any,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[tuple[int, Obj, bool, Obj | None]]:
         return report_cohort(
             cohort_state,
             point_by_strategy,
@@ -318,11 +315,11 @@ class CohortWorkerPool:
         root: Path,
         settings: ResearchSettings,
         benchmark: tuple[list[str], dict[str, float]],
-        items: list[tuple[int, dict[str, Any], dict[str, Any]]],
-        check_cancelled,
-        on_progress=None,
-    ) -> list[dict[str, Any]]:
-        return window_summaries(
+        items: list[tuple[int, Obj, Obj]],
+        check_cancelled: CheckCancelled,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[Obj]:
+        return _window_summaries(
             (self, sys.modules[__name__]),
             root,
             settings,
@@ -338,13 +335,12 @@ class CohortWorkerPool:
             slots = list(self._worker_slots)
             self._worker_slots.clear()
         for slot in slots:
-            try:
+            # Shutdown is best-effort: one unresponsive executor must not block the rest.
+            with contextlib.suppress(Exception):
                 slot.shutdown(wait=wait_for, cancel_futures=True)
-            except Exception:
-                pass
 
 
 def get_worker_pool(service: Any) -> CohortWorkerPool:
     if service._pool is None:
         service._pool = CohortWorkerPool()
-    return service._pool
+    return cast(CohortWorkerPool, service._pool)

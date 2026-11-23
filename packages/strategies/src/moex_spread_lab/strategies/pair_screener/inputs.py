@@ -23,12 +23,24 @@ HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
 )
 PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
 
+# Facade hooks plus the pre-P7.2 wildcard surface (Issue #139): the pre-leaf
+# star names stay importable via `from ...inputs import *`, including its
+# incidental imports.
 __all__ = [
+    "DEFAULT_TIMEFRAME",
     "HISTORY_WINDOWS",
     "PAIRS",
     "_CANDLE_SUMMARY_CACHE",
+    "Any",
+    "BarSeries",
+    "Callable",
+    "Mapping",
+    "MarketDataStore",
+    "Path",
+    "ProofFunding",
     "ScreenerError",
     "ScreenerInputs",
+    "W0Error",
     "_candle_summary",
     "_history_source",
     "_leg_volumes",
@@ -38,6 +50,12 @@ __all__ = [
     "_pair_history_span",
     "_positive_leg_volume_dates",
     "_session_volumes",
+    "annotations",
+    "cached_property",
+    "dataclass",
+    "fetch_history",
+    "get_timeframe",
+    "math",
     "pair_price_inputs",
 ]
 

@@ -27,7 +27,7 @@ claim replaces a complete P7.2 acceptance run.
 
 ## Remaining
 
-Strict typing is not enabled for the four complete packages; selected modules are strict. Proof size/complexity exceptions and decomposition remain,
+Strict typing is enabled for all accounting source; the other three complete packages remain. Proof size/complexity exceptions and decomposition remain,
 as do broader real-data parity checks and the final integrated acceptance gate.
 P7.3 remains a separate work package.
 
@@ -53,3 +53,27 @@ normalized SHA-256 `611ec85bdc1c3e91d8dacc64e4b105d6a84095c39cff13b89b98775e6038
 Each case used one call with no warmup; live and new candidate cache states
 were different, so timings are not a performance comparison. These probes do
 not establish parity for untested changes, strategies or datasets.
+
+## Accounting strict and carry settlement — 2026-11-23
+
+At `61dacf4`, accounting source is enabled in strict mode as a whole. PyArrow
+19.4 stubs were added as a development dependency; a narrow cast documents a
+stub limitation for valid string Parquet filters, and the artifact adapter
+narrows partially unknown third-party callable signatures. No typing baseline
+or checker rule was relaxed. Diagnostic-only strict over all four target
+packages reports 4,030 errors: proof 3,146, data 576, strategies 308,
+accounting 0. This measurement uses the newly installed stubs and changed proof
+code, so it is not directly comparable with the earlier 4,152 count.
+
+Workstation A/B against live `d231a44` used an isolated candidate containing
+only the six sizing/core files changed in `cf3cee7`. All four single-proof
+1d/1h workloads and the Si calendar cohort matched in full normalized payload
+hash and run ID, with zero ledger reconciliation for the single proofs. The
+cohort again used six workers, 80 trials, seed 41 and run ID
+`381ff296b49b5c52`. A second candidate added only the carry accounting file
+from `61dacf4` to those six files: a CNYRUBF/CRZ6 `funding_only`, 1d,
+`max_affordable` run matched (`run_id` `ca6cc884d090f3c4`, normalized SHA-256
+`c2447b1f09f53de8f4b5c8018ed5e495d76aa11a46e2bc324ea1f195289a69c0`,
+ledger reconciliation zero). Each test used one call and no warmup. The
+candidate did not include the artifact or PyArrow-stub changes; these checks
+are workload-specific and do not establish general equivalence or latency.

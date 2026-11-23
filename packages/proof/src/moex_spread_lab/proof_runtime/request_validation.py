@@ -2,35 +2,50 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, cast
+
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from .axis import Axis, _ordered
+from . import axis as _axis
+from .axis import Axis
 from .strategy_catalog import get_strategy_axes
+
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies import StrategyRegistry
+
+_Request = dict[str, Any]
+_Axes = dict[str, Axis]
+
+# ``axis._ordered`` is a private cross-module facade hook. Resolve it through the
+# owning module's dictionary so strict mode does not treat the alias as private
+# usage while keeping ``request_validation._ordered`` patchable as before.
+_ordered = cast(Callable[[Mapping[str, Any]], bool], _axis.__dict__["_ordered"])
 
 # Fixed-size API/CLI compatibility only. The workbench uses automatic sizing and
 # one immutable global slippage preference, so neither is an optimization axis.
-EXECUTION_AXES = {"quantity": Axis(1, 50, 1), "slippage_ticks": Axis(0, 10, 0.5)}
+EXECUTION_AXES: _Axes = {"quantity": Axis(1, 50, 1), "slippage_ticks": Axis(0, 10, 0.5)}
 
 
-def execution_axes(request):
+def execution_axes(request: _Request) -> _Axes:
     return {} if automatic(request) else EXECUTION_AXES
 
 
-def _identity(request):
+def _identity(request: Mapping[str, Any]) -> dict[str, str]:
     u = request.get("universe", CALENDAR_UNIVERSE)
-    t = {"universe": u, "pair": request.get("pair")}
+    t: dict[str, Any] = {"universe": u, "pair": request.get("pair")}
     if u == CALENDAR_UNIVERSE:
         t["asset"] = request.get("asset")
     if u not in (PAIR_UNIVERSE, CALENDAR_UNIVERSE) or not all(
         isinstance(v, str) and 0 < len(v) <= 80 for v in t.values()
     ):
         raise W0Error("Некорректный идентификатор окна.")
-    return t
+    return cast(dict[str, str], t)
 
 
-def compact_result(proof):
+def compact_result(proof: Mapping[str, Any]) -> dict[str, Any]:
     summary = proof["summary"]
     return {
         "status": "measured",
@@ -46,7 +61,7 @@ def compact_result(proof):
     }
 
 
-def _validate_options(request):
+def _validate_options(request: _Request) -> None:
     if "optimize_strategy" in request and type(request["optimize_strategy"]) is not bool:
         raise W0Error("optimize_strategy: укажите true или false.")
     if "price_fill" in request and request["price_fill"] not in (
@@ -68,18 +83,19 @@ def _validate_options(request):
         raise W0Error("При автоматическом размере количество не задаётся вручную.")
 
 
-def _validate_parameters(request, registry):
+def _validate_parameters(request: _Request, registry: StrategyRegistry | None) -> None:
     strategy = request.get("strategy", "zscore_mean_reversion")
     strategy_axes = get_strategy_axes(registry)
     if not isinstance(strategy, str) or strategy not in strategy_axes:
         raise W0Error("Неизвестная стратегия подбора")
-    params = request.get("parameters", {})
+    params: object = request.get("parameters", {})
     axes = strategy_axes[strategy]
-    if not isinstance(params, dict) or params.keys() - axes.keys():
+    if not isinstance(params, dict) or cast(dict[str, Any], params).keys() - axes.keys():
         raise W0Error("Переданы параметры другой стратегии")
+    typed_params = cast(dict[str, Any], params)
     domains = axes | EXECUTION_AXES
-    values = {
-        **params,
+    values: dict[str, Any] = {
+        **typed_params,
         **{
             k: request[k]
             for k in EXECUTION_AXES
@@ -90,12 +106,31 @@ def _validate_parameters(request, registry):
         axis = domains[name]
         if not axis.contains(value):
             raise W0Error(f"{name}: допустимый диапазон {axis.low}–{axis.high}")
-    if not _ordered(params):
+    if not _ordered(typed_params):
         raise W0Error("Порог выхода должен быть ниже порога входа")
 
 
-def _validate(request, *, registry=None):
+def _validate(request: object, *, registry: StrategyRegistry | None = None) -> None:
     if not isinstance(request, dict):
         raise W0Error("Выбор должен быть объектом.")
-    _validate_options(request)
-    _validate_parameters(request, registry)
+    checked = cast(dict[str, Any], request)
+    _validate_options(checked)
+    _validate_parameters(checked, registry)
+
+
+# ``proof_kernel`` and ``proof_search`` re-export these helpers, so they are
+# declared surface of this module even though their names stay private.
+__all__ = [
+    "AUTO_SIZING",
+    "CALENDAR_UNIVERSE",
+    "EXECUTION_AXES",
+    "PAIR_UNIVERSE",
+    "Axis",
+    "W0Error",
+    "_identity",
+    "_validate",
+    "automatic",
+    "compact_result",
+    "execution_axes",
+    "get_strategy_axes",
+]

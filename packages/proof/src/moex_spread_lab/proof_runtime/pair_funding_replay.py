@@ -7,27 +7,82 @@ non-executable close mark. Missing rates remain unknown, never a zero charge.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from numbers import Real
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, TypeGuard, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies.funding_carry.proof_funding import (
+        FundingEvidence,
+        FundingWindow,
+    )
 
-def _finite(value):
+_FundingStatus = Literal["no_clearing", "not_held", "missing_rate", "applied"]
+
+
+class _FundingRow(TypedDict):
+    date: str
+    position_at_clearing: int
+    funding_rub: float | None
+    funding_status: _FundingStatus
+
+
+class _DailyFundingRow(_FundingRow):
+    rate_kind: str
+    rate: float | None
+
+
+class _DailyFundingReplay(TypedDict):
+    daily: list[_DailyFundingRow]
+    provenance: dict[str, Any]
+
+
+class _AttachedFunding(TypedDict):
+    series: list[dict[str, object]]
+    provenance: dict[str, Any]
+
+
+def _is_string(value: object) -> TypeGuard[str]:
+    return isinstance(value, str)
+
+
+def _is_mapping(value: object) -> bool:
+    return isinstance(value, Mapping)
+
+
+def _is_list_or_tuple(value: object) -> bool:
+    return isinstance(value, (list, tuple))
+
+
+def _is_instance(value: object, instance_type: type[object]) -> bool:
+    return isinstance(value, instance_type)
+
+
+def _finite(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        return False
     try:
-        return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
+        return math.isfinite(value)
     except OverflowError:
         return False
 
 
-def _positions(dates, trades, index):
+def _positions(
+    dates: Sequence[str], trades: Sequence[Mapping[str, object]], index: Mapping[str, int]
+) -> list[int]:
     positions = [0] * len(dates)
     last_exit = -1
     for trade in trades:
-        if not isinstance(trade, Mapping):
+        if not _is_mapping(trade):
             raise W0Error("Некорректная сделка для расчёта фондирования.")
         try:
-            entry, exit_ = index[trade["entry"]["date"]], index[trade["exit"]["date"]]
+            entry_fields = cast(Mapping[str, object], trade["entry"])
+            exit_fields = cast(Mapping[str, object], trade["exit"])
+            entry_date = cast(str, entry_fields["date"])
+            exit_date = cast(str, exit_fields["date"])
+            entry, exit_ = index[entry_date], index[exit_date]
             side, terminal = trade["side"], trade["open_at_end"]
         except (KeyError, TypeError):
             raise W0Error("Некорректная сделка для расчёта фондирования.") from None
@@ -46,9 +101,16 @@ def _positions(dates, trades, index):
     return positions
 
 
-def _funding_row(day, position, rates, no_clearing, near_lot_size, quantity):
+def _funding_row(
+    day: str,
+    position: int,
+    rates: Mapping[str, float | None],
+    no_clearing: Set[str],
+    near_lot_size: float,
+    quantity: int,
+) -> _FundingRow:
     rate = rates.get(day)
-    status = (
+    status: _FundingStatus = (
         "no_clearing"
         if day in no_clearing
         else "not_held"
@@ -58,7 +120,7 @@ def _funding_row(day, position, rates, no_clearing, near_lot_size, quantity):
         else "applied"
     )
     try:
-        value = (
+        value: float | None = (
             0.0
             if day in no_clearing or not position
             else None
@@ -79,13 +141,13 @@ def _funding_row(day, position, rates, no_clearing, near_lot_size, quantity):
 
 def replay_pair_funding(
     dates: Sequence[str],
-    trades: Sequence[Mapping],
+    trades: Sequence[Mapping[str, object]],
     rates: Mapping[str, float | None],
     *,
     near_lot_size: float,
     quantity: int,
     no_clearing_dates: Sequence[str] = (),
-) -> list[dict]:
+) -> list[_FundingRow]:
     """Return per-bar signed near-leg funding; callers must establish evidence.
 
     Dates are unique ordered bar keys, and rates must use those exact keys. This
@@ -95,9 +157,9 @@ def replay_pair_funding(
 
     if (
         not dates
-        or any(not isinstance(day, str) or not day for day in dates)
+        or any(not _is_string(day) or not day for day in dates)
         or list(dates) != sorted(set(dates))
-        or not isinstance(rates, Mapping)
+        or not _is_mapping(rates)
         or not _finite(near_lot_size)
         or near_lot_size <= 0
         or type(quantity) is not int
@@ -111,31 +173,29 @@ def replay_pair_funding(
         raise W0Error("Некорректная ставка фондирования или дата.")
     positions = _positions(dates, trades, index)
     no_clearing = set(no_clearing_dates)
-    result = []
+    result: list[_FundingRow] = []
     for day, position in zip(dates, positions, strict=True):
         result.append(_funding_row(day, position, rates, no_clearing, near_lot_size, quantity))
     return result
 
 
-def _validate_daily_dates(dates, through):
+def _validate_daily_dates(dates: Sequence[object], through: object | None) -> None:
     from datetime import date
 
     try:
-        if any(
-            not isinstance(day, str) or date.fromisoformat(day).isoformat() != day for day in dates
-        ):
+        if any(not _is_string(day) or date.fromisoformat(day).isoformat() != day for day in dates):
             raise ValueError
         if through is not None and (
-            not isinstance(through, str) or date.fromisoformat(through).isoformat() != through
+            not _is_string(through) or date.fromisoformat(through).isoformat() != through
         ):
             raise ValueError
     except (ValueError, TypeError):
         raise W0Error("Для дневного фондирования требуются даты YYYY-MM-DD.") from None
 
 
-def _resolved_marks(evidence):
-    no_clearing = []
-    rates = {}
+def _resolved_marks(evidence: FundingEvidence) -> tuple[dict[str, float], list[str]]:
+    no_clearing: list[str] = []
+    rates: dict[str, float] = {}
     for day, mark in evidence.marks.items():
         if mark.kind == "no_clearing" and mark.value is None:
             no_clearing.append(day)
@@ -146,7 +206,15 @@ def _resolved_marks(evidence):
     return rates, no_clearing
 
 
-def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_size, quantity):
+def replay_daily_pair_funding(
+    dates: Sequence[str],
+    trades: Sequence[Mapping[str, object]],
+    window: FundingWindow,
+    *,
+    through: str | None = None,
+    near_lot_size: float,
+    quantity: int,
+) -> _DailyFundingReplay:
     """Resolve existing funding evidence for daily bars, then replay its payments.
 
     The window must be constructed from the same positive-volume analysis bars.
@@ -157,7 +225,7 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
 
     from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 
-    if not isinstance(window, FundingWindow) or not dates:
+    if not _is_instance(window, FundingWindow) or not dates:
         raise W0Error("Для дневного расчёта нужны окно и даты фондирования.")
     _validate_daily_dates(dates, through)
     expected = [day for day in window.days if through is None or day <= through]
@@ -167,7 +235,7 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
     if set(evidence.marks) != set(dates):
         raise W0Error("Неполное покрытие ставок фондирования.")
     rates, no_clearing = _resolved_marks(evidence)
-    rows = replay_pair_funding(
+    base_rows = replay_pair_funding(
         dates,
         trades,
         rates,
@@ -175,13 +243,25 @@ def replay_daily_pair_funding(dates, trades, window, *, through=None, near_lot_s
         quantity=quantity,
         no_clearing_dates=no_clearing,
     )
-    for row in rows:
-        row["rate_kind"] = evidence.marks[row["date"]].kind
-        row["rate"] = evidence.marks[row["date"]].value
+    rows: list[_DailyFundingRow] = [
+        {
+            **row,
+            "rate_kind": evidence.marks[row["date"]].kind,
+            "rate": evidence.marks[row["date"]].value,
+        }
+        for row in base_rows
+    ]
     return {"daily": rows, "provenance": deepcopy(evidence.provenance)}
 
 
-def attach_daily_unit_funding(series, trades, window, *, through=None, near_lot_size):
+def attach_daily_unit_funding(
+    series: list[Mapping[str, object]] | tuple[Mapping[str, object], ...],
+    trades: Sequence[Mapping[str, object]],
+    window: FundingWindow,
+    *,
+    through: str | None = None,
+    near_lot_size: float,
+) -> _AttachedFunding:
     """Prepare isolated unit funding fields for the existing funded sizing replay.
 
     This consumes only the eligible daily analysis series. It intentionally rejects
@@ -190,15 +270,15 @@ def attach_daily_unit_funding(series, trades, window, *, through=None, near_lot_
     """
     from copy import deepcopy
 
-    if not isinstance(series, (list, tuple)) or any(not isinstance(row, Mapping) for row in series):
+    if not _is_list_or_tuple(series) or any(not _is_mapping(row) for row in series):
         raise W0Error("Некорректные строки анализа для фондирования.")
     if any(row.get("volume_eligible", True) is not True for row in series):
         raise W0Error("В расчёт фондирования допускаются только подходящие бары анализа.")
-    dates = [row.get("date") for row in series]
+    dates = [cast(str, row.get("date")) for row in series]
     replay = replay_daily_pair_funding(
         dates, trades, window, through=through, near_lot_size=near_lot_size, quantity=1
     )
-    rows = []
+    rows: list[dict[str, object]] = []
     for row, funding in zip(series, replay["daily"], strict=True):
         if funding["funding_rub"] is None:
             raise W0Error("Неполные данные фондирования нельзя передать в учёт.")

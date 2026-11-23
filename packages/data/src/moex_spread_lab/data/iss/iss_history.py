@@ -9,10 +9,11 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
-from moex_spread_lab.core.w0 import W0Error, _HashedJSONCache
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
+from moex_spread_lab.core.w0 import W0Error
 
 HISTORY_SCHEMA = "iss-history.v1"
 HISTORY_PAGE_SIZE = 100
@@ -72,27 +73,28 @@ def _fetch_history_json(
     except OSError as exc:
         raise error(f"history request failed: {url}: {exc}") from exc
     try:
-        value = json.loads(raw.decode("utf-8"))
+        value: object = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise error(f"history response is not JSON: {url}") from exc
     if not isinstance(value, dict):
         raise error(f"history response is not an object: {url}")
-    return value, hashlib.sha256(raw).hexdigest()
+    return cast(dict[str, Any], value), hashlib.sha256(raw).hexdigest()
 
 
 def _history_rows(
     block: Any, name: str, *, error: type[W0Error] = IssHistoryError
 ) -> list[dict[str, Any]]:
-    if (
-        not isinstance(block, dict)
-        or not isinstance(block.get("columns"), list)
-        or not isinstance(block.get("data"), list)
-    ):
+    if not isinstance(block, dict):
         raise error(f"malformed ISS block: {name}")
-    columns: list[str] = block["columns"]
+    block_obj = cast(dict[str, Any], block)
+    raw_columns: object = block_obj.get("columns")
+    raw_data: object = block_obj.get("data")
+    if not isinstance(raw_columns, list) or not isinstance(raw_data, list):
+        raise error(f"malformed ISS block: {name}")
+    columns = cast(list[str], raw_columns)
     return [
-        dict(zip(columns, values, strict=False))
-        for values in block["data"]
+        dict(zip(columns, cast(list[Any], values), strict=False))
+        for values in cast(list[object], raw_data)
         if isinstance(values, list)
     ]
 
@@ -135,15 +137,16 @@ def _try_load_cached_history_page(
         cache_key = (str(resolved), stat.st_mtime_ns, stat.st_size)
         cached = _HISTORY_JSON_CACHE.get(cache_key)
         if cached is None:
-            cached_obj = json.loads(resolved.read_text(encoding="utf-8"))
-            if isinstance(cached_obj, dict):
+            cached_raw: object = json.loads(resolved.read_text(encoding="utf-8"))
+            if isinstance(cached_raw, dict):
+                cached_obj = cast(dict[str, Any], cached_raw)
                 _HISTORY_JSON_CACHE.put(cache_key, (cached_obj, ""))
                 cached = (cached_obj, "")
         if cached is not None and cached[0].get("url") == url:
-            payload = cached[0].get("payload")
-            raw_hash = cached[0].get("raw_response_sha256")
+            payload: object = cached[0].get("payload")
+            raw_hash: object = cached[0].get("raw_response_sha256")
             if isinstance(payload, dict):
-                return payload, str(raw_hash or "")
+                return cast(dict[str, Any], payload), str(raw_hash or "")
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return None

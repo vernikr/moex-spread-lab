@@ -111,6 +111,9 @@ def _resolve_window(spec: MeanReversionSpec) -> MeanReversionWindow:
     )
 
 
+resolve_window = _resolve_window
+
+
 def report_for(window: MeanReversionWindow, *, metrics_only: bool) -> dict[str, Any]:
     spec = window.spec
     execution, params = spec.execution, spec.params

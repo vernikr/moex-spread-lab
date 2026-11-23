@@ -85,7 +85,7 @@ def _trade_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict[
     daily_by_date = {row["date"]: row for row in report["daily"]}
     last_date = report["daily"][-1]["date"]
     reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])}
-    trades = []
+    trades: list[dict[str, Any]] = []
     for number, row in enumerate(report["trades"], start=1):
         open_at_end = row["status"] == PERPETUAL_OPEN_STATUS
         entry_date = row["entry_execution_date"]
@@ -132,7 +132,7 @@ def _series_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict
     near_lot = float(spec.terms[near].get("lot_size") or 1.0)
     marks = state.evidence.marks
     book_marks = state.funding_window.book.marks
-    rows = []
+    rows: list[dict[str, Any]] = []
     for row in report["daily"]:
         position = 1 if row["position"] else 0
         study_row = state.study_by_date.get(row["date"], {})

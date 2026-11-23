@@ -6,10 +6,12 @@ from typing import Any
 from moex_spread_lab.core.w0 import W0Error
 
 
-def _scaled_series(unit: dict[str, Any], template: dict[str, Any], quantity: int) -> list[dict]:
+def _scaled_series(
+    unit: dict[str, Any], template: dict[str, Any], quantity: int
+) -> list[dict[str, Any]]:
     """Sizing rows scaled to the quantity and merged over the template rows."""
     originals = {row["date"]: row for row in template["series"]}
-    rows = []
+    rows: list[dict[str, Any]] = []
     for raw in unit["series"]:
         amount = raw["funding_rub"]
         if amount is not None and not math.isfinite(amount * quantity):
@@ -24,3 +26,6 @@ def _scaled_series(unit: dict[str, Any], template: dict[str, Any], quantity: int
             }
         )
     return rows
+
+
+scaled_series = _scaled_series

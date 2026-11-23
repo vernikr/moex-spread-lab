@@ -1,6 +1,7 @@
 """Lightweight local proxies describing remote cohort members."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -27,11 +28,11 @@ class _RemoteSplit:
 
 @dataclass
 class _RemoteCase:
-    request: dict
-    strategy_axes: dict
-    execution_axes: dict
-    axes: dict
-    seed: dict
+    request: dict[str, Any]
+    strategy_axes: dict[str, Any]
+    execution_axes: dict[str, Any]
+    axes: dict[str, Any]
+    seed: dict[str, Any]
     split: _RemoteSplit
     _lamp_warning: str | None
 

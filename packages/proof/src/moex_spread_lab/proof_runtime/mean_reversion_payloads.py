@@ -24,7 +24,8 @@ from .mean_reversion_blocks import (
     trades_for,
     window_meta,
 )
-from .mean_reversion_engine import _resolve_window, report_for
+from .mean_reversion_engine import report_for
+from .mean_reversion_engine import resolve_window as _resolve_window
 from .mean_reversion_spec import MeanReversionSpec, MeanReversionWindow
 from .pair_payload import PairPayloadSpec, pair_payload
 from .payload_tools import FORCED_EXIT_REASONS, PROOF_SCHEMA, positive_pair_volume
@@ -33,7 +34,7 @@ from .payload_tools import FORCED_EXIT_REASONS, PROOF_SCHEMA, positive_pair_volu
 def intent_trades(window: MeanReversionWindow, report: dict[str, Any]) -> list[dict[str, Any]]:
     """Intent-level trades for the sizing pass (prices only, no cost or capital data)."""
     intraday = get_timeframe(window.series["timeframe"]).intraday
-    trades = []
+    trades: list[dict[str, Any]] = []
     for row in report["trades"]:
         entry_date = stamp(row["entry_date"], intraday)
         exit_date = stamp(row["exit_date"], intraday)
@@ -80,7 +81,7 @@ def intent_series(window: MeanReversionWindow, report: dict[str, Any]) -> list[d
             for row in window.series["rows"]
         ]
     state = holding_flags([row["date"] for row in window.series["rows"]], report["daily"])
-    rows = []
+    rows: list[dict[str, Any]] = []
     for row in window.series["rows"]:
         day = row["date"]
         daily, _, held = state[day]

@@ -13,7 +13,7 @@ from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 from moex_spread_lab.core.w0 import W0Error, _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
-from .fixed_plugin_series import _scaled_series
+from .fixed_plugin_series import scaled_series as _scaled_series
 from .ledger_blocks import price_ledger
 from .payload_tools import TradeSpec, fill_block, mark, point_value, trade_block
 from .plugin_notes import (

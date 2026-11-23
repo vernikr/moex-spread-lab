@@ -47,7 +47,7 @@ def window_meta(window: MeanReversionWindow) -> dict[str, Any]:
     sessions = sessions_for(window)
     near, far = window.spec.pair["near"], window.spec.pair["far"]
     near_volumes, far_volumes = sessions.get(near, {}), sessions.get(far, {})
-    volumes = []
+    volumes: list[float] = []
     for row in window.series["rows"]:
         session_date = row.get("session_date", row["date"][:10])
         near_volume, far_volume = near_volumes.get(session_date), far_volumes.get(session_date)
@@ -74,7 +74,7 @@ def trades_for(window: MeanReversionWindow, report: dict[str, Any]) -> list[dict
     """Fixed-quantity trade rows; fills are looked up in the cut price rows."""
     spec, execution = window.spec, window.spec.execution
     intraday = get_timeframe(window.series["timeframe"]).intraday
-    trades = []
+    trades: list[dict[str, Any]] = []
     for number, row in enumerate(report["trades"], start=1):
         entry_date = stamp(row["entry_date"], intraday)
         exit_date = stamp(row["exit_date"], intraday)
@@ -153,14 +153,14 @@ def series_rows_for(window: MeanReversionWindow, report: dict[str, Any]) -> list
     near_sessions, far_sessions = sessions.get(near, {}), sessions.get(far, {})
     near_lot = float(window.series["contracts"][near].get("lot_size") or 1.0)
     state = holding_flags([row["date"] for row in window.series["rows"]], report["daily"])
-    rows = []
+    rows: list[dict[str, Any]] = []
     for row in window.series["rows"]:
         day = row["date"]
         session_date = row.get("session_date", day[:10])
         daily, position, held = state[day]
         funded = day in window.funding_swaprates
         spread_open = row["near_open"] * window.near_mult - row["far_open"] * window.far_mult
-        row_out = {
+        row_out: dict[str, Any] = {
             "date": day,
             "timestamp": row.get("timestamp", day),
             "session_date": session_date,

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from moex_spread_lab.core.derived_cache import (
     derived_cache_enabled,
@@ -45,6 +45,7 @@ CATALOG_CACHE_NAMESPACE = "proof-catalog"
 
 def _build_catalog(service: CatalogService, settings: ResearchSettings) -> dict[str, Any]:
     spec = get_timeframe(settings.timeframe)
+    calendar: dict[str, Any]
     try:
         if not spec.supports_calendar:
             raise W0Error(
@@ -116,7 +117,7 @@ def catalog_payload(service: CatalogService, settings: ResearchSettings) -> dict
             except ValueError:
                 hit = None
             if isinstance(hit, dict):
-                return hit
+                return cast(dict[str, Any], hit)
     payload = _build_catalog(service, settings)
     # Normalize through canonical JSON once, so the in-memory payload, the bytes
     # served over HTTP and the bytes stored in the cache are identical objects

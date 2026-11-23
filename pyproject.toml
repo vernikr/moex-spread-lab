@@ -239,6 +239,8 @@ strict = [
     "packages/accounting/src",
     "packages/proof/src/moex_spread_lab/proof_runtime/funding_sizing_payload.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/funding_payloads.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/catalog_payload.py",
+    "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_blocks.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_engine.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_payloads.py",
     "packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_series.py",

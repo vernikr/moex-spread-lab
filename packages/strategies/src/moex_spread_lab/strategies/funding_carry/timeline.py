@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
@@ -66,13 +66,17 @@ def supplement_path(root: Path | str, secid: str) -> Path:
 def _valid_supplement_record(day: str, record: Any) -> bool:
     if not isinstance(record, Mapping):
         return False
+    record = cast(Mapping[str, Any], record)
     date.fromisoformat(day)
     hashes = record.get("page_hashes")
     return (
         finite_rate(record.get("rate")) is not None
         and isinstance(hashes, list)
-        and bool(hashes)
-        and all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes)
+        and bool(cast(list[object], hashes))
+        and all(
+            isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h)
+            for h in cast(list[object], hashes)
+        )
         and isinstance(record.get("from"), str)
         and isinstance(record.get("till"), str)
         and (record["from"] <= day <= record["till"])
@@ -87,6 +91,7 @@ def read_supplement(root: Path | str, secid: str) -> dict[str, dict[str, Any]]:
         records = data["records"]
         if not isinstance(records, dict):
             raise ValueError
+        records = cast(dict[str, Any], records)
         for day, record in records.items():
             if not _valid_supplement_record(day, record):
                 raise ValueError

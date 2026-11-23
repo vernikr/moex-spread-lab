@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -71,6 +73,21 @@ class SearchTests(unittest.TestCase):
             optimize(self.inputs, request, evaluator=self.evaluator, available=self.available),
         )
         self.assertEqual(result["scope"], "independent_pair_studies_not_a_shared_capital_basket")
+
+    def test_validation_result_golden(self):
+        save_settings(self.inputs.root, {"validation_percent": 50})
+        request = {
+            "pairs": self.pairs,
+            "strategy": "mean_reversion",
+            "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
+        }
+        result = optimize(self.inputs, request, evaluator=self.evaluator, available=self.available)
+        canonical = json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        self.assertEqual(result["run_id"], "f0b69e50b3ea3ce1")
+        self.assertEqual(
+            hashlib.sha256(canonical.encode()).hexdigest(),
+            "8a6d812c93c0ed288790129526c6acf50f716f641776948815e5046dcb2ebf27",
+        )
 
     def test_validation_change_does_not_select_parameters(self):
         save_settings(self.inputs.root, {"validation_percent": 50})

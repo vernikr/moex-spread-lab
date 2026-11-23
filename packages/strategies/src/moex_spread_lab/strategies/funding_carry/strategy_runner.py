@@ -6,7 +6,7 @@ import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.core.w0 import load_contracts
@@ -252,8 +252,11 @@ def build_carry_strategy(
     cfg = parse_carry_config(options)
     if carry_result.get("schema_version") != CARRY_SCHEMA:
         raise CarryStrategyError("unsupported carry decomposition schema")
-    rows = carry_result.get("rows")
-    if not isinstance(rows, list) or len(rows) <= cfg.warmup_observations:
+    raw_rows = carry_result.get("rows")
+    if not isinstance(raw_rows, list):
+        raise CarryStrategyError("carry decomposition does not contain the required warmup")
+    rows: list[dict[str, Any]] = cast(list[dict[str, Any]], raw_rows)
+    if len(rows) <= cfg.warmup_observations:
         raise CarryStrategyError("carry decomposition does not contain the required warmup")
     near, far = carry_result.get("near"), carry_result.get("far")
     if not isinstance(near, str) or not isinstance(far, str):

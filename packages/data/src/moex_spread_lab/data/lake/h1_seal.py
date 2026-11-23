@@ -5,21 +5,23 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
 
+from . import bar_types as _bar_types
+from . import h1_migration as _h1_migration
 from .bar_types import (
     H1_SEAL_SCHEMA,
     BarSeries,
     DataLakeError,
     SealedH1Reader,
-    _signature,
     reject_sealed_table_write,
     verify_archived_record,
 )
 from .data_lake import ParquetBarStore
-from .h1_migration import build_h1_plan, verify_h1_stage
 
 SCHEMA = H1_SEAL_SCHEMA
 
@@ -36,8 +38,21 @@ __all__ = [
     "verify_sealed_h1",
 ]
 
+# Rebind the existing cross-module hooks to their original callables: their
+# owning modules keep the untyped definitions, while this facade keeps its
+# public/private names and runtime identity under whole-package strict typing.
+_signature: Callable[[Path], tuple[int, int, int, int]] = cast(
+    Callable[[Path], tuple[int, int, int, int]], _bar_types.__dict__["_signature"]
+)
+build_h1_plan: Callable[[Path], dict[str, Any]] = cast(
+    Callable[[Path], dict[str, Any]], _h1_migration.__dict__["build_h1_plan"]
+)
+verify_h1_stage: Callable[[Path, Path, Path], dict[str, Any]] = cast(
+    Callable[[Path, Path, Path], dict[str, Any]], _h1_migration.__dict__["verify_h1_stage"]
+)
 
-def _new_json(path: Path, value: dict):
+
+def _new_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as handle:
         json.dump(value, handle, sort_keys=True, indent=2)
@@ -45,7 +60,7 @@ def _new_json(path: Path, value: dict):
         os.fsync(handle.fileno())
 
 
-def activate_h1(root: Path, plan_path: Path, candidate: Path) -> dict:
+def activate_h1(root: Path, plan_path: Path, candidate: Path) -> dict[str, Any]:
     root = root.resolve()
     reader = SealedH1Reader(root)
     if any(os.path.lexists(p) for p in (reader.path, reader.marker)):
@@ -54,8 +69,8 @@ def activate_h1(root: Path, plan_path: Path, candidate: Path) -> dict:
     if not candidate.is_relative_to(root / "data-lake"):
         raise DataLakeError("production H1 candidate must be inside data-lake")
     verify_h1_stage(root, plan_path, candidate)
-    plan = json.loads(plan_path.read_text())
-    records = {}
+    plan: dict[str, Any] = json.loads(plan_path.read_text())
+    records: dict[str, dict[str, Any]] = {}
     for entry in plan["files"]:
         record = ParquetBarStore(root, candidate / entry["source_group"]).record_for_legacy_path(
             root / entry["legacy_path"]
@@ -63,7 +78,7 @@ def activate_h1(root: Path, plan_path: Path, candidate: Path) -> dict:
         if record is None:
             raise DataLakeError("missing candidate record")
         records[entry["legacy_path"]] = record
-    value = {
+    value: dict[str, Any] = {
         "schema_version": SCHEMA,
         "root": str(root),
         "plan": plan,
@@ -80,7 +95,7 @@ def activate_h1(root: Path, plan_path: Path, candidate: Path) -> dict:
     return verify_sealed_h1(root)
 
 
-def verify_sealed_h1(root: Path) -> dict:
+def verify_sealed_h1(root: Path) -> dict[str, Any]:
     reader = SealedH1Reader(root)
     value = reader.payload()
     if value is None:
@@ -99,7 +114,7 @@ def verify_sealed_h1(root: Path) -> dict:
     }
 
 
-def deactivate_h1(root: Path) -> dict:
+def deactivate_h1(root: Path) -> dict[str, Any]:
     reader = SealedH1Reader(root)
     value = reader.payload()
     if value is None:

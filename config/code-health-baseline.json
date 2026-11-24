@@ -48,49 +48,9 @@
     "packages/web/tests/browser/group_lamps_smoke.py::run": 20
   },
   "files": {
-    "packages/accounting/tests/test_position_sizing.py": {
-      "baseline_loc": 454,
-      "baseline_tokens": 6344
-    },
     "packages/core/src/moex_spread_lab/core/_fastcore.c": {
       "baseline_loc": 1314,
-      "baseline_tokens": 14623
-    },
-    "packages/core/src/moex_spread_lab/core/w0.py": {
-      "baseline_loc": 320,
-      "baseline_tokens": 3996
-    },
-    "packages/core/tests/test_architecture_dag.py": {
-      "baseline_loc": 297,
-      "baseline_tokens": 4202
-    },
-    "packages/strategies/tests/contract/test_strategy_conformance.py": {
-      "baseline_loc": 654,
-      "baseline_tokens": 6810
-    },
-    "packages/strategies/tests/test_analytics.py": {
-      "baseline_loc": 362,
-      "baseline_tokens": 4096
-    },
-    "packages/strategies/tests/test_carry.py": {
-      "baseline_loc": 585,
-      "baseline_tokens": 6939
-    },
-    "packages/web/src/moex_spread_lab/web/static/css/layout.css": {
-      "baseline_loc": 143,
-      "baseline_tokens": 3611
-    },
-    "packages/web/src/moex_spread_lab/web/static/index.html": {
-      "baseline_loc": 174,
-      "baseline_tokens": 4086
-    },
-    "packages/web/tests/test_http_routes.py": {
-      "baseline_loc": 264,
-      "baseline_tokens": 3534
-    },
-    "packages/web/tests/test_screener_app.py": {
-      "baseline_loc": 456,
-      "baseline_tokens": 5752
+      "baseline_tokens": 12534
     }
   },
   "guard_files": [],

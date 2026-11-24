@@ -255,6 +255,14 @@ def test_package_token_growth_inside_the_tolerance_stays_silent():
     assert rules._package_token_advisories({"packages/core": 1019}, baseline) == []
 
 
+def test_shipped_baseline_entries_are_justified_by_the_tiered_policy():
+    baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
+
+    for relative, entry in baseline["files"].items():
+        metrics = {"loc": int(entry["baseline_loc"]), "tokens": int(entry["baseline_tokens"])}
+        assert not rules._baseline_entry_is_obsolete(relative, metrics), relative
+
+
 def test_shipped_legacy_inventories_only_list_offending_names():
     baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
     offenders = set(baseline["legacy_fragment_files"])

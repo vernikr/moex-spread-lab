@@ -8,7 +8,7 @@ from typing import Any
 from moex_spread_lab.core.settings import read_settings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.proof_runtime.screener_search import optimize, screen_table
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
+from moex_spread_lab.proof_runtime.web_legacy import ScreenerError
 
 LEGACY_POST_ROUTES = frozenset({"/api/run", "/api/screen", "/api/optimize"})
 

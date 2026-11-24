@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import canonical_bytes
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web.server import ScreenerStore
 from proof_fixtures import two_calendar_windows
 
 

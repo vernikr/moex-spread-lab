@@ -138,7 +138,10 @@ def run(browser, url):
     assert pair.locator("tr[data-period=training]").count() == 42
     pair.locator("#lookback + .plateau-dot").hover()
     expect(pair.locator("#plateau-tip")).to_contain_text("Проверка:")
-    expect(pair.locator("#plateau-tip")).to_contain_text("ни на обучении, ни на проверке")
+    reason = pair.evaluate("payload.evaluation.result.reason")
+    assert reason == "Свободные средства недостаточны для маржи."
+    expect(pair.locator("#plateau-tip")).to_contain_text(reason)
+    expect(pair.locator("#plateau-tip")).to_contain_text("Соседи на обучении")
     with pair.expect_response(lambda r: r.url.endswith("/api/proof/run")):
         pair.locator("#auto-tune").click()
     ready(pair, "validation")

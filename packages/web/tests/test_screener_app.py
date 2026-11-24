@@ -9,23 +9,19 @@ import unittest
 from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
 
+from moex_spread_lab.core.universe import HISTORICAL_PERPETUAL_PAIRS, HISTORY_WINDOWS, PAIRS
 from moex_spread_lab.proof_runtime.screener_search import screen_table
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
-from moex_spread_lab.web.server import (
-    HISTORICAL_PERPETUAL_PAIRS,
-    HISTORY_WINDOWS,
-    PAIRS,
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
     ScreenerInputs,
-    ScreenerStore,
     _leg_volumes,
     _positive_leg_volume_dates,
     build_result,
     catalog,
-    make_handler,
 )
+from moex_spread_lab.web.server import ScreenerStore, make_handler
 
 
 class ScreenerAppTests(unittest.TestCase):
@@ -353,15 +349,15 @@ class ScreenerAppTests(unittest.TestCase):
         cache.mkdir(parents=True, exist_ok=True)
         for secid in ("CNYRUBF", "CRZ6"):
             (cache / f"{secid}-2025-06-17-2026-10-27-0.json").write_text("{}")
-        with patch("moex_spread_lab.web.server.fetch_history", side_effect=history):
-            result = build_result(
-                self.inputs,
-                {
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "funding_only",
-                    "parameters": {"lookback": 12},
-                },
-            )
+        result = build_result(
+            self.inputs,
+            {
+                "pair": "CNYRUBF/CRZ6",
+                "strategy": "funding_only",
+                "parameters": {"lookback": 12},
+            },
+            fetch_fn=history,
+        )
         self.assertEqual(result["selection"]["parameters"]["lookback"], 12)
         self.assertEqual(result["period"]["observations"], 50)
         with self.assertRaises(ScreenerError):
@@ -469,7 +465,7 @@ class ScreenerAppTests(unittest.TestCase):
         response.read()
         connection.close()
         with self.assertRaises(OSError):
-            from moex_spread_lab.web.server import _offline_only
+            from moex_spread_lab.strategies.pair_screener.pair_screener import _offline_only
 
             _offline_only("https://iss.moex.com/")
 

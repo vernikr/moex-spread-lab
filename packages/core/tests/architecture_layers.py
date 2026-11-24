@@ -101,11 +101,11 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
     {
         ("packages/data/tests/test_h1_archive.py", "proof_runtime.proof_pool"),
         ("packages/data/tests/test_h1_seal.py", "strategies.calendar.calendar_spreads"),
-        ("packages/data/tests/test_h1_seal.py", "web.server"),
+        ("packages/data/tests/test_h1_seal.py", "strategies.pair_screener.pair_screener"),
         ("packages/data/tests/test_storage_policy.py", "accounting.run_artifacts"),
         ("packages/data/tests/test_store_cutover.py", "strategies.calendar.calendar_spreads"),
         ("packages/data/tests/test_store_cutover.py", "strategies.pair_screener.screener"),
-        ("packages/data/tests/test_store_cutover.py", "web.server"),
+        ("packages/data/tests/test_store_cutover.py", "strategies.pair_screener.pair_screener"),
         (
             "packages/accounting/tests/test_execution_accounting.py",
             "strategies.pair_mean_reversion.analytics",

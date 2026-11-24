@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import moex_spread_lab.web.server as web_server
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 PREVIEW = "8765-x.e2b.app"
 
@@ -19,7 +20,7 @@ class AllowedPreviewHostTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        store = web_server.ScreenerStore(web_server.ScreenerInputs(Path(self._tmp.name)))
+        store = web_server.ScreenerStore(ScreenerInputs(Path(self._tmp.name)))
         self.addCleanup(store.close)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), web_server.make_handler(store))
         self.addCleanup(self.server.server_close)

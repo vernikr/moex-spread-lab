@@ -7,7 +7,7 @@ from pathlib import Path
 
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.proof_runtime.screener_search import optimize
-from moex_spread_lab.web.server import ScreenerError, ScreenerInputs
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError, ScreenerInputs
 
 
 class SearchTests(unittest.TestCase):

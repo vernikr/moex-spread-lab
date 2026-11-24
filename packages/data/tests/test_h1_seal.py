@@ -8,7 +8,7 @@ from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore
 from moex_spread_lab.data.lake.h1_migration import stage_h1, write_h1_plan
 from moex_spread_lab.data.lake.h1_seal import activate_h1, deactivate_h1, verify_sealed_h1
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-from moex_spread_lab.web.server import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 
 @pytest.fixture

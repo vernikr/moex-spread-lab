@@ -17,7 +17,7 @@ from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.proof_windows import window_summaries
 from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.web.server import ScreenerInputs, catalog
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, catalog
 from proof_fixtures import two_calendar_windows
 from test_position_sizing import unit_proof
 

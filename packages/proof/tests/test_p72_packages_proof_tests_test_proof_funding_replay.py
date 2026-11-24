@@ -11,7 +11,7 @@ from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
 from moex_spread_lab.strategies.funding_carry.proof_funding import NO_CLEARING, supplement_path
-from moex_spread_lab.web.server import build_result
+from moex_spread_lab.strategies.pair_screener.pair_screener import build_result
 
 
 class FundingReplayTests(FundingReplayCase):

@@ -405,17 +405,13 @@ version = "0.9.0"
 source = { editable = "packages/web" }
 dependencies = [
     { name = "msl-core" },
-    { name = "msl-data" },
     { name = "msl-proof" },
-    { name = "msl-strategies" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "msl-core", editable = "packages/core" },
-    { name = "msl-data", editable = "packages/data" },
     { name = "msl-proof", editable = "packages/proof" },
-    { name = "msl-strategies", editable = "packages/strategies" },
 ]
 
 [[package]]

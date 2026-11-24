@@ -20,7 +20,8 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
     HISTORY_FROM,
 )
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web.server import ScreenerStore, make_handler
 
 TILL = "2023-06-15"
 

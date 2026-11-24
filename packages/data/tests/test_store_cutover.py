@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 from moex_spread_lab.data.lake.data_lake import LegacyJsonBarStore, MarketDataStore, ParquetBarStore
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
-from moex_spread_lab.web.server import ScreenerInputs
 
 
 class StoreCutoverTests(unittest.TestCase):

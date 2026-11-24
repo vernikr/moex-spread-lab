@@ -70,7 +70,9 @@ class CatalogOfflineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
-            store = web_server.ScreenerStore(web_server.ScreenerInputs(root))
+            from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+
+            store = web_server.ScreenerStore(ScreenerInputs(root))
             try:
                 start = time.perf_counter()
                 catalog = store.proof.catalog()
@@ -92,7 +94,8 @@ class CatalogColdProcessTests(unittest.TestCase):
             f"sys.path.insert(0, {str(_REPO_ROOT / 'tests')!r})\n"
             f"sys.path.insert(0, {str(_REPO_ROOT / 'packages' / 'proof' / 'tests')!r})\n"
             "from proof_fixtures import two_calendar_windows\n"
-            "from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore\n"
+            "from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs\n"
+            "from moex_spread_lab.web.server import ScreenerStore\n"
             "with tempfile.TemporaryDirectory() as tmp:\n"
             "    root = Path(tmp)\n"
             "    two_calendar_windows(root)\n"

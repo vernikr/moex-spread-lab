@@ -10,7 +10,7 @@ from typing import Any
 
 from moex_spread_lab.proof_runtime.proof_pool import get_worker_pool
 from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.proof_runtime.web_legacy import ScreenerInputs
 
 
 class ScreenerStore:
@@ -28,7 +28,7 @@ class ScreenerStore:
         if self._proof is None:
             self._proof = ProofService(
                 self.inputs.root,
-                calendar=self.calendar,
+                calendar=self._calendar,
                 pool_factory=get_worker_pool,
             )
         return self._proof
@@ -36,9 +36,7 @@ class ScreenerStore:
     @property
     def calendar(self) -> Any:
         if self._calendar is None:
-            from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-
-            self._calendar = CalendarData(self.inputs.root)
+            self._calendar = self.proof.calendar_data
         return self._calendar
 
     def close(self) -> None:

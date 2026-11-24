@@ -14,7 +14,8 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
 from moex_spread_lab.proof_runtime.proof_search import research_run
 from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import fixture
 from proof_plateau_checks_p72_packages_proof_tests_test_proof_plateau import (
     assert_center_utility_is_member_mean,

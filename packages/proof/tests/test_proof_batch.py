@@ -13,7 +13,8 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof_runtime.proof_batch import MAX_TARGETS, _targets
 from moex_spread_lab.proof_runtime.proof_search import TRIALS, _annualized_returns, research_run
 from moex_spread_lab.strategies.calendar import calendar_spreads
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web.server import ScreenerStore, make_handler
 
 
 class AnnualizationTests(unittest.TestCase):

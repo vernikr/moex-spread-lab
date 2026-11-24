@@ -10,7 +10,8 @@ import threading
 from http.server import ThreadingHTTPServer
 
 from moex_spread_lab.core.settings import ResearchSettings, read_settings
-from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_search_fixtures_p72_packages_proof_tests_test_proof_search import PAIR
 from test_execution_proof import _build_root as pair_fixture
 

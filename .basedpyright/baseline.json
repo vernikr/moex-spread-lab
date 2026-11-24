@@ -1,32 +1,3 @@
 {
-    "files": {
-        "./packages/web/src/moex_spread_lab/web/__init__.py": [
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 17,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 4,
-                    "endColumn": 18,
-                    "lineCount": 1
-                }
-            }
-        ],
-        "./packages/web/src/moex_spread_lab/web/cli.py": [
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 28,
-                    "endColumn": 42,
-                    "lineCount": 1
-                }
-            }
-        ]
-    }
+    "files": {}
 }

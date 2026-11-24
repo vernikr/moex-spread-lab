@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.proof_runtime.audit import audit_pairs, independent_gross
-from moex_spread_lab.web.server import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 
 def _rows(secid: str, closes: list[float]) -> dict:

@@ -13,21 +13,19 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-import moex_spread_lab.web.server as screener_app
 import moex_spread_lab.web.server as web_server
 import moex_spread_lab.web.strategy_registry as strategy_registry
 from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 
 class WebPackageArchitectureTests(unittest.TestCase):
-    def test_screener_app_is_direct_module_alias_of_web_server(self) -> None:
-        self.assertIs(screener_app, web_server)
-        sentinel = object()
-        with mock.patch.object(screener_app, "fetch_history", sentinel):
-            self.assertIs(web_server.fetch_history, sentinel)
+    def test_server_does_not_export_legacy_fetch_history(self) -> None:
+        for name in ("fetch_history", "catalog", "build_result", "ScreenerInputs", "ScreenerError"):
+            self.assertFalse(hasattr(web_server, name), name)
 
     def test_vendored_lightweight_charts_and_apache_license_are_intact(self) -> None:
         vendor_dir = Path(web_server.__file__).resolve().parent / "vendor"
@@ -56,7 +54,7 @@ class WebHttpRoutesTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
-        self.store = web_server.ScreenerStore(web_server.ScreenerInputs(self.root))
+        self.store = web_server.ScreenerStore(ScreenerInputs(self.root))
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), web_server.make_handler(self.store))
         self.port = self.server.server_port
         self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)

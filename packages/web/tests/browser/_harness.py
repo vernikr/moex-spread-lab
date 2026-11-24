@@ -181,7 +181,8 @@ def serve(
     store_factory: Callable[[Any], Any] | None = None,
 ) -> Iterator[str]:
     """Serve the loopback screener API on an ephemeral port with a clean shutdown."""
-    from moex_spread_lab.web.server import ScreenerInputs, ScreenerStore, make_handler
+    from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+    from moex_spread_lab.web.server import ScreenerStore, make_handler
 
     _quiet_optuna()
     with phase("server_startup"):

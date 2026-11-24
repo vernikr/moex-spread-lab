@@ -20,8 +20,6 @@
   ],
   "dependencies": [
     "moex-spread-lab.core",
-    "moex-spread-lab.data",
-    "moex-spread-lab.strategies",
     "moex-spread-lab.proof"
   ],
   "owner": "project-web",

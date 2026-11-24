@@ -37,7 +37,9 @@ def run(args: Any) -> int:
     if args.command == "screener":
         import signal
 
-        from .server import ScreenerInputs, serve
+        from moex_spread_lab.proof_runtime.web_legacy import ScreenerInputs
+
+        from .server import serve
 
         def terminate(_signum, _frame):
             raise KeyboardInterrupt

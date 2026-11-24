@@ -2,8 +2,9 @@
 
 import json
 
+from moex_spread_lab.core.universe import HISTORY_WINDOWS
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
-from moex_spread_lab.web.server import HISTORY_WINDOWS, ScreenerInputs
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from test_execution_proof import _build_root
 
 PAIR = "CNYRUBF/CRZ6"

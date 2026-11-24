@@ -2,7 +2,7 @@
 
 import {
   $, GROUP_RU,
-  cls, displayTime, el, fmt, pct, rub,
+  cls, displayTime, el, fmt, pct, pp, rub,
 } from './dom.js';
 import { isIntraday, state } from './state.js';
 

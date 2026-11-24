@@ -50,7 +50,7 @@ def _prepare(case):
 
 def test_archive_restore_then_explicit_apply_and_missing_json_maintenance(archive_case):
     root, intake, screen, candidate, evidence, archive, ap = archive_case
-    from moex_spread_lab.proof_runtime.proof_pool import _estimate_weight
+    from moex_spread_lab.proof.proof_pool import _estimate_weight
 
     target = {"universe": "pair_screen", "pair": "FAR/NEAR"}
     expected_weight = _estimate_weight(root, target, "1h")

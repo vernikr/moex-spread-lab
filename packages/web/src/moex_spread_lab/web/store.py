@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.proof_runtime.proof_pool import get_worker_pool
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.web_legacy import ScreenerInputs
+from moex_spread_lab.proof.proof_pool import get_worker_pool
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.web_legacy import ScreenerInputs
 
 
 class ScreenerStore:

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from moex_spread_lab.core.w0 import _run_id
-from moex_spread_lab.proof_runtime import cohort_reporting, proof_batch
+from moex_spread_lab.proof import cohort_reporting, proof_batch
 
 
 def test_report_keeps_run_id_progress_and_single_window_details():

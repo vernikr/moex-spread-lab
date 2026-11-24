@@ -15,7 +15,7 @@ def _namespace_fixture(root: Path) -> None:
         "packages/data/src/moex_spread_lab/data",
         "packages/accounting/src/moex_spread_lab/accounting",
         "packages/strategies/src/moex_spread_lab/strategies",
-        "packages/proof/src/moex_spread_lab/proof_runtime",
+        "packages/proof/src/moex_spread_lab/proof",
         "packages/web/src/moex_spread_lab/web",
         "src/moex_spread_lab",
     ):
@@ -34,7 +34,7 @@ def test_typecheck_view_unifies_namespace_roots_and_is_reproducible(tmp_path: Pa
         "accounting",
         "core",
         "data",
-        "proof_runtime",
+        "proof",
         "strategies",
         "web",
     }

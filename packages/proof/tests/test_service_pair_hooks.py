@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.proof_runtime import service as facade
+from moex_spread_lab.proof import service as facade
 from proof_fixtures import funding_winner
 from test_global_capital import PAIR
 

@@ -64,7 +64,7 @@ def test_reverse_dependency_closures() -> None:
             "proof",
             "web",
         ),
-        "packages/proof/src/moex_spread_lab/proof_runtime/cohort_models.py": ("proof", "web"),
+        "packages/proof/src/moex_spread_lab/proof/cohort_models.py": ("proof", "web"),
         "packages/web/src/moex_spread_lab/web/server.py": ("web",),
     }
     for path, legs in cases.items():

@@ -253,7 +253,7 @@ def ui_only_trials(trials: int = UI_ONLY_TRIALS) -> Iterator[None]:
     """Bound the Optuna budget for a scenario that asserts no numerical result.
 
     The bound only takes effect under the offline contract and only downwards; see
-    `moex_spread_lab.proof_runtime.proof_strategy_search.trials_per_strategy`.
+    `moex_spread_lab.proof.proof_strategy_search.trials_per_strategy`.
     """
     previous = os.environ.get(UI_TRIALS_ENV)
     os.environ[UI_TRIALS_ENV] = str(trials)

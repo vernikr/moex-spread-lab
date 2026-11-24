@@ -56,8 +56,8 @@ import sys
 from pathlib import Path
 from funding_fixtures import fixture, change, request, PAIR
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.core.w0 import W0Error
 root = Path(sys.argv[1]); days = fixture(root)
 change(root, "CNYRUBF", {d: -0.04 for d in days[20:32]})

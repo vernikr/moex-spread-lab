@@ -208,7 +208,7 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         _, detailed_edges = _workspace_analysis()
-        roots = {"core", "data", "accounting", "strategies", "proof_runtime", "web"}
+        roots = {"core", "data", "accounting", "strategies", "proof", "proof_runtime", "web"}
         prefixes = tuple(f"{r}." for r in roots)
         violations = [
             f"{src}:{lineno} -> {dst} (umbrella import forbidden)"

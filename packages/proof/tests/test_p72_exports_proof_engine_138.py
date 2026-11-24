@@ -7,7 +7,7 @@ import pytest
 
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     pair_funding_replay,
     pool_reports,
     proof_kernel,
@@ -15,10 +15,10 @@ from moex_spread_lab.proof_runtime import (
     request_validation,
     strategy_search_prepare,
 )
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     pair_plugin_accounting as accounting,
 )
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     proof_strategy_search as search,
 )
 from pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline import (
@@ -168,7 +168,7 @@ def test_search_family_observes_both_record_and_winner_hooks(monkeypatch, hook):
 
 def test_family_selection_observes_historical_adapter_patch(monkeypatch):
     from moex_spread_lab.core.timeframes import get_timeframe
-    from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_registry
+    from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 
     monkeypatch.setattr(search, "get_proof_adapter_ids", lambda _registry: frozenset())
     assert (
@@ -180,7 +180,7 @@ def test_family_selection_observes_historical_adapter_patch(monkeypatch):
 
 
 def test_single_pair_universe_does_not_prefer_calendar_for_multi_universe_plugin():
-    from moex_spread_lab.proof_runtime import (
+    from moex_spread_lab.proof import (
         families_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_strategy_search as families,
     )
 

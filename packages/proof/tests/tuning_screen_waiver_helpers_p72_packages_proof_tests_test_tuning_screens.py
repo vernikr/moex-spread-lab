@@ -10,9 +10,9 @@ from typing import Any
 
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import TRIALS, research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import TRIALS, research_run
+from moex_spread_lab.proof.service import ProofService
 from test_proof_batch import ACTIVE
 
 

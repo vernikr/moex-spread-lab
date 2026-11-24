@@ -93,9 +93,7 @@
       "baseline_tokens": 5752
     }
   },
-  "guard_files": [
-    "src/moex_spread_lab/proof.py"
-  ],
+  "guard_files": [],
   "policy": {
     "max_c_function_ccn": 15,
     "max_c_function_nloc": 100,

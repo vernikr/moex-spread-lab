@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from moex_spread_lab.proof_runtime import phase_metrics as metrics
+from moex_spread_lab.proof import phase_metrics as metrics
 
 
 def test_same_phase_nesting_and_exceptions_are_timed_once(monkeypatch):

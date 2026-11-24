@@ -233,7 +233,7 @@ class CalendarProofTests(unittest.TestCase):
         connection.close()
 
     def test_service_calendar_payload_adds_instrument_provenance_and_run_id(self):
-        from moex_spread_lab.proof_runtime.service import ProofService
+        from moex_spread_lab.proof.service import ProofService
 
         proof = ProofService(self.root).proof({"universe": "calendar_native", **_zscore_request()})
         assert_instrument_provenance(self, proof)

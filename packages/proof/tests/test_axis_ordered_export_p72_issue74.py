@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     axis,
     landscape,
     proof_batch,
@@ -59,7 +59,7 @@ def test_facade_chain_keeps_one_object_under_the_private_name() -> None:
 
 def test_star_import_surface_is_unchanged() -> None:
     namespace: dict[str, Any] = {}
-    exec("from moex_spread_lab.proof_runtime.axis import *", namespace)
+    exec("from moex_spread_lab.proof.axis import *", namespace)
     assert set(namespace) - {"__builtins__"} == {
         "Axis",
         "Mapping",

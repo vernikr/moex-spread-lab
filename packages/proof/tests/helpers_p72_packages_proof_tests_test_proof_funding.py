@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from funding_fixtures import PAIR, fixture
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, _pair, catalog
 
 

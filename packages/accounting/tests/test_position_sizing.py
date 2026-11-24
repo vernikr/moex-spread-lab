@@ -17,9 +17,9 @@ from moex_spread_lab.core.settings import (
     settings_path,
 )
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import _tune, research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import _tune, research_run
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import fixture
 
 
@@ -452,7 +452,7 @@ class SizingIntegrationTests(unittest.TestCase):
             save_settings(self.root, {"slippage_ticks": 4})
             return _tune(*args, **kwargs)
 
-        with patch("moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change):
+        with patch("moex_spread_lab.proof.proof_batch._tune", side_effect=change):
             result = research_run(
                 self.svc,
                 {

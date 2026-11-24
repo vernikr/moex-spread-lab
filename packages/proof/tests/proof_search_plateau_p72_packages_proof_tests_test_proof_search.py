@@ -8,7 +8,7 @@ new module needs no Ruff exception.
 
 from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_search import (
+from moex_spread_lab.proof.proof_search import (
     EXECUTION_AXES,
     GREEN,
     STRATEGY_AXES,

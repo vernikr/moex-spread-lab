@@ -10,7 +10,7 @@ import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, ResearchSettings
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     axis,
     evaluation,
     landscape,
@@ -23,9 +23,9 @@ from moex_spread_lab.proof_runtime import (
     strategy_catalog,
     tuning,
 )
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.landscape import Landscape
-from moex_spread_lab.proof_runtime.proof_kernel import _measure, _tune
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Landscape
+from moex_spread_lab.proof.proof_kernel import _measure, _tune
 
 
 def test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_kernel_bindings() -> None:

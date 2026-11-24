@@ -6,15 +6,15 @@ from types import SimpleNamespace
 from typing import Any
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     cohort_models,
     cohort_prepare,
     cohort_prepare_helpers,
     remote_cohort_types,
     request_validation,
 )
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.cohort_prepare import PreparationInputs, prepare_cohort
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.cohort_prepare import PreparationInputs, prepare_cohort
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 

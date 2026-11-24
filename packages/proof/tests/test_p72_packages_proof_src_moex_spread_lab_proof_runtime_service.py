@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.proof_runtime import payload_tools, service
-from moex_spread_lab.proof_runtime.service import (
+from moex_spread_lab.proof import payload_tools, service
+from moex_spread_lab.proof.service import (
     FORCED_EXIT_REASONS,
     PROOF_SCHEMA,
     ProofService,

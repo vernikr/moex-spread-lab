@@ -10,8 +10,8 @@ from unittest.mock import patch
 from helpers_p72_packages_proof_tests_test_proof_batch import ACTIVE, C, CohortCase, P
 from moex_spread_lab.core.settings import EvaluationSplit, save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_batch import MAX_TARGETS, _targets
-from moex_spread_lab.proof_runtime.proof_search import TRIALS, _annualized_returns, research_run
+from moex_spread_lab.proof.proof_batch import MAX_TARGETS, _targets
+from moex_spread_lab.proof.proof_search import TRIALS, _annualized_returns, research_run
 from moex_spread_lab.strategies.calendar import calendar_spreads
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
@@ -148,7 +148,7 @@ class CohortTests(CohortCase):
         self.assertGreater(g["group"]["training_mean_pp"], 0)
 
     def test_failed_member_prunes_the_whole_proposal_not_the_denominator(self):
-        from moex_spread_lab.proof_runtime import proof_search
+        from moex_spread_lab.proof import proof_search
 
         original = proof_search._measure
 
@@ -183,7 +183,7 @@ class CohortTests(CohortCase):
         self.assertEqual(single, self.search())
         self.assertEqual(single, self.search(targets=[P]))
         with patch(
-            "moex_spread_lab.proof_runtime.proof_batch._tune",
+            "moex_spread_lab.proof.proof_batch._tune",
             side_effect=AssertionError("no pre-confirmation search"),
         ):
             for req, targets, excluded in [

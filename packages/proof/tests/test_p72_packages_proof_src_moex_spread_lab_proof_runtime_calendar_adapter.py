@@ -11,13 +11,13 @@ from typing import Any
 from moex_spread_lab.accounting.costs import cost_totals
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.proof_runtime import calendar_adapter
-from moex_spread_lab.proof_runtime.calendar_adapter import (
+from moex_spread_lab.proof import calendar_adapter
+from moex_spread_lab.proof.calendar_adapter import (
     calendar_instrument,
     calendar_proof,
     calendar_provenance,
 )
-from moex_spread_lab.proof_runtime.payload_tools import PROOF_SCHEMA
+from moex_spread_lab.proof.payload_tools import PROOF_SCHEMA
 from moex_spread_lab.strategies import REFERENCE_WARNING
 
 

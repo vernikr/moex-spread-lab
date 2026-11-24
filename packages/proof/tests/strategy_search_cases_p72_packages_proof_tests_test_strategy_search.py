@@ -16,9 +16,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from moex_spread_lab.proof_runtime.proof_search import _measure, research_run
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.trial_budget import TRIALS_PER_STRATEGY
+from moex_spread_lab.proof.proof_search import _measure, research_run
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.trial_budget import TRIALS_PER_STRATEGY
 from proof_fixtures import rising_calendar
 from test_global_capital import FLAT, PAIR, TARGETS
 
@@ -154,7 +154,7 @@ class StrategyChoiceCases(unittest.TestCase):
             ],
         }
         with patch(
-            "moex_spread_lab.proof_runtime.proof_strategy_search._tune",
+            "moex_spread_lab.proof.proof_strategy_search._tune",
             side_effect=AssertionError("no trials before confirmation"),
         ):
             r = self.search(req)
@@ -165,7 +165,7 @@ class StrategyChoiceCases(unittest.TestCase):
         self.assertIsNone(r["selected_strategy"])
 
     def test_different_strategy_failures_cannot_shrink_the_denominator(self):
-        import moex_spread_lab.proof_runtime.proof_strategy_search as module
+        import moex_spread_lab.proof.proof_strategy_search as module
 
         # Deliberately disjoint per-family failures. Neither is universally bad.
         def prepare(service, request, settings, benchmark, _cancelled, **kwargs):
@@ -206,7 +206,7 @@ class StrategyChoiceCases(unittest.TestCase):
 
         req = {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}}
         before = json.loads(json.dumps(req))
-        with patch("moex_spread_lab.proof_runtime.proof_search._measure", side_effect=fail):
+        with patch("moex_spread_lab.proof.proof_search._measure", side_effect=fail):
             r = self.search(req)
         self.assertEqual(r["status"], "no_admissible_candidate")
         self.assertEqual(r["trial_count"], 2 * TRIALS_PER_STRATEGY)

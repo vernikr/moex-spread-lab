@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from moex_spread_lab.core.contracts import CompatibilityVerdict, StrategyIntentRun, WindowSnapshot
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.proof_runtime.pair_plugin_accounting import size_daily_pair_plugin
+from moex_spread_lab.proof.pair_plugin_accounting import size_daily_pair_plugin
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 
 DAYS = [f"2026-01-0{i}" for i in range(1, 6)]

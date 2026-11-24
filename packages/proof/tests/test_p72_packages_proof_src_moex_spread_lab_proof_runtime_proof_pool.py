@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     cohort_scores,
     pool_reports,
     proof_pool,

@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.web_legacy import ScreenerError
+from moex_spread_lab.proof.web_legacy import ScreenerError
 
 from .routes_dev import health, probe
 from .routes_legacy import LEGACY_POST_ROUTES, handle_get_legacy, handle_post_legacy

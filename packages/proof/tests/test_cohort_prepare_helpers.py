@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import cohort_prepare_helpers as helpers
-from moex_spread_lab.proof_runtime import proof_batch
-from moex_spread_lab.proof_runtime.axis import Axis
+from moex_spread_lab.proof import cohort_prepare_helpers as helpers
+from moex_spread_lab.proof import proof_batch
+from moex_spread_lab.proof.axis import Axis
 
 
 def test_cohort_request_helpers_remain_reexported():

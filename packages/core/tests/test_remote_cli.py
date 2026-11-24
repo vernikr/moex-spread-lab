@@ -115,7 +115,7 @@ def test_sync_fetches_fast_forwards_syncs_and_restarts(monkeypatch, tmp_path):
         monkeypatch,
         tmp_path,
         new_head="b" * 40,
-        changed=["packages/proof/src/moex_spread_lab/proof_runtime/service.py"],
+        changed=["packages/proof/src/moex_spread_lab/proof/service.py"],
     )
     result = workstation_remote.sync(tmp_path)
     assert result["head"] == "b" * 40
@@ -244,7 +244,7 @@ def test_sync_repeated_sha_is_idempotent(monkeypatch, tmp_path):
 def test_runtime_path_classification():
     runtime = workstation_remote._is_runtime_path
     assert runtime("src/moex_spread_lab/cli.py") is True
-    assert runtime("packages/proof/src/moex_spread_lab/proof_runtime/service.py") is True
+    assert runtime("packages/proof/src/moex_spread_lab/proof/service.py") is True
     assert runtime("packages/proof/tests/test_proof_plateau.py") is False
     assert runtime("packages/web/tests/browser/x.py") is False
     assert runtime("packages/core/pyproject.toml") is True  # dependency input

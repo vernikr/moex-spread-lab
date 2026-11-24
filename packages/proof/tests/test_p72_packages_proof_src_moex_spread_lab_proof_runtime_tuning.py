@@ -5,10 +5,10 @@ from __future__ import annotations
 import optuna
 import pytest
 
-from moex_spread_lab.proof_runtime import tuning
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.landscape import Landscape
-from moex_spread_lab.proof_runtime.tuning import TuningOptions, _suggest_point, run_tuning
+from moex_spread_lab.proof import tuning
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Landscape
+from moex_spread_lab.proof.tuning import TuningOptions, _suggest_point, run_tuning
 
 
 def test_p72_tuning_public_and_private_exports_preserved() -> None:

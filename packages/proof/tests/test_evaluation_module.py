@@ -7,7 +7,7 @@ import pytest
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import evaluation, proof_kernel, proof_search
+from moex_spread_lab.proof import evaluation, proof_kernel, proof_search
 
 
 def test_evaluation_exports_remain_compatible():

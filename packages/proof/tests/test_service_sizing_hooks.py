@@ -3,8 +3,8 @@
 from unittest.mock import Mock
 
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS
-from moex_spread_lab.proof_runtime import service as facade
-from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_registry
+from moex_spread_lab.proof import service as facade
+from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 
 
 def test_sized_replay_resolves_facade_hooks_after_preparation(monkeypatch, tmp_path):

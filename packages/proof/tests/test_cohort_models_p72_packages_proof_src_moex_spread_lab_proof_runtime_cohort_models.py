@@ -8,10 +8,10 @@ reference implementations they mirror.
 
 import pytest
 
-from moex_spread_lab.proof_runtime import cohort_models
-from moex_spread_lab.proof_runtime.axis import Axis, _ordered
-from moex_spread_lab.proof_runtime.cohort_prepare_helpers import _translate
-from moex_spread_lab.proof_runtime.landscape import Landscape, _lamps
+from moex_spread_lab.proof import cohort_models
+from moex_spread_lab.proof.axis import Axis, _ordered
+from moex_spread_lab.proof.cohort_prepare_helpers import _translate
+from moex_spread_lab.proof.landscape import Landscape, _lamps
 
 
 def _land(evaluate=lambda point: {"utility": 10.0, "rank_score": 1.0}):

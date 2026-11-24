@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from moex_spread_lab.proof_runtime import ledger_blocks
-from moex_spread_lab.proof_runtime.pair_payload import _summary_block
-from moex_spread_lab.proof_runtime.rounding_totals import apply_raw_trade_totals
+from moex_spread_lab.proof import ledger_blocks
+from moex_spread_lab.proof.pair_payload import _summary_block
+from moex_spread_lab.proof.rounding_totals import apply_raw_trade_totals
 
 
 def test_independently_rounded_trades_can_differ_from_unrounded_ledger(monkeypatch):
@@ -78,9 +78,9 @@ def test_fixed_pair_summary_uses_raw_trade_values_from_engine(tmp_path, monkeypa
     from math import fsum
 
     from funding_fixtures import fixture, request
-    from moex_spread_lab.proof_runtime import mean_reversion_blocks
-    from moex_spread_lab.proof_runtime.proof_search import research_run
-    from moex_spread_lab.proof_runtime.service import ProofService
+    from moex_spread_lab.proof import mean_reversion_blocks
+    from moex_spread_lab.proof.proof_search import research_run
+    from moex_spread_lab.proof.service import ProofService
 
     fixture(tmp_path)
     seen = []

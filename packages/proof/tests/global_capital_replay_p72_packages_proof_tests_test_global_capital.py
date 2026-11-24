@@ -13,7 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.core.settings import EvaluationSplit
-from moex_spread_lab.proof_runtime.proof_search import _annualized_returns
+from moex_spread_lab.proof.proof_search import _annualized_returns
 
 LINEAGE_PATH = Path("data/benchmark/lqdt-lineage.json")
 

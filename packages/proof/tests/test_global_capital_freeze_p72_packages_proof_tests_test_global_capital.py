@@ -6,9 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from moex_spread_lab.core.settings import read_settings, save_settings
-from moex_spread_lab.proof_runtime.proof_search import StudyWindow, _tune, research_run
-from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_search import StudyWindow, _tune, research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import two_calendar_windows
 from test_global_capital import CAL, PAIR, TARGETS
 
@@ -28,9 +28,7 @@ class CapitalFreezeTests(unittest.TestCase):
             save_settings(self.root, {"initial_capital_rub": 60000})
             return StudyWindow(*args)
 
-        with patch(
-            "moex_spread_lab.proof_runtime.proof_windows.StudyWindow", side_effect=change_settings
-        ):
+        with patch("moex_spread_lab.proof.proof_windows.StudyWindow", side_effect=change_settings):
             result = window_summaries(self.service, {"requests": [PAIR, CAL]})
         self.assertEqual(result["initial_capital_rub"], 20000)
         self.assertTrue(all(r["selection"]["initial_capital_rub"] == 20000 for r in result["rows"]))
@@ -43,7 +41,7 @@ class CapitalFreezeTests(unittest.TestCase):
             save_settings(self.root, {"initial_capital_rub": 60000})
             return _tune(*args, **kwargs)
 
-        with patch("moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change_settings):
+        with patch("moex_spread_lab.proof.proof_batch._tune", side_effect=change_settings):
             result = research_run(
                 self.service,
                 {**PAIR, "fill": "next_close", "targets": TARGETS},

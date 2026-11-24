@@ -7,10 +7,10 @@ from typing import Any
 
 from moex_spread_lab.core.settings import read_settings
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.proof_runtime.web_legacy import ScreenerError
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.web_legacy import ScreenerError
 
 from .strategy_registry import strategy_registry_payload
 

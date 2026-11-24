@@ -3,7 +3,7 @@
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.carry_intent_accounting import replay_carry_intents
+from moex_spread_lab.proof.carry_intent_accounting import replay_carry_intents
 
 DAYS = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
 STUDY = {

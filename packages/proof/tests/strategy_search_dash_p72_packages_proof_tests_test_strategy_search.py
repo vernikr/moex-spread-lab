@@ -13,8 +13,8 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings
-from moex_spread_lab.proof_runtime.proof_kernel import StudyWindow
-from moex_spread_lab.proof_runtime.proof_windows import compact_result
+from moex_spread_lab.proof.proof_kernel import StudyWindow
+from moex_spread_lab.proof.proof_windows import compact_result
 
 # ``test_position_sizing`` lives in the accounting test tree, which the workspace
 # type-check view does not include; pytest's configured pythonpath resolves it.

@@ -37,7 +37,7 @@ def run(args: Any) -> int:
     if args.command == "screener":
         import signal
 
-        from moex_spread_lab.proof_runtime.web_legacy import ScreenerInputs
+        from moex_spread_lab.proof.web_legacy import ScreenerInputs
 
         from .server import serve
 

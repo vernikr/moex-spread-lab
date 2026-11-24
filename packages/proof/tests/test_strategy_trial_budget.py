@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from moex_spread_lab.proof_runtime.trial_budget import TRIALS_PER_STRATEGY, budget
+from moex_spread_lab.proof.trial_budget import TRIALS_PER_STRATEGY, budget
 
 
 def test_default_budget_is_the_production_value(monkeypatch):

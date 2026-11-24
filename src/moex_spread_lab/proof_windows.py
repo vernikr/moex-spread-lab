@@ -1,7 +1,7 @@
-"""Compatibility alias for ``moex_spread_lab.proof_runtime.proof_windows``."""
+"""Compatibility alias for ``moex_spread_lab.proof.proof_windows``."""
 
 import sys
 
-from moex_spread_lab.proof_runtime import proof_windows as _module
+from moex_spread_lab.proof import proof_windows as _module
 
 sys.modules[__name__] = _module

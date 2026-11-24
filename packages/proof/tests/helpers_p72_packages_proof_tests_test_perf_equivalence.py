@@ -15,7 +15,7 @@ from typing import Any
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.proof_runtime.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE
+from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 
 PAIR_SCREEN_PAIR = "CNYRUBF/CRZ6"
 CALENDAR_ASSET = "SR"

@@ -3,7 +3,7 @@
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.pair_funding_replay import replay_pair_funding
+from moex_spread_lab.proof.pair_funding_replay import replay_pair_funding
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
 DATES = [f"2026-01-0{i}" for i in range(1, 6)]
@@ -118,7 +118,7 @@ def test_overflow_fails_closed():
 
 
 def test_daily_resolver_keeps_estimates_zero_and_no_clearing_distinct():
-    from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
+    from moex_spread_lab.proof.pair_funding_replay import replay_daily_pair_funding
     from moex_spread_lab.strategies.funding_carry.proof_funding import (
         FundingTimeline,
         FundingWindow,
@@ -158,7 +158,7 @@ def test_daily_resolver_keeps_estimates_zero_and_no_clearing_distinct():
 
 
 def test_daily_resolver_rejects_future_anchor_gap_and_partial_mismatch():
-    from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
+    from moex_spread_lab.proof.pair_funding_replay import replay_daily_pair_funding
     from moex_spread_lab.strategies.funding_carry.proof_funding import (
         FundingTimeline,
         FundingWindow,
@@ -183,7 +183,7 @@ def test_daily_resolver_rejects_future_anchor_gap_and_partial_mismatch():
 
 
 def test_training_cutoff_cannot_borrow_holdout_anchor():
-    from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
+    from moex_spread_lab.proof.pair_funding_replay import replay_daily_pair_funding
     from moex_spread_lab.strategies.funding_carry.proof_funding import (
         FundingTimeline,
         FundingWindow,
@@ -203,7 +203,7 @@ def test_no_clearing_requires_explicit_distinct_evidence():
 
 
 def test_resolved_evidence_reconciles_with_baseline_including_nonclearing():
-    from moex_spread_lab.proof_runtime.pair_funding_replay import replay_daily_pair_funding
+    from moex_spread_lab.proof.pair_funding_replay import replay_daily_pair_funding
     from moex_spread_lab.strategies.funding_carry.proof_funding import (
         FundingTimeline,
         FundingWindow,

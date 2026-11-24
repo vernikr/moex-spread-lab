@@ -7,7 +7,7 @@ import pytest
 from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.pair_funding_replay import attach_daily_unit_funding
+from moex_spread_lab.proof.pair_funding_replay import attach_daily_unit_funding
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 
 DAYS = [f"2026-01-0{i}" for i in range(1, 6)]

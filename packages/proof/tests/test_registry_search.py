@@ -7,9 +7,9 @@ import pytest
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_batch
-from moex_spread_lab.proof_runtime import proof_strategy_search as search
-from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_registry
+from moex_spread_lab.proof import proof_batch
+from moex_spread_lab.proof import proof_strategy_search as search
+from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 from moex_spread_lab.strategies import StrategyRegistry
 
 DEFAULT_REGISTRY = get_strategy_registry()

@@ -21,7 +21,7 @@ def register(subparsers: Any) -> None:
 
 def run(args: Any) -> int:
     if args.command == "audit-pairs":
-        from moex_spread_lab.proof_runtime.audit import audit_pairs
+        from moex_spread_lab.proof.audit import audit_pairs
         from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
         result = audit_pairs(ScreenerInputs(args.root.resolve()))

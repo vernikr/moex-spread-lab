@@ -9,7 +9,7 @@ from moex_spread_lab.accounting.costs import tariff_profile
 from moex_spread_lab.core.contracts import CompatibilityVerdict, StrategyIntentRun
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.pair_plugin_accounting import size_daily_pair_plugin
+from moex_spread_lab.proof.pair_plugin_accounting import size_daily_pair_plugin
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 from pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline import (

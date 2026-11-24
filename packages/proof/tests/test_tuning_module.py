@@ -1,9 +1,9 @@
 """Regression contracts for the extracted seeded Optuna trial engine."""
 
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.landscape import Landscape
-from moex_spread_lab.proof_runtime.proof_kernel import _tune
-from moex_spread_lab.proof_runtime.proof_search import _tune as facade_tune
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Landscape
+from moex_spread_lab.proof.proof_kernel import _tune
+from moex_spread_lab.proof.proof_search import _tune as facade_tune
 
 
 def test_seeded_trials_preserve_order_bounds_winner_and_progress():

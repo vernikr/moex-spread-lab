@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_kernel, proof_search
-from moex_spread_lab.proof_runtime.proof_search import _measure, _tune, _validate, research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof import proof_kernel, proof_search
+from moex_spread_lab.proof.proof_search import _measure, _tune, _validate, research_run
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import screen_failures
@@ -143,7 +143,7 @@ class StrategyReportCases(unittest.TestCase):
             seen.append(1)
             return _tune(*args, **kwargs)
 
-        with patch("moex_spread_lab.proof_runtime.proof_strategy_search._tune", side_effect=change):
+        with patch("moex_spread_lab.proof.proof_strategy_search._tune", side_effect=change):
             r = self.search()
         self.assertEqual(len(seen), 2)
         for member in r["group"]["members"]:

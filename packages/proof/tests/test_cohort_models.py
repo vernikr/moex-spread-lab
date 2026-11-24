@@ -3,9 +3,9 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from moex_spread_lab.proof_runtime import cohort_models, proof_batch
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.landscape import Landscape
+from moex_spread_lab.proof import cohort_models, proof_batch
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Landscape
 
 
 def test_remote_plateau_prewarm_deduplicates_and_release_is_idempotent():

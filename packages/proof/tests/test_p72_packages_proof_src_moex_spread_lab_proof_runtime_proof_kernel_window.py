@@ -14,8 +14,8 @@ import pytest
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_kernel
-from moex_spread_lab.proof_runtime.proof_kernel import StudyWindow
+from moex_spread_lab.proof import proof_kernel
+from moex_spread_lab.proof.proof_kernel import StudyWindow
 
 
 def _window_service(selection: dict[str, Any], **proof_overrides: Any) -> SimpleNamespace:

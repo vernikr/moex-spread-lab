@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, ResearchSettings
-from moex_spread_lab.proof_runtime import proof_kernel
+from moex_spread_lab.proof import proof_kernel
 
 
 def test_measure_resolves_admission_hook(monkeypatch):

@@ -20,8 +20,8 @@ from unittest.mock import patch
 import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
 from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
     _build_h1_workspace,
     _canon,
@@ -48,7 +48,7 @@ class ProofPerfEquivalenceFastcoreTests(unittest.TestCase):
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):
         from moex_spread_lab.core._fastcore_loader import load_fastcore
-        from moex_spread_lab.proof_runtime.service import _clean
+        from moex_spread_lab.proof.service import _clean
         from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
             compute_rolling_z,
             run_mean_reversion_baseline,

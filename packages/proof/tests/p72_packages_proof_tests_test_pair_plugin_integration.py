@@ -42,9 +42,9 @@ from pathlib import Path
 from funding_fixtures import PAIR, WEEKEND_PAIR, fixture, request, weekend
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_kernel import STRATEGY_AXES
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_kernel import STRATEGY_AXES
 root = Path(sys.argv[1])
 fixture(root)
 weekend(root)

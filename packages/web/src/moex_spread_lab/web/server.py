@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from moex_spread_lab.proof_runtime import web_legacy as _legacy
+from moex_spread_lab.proof import web_legacy as _legacy
 
 from .dispatch import dispatch_get, dispatch_post, split_path
 from .http_handler import LoopbackHandler

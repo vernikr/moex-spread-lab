@@ -4,7 +4,7 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 from moex_spread_lab.core.cache_metrics import record_cache_lookup
-from moex_spread_lab.proof_runtime.worker_metrics import (
+from moex_spread_lab.proof.worker_metrics import (
     collect_worker_metrics,
     submit_worker,
     unwrap_worker_result,

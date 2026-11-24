@@ -12,17 +12,17 @@ import pytest
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     cohort_prepare_helpers,
     proof_batch,
     proof_kernel,
     strategy_search_prepare,
 )
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     proof_strategy_search as search,
 )
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_registry
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 
 TARGET = {"universe": PAIR_UNIVERSE, "pair": "AAA/BBB"}
 

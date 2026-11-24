@@ -18,8 +18,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _ACCOUNTING_TESTS = str(_REPO_ROOT / "packages" / "accounting" / "tests")
 if _ACCOUNTING_TESTS not in sys.path:
     sys.path.insert(0, _ACCOUNTING_TESTS)
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.web.server import ScreenerStore
 from test_global_capital import PAIR
 

@@ -1,11 +1,11 @@
 """Integration regression for the pre-P7.2 evaluation star-import surface."""
 
-from moex_spread_lab.proof_runtime import evaluation, proof_kernel
+from moex_spread_lab.proof import evaluation, proof_kernel
 
 
 def test_evaluation_wildcard_and_hook_identity():
     namespace = {}
-    exec("from moex_spread_lab.proof_runtime.evaluation import *", namespace)
+    exec("from moex_spread_lab.proof.evaluation import *", namespace)
     assert set(namespace) - {"__builtins__"} == {
         "DEFAULT_INITIAL_CAPITAL_RUB",
         "W0Error",

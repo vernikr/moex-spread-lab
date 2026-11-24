@@ -135,10 +135,7 @@ def test_dependency_inputs_detection():
     assert _deps_inputs_touched(["packages/core/src/moex_spread_lab/core/_fastcore.c"])
     assert _deps_inputs_touched(["src/pkg/extension.pyx"])
     assert _deps_inputs_touched(["docs/notes.md"]) is False
-    assert (
-        _deps_inputs_touched(["packages/proof/src/moex_spread_lab/proof_runtime/service.py"])
-        is False
-    )
+    assert _deps_inputs_touched(["packages/proof/src/moex_spread_lab/proof/service.py"]) is False
 
 
 def test_assert_candidate_python_accepts_shadowed_module(tmp_path):

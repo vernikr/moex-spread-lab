@@ -21,15 +21,15 @@ from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.contracts import StrategyPlugin
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     axis,
     cohort_prepare,
     proof_kernel,
     proof_search,
     request_validation,
 )
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_axes, get_strategy_registry
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.strategy_catalog import get_strategy_axes, get_strategy_registry
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 

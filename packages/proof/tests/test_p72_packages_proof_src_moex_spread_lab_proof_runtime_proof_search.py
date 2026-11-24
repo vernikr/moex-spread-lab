@@ -16,14 +16,14 @@ from typing import Any
 from unittest.mock import patch
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     evaluation,
     proof_kernel,
     proof_search,
     request_validation,
     service,
 )
-from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof.proof_search import research_run
 
 
 def _fake_window(events: list[str]) -> Any:

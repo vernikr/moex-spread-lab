@@ -9,7 +9,7 @@ import json
 
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_search import EXECUTION_AXES, TRIALS, research_run
+from moex_spread_lab.proof.proof_search import EXECUTION_AXES, TRIALS, research_run
 from proof_search_fixtures_p72_packages_proof_tests_test_proof_search import CALENDAR, PAIR
 from test_calendar_proof import _build_root as calendar_fixture
 from test_execution_proof import _build_root as pair_fixture

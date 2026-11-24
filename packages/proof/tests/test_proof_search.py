@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.service import ProofService
 from proof_search_fixtures_p72_packages_proof_tests_test_proof_search import CALENDAR as CALENDAR
 from proof_search_fixtures_p72_packages_proof_tests_test_proof_search import PAIR as PAIR
 from proof_search_http_p72_packages_proof_tests_test_proof_search import (

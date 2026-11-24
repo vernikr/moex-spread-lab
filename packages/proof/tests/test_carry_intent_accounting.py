@@ -3,7 +3,7 @@
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.carry_intent_accounting import replay_carry_intents
+from moex_spread_lab.proof.carry_intent_accounting import replay_carry_intents
 
 DAYS = [f"2026-01-0{i}" for i in range(1, 7)]
 STUDY = {
@@ -69,7 +69,7 @@ def test_nonfinite_inputs_fail_closed():
 def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, prefix, negative_late):
     from funding_fixtures import PAIR, change, fixture
     from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-    from moex_spread_lab.proof_runtime.service import ProofService
+    from moex_spread_lab.proof.service import ProofService
     from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, load_contracts
     from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
     from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
@@ -129,7 +129,7 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
         far_expiry=contracts[pair["far"]]["expiry"],
     )
     assert actual["trades"] == native["trades"]
-    from moex_spread_lab.proof_runtime.service import _benchmark_marks
+    from moex_spread_lab.proof.service import _benchmark_marks
 
     days, prices = _benchmark_marks(inputs.benchmark)
     full = replay_carry_intents(

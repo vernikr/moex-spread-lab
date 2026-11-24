@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from test_execution_proof import _build_root, _far_close, _near_close
@@ -79,7 +79,7 @@ class ExecutionProofHourlyFundingAndRoutesTests(unittest.TestCase):
         )
         self.assertEqual(result["window"]["min_leg_volume"], 800)
         self.assertEqual(result["selection"]["timeframe"], "1h")
-        from moex_spread_lab.proof_runtime.proof_search import research_run
+        from moex_spread_lab.proof.proof_search import research_run
 
         evaluated = research_run(self.proof, selection, optimize=False, include_plateau=False)
         self.assertIsNotNone(evaluated["evaluation"]["periods"]["validation"])

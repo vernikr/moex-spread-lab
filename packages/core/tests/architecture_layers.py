@@ -20,6 +20,7 @@ from pathlib import Path
 _CLI_LAYER_KEYS = frozenset({"cli", "cli_web", "core.cli", "data.cli", "accounting.cli"})
 _PACKAGE_HEAD_LAYERS = {
     "core": "core",
+    "proof": "proof",
     "data": "data",
     "accounting": "accounting",
     "strategies": "strategies",
@@ -99,7 +100,7 @@ PACKAGE_TEST_LAYERS: dict[str, str] = {
 # proof are ratcheted here so no new upward import can be introduced.
 LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
     {
-        ("packages/data/tests/test_h1_archive.py", "proof_runtime.proof_pool"),
+        ("packages/data/tests/test_h1_archive.py", "proof.proof_pool"),
         ("packages/data/tests/test_h1_seal.py", "strategies.calendar.calendar_spreads"),
         ("packages/data/tests/test_h1_seal.py", "strategies.pair_screener.pair_screener"),
         ("packages/data/tests/test_storage_policy.py", "accounting.run_artifacts"),
@@ -110,9 +111,9 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
             "packages/accounting/tests/test_execution_accounting.py",
             "strategies.pair_mean_reversion.analytics",
         ),
-        ("packages/accounting/tests/test_position_sizing.py", "proof_runtime.proof_batch"),
-        ("packages/accounting/tests/test_position_sizing.py", "proof_runtime.proof_search"),
-        ("packages/accounting/tests/test_position_sizing.py", "proof_runtime.service"),
+        ("packages/accounting/tests/test_position_sizing.py", "proof.proof_batch"),
+        ("packages/accounting/tests/test_position_sizing.py", "proof.proof_search"),
+        ("packages/accounting/tests/test_position_sizing.py", "proof.service"),
         (
             "packages/accounting/tests/test_run_artifacts.py",
             "strategies.pair_mean_reversion.analytics",

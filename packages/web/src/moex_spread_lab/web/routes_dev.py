@@ -17,12 +17,12 @@ from typing import Any
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.phase_metrics import collect_phase_metrics
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_pool import configured_workers
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.proof_runtime.worker_metrics import collect_worker_metrics
+from moex_spread_lab.proof.phase_metrics import collect_phase_metrics
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_pool import configured_workers
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.worker_metrics import collect_worker_metrics
 
 from .dev_diagnostics import calendar_cache_count, fastcore_binary, profile_summary
 from .dev_pool_metrics import pool_snapshot

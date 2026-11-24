@@ -7,8 +7,8 @@ from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import fixture
 
 P = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6"}

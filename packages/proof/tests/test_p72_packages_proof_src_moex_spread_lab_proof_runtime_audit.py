@@ -11,8 +11,8 @@ from typing import Any
 
 from moex_spread_lab.core import universe
 from moex_spread_lab.data.lake.data_lake import BarSeries
-from moex_spread_lab.proof_runtime import audit
-from moex_spread_lab.proof_runtime.audit import (
+from moex_spread_lab.proof import audit
+from moex_spread_lab.proof.audit import (
     SLIPPAGE_GRID,
     _candles,
     audit_pairs,

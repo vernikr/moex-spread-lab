@@ -35,7 +35,7 @@
   },
   "determinism": {
     "required": true,
-    "randomness": "delegated_to_proof_runtime"
+    "randomness": "delegated_to_proof"
   },
   "health": {
     "supported_python": ">=3.12,<3.13",

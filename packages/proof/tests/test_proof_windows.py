@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 from moex_spread_lab.core.settings import save_settings, settings_path
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_search import StudyWindow, research_run
-from moex_spread_lab.proof_runtime.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
+from moex_spread_lab.proof.proof_search import StudyWindow, research_run
+from moex_spread_lab.proof.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     AnalyticsError,
     run_mean_reversion_baseline,
@@ -193,7 +193,7 @@ class WindowSummaryTests(FixtureCase):
             save_settings(self.root, {"slippage_ticks": 4})
             return StudyWindow(*args)
 
-        with patch("moex_spread_lab.proof_runtime.proof_windows.StudyWindow", side_effect=changed):
+        with patch("moex_spread_lab.proof.proof_windows.StudyWindow", side_effect=changed):
             result = window_summaries(self.service, {"requests": [PAIR, CAL]})
         self.assertEqual(result["slippage_ticks"], 1)
         self.assertTrue(all(r["selection"]["slippage_ticks"] == 1 for r in result["rows"]))

@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_kernel, proof_windows, request_validation
-from moex_spread_lab.proof_runtime.payload_tools import benchmark_marks
-from moex_spread_lab.proof_runtime.worker_weight import estimate_weight
+from moex_spread_lab.proof import proof_kernel, proof_windows, request_validation
+from moex_spread_lab.proof.payload_tools import benchmark_marks
+from moex_spread_lab.proof.worker_weight import estimate_weight
 
 CAL = {
     "universe": "calendar_native",

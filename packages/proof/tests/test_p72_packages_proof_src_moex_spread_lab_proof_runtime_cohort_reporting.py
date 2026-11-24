@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.proof_runtime import cohort_reporting, landscape, proof_batch
+from moex_spread_lab.proof import cohort_reporting, landscape, proof_batch
 
 
 def _case(strategy: str = "x") -> SimpleNamespace:

@@ -12,8 +12,8 @@ from unittest.mock import Mock, patch
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_pool, worker_cohort
-from moex_spread_lab.proof_runtime.axis import Axis
+from moex_spread_lab.proof import proof_pool, worker_cohort
+from moex_spread_lab.proof.axis import Axis
 
 _FACADE_NAMES = (
     "_WORKER_COHORTS",

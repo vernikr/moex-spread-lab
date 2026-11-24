@@ -2,8 +2,8 @@
 
 from concurrent.futures import Future
 
-from moex_spread_lab.proof_runtime import cohort_scores
-from moex_spread_lab.proof_runtime.proof_pool import CohortWorkerPool
+from moex_spread_lab.proof import cohort_scores
+from moex_spread_lab.proof.proof_pool import CohortWorkerPool
 
 
 class ImmediateSlot:

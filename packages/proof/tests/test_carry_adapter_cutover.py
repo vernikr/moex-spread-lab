@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from moex_spread_lab.proof_runtime.service import _validate_carry_result
-from moex_spread_lab.proof_runtime.strategy_catalog import get_proof_adapter_ids
+from moex_spread_lab.proof.service import _validate_carry_result
+from moex_spread_lab.proof.strategy_catalog import get_proof_adapter_ids
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
 

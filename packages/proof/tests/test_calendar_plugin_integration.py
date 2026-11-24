@@ -43,9 +43,9 @@ import sys
 from pathlib import Path
 from proof_fixtures import two_calendar_windows
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.proof_runtime.service import ProofService
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_kernel import STRATEGY_AXES
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_kernel import STRATEGY_AXES
 root = Path(sys.argv[1])
 two_calendar_windows(root)
 save_settings(root, {"random_seed": 41})

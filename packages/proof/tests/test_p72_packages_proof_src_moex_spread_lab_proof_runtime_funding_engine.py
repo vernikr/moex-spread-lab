@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
-from moex_spread_lab.proof_runtime.funding_engine import (
+from moex_spread_lab.proof.funding_engine import (
     FundingSpec,
     carry_plugin_of,
     strategy_name_of,
@@ -160,8 +160,8 @@ def test_carry_plugin_of_and_strategy_name_of() -> None:
 def test_funding_inputs_end_to_end(tmp_path) -> None:
     from funding_fixtures import PAIR as FX_PAIR
     from funding_fixtures import fixture
-    from moex_spread_lab.proof_runtime.payload_tools import load_instruments
-    from moex_spread_lab.proof_runtime.service import ProofService
+    from moex_spread_lab.proof.payload_tools import load_instruments
+    from moex_spread_lab.proof.service import ProofService
     from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
     from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
 

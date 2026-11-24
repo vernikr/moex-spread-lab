@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     cohort_models,
     cohort_prepare,
     cohort_prepare_helpers,
@@ -37,7 +37,7 @@ from moex_spread_lab.proof_runtime import (
     worker_cohort,
     worker_window,
 )
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     pool_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_pool as pool_tasks,
 )
 
@@ -99,7 +99,7 @@ _COHORT_TASKS = (
 
 def _star_names(module_name: str) -> set[str]:
     namespace: dict[str, Any] = {}
-    exec(f"from moex_spread_lab.proof_runtime.{module_name} import *", namespace)
+    exec(f"from moex_spread_lab.proof.{module_name} import *", namespace)
     return set(namespace) - {"__builtins__"}
 
 

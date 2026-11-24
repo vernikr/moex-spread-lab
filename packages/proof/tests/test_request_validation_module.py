@@ -4,8 +4,8 @@ import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import proof_kernel, proof_search, request_validation
-from moex_spread_lab.proof_runtime.strategy_catalog import get_strategy_registry
+from moex_spread_lab.proof import proof_kernel, proof_search, request_validation
+from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 

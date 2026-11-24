@@ -5,7 +5,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
 
 START, END = "2025-06-17", "2026-10-27"

@@ -13,7 +13,7 @@ import pytest
 from moex_spread_lab.core import w0
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import (
+from moex_spread_lab.proof import (
     cohort_models,
     cohort_prepare_helpers,
     cohort_reporting,
@@ -24,7 +24,7 @@ from moex_spread_lab.proof_runtime import (
     request_validation,
     service,
 )
-from moex_spread_lab.proof_runtime.cohort_prepare import PreparationInputs
+from moex_spread_lab.proof.cohort_prepare import PreparationInputs
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
 

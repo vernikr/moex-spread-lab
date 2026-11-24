@@ -4,8 +4,8 @@ import tempfile
 from pathlib import Path
 
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import funding_winner
 from strategy_search_cases_p72_packages_proof_tests_test_strategy_search import (
     StrategyChoiceCases,

@@ -19,10 +19,10 @@ import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.proof_runtime.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
 from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
     _build_h1_workspace,
     _canon,

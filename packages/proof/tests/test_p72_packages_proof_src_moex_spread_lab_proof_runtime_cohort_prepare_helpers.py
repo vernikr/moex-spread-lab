@@ -10,10 +10,10 @@ import pytest
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import cohort_prepare, proof_batch, request_validation
-from moex_spread_lab.proof_runtime import cohort_prepare_helpers as helpers
-from moex_spread_lab.proof_runtime.axis import Axis
-from moex_spread_lab.proof_runtime.cohort_prepare_helpers import (
+from moex_spread_lab.proof import cohort_prepare, proof_batch, request_validation
+from moex_spread_lab.proof import cohort_prepare_helpers as helpers
+from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.cohort_prepare_helpers import (
     _active_seed,
     _confirmation,
     _filter_training,

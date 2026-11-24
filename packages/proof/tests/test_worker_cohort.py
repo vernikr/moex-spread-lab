@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from moex_spread_lab.proof_runtime import proof_pool, worker_cohort
-from moex_spread_lab.proof_runtime.axis import Axis
+from moex_spread_lab.proof import proof_pool, worker_cohort
+from moex_spread_lab.proof.axis import Axis
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 

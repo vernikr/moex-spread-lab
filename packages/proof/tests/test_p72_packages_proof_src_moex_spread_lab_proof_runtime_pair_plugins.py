@@ -1,7 +1,7 @@
 """Regression coverage for strict typing of ``proof_runtime.pair_plugins`` (Issue #88).
 
 These tests pin the behavior-preserving strict-typing refactor of
-``packages/proof/src/moex_spread_lab/proof_runtime/pair_plugins.py``:
+``packages/proof/src/moex_spread_lab/proof/pair_plugins.py``:
 
 * the public ``run_id`` alias replaces the private ``_run_id`` cross-module import;
 * the module-level ``cast`` bindings for the not-yet-strict accounting callables
@@ -24,9 +24,9 @@ import pytest
 from moex_spread_lab.core import w0
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime import pair_plugin_accounting as accounting
-from moex_spread_lab.proof_runtime import pair_plugins
-from moex_spread_lab.proof_runtime.pair_plugins import (
+from moex_spread_lab.proof import pair_plugin_accounting as accounting
+from moex_spread_lab.proof import pair_plugins
+from moex_spread_lab.proof.pair_plugins import (
     PairPluginRoute,
     _enriched_trade,
 )

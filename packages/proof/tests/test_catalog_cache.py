@@ -52,7 +52,7 @@ class DerivedCatalogCacheTests(unittest.TestCase):
             self.assertEqual(cache_files[0].read_bytes(), first_bytes)
 
     def test_cache_hit_skips_the_build_entirely(self) -> None:
-        from moex_spread_lab.proof_runtime import catalog_payload
+        from moex_spread_lab.proof import catalog_payload
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -77,7 +77,7 @@ class DerivedCatalogCacheTests(unittest.TestCase):
                 store.close()
 
     def test_same_size_same_mtime_tick_edit_invalidates(self) -> None:
-        from moex_spread_lab.proof_runtime import catalog_payload
+        from moex_spread_lab.proof import catalog_payload
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

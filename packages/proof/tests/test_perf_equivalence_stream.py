@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof_runtime.service import PAIR_UNIVERSE
+from moex_spread_lab.proof.service import PAIR_UNIVERSE
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from perf_equivalence_fixtures import _canon

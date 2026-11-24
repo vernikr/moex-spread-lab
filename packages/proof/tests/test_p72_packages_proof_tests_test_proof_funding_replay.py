@@ -7,8 +7,8 @@ from funding_fixtures import PAIR, WEEKEND_PAIR, change, page, request, weekend
 from helpers_p72_packages_proof_tests_test_proof_funding import FundingReplayCase
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import research_run
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
 from moex_spread_lab.strategies.funding_carry.proof_funding import NO_CLEARING, supplement_path
 from moex_spread_lab.strategies.pair_screener.pair_screener import build_result

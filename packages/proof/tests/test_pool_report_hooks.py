@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.proof_runtime import proof_pool
+from moex_spread_lab.proof import proof_pool
 
 
 def test_await_futures_cancels_pending_when_check_raises():

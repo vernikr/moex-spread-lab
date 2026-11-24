@@ -26,10 +26,10 @@ from helpers_p72_packages_proof_tests_test_perf_equivalence import (
     rewrite_same_size,
 )
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import research_run
-from moex_spread_lab.proof_runtime.proof_windows import window_summaries
-from moex_spread_lab.proof_runtime.service import (
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.service import (
     CALENDAR_UNIVERSE,
     PAIR_UNIVERSE,
     ProofService,

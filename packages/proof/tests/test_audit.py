@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.proof_runtime.audit import audit_pairs, independent_gross
+from moex_spread_lab.proof.audit import audit_pairs, independent_gross
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 

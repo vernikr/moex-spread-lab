@@ -13,9 +13,9 @@ from moex_spread_lab.core.settings import (
     settings_path,
 )
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof_runtime.proof_batch import checked_plateau
-from moex_spread_lab.proof_runtime.proof_search import _tune, research_run
-from moex_spread_lab.proof_runtime.service import ProofService
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_search import _tune, research_run
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import screen_failures
 from test_proof_batch import ACTIVE, C, P
 from tuning_screen_waiver_helpers_p72_packages_proof_tests_test_tuning_screens import (
@@ -99,9 +99,7 @@ class TuningScreenTests(unittest.TestCase):
             )
             return _tune(*args, **kwargs)
 
-        with patch(
-            "moex_spread_lab.proof_runtime.proof_batch._tune", side_effect=change_while_running
-        ):
+        with patch("moex_spread_lab.proof.proof_batch._tune", side_effect=change_while_running):
             r = research_run(svc, req, optimize=True)
         for e in [r["group"], *[m["evaluation"] for m in r["group"]["members"]]]:
             for k, v in ResearchSettings().metadata().items():

@@ -72,7 +72,7 @@
 
 ## 6. Параллельный пул воркеров (`CohortWorkerPool`)
 
-Для пакетных расчётов (`batch_search`, `strategy_search`, `checked_plateau`, `window_summaries`) используется долгоживущий пул процессов `CohortWorkerPool` (`packages/proof/src/moex_spread_lab/proof_runtime/proof_pool.py`), запускаемый в контексте `spawn`:
+Для пакетных расчётов (`batch_search`, `strategy_search`, `checked_plateau`, `window_summaries`) используется долгоживущий пул процессов `CohortWorkerPool` (`packages/proof/src/moex_spread_lab/proof/proof_pool.py`), запускаемый в контексте `spawn`:
 
 * **Слотовая архитектура и пороги активации** — для каждого слота создаётся отдельный `ProcessPoolExecutor(max_workers=1)` с явной адресацией шардов (на macOS по умолчанию ограничивается физическими ядрами `min(6, cpu // 2)` во избежание Hyper-Threading-конкуренции, на остальных платформах — до `min(8, cpu)`, переопределяется `MOEX_PROOF_WORKERS`). Пул подключается при наличии не менее `MIN_POOL_WINDOWS` (3) валидных окон и достаточного суммарного числа баров (`>= 1500` или `N >= 4`; либо принудительно через `MOEX_PROOF_FORCE_POOL=1`).
 * **LPT-балансировка и Sticky Sharding** — окна распределяются по воркерам жадным алгоритмом Longest Processing Time на основе закэшированного манифеста запечатанного H1-хранилища или размера файлов свечей, а внутри каждого шарда упорядочиваются по каноническому индексу `idx`. Экземпляры `StudyWindow` создаются внутри назначенных воркеров один раз при инициализации когорты (`_worker_init_cohort`) и сохраняются в памяти воркера (`_WORKER_COHORTS`) на весь цикл оптимизации, оценки плато и формирования финальных отчётов.

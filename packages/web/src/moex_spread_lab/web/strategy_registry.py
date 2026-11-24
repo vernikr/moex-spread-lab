@@ -11,7 +11,7 @@ from moex_spread_lab.core.contracts import (
 )
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
-from moex_spread_lab.proof_runtime.strategy_catalog import (
+from moex_spread_lab.proof.strategy_catalog import (
     get_proof_adapter_ids,
     get_strategy_registry,
 )

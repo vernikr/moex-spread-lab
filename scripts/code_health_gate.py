@@ -31,6 +31,10 @@ if __package__:
         _complexity_failures,
         _exception_failures,
         _fastcore_parity_failures,
+        _fragment_name_failures,
+        _package_token_advisories,
+        _package_totals,
+        _shallow_shard_advisories,
         _updated_baseline,
     )
 else:
@@ -51,6 +55,10 @@ else:
         _complexity_failures,
         _exception_failures,
         _fastcore_parity_failures,
+        _fragment_name_failures,
+        _package_token_advisories,
+        _package_totals,
+        _shallow_shard_advisories,
         _updated_baseline,
     )
 
@@ -230,13 +238,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--update-baseline requires a full scan")
     complexity: dict[str, int] = {}
     c_functions: dict[str, dict[str, int]] = {}
+    advisories: list[str] = []
+    sources: list[Path] | None = None
     try:
         baseline = _load_baseline()
         if args.changed:
-            failures, file_metrics, skipped = _changed_failures(args.base, baseline)
+            failures, file_metrics, advisories, skipped = _changed_failures(args.base, baseline)
         else:
             skipped = []
-            failures, file_metrics = _check_files(_source_files(), baseline)
+            sources = _source_files()
+            failures, file_metrics, advisories = _check_files(sources, baseline)
+            failures.extend(_fragment_name_failures(sources, baseline))
+            advisories.extend(_shallow_shard_advisories(sources, file_metrics, baseline))
+            advisories.extend(_package_token_advisories(_package_totals(file_metrics), baseline))
             complexity = _run_complexipy()
             c_functions = _run_lizard()
             failures.extend(_complexity_failures(complexity, baseline))
@@ -250,9 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         print("code-health-gate: failed")
         for failure in failures:
             print(f"  - {failure}")
+        _print_advisories(advisories)
         return 1
     if args.update_baseline:
-        _write_baseline(_updated_baseline(baseline, file_metrics, complexity, c_functions))
+        _write_baseline(_updated_baseline(baseline, file_metrics, complexity, c_functions, sources))
         print(
             f"code-health-gate: baseline reductions recorded in {BASELINE_PATH.relative_to(ROOT)}"
         )
@@ -263,17 +278,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"skipped: {', '.join(skipped) if skipped else 'nothing'}")
     else:
         print("code-health-gate: passed")
+    _print_advisories(advisories)
     return 0
+
+
+def _print_advisories(advisories: list[str]) -> None:
+    """Log yellow-band size and fragmentation findings without failing the gate."""
+    for advisory in advisories:
+        print(f"advisory: {advisory}")
 
 
 def _changed_failures(
     base: str, baseline: dict[str, Any]
-) -> tuple[list[str], dict[str, dict[str, int]], list[str]]:
+) -> tuple[list[str], dict[str, dict[str, int]], list[str], list[str]]:
     files = _touched_files(base)
     py_files = [path for path in files if path.suffix.lower() == ".py"]
     c_files = [path for path in files if path.suffix.lower() == ".c"]
-    failures, file_metrics = _check_files(files, baseline, check_guard=False)
-    skipped = ["guard_files", "full-repo scan"]
+    failures, file_metrics, advisories = _check_files(files, baseline, check_guard=False)
+    failures.extend(_fragment_name_failures(files, baseline))
+    advisories.extend(_shallow_shard_advisories(files, file_metrics, baseline))
+    skipped = ["guard_files", "full-repo scan", "package token delta (full scan only)"]
     if py_files:
         failures.extend(_complexity_failures(_run_complexipy(paths=py_files), baseline))
     else:
@@ -292,7 +316,7 @@ def _changed_failures(
         skipped.append("fastcore parity (inputs untouched)")
     protected = [path for path in py_files if _is_under(path, PROTECTED_EXCEPTION_ROOTS)]
     failures.extend(_exception_failures(protected))
-    return failures, file_metrics, skipped
+    return failures, file_metrics, advisories, skipped
 
 
 def _is_under(path: Path, roots: tuple[Path, ...]) -> bool:

@@ -26,6 +26,9 @@ build/
 coverage/
 *.log
 *.sqlite*
+
+# Size report generated on demand by @vernikr/size-report (npm run sizes)
+docs/size-report.html
 /data/
 /data-lake/
 /artifacts/

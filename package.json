@@ -1,0 +1,15 @@
+{
+  "name": "moex-spread-lab",
+  "private": true,
+  "description": "Development tooling for moex-spread-lab (size report)",
+  "scripts": {
+    "sizes": "size --write",
+    "test:sizes": "size"
+  },
+  "devDependencies": {
+    "@vernikr/size-report": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

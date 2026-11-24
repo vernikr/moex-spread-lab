@@ -5,18 +5,22 @@ from __future__ import annotations
 
 import argparse
 import ast
-import io
 import shutil
 import subprocess
 import sys
-import tokenize
 from collections import defaultdict
 from pathlib import Path
 
+if __package__:
+    from .code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
+else:
+    from code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
+
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MAX_LOC = 400
-DEFAULT_MAX_TOKENS = 3500
-DEFAULT_MAX_COMPLEXITY = 15
+# Size budgets, the token estimator and the complexity ceiling are the gate's own
+# policy (TD-1 #152, TD-6 #158): the inner-loop helper must never disagree with it.
+MAX_COMPLEXITY = int(POLICY["max_cognitive_complexity"])
+SIZE_MEASURES = ("loc", "tokens")
 
 
 def _path(value: str) -> Path:
@@ -24,19 +28,43 @@ def _path(value: str) -> Path:
     return (path if path.is_absolute() else ROOT / path).resolve()
 
 
-def _tokens(source: str) -> int:
-    ignored = {
-        tokenize.ENCODING,
-        tokenize.NL,
-        tokenize.NEWLINE,
-        tokenize.COMMENT,
-        tokenize.ENDMARKER,
-    }
-    return sum(
-        1
-        for item in tokenize.generate_tokens(io.StringIO(source).readline)
-        if item.type not in ignored
-    )
+def _relative_key(path: Path) -> str:
+    """Repository-relative POSIX path used for archetype classification."""
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.as_posix()
+
+
+def _band(relative: str, metrics: dict[str, int]) -> tuple[str, str, dict[str, int]]:
+    """Return ``(archetype, band, budget)`` using the gate's tiered file budgets.
+
+    ``green`` is at or under every soft target, ``advisory`` exceeds a soft target
+    (logged by the gate, never fails) and ``over-hard`` exceeds a hard ceiling.
+    """
+    archetype, budget = _budget_for(relative)
+    band = "green"
+    for measure in SIZE_MEASURES:
+        hard = budget.get(f"hard_{measure}")
+        if hard is None:
+            continue
+        if metrics[measure] > hard:
+            return archetype, "over-hard", budget
+        if metrics[measure] > budget[f"soft_{measure}"]:
+            band = "advisory"
+    return archetype, band, budget
+
+
+def _measure_text(measure: str, value: int, budget: dict[str, int]) -> str:
+    hard = budget.get(f"hard_{measure}")
+    if hard is None:
+        return f"{measure}={value} (not budgeted)"
+    return f"{measure}={value} (soft {budget[f'soft_{measure}']}, hard {hard})"
+
+
+def _budget_text(path: Path) -> tuple[str, str]:
+    """Return ``(band, summary)`` with the gate's ``loc``/``tokens`` for ``path``."""
+    metrics = _file_metrics(path)
+    archetype, band, budget = _band(_relative_key(path), metrics)
+    sizes = " ".join(_measure_text(name, metrics[name], budget) for name in SIZE_MEASURES)
+    return band, f"archetype={archetype} band={band} {sizes}"
 
 
 def _complexity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
@@ -81,7 +109,7 @@ def outline(path: Path) -> int:
             imports.append(f"{node.lineno}: from {'.' * node.level}{node.module or ''} import ...")
     imports.sort(key=lambda item: int(item.split(":", 1)[0]))
     print(f"{path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
-    print(f"LOC {len(lines)} | tokens {_tokens(source)} | bytes {len(source.encode('utf-8'))}")
+    print(f"{_budget_text(path)[1]} bytes={len(source.encode('utf-8'))} total_lines={len(lines)}")
     print("Imports:")
     for item in imports:
         print(f"  {item}")
@@ -206,13 +234,11 @@ def _run(label: str, command: list[str]) -> bool:
     return result.returncode == 0
 
 
-def _size_metrics(path: Path) -> tuple[int, int, dict[str, int]]:
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
-    complexities = {
-        f"{node.name}@{node.lineno}": _complexity(node) for node in _function_nodes(tree)
-    }
-    return len(source.splitlines()), int(len(source.encode("utf-8")) / 3.6), complexities
+def _complexities(path: Path) -> dict[str, int]:
+    if path.suffix != ".py":
+        return {}
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return {f"{node.name}@{node.lineno}": _complexity(node) for node in _function_nodes(tree)}
 
 
 def _ruff_command() -> list[str]:
@@ -231,19 +257,20 @@ def _check_file(path: Path, *, strict_limits: bool) -> tuple[bool, bool]:
         print(f"missing file: {path}")
         return False, False
     try:
-        loc, tokens, complexities = _size_metrics(path)
-    except (OSError, UnicodeError, SyntaxError) as exc:
+        band, summary = _budget_text(path)
+        complexities = _complexities(path)
+    except (GateError, OSError, UnicodeError, SyntaxError) as exc:
         print(f"parse: {path}: {exc}")
         return False, False
     offenders = [
-        f"{name}={value}" for name, value in complexities.items() if value > DEFAULT_MAX_COMPLEXITY
+        f"{name}={value}" for name, value in complexities.items() if value > MAX_COMPLEXITY
     ]
-    over = loc > DEFAULT_MAX_LOC or tokens > DEFAULT_MAX_TOKENS or bool(offenders)
+    # Like the gate, the advisory band never fails; only hard ceilings do.
+    over = band == "over-hard" or bool(offenders)
     status = "FAIL" if strict_limits and over else "WARN" if over else "PASS"
-    display = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
-    print(f"{display}: {status} LOC={loc}/{DEFAULT_MAX_LOC} tokens={tokens}/{DEFAULT_MAX_TOKENS}")
+    print(f"{_relative_key(path)}: {status} {summary}")
     for item in offenders:
-        print(f"  complexity ceiling {DEFAULT_MAX_COMPLEXITY}: {item}")
+        print(f"  complexity ceiling {MAX_COMPLEXITY}: {item}")
     return not (strict_limits and over), True
 
 
@@ -287,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     check_parser.add_argument("files", nargs="+")
     check_parser.add_argument(
-        "--strict-limits", action="store_true", help="fail over repository ceilings"
+        "--strict-limits", action="store_true", help="fail over the gate's hard ceilings"
     )
     check_parser.add_argument("--metrics-only", action="store_true", help="skip external tools")
     args = parser.parse_args(argv)
@@ -301,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             strict_limits=args.strict_limits,
             metrics_only=args.metrics_only,
         )
-    except (OSError, UnicodeError, SyntaxError) as exc:
+    except (GateError, OSError, UnicodeError, SyntaxError) as exc:
         print(f"inspect: {exc}", file=sys.stderr)
         return 2
 

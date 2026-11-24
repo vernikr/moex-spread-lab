@@ -8,8 +8,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
 
-from moex_spread_lab.core.universe import PERPETUAL_HISTORY_STARTS
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.universe import PERPETUAL_HISTORY_STARTS
 
 from .carry import fetch_history
 from .timeline import DSVD_NOTICE, published_rates, read_supplement, supplement_path

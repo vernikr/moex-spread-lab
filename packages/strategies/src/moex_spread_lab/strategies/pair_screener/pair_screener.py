@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from moex_spread_lab.core import universe as _universe
+from moex_spread_lab.data import universe as _catalog
 
 from ..funding_carry import carry as _carry
 from ..funding_carry.proof_funding import FundingWindow, ProofFunding
@@ -22,13 +23,13 @@ def _runtime_attr(module: Any, name: str) -> Any:
 # implementation names directly across module boundaries. The defining modules
 # remain the source of truth for these compatibility hooks.
 HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
-    dict[str, tuple[str, str]], _runtime_attr(_universe, "HISTORY_WINDOWS")
+    dict[str, tuple[str, str]], _runtime_attr(_catalog, "HISTORY_WINDOWS")
 )
 INITIAL_CAPITAL: float = cast(float, _runtime_attr(_universe, "INITIAL_CAPITAL"))
 MAX_QUANTITY: int = cast(int, _runtime_attr(_universe, "MAX_QUANTITY"))
 MIN_DAILY_VOLUME: float = cast(float, _runtime_attr(_universe, "MIN_DAILY_VOLUME"))
 PAIRS: tuple[dict[str, str], ...] = cast(
-    tuple[dict[str, str], ...], _runtime_attr(_universe, "PAIRS")
+    tuple[dict[str, str], ...], _runtime_attr(_catalog, "PAIRS")
 )
 STRATEGIES: dict[str, dict[str, Any]] = cast(
     dict[str, dict[str, Any]], _runtime_attr(_universe, "STRATEGIES")

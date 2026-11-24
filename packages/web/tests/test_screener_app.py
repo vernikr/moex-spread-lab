@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from moex_spread_lab.core.universe import HISTORICAL_PERPETUAL_PAIRS, HISTORY_WINDOWS, PAIRS
+from moex_spread_lab.data.universe import HISTORICAL_PERPETUAL_PAIRS, HISTORY_WINDOWS, PAIRS
 from moex_spread_lab.proof_runtime.screener_search import screen_table
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.strategies.pair_screener.pair_screener import (

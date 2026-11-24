@@ -6,18 +6,18 @@ import json
 import math
 from collections.abc import Mapping
 from datetime import date
-from typing import Any, cast
+from typing import Any
 
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data import universe as _catalog
 from moex_spread_lab.data.lake.data_lake import BarSeries
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
 
-PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 SLIPPAGE_GRID = (0.0, 1.0, 2.0)
 _INDEPENDENT_GROSS_OPTS = frozenset({"lookback", "entry_z", "exit_z", "delay", "fill"})
 

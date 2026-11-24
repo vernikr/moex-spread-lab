@@ -79,10 +79,10 @@ def _daily_funding_journal(
     through: str | None,
     lot: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    import moex_spread_lab.core.universe as core_universe
+    from moex_spread_lab.data import universe as catalog_universe
     from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 
-    declared_pairs = cast(Sequence[Mapping[str, str]], vars(core_universe)["PAIRS"])
+    declared_pairs = cast(Sequence[Mapping[str, str]], catalog_universe.PAIRS)
     declared = next((pair for pair in declared_pairs if pair["pair_id"] == window.pair), None)
     if declared is not None and (
         declared["near"] != window.near

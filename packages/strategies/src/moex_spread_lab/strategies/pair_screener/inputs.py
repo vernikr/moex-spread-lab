@@ -9,19 +9,17 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, cast
 
-from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data import universe as _catalog
 from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
 
 from ..funding_carry.carry import fetch_history
 from ..funding_carry.proof_funding import ProofFunding
 from .screener import _normalized_series
 
-HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
-    "dict[str, tuple[str, str]]", _universe.HISTORY_WINDOWS
-)
-PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
+PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 
 # Facade hooks plus the pre-P7.2 wildcard surface (Issue #139): the pre-leaf
 # star names stay importable via `from ...inputs import *`, including its

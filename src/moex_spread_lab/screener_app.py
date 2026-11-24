@@ -7,20 +7,22 @@ from typing import Any
 from moex_spread_lab.core.settings import read_settings, save_settings
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe, timeframe_options
 from moex_spread_lab.core.universe import (
+    INITIAL_CAPITAL,
+    MAX_QUANTITY,
+    MIN_DAILY_VOLUME,
+    STRATEGIES,
+)
+from moex_spread_lab.data.universe import (
     EXTRA_PAIRS,
     GLD_HISTORICAL_FAR,
     GLD_HISTORICAL_PAIRS,
     HISTORICAL_FAR_BY_NEAR,
     HISTORICAL_PERPETUAL_PAIRS,
     HISTORY_WINDOWS,
-    INITIAL_CAPITAL,
-    MAX_QUANTITY,
-    MIN_DAILY_VOLUME,
     PAIRS,
     PERPETUAL_HISTORY_STARTS,
     PERPETUAL_HISTORY_TILL,
     SCREEN_PAIRS,
-    STRATEGIES,
 )
 from moex_spread_lab.strategies.funding_carry.carry import fetch_history
 from moex_spread_lab.strategies.pair_screener.pair_screener import (

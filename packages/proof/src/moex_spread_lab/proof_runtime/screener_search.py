@@ -11,6 +11,7 @@ from typing import Any, TypedDict, cast
 from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, read_settings
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.universe import PAIRS
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
     ScreenerInputs,
@@ -34,7 +35,6 @@ class _DateRow(TypedDict):
     date: str
 
 
-PAIRS = cast(tuple[dict[str, str], ...], _universe.PAIRS)
 STRATEGIES = cast(dict[str, _Payload], _universe.STRATEGIES)
 
 INITIAL_CAPITAL = 30_000.0

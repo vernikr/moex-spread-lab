@@ -11,11 +11,11 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.settings import EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data import universe as _catalog
 from moex_spread_lab.data.iss.catalog import fetch_history
 
 from .funding_recheck import format_evidence_notes
@@ -36,10 +36,8 @@ from .timeline import (
     supplement_path,
 )
 
-HISTORY_WINDOWS: dict[str, tuple[str, str]] = cast(
-    dict[str, tuple[str, str]], _universe.HISTORY_WINDOWS
-)
-PAIRS: tuple[dict[str, str], ...] = cast(tuple[dict[str, str], ...], _universe.PAIRS)
+HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
+PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 
 
 def _default_offline_only(*_args: Any, **_kwargs: Any) -> Any:

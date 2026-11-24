@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
-from moex_spread_lab.core.universe import SCREEN_PAIRS
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.universe import SCREEN_PAIRS
 
 from ..pair_mean_reversion.analytics import get_cost_scenario, run_mean_reversion_baseline
 from .normalization import ScreenError, _bar_series, _normalized_series, _read_json, _round

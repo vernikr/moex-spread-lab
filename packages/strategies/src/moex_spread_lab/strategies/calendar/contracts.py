@@ -13,12 +13,31 @@ from moex_spread_lab.accounting.account_risk import (
 )
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.universe.assets import (
+    ASSETS as ASSETS,
+)
+from moex_spread_lab.data.universe.assets import (
+    CROSS_EXPIRY_PAIRS as CROSS_EXPIRY_PAIRS,
+)
+from moex_spread_lab.data.universe.assets import (
+    FX_SOURCE as FX_SOURCE,
+)
+from moex_spread_lab.data.universe.assets import (
+    MONTH_CODES as MONTH_CODES,
+)
+from moex_spread_lab.data.universe.assets import (
+    QUARTER_CODES as QUARTER_CODES,
+)
+from moex_spread_lab.data.universe.assets import (
+    SYNTHETIC_TRIANGLE_PAIRS as SYNTHETIC_TRIANGLE_PAIRS,
+)
+from moex_spread_lab.data.universe.assets import (
+    contract_chain as contract_chain,
+)
 
 from ..base import ZSCORE_CALENDAR_OPTIONS
 from ..calendar_eval import FILLS, strategy_runner
 
-QUARTER_CODES = "HMUZ"
-MONTH_CODES = "FGHJKMNQUVXZ"
 HISTORY_FIELDS = (
     "TRADEDATE",
     "SECID",
@@ -29,65 +48,6 @@ HISTORY_FIELDS = (
     "SETTLEPRICE",
     "VOLUME",
     "NUMTRADES",
-)
-ASSETS: dict[str, dict[str, Any]] = {
-    "SR": {"group": "stock", "convergence": True, "name": "SBRF"},
-    "GZ": {"group": "stock", "convergence": True, "name": "GAZR"},
-    "LK": {"group": "stock", "name": "LKOH"},
-    "RN": {"group": "stock", "name": "ROSN"},
-    "SP": {"group": "stock", "name": "SBPR"},
-    "MG": {"group": "stock", "name": "MGNT"},
-    "YD": {"group": "stock", "name": "YDEX"},
-    "AL": {"group": "stock", "name": "ALRS"},
-    "TN": {"group": "stock", "name": "TATN"},
-    "SG": {"group": "stock", "name": "SNGP"},
-    "MM": {"group": "index", "name": "MXI (mini IMOEX)"},
-    "MX": {"group": "index", "name": "MIX (IMOEX)"},
-    "RI": {"group": "index", "fx": "usd", "name": "RTS"},
-    "RB": {"group": "interest", "name": "RGBI"},
-    "Si": {"group": "currency", "name": "USD/RUB"},
-    "Eu": {"group": "currency", "name": "EUR/RUB"},
-    "CR": {"group": "currency", "name": "CNY/RUB"},
-    "ED": {"group": "currency", "fx": "usd", "name": "EUR/USD"},
-    "UC": {"group": "currency", "fx": "cny", "name": "USD/CNY"},
-    "GD": {"group": "commodity", "fx": "usd", "name": "GOLD"},
-    "GN": {"group": "commodity", "fx": "usd", "name": "GOLDM"},
-    "PT": {"group": "commodity", "fx": "usd", "name": "PLT"},
-    "SV": {"group": "commodity", "fx": "usd", "name": "SILV"},
-    "BR": {"group": "commodity", "fx": "usd", "monthly": True, "name": "Brent"},
-    "NG": {"group": "commodity", "fx": "usd", "monthly": True, "name": "Natural gas"},
-    "WT": {"group": "commodity", "fx": "usd", "monthly": True, "name": "WTI"},
-}
-FX_SOURCE: dict[str, str] = {"usd": "Si", "cny": "CR"}
-CROSS_EXPIRY_PAIRS: tuple[dict[str, str], ...] = (
-    {
-        "pair_id": "MX/MM",
-        "near": "MX",
-        "far": "MM",
-        "family": "cross_contract_same_expiry",
-        "name": "MIX vs MXI",
-    },
-    {
-        "pair_id": "GD/GN",
-        "near": "GD",
-        "far": "GN",
-        "family": "cross_contract_same_expiry",
-        "name": "GOLD vs GOLDM",
-    },
-)
-SYNTHETIC_TRIANGLE_PAIRS: tuple[dict[str, Any], ...] = (
-    {
-        "pair_id": "Si+Eu/ED",
-        "legs": ("Si", "Eu", "ED"),
-        "family": "synthetic_triangle_same_expiry",
-        "name": "USD/RUB + EUR/RUB vs EUR/USD",
-    },
-    {
-        "pair_id": "Si+CR/UC",
-        "legs": ("Si", "CR", "UC"),
-        "family": "synthetic_triangle_same_expiry",
-        "name": "USD/RUB + CNY/RUB vs USD/CNY",
-    },
 )
 EXIT_BUFFER_DAYS = 2
 HISTORY_FROM = "2022-06-01"
@@ -100,13 +60,6 @@ MIN_H1_NATIVE_SESSION_VOLUME = MIN_DAILY_VOLUME
 MIN_H1_PROXY_LEG_SESSION_VOLUME = MIN_DAILY_VOLUME
 
 _calendar_strategy_runner = strategy_runner
-
-
-def contract_chain(asset: str, first_year: int = 3, last_year: int = 7) -> list[str]:
-    monthly = ASSETS.get(asset, {}).get("monthly", False)
-    codes, last = (MONTH_CODES, "F") if monthly else (QUARTER_CODES, "H")
-    chain = [f"{asset}{code}{year}" for year in range(first_year, last_year + 1) for code in codes]
-    return chain[: chain.index(f"{asset}{last}{last_year}") + 1]
 
 
 def spread_id(near: str, far: str) -> str:

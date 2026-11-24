@@ -4,27 +4,39 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 if __package__:
     from .code_health_gate_common import (
         ALLOW_MARKER,
+        EXCLUDED_PARTS,
         POLICY,
         PROTECTED_EXCEPTION_ROOTS,
         ROOT,
         GateError,
+        _budget_for,
         _file_metrics,
+        _fragment_name_problem,
+        _is_compatibility_shim,
+        _package_group,
+        _package_root,
         _relative,
     )
 else:
     from code_health_gate_common import (
         ALLOW_MARKER,
+        EXCLUDED_PARTS,
         POLICY,
         PROTECTED_EXCEPTION_ROOTS,
         ROOT,
         GateError,
+        _budget_for,
         _file_metrics,
+        _fragment_name_problem,
+        _is_compatibility_shim,
+        _package_group,
+        _package_root,
         _relative,
     )
 
@@ -202,24 +214,130 @@ def _existing_file_failures(
     return failures
 
 
-def _new_file_failures(path: Path, relative: str, metrics: dict[str, int]) -> list[str]:
+def _budget_outcome(relative: str, metrics: dict[str, int]) -> tuple[list[str], list[str]]:
+    """Return ``(failures, advisories)`` for one unratcheted file against its archetype budget."""
+    archetype, budget = _budget_for(relative)
+    failures: list[str] = []
+    advisories: list[str] = []
+    for measure in ("loc", "tokens"):
+        hard = budget.get(f"hard_{measure}")
+        if hard is None:
+            continue
+        value = metrics[measure]
+        soft = budget[f"soft_{measure}"]
+        if value > hard:
+            failures.append(
+                f"{relative}: {value} {measure} exceed the {archetype} hard ceiling {hard}; "
+                "split it along a real domain seam, never into pass-through shards"
+            )
+        elif value > soft:
+            advisories.append(
+                f"{relative}: {value} {measure} in the {archetype} advisory band "
+                f"(soft {soft}, hard {hard})"
+            )
+    return failures, advisories
+
+
+def _fragment_name_failures(files: list[Path], baseline: dict[str, Any]) -> list[str]:
+    """Hard-forbid new ``*p72*``, issue-numbered and path-encoded overflow filenames."""
+    legacy = {str(path) for path in baseline["legacy_fragment_files"]}
     failures = []
-    is_c = path.suffix.lower() == ".c"
-    limit = POLICY["new_c_file_max_loc"] if is_c else POLICY["new_file_max_loc"]
-    if metrics["loc"] > limit:
-        failures.append(f"{relative}: new file has {metrics['loc']} LOC (limit {limit})")
-    if not is_c and metrics["tokens"] > POLICY["new_file_max_tokens"]:
+    for path in files:
+        problem = _fragment_name_problem(path.name)
+        relative = _relative(path)
+        if problem is None or relative in legacy:
+            continue
         failures.append(
-            f"{relative}: new file has about {metrics['tokens']} tokens "
-            f"(limit {POLICY['new_file_max_tokens']})"
+            f"{relative}: forbidden overflow filename ({problem}); keep the code in its "
+            "cohesive module instead of sharding it by issue or path"
         )
     return failures
 
 
+def _intra_package_callers(path: Path, relative: str) -> int:
+    """Count sibling modules in the same package that import this module."""
+    package_root = _package_root(relative)
+    if package_root is None or not package_root.is_dir():
+        return 0
+    pattern = re.compile(rf"^\s*(?:from|import)\s+.*\b{re.escape(path.stem)}\b")
+    callers = 0
+    for candidate in package_root.rglob("*.py"):
+        if candidate == path or EXCLUDED_PARTS.intersection(candidate.parts):
+            continue
+        try:
+            source = candidate.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if any(pattern.match(line) for line in source.splitlines()):
+            callers += 1
+    return callers
+
+
+def _shallow_shard_paths(files: list[Path], file_metrics: dict[str, dict[str, int]]) -> list[str]:
+    """Return production micro-modules that a single sibling imports (fragmentation)."""
+    max_loc = int(POLICY["shallow_shard_max_loc"])
+    max_callers = int(POLICY["shallow_shard_max_callers"])
+    flagged = []
+    for path in sorted(files):
+        relative = _relative(path)
+        if file_metrics[relative]["loc"] >= max_loc:
+            continue
+        if path.suffix.lower() != ".py" or path.name == "__init__.py":
+            continue
+        if "tests" in PurePosixPath(relative).parts or _is_compatibility_shim(relative):
+            continue
+        if _intra_package_callers(path, relative) <= max_callers:
+            flagged.append(relative)
+    return flagged
+
+
+def _shallow_shard_advisories(
+    files: list[Path], file_metrics: dict[str, dict[str, int]], baseline: dict[str, Any]
+) -> list[str]:
+    legacy = {str(path) for path in baseline["legacy_shallow_shards"]}
+    return [
+        f"{relative}: {file_metrics[relative]['loc']} LOC module with at most "
+        f"{POLICY['shallow_shard_max_callers']} intra-package caller(s); fold it back into a "
+        "deep module unless it is a real seam"
+        for relative in _shallow_shard_paths(files, file_metrics)
+        if relative not in legacy
+    ]
+
+
+def _package_totals(file_metrics: dict[str, dict[str, int]]) -> dict[str, int]:
+    """Sum estimated tokens per workspace package (or top-level source root)."""
+    totals: dict[str, int] = {}
+    for relative, metrics in file_metrics.items():
+        group = _package_group(relative)
+        if group is not None:
+            totals[group] = totals.get(group, 0) + metrics["tokens"]
+    return totals
+
+
+def _package_token_advisories(totals: dict[str, int], baseline: dict[str, Any]) -> list[str]:
+    """Surface package-level token regressions that a file split would otherwise hide."""
+    recorded = baseline["packages"]
+    tolerance = int(POLICY["package_token_tolerance_pct"])
+    advisories = []
+    for group, total in sorted(totals.items()):
+        old = recorded.get(group)
+        if old is None:
+            advisories.append(f"{group}: {total} tokens with no recorded package total")
+            continue
+        ceiling = int(old["baseline_tokens"])
+        if total > ceiling * (100 + tolerance) // 100:
+            advisories.append(
+                f"{group}: source tokens grew from {ceiling} to {total} "
+                f"(+{total - ceiling}); a split must lower the package total"
+            )
+    return advisories
+
+
 def _check_files(
     files: list[Path], baseline: dict[str, Any], check_guard: bool = True
-) -> tuple[list[str], dict[str, dict[str, int]]]:
+) -> tuple[list[str], dict[str, dict[str, int]], list[str]]:
     failures = []
+    advisories = []
     current = {}
     base_files = baseline["files"]
     guard_files = set(baseline["guard_files"])
@@ -228,16 +346,18 @@ def _check_files(
         metrics = _file_metrics(path)
         current[relative] = metrics
         old = base_files.get(relative)
-        if old is None:
-            failures.extend(_new_file_failures(path, relative, metrics))
-        else:
+        if old is not None:
             failures.extend(_existing_file_failures(relative, metrics, old))
+            continue
+        file_failures, file_advisories = _budget_outcome(relative, metrics)
+        failures.extend(file_failures)
+        advisories.extend(file_advisories)
     if check_guard:
         failures.extend(
             f"guarded compatibility file is missing: {relative}"
             for relative in sorted(guard_files - current.keys())
         )
-    return failures, current
+    return failures, current, advisories
 
 
 def _complexity_failures(current: dict[str, int], baseline: dict[str, Any]) -> list[str]:
@@ -279,26 +399,31 @@ def _c_function_failures(current: dict[str, dict[str, int]], baseline: dict[str,
     return failures
 
 
+def _baseline_entry_is_obsolete(relative: str, metrics: dict[str, int]) -> bool:
+    """A ratchet entry is obsolete once the file fits its role-aware budget again."""
+    archetype, budget = _budget_for(relative)
+    if archetype == "kernel":
+        # The C99 kernel is one translation unit: keep its LOC ratchet above the soft target.
+        return metrics["loc"] <= budget["soft_loc"]
+    return metrics["loc"] <= budget["hard_loc"] and metrics["tokens"] <= budget["hard_tokens"]
+
+
 def _updated_baseline(
     baseline: dict[str, Any],
     file_metrics: dict[str, dict[str, int]],
     complexity: dict[str, int],
     c_functions: dict[str, dict[str, int]],
+    files: list[Path] | None = None,
 ) -> dict[str, Any]:
     updated = dict(baseline)
     updated["files"] = {}
     for path, old in baseline["files"].items():
-        if path not in file_metrics:
-            continue
-        is_c = path.lower().endswith(".c")
-        loc_limit = POLICY["new_c_file_max_loc"] if is_c else POLICY["new_file_max_loc"]
-        new_loc = min(int(old["baseline_loc"]), file_metrics[path]["loc"])
-        new_tokens = min(int(old["baseline_tokens"]), file_metrics[path]["tokens"])
-        if new_loc <= loc_limit and (is_c or new_tokens <= POLICY["new_file_max_tokens"]):
+        metrics = file_metrics.get(path)
+        if metrics is None or _baseline_entry_is_obsolete(path, metrics):
             continue
         updated["files"][path] = {
-            "baseline_loc": new_loc,
-            "baseline_tokens": new_tokens,
+            "baseline_loc": min(int(old["baseline_loc"]), metrics["loc"]),
+            "baseline_tokens": min(int(old["baseline_tokens"]), metrics["tokens"]),
         }
     limit = POLICY["max_cognitive_complexity"]
     updated["complexity"] = {
@@ -319,4 +444,22 @@ def _updated_baseline(
         updated["c_functions"][key] = {
             f"baseline_{name}": min(int(old[f"baseline_{name}"]), metrics[name]) for name in limits
         }
+    offenders = {
+        relative
+        for relative in file_metrics
+        if _fragment_name_problem(PurePosixPath(relative).name) is not None
+    }
+    updated["legacy_fragment_files"] = sorted(set(baseline["legacy_fragment_files"]) & offenders)
+    shards: set[str] | None = None
+    if files is not None:
+        shards = set(_shallow_shard_paths(files, file_metrics))
+        updated["legacy_shallow_shards"] = sorted(set(baseline["legacy_shallow_shards"]) & shards)
+    updated["packages"] = {
+        group: {
+            "baseline_tokens": total
+            if (old := baseline["packages"].get(group)) is None
+            else min(int(old["baseline_tokens"]), total)
+        }
+        for group, total in _package_totals(file_metrics).items()
+    }
     return updated

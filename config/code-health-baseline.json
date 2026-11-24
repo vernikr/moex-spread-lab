@@ -94,15 +94,199 @@
     }
   },
   "guard_files": [],
+  "legacy_fragment_files": [
+    "packages/data/src/moex_spread_lab/data/lake/helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh.py",
+    "packages/data/src/moex_spread_lab/data/lake/helpers_p72_packages_data_src_moex_spread_lab_data_lake_parquet_store.py",
+    "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
+    "packages/data/src/moex_spread_lab/data/lake/seal_identity_p72_57.py",
+    "packages/data/src/moex_spread_lab/data/retention/helpers_p72_packages_data_src_moex_spread_lab_data_retention_data_archive_candidates.py",
+    "packages/data/tests/test_catalog_p72_packages_data_src_moex_spread_lab_data_iss_catalog.py",
+    "packages/data/tests/test_cli_storage_handlers_p72_packages_data_src_moex_spread_lab_data_cli_storage_handlers.py",
+    "packages/data/tests/test_data_archive_candidates_p72_packages_data_src_moex_spread_lab_data_retention_data_archive_candidates.py",
+    "packages/data/tests/test_data_inventory_facade_p72_packages_data_src_moex_spread_lab_data_retention_data_inventory.py",
+    "packages/data/tests/test_data_retention_p72_packages_data_src_moex_spread_lab_data_retention_data_retention.py",
+    "packages/data/tests/test_h1_archive_p72_packages_data_src_moex_spread_lab_data_retention_h1_archive.py",
+    "packages/data/tests/test_iss_history_p72_packages_data_src_moex_spread_lab_data_iss_iss_history.py",
+    "packages/data/tests/test_p72_exports_data.py",
+    "packages/data/tests/test_p72_final_lake_contracts.py",
+    "packages/data/tests/test_p72_h1_migration_issue60.py",
+    "packages/data/tests/test_p72_lake_exports_57_63.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_iss_iss_coverage.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_iss_iss_http.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_lake_h1_seal.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_lake_legacy_series.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_lake_parquet_store.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_retention_inventory_policy.py",
+    "packages/data/tests/test_p72_packages_data_src_moex_spread_lab_data_retention_storage_policy.py",
+    "packages/data/tests/test_refresh_merge_p72_packages_data_src_moex_spread_lab_data_lake_refresh_merge.py",
+    "packages/proof/src/moex_spread_lab/proof/compat_hooks_p72_138.py",
+    "packages/proof/src/moex_spread_lab/proof/families_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_strategy_search.py",
+    "packages/proof/src/moex_spread_lab/proof/pair_plugin_accounting_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting.py",
+    "packages/proof/src/moex_spread_lab/proof/pool_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_pool.py",
+    "packages/proof/src/moex_spread_lab/proof/proof_kernel_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_kernel.py",
+    "packages/proof/tests/calendar_proof_expectations_p72_packages_proof_tests_test_calendar_proof.py",
+    "packages/proof/tests/calendar_proof_fixtures_p72_packages_proof_tests_test_calendar_proof.py",
+    "packages/proof/tests/global_capital_replay_p72_packages_proof_tests_test_global_capital.py",
+    "packages/proof/tests/helpers_p72_packages_proof_tests_test_perf_equivalence.py",
+    "packages/proof/tests/helpers_p72_packages_proof_tests_test_proof_batch.py",
+    "packages/proof/tests/helpers_p72_packages_proof_tests_test_proof_funding.py",
+    "packages/proof/tests/p72_packages_proof_tests_test_pair_plugin_integration.py",
+    "packages/proof/tests/pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline.py",
+    "packages/proof/tests/pair_plugin_real_proof_parity_assertions_p72_packages_proof_tests_test_pair_plugin_real_proof_parity.py",
+    "packages/proof/tests/proof_plateau_checks_p72_packages_proof_tests_test_proof_plateau.py",
+    "packages/proof/tests/proof_search_fixtures_p72_packages_proof_tests_test_proof_search.py",
+    "packages/proof/tests/proof_search_http_p72_packages_proof_tests_test_proof_search.py",
+    "packages/proof/tests/proof_search_plateau_p72_packages_proof_tests_test_proof_search.py",
+    "packages/proof/tests/proof_search_service_p72_packages_proof_tests_test_proof_search.py",
+    "packages/proof/tests/proof_windows_expectations_p72_packages_proof_tests_test_proof_windows.py",
+    "packages/proof/tests/proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows.py",
+    "packages/proof/tests/strategy_search_cases_p72_packages_proof_tests_test_strategy_search.py",
+    "packages/proof/tests/strategy_search_dash_p72_packages_proof_tests_test_strategy_search.py",
+    "packages/proof/tests/strategy_search_reports_p72_packages_proof_tests_test_strategy_search.py",
+    "packages/proof/tests/test_axis_ordered_export_p72_issue74.py",
+    "packages/proof/tests/test_cohort_models_p72_packages_proof_src_moex_spread_lab_proof_runtime_cohort_models.py",
+    "packages/proof/tests/test_global_capital_freeze_p72_packages_proof_tests_test_global_capital.py",
+    "packages/proof/tests/test_global_capital_settings_p72_packages_proof_tests_test_global_capital.py",
+    "packages/proof/tests/test_p72_evaluation_wildcard_contract.py",
+    "packages/proof/tests/test_p72_exports_proof_engine_138.py",
+    "packages/proof/tests/test_p72_exports_proof_workers.py",
+    "packages/proof/tests/test_p72_landscape_issue_85.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_audit.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_calendar_adapter.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_carry_intent_accounting.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cohort_prepare.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cohort_prepare_helpers.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cohort_reporting.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_funding_engine.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugins.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_batch.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_kernel.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_kernel_window.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_pool.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_search.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_strategy_search.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_windows.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_request_validation.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_service.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_tuning.py",
+    "packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_worker_cohort.py",
+    "packages/proof/tests/test_p72_packages_proof_tests_test_execution_proof.py",
+    "packages/proof/tests/test_p72_packages_proof_tests_test_proof_funding_replay.py",
+    "packages/proof/tests/tuning_screen_waiver_helpers_p72_packages_proof_tests_test_tuning_screens.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
+    "packages/strategies/tests/catalog_fixtures_p72_packages_strategies_tests_catalog_114.py",
+    "packages/strategies/tests/test_carry_facade_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_carry.py",
+    "packages/strategies/tests/test_carry_intents_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_intents.py",
+    "packages/strategies/tests/test_catalog_p72_packages_strategies_tests_catalog_114.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_calendar___init__.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_engine.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_proof_funding.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_strategy_costs.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_funding_carry_strategy_runner.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_pair_mean_reversion_series_builder.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_pair_screener___init__.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_pair_screener_inputs.py",
+    "packages/strategies/tests/test_p72_packages_strategies_src_moex_spread_lab_strategies_pair_screener_normalization.py",
+    "packages/strategies/tests/test_p72_runner_wildcard_contract.py",
+    "packages/strategies/tests/test_pair_screener_exports_p72_exports_strategies.py",
+    "packages/strategies/tests/test_runner_119.py",
+    "packages/strategies/tests/test_strategy_costs_exports_p72_103.py"
+  ],
+  "legacy_shallow_shards": [
+    "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
+    "packages/core/src/moex_spread_lab/core/workstation_results.py",
+    "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
+    "packages/proof/src/moex_spread_lab/proof/cli.py",
+    "packages/proof/src/moex_spread_lab/proof/fixed_plugin_series.py",
+    "packages/proof/src/moex_spread_lab/proof/service_prepare.py",
+    "packages/proof/src/moex_spread_lab/proof/service_validation.py",
+    "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
+    "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
+    "packages/web/src/moex_spread_lab/web/routes_settings.py",
+    "scripts/verify_workers.py",
+    "scripts/vulture_whitelist.py"
+  ],
+  "packages": {
+    "packages/accounting": {
+      "baseline_tokens": 43500
+    },
+    "packages/core": {
+      "baseline_tokens": 71987
+    },
+    "packages/data": {
+      "baseline_tokens": 121585
+    },
+    "packages/proof": {
+      "baseline_tokens": 237592
+    },
+    "packages/strategies": {
+      "baseline_tokens": 156368
+    },
+    "packages/web": {
+      "baseline_tokens": 104505
+    },
+    "scripts": {
+      "baseline_tokens": 49067
+    },
+    "src": {
+      "baseline_tokens": 3380
+    }
+  },
   "policy": {
+    "declarative_dirs": [
+      "universe"
+    ],
+    "declarative_stems": [
+      "contracts",
+      "universe",
+      "catalog",
+      "cli_parsers",
+      "registry"
+    ],
+    "declarative_suffixes": [
+      ".html",
+      ".css"
+    ],
+    "file_budgets": {
+      "declarative": {
+        "hard_loc": 800,
+        "hard_tokens": 8000,
+        "soft_loc": 550,
+        "soft_tokens": 5500
+      },
+      "kernel": {
+        "hard_loc": 1350,
+        "soft_loc": 900
+      },
+      "production": {
+        "hard_loc": 600,
+        "hard_tokens": 6000,
+        "soft_loc": 400,
+        "soft_tokens": 4000
+      },
+      "tests": {
+        "hard_loc": 900,
+        "hard_tokens": 9500,
+        "soft_loc": 600,
+        "soft_tokens": 6500
+      }
+    },
+    "forbidden_fragment_patterns": {
+      "issue-numbered shard": "(?:^|[_-])\\d{2,4}(?:$|[_-])",
+      "p72 overflow shard": "p72",
+      "path-encoded shard": "(?:^|[_-])(?:packages|src|tests|moex_spread_lab)(?:$|[_-])"
+    },
     "max_c_function_ccn": 15,
     "max_c_function_nloc": 100,
     "max_c_function_parameters": 7,
     "max_cognitive_complexity": 15,
-    "new_c_file_max_loc": 600,
-    "new_file_max_loc": 400,
-    "new_file_max_tokens": 3500,
-    "token_estimator": "utf8_bytes / 3.6 (rounded down)"
+    "package_token_tolerance_pct": 2,
+    "shallow_shard_max_callers": 1,
+    "shallow_shard_max_loc": 40,
+    "token_estimator": "utf8_bytes * 10 // 42 (~4.2 bytes/token, o200k_base-aligned for code)"
   },
-  "schema_version": 1
+  "schema_version": 2
 }

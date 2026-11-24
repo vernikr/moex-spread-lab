@@ -305,12 +305,37 @@ for i in "${!NAMES[@]}"; do
     esac
 done
 
+# Advisory lines are yellow-band findings (TD-1): logged here, never failing.
+advisory_count() { # name -> prints the number of advisory lines in that check's log
+    local count
+    count="$(grep -c '^advisory: ' "$logs/$1.log" 2>/dev/null || true)"
+    case "$count" in (*[!0-9]*|"") count=0 ;; esac
+    printf '%s' "$count"
+}
+
+print_advisories() { # name
+    local name="$1" line shown=0
+    while IFS= read -r line; do
+        [ "$shown" -ge 5 ] && { printf '  advisory: … (see %s log)\n' "$name"; break; }
+        printf '  %s\n' "$line"
+        shown=$((shown + 1))
+    done < <(grep '^advisory: ' "$logs/$name.log" 2>/dev/null || true)
+}
+
 for i in "${!NAMES[@]}"; do
     name="${NAMES[$i]}"; status="${STATUS[$i]}"; dur="${DUR[$i]}"
     if [ "$VERBOSE" -eq 1 ]; then cat "$logs/$name.log"; fi
     case "$status" in
         passed)
-            [ "$MODE" = full ] && printf '%s: passed (%ss)\n' "$name" "$dur" ;;
+            if [ "$MODE" = full ]; then
+                advisory_n="$(advisory_count "$name")"
+                if [ "$advisory_n" -gt 0 ]; then
+                    printf '%s: passed (%ss, %s advisory)\n' "$name" "$dur" "$advisory_n"
+                    print_advisories "$name"
+                else
+                    printf '%s: passed (%ss)\n' "$name" "$dur"
+                fi
+            fi ;;
         timeout)
             printf '=== %s: TIMEOUT after %ss ===\n' "$name" "$TIMEOUT"
             tail -n 40 "$logs/$name.log" ;;
@@ -326,11 +351,16 @@ done
 
 if [ "$MODE" = changed ]; then
     executed=""
+    advisory_total=0
     for i in "${!NAMES[@]}"; do
-        [ "${STATUS[$i]}" != skipped ] && executed+=", ${NAMES[$i]}"
+        if [ "${STATUS[$i]}" != skipped ]; then
+            executed+=", ${NAMES[$i]}"
+            advisory_total=$((advisory_total + $(advisory_count "${NAMES[$i]}")))
+        fi
     done
     executed="${executed#, }"
     skipped_list="${skipped_list#, }"
+    if [ "$advisory_total" -gt 0 ]; then executed+="; ${advisory_total} advisory"; fi
     if [ "$failures" -eq 0 ] && [ "$unavailable" -eq 0 ]; then
         printf 'check_health (changed): passed in %ss (%s)\n' "$((SECONDS - started))" "$executed"
     fi

@@ -2,6 +2,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.data.lake.data_lake import ParquetBarStore, RawResponseArchive
@@ -9,6 +10,12 @@ from moex_spread_lab.data.lake.data_refresh import (
     DataRefreshError,
     RefreshTarget,
     refresh_candle_datasets,
+)
+from moex_spread_lab.data.lake.refresh_merge import (
+    _overlap_start,
+    _payload_rows,
+    _payload_watermark,
+    _read_legacy_payload,
 )
 
 ASSUMPTION = "user_A-06_candle_is_usable_medium_term_price_proxy"
@@ -200,6 +207,36 @@ class DataRefreshTests(unittest.TestCase):
                     workers=5,
                     fetcher=fetcher,
                 )
+
+
+class RefreshMergeHelperTests(unittest.TestCase):
+    """Typed refresh-merge edge cases folded back from the P7.2 shard."""
+
+    def test_payload_rows_and_watermark_ignore_non_object_entries(self):
+        def row(begin: str) -> dict:
+            return {"begin": begin, "close": 100.0}
+
+        payload = {"rows": [row("2026-01-05 00:00:00"), "junk", 7, row("2026-01-06 00:00:00")]}
+        self.assertEqual(
+            [item["begin"] for item in _payload_rows(payload)],
+            ["2026-01-05 00:00:00", "2026-01-06 00:00:00"],
+        )
+        self.assertEqual(_payload_rows({}), [])
+        self.assertEqual(_payload_watermark(payload), date(2026, 1, 6))
+        self.assertIsNone(_payload_watermark({"rows": ["junk"]}))
+        self.assertIsNone(_payload_watermark(None))
+
+    def test_overlap_start_uses_observed_sessions_then_the_two_day_fallback(self):
+        rows = [{"begin": f"2026-01-{day:02d} 00:00:00", "close": 1.0} for day in (5, 6, 7, 8)]
+        self.assertEqual(_overlap_start({"rows": rows}, date(2026, 1, 8), 1), date(2026, 1, 7))
+        self.assertEqual(_overlap_start(None, date(2026, 1, 8), 2), date(2026, 1, 4))
+
+    def test_read_legacy_payload_rejects_a_non_object_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ABC_1d.json"
+            path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+            with self.assertRaises(DataRefreshError):
+                _read_legacy_payload(path, RefreshTarget("ABC", 24))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import hashlib
 import json
 import tempfile
 import unittest
@@ -11,6 +14,7 @@ from moex_spread_lab.data.iss.catalog import (
     normalize_candles,
     normalize_iss_intake,
 )
+from moex_spread_lab.data.iss.iss_http import IssIntakeError, fetch_json_with_raw, rows
 
 
 def payload():
@@ -312,6 +316,125 @@ class IssIntakeTests(unittest.TestCase):
         near = next(item for item in result["instruments"] if item["secid"] == "CNYRUBF")
         self.assertEqual(near["quote_quality"], "crossed_quote")
         self.assertEqual(result["instrument_count"], 2)
+
+
+class _Response:
+    """Minimal urllib-style response double for the ISS fetcher."""
+
+    def __init__(self, body: bytes, *, status: int = 200, content_type: str = "application/json"):
+        self._body = body
+        self.status = status
+        self.headers = {"Content-Type": content_type}
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _Response:
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+
+class IssHttpContractTests(unittest.TestCase):
+    """Row and fetcher contract of ``data.iss.iss_http`` (folded from the P7.2 shard)."""
+
+    def test_rows_maps_columns_to_dicts(self):
+        block = {"columns": ["SECID", "BID"], "data": [["CNYRUBF", 12.5], ["CRZ6", None]]}
+        self.assertEqual(
+            rows(block, "marketdata"),
+            [{"SECID": "CNYRUBF", "BID": 12.5}, {"SECID": "CRZ6", "BID": None}],
+        )
+        self.assertEqual(rows({"columns": ["SECID"], "data": []}, "securities"), [])
+
+    def test_rows_rejects_malformed_blocks_and_row_width(self):
+        malformed = [
+            None,
+            [],
+            "block",
+            3,
+            {},
+            {"columns": ["SECID"]},
+            {"data": []},
+            {"columns": "SECID", "data": []},
+            {"columns": [], "data": "rows"},
+        ]
+        for block in malformed:
+            with self.subTest(block=block), self.assertRaises(IssIntakeError) as ctx:
+                rows(block, "securities")
+            self.assertEqual(str(ctx.exception), "ISS block is malformed: securities")
+        widths = [
+            ({"columns": ["SECID"], "data": [["a", "b"]]}, "securities[0]"),
+            ({"columns": ["SECID", "BID"], "data": [["a"]]}, "securities[0]"),
+            ({"columns": ["SECID"], "data": [["a"], "row"]}, "securities[1]"),
+            ({"columns": ["SECID"], "data": [["a"], ["b"], ["c", "d"]]}, "securities[2]"),
+        ]
+        for block, where in widths:
+            with self.subTest(block=block), self.assertRaises(IssIntakeError) as ctx:
+                rows(block, "securities")
+            self.assertEqual(str(ctx.exception), f"ISS row has invalid width: {where}")
+
+    def test_fetch_json_with_raw_returns_digest_and_raw_body(self):
+        body = json.dumps({"securities": {"columns": ["SECID"], "data": [["CNYRUBF"]]}}).encode()
+        calls = []
+
+        def opener(request, timeout=None):
+            calls.append((request, timeout))
+            return _Response(body)
+
+        payload, received_at, raw_sha256, raw = fetch_json_with_raw(
+            "https://iss.moex.com/iss.json", timeout=3.5, opener=opener, probe="coverage"
+        )
+        self.assertEqual(payload, {"securities": {"columns": ["SECID"], "data": [["CNYRUBF"]]}})
+        self.assertEqual(raw, body)
+        self.assertEqual(raw_sha256, hashlib.sha256(body).hexdigest())
+        self.assertIsInstance(received_at, str)
+        self.assertEqual(calls[0][1], 3.5)
+        self.assertEqual(calls[0][0].get_header("Accept"), "application/json")
+
+    def test_fetch_json_with_raw_rejects_http_content_and_network_failures(self):
+        def opener_returning(response):
+            def opener(request, timeout=None):
+                return response
+
+            return opener
+
+        def opener_raising(request, timeout=None):
+            raise OSError("network down")
+
+        cases = [
+            (opener_returning(_Response(b"{}", status=500)), "ISS request returned HTTP 500"),
+            (
+                opener_returning(_Response(b"<html>denied</html>", content_type="text/html")),
+                "ISS response is not JSON; possible access/error page",
+            ),
+            (opener_returning(_Response(b"not-json")), "ISS response is not valid UTF-8 JSON"),
+            (opener_returning(_Response(b"[1, 2]")), "ISS JSON root is not an object"),
+            (opener_raising, "ISS request failed: network down"),
+        ]
+        for opener, message in cases:
+            with self.subTest(message=message), self.assertRaises(IssIntakeError) as ctx:
+                fetch_json_with_raw("https://iss.moex.com/iss.json", timeout=3.5, opener=opener)
+            self.assertEqual(str(ctx.exception), message)
+
+    def test_url_builders_keep_the_documented_query_contract(self):
+        from moex_spread_lab.data.iss import iss_http
+
+        self.assertEqual(
+            iss_http.url("https://iss.moex.com/", "RFUD"),
+            "https://iss.moex.com/iss/engines/futures/markets/forts/boards/RFUD/securities.json"
+            "?iss.meta=off&iss.only=securities,marketdata"
+            f"&securities.columns={','.join(iss_http.SECURITY_FIELDS)}"
+            f"&marketdata.columns={','.join(iss_http.MARKETDATA_FIELDS)}",
+        )
+        self.assertEqual(
+            iss_http.candles_url(
+                "https://iss.moex.com", "RFUD", "CNYRUBF", 60, "2026-01-01", "2026-01-31", 500
+            ),
+            "https://iss.moex.com/iss/engines/futures/markets/forts/boards/RFUD"
+            "/securities/CNYRUBF/candles.json?iss.meta=off&interval=60&from=2026-01-01"
+            "&till=2026-01-31&start=500",
+        )
 
 
 if __name__ == "__main__":

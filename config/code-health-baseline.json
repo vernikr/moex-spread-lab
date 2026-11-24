@@ -84,22 +84,6 @@
       "baseline_loc": 174,
       "baseline_tokens": 4086
     },
-    "packages/web/src/moex_spread_lab/web/static/js/charts.js": {
-      "baseline_loc": 484,
-      "baseline_tokens": 6538
-    },
-    "packages/web/src/moex_spread_lab/web/static/js/ledger.js": {
-      "baseline_loc": 382,
-      "baseline_tokens": 4815
-    },
-    "packages/web/src/moex_spread_lab/web/static/js/picker.js": {
-      "baseline_loc": 417,
-      "baseline_tokens": 5222
-    },
-    "packages/web/src/moex_spread_lab/web/static/js/strategy-form.js": {
-      "baseline_loc": 472,
-      "baseline_tokens": 4848
-    },
     "packages/web/tests/test_http_routes.py": {
       "baseline_loc": 264,
       "baseline_tokens": 3534

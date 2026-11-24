@@ -59,9 +59,7 @@ def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str
                 }
                 for tf in ("1d", "1h")
             }
-        ui_order = list(
-            plugin_ui_field_order(plugin, tuple(spec["name"] for spec in base_specs))
-        )
+        ui_order = list(plugin_ui_field_order(plugin, tuple(spec["name"] for spec in base_specs)))
         items.append(
             {
                 "id": plugin.strategy_id,

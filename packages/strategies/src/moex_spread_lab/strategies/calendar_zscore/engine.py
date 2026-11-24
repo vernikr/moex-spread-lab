@@ -199,10 +199,14 @@ def _zscore_scan_py(
             # A position closed by the terminal mark keeps its executable exit row; opening and
             # closing on the final bar would be an unauditable zero-holding round trip.
             st.trades.append(
-                make_calendar_trade(st.entry, rows[-1], st.position, cfg.fill, "end_of_window", signal)
+                make_calendar_trade(
+                    st.entry, rows[-1], st.position, cfg.fill, "end_of_window", signal
+                )
             )
         else:
-            st.trades.append({"entry": st.entry, "exit": rows[-1], "direction": st.position, "signal": signal})
+            st.trades.append(
+                {"entry": st.entry, "exit": rows[-1], "direction": st.position, "signal": signal}
+            )
     return st.trades
 
 

@@ -93,7 +93,7 @@ class CalendarZscorePlugin:
         )
         # The shared Z cache keeps the request-scoped cache telemetry and the repeated-trial
         # behaviour identical to the historical runner.
-        _extra = window.extra if isinstance(window.extra, Mapping) else {}
+        _extra = window.extra
         trades = zscore_trades(
             analysis_rows,
             delay=delay,

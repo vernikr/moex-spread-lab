@@ -90,7 +90,7 @@ class CalendarRuoniaPlugin:
             if window.timeframe == "1h"
             else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
         )
-        _extra = window.extra if isinstance(window.extra, Mapping) else {}
+        _extra = window.extra
         trades = convergence_trades(
             analysis_rows,
             threshold=float(validated["threshold_pp"]),

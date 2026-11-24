@@ -76,7 +76,6 @@ def _terminal_mark(
 
 
 def _convergence_trades_py(
-
     rows: list[dict[str, Any]],
     *,
     threshold: float,

@@ -36,9 +36,7 @@ def _derive(registry: StrategyRegistry) -> Derived:
     Discovery alone must never route an unimplemented plugin into another engine.
     """
     adapter_ids = (
-        frozenset(
-            plugin.strategy_id for plugin in registry if plugin_is_builtin(plugin)
-        )
+        frozenset(plugin.strategy_id for plugin in registry if plugin_is_builtin(plugin))
         | calendar_proof_plugin_ids(registry)
         | daily_pair_proof_plugin_ids(registry)
         | carry_proof_plugin_ids(registry)

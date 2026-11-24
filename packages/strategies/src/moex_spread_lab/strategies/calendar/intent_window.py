@@ -15,7 +15,7 @@ def prepare_daily_eligibility(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     Hourly windows carry them from their own liquidity screen; daily windows are admitted by
     positive spread volume alone, so every admitted row is eligible for signal, entry and exit.
     """
-    prepared = []
+    prepared: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
         if item.get("signal_eligible") is None:

@@ -289,7 +289,7 @@ def execute_calendar_proof(
     )
     if need_plugin_params:
         assert plugin_params is not None
-        payload["selection"]["parameters"] = cast(dict[str, Any], plugin_params)
+        payload["selection"]["parameters"] = plugin_params
     price_source = window.get("price_source", "native_daily_spread")
     payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
     if metrics_only:

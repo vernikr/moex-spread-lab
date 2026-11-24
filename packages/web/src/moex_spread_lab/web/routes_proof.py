@@ -30,6 +30,7 @@ LARGE_PROOF_POST_ROUTES = frozenset(
     }
 )
 
+
 def handle_get_proof(path: str, store: Any) -> tuple[bool, Any]:
     """Dispatch GET ``/api/proof/catalog`` and ``/api/strategies``."""
     if path == "/api/proof/catalog":

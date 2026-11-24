@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import ClassVar
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -82,8 +83,6 @@ class CoreContractsTests(unittest.TestCase):
 
         self.assertIsInstance(DummyPlugin(), StrategyPlugin)
 
-
-
     def test_declarative_plugin_metadata_accessors(self) -> None:
         from moex_spread_lab.core.contracts import (
             plugin_parameter_aliases,
@@ -95,7 +94,7 @@ class CoreContractsTests(unittest.TestCase):
 
         class MetaPlugin:
             proof_adapter = "pair_price_intents.v1"
-            family_parameter_aliases = {"window": "lookback"}
+            family_parameter_aliases: ClassVar[dict[str, str]] = {"window": "lookback"}
             ui_field_order = ("entry_z", "exit_z", "lookback")
             required_asset_capability = "convergence"
             trust_tier = "builtin"

@@ -25,9 +25,7 @@ def test_builtins_declare_trust_tier_and_ui_order() -> None:
 
 def test_family_parameter_aliases_match_historical_translation() -> None:
     registry = discover_strategies()
-    assert dict(plugin_parameter_aliases(registry.get("mean_reversion"))) == {
-        "window": "lookback"
-    }
+    assert dict(plugin_parameter_aliases(registry.get("mean_reversion"))) == {"window": "lookback"}
     assert dict(plugin_parameter_aliases(registry.get("zscore_mean_reversion"))) == {
         "lookback": "window"
     }

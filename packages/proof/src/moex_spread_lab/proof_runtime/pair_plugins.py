@@ -149,9 +149,7 @@ class PairPluginRoute:
         native_selection: dict[str, Any] = {
             **self.selection,
             "strategy": "mean_reversion",
-            "parameters": (
-                dict(self.selection.get("parameters") or {}) if self._builtin else {}
-            ),
+            "parameters": (dict(self.selection.get("parameters") or {}) if self._builtin else {}),
         }
         native = self.service._prepare_native(native_selection, settings=self.settings)
         series, funding_window, provenance, inputs = self._prepared_inputs(pair)
@@ -181,9 +179,7 @@ class PairPluginRoute:
                 req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
             )
             if self._builtin and metrics_only:
-                return native(
-                    self._template_request(req, fill), through=through, metrics_only=True
-                )
+                return native(self._template_request(req, fill), through=through, metrics_only=True)
             unit, execution, actual = self._unit_or_actual(
                 self.plugin, req, plugin_prepared, fill, through, builtin=self._builtin
             )

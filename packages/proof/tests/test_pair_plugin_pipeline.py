@@ -1,23 +1,137 @@
 """Daily pair plugin pipeline characterization; this does not enable a proof adapter."""
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.core.contracts import CompatibilityVerdict, StrategyIntentRun
+from moex_spread_lab.core.contracts import (
+    CompatibilityVerdict,
+    EntryBandPoint,
+    InstrumentContext,
+    ParameterSpec,
+    StrategyIntentRun,
+    WindowSnapshot,
+)
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.pair_plugin_accounting import size_daily_pair_plugin
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
-from pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline import (
-    DAYS,
-    PairPlugin,
-    fixture,
-    pipeline,
-)
+
+# ---- folded from the retired P7.2 shard pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline ----
+DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
+
+
+class PairPlugin:
+    """Minimal ``StrategyPlugin`` double: only the members the pipeline touches."""
+
+    strategy_id: str = "pair_test_plugin"
+    family_id: str = "pair_test"
+    label_ru: str = "Тестовый парный плагин"
+    short_label_ru: str = "Тест"
+    supported_universes: frozenset[str] = frozenset({"pair_screen"})
+    supported_fills: tuple[str, ...] = ("next_open", "next_close", "reference_same_bar")
+    requires_daily_bars: bool = True
+
+    def parameter_schema(
+        self, context: InstrumentContext | None = None
+    ) -> tuple[ParameterSpec, ...]:
+        return ()
+
+    def validate_parameters(
+        self, raw: Mapping[str, Any], context: InstrumentContext | None = None
+    ) -> dict[str, Any]:
+        return dict(raw)
+
+    def check_compatibility(
+        self, window: WindowSnapshot, settings: ResearchSettings | None = None
+    ) -> CompatibilityVerdict:
+        return CompatibilityVerdict(True)
+
+    def compute_entry_bands(
+        self,
+        series: list[dict[str, Any]],
+        params: Mapping[str, Any],
+        fill: str,
+        *,
+        far_point_value_rub: float = 1.0,
+    ) -> list[EntryBandPoint]:
+        return []
+
+    def __init__(self, side: str, terminal: bool, bad_price: bool = False) -> None:
+        self.side, self.terminal, self.bad_price = side, terminal, bad_price
+
+    def evaluate_intents(
+        self, window: WindowSnapshot, params: Mapping[str, Any], fill: str
+    ) -> StrategyIntentRun:
+        quote = "open" if fill == "next_open" else "close"
+        a, b = window.rows[3], window.rows[4]
+        exit_quote = "close" if self.terminal else quote
+        signal_idx = 3 if fill == "reference_same_bar" else 2
+        item = {
+            "side": self.side,
+            "entry_date": a["date"],
+            "exit_date": b["date"],
+            "entry_near_fill": a[f"near_{quote}"] + int(self.bad_price),
+            "entry_far_fill": a[f"far_{quote}"],
+            "exit_near_fill": b[f"near_{exit_quote}"],
+            "exit_far_fill": b[f"far_{exit_quote}"],
+            "reason": "end_of_sample" if self.terminal else "mean_reversion_exit",
+            "signal": {
+                "date": window.rows[signal_idx]["date"],
+                "kind": "z",
+                "value": -2 if self.side == "long_spread" else 2,
+            },
+            "funding_rub": 1000000,
+            "gross_pnl": 1000000,
+            "quantity": 1000000,
+        }
+        return StrategyIntentRun(self.strategy_id, fill, dict(params), (item,))
+
+
+def fixture():
+    contracts = {
+        s: {
+            "secid": s,
+            "tick_size": 1.0,
+            "tick_value": 1.0,
+            "initial_margin": 2500,
+            "lot_size": 10,
+            "tariff_group": "stock",
+        }
+        for s in ("N", "F")
+    }
+    rows = [
+        {
+            "date": d,
+            "near_open": 50000 + 10 * i,
+            "far_open": 50000,
+            "near_close": 50001 + 10 * i,
+            "far_close": 50000,
+            "near_volume": 300,
+            "far_volume": 400,
+            "spread_ticks": 1 + 10 * i,
+            "benchmark_price": 1.0,
+            "benchmark_source_kind": "observed",
+        }
+        for i, d in enumerate(DAYS)
+    ]
+    window = WindowSnapshot(
+        universe="pair_screen", pair="N/F", near="N", far="F", rows=rows, contracts=contracts
+    )
+    rates = dict.fromkeys(DAYS, 0.2)
+    evidence = FundingWindow(FundingTimeline("N", rates, DAYS), DAYS)
+    return window, evidence, rates
+
+
+def pipeline(window, evidence, plugin, fill):
+    return size_daily_pair_plugin(
+        plugin, window, {}, fill, evidence, dict.fromkeys(DAYS, 1.0), ResearchSettings()
+    )
 
 
 @pytest.mark.parametrize("fill", ["next_open", "next_close", "reference_same_bar"])
@@ -117,10 +231,10 @@ def test_accounting_rejects_unsafe_inputs_and_no_funding_inference():
 
 def test_incompatible_plugin_is_rejected_before_intent_evaluation():
     class Incompatible(PairPlugin):
-        def check_compatibility(self, window, settings):
+        def check_compatibility(self, window, settings=None):
             return CompatibilityVerdict(False, "not compatible")
 
-        def evaluate_intents(self, *args):
+        def evaluate_intents(self, window, params, fill):
             raise AssertionError("incompatible plugin must not be called")
 
     window, evidence, _ = fixture()
@@ -137,9 +251,9 @@ def test_journal_only_bar_does_not_revalue_or_receive_funding():
     evidence = FundingWindow(FundingTimeline("N", dict.fromkeys(days, 0.2), days), days)
 
     class AcrossGap(PairPlugin):
-        def evaluate_intents(self, snap, params, fill):
-            assert [r["date"] for r in snap.rows] == days
-            a, b = snap.rows[1], snap.rows[3]
+        def evaluate_intents(self, window, params, fill):
+            assert [r["date"] for r in window.rows] == days
+            a, b = window.rows[1], window.rows[3]
             item = {
                 "side": "long_spread",
                 "entry_date": a["date"],
@@ -151,7 +265,7 @@ def test_journal_only_bar_does_not_revalue_or_receive_funding():
                 "reason": "exit",
                 "signal": {"date": days[0], "kind": "x", "value": 1},
             }
-            return StrategyIntentRun(self.strategy_id, fill, params, (item,))
+            return StrategyIntentRun(self.strategy_id, fill, dict(params), (item,))
 
     result = pipeline(window, evidence, AcrossGap("long_spread", False), "next_open")
     journal = result["ledger"][2]
@@ -172,11 +286,11 @@ def test_prefix_hides_future_rows_and_extra_snapshot_data_and_identity():
     )
 
     class PrefixPlugin(PairPlugin):
-        def evaluate_intents(self, snap, params, fill):
-            assert [r["date"] for r in snap.rows] == DAYS[:4]
-            assert snap.funding_swaprates is None and snap.carry_study is None
-            assert snap.benchmark is None and not snap.extra
-            return StrategyIntentRun(self.strategy_id, fill, params, ())
+        def evaluate_intents(self, window, params, fill):
+            assert [r["date"] for r in window.rows] == DAYS[:4]
+            assert window.funding_swaprates is None and window.carry_study is None
+            assert window.benchmark is None and not window.extra
+            return StrategyIntentRun(self.strategy_id, fill, dict(params), ())
 
     plugin = PrefixPlugin("long_spread", False)
     first = size_daily_pair_plugin(

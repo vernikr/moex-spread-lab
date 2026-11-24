@@ -13,18 +13,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
-from helpers_p72_packages_proof_tests_test_perf_equivalence import (
-    calendar_spread_request,
-    convergence_window_requests,
-    pair_screen_fixed_quantity_request,
-    pair_screen_request,
-    research_settings,
-    rewrite_same_size,
-)
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
@@ -44,6 +39,89 @@ from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names
     _write_h1_candles,
 )
 from proof_fixtures import funding_winner
+
+
+# ---- folded from the retired P7.2 shard helpers_p72_packages_proof_tests_test_perf_equivalence ----
+def research_settings(*, timeframe: str, initial_capital_rub: float) -> ResearchSettings:
+    """Fixed-seed comparison settings; both eval modes must stay comparable."""
+    return ResearchSettings(
+        timeframe=timeframe,
+        validation_percent=20,
+        allow_failed_volume=True,
+        allow_failed_capital=True,
+        initial_capital_rub=initial_capital_rub,
+        random_seed=41,
+    )
+
+
+def pair_screen_request(**overrides: Any) -> dict[str, Any]:
+    """Pair-screen ``mean_reversion`` request with automatic sizing."""
+    request: dict[str, Any] = {
+        "universe": PAIR_UNIVERSE,
+        "pair": PAIR_SCREEN_PAIR,
+        "strategy": "mean_reversion",
+        "fill": "next_open",
+        "sizing": AUTO_SIZING,
+    }
+    request.update(overrides)
+    return request
+
+
+def pair_screen_fixed_quantity_request(**overrides: Any) -> dict[str, Any]:
+    """Pair-screen request with a manual quantity and no automatic ``sizing`` key."""
+    request: dict[str, Any] = {
+        "universe": PAIR_UNIVERSE,
+        "pair": PAIR_SCREEN_PAIR,
+        "strategy": "mean_reversion",
+        "fill": "next_open",
+        "quantity": 1,
+        "slippage_ticks": 1.0,
+    }
+    request.update(overrides)
+    return request
+
+
+def calendar_spread_request(**overrides: Any) -> dict[str, Any]:
+    """Calendar ``zscore_mean_reversion`` request with per-case overrides."""
+    request: dict[str, Any] = {
+        "universe": CALENDAR_UNIVERSE,
+        "asset": CALENDAR_ASSET,
+        "pair": CALENDAR_PAIR,
+        "strategy": "zscore_mean_reversion",
+        "fill": "next_open",
+        "sizing": AUTO_SIZING,
+    }
+    request.update(overrides)
+    return request
+
+
+def convergence_window_requests(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One ``convergence_to_ruonia`` window request per calendar target."""
+    return [
+        {
+            "universe": CALENDAR_UNIVERSE,
+            "asset": CALENDAR_ASSET,
+            "pair": target["pair"],
+            "strategy": "convergence_to_ruonia",
+            "parameters": {"threshold_pp": 0.5},
+            "fill": "next_open",
+            "sizing": AUTO_SIZING,
+        }
+        for target in targets
+    ]
+
+
+def rewrite_same_size(path: Path, old: str, new: str) -> str:
+    """Rewrite ``path`` with a same-byte-length replacement and a fresh mtime."""
+    raw = path.read_text(encoding="utf-8")
+    mutated = raw.replace(old, new, 1)
+    assert len(raw) == len(mutated), f"same-size rewrite changed length: {path}"
+    before_stat = path.stat()
+    time.sleep(0.02)  # guarantee a different st_mtime_ns on rewrite
+    path.write_text(mutated, encoding="utf-8")
+    after_stat = path.stat()
+    assert before_stat.st_mtime_ns != after_stat.st_mtime_ns, f"mtime did not move: {path}"
+    return mutated
 
 
 class ProofPerfEquivalenceTests(unittest.TestCase):
@@ -278,3 +356,12 @@ class ProofPerfEquivalenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CALENDAR_ASSET = "SR"
+
+
+CALENDAR_PAIR = "SRH3/SRM3"
+
+
+PAIR_SCREEN_PAIR = "CNYRUBF/CRZ6"

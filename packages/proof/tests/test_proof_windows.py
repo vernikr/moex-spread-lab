@@ -9,39 +9,188 @@ detailed band, fill and compact-row expectations live in
 import http.client
 import json
 import math
+import statistics
+import tempfile
 import threading
+import unittest
 from copy import deepcopy
 from http.server import ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from moex_spread_lab.core.settings import save_settings, settings_path
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_search import StudyWindow, research_run
 from moex_spread_lab.proof.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     AnalyticsError,
     run_mean_reversion_baseline,
 )
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.strategies.signals import pair_fill
+from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
 from moex_spread_lab.web.server import ScreenerStore, make_handler
-from proof_windows_expectations_p72_packages_proof_tests_test_proof_windows import (
-    assert_bands_are_prefix_causal,
-    assert_bands_follow_point_value,
-    assert_compact_row_matches_proof,
-    assert_entry_matches_signal_band,
-    assert_fill_selection,
-    assert_zero_volume_row_is_ignored,
-    band_levels,
-)
-from proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows import (
-    CAL,
-    FILLS,
-    FLAT,
-    PAIR,
-    FixtureCase,
-    group_request,
-)
+from proof_fixtures import two_calendar_windows
+
+# ---- folded from the retired P7.2 shard proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows ----
+PAIR = {
+    "universe": "pair_screen",
+    "pair": "CNYRUBF/CRZ6",
+    "strategy": "mean_reversion",
+    "parameters": {"lookback": 6, "entry_z": 0.8, "exit_z": 0.1},
+    "sizing": "max_affordable",
+}
+
+CAL = {
+    "universe": "calendar_native",
+    "asset": "SR",
+    "pair": "SRH3/SRM3",
+    "strategy": "zscore_mean_reversion",
+    "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
+    "sizing": "max_affordable",
+}
+
+FLAT = {**CAL, "pair": "SRM3/SRU3"}
+
+FILLS = ("next_open", "next_close", "reference_same_bar")
+
+
+def group_request(fill: str) -> dict[str, Any]:
+    """Pair request widened to a checked cross-universe group for the given fill."""
+    return {
+        **PAIR,
+        "fill": fill,
+        "targets": [
+            {k: v for k, v in r.items() if k in ("universe", "asset", "pair")} for r in (PAIR, CAL)
+        ],
+    }
+
+
+class FixtureCase(unittest.TestCase):
+    """Temporary proof service seeded with the two-calendar-window fixture."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        two_calendar_windows(self.root)
+        self.service = ProofService(self.root)
+
+    def run_proof(self, req):
+        return research_run(self.service, req, optimize=False, include_plateau=False)
+
+
+# ---- folded from the retired P7.2 shard proof_windows_expectations_p72_packages_proof_tests_test_proof_windows ----
+def band_levels(
+    base: dict[str, Any], fill: str, series: list[dict[str, Any]]
+) -> tuple[dict[str, Any], float, float]:
+    """Return the first full-window row and the entry/exit bands it must carry.
+
+    The pair universe prices a RUB-neutral spread, so it uses the population
+    deviation of the raw spread; the calendar universe prices a RUB point value,
+    so it uses the sample deviation of the RUB-scaled spread. ``reference_same_bar``
+    consumes one extra leading row because entry happens on the signal bar.
+    """
+    native = base["universe"] == "calendar_native"
+    rows = [r for r in series if r.get("volume_eligible", True)]
+    window = base["parameters"]["window" if native else "lookback"]
+    i = window + 1
+    end = i + 1 if native and fill == "reference_same_bar" else i
+    sample = [
+        r["spread"] * (r["point_value_rub"] if native else 1) for r in rows[end - window : end]
+    ]
+    mean = statistics.mean(sample)
+    deviation = statistics.stdev(sample) if native else statistics.pstdev(sample)
+    point = rows[i]["point_value_rub"] if native else 1
+    entry_z = base["parameters"]["entry_z"]
+    return rows[i], (mean - entry_z * deviation) / point, (mean + entry_z * deviation) / point
+
+
+def assert_fill_selection(case: FixtureCase, proof: dict[str, Any], fill: str) -> None:
+    """The selected fill drives execution reference, replay identity and entry prices."""
+    same_bar = fill == "reference_same_bar"
+    case.assertEqual(proof["selection"]["fill"], fill)
+    case.assertEqual(proof["execution_reference"], same_bar)
+    case.assertEqual(proof["evaluation"]["execution_reference"], same_bar)
+    case.assertEqual(proof["summary"]["ledger_reconciliation_rub"], 0)
+    case.assertEqual(case.run_proof(proof["selection"])["run_id"], proof["run_id"])
+    case.assertTrue(proof["trades"])
+    rows = {r["date"]: r for r in proof["series"]}
+    for trade in proof["trades"]:
+        row = rows[trade["entry"]["date"]]
+        case.assertEqual(
+            trade["entry"]["near_price"],
+            row["near_open" if fill == "next_open" else "near"],
+        )
+        if same_bar:
+            case.assertEqual(trade["signal"]["date"], trade["entry"]["date"])
+    if same_bar:
+        case.assertTrue(any("не является проверкой исполнимой" in note for note in proof["notes"]))
+
+
+def assert_entry_matches_signal_band(
+    case: FixtureCase, trade: dict[str, Any], signal: dict[str, Any]
+) -> None:
+    """A long entry triggers at or below the buy band, a short one at or above the sell."""
+    long_side = trade["side"] == "long_spread"
+    bound = signal["buy_level" if long_side else "sell_level"]
+    case.assertIsNotNone(bound)
+    if long_side:
+        case.assertLessEqual(signal["spread"] - bound, 1e-6)
+    else:
+        case.assertGreaterEqual(signal["spread"] - bound, -1e-6)
+
+
+def assert_zero_volume_row_is_ignored(case: FixtureCase, proof: dict[str, Any]) -> None:
+    """A zero-volume row cannot poison later bands, even with an absurd spread."""
+    altered = deepcopy(proof)
+    altered["series"][0]["volume_eligible"] = False
+    altered["series"][0]["spread"] = 1e10
+    attach_entry_levels(altered)
+    without = deepcopy(proof)
+    without["series"] = without["series"][1:]
+    attach_entry_levels(without)
+    case.assertEqual(
+        [(r["buy_level"], r["sell_level"]) for r in altered["series"]][1:],
+        [(r["buy_level"], r["sell_level"]) for r in without["series"]],
+    )
+
+
+def assert_bands_are_prefix_causal(case: FixtureCase, proof: dict[str, Any]) -> None:
+    """Bands recomputed on a truncated series reproduce the full-series prefix."""
+    prefix = deepcopy(proof)
+    prefix["series"] = prefix["series"][:30]
+    attach_entry_levels(prefix)
+    case.assertEqual(
+        [(r["buy_level"], r["sell_level"]) for r in proof["series"]][:30],
+        [(r["buy_level"], r["sell_level"]) for r in prefix["series"]],
+    )
+
+
+def assert_bands_follow_point_value(case: FixtureCase, proof: dict[str, Any]) -> None:
+    """Changing the RUB point value moves the bands, so it is not ignored."""
+    fx = deepcopy(proof)
+    for i, row in enumerate(fx["series"]):
+        row["point_value_rub"] = 2 + i / 10
+    attach_entry_levels(fx)
+    case.assertNotEqual(fx["series"][20]["buy_level"], proof["series"][20]["buy_level"])
+
+
+def assert_compact_row_matches_proof(
+    case: FixtureCase, row: dict[str, Any], proof: dict[str, Any]
+) -> None:
+    """A compact window row is the exact chart result with the heavy payloads omitted."""
+    case.assertEqual(row["status"], "measured")
+    case.assertEqual(row["run_id"], proof["run_id"])
+    case.assertEqual(row["trades"], proof["summary"]["trades"])
+    case.assertEqual(
+        row["annualized_excess_pp"],
+        proof["evaluation"]["result"].get("annualized_excess_pp"),
+    )
+    case.assertEqual(row["evaluation"], proof["evaluation"])
+    case.assertNotIn("ledger", row)
+    case.assertNotIn("plateau", row)
 
 
 class ReferenceAndBandsTests(FixtureCase):

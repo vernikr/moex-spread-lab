@@ -71,6 +71,7 @@ pythonpath = [
     "packages/proof/tests",
     "packages/web/tests",
     "packages/core/tests",
+    "packages/accounting/tests",
     "tests",
 ]
 # Test discovery is package-scoped; root tests/ contains shared synthetic fixtures only.
@@ -204,6 +205,7 @@ extraPaths = [
     "scripts",
     "scripts/typings",
     "packages/core/tests",
+    "packages/accounting/tests",
     "tests",
     "packages/strategies/tests/contract",
     "packages/web/tests/browser",

@@ -123,32 +123,20 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
             "strategies.pair_mean_reversion.analytics",
         ),
         (
-            "packages/proof/tests/calendar_proof_fixtures_p72_packages_proof_tests_test_calendar_proof.py",
+            "packages/proof/tests/test_calendar_proof.py",
             "web.server",
         ),
         (
-            "packages/proof/tests/helpers_p72_packages_proof_tests_test_proof_funding.py",
+            "packages/proof/tests/test_proof_search.py",
             "web.server",
         ),
         (
-            "packages/proof/tests/proof_search_http_p72_packages_proof_tests_test_proof_search.py",
-            "web.server",
-        ),
-        (
-            "packages/proof/tests/strategy_search_reports_p72_packages_proof_tests_test_strategy_search.py",
+            "packages/proof/tests/test_strategy_search.py",
             "web.server",
         ),
         ("packages/proof/tests/test_audit.py", "web.server"),
         ("packages/proof/tests/test_catalog_cache.py", "web.server"),
         ("packages/proof/tests/test_global_capital.py", "web.server"),
-        (
-            "packages/proof/tests/test_p72_packages_proof_tests_test_execution_proof.py",
-            "web.server",
-        ),
-        (
-            "packages/proof/tests/test_p72_packages_proof_tests_test_proof_funding_replay.py",
-            "web.server",
-        ),
         ("packages/proof/tests/test_perf_equivalence_stream.py", "web.server"),
         ("packages/proof/tests/test_proof_batch.py", "web.server"),
         ("packages/proof/tests/test_proof_plateau.py", "web.server"),

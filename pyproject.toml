@@ -759,6 +759,10 @@ label = "test_code_health_gate.py"
 paths = ["packages/core/tests/test_code_health_gate.py"]
 
 [[tool.size-report.columns]]
+label = "test_code_inspect_budgets.py"
+paths = ["packages/core/tests/test_code_inspect_budgets.py"]
+
+[[tool.size-report.columns]]
 label = "strategy-plans.js"
 paths = ["packages/web/src/moex_spread_lab/web/static/js/strategy-plans.js"]
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -33,6 +33,9 @@ class FundingCarryPlugin:
     supported_universes = frozenset({PAIR_UNIVERSE})
     supported_fills = ("same_day_settlement",)
     requires_daily_bars = True
+
+    # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    trust_tier: Literal["builtin", "plugin"] = "builtin"
 
     def parameter_schema(
         self, context: InstrumentContext | None = None

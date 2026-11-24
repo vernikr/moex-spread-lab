@@ -83,5 +83,42 @@ class CoreContractsTests(unittest.TestCase):
         self.assertIsInstance(DummyPlugin(), StrategyPlugin)
 
 
+
+    def test_declarative_plugin_metadata_accessors(self) -> None:
+        from moex_spread_lab.core.contracts import (
+            plugin_parameter_aliases,
+            plugin_proof_adapter,
+            plugin_required_asset_capability,
+            plugin_trust_tier,
+            plugin_ui_field_order,
+        )
+
+        class MetaPlugin:
+            proof_adapter = "pair_price_intents.v1"
+            family_parameter_aliases = {"window": "lookback"}
+            ui_field_order = ("entry_z", "exit_z", "lookback")
+            required_asset_capability = "convergence"
+            trust_tier = "builtin"
+
+        plugin = MetaPlugin()
+        self.assertEqual(plugin_proof_adapter(plugin), "pair_price_intents.v1")
+        self.assertEqual(dict(plugin_parameter_aliases(plugin)), {"window": "lookback"})
+        self.assertEqual(
+            plugin_ui_field_order(plugin, ("fallback",)), ("entry_z", "exit_z", "lookback")
+        )
+        self.assertEqual(plugin_required_asset_capability(plugin), "convergence")
+        self.assertEqual(plugin_trust_tier(plugin), "builtin")
+
+        class BarePlugin:
+            pass
+
+        bare = BarePlugin()
+        self.assertIsNone(plugin_proof_adapter(bare))
+        self.assertEqual(dict(plugin_parameter_aliases(bare)), {})
+        self.assertEqual(plugin_ui_field_order(bare, ("fallback",)), ("fallback",))
+        self.assertIsNone(plugin_required_asset_capability(bare))
+        self.assertEqual(plugin_trust_tier(bare), "plugin")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from moex_spread_lab.core.contracts import InstrumentContext
+from moex_spread_lab.core.contracts import InstrumentContext, plugin_ui_field_order
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.proof_runtime.strategy_catalog import (
@@ -20,11 +20,6 @@ _BUILTIN_STRATEGY_IDS = frozenset(
         "convergence_to_ruonia",
     }
 )
-
-_UI_FIELD_ORDER: dict[str, tuple[str, ...]] = {
-    "mean_reversion": ("entry_z", "exit_z", "lookback"),
-    "zscore_mean_reversion": ("entry_z", "exit_z", "window"),
-}
 
 
 def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
@@ -70,10 +65,7 @@ def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str
                 for tf in ("1d", "1h")
             }
         ui_order = list(
-            _UI_FIELD_ORDER.get(
-                plugin.strategy_id,
-                tuple(spec["name"] for spec in base_specs),
-            )
+            plugin_ui_field_order(plugin, tuple(spec["name"] for spec in base_specs))
         )
         items.append(
             {

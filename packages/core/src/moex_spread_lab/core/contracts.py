@@ -172,3 +172,41 @@ class StrategyPlugin(Protocol):
         *,
         far_point_value_rub: float = 1.0,
     ) -> list[EntryBandPoint]: ...
+
+
+# Declarative capability attributes a plugin implementation may declare. They stay optional so
+# existing drop-in plugins keep loading unchanged; consumers read them through the helpers below
+# instead of ad-hoc ``getattr`` chains:
+#   proof_adapter: str | None            validated intent-adapter contract id (legacy path if None)
+#   family_parameter_aliases: Mapping[str, str]  incoming parameter renames applied for this plugin
+#   ui_field_order: tuple[str, ...] | None        web form field order (schema order when None)
+#   required_asset_capability: str | None         asset capability gate, e.g. "convergence"
+#   trust_tier: Literal["builtin", "plugin"]      provenance-note tier
+
+
+def plugin_proof_adapter(plugin: StrategyPlugin) -> str | None:
+    """Return the declared proof-adapter contract id, or ``None`` for a legacy path."""
+    return getattr(plugin, "proof_adapter", None)
+
+
+def plugin_parameter_aliases(plugin: StrategyPlugin) -> Mapping[str, str]:
+    """Return the incoming-parameter renames declared by ``plugin`` (possibly empty)."""
+    aliases = getattr(plugin, "family_parameter_aliases", None)
+    return dict(aliases) if aliases else {}
+
+
+def plugin_ui_field_order(plugin: StrategyPlugin, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the declared web form field order, falling back to ``default``."""
+    order = getattr(plugin, "ui_field_order", None)
+    return tuple(order) if order else default
+
+
+def plugin_required_asset_capability(plugin: StrategyPlugin) -> str | None:
+    """Return the asset capability required by ``plugin`` (e.g. ``"convergence"``), if any."""
+    return getattr(plugin, "required_asset_capability", None)
+
+
+def plugin_trust_tier(plugin: StrategyPlugin) -> Literal["builtin", "plugin"]:
+    """Return the provenance tier declared by ``plugin``; unknown plugins count as third-party."""
+    tier = getattr(plugin, "trust_tier", None)
+    return "builtin" if tier == "builtin" else "plugin"

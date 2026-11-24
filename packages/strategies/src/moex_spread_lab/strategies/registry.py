@@ -11,7 +11,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.core.contracts import StrategyPlugin
+from moex_spread_lab.core.contracts import StrategyPlugin, plugin_proof_adapter
 from moex_spread_lab.core.w0 import W0Error
 
 _STRATEGIES_DIR = Path(__file__).resolve().parent
@@ -87,7 +87,7 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     return frozenset(
         p.strategy_id
         for p in plugins
-        if getattr(p, "proof_adapter", None) == "calendar_price_intents.v1"
+        if plugin_proof_adapter(p) == "calendar_price_intents.v1"
         and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
         and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
         and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
@@ -106,11 +106,11 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         for p in plugins
         if (
             (
-                getattr(p, "proof_adapter", None) == "daily_pair_price_intents.v1"
+                plugin_proof_adapter(p) == "daily_pair_price_intents.v1"
                 and p.requires_daily_bars is True
             )
             or (
-                getattr(p, "proof_adapter", None) == "pair_price_intents.v1"
+                plugin_proof_adapter(p) == "pair_price_intents.v1"
                 and p.requires_daily_bars is False
             )
         )
@@ -130,7 +130,7 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     return frozenset(
         p.strategy_id
         for p in plugins
-        if getattr(p, "proof_adapter", None) == "carry_settlement_intents.v1"
+        if plugin_proof_adapter(p) == "carry_settlement_intents.v1"
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and p.supported_fills == ("same_day_settlement",)
         and p.requires_daily_bars is True

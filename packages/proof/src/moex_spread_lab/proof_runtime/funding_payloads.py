@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.core.contracts import plugin_trust_tier
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 
 from .funding_engine import (
@@ -175,7 +176,9 @@ def _notes(state: FundingWindowState, trades: list[dict[str, Any]]) -> list[str]
     plugin = carry_plugin_of(spec)
     return [
         *evidence.notes(),
-        BUILTIN_SIGNAL_NOTE if plugin is None else CARRY_PLUGIN_NOTE,
+        BUILTIN_SIGNAL_NOTE
+        if plugin is None or plugin_trust_tier(plugin) == "builtin"
+        else CARRY_PLUGIN_NOTE,
         SWAPRATE_NOTE,
         *(
             [

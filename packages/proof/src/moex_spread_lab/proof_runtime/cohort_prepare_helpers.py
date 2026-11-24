@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sized
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from moex_spread_lab.core.contracts import InstrumentContext
+from moex_spread_lab.core.contracts import (
+    InstrumentContext,
+    plugin_parameter_aliases,
+    plugin_required_asset_capability,
+)
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
@@ -61,12 +65,20 @@ execution_axes = cast(
 )
 
 
+def _parameter_aliases(strategy: str) -> Mapping[str, str]:
+    """Incoming-parameter renames declared by the plugin behind ``strategy``."""
+    try:
+        plugin = resolve_strategy_registry(None).get(strategy)
+    except W0Error:
+        return {}
+    return plugin_parameter_aliases(plugin)
+
+
 def _translate[ValueT](params: Mapping[str, ValueT], strategy: str) -> dict[str, ValueT]:
     result = dict(params)
-    if strategy == "mean_reversion" and "window" in result:
-        result["lookback"] = result.pop("window")
-    if strategy == "zscore_mean_reversion" and "lookback" in result:
-        result["window"] = result.pop("lookback")
+    for source, target in _parameter_aliases(strategy).items():
+        if source in result:
+            result[target] = result.pop(source)
     return result
 
 
@@ -95,10 +107,13 @@ def _native_request(
     if not adapters:
         raise W0Error("Выбранная стратегия неприменима к этому типу пары.")
     strategy = adapters[0].strategy_id
-    if strategy == "convergence_to_ruonia" and not ASSETS.get(target["asset"], {}).get(
-        "convergence"
-    ):
-        raise W0Error("Для этого актива не предусмотрена стратегия RUONIA.")
+    capability = plugin_required_asset_capability(registry.get(strategy))
+    if capability and not ASSETS.get(target["asset"], {}).get(capability):
+        raise W0Error(
+            "Для этого актива не предусмотрена стратегия RUONIA."
+            if capability == "convergence"
+            else f"Для этого актива не предусмотрена возможность «{capability}»."
+        )
     fill = active.get("fill", default_price_fill)
     return {
         **target,

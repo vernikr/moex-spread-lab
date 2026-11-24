@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from moex_spread_lab.core.contracts import plugin_parameter_aliases
 from moex_spread_lab.core.evaluation_periods import EvaluationSplit, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
@@ -77,11 +78,17 @@ def _ordered_values(values: PointValues) -> bool:
 
 
 def _translate_parameters(params: PointValues, strategy: str) -> dict[str, Any]:
+    """Rename shared parameter names to ``strategy``'s declared spelling."""
     result = dict(params)
-    if strategy == "mean_reversion" and "window" in result:
-        result["lookback"] = result.pop("window")
-    if strategy == "zscore_mean_reversion" and "lookback" in result:
-        result["window"] = result.pop("lookback")
+    try:
+        from .strategy_catalog import resolve_strategy_registry
+
+        plugin = resolve_strategy_registry(None).get(strategy)
+    except W0Error:
+        return result
+    for source, target in plugin_parameter_aliases(plugin).items():
+        if source in result:
+            result[target] = result.pop(source)
     return result
 
 

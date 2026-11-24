@@ -30,21 +30,6 @@ LARGE_PROOF_POST_ROUTES = frozenset(
     }
 )
 
-_BUILTIN_STRATEGY_IDS = frozenset(
-    {
-        "mean_reversion",
-        "funding_only",
-        "zscore_mean_reversion",
-        "convergence_to_ruonia",
-    }
-)
-
-_UI_FIELD_ORDER: dict[str, tuple[str, ...]] = {
-    "mean_reversion": ("entry_z", "exit_z", "lookback"),
-    "zscore_mean_reversion": ("entry_z", "exit_z", "window"),
-}
-
-
 def handle_get_proof(path: str, store: Any) -> tuple[bool, Any]:
     """Dispatch GET ``/api/proof/catalog`` and ``/api/strategies``."""
     if path == "/api/proof/catalog":

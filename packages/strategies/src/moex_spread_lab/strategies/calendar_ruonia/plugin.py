@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -33,6 +33,10 @@ class CalendarRuoniaPlugin:
     supported_universes = frozenset({CALENDAR_UNIVERSE})
     supported_fills = ("next_open", "next_close", "reference_same_bar")
     requires_daily_bars = False
+
+    # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    required_asset_capability: str | None = "convergence"
+    trust_tier: Literal["builtin", "plugin"] = "builtin"
 
     def parameter_schema(
         self, context: InstrumentContext | None = None

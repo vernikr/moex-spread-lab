@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -34,6 +34,11 @@ class CalendarZscorePlugin:
     supported_universes = frozenset({CALENDAR_UNIVERSE})
     supported_fills = ("next_open", "next_close", "reference_same_bar")
     requires_daily_bars = False
+
+    # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    family_parameter_aliases: Mapping[str, str] = {"lookback": "window"}
+    ui_field_order: tuple[str, ...] = ("entry_z", "exit_z", "window")
+    trust_tier: Literal["builtin", "plugin"] = "builtin"
 
     def parameter_schema(
         self, context: InstrumentContext | None = None

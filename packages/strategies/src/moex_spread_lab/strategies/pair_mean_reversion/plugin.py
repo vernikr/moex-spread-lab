@@ -38,6 +38,7 @@ class PairMeanReversionPlugin:
     requires_daily_bars = False
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    proof_adapter: Literal["pair_price_intents.v1"] = "pair_price_intents.v1"
     family_parameter_aliases: Mapping[str, str] = {"window": "lookback"}
     ui_field_order: tuple[str, ...] = ("entry_z", "exit_z", "lookback")
     trust_tier: Literal["builtin", "plugin"] = "builtin"
@@ -119,6 +120,13 @@ class PairMeanReversionPlugin:
             sizing_intents=True,
             metrics_only=True,
         )
+        days = [row["date"] for row in window.rows]
+        delay = 0 if fill == "reference_same_bar" else 1
+
+        def signal_day(entry: str) -> str:
+            key = entry[:10] if window.timeframe == "1d" else entry[:19].replace(" ", "T")
+            return days[max(0, days.index(key) - delay)]
+
         intents = tuple(
             {
                 "side": "long_spread"
@@ -131,6 +139,11 @@ class PairMeanReversionPlugin:
                 "exit_near_fill": row["exit_near_fill"],
                 "exit_far_fill": row["exit_far_fill"],
                 "entry_signal_z": row["entry_signal_z"],
+                "signal": {
+                    "kind": "z",
+                    "date": signal_day(row["entry_date"]),
+                    "value": row["entry_signal_z"],
+                },
                 "reason": row["exit_reason"],
             }
             for row in report["trades"]

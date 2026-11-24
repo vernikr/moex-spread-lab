@@ -49,7 +49,11 @@ def test_loaded_pair_plugin_matches_native_accounting(tmp_path, fill, validation
     service = ProofService(tmp_path)
     settings = ResearchSettings(validation_percent=validation, price_fill=fill)
     selection = {**request(), "sizing": "max_affordable", "fill": fill}
-    native = service.prepare(selection, settings=settings)
+    # The built-in now runs on its own adapter route; the native engine stays reachable as the
+    # accounting reference for this parity check. Automatic sizing derives the quantity itself.
+    native = service._prepare_native(
+        {key: value for key, value in selection.items() if key != "quantity"}, settings=settings
+    )
     pair = _pair(PAIR)
     series, _, funding_window, _ = service._price_inputs(
         service.screener_inputs, pair, ProofFunding(service.screener_inputs), validation, "1d"
@@ -76,3 +80,37 @@ def test_loaded_pair_plugin_matches_native_accounting(tmp_path, fill, validation
             through=through,
         )
         assert_loaded_pair_plugin_matches_native_accounting(actual, expected)
+
+
+def _proof_settings(service: ProofService) -> ResearchSettings:
+    """Mirror the strict settings ``ProofService.proof`` derives from the saved ones."""
+    saved = ResearchSettings.load(service.root)
+    return ResearchSettings(
+        validation_percent=saved.validation_percent,
+        allow_failed_volume=False,
+        allow_failed_capital=False,
+        slippage_ticks=saved.slippage_ticks,
+        initial_capital_rub=saved.initial_capital_rub,
+        timeframe=saved.timeframe,
+        price_fill=saved.price_fill,
+    )
+
+
+@pytest.mark.parametrize("fill", ["next_open", "reference_same_bar"])
+def test_builtin_mean_reversion_adapter_payload_matches_native_engine(tmp_path, fill):
+    """The built-in runs its own adapter route; the payload must stay byte-identical."""
+    fixture(tmp_path)
+    service = ProofService(tmp_path)
+    settings = _proof_settings(service)
+
+    fixed = {**request(), "fill": fill}
+    native_fixed = service._prepare_native(
+        {key: value for key, value in fixed.items() if key != "quantity"}, settings=settings
+    )
+    assert service.proof(fixed) == native_fixed(fixed)
+
+    auto = {**request(), "fill": fill, "sizing": "max_affordable"}
+    auto.pop("quantity")
+    auto["parameters"] = {"lookback": 7, "entry_z": 1.2, "exit_z": 0.6}
+    native_auto = service._prepare_native(auto, settings=settings)
+    assert service.proof(auto) == native_auto(auto)

@@ -12,7 +12,6 @@ import moex_spread_lab.core.universe as _universe
 import moex_spread_lab.core.w0 as _w0
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair as assess_vtb_pair
 from moex_spread_lab.accounting.position_sizing import (
-    AUTO_SIZING,
     automatic,
 )
 from moex_spread_lab.accounting.position_sizing import (
@@ -71,6 +70,7 @@ from .payload_tools import (
 )
 from .service_calendar import calendar_sizing_unit, prepare_fixed
 from .service_pair import prepare_pair
+from .service_prepare import check_sizing_request, prepare_native
 from .service_sizing import prepare_automatic
 from .service_validation import intent_request, plugin_parameters
 
@@ -245,17 +245,19 @@ class ProofService:
         registry = cast(Any, get_strategy_registry())
         strategy = selection.get("strategy")
         if isinstance(strategy, str) and strategy in daily_pair_proof_plugin_ids(registry):
-            if selection.get("sizing") not in (None, AUTO_SIZING):
-                raise W0Error("Неизвестный режим расчёта размера позиции.")
-            if automatic(selection) and selection.get("quantity") is not None:
-                raise W0Error("При автоматическом размере количество не задаётся вручную.")
+            check_sizing_request(selection)
             return self._prepare_daily_pair_plugin(selection, settings, registry.get(strategy))
-        if selection.get("sizing") not in (None, AUTO_SIZING):
-            raise W0Error("Неизвестный режим расчёта размера позиции.")
-        if not automatic(selection):
-            return self._prepare_fixed(selection, calendar=calendar, settings=settings)
+        return self._prepare_native(selection, calendar=calendar, settings=settings)
 
-        return self._prepare_automatic(selection, calendar, settings, registry, strategy)
+    def _prepare_native(
+        self,
+        selection: dict[str, Any],
+        *,
+        calendar: Any = None,
+        settings: ResearchSettings = STRICT_SCREENS,
+    ) -> Callable[..., dict[str, Any]]:
+        """Prepare a built-in-engine replay, bypassing adapter routing."""
+        return prepare_native(self, selection, calendar=calendar, settings=settings)
 
     def _prepare_automatic(
         self,

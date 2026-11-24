@@ -9,9 +9,11 @@ import os
 import pkgutil
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.contracts import StrategyPlugin, plugin_proof_adapter
+from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
 _STRATEGIES_DIR = Path(__file__).resolve().parent
@@ -95,10 +97,13 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     )
 
 
+BUILTIN_STRATEGY_IDS: frozenset[str] = frozenset(
+    str(key) for key in cast("Mapping[str, Any]", _universe.STRATEGIES)
+)
+
+
 def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     """Opt in a distinct pair-only price strategy, never funding carry."""
-    from moex_spread_lab.core.universe import PAIR_UNIVERSE
-
     plugins = registry.values()
     counts = _family_counts(plugins)
     return frozenset(
@@ -117,7 +122,9 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
         and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
-        and counts[p.family_id] == 1
+        # Third-party plugins opt in only when their family is unambiguous. The fixed pair
+        # strategies are identified by id, so their calendar sibling is no obstacle.
+        and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
     )
 
 

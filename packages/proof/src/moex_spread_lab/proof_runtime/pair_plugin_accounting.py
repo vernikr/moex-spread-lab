@@ -163,6 +163,7 @@ def prepare_daily_pair_unit(
     settings: ResearchSettings,
     *,
     through: str | None = None,
+    enforce_compatibility: bool = True,
 ) -> tuple[dict[str, Any], dict[str, float]]:
     """Validate decisions and size them against resolved funding and one account.
 
@@ -195,9 +196,10 @@ def prepare_daily_pair_unit(
     validated_input: object = validated
     if not _is_runtime_instance(validated_input, dict):
         raise W0Error("Плагин вернул некорректные параметры.")
-    verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
-    if not verdict.compatible:
-        raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
+    if enforce_compatibility:
+        verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
+        if not verdict.compatible:
+            raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
     trades = pair_price_intent_trades(plugin, analysis_window, validated, fill)
     rows, lot = _priced_rows(window, prefix, benchmark_marks)
     if any(
@@ -257,8 +259,17 @@ def size_daily_pair_plugin(
     settings: ResearchSettings,
     *,
     through: str | None = None,
+    enforce_compatibility: bool = True,
 ) -> dict[str, Any]:
     unit, marks = prepare_daily_pair_unit(
-        plugin, window, params, fill, funding_window, benchmark_marks, settings, through=through
+        plugin,
+        window,
+        params,
+        fill,
+        funding_window,
+        benchmark_marks,
+        settings,
+        through=through,
+        enforce_compatibility=enforce_compatibility,
     )
     return size_proof(unit, marks, settings, cast(dict[str, Any], window.contracts))

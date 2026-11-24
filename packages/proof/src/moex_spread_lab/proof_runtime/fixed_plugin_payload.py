@@ -18,11 +18,7 @@ from moex_spread_lab.strategies import attach_entry_levels
 from .fixed_plugin_series import scaled_series as _scaled_series
 from .ledger_blocks import price_ledger
 from .payload_tools import TradeSpec, fill_block, mark, point_value, trade_block
-from .plugin_notes import (
-    OPEN_POSITION_NOTE,
-    OPEN_POSITION_PREFIX,
-    PLUGIN_SOURCE_NOTE,
-)
+from .plugin_notes import apply_pair_notes
 from .rounding_totals import apply_raw_trade_totals
 
 
@@ -251,6 +247,8 @@ def fixed_daily_pair_plugin_payload(
     context: tuple[dict[str, Any], dict[str, Any], dict[str, Any]],
     execution: dict[str, Any],
     benchmark: tuple[list[str], dict[str, float]],
+    *,
+    builtin: bool = False,
 ) -> dict[str, Any]:
     """Recompute fixed-quantity fills, cash flows and journal from unit intents.
 
@@ -263,7 +261,7 @@ def fixed_daily_pair_plugin_payload(
     multipliers = (point_value(contracts[0]), point_value(contracts[1]))
     near_mult, far_mult = multipliers
     margin = sum(float(contract["initial_margin"]) for contract in contracts) * quantity
-    rows = _scaled_series(unit, template, quantity)
+    rows = _scaled_series(unit, template, quantity, builtin=builtin)
     blocks = _trade_blocks(
         unit, {r["date"]: r for r in rows}, contracts, (quantity, slippage, far_mult)
     )
@@ -293,20 +291,16 @@ def fixed_daily_pair_plugin_payload(
     template.update(series=rows, trades=trades, ledger=ledger)
     _summary_update(template, trades, ledger, drawdown, raw_totals)
     template["provenance"].update({**provenance, **unit["provenance"]})
-    template["notes"] = [
-        note for note in template["notes"] if not note.startswith(OPEN_POSITION_PREFIX)
-    ]
-    if any(trade["open_at_end"] for trade in trades):
-        template["notes"].append(OPEN_POSITION_NOTE)
-    template["notes"].append(PLUGIN_SOURCE_NOTE)
+    apply_pair_notes(template, trades, builtin=builtin)
     attach_entry_levels(template)
-    template["run_id"] = _run_id(
-        {
-            "selection": template["selection"],
-            "series": rows,
-            "trades": trades,
-            "ledger": ledger,
-            "provenance": template["provenance"],
-        }
-    )
+    if not builtin:
+        template["run_id"] = _run_id(
+            {
+                "selection": template["selection"],
+                "series": rows,
+                "trades": trades,
+                "ledger": ledger,
+                "provenance": template["provenance"],
+            }
+        )
     return template

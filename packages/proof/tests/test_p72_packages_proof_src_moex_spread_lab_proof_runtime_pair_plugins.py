@@ -55,6 +55,9 @@ class _StubService:
     def prepare(self, selection, *, calendar=None, settings=None):
         return self._native
 
+    def _prepare_native(self, selection, *, calendar=None, settings=None):
+        return self._native
+
 
 def _series() -> dict[str, Any]:
     return {

@@ -79,17 +79,28 @@ def test_calendar_proof_opt_in_is_narrow_and_unambiguous():
 
     plugin = NewCalendar()
     existing = DEFAULT_REGISTRY.as_dict()
+    # The narrow adapter set stays unambiguous per family: the injected plugin joins because it
+    # declares the adapter and owns a family of its own, while z-score stays in the shared
+    # ``mean_reversion`` family (the pair-screen adapter wins it) and RUONIA keeps its own.
     assert calendar_proof_plugin_ids(
         StrategyRegistry({**existing, plugin.strategy_id: plugin})
-    ) == {"new_calendar"}
+    ) == {"new_calendar", "convergence_to_ruonia"}
+    # A second adapter in a family that already has one is ambiguous and stays out, which is why
+    # the built-in z-score entry (family ``mean_reversion``) does not join the narrow set.
     plugin.family_id = "mean_reversion"
-    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))
+    assert calendar_proof_plugin_ids(
+        StrategyRegistry({**existing, plugin.strategy_id: plugin})
+    ) == {"convergence_to_ruonia"}
     plugin.family_id = "new_calendar"
-    plugin.supported_universes = frozenset({PAIR_UNIVERSE, CALENDAR_UNIVERSE})
-    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))
-    plugin.supported_universes = frozenset({CALENDAR_UNIVERSE})
-    plugin.supported_fills = ("next_open",)
-    assert not calendar_proof_plugin_ids(StrategyRegistry({**existing, plugin.strategy_id: plugin}))
+    for universes, fills in (
+        (frozenset({PAIR_UNIVERSE, CALENDAR_UNIVERSE}), plugin.supported_fills),
+        (frozenset({CALENDAR_UNIVERSE}), ("next_open",)),
+    ):
+        plugin.supported_universes = universes
+        plugin.supported_fills = fills
+        assert "new_calendar" not in calendar_proof_plugin_ids(
+            StrategyRegistry({**existing, plugin.strategy_id: plugin})
+        )
 
 
 def test_injected_adapted_plugin_enters_the_search_without_patching():

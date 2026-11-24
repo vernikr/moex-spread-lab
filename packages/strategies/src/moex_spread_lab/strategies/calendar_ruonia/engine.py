@@ -56,7 +56,27 @@ def implied_ruonia_deviation_pp(
     return (implied - ruonia_rate) * 100
 
 
+def _terminal_mark(
+    rows: list[dict[str, Any]],
+    entry: dict[str, Any],
+    position: int,
+    fill: str,
+    close_at_end: bool,
+    signal_row: dict[str, Any],
+) -> dict[str, Any]:
+    """Close an open position at the window end, or report it as still open.
+
+    A position opened on the very last bar cannot be round-tripped into an auditable trade, so it
+    is returned as an open-at-end marker for the plugin layer instead.
+    """
+    signal = ("dev_pp", signal_row, float(signal_row["dev_pp"]))
+    if close_at_end and entry is not rows[-1]:
+        return make_calendar_trade(entry, rows[-1], position, fill, "end_of_window", signal)
+    return {"entry": entry, "exit": rows[-1], "direction": position, "signal": signal}
+
+
 def _convergence_trades_py(
+
     rows: list[dict[str, Any]],
     *,
     threshold: float,
@@ -101,17 +121,8 @@ def _convergence_trades_py(
             position = -1 if float(signal["dev_pp"]) > 0 else 1
             entry = row
             signal_row = signal
-    if position and close_at_end and entry is not None and signal_row is not None:
-        trades.append(
-            make_calendar_trade(
-                entry,
-                rows[-1],
-                position,
-                fill,
-                "end_of_window",
-                ("dev_pp", signal_row, float(signal_row["dev_pp"])),
-            )
-        )
+    if position and entry is not None and signal_row is not None:
+        trades.append(_terminal_mark(rows, entry, position, fill, close_at_end, signal_row))
     return trades
 
 

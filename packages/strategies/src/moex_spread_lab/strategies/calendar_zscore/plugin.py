@@ -36,6 +36,7 @@ class CalendarZscorePlugin:
     requires_daily_bars = False
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    proof_adapter: str | None = "calendar_price_intents.v1"
     family_parameter_aliases: Mapping[str, str] = {"lookback": "window"}
     ui_field_order: tuple[str, ...] = ("entry_z", "exit_z", "window")
     trust_tier: Literal["builtin", "plugin"] = "builtin"
@@ -90,10 +91,15 @@ class CalendarZscorePlugin:
             if window.timeframe == "1h"
             else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
         )
+        # The shared Z cache keeps the request-scoped cache telemetry and the repeated-trial
+        # behaviour identical to the historical runner.
+        _extra = window.extra if isinstance(window.extra, Mapping) else {}
         trades = zscore_trades(
             analysis_rows,
             delay=delay,
             fill=fill_quote,
+            z_cache=_extra.get("z_cache"),
+            z_cache_key=_extra.get("z_cache_key"),
             entry_z=float(opts["entry_z"]),
             exit_z=float(opts["exit_z"]),
             window=int(opts["window"]),
@@ -102,6 +108,7 @@ class CalendarZscorePlugin:
             skip_dividend_windows=False,
             close_at_end=True,
         )
+        last_day = window.rows[-1]["date"] if window.rows else None
         intents = tuple(
             {
                 "side": "short_spread" if item["direction"] < 0 else "long_spread",
@@ -110,7 +117,11 @@ class CalendarZscorePlugin:
                 "entry_price": item["entry_price"],
                 "exit_price": item["exit_price"],
                 "signal": item["signal"],
-                "reason": item["reason"],
+                # ``open_at_end`` items come from the terminal mark without a closed reason.
+                "reason": item.get("reason") or "end_of_window",
+                # A terminal mark on the very bar the position opened is reported as an open
+                # position rather than a zero-holding round trip the verifier must reject.
+                **({"open_at_end": True} if item["entry"]["date"] == last_day else {}),
             }
             for item in trades
         )

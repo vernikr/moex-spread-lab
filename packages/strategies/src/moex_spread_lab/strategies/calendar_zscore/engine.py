@@ -193,17 +193,16 @@ def _zscore_scan_py(
     for index, row in enumerate(rows):
         _try_exit_zscore_py(st, index, row)
         _try_enter_zscore_py(st, index, row)
-    if st.position and cfg.close_at_end and st.entry is not None:
-        st.trades.append(
-            make_calendar_trade(
-                st.entry,
-                rows[-1],
-                st.position,
-                cfg.fill,
-                "end_of_window",
-                ("z", rows[st.signal_index], z[st.signal_index]),
+    if st.position and st.entry is not None:
+        signal = ("z", rows[st.signal_index], z[st.signal_index])
+        if cfg.close_at_end and st.entry is not rows[-1]:
+            # A position closed by the terminal mark keeps its executable exit row; opening and
+            # closing on the final bar would be an unauditable zero-holding round trip.
+            st.trades.append(
+                make_calendar_trade(st.entry, rows[-1], st.position, cfg.fill, "end_of_window", signal)
             )
-        )
+        else:
+            st.trades.append({"entry": st.entry, "exit": rows[-1], "direction": st.position, "signal": signal})
     return st.trades
 
 

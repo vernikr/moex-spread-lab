@@ -7,7 +7,7 @@ from copy import deepcopy
 from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import tariff_profile
-from moex_spread_lab.core.contracts import InstrumentContext, WindowSnapshot
+from moex_spread_lab.core.contracts import InstrumentContext
 from moex_spread_lab.core.settings import INITIAL_CAPITAL
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
@@ -15,11 +15,25 @@ from moex_spread_lab.core.w0 import W0Error
 from ..base import StrategyRegistry
 from ..calendar_eval import FILLS, account_trades, strategy_runner
 from .catalog_builder import build_1d_catalog, build_h1_catalog, enrich_proof_window_and_notes
-from .contracts import ASSETS
+from .contracts import ASSETS, STRATEGIES
 from .contracts import positive_spread_volume_rows as _positive_spread_volume_rows
 from .contracts import zscore_options as _zscore_options
+from .intent_window import build_h1_eligible_rows as _build_h1_eligible_rows
+from .intent_window import intent_snapshot
+from .intent_window import prepare_daily_eligibility as _prepare_daily_eligibility
 from .intents import calendar_intent_trades
 from .proof_payload import build_proof_payload
+
+
+def _instrument_context(asset: str, pair: str, timeframe: str) -> InstrumentContext:
+    return InstrumentContext(
+        universe=CALENDAR_UNIVERSE,
+        pair=pair,
+        asset=asset,
+        timeframe=timeframe,
+        monthly=bool(ASSETS[asset].get("monthly")),
+        convergence=bool(ASSETS[asset].get("convergence")),
+    )
 
 
 def _validate_plugin_params(
@@ -30,14 +44,7 @@ def _validate_plugin_params(
     raw_params: dict[str, Any],
     registry: StrategyRegistry,
 ) -> dict[str, Any]:
-    context = InstrumentContext(
-        universe=CALENDAR_UNIVERSE,
-        pair=pair,
-        asset=asset,
-        timeframe=timeframe,
-        monthly=bool(ASSETS[asset].get("monthly")),
-        convergence=bool(ASSETS[asset].get("convergence")),
-    )
+    context = _instrument_context(asset, pair, timeframe)
     plugin = registry.get(strategy)
     if plugin.requires_daily_bars and timeframe != "1d":
         raise W0Error("Плагин поддерживает только дневные данные.")
@@ -97,30 +104,6 @@ def _validate_proof_params(
     return options, threshold, None
 
 
-def _build_h1_eligible_rows(
-    window: dict[str, Any], fill: str, quantity: int
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    is_open = fill == "open"
-    gate = float(window["liquidity_gate"])
-    h1_rows: list[dict[str, Any]] = []
-    for src in window["rows"]:
-        row = dict(src)
-        close_ok = bool(row.get("volume_eligible"))
-        fill_ok = (
-            float(row.get("liquidity_cumulative_before", 0.0)) >= gate
-            and float(row.get("prior_bar_volume", 0.0)) >= quantity
-            if is_open
-            else close_ok and float(row.get("min_volume", 0.0)) >= quantity
-        )
-        row["signal_eligible"] = close_ok
-        row["entry_eligible"] = bool(fill_ok)
-        row["exit_eligible"] = bool(fill_ok)
-        h1_rows.append(row)
-    if sum(bool(r["signal_eligible"]) for r in h1_rows) < 2:
-        raise W0Error("fewer than two causally liquidity-eligible hourly observations")
-    return {**window, "rows": h1_rows}, h1_rows
-
-
 def _prepare_analysis_rows(
     window: dict[str, Any],
     timeframe: str,
@@ -134,19 +117,59 @@ def _prepare_analysis_rows(
         h1_key = (through, fill, quantity)
         if h1_cache is not None and h1_key in h1_cache:
             return h1_cache[h1_key]
-        res = _build_h1_eligible_rows(window, fill, quantity)
+        res_window, res_rows = _build_h1_eligible_rows(window, fill, quantity)
+        prepared = _prepare_daily_eligibility(res_rows)
         if h1_cache is not None:
-            h1_cache[h1_key] = res
-        return res
+            h1_cache[h1_key] = (res_window, prepared)
+        return res_window, prepared
     elig_cache = cache.setdefault("daily_eligible", {}) if cache is not None else None
     if elig_cache is not None and through in elig_cache:
         return window, elig_cache[through]
-    analysis_rows = _positive_spread_volume_rows(window["rows"])
+    analysis_rows = _prepare_daily_eligibility(_positive_spread_volume_rows(window["rows"]))
     if len(analysis_rows) < 2:
         raise W0Error("fewer than two positive-volume calendar-spread observations")
     if elig_cache is not None:
         elig_cache[through] = analysis_rows
     return window, analysis_rows
+
+
+def _resolve_calendar_params(
+    asset: str,
+    pair: str,
+    timeframe: str,
+    strategy: str,
+    raw_params: dict[str, Any],
+    generic: bool,
+    registry: StrategyRegistry,
+) -> tuple[dict[str, Any], float, dict[str, Any] | None]:
+    """Resolve the historical envelope and the plugin parameter map for one proof replay."""
+    if not generic:
+        options, threshold, _ = _validate_proof_params(
+            asset, pair, timeframe, strategy, raw_params, False, registry
+        )
+        return options, threshold, None
+    plugin_params = _validate_plugin_params(asset, pair, timeframe, strategy, raw_params, registry)
+    if strategy not in STRATEGIES:
+        options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset), **plugin_params}
+        options["window"] = int(options["window"])
+        return options, 1.0, plugin_params
+    # Built-ins keep their historical envelope; the plugin re-validates exactly that map so the
+    # declared parameters (and therefore the payload) stay bit-for-bit identical.
+    options, threshold, _ = _validate_proof_params(
+        asset, pair, timeframe, strategy, raw_params, False, registry
+    )
+    plugin = registry.get(strategy)
+    context = _instrument_context(asset, pair, timeframe)
+    names = tuple(spec.name for spec in plugin.parameter_schema(context))
+    return (
+        options,
+        threshold,
+        dict(
+            plugin.validate_parameters(
+                {name: options[name] for name in names if name in options}, context
+            )
+        ),
+    )
 
 
 def execute_calendar_proof(
@@ -170,8 +193,13 @@ def execute_calendar_proof(
     cache: dict[str, Any] | None = req.get("cache")
 
     delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
-    options, threshold, plugin_params = _validate_proof_params(
-        asset, pair, timeframe, strategy, req["raw_params"], generic, registry
+    # ``req["raw_params"]`` is the selection map the historical envelope and the payload used to
+    # resolve thresholds from. The built-in calendar plugins declare the same adapter, so they
+    # join the intent pipeline while still being handed exactly that map: their own schema fills
+    # any default (window, entry_z, exit_z, threshold_pp) before the intents are produced.
+    raw_params: dict[str, Any] = cast(dict[str, Any], req["raw_params"])
+    options, threshold, plugin_params = _resolve_calendar_params(
+        asset, pair, timeframe, strategy, raw_params, generic, registry
     )
     profile = {**tariff_profile(slippage), "tariff_group": ASSETS[asset]["group"]}
     z_cache = cache.setdefault("z", {}) if cache is not None else None
@@ -180,23 +208,21 @@ def execute_calendar_proof(
         window, timeframe, fill, quantity, through, cache
     )
     native_order = bool(window.get("native_spread_order", True))
+    need_plugin_params = generic and strategy not in STRATEGIES
     if generic:
         assert plugin_params is not None
-        snapshot = WindowSnapshot(
-            universe=CALENDAR_UNIVERSE,
-            pair=pair,
+        snapshot = intent_snapshot(
+            window,
+            analysis_rows,
             asset=asset,
+            pair=pair,
             timeframe=timeframe,
-            rows=tuple(analysis_rows),
-            near=window.get("near", ""),
-            far=window.get("far", ""),
-            initial_capital_rub=initial_capital,
-            slippage_ticks=slippage,
-            native_spread_order=native_order,
-            extra={
-                "monthly": bool(ASSETS[asset].get("monthly")),
-                "convergence": bool(ASSETS[asset].get("convergence")),
-                "tradable_every_session": window.get("tradable_every_session", True),
+            market={
+                "capital": initial_capital,
+                "slippage": slippage,
+                "native_order": native_order,
+                "assets": ASSETS,
+                "shared_cache": (z_cache, z_cache_key),
             },
         )
         plugin = registry.get(strategy)
@@ -261,8 +287,9 @@ def execute_calendar_proof(
         series_cache=series_cache,
         series_key=series_key,
     )
-    if generic:
-        payload["selection"]["parameters"] = plugin_params
+    if need_plugin_params:
+        assert plugin_params is not None
+        payload["selection"]["parameters"] = cast(dict[str, Any], plugin_params)
     price_source = window.get("price_source", "native_daily_spread")
     payload["selection"].update({"timeframe": timeframe, "price_source": price_source})
     if metrics_only:

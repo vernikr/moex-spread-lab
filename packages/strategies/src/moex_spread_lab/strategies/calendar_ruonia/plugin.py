@@ -36,6 +36,7 @@ class CalendarRuoniaPlugin:
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
     required_asset_capability: str | None = "convergence"
+    proof_adapter: str | None = "calendar_price_intents.v1"
     trust_tier: Literal["builtin", "plugin"] = "builtin"
 
     def parameter_schema(
@@ -89,13 +90,17 @@ class CalendarRuoniaPlugin:
             if window.timeframe == "1h"
             else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
         )
+        _extra = window.extra if isinstance(window.extra, Mapping) else {}
         trades = convergence_trades(
             analysis_rows,
             threshold=float(validated["threshold_pp"]),
             delay=delay,
             fill=fill_quote,
             close_at_end=True,
+            z_cache=_extra.get("z_cache"),
+            z_cache_key=_extra.get("z_cache_key"),
         )
+        last_day = window.rows[-1]["date"] if window.rows else None
         intents = tuple(
             {
                 "side": "short_spread" if item["direction"] < 0 else "long_spread",
@@ -104,7 +109,11 @@ class CalendarRuoniaPlugin:
                 "entry_price": item["entry_price"],
                 "exit_price": item["exit_price"],
                 "signal": item["signal"],
-                "reason": item["reason"],
+                # ``open_at_end`` items come from the terminal mark without a closed reason.
+                "reason": item.get("reason") or "end_of_window",
+                # A terminal mark on the very bar the position opened is reported as an open
+                # position rather than a zero-holding round trip the verifier must reject.
+                **({"open_at_end": True} if item["entry"]["date"] == last_day else {}),
             }
             for item in trades
         )

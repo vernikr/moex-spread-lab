@@ -81,6 +81,30 @@ class _IntentScanState:
     exit_days: set[str] = field(default_factory=set)
 
 
+def _violates_intent_order(
+    st: _IntentScanState, indices: tuple[int, int, int], days: tuple[str, str], terminal_open: bool
+) -> bool:
+    si, ei, xi = indices
+    entry_day, exit_day = days
+    return (
+        si < 0
+        or si > ei - st.delay
+        or (xi <= ei and not terminal_open)
+        or ei < st.previous_exit
+        or entry_day in st.entry_days
+        or exit_day in st.exit_days
+    )
+
+
+def _bad_terminal_mark(
+    st: _IntentScanState, xi: int, ei: int, forced: bool, terminal_open: bool
+) -> bool:
+    if terminal_open:
+        # A position opened on the final bar is reported open, not closed on the same day.
+        return xi != len(st.rows) - 1 or ei != xi
+    return forced and xi != len(st.rows) - 1
+
+
 def _validate_calendar_intent(item: Mapping[str, Any], st: _IntentScanState) -> dict[str, Any]:
     entry_day, exit_day, ei, xi, si, signal = _lookup_intent_indices(item, st.lookup)
     side, reason = item.get("side"), item.get("reason")
@@ -91,21 +115,15 @@ def _validate_calendar_intent(item: Mapping[str, Any], st: _IntentScanState) -> 
         or reason in {"end_of_sample", "open_at_data_end_no_executable_exit"}
     ):
         raise W0Error("Некорректное направление или причина выхода.")
-    if (
-        si < 0
-        or si > ei - st.delay
-        or xi <= ei
-        or ei < st.previous_exit
-        or entry_day in st.entry_days
-        or exit_day in st.exit_days
-    ):
+    terminal_open = bool(item.get("open_at_end"))
+    forced = reason == "end_of_window" or terminal_open
+    if _violates_intent_order(st, (si, ei, xi), (entry_day, exit_day), terminal_open):
         raise W0Error("Нарушен порядок событий или причинность сигналов.")
-    forced = reason == "end_of_window"
-    if forced and xi != len(st.rows) - 1:
+    if _bad_terminal_mark(st, xi, ei, forced, terminal_open):
         raise W0Error("Некорректная конечная отметка позиции.")
     if not st.rows[si].get("signal_eligible", True) or not st.rows[ei].get("entry_eligible", True):
         raise W0Error("Сигнал или вход на недопустимом баре.")
-    if not forced and not st.rows[xi].get("exit_eligible", True):
+    if not forced and not terminal_open and not st.rows[xi].get("exit_eligible", True):
         raise W0Error("Выход на недопустимом баре.")
     expected_entry, expected_exit = _verify_calendar_prices(
         item, st.rows[ei], st.rows[xi], st.quote

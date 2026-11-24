@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core.contracts import plugin_proof_adapter
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
 
@@ -218,7 +219,11 @@ def _validate_proof_selection(
     fill_label = str(selection.get("fill", "next_open"))
     quantity = selection.get("quantity", 1)
     registry = discover_strategies()
-    generic = strategy in calendar_proof_plugin_ids(registry)
+    # External plugins opt in through the narrow calendar adapter set; built-in calendar
+    # strategies join the same pipeline once their plugin declares the adapter contract.
+    generic = strategy in calendar_proof_plugin_ids(registry) or (
+        strategy in STRATEGIES and plugin_proof_adapter(registry.get(strategy)) is not None
+    )
     valid_spec = (
         isinstance(asset, str)
         and asset in ASSETS

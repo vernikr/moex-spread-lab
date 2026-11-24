@@ -130,3 +130,23 @@ def test_nonmonotonic_rows_and_wrong_identity_are_rejected():
             {"value": 1},
             "next_open",
         )
+
+
+def test_open_at_end_terminal_mark_is_accepted_only_on_the_final_bar():
+    """A position opened on the last bar is reported open, not closed on the same day."""
+    rows = deepcopy(ROWS)
+    terminal = {
+        **TRADE,
+        "entry_date": rows[-1]["date"],
+        "exit_date": rows[-1]["date"],
+        "entry_price": 5.5,
+        "exit_price": 5.5,
+        "reason": "end_of_window",
+        "open_at_end": True,
+    }
+    trade = run([terminal], rows)[0]
+    assert trade["entry"]["date"] == rows[-1]["date"]
+
+    with pytest.raises(W0Error):
+        # Not the final row: an open-at-end marker must sit on the window's last bar.
+        run([{**terminal, "entry_date": rows[2]["date"], "exit_date": rows[2]["date"]}], rows)

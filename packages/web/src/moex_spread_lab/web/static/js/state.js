@@ -1,10 +1,10 @@
 import { PARAM_RU, px, rubPx } from './dom.js';
-import { FALLBACK_STRATEGIES } from './strategy-registry.js';
 
 
 export const state = {
   catalog: null,
-  strategies: new Map(FALLBACK_STRATEGIES.map(s => [s.id, s])),
+  /** Strategy schemas from `/api/strategies`; the only source for form fields. */
+  strategies: new Map(),
   payload: null,
   selectedTrade: null,
   universe: 'pair_screen',
@@ -45,7 +45,8 @@ export const state = {
   windowReadTimer: null,
   windowReadController: null,
   sharedStrategy: null,
-  sharedMR: 'mean_reversion',
+  /** Last variant chosen per multi-universe family (family id -> strategy id). */
+  sharedVariants: new Map(),
   sharedDrafts: new Map(),
   profileKey: '',
   profileVersion: 0,
@@ -71,73 +72,90 @@ export function installStrategyRegistry(registryPayload) {
   }
 }
 
+/** Strategy metadata comes from the `/api/strategies` registry only. */
 export function getStrategyMeta(id) {
-  if (state.strategies.has(id)) return state.strategies.get(id);
-  const catalogPlugin = (state.catalog?.pair_screen?.proof_plugins || []).find(p => p.id === id);
-  if (catalogPlugin) {
-    return {
-      id: catalogPlugin.id,
-      family_id: catalogPlugin.family_id,
-      label: catalogPlugin.label,
-      short_label: catalogPlugin.label,
-      supported_universes: ['pair_screen'],
-      supported_fills: catalogPlugin.supported_fills || [],
-      requires_daily_bars: !!catalogPlugin.requires_daily_bars,
-      timeframe_supported: catalogPlugin.timeframe_supported !== false,
-      proof_adapter: catalogPlugin.adapter || null,
-      proof_enabled: true,
-      is_builtin: false,
-      ui_order: (catalogPlugin.parameters || []).map(s => s.name),
-      parameters: catalogPlugin.parameters || [],
-      context_parameters: {},
-    };
-  }
-  return null;
+  return state.strategies.get(id) || null;
 }
 
-export const isMR = s => s === 'mean_reversion' || s === 'zscore_mean_reversion';
+export function strategyFamily(id) {
+  return getStrategyMeta(id)?.family_id || id;
+}
+
+/** Every universe variant declared by one family (e.g. pair vs calendar MR). */
+export function familyMembers(familyId) {
+  if (!familyId) return [];
+  return [...state.strategies.values()].filter(meta => meta.family_id === familyId);
+}
+
+export function familyVariant(familyId, universe) {
+  return familyMembers(familyId).find(meta => meta.supported_universes?.includes(universe)) || null;
+}
+
+/**
+ * Solo strategy options: built-in engines first in their historical alphabetical
+ * order (this keeps the default selection unchanged), then drop-in plugins in
+ * registry order.
+ */
+export function strategyOptions(universe) {
+  const builtins = [];
+  const plugins = [];
+  for (const meta of state.strategies.values()) {
+    if (!meta.proof_enabled || !meta.supported_universes?.includes(universe)) continue;
+    (meta.is_builtin ? builtins : plugins).push(meta);
+  }
+  builtins.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...builtins, ...plugins];
+}
+
+export const hasFamilyVariants = id => familyMembers(strategyFamily(id)).length > 1;
+
+/**
+ * Translate parameters between two variants of one family by schema position.
+ * Both variants publish the same axes in `ui_order` order under different names
+ * (`lookback` vs `window`), so a positional map is the family alias.
+ */
+export function familyParameters(params, fromId, toId) {
+  const from = getStrategyMeta(fromId);
+  const to = getStrategyMeta(toId);
+  if (!from || !to || from.family_id !== to.family_id || fromId === toId) return { ...params };
+  const fromOrder = orderedStrategySpecs(fromId).map(spec => spec.name);
+  const toOrder = orderedStrategySpecs(toId).map(spec => spec.name);
+  if (fromOrder.length !== toOrder.length) return { ...params };
+  const out = {};
+  toOrder.forEach((name, index) => {
+    const source = fromOrder[index];
+    if (Object.hasOwn(params, source)) out[name] = params[source];
+  });
+  return out;
+}
 
 export function orderedStrategySpecs(strategyId, options = {}) {
   const meta = getStrategyMeta(strategyId);
   if (!meta) return [];
   const tf = options.timeframe || state.preferences.timeframe || '1d';
-  const u = options.universe || (meta.supported_universes?.[0] ?? state.universe);
-  const monthlyKey = options.monthly ? 'monthly' : 'quarterly';
-  let rawSpecs = null;
-  if (u === 'calendar_native') {
-    rawSpecs = meta.context_parameters?.calendar_native?.[tf]?.[monthlyKey];
-    if (!rawSpecs && meta.parameters?.length) {
-      rawSpecs = meta.parameters.map(s => {
-        if (s.name === 'window') {
-          return {
-            ...s,
-            default: options.monthly ? 7 : 20,
-            label_ru: tf === '1h' ? 'Окно · баров' : 'Окно · дней',
-          };
-        }
-        return s;
-      });
-    }
-  } else {
-    rawSpecs = meta.context_parameters?.[u]?.[tf]?.default || meta.parameters;
-  }
-  const specs = rawSpecs || meta.parameters || [];
-  const byName = new Map(specs.map(s => [s.name, s]));
-  const order = meta.ui_order?.length ? meta.ui_order : specs.map(s => s.name);
+  const universe = options.universe || meta.supported_universes?.[0] || state.universe;
+  const context = meta.context_parameters?.[universe]?.[tf];
+  const specs =
+    (universe === 'calendar_native' ? context?.[options.monthly ? 'monthly' : 'quarterly'] : context?.default) ||
+    meta.parameters ||
+    [];
+  const byName = new Map(specs.map(spec => [spec.name, spec]));
+  const order = meta.ui_order?.length ? meta.ui_order : specs.map(spec => spec.name);
   const result = [];
   for (const name of order) {
-    if (byName.has(name)) {
-      result.push(byName.get(name));
+    const spec = byName.get(name);
+    if (spec) {
+      result.push(spec);
       byName.delete(name);
     }
   }
-  for (const s of byName.values()) result.push(s);
+  for (const spec of byName.values()) result.push(spec);
   return result;
 }
 
 export function defaultParametersFor(strategyId, options = {}) {
   const specs = orderedStrategySpecs(strategyId, options);
-  return Object.fromEntries(specs.map(s => [s.name, s.default]));
+  return Object.fromEntries(specs.map(spec => [spec.name, spec.default]));
 }
 
 export function timeframeOption(id) {
@@ -196,81 +214,64 @@ export function researchStrategies(p) {
     : p?.strategies;
 }
 
-export function pairPlugin(name) {
-  const fromCat = (state.catalog?.pair_screen?.proof_plugins || []).find(p => p.id === name);
-  if (fromCat) return fromCat;
-  const meta = getStrategyMeta(name);
-  if (meta && !meta.is_builtin && meta.proof_enabled && meta.supported_universes?.includes('pair_screen')) {
-    const tfOk = state.preferences.timeframe === '1d' || !meta.requires_daily_bars;
-    return {
-      id: meta.id,
-      family_id: meta.family_id,
-      label: meta.label,
-      adapter: meta.proof_adapter,
-      supported_fills: meta.supported_fills,
-      requires_daily_bars: meta.requires_daily_bars,
-      timeframe_supported: tfOk,
-      parameters: meta.parameters,
-    };
-  }
-  return undefined;
-}
+/** A strategy runs on the selected timeframe unless it needs daily bars. */
+export const timeframeSupported = meta => state.preferences.timeframe === '1d' || !meta.requires_daily_bars;
 
-export function calendarProofPlugins() {
-  const out = [];
-  for (const meta of state.strategies.values()) {
-    if (!meta.is_builtin && meta.proof_enabled && meta.supported_universes?.includes('calendar_native')) {
-      const tfOk = state.preferences.timeframe === '1d' || !meta.requires_daily_bars;
-      out.push({ ...meta, timeframe_supported: tfOk });
-    }
-  }
-  return out;
+/**
+ * Legacy `/api/proof/catalog` slot that records availability for a strategy.
+ * Built-ins use their own id; a drop-in uses the slot of its proof adapter.
+ */
+export function pairCatalogSlot(name) {
+  const meta = getStrategyMeta(name);
+  if (!meta) return name;
+  return meta.is_builtin ? meta.id : meta.proof_adapter === 'carry_settlement_intents.v1' ? 'funding_only' : 'mean_reversion';
 }
 
 export function calendarStrategySupported(assetObj, name) {
-  if (name === 'zscore_mean_reversion') return true;
-  if (name === 'convergence_to_ruonia') return !!assetObj?.convergence;
   const meta = getStrategyMeta(name);
-  if (!meta || !meta.proof_enabled || !meta.supported_universes?.includes('calendar_native')) return false;
-  return state.preferences.timeframe === '1d' || !meta.requires_daily_bars;
+  if (!meta?.proof_enabled || !meta.supported_universes?.includes('calendar_native')) return false;
+  if (!timeframeSupported(meta)) return false;
+  // Calendar assets publish boolean capability flags; a family requires every flag
+  // its id starts with (e.g. `convergence` for `convergence_to_ruonia`).
+  return Object.entries(assetObj || {})
+    .filter(([, value]) => typeof value === 'boolean')
+    .every(([flag, value]) => !String(meta.family_id).startsWith(flag) || value);
 }
 
 export function pairStrategyAvailable(p, name, proof = false) {
-  const plugin = pairPlugin(name);
+  const meta = getStrategyMeta(name);
+  if (!meta || !timeframeSupported(meta)) return false;
   const entries = proof ? p?.proof_strategies : researchStrategies(p);
-  const base = plugin?.adapter === 'carry_settlement_intents.v1' ? 'funding_only' : 'mean_reversion';
-  return plugin ? !!(plugin.timeframe_supported && entries?.[base]) : !!entries?.[name];
+  return !!entries?.[pairCatalogSlot(name)];
 }
 
 export function strategyFill(name) {
-  const meta = getStrategyMeta(name);
-  const plugin = pairPlugin(name);
-  const fills = meta?.supported_fills || plugin?.supported_fills || [];
-  return name === 'funding_only' || (fills.length === 1 && fills[0] === 'same_day_settlement')
+  const fills = getStrategyMeta(name)?.supported_fills || [];
+  return fills.length === 1 && fills[0] === 'same_day_settlement'
     ? 'same_day_settlement'
     : state.preferences.price_fill;
 }
 
 export function strategyLabel(name) {
-  return getStrategyMeta(name)?.label || pairPlugin(name)?.label || name;
+  return getStrategyMeta(name)?.label || name;
 }
 
 export function paramLabel(strategyId, axisName) {
-  if (PARAM_RU[axisName]) return PARAM_RU[axisName];
   const meta = getStrategyMeta(strategyId);
-  return meta?.parameters?.find(p => p.name === axisName)?.label_ru || axisName;
+  return meta?.parameters?.find(p => p.name === axisName)?.label_ru || PARAM_RU[axisName] || axisName;
 }
 
 export function pairUnavailable(p, name) {
-  return p?.proof_strategies?.[name] ? 'не пройдена проверка на объём' : p?.data_reasons?.[name] || 'нет локальных данных';
+  const slot = pairCatalogSlot(name);
+  return p?.proof_strategies?.[slot] ? 'не пройдена проверка на объём' : p?.data_reasons?.[slot] || 'нет локальных данных';
 }
 
 export function pairIsAvailable(p) {
-  return !!(p?.strategies?.mean_reversion || p?.strategies?.funding_only);
+  return Object.values(p?.strategies || {}).some(Boolean);
 }
 
 export function pairHasLocalData(p) {
-  return !!(p?.proof_strategies?.mean_reversion || p?.proof_strategies?.funding_only || pairIsAvailable(p));
+  return Object.values(p?.proof_strategies || {}).some(Boolean) || pairIsAvailable(p);
 }
 
 export function legQuoteIsRuble() {

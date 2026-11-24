@@ -2,7 +2,7 @@ import { $, bindBackdropClose, setSearchProgress } from './dom.js';
 import { configureStrategyControlsCallbacks, changeSharedStrategy, fillStrategy, refreshGroupProfile, syncCalendarParams } from './strategy-controls.js';
 import { activeInputs, activeStrategyName, formKey } from './form-inputs.js';
 import { bindLamp, drawLamps, hidePlateauTip } from './plateau-lamps.js';
-import { state } from './state.js';
+import { familyVariant, state, strategyFamily } from './state.js';
 import {
   calendarRequest,
   chartPlan,
@@ -70,11 +70,9 @@ export function configureStrategyFormCallbacks(next) {
 
 const dirtyInputs = new WeakSet();
 
+/** Resolve a strategy to its variant in the currently open universe. */
 export function mappedStrategy(name) {
-  if (name === 'mean_reversion' || name === 'zscore_mean_reversion') {
-    return state.universe === 'pair_screen' ? 'mean_reversion' : 'zscore_mean_reversion';
-  }
-  return name;
+  return familyVariant(strategyFamily(name), state.universe)?.id || name;
 }
 
 export function rememberForm() {

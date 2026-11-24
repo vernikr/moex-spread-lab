@@ -104,10 +104,10 @@ export function setPreferences(x) {
     if (state.catalog && state.sharedStrategy) refreshGroupProfile(0);
     if (!supportsCalendar(state.preferences.timeframe) && state.universe === 'calendar_native' && state.catalog) {
       const candidate =
-        (state.catalog.pair_screen?.pairs || []).find(row => row.proof_strategies?.mean_reversion) ||
+        (state.catalog.pair_screen?.pairs || []).find(row => Object.values(row.proof_strategies || {}).some(Boolean)) ||
         state.catalog.pair_screen?.pairs?.[0];
       const branch = candidate && state.branches.get('pair_screen|' + candidate.near);
-      if (branch) openBranch(branch.key, candidate.id, 'mean_reversion', false);
+      if (branch) openBranch(branch.key, candidate.id, '', false);
     }
     for (const row of $('window-list').querySelectorAll('tr[data-leaf]')) {
       const l = state.leaves.get(row.dataset.leaf);
@@ -154,7 +154,7 @@ export async function refreshCatalog() {
   let target = oldTarget;
   if (!supportsCalendar(state.preferences.timeframe) && target?.universe === 'calendar_native') {
     const candidate =
-      (state.catalog.pair_screen?.pairs || []).find(row => row.proof_strategies?.mean_reversion) ||
+      (state.catalog.pair_screen?.pairs || []).find(row => Object.values(row.proof_strategies || {}).some(Boolean)) ||
       state.catalog.pair_screen?.pairs?.[0];
     target = candidate ? { universe: 'pair_screen', pair: candidate.id } : null;
   }

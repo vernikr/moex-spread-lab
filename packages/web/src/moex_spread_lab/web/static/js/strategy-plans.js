@@ -3,8 +3,11 @@
 import { $ } from './dom.js';
 import { activeInputs, activeStrategyName, formKey, sharedInputs } from './form-inputs.js';
 import {
+  calendarStrategySupported,
+  currentPair,
   defaultParametersFor,
-  isMR,
+  familyParameters,
+  familyVariant,
   orderedStrategySpecs,
   pairAvailability,
   pairStrategyAvailable,
@@ -12,9 +15,8 @@ import {
   settingsKey,
   state,
   strategyFill,
+  strategyFamily,
   targetKey,
-  currentPair,
-  calendarStrategySupported,
 } from './state.js';
 
 export function pairRequest() {
@@ -60,13 +62,6 @@ export function defaultLeafRequest(l) {
   return { ...l.target, ...tf, strategy: name, parameters, sizing: 'max_affordable', fill };
 }
 
-function translateParams(params, strategy) {
-  const p = { ...params };
-  if (strategy === 'mean_reversion' && 'window' in p) { p.lookback = p.window; delete p.window; }
-  if (strategy === 'zscore_mean_reversion' && 'lookback' in p) { p.window = p.lookback; delete p.lookback; }
-  return p;
-}
-
 export function sharedRequest() {
   const parameters = Object.fromEntries(sharedInputs().map(n => [n.dataset.axis, n.valueAsNumber]));
   return { strategy: state.sharedStrategy, parameters, sizing: 'max_affordable', fill: strategyFill(state.sharedStrategy) };
@@ -102,8 +97,9 @@ export function commonPlan(own, target, key) {
   if (target && state.sharedStrategy && state.checked.has(key) && !pointError(sharedInputs())) {
     const g = sharedRequest();
     const cal = target.universe === 'calendar_native';
-    const name = isMR(g.strategy) ? (cal ? 'zscore_mean_reversion' : 'mean_reversion') : g.strategy;
-    const p = translateParams(g.parameters, name);
+    const variant = familyVariant(strategyFamily(g.strategy), target.universe);
+    const name = variant?.id || g.strategy;
+    const p = familyParameters(g.parameters, g.strategy, name);
     const assetObj = cal ? state.branches.get('calendar_native|' + target.asset)?.asset : null;
     const supported = cal ? calendarStrategySupported(assetObj, name) : pairStrategyAvailable(pairAvailability(target.pair), name);
     if (supported && specsAcceptPoint(name, p, { universe: target.universe, timeframe: state.preferences.timeframe, monthly: !!assetObj?.monthly })) {

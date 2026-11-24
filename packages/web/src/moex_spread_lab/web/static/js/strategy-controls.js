@@ -2,9 +2,10 @@ import { $, CATSTATUS_RU, el, fmt } from './dom.js';
 import { sharedInputs } from './form-inputs.js';
 import { bindLamp, hidePlateauTip, runGroupProfileStream, showGroupLampsReading, stopProfile } from './plateau-lamps.js';
 import {
-  calendarProofPlugins, calendarStrategySupported, currentAsset, currentPair,
-  getStrategyMeta, isMR, orderedStrategySpecs, pairAvailability, pairHasLocalData,
-  pairPlugin, pairStrategyAvailable, pairUnavailable, settingsKey, state, strategyLabel,
+  calendarStrategySupported, currentAsset, currentPair, familyMembers, familyVariant,
+  getStrategyMeta, hasFamilyVariants, orderedStrategySpecs, pairAvailability, pairCatalogSlot,
+  pairHasLocalData, pairStrategyAvailable, pairUnavailable, settingsKey, state,
+  strategyFamily, strategyLabel, strategyOptions, timeframeSupported,
 } from './state.js';
 import { currentRequest, pointError, sharedRequest } from './strategy-plans.js';
 
@@ -18,27 +19,13 @@ export function configureStrategyControlsCallbacks(next) {
   callbacks = { ...callbacks, ...next };
 }
 
-const SOLO_BUILTIN_IDS = {
-  pair_screen: { entry_z: 'entry', exit_z: 'exit', lookback: 'lookback' },
-  calendar_native: { entry_z: 'centry', exit_z: 'cexit', window: 'clookback', threshold_pp: 'cthreshold' },
-};
+// Built-in parameters keep their legacy DOM ids (short axis names, `c`-prefixed
+// in the calendar universe); drop-in strategies use the `plugin-` scheme.
+const BUILTIN_AXIS_IDS = { entry_z: 'entry', exit_z: 'exit', lookback: 'lookback', window: 'lookback', threshold_pp: 'threshold' };
 
-const GROUP_SHORT_LABELS = {
-  funding_only: 'Фондирование',
-  convergence_to_ruonia: 'Сходимость к RUONIA',
-};
-
-function soloInputId(universe, strategyId, paramName) {
-  const meta = getStrategyMeta(strategyId);
-  const builtin = meta
-    ? meta.is_builtin === true && !pairPlugin(strategyId)
-    : !pairPlugin(strategyId) &&
-      strategyId in { mean_reversion: 1, funding_only: 1, zscore_mean_reversion: 1, convergence_to_ruonia: 1 };
-  if (builtin) {
-    const mapped = SOLO_BUILTIN_IDS[universe]?.[paramName];
-    if (mapped) return mapped;
-  }
-  return (universe === 'calendar_native' ? 'cplugin-' : 'plugin-') + paramName;
+function paramInputId(universe, meta, spec) {
+  if (!meta.is_builtin) return (universe === 'calendar_native' ? 'cplugin-' : 'plugin-') + spec.name;
+  return (universe === 'calendar_native' ? 'c' : '') + (BUILTIN_AXIS_IDS[spec.name] || spec.name);
 }
 
 export function createParameterField(spec, inputId, point, onBind) {
@@ -74,68 +61,42 @@ function detachContainerInputs(container) {
   delete container.dataset.mountedKey;
 }
 
+function refreshMountedSpecs(container, specs) {
+  for (const spec of specs) {
+    const input = container.querySelector(`input[data-axis="${spec.name}"]`);
+    if (!input) continue;
+    input.min = spec.min_value;
+    input.max = spec.max_value;
+    input.step = spec.step;
+    input.defaultValue = spec.default;
+    if (input.labels?.[0]) input.labels[0].textContent = spec.label_ru;
+  }
+}
+
 function mountSoloControls(universe, strategyId) {
   if (!strategyId) return;
   const meta = getStrategyMeta(strategyId);
+  if (!meta) return;
   const monthly = universe === 'calendar_native' ? !!currentAsset()?.monthly : false;
   const tf = state.preferences.timeframe || '1d';
   const specs = orderedStrategySpecs(strategyId, { universe, timeframe: tf, monthly });
-  if (universe === 'pair_screen') {
-    const builtin = meta ? meta.is_builtin === true && !pairPlugin(strategyId) : !pairPlugin(strategyId);
-    const activeContainer = builtin ? $('pair-params') : $('pair-plugin-params');
-    const idleContainer = builtin ? $('pair-plugin-params') : $('pair-params');
-    detachContainerInputs(idleContainer);
-    const mountedKey = `${strategyId}|${tf}`;
-    if (activeContainer.dataset.mountedKey === mountedKey) {
-      for (const spec of specs) {
-        const input = activeContainer.querySelector(`input[data-axis="${spec.name}"]`);
-        if (input) {
-          input.min = spec.min_value;
-          input.max = spec.max_value;
-          input.step = spec.step;
-          input.defaultValue = spec.default;
-          if (input.labels?.[0]) input.labels[0].textContent = spec.label_ru;
-        }
-      }
-      return;
-    }
-    detachContainerInputs(activeContainer);
-    activeContainer.replaceChildren(
-      ...specs.map(spec =>
-        createParameterField(spec, soloInputId('pair_screen', strategyId, spec.name), null, input => {
-          state.numericInputs.push(input);
-          callbacks.bindFocusInput(input);
-        }),
-      ),
-    );
-    activeContainer.dataset.mountedKey = mountedKey;
-  } else {
-    const container = $('calendar-params');
-    const mountedKey = `${strategyId}|${tf}|${monthly ? 'm' : 'q'}`;
-    if (container.dataset.mountedKey === mountedKey) {
-      for (const spec of specs) {
-        const input = container.querySelector(`input[data-axis="${spec.name}"]`);
-        if (input) {
-          input.min = spec.min_value;
-          input.max = spec.max_value;
-          input.step = spec.step;
-          input.defaultValue = spec.default;
-          if (input.labels?.[0]) input.labels[0].textContent = spec.label_ru;
-        }
-      }
-      return;
-    }
-    detachContainerInputs(container);
-    container.replaceChildren(
-      ...specs.map(spec =>
-        createParameterField(spec, soloInputId('calendar_native', strategyId, spec.name), null, input => {
-          state.numericInputs.push(input);
-          callbacks.bindFocusInput(input);
-        }),
-      ),
-    );
-    container.dataset.mountedKey = mountedKey;
+  const builtin = meta.is_builtin === true;
+  const container = universe === 'pair_screen' && !builtin ? $('pair-plugin-params') : universe === 'pair_screen' ? $('pair-params') : $('calendar-params');
+  const idle = universe === 'pair_screen' ? (builtin ? $('pair-plugin-params') : $('pair-params')) : null;
+  detachContainerInputs(idle);
+  const mountedKey = `${strategyId}|${tf}|${monthly ? 'm' : 'q'}`;
+  if (container.dataset.mountedKey === mountedKey) {
+    refreshMountedSpecs(container, specs);
+    return;
   }
+  detachContainerInputs(container);
+  container.replaceChildren(
+    ...specs.map(spec => createParameterField(spec, paramInputId(universe, meta, spec), null, input => {
+      state.numericInputs.push(input);
+      callbacks.bindFocusInput(input);
+    })),
+  );
+  container.dataset.mountedKey = mountedKey;
 }
 
 const checkedTargets = () => [...state.checked].sort().map(k => state.leaves.get(k).target);
@@ -143,8 +104,7 @@ const checkedTargets = () => [...state.checked].sort().map(k => state.leaves.get
 export function syncPairHint() {
   const p = pairAvailability(currentPair());
   const selected = $('strategy').value;
-  const plugin = pairPlugin(selected);
-  const reasonKey = plugin ? (plugin.adapter === 'carry_settlement_intents.v1' ? 'funding_only' : 'mean_reversion') : selected;
+  const reasonKey = pairCatalogSlot(selected);
   $('pair-hint').textContent = p
     ? `${p.data_reasons?.[reasonKey] || CATSTATUS_RU[p.status] || p.status.replaceAll('_', ' ')} · маржа ≈ ${p.max_pair_margin_rub != null ? fmt((p.max_pair_margin_rub / state.preferences.initial_capital_rub) * 100, 2) + '% капитала' : '—'}${p.expiry ? ' · экспирация дальней ноги ' + p.expiry : ''}`
     : '';
@@ -155,35 +115,12 @@ export function fillStrategy(preferred) {
   const s = $('strategy');
   const prev = preferred || s.value;
   s.replaceChildren();
-  const meta = state.catalog.pair_screen.strategies;
-  for (const [name, m] of Object.entries(meta)) {
-    const label = getStrategyMeta(name)?.label || m.label;
-    const ok = pairStrategyAvailable(p, name);
-    const o = el('option', '', `${label}${ok ? '' : ' · ' + pairUnavailable(p, name)}`);
-    o.value = name;
-    o.disabled = !pairStrategyAvailable(p, name, true) && pairHasLocalData(p);
-    s.append(o);
-  }
-  const seenIds = new Set(Object.keys(meta));
-  const pluginEntries = [...(state.catalog.pair_screen.proof_plugins || [])];
-  for (const regMeta of state.strategies.values()) {
-    if (!regMeta.is_builtin && regMeta.proof_enabled && regMeta.supported_universes?.includes('pair_screen') && !pluginEntries.some(x => x.id === regMeta.id)) {
-      pluginEntries.push({
-        id: regMeta.id,
-        label: regMeta.label,
-        adapter: regMeta.proof_adapter,
-        timeframe_supported: state.preferences.timeframe === '1d' || !regMeta.requires_daily_bars,
-      });
-    }
-  }
-  for (const m of pluginEntries) {
-    if (seenIds.has(m.id)) continue;
-    seenIds.add(m.id);
-    const ok = pairStrategyAvailable(p, m.id);
-    const baseKey = m.adapter === 'carry_settlement_intents.v1' ? 'funding_only' : 'mean_reversion';
-    const o = el('option', '', `${m.label}${ok ? '' : m.timeframe_supported ? ' · ' + pairUnavailable(p, baseKey) : ' · интервал не поддерживается'}`);
-    o.value = m.id;
-    o.disabled = !m.timeframe_supported || (!pairStrategyAvailable(p, m.id, true) && pairHasLocalData(p));
+  for (const meta of strategyOptions('pair_screen')) {
+    const tfOk = timeframeSupported(meta);
+    const ok = pairStrategyAvailable(p, meta.id);
+    const o = el('option', '', `${meta.label}${ok ? '' : ' · ' + (tfOk ? pairUnavailable(p, meta.id) : 'интервал не поддерживается')}`);
+    o.value = meta.id;
+    o.disabled = !tfOk || (!pairStrategyAvailable(p, meta.id, true) && pairHasLocalData(p));
     s.append(o);
   }
   s.value =
@@ -204,56 +141,63 @@ export function fillCalendarStrategies(preferred) {
   const s = $('cstrategy');
   const prev = preferred || s.value;
   s.replaceChildren();
-  const names = [...(state.catalog.strategies || [])];
-  for (const extra of calendarProofPlugins()) {
-    if (!names.includes(extra.id)) names.push(extra.id);
-  }
-  for (const name of names) {
-    if (!calendarStrategySupported(a, name)) continue;
-    const o = el('option', '', strategyLabel(name));
-    o.value = name;
+  for (const meta of strategyOptions('calendar_native')) {
+    if (!calendarStrategySupported(a, meta.id)) continue;
+    const o = el('option', '', strategyLabel(meta.id));
+    o.value = meta.id;
     s.append(o);
   }
   if ([...s.options].some(o => o.value === prev)) s.value = prev;
   syncCalendarParams();
 }
 
+/** Legacy cohort value for the family that spans both universes. */
+const COHORT_FAMILY_VALUE = 'mr';
+
+const cohortValue = meta => (hasFamilyVariants(meta.id) ? COHORT_FAMILY_VALUE : meta.id);
+
+function groupLabel(meta) {
+  const label = meta.short_label || meta.label || meta.id;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export function syncGroupStrategyOptions() {
   const gs = $('group-strategy');
   const current = gs.value;
   gs.replaceChildren();
-  const mrOpt = el('option', '', 'Возврат к среднему');
-  mrOpt.value = 'mr';
-  gs.append(mrOpt);
-  const added = new Set(['mean_reversion', 'zscore_mean_reversion']);
+  const seen = new Set();
   for (const meta of state.strategies.values()) {
-    if (added.has(meta.id) || !meta.proof_enabled) continue;
-    added.add(meta.id);
-    const o = el('option', '', GROUP_SHORT_LABELS[meta.id] || meta.label);
-    o.value = meta.id;
-    if (!meta.is_builtin) o.dataset.plugin = 'true';
-    o.disabled = !(state.preferences.timeframe === '1d' || !meta.requires_daily_bars);
-    gs.append(o);
-  }
-  for (const p of state.catalog?.pair_screen?.proof_plugins || []) {
-    if (added.has(p.id)) continue;
-    added.add(p.id);
-    const o = el('option', '', p.label);
-    o.value = p.id;
-    o.dataset.plugin = 'true';
-    o.disabled = !p.timeframe_supported;
+    if (!meta.proof_enabled) continue;
+    const value = cohortValue(meta);
+    if (seen.has(value)) continue;
+    seen.add(value);
+    const variants = familyMembers(meta.family_id);
+    const o = el('option', '', groupLabel(variants.length > 1 ? variants[0] : meta));
+    o.value = value;
+    if (variants.length <= 1) {
+      if (!meta.is_builtin) o.dataset.plugin = 'true';
+      o.disabled = !timeframeSupported(meta);
+    }
     gs.append(o);
   }
   if ([...gs.options].some(o => o.value === current && !o.disabled)) gs.value = current;
 }
 
+function resolveGroupStrategy(chosen) {
+  const family = [...state.strategies.values()].find(
+    meta => cohortValue(meta) === chosen && hasFamilyVariants(meta.id),
+  );
+  if (!family) return chosen;
+  return state.sharedVariants.get(family.family_id) || familyVariant(family.family_id, state.universe)?.id || family.family_id;
+}
+
 export function renderSharedEditor(req) {
   hidePlateauTip();
   state.sharedStrategy = req.strategy;
-  if (isMR(req.strategy)) state.sharedMR = req.strategy;
+  if (hasFamilyVariants(req.strategy)) state.sharedVariants.set(strategyFamily(req.strategy), req.strategy);
   syncGroupStrategyOptions();
-  $('group-strategy').value = isMR(req.strategy) ? 'mr' : req.strategy;
   const meta = getStrategyMeta(req.strategy);
+  $('group-strategy').value = meta ? cohortValue(meta) : req.strategy;
   const u = meta?.supported_universes?.[0] || state.universe;
   const monthly = u === 'calendar_native' ? !!currentAsset()?.monthly : false;
   const specs = orderedStrategySpecs(req.strategy, { universe: u, timeframe: state.preferences.timeframe, monthly });
@@ -274,8 +218,7 @@ export function renderSharedEditor(req) {
 export function changeSharedStrategy() {
   const old = sharedRequest();
   if (!pointError(sharedInputs())) state.sharedDrafts.set(state.sharedStrategy, old);
-  const chosen = $('group-strategy').value;
-  const name = chosen === 'mr' ? state.sharedMR : chosen;
+  const name = resolveGroupStrategy($('group-strategy').value);
   const next = state.sharedDrafts.get(name) || { strategy: name, parameters: {} };
   renderSharedEditor(next);
   callbacks.sharedEdited(0);
@@ -310,9 +253,13 @@ export function syncEditorScope() {
   $('cohort-editor').hidden = !on;
   if (on) {
     if (!state.sharedStrategy) {
-      const req = currentRequest();
-      state.sharedMR = isMR(req.strategy) ? req.strategy : state.universe === 'calendar_native' ? 'zscore_mean_reversion' : 'mean_reversion';
-      renderSharedEditor(req);
+      for (const meta of state.strategies.values()) {
+        if (familyMembers(meta.family_id).length > 1 && !state.sharedVariants.has(meta.family_id)) {
+          const variant = familyVariant(meta.family_id, state.universe);
+          if (variant) state.sharedVariants.set(meta.family_id, variant.id);
+        }
+      }
+      renderSharedEditor(currentRequest());
     }
   } else {
     stopProfile();
@@ -321,5 +268,3 @@ export function syncEditorScope() {
     hidePlateauTip();
   }
 }
-
-

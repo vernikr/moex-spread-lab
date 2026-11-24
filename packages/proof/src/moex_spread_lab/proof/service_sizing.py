@@ -34,6 +34,7 @@ def prepare_automatic(
         *,
         metrics_only: bool = False,
         scalar_summary: tuple[str, str] | None = None,
+        template: bool = False,
     ) -> dict[str, Any]:
         from moex_spread_lab.strategies.base import carry_proof_plugin_ids
 
@@ -47,6 +48,7 @@ def prepare_automatic(
             facade._intent_request(request, registry, settings),
             through=through,
             metrics_only=metrics_only,
+            **({"template": True} if template else {}),
         )
         unit = facade._calendar_sizing_unit(service.root, request, unit, through, metrics_only)
         marks = marks_cache.get(through)

@@ -28,12 +28,8 @@ def merge_pair_series_row(
     return {**template_row, **actual_row, "signal_z": None}
 
 
-def apply_pair_notes(
-    template: dict[str, Any], trades: list[dict[str, Any]], *, builtin: bool
-) -> None:
-    """Attach provenance notes, keeping the native wording for built-in strategies."""
-    if builtin:
-        return
+def apply_pair_notes(template: dict[str, Any], trades: list[dict[str, Any]]) -> None:
+    """Attach drop-in provenance notes; built-in payloads keep their native wording."""
     template["notes"] = [
         note for note in template["notes"] if not note.startswith(OPEN_POSITION_PREFIX)
     ]

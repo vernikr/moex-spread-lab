@@ -78,26 +78,29 @@ def test_fixed_pair_summary_uses_raw_trade_values_from_engine(tmp_path, monkeypa
     from math import fsum
 
     from funding_fixtures import fixture, request
-    from moex_spread_lab.proof import mean_reversion_blocks
+    from moex_spread_lab.proof import fixed_plugin_payload
     from moex_spread_lab.proof.proof_search import research_run
     from moex_spread_lab.proof.service import ProofService
 
     fixture(tmp_path)
     seen = []
-    original = mean_reversion_blocks.trade_block
+    original = fixed_plugin_payload.trade_block
 
     def capture(spec, *args, **kwargs):
         seen.append(spec.net_rub)
         return original(spec, *args, **kwargs)
 
-    monkeypatch.setattr(mean_reversion_blocks, "trade_block", capture)
+    monkeypatch.setattr(fixed_plugin_payload, "trade_block", capture)
     service = ProofService(tmp_path)
     try:
         result = research_run(service, request(), optimize=False, include_plateau=False)
     finally:
         service.close()
     assert seen
-    assert result["summary"]["net_rub"] == round(fsum(seen), 2)
+    # Every replay of the run (training cut-off and full window) prices its own trades;
+    # the payload summary is the final replay's raw sum.
+    final = seen[-len(result["trades"]) :]
+    assert result["summary"]["net_rub"] == round(fsum(final), 2)
     assert result["summary"]["ledger_reconciliation_rub"] == round(
         result["summary"]["net_rub"] - result["ledger"][-1]["cumulative_net_rub"], 2
     )

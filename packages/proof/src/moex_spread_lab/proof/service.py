@@ -51,13 +51,11 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings as execution_settings,
 )
 
-from . import funding_engine as _funding_engine
 from .calendar_adapter import calendar_proof as calendar_proof
-from .funding_engine import FundingSpec as FundingSpec
-from .funding_payloads import run_funding as run_funding
-from .mean_reversion_payloads import run_mean_reversion as run_mean_reversion
-from .mean_reversion_spec import MeanReversionSpec as MeanReversionSpec
+from .carry_payload import run_carry
+from .carry_route import funding_inputs
 from .pair_plugins import PairPluginRoute
+from .pair_route import builtin_pair_proof, check_sizing_request, prepare_native, prepare_pair
 from .payload_tools import (
     benchmark_marks,
     clean,
@@ -70,8 +68,6 @@ from .payload_tools import (
     sha256_bytes,
 )
 from .service_calendar import calendar_sizing_unit, prepare_fixed
-from .service_pair import prepare_pair
-from .service_prepare import check_sizing_request, prepare_native
 from .service_sizing import prepare_automatic
 from .service_validation import intent_request, plugin_parameters
 
@@ -80,9 +76,10 @@ _run_id: Any = vars(_w0)["_run_id"]
 STRATEGIES: dict[str, dict[str, Any]] = cast(
     dict[str, dict[str, Any]], vars(_universe)["STRATEGIES"]
 )
-funding_inputs: Callable[..., Any] = cast(
-    Callable[..., Any], vars(_funding_engine)["funding_inputs"]
-)
+
+# Replay hooks resolved through the module at call time, so tests may patch them.
+run_mean_reversion = builtin_pair_proof
+run_funding = run_carry
 
 PROOF_SCHEMA = "execution-proof.v1"
 FORCED_EXIT_REASONS = frozenset(

@@ -1,7 +1,7 @@
-"""Payloads emitted by the funding/carry engine.
+"""`execution-proof.v1` payloads of the carry replay.
 
-The sizing pass consumes the price-only intent payload, the tuning search consumes the
-metrics payload and the web UI consumes the full `execution-proof.v1` payload.
+The sizing pass consumes the price-only intent payload (`carry_route`), the tuning
+search the metrics payload and the web UI the full settlement-priced payload.
 """
 
 from __future__ import annotations
@@ -12,29 +12,21 @@ from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.core.contracts import plugin_trust_tier
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 
-from .funding_engine import (
-    FundingSpec,
-    FundingWindowState,
+from .carry_route import (
+    PERPETUAL_OPEN_STATUS,
+    CarryWindowState,
     carry_plugin_of,
+    funding_instrument,
+    funding_selection,
     report_for,
+    sizing_intent_payload,
     strategy_name_of,
     study_cut,
 )
-from .funding_notes import (
-    BUILTIN_SIGNAL_NOTE,
-    CARRY_PLUGIN_NOTE,
-    OPEN_POSITION_NOTE,
-    PERPETUAL_OPEN_STATUS,
-    SPREAD_NOTES,
-    SWAPRATE_NOTE,
-)
-from .funding_sizing_payload import (
-    funding_instrument,
-    funding_selection,
-    sizing_intent_payload,
-)
 from .ledger_blocks import funding_ledger
+from .market_window import ReplaySpec
 from .pair_payload import PairPayloadSpec, pair_payload
+from .pair_template import SPREAD_NOTES
 from .payload_tools import (
     PROOF_SCHEMA,
     TradeSpec,
@@ -44,9 +36,28 @@ from .payload_tools import (
     trade_block,
 )
 
+CARRY_PLUGIN_NOTE = (
+    "Сигналы предоставлены доверенным carry-плагином: их причинность должна проверяться отдельно. "
+    "Исполнение — расчёт в тот же день; обычный выход теряет фондирование этого дня."
+)
+BUILTIN_SIGNAL_NOTE = (
+    "Сигнал встроенной стратегии использует фондирование до предыдущего клиринга; прокси исполнения — "
+    "расчёт в тот же день; выход в тот же день теряет фондирование этого дня."
+)
+SWAPRATE_NOTE = (
+    "В таблице SWAPRATE показан отдельно от денежного итога: начисление/списание = SWAPRATE × лот × "
+    "число удерживаемых контрактов; положительный итог здесь означает получение шортом ближнего "
+    "перпетуала. Базовый источник — итог клиринга ISS; оценки помечены отдельно. Это не брокерская "
+    "выписка."
+)
+OPEN_POSITION_NOTE = (
+    "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как "
+    "исполняемая сделка."
+)
+
 
 def _settlement_fill(
-    state: FundingWindowState,
+    state: CarryWindowState,
     daily_by_date: dict[str, dict[str, Any]],
     day: str,
     costs: dict[str, float],
@@ -66,7 +77,7 @@ def _settlement_fill(
     )
 
 
-def _entry_costs(spec: FundingSpec, state: FundingWindowState) -> dict[str, float]:
+def _entry_costs(spec: ReplaySpec, state: CarryWindowState) -> dict[str, float]:
     """Round-trip reference side cost scaled to the requested quantity."""
     near, far = spec.pair["near"], spec.pair["far"]
     leg_contracts = load_contracts_for_side_cost(spec.inputs.contracts, near, far)
@@ -79,7 +90,7 @@ def _entry_costs(spec: FundingSpec, state: FundingWindowState) -> dict[str, floa
     return {key: round(value * quantity, 2) for key, value in reference.items()}
 
 
-def _trade_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict[str, Any]]:
+def _trade_rows(state: CarryWindowState, report: dict[str, Any]) -> list[dict[str, Any]]:
     """Settlement-priced trade rows for the full payload."""
     spec = state.spec
     costs = _entry_costs(spec, state)
@@ -125,7 +136,7 @@ def _trade_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict[
     return trades
 
 
-def _series_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict[str, Any]]:
+def _series_rows(state: CarryWindowState, report: dict[str, Any]) -> list[dict[str, Any]]:
     """Daily settlement rows with funding, swaprate and margin columns."""
     spec = state.spec
     quantity = int(spec.execution["quantity"])
@@ -169,7 +180,7 @@ def _series_rows(state: FundingWindowState, report: dict[str, Any]) -> list[dict
     return rows
 
 
-def _notes(state: FundingWindowState, trades: list[dict[str, Any]]) -> list[str]:
+def _notes(state: CarryWindowState, trades: list[dict[str, Any]]) -> list[str]:
     """Provenance notes for the funding proxy, plus pair-specific caveats."""
     spec, evidence = state.spec, state.evidence
     near, pair_id = spec.pair["near"], spec.pair["pair_id"]
@@ -207,7 +218,7 @@ def _notes(state: FundingWindowState, trades: list[dict[str, Any]]) -> list[str]
 
 
 def _metrics_payload(
-    state: FundingWindowState,
+    state: CarryWindowState,
     trades: list[dict[str, Any]],
     ledger: list[dict[str, Any]],
     strategy_name: str,
@@ -230,7 +241,7 @@ def _metrics_payload(
     }
 
 
-def funding_proof(spec: FundingSpec, *, metrics_only: bool = False) -> dict[str, Any]:
+def run_carry(spec: ReplaySpec, *, metrics_only: bool = False) -> dict[str, Any]:
     """Run the funding/carry replay for one prepared window and cut-off."""
     state = study_cut(spec)
     strategy_name = strategy_name_of(spec)
@@ -269,8 +280,3 @@ def funding_proof(spec: FundingSpec, *, metrics_only: bool = False) -> dict[str,
             risk=spec.risk,
         )
     )
-
-
-def run_funding(spec: FundingSpec, *, metrics_only: bool = False) -> dict[str, Any]:
-    """Run the funding/carry replay for one prepared window and cut-off."""
-    return funding_proof(spec, metrics_only=metrics_only)

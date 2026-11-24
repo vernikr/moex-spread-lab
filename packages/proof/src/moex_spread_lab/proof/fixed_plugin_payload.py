@@ -15,10 +15,9 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
-from .fixed_plugin_series import scaled_series as _scaled_series
 from .ledger_blocks import price_ledger
 from .payload_tools import TradeSpec, fill_block, mark, point_value, trade_block
-from .plugin_notes import apply_pair_notes
+from .plugin_notes import apply_pair_notes, merge_pair_series_row
 from .rounding_totals import apply_raw_trade_totals
 
 
@@ -170,7 +169,7 @@ def _excess_drawdown(values: list[float], marks: list[float], capital: float) ->
 
 
 def _account_curve(
-    template: dict[str, Any],
+    capital: float,
     unit: dict[str, Any],
     rows: list[dict[str, Any]],
     trades: list[dict[str, Any]],
@@ -182,7 +181,6 @@ def _account_curve(
     """
     near_mult, margin, quantity, marks = curve
     mults = (near_mult, near_mult)
-    capital = template["initial_capital_rub"]
     entries = {trade["entry"]["date"]: trade for trade in trades}
     exits = {trade["exit"]["date"]: trade for trade in trades}
     funding_by_date = {row["date"]: float(row["funding_rub"] or 0.0) for row in unit["series"]}
@@ -212,7 +210,7 @@ def _summary_update(
     trades: list[dict[str, Any]],
     ledger: list[dict[str, Any]],
     drawdown: float,
-    raw_totals: list[tuple[float, float, float]],
+    totals: tuple[float, float, float],
 ) -> None:
     closed = [trade for trade in trades if not trade["open_at_end"]]
     gross, costs, net = (
@@ -235,33 +233,56 @@ def _summary_update(
             net - (ledger[-1]["cumulative_net_rub"] if ledger else 0), 2
         ),
     )
-    totals = [math.fsum(row[i] for row in raw_totals) for i in range(3)]
     apply_raw_trade_totals(template["summary"], trades, ledger, totals)
     if abs(template["summary"]["ledger_reconciliation_rub"]) > 0.02:
         raise W0Error("Учёт плагина не согласован с журналом сделок.")
 
 
-def fixed_daily_pair_plugin_payload(
-    template: dict[str, Any],
+def _scaled_series(
+    unit: dict[str, Any], template_rows: list[dict[str, Any]], quantity: int, *, builtin: bool
+) -> list[dict[str, Any]]:
+    """Sizing rows scaled to the quantity and merged over the template rows."""
+    originals = {row["date"]: row for row in template_rows}
+    rows: list[dict[str, Any]] = []
+    for raw in unit["series"]:
+        amount = raw["funding_rub"]
+        if amount is not None and not math.isfinite(amount * quantity):
+            raise W0Error("Переполнение суммы фондирования.")
+        merged = merge_pair_series_row(originals[raw["date"]], raw, builtin=builtin)
+        merged["funding_rub"] = round(amount * quantity, 8) if amount is not None else None
+        merged["funding_contracts"] = quantity * raw["funding_contracts"]
+        rows.append(merged)
+    return rows
+
+
+def fixed_pair_accounting(
+    template_rows: list[dict[str, Any]],
     unit: dict[str, Any],
     context: tuple[dict[str, Any], dict[str, Any], dict[str, Any]],
     execution: dict[str, Any],
     benchmark: tuple[list[str], dict[str, float]],
+    capital: float,
     *,
-    builtin: bool = False,
-) -> dict[str, Any]:
-    """Recompute fixed-quantity fills, cash flows and journal from unit intents.
+    builtin: bool,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    float,
+    tuple[float, float, float],
+]:
+    """Fixed-quantity fills, cash flows, journal and drawdown recomputed from unit intents.
 
-    `context` carries `(series, pair, provenance)` from the native template proof.
+    `context` carries `(series, pair, provenance)` of the shared market window. Returns
+    `(rows, trades, ledger, drawdown, raw_trade_totals)`.
     """
     series, pair, provenance = context
     quantity, slippage = execution["quantity"], execution["slippage_ticks"]
     near, far = pair["near"], pair["far"]
     contracts = [series["contracts"][near], series["contracts"][far]]
-    multipliers = (point_value(contracts[0]), point_value(contracts[1]))
-    near_mult, far_mult = multipliers
+    near_mult, far_mult = point_value(contracts[0]), point_value(contracts[1])
     margin = sum(float(contract["initial_margin"]) for contract in contracts) * quantity
-    rows = _scaled_series(unit, template, quantity, builtin=builtin)
+    rows = _scaled_series(unit, template_rows, quantity, builtin=builtin)
     blocks = _trade_blocks(
         unit, {r["date"]: r for r in rows}, contracts, (quantity, slippage, far_mult)
     )
@@ -283,24 +304,44 @@ def fixed_daily_pair_plugin_payload(
         for row in rows
     ]
     drawdown = _account_curve(
-        template, unit, rows, trades, ledger, (near_mult, margin, quantity, marks)
+        capital, unit, rows, trades, ledger, (near_mult, margin, quantity, marks)
+    )
+    gross, cost, net = (math.fsum(row[i] for row in raw_totals) for i in range(3))
+    return rows, trades, ledger, drawdown, (gross, cost, net)
+
+
+def fixed_daily_pair_plugin_payload(
+    template: dict[str, Any],
+    unit: dict[str, Any],
+    context: tuple[dict[str, Any], dict[str, Any], dict[str, Any]],
+    execution: dict[str, Any],
+    benchmark: tuple[list[str], dict[str, float]],
+) -> dict[str, Any]:
+    """Drop-in plugin payload: shared accounting over the native chart template."""
+    rows, trades, ledger, drawdown, totals = fixed_pair_accounting(
+        template["series"],
+        unit,
+        context,
+        execution,
+        benchmark,
+        template["initial_capital_rub"],
+        builtin=False,
     )
     template["selection"].update(
         strategy=unit["selection"]["strategy"], parameters=unit["selection"]["parameters"]
     )
     template.update(series=rows, trades=trades, ledger=ledger)
-    _summary_update(template, trades, ledger, drawdown, raw_totals)
-    template["provenance"].update({**provenance, **unit["provenance"]})
-    apply_pair_notes(template, trades, builtin=builtin)
+    _summary_update(template, trades, ledger, drawdown, totals)
+    template["provenance"].update({**context[2], **unit["provenance"]})
+    apply_pair_notes(template, trades)
     attach_entry_levels(template)
-    if not builtin:
-        template["run_id"] = _run_id(
-            {
-                "selection": template["selection"],
-                "series": rows,
-                "trades": trades,
-                "ledger": ledger,
-                "provenance": template["provenance"],
-            }
-        )
+    template["run_id"] = _run_id(
+        {
+            "selection": template["selection"],
+            "series": rows,
+            "trades": trades,
+            "ledger": ledger,
+            "provenance": template["provenance"],
+        }
+    )
     return template

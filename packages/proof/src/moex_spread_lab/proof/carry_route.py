@@ -1,7 +1,7 @@
-"""Funding/carry pair proof engine.
+"""Carry replay: one trusted carry study cut, settlement intents and their accounting.
 
-Runs the built-in `funding_only` strategy or a trusted carry plugin over a resolved
-carry study and emits the `execution-proof.v1` payload with settlement-priced fills.
+Runs the built-in `funding_only` plugin or a trusted drop-in carry plugin through
+`carry_settlement_intents.v1`; prices and cash flows come only from the carry study.
 """
 
 from __future__ import annotations
@@ -21,27 +21,10 @@ from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 from .carry_intent_accounting import replay_carry_intents
-from .payload_tools import (
-    load_contracts_for_side_cost,
-    point_value,
-)
+from .market_window import ReplaySpec
+from .payload_tools import PROOF_SCHEMA, load_contracts_for_side_cost, point_value
 
-
-@dataclass(frozen=True, slots=True)
-class FundingSpec:
-    """One funding/carry replay request bound to prepared inputs."""
-
-    inputs: Any
-    pair: dict[str, Any]
-    execution: dict[str, Any]
-    params: dict[str, Any]
-    terms: dict[str, dict[str, Any]]
-    risk: dict[str, Any]
-    prepared: tuple[Any, ...]
-    through: str | None = None
-    cache: dict[str, Any] | None = None
-    benchmark_dates: list[str] | None = None
-    benchmark_prices: dict[str, float] | None = None
+PERPETUAL_OPEN_STATUS = "open_at_data_end_no_executable_exit"
 
 
 def funding_inputs(
@@ -70,10 +53,10 @@ def funding_inputs(
 
 
 @dataclass(frozen=True, slots=True)
-class FundingWindowState:
+class CarryWindowState:
     """Study cut at `through` plus the reference settlement prices for that cut."""
 
-    spec: FundingSpec
+    spec: ReplaySpec
     study: dict[str, Any]
     evidence: Any
     study_by_date: dict[str, dict[str, Any]]
@@ -86,7 +69,7 @@ class FundingWindowState:
     margin_pair: float
 
 
-def study_cut(spec: FundingSpec) -> FundingWindowState:
+def study_cut(spec: ReplaySpec) -> CarryWindowState:
     """Cut the study at `through` and derive the quantities every parameter reuses."""
     study, _, _, window = spec.prepared[:4]
     if spec.through is not None:
@@ -118,7 +101,7 @@ def study_cut(spec: FundingSpec) -> FundingWindowState:
     near, far = spec.pair["near"], spec.pair["far"]
     near_mult = point_value(spec.terms[near], fallback=1.0)
     far_mult = point_value(spec.terms[far], fallback=near_mult)
-    return FundingWindowState(
+    return CarryWindowState(
         spec=spec,
         study=study,
         evidence=evidence,
@@ -137,16 +120,16 @@ def study_cut(spec: FundingSpec) -> FundingWindowState:
     )
 
 
-def carry_plugin_of(spec: FundingSpec) -> Any:
+def carry_plugin_of(spec: ReplaySpec) -> Any:
     return spec.cache.get("carry_plugin") if spec.cache is not None else None
 
 
-def strategy_name_of(spec: FundingSpec) -> str:
+def strategy_name_of(spec: ReplaySpec) -> str:
     plugin = carry_plugin_of(spec)
     return plugin.strategy_id if plugin is not None else "funding_only"
 
 
-def _reference_fee(state: FundingWindowState) -> float:
+def _reference_fee(state: CarryWindowState) -> float:
     """Round-trip taker cost of one unit of the pair at the reference settlement."""
     spec = state.spec
     near, far = spec.pair["near"], spec.pair["far"]
@@ -160,7 +143,7 @@ def _reference_fee(state: FundingWindowState) -> float:
 
 
 def _pluginreport_for(
-    state: FundingWindowState, plugin: Any, *, metrics_only: bool
+    state: CarryWindowState, plugin: Any, *, metrics_only: bool
 ) -> dict[str, Any]:
     """Replay trusted carry-plugin intents through the settlement accounting."""
     spec, execution = state.spec, state.spec.execution
@@ -211,7 +194,7 @@ def _pluginreport_for(
     return report
 
 
-def _builtinreport_for(state: FundingWindowState, *, metrics_only: bool) -> dict[str, Any]:
+def _builtinreport_for(state: CarryWindowState, *, metrics_only: bool) -> dict[str, Any]:
     spec, execution = state.spec, state.spec.execution
     return build_carry_strategy(
         state.study,
@@ -229,7 +212,7 @@ def _builtinreport_for(state: FundingWindowState, *, metrics_only: bool) -> dict
     )
 
 
-def report_for(state: FundingWindowState, *, metrics_only: bool) -> dict[str, Any]:
+def report_for(state: CarryWindowState, *, metrics_only: bool) -> dict[str, Any]:
     plugin = carry_plugin_of(state.spec)
     if plugin is None:
         return _builtinreport_for(state, metrics_only=metrics_only)
@@ -242,3 +225,90 @@ def report_for(state: FundingWindowState, *, metrics_only: bool) -> dict[str, An
         if plugin_is_builtin(plugin):
             return _builtinreport_for(state, metrics_only=metrics_only)
         raise
+
+
+def sizing_intent_payload(
+    state: CarryWindowState, report: dict[str, Any], strategy_name: str
+) -> dict[str, Any]:
+    """Price-only payload for the sizing pass: settlement spreads and funding only."""
+    spec = state.spec
+    quantity = int(spec.execution["quantity"])
+    daily_by_date = {row["date"]: row for row in report["daily"]}
+    last_date = report["daily"][-1]["date"]
+    trades: list[dict[str, Any]] = []
+    for row in report["trades"]:
+        entry_date = row["entry_execution_date"]
+        exit_date = row["exit_execution_date"] or last_date
+        trades.append(
+            {
+                "side": "short_spread",
+                "signal": {
+                    "kind": "funding",
+                    "value": None,
+                    "date": row["entry_decision_date"],
+                },
+                "entry": settlement_intent_fill(state, daily_by_date[entry_date]),
+                "exit": settlement_intent_fill(state, daily_by_date[exit_date]),
+                "open_at_end": row["status"] == PERPETUAL_OPEN_STATUS,
+            }
+        )
+    series_rows = [
+        {
+            "date": row["date"],
+            "spread": round(
+                row["near_settle"] * state.near_mult - row["far_settle"] * state.far_mult, 8
+            ),
+            "funding_rub": round(row["daily_funding_included_rub"], 2),
+            "funding_contracts": quantity if row["position"] else 0,
+        }
+        for row in report["daily"]
+    ]
+    return {
+        "schema_version": PROOF_SCHEMA,
+        "universe": PAIR_UNIVERSE,
+        "selection": funding_selection(state, strategy_name),
+        "initial_capital_rub": spec.execution["initial_capital_rub"],
+        "instrument": funding_instrument(state),
+        "window": {
+            **state.window_meta,
+            "passes_capital_screen": spec.risk["summary"]["all_scenarios_passed"],
+        },
+        "contract": {},
+        "series": series_rows,
+        "trades": trades,
+        "provenance": state.evidence.provenance,
+    }
+
+
+def funding_selection(state: CarryWindowState, strategy_name: str) -> dict[str, Any]:
+    spec = state.spec
+    return {
+        "universe": PAIR_UNIVERSE,
+        "pair": spec.pair["pair_id"],
+        "strategy": strategy_name,
+        "timeframe": "1d",
+        "fill": "same_day_settlement",
+        "quantity": int(spec.execution["quantity"]),
+        "slippage_ticks": float(spec.execution["slippage_ticks"]),
+        "parameters": spec.params,
+        "initial_capital_rub": spec.execution["initial_capital_rub"],
+    }
+
+
+def funding_instrument(state: CarryWindowState) -> dict[str, Any]:
+    return {
+        "near": state.spec.pair["near"],
+        "far": state.spec.pair["far"],
+        "family": state.spec.pair["family"],
+    }
+
+
+def settlement_intent_fill(state: CarryWindowState, row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "date": row["date"],
+        "spread_fill": round(
+            row["near_settle"] * state.near_mult - row["far_settle"] * state.far_mult, 8
+        ),
+        "near_price": row["near_settle"],
+        "far_price": row["far_settle"],
+    }

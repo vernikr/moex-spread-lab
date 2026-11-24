@@ -53,15 +53,29 @@ def test_proof_runtime_alias_resolves_from_imports():
     assert proof_kernel is importlib.import_module("moex_spread_lab.proof.proof_kernel")
 
 
-def test_extracted_strict_helpers_preserve_private_aliases():
-    from moex_spread_lab.proof import (
-        fixed_plugin_payload,
-        fixed_plugin_series,
-        mean_reversion_engine,
-        mean_reversion_payloads,
-    )
+def test_builtin_replays_use_the_canonical_intent_pipeline():
+    from moex_spread_lab.proof import carry_payload, pair_route, service
 
-    assert fixed_plugin_series.scaled_series is fixed_plugin_series._scaled_series
-    assert fixed_plugin_payload._scaled_series is fixed_plugin_series._scaled_series
-    assert mean_reversion_engine.resolve_window is mean_reversion_engine._resolve_window
-    assert mean_reversion_payloads._resolve_window is mean_reversion_engine._resolve_window
+    assert service.run_mean_reversion is pair_route.builtin_pair_proof
+    assert service.run_funding is carry_payload.run_carry
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "mean_reversion_engine",
+        "mean_reversion_blocks",
+        "mean_reversion_payloads",
+        "mean_reversion_spec",
+        "funding_engine",
+        "funding_payloads",
+        "funding_sizing_payload",
+        "funding_notes",
+        "service_pair",
+        "service_prepare",
+        "fixed_plugin_series",
+    ],
+)
+def test_retired_legacy_replay_modules_stay_deleted(module):
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(f"moex_spread_lab.proof.{module}")

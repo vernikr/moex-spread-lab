@@ -107,13 +107,10 @@ class PairPluginRoute:
         prepared: tuple[Any, ...],
         fill: str,
         through: str | None,
-        *,
-        builtin: bool,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
         """Run the plugin's intents for this trial: sized in automatic mode, unit otherwise."""
         snapshot, funding_window, marks, settings = prepared
         params = request.get("parameters", {})
-        enforce_compatibility = not builtin
         if automatic(request):
             actual = _size_daily_pair_plugin(
                 plugin,
@@ -124,7 +121,6 @@ class PairPluginRoute:
                 marks,
                 settings,
                 through=through,
-                enforce_compatibility=enforce_compatibility,
             )
             return None, None, actual
         execution = execution_settings(request)
@@ -137,7 +133,6 @@ class PairPluginRoute:
             marks,
             settings,
             through=through,
-            enforce_compatibility=enforce_compatibility,
         )
         return unit, execution, None
 
@@ -145,13 +140,15 @@ class PairPluginRoute:
         """Return the request-scoped replay callable for this plugin window."""
         pair = self._validate_window()
         # Native pair preflight owns data, funding, liquidity and capital screens. A built-in
-        # keeps its real parameters so the template proves the very engine being routed.
+        # keeps its real parameters: the native replay is the canonical intent pipeline itself.
         native_selection: dict[str, Any] = {
             **self.selection,
             "strategy": "mean_reversion",
             "parameters": (dict(self.selection.get("parameters") or {}) if self._builtin else {}),
         }
         native = self.service._prepare_native(native_selection, settings=self.settings)
+        if self._builtin:
+            return self._builtin_replay(native, pair["pair_id"])
         series, funding_window, provenance, inputs = self._prepared_inputs(pair)
         snapshot = WindowSnapshot(
             universe=PAIR_UNIVERSE,
@@ -178,27 +175,43 @@ class PairPluginRoute:
             fill = pair_fill(
                 req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
             )
-            if self._builtin and metrics_only:
-                return native(self._template_request(req, fill), through=through, metrics_only=True)
             unit, execution, actual = self._unit_or_actual(
-                self.plugin, req, plugin_prepared, fill, through, builtin=self._builtin
+                self.plugin, req, plugin_prepared, fill, through
             )
             # The native proof supplies trusted market/chart/screen metadata only;
             # never retain its decisions, ledger or indicator values.
-            template = native(self._template_request(req, fill), through=through)
+            template = native(self._template_request(req, fill), through=through, template=True)
             if actual is None:
                 if unit is None or execution is None:
                     raise W0Error("Плагин не вернул единичный расчёт для фиксированного размера.")
                 return fixed_daily_pair_plugin_payload(
-                    template,
-                    unit,
-                    (series, pair, provenance),
-                    execution,
-                    benchmark,
-                    builtin=self._builtin,
+                    template, unit, (series, pair, provenance), execution, benchmark
                 )
             return enrich_sized_plugin_payload(
-                template, actual, series, pair, provenance, benchmark, builtin=self._builtin
+                template, actual, series, pair, provenance, benchmark
+            )
+
+        return replay
+
+    def _builtin_replay(
+        self, native: Callable[..., dict[str, Any]], pair_id: str
+    ) -> Callable[..., dict[str, Any]]:
+        """A built-in plugin is proven by the native replay of the same intent pipeline."""
+
+        def replay(
+            request: Any,
+            through: str | None = None,
+            *,
+            metrics_only: bool = False,
+            scalar_summary: Any | None = None,
+        ) -> dict[str, Any]:
+            req = cast(dict[str, Any], request)
+            self._ensure_request(req, pair_id)
+            fill = pair_fill(
+                req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
+            )
+            return native(
+                self._template_request(req, fill), through=through, metrics_only=metrics_only
             )
 
         return replay
@@ -211,8 +224,6 @@ def enrich_sized_plugin_payload(
     pair: dict[str, Any],
     provenance: dict[str, Any],
     benchmark: tuple[list[str], dict[str, float]],
-    *,
-    builtin: bool = False,
 ) -> dict[str, Any]:
     """Merge plugin decisions into the native template: market metadata stays native.
 
@@ -221,8 +232,7 @@ def enrich_sized_plugin_payload(
     """
     by_date: dict[str, dict[str, Any]] = {row["date"]: row for row in template["series"]}
     enriched_rows: list[dict[str, Any]] = [
-        merge_pair_series_row(by_date[row["date"]], row, builtin=builtin)
-        for row in actual["series"]
+        merge_pair_series_row(by_date[row["date"]], row, builtin=False) for row in actual["series"]
     ]
     indexed: dict[str, dict[str, Any]] = {row["date"]: row for row in enriched_rows}
     far_mult = point_value(series["contracts"][pair["far"]])
@@ -242,19 +252,18 @@ def enrich_sized_plugin_payload(
         skipped_entries=actual["skipped_entries"],
     )
     template["provenance"].update({**provenance, **actual["provenance"]})
-    apply_pair_notes(template, enriched_trades, builtin=builtin)
+    apply_pair_notes(template, enriched_trades)
     attach_entry_levels(template)
-    if not builtin:
-        template["run_id"] = run_id(
-            {
-                "selection": template["selection"],
-                "series": template["series"],
-                "trades": template["trades"],
-                "ledger": template["ledger"],
-                "sizing": template["sizing"],
-                "provenance": template["provenance"],
-            }
-        )
+    template["run_id"] = run_id(
+        {
+            "selection": template["selection"],
+            "series": template["series"],
+            "trades": template["trades"],
+            "ledger": template["ledger"],
+            "sizing": template["sizing"],
+            "provenance": template["provenance"],
+        }
+    )
     return template
 
 

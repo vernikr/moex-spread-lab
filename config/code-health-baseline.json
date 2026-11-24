@@ -73,8 +73,6 @@
     "packages/core/src/moex_spread_lab/core/workstation_results.py",
     "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
-    "packages/proof/src/moex_spread_lab/proof/fixed_plugin_series.py",
-    "packages/proof/src/moex_spread_lab/proof/service_prepare.py",
     "packages/proof/src/moex_spread_lab/proof/service_validation.py",
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",

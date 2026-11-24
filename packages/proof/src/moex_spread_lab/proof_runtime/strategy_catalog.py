@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from moex_spread_lab.core.contracts import plugin_is_builtin
 from moex_spread_lab.strategies import (
     StrategyRegistry,
     clear_discovery_cache,
@@ -23,9 +24,6 @@ from moex_spread_lab.strategies.base import (
 
 from .axis import Axis
 
-BUILTIN_PROOF_IDS = frozenset(
-    {"mean_reversion", "funding_only", "zscore_mean_reversion", "convergence_to_ruonia"}
-)
 Derived = tuple[StrategyRegistry, frozenset[str], dict[str, dict[str, Axis]]]
 
 _registry: StrategyRegistry | None = None
@@ -38,7 +36,9 @@ def _derive(registry: StrategyRegistry) -> Derived:
     Discovery alone must never route an unimplemented plugin into another engine.
     """
     adapter_ids = (
-        BUILTIN_PROOF_IDS
+        frozenset(
+            plugin.strategy_id for plugin in registry if plugin_is_builtin(plugin)
+        )
         | calendar_proof_plugin_ids(registry)
         | daily_pair_proof_plugin_ids(registry)
         | carry_proof_plugin_ids(registry)

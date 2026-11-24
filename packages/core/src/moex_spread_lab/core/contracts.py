@@ -206,6 +206,19 @@ def plugin_required_asset_capability(plugin: StrategyPlugin) -> str | None:
     return getattr(plugin, "required_asset_capability", None)
 
 
+_BUILTIN_PLUGIN_MODULE_PREFIX = "moex_spread_lab.strategies"
+
+
+def plugin_is_builtin(plugin: StrategyPlugin) -> bool:
+    """True for engines shipped inside the strategies package.
+
+    A drop-in may subclass a built-in plugin and inherit its ``trust_tier``, so the
+    declared tier alone cannot identify the built-in engine; the implementation's own
+    module does.
+    """
+    return type(plugin).__module__.startswith(_BUILTIN_PLUGIN_MODULE_PREFIX)
+
+
 def plugin_trust_tier(plugin: StrategyPlugin) -> Literal["builtin", "plugin"]:
     """Return the provenance tier declared by ``plugin``; unknown plugins count as third-party."""
     tier = getattr(plugin, "trust_tier", None)

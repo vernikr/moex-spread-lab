@@ -4,21 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from moex_spread_lab.core.contracts import InstrumentContext, plugin_ui_field_order
+from moex_spread_lab.core.contracts import (
+    InstrumentContext,
+    plugin_is_builtin,
+    plugin_ui_field_order,
+)
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.proof_runtime.strategy_catalog import (
     get_proof_adapter_ids,
     get_strategy_registry,
-)
-
-_BUILTIN_STRATEGY_IDS = frozenset(
-    {
-        "mean_reversion",
-        "funding_only",
-        "zscore_mean_reversion",
-        "convergence_to_ruonia",
-    }
 )
 
 
@@ -79,7 +74,7 @@ def strategy_registry_payload(*, timeframe: str = DEFAULT_TIMEFRAME) -> dict[str
                 "timeframe_supported": timeframe == "1d" or not bool(plugin.requires_daily_bars),
                 "proof_adapter": getattr(plugin, "proof_adapter", None),
                 "proof_enabled": plugin.strategy_id in adapted_ids,
-                "is_builtin": plugin.strategy_id in _BUILTIN_STRATEGY_IDS,
+                "is_builtin": plugin_is_builtin(plugin),
                 "ui_order": ui_order,
                 "parameters": base_specs,
                 "context_parameters": context_params,

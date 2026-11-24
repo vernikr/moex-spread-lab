@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.core.contracts import WindowSnapshot
+from moex_spread_lab.core.contracts import WindowSnapshot, plugin_is_builtin
 from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, build_carry_study
@@ -233,4 +233,12 @@ def report_for(state: FundingWindowState, *, metrics_only: bool) -> dict[str, An
     plugin = carry_plugin_of(state.spec)
     if plugin is None:
         return _builtinreport_for(state, metrics_only=metrics_only)
-    return _pluginreport_for(state, plugin, metrics_only=metrics_only)
+    try:
+        return _pluginreport_for(state, plugin, metrics_only=metrics_only)
+    except W0Error:
+        # The adapter rejects windows its invariants cannot certify (for example missing
+        # leg volumes). The built-in keeps its historical screening behaviour there, so a
+        # degenerate window is reported exactly as before the cutover.
+        if plugin_is_builtin(plugin):
+            return _builtinreport_for(state, metrics_only=metrics_only)
+        raise

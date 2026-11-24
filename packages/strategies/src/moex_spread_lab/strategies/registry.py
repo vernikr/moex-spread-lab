@@ -141,7 +141,9 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and p.supported_fills == ("same_day_settlement",)
         and p.requires_daily_bars is True
-        and counts[p.family_id] == 1
+        # Third-party plugins opt in only when their family is unambiguous; the
+        # built-in carry engine is identified by id.
+        and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
         and bool(p.parameter_schema())
         and all(spec.tunable for spec in p.parameter_schema())
     )

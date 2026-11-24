@@ -119,6 +119,20 @@ class CoreContractsTests(unittest.TestCase):
         self.assertIsNone(plugin_required_asset_capability(bare))
         self.assertEqual(plugin_trust_tier(bare), "plugin")
 
+    def test_plugin_is_builtin_follows_implementation_origin(self) -> None:
+        from moex_spread_lab.core.contracts import plugin_is_builtin
+
+        class Shipped:
+            __module__ = "moex_spread_lab.strategies.demo.plugin"
+            trust_tier = "plugin"
+
+        class DropIn:
+            trust_tier = "builtin"
+
+        self.assertTrue(plugin_is_builtin(Shipped()))
+        # The declared tier alone cannot identify the engine: a drop-in may inherit it.
+        self.assertFalse(plugin_is_builtin(DropIn()))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ from moex_spread_lab.accounting.position_sizing import (
 from moex_spread_lab.accounting.position_sizing import (
     size_proof as size_proof,
 )
+from moex_spread_lab.core.contracts import plugin_is_builtin
 from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
@@ -158,7 +159,9 @@ def _validate_pair_request(
 
 
 def _validate_carry_result(result: Any, carry_plugin: Any, metrics_only: bool) -> None:
-    if carry_plugin is None:
+    # Built-in engines keep their native payload shape; drop-ins carry the marker even
+    # when they subclass a built-in plugin and inherit its trust tier.
+    if carry_plugin is None or plugin_is_builtin(carry_plugin):
         return
     res = cast(dict[str, Any], result)
     res["accounting_policy"] = "carry_settlement.v1"

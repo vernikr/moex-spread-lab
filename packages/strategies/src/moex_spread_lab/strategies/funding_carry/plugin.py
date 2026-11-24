@@ -35,6 +35,7 @@ class FundingCarryPlugin:
     requires_daily_bars = True
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
+    proof_adapter: Literal["carry_settlement_intents.v1"] = "carry_settlement_intents.v1"
     trust_tier: Literal["builtin", "plugin"] = "builtin"
 
     def parameter_schema(

@@ -175,9 +175,18 @@ def _validate_pair_intent(item: object, st: _PairIntentState) -> dict[str, Any]:
 
 
 def pair_price_intent_trades(
-    plugin: StrategyPlugin, window: WindowSnapshot, params: dict[str, Any], fill: str
+    plugin: StrategyPlugin,
+    window: WindowSnapshot,
+    params: dict[str, Any],
+    fill: str,
+    *,
+    isolate: bool = True,
 ) -> list[dict[str, Any]]:
-    """Rebind unit pair decisions to actual two-leg price proxies; fail closed."""
+    """Rebind unit pair decisions to actual two-leg price proxies; fail closed.
+
+    `isolate=False` is reserved for first-party built-ins, which never mutate their
+    window; drop-in plugins always receive private copies.
+    """
     if (
         window.universe != PAIR_UNIVERSE
         or fill not in PRICE_FILLS
@@ -193,7 +202,11 @@ def pair_price_intent_trades(
     for row in rows:
         if any(_number(row.get(f"{leg}_volume")) <= 0 for leg in ("near", "far")):
             raise W0Error("Строка пары не прошла проверку объёмов.")
-    result: Any = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
+    result: Any = (
+        plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
+        if isolate
+        else plugin.evaluate_intents(window, dict(params), fill)
+    )
     if (
         not isinstance(result, StrategyIntentRun)
         or result.strategy_id != plugin.strategy_id

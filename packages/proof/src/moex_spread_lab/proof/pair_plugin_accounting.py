@@ -164,6 +164,8 @@ def prepare_daily_pair_unit(
     *,
     through: str | None = None,
     enforce_compatibility: bool = True,
+    isolate: bool = True,
+    memo: dict[str | None, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, float]]:
     """Validate decisions and size them against resolved funding and one account.
 
@@ -173,8 +175,18 @@ def prepare_daily_pair_unit(
     Daily perpetual funding evidence must match the near contract. Missing daily
     evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
     prices follow native proof and omit funding rather than invent clearing times.
+    `isolate=False` (first-party built-ins only) skips the defensive input copies.
+    A request-scoped `memo` (first-party built-ins only) reuses the validated and
+    priced rows of each cut-off across trials and leaves the unit `run_id` unset:
+    built-in payloads derive their identity from the full replay, not the unit.
     """
-    prefix, analysis_rows = _validated_rows(window, params, benchmark_marks, settings, through)
+    window_rows = memo.get(through) if memo is not None else None
+    if window_rows is None:
+        prefix, analysis_rows = _validated_rows(window, params, benchmark_marks, settings, through)
+        window_rows = (prefix, analysis_rows, *_priced_rows(window, prefix, benchmark_marks))
+        if memo is not None:
+            memo[through] = window_rows
+    prefix, analysis_rows, rows, lot = window_rows
     # Do not hand a plugin the original snapshot: benchmark/funding/extra fields
     # may contain future observations or unvalidated external data.
     analysis_window = WindowSnapshot(
@@ -182,8 +194,8 @@ def prepare_daily_pair_unit(
         pair=window.pair,
         timeframe=window.timeframe,
         asset=window.asset,
-        rows=deepcopy(analysis_rows),
-        contracts=deepcopy(window.contracts),
+        rows=deepcopy(analysis_rows) if isolate else analysis_rows,
+        contracts=deepcopy(window.contracts) if isolate else window.contracts,
         near=window.near,
         far=window.far,
         initial_capital_rub=settings.initial_capital_rub,
@@ -192,7 +204,7 @@ def prepare_daily_pair_unit(
     context = InstrumentContext(
         universe=window.universe, pair=window.pair, timeframe=window.timeframe
     )
-    validated = plugin.validate_parameters(deepcopy(params), context)
+    validated = plugin.validate_parameters(deepcopy(params) if isolate else params, context)
     validated_input: object = validated
     if not _is_runtime_instance(validated_input, dict):
         raise W0Error("Плагин вернул некорректные параметры.")
@@ -200,8 +212,7 @@ def prepare_daily_pair_unit(
         verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
         if not verdict.compatible:
             raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
-    trades = pair_price_intent_trades(plugin, analysis_window, validated, fill)
-    rows, lot = _priced_rows(window, prefix, benchmark_marks)
+    trades = pair_price_intent_trades(plugin, analysis_window, validated, fill, isolate=isolate)
     if any(
         not math.isfinite(trade[event]["spread_fill"])
         for trade in trades
@@ -221,15 +232,19 @@ def prepare_daily_pair_unit(
         "parameters": validated,
     }
     try:
-        identity = _choose_hook(run_id, _run_id, _original_run_id)(
-            {
-                "selection": selection,
-                "series": journal,
-                "trades": trades,
-                "contracts": window.contracts,
-                "benchmark_marks": marks,
-                "funding_provenance": prepared["provenance"],
-            }
+        identity = (
+            None
+            if memo is not None
+            else _choose_hook(run_id, _run_id, _original_run_id)(
+                {
+                    "selection": selection,
+                    "series": journal,
+                    "trades": trades,
+                    "contracts": window.contracts,
+                    "benchmark_marks": marks,
+                    "funding_provenance": prepared["provenance"],
+                }
+            )
         )
     except (TypeError, ValueError, OverflowError):
         raise W0Error("Некорректные данные идентичности расчёта.") from None

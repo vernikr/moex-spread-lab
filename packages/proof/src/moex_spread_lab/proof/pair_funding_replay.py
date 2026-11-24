@@ -254,6 +254,18 @@ def replay_daily_pair_funding(
     return {"daily": rows, "provenance": deepcopy(evidence.provenance)}
 
 
+_SCALARS = (str, int, float, bool, type(None))
+
+
+def _isolated(row: Mapping[str, object]) -> dict[str, object]:
+    """A private copy of an analysis row; flat scalar rows need no recursive copy."""
+    from copy import deepcopy
+
+    if all(isinstance(value, _SCALARS) for value in row.values()):
+        return dict(row)
+    return deepcopy(dict(row))
+
+
 def attach_daily_unit_funding(
     series: list[Mapping[str, object]] | tuple[Mapping[str, object], ...],
     trades: Sequence[Mapping[str, object]],
@@ -268,8 +280,6 @@ def attach_daily_unit_funding(
     journal-only extras and is not a complete proof or an enabled plugin adapter.
     Quantity is fixed at one here; the sizing engine applies accepted quantities.
     """
-    from copy import deepcopy
-
     if not _is_list_or_tuple(series) or any(not _is_mapping(row) for row in series):
         raise W0Error("Некорректные строки анализа для фондирования.")
     if any(row.get("volume_eligible", True) is not True for row in series):
@@ -286,7 +296,7 @@ def attach_daily_unit_funding(
         held = bool(funding["position_at_clearing"])
         rows.append(
             {
-                **deepcopy(row),
+                **_isolated(row),
                 "funding_rub": funding["funding_rub"],
                 "funding_contracts": int(held and funding["funding_status"] == "applied"),
                 "funding_rate_kind": funding["rate_kind"],

@@ -17,7 +17,7 @@ from pathlib import Path
 # test_architecture_dag.py. `cli` surfaces whose HEAD classification was "cli" keep it;
 # root-level compatibility shims stay explicit; everything else under a package tree
 # takes the package's layer.
-_CLI_LAYER_KEYS = frozenset({"cli", "cli_web", "core.cli", "data.cli", "accounting.cli"})
+_CLI_LAYER_KEYS = frozenset({"cli", "core.cli", "data.cli", "accounting.cli"})
 _PACKAGE_HEAD_LAYERS = {
     "core": "core",
     "proof": "proof",
@@ -32,8 +32,6 @@ _ROOT_SHIM_LAYERS = {
     "w0": "core",
     "timeframes": "core",
     "evaluation_periods": "core",
-    "universe": "core",
-    "bar_types": "data",
     "data_lake": "data",
     "h1_migration": "data",
     "h1_seal": "data",
@@ -63,11 +61,9 @@ _ROOT_SHIM_LAYERS = {
     "calendar_spreads": "strategies",
     "s3_reference": "strategies",
     "screener": "strategies",
-    "pair_screener": "strategies",
     "audit": "proof",
     "screener_search": "proof",
     "proof": "proof",
-    "proof_kernel": "proof",
     "proof_pool": "proof",
     "proof_windows": "proof",
     "proof_batch": "proof",

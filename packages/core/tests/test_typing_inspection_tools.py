@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from scripts import code_inspect, codemod_imports, typecheck_workspace
+from scripts import code_inspect, typecheck_workspace
 
 
 def _namespace_fixture(root: Path) -> None:
@@ -117,32 +117,3 @@ def test_inspector_strict_limit_detects_a_ceiling_breach(tmp_path: Path) -> None
     )
     assert result.returncode == 1
     assert "complexity ceiling 15" in result.stdout
-
-
-def test_import_codemod_is_ast_scoped_and_idempotent() -> None:
-    source = (
-        'from old.package import Item\ntext = "from old.package import Item"\nfrom . import local\n'
-    )
-    rewritten = codemod_imports.rewrite_imports(source, {"old.package": "new.package"})
-
-    assert (
-        rewritten
-        == 'from new.package import Item\ntext = "from old.package import Item"\nfrom . import local\n'
-    )
-    assert codemod_imports.rewrite_imports(rewritten, {"old.package": "new.package"}) == rewritten
-
-
-def test_reexport_shim_rejects_invalid_module_and_keyword_symbols() -> None:
-    with pytest.raises(ValueError, match="dotted Python identifier"):
-        codemod_imports.render_shim("safe.module\nimport os", ["Thing"])
-    with pytest.raises(ValueError, match="Python identifiers"):
-        codemod_imports.render_shim("safe.module", ["class"])
-
-
-def test_reexport_shim_is_deterministic_and_idempotent() -> None:
-    first = codemod_imports.render_shim("new.module", ["Thing", "helper", "Thing"])
-    second = codemod_imports.render_shim("new.module", ["Thing", "helper"])
-
-    assert first == second
-    assert "from new.module import (" in first
-    assert first.count("    Thing,") == 1

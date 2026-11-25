@@ -8,7 +8,6 @@ import pytest
 @pytest.mark.parametrize(
     ("old", "new"),
     [
-        ("proof_kernel", "proof_kernel"),
         ("proof_search", "proof_search"),
         ("proof_batch", "proof_batch"),
         ("proof_strategy_search", "proof_strategy_search"),

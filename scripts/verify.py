@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
-"""Documented launcher for agent task verification (plans S2 item 1, S4a item 1).
+"""Agent verification launcher: ``quick`` | ``affected`` | ``full`` | ``pre-push``.
 
-Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-only scan
-or router-scoped legs with advisory testmon and the always-run set; full fallback
-when no path matches) and ``full``/``pre-push`` (full health gate and the whole
-suite, every parity tier). Browser smokes run in the scheduled
-``scripts/run_browser_smokes.py`` job and are reported as not run here. pytest uses
-``-n <workers> --dist loadfile -q --tb=short``; ``TESTMON_DATAFILE`` defaults to
-``<repo>/.testmondata`` (gitignored).
+``quick`` runs ``check_health.sh --changed``; ``affected`` runs a docs-only scan or the
+router-scoped legs (advisory testmon plus the always-run set; full fallback when no
+path matches); ``full``/``pre-push`` run the full gate and the whole suite with every
+parity tier. Browser smokes live in the scheduled ``run_browser_smokes.py`` job.
 
-Every step runs with ``MOEX_OFFLINE_ONLY=1`` and ``UV_NO_SYNC=1`` and appends one
-sanitized JSON line (``msl.verification-record/1``) to ``reports/perf/records.jsonl``
-(gitignored; override with ``--records`` or ``MSL_VERIFICATION_RECORDS``). Home and
-repository paths and credential-shaped tokens are redacted; raw output never enters
-a record.
-
-Workers (S4a item 5): the A/B on a pinned 2-vCPU runner measured ``-n 0`` 73.5 s,
-``-n 2`` 42.5 s, ``-n 3`` 37.5 s and ``-n 4`` 37.0 s, so the default is the usable CPU
-budget (affinity and cgroup quota aware); ``MSL_VERIFY_WORKERS`` overrides it.
+Steps run with ``MOEX_OFFLINE_ONLY=1``/``UV_NO_SYNC=1`` and append one sanitized
+``msl.verification-record/1`` line to ``reports/perf/records.jsonl`` (``--records`` or
+``MSL_VERIFICATION_RECORDS`` override); paths and credential-shaped tokens are redacted
+and raw output never enters a record. pytest workers default to the usable CPU budget
+(2-vCPU A/B: -n 0 73.5 s, -n 2 42.5 s, -n 4 37.0 s); ``MSL_VERIFY_WORKERS`` overrides.
 """
 
 from __future__ import annotations

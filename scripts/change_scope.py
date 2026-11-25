@@ -1,24 +1,16 @@
 #!/usr/bin/env python3
-"""S2 change-scope router and touched-file lister (stdlib only; Agent Performance Issue #19).
+"""Change-scope router and touched-file helpers (stdlib only; used by ci.yml, verify, gates).
 
-Shared by ``scripts/verify.py``, ``scripts/check_health.sh``, the code-health gate and
-the ``scope``/``code-health`` jobs in ``.github/workflows/ci.yml``. Rules, evaluated
-per changed path; any unmatched path resolves to ``full``:
+Per changed path; any unmatched path resolves to ``full``:
 
 1. ``docs/**`` and root-level ``*.md`` are docs (Markdown inside ``packages/**`` is not).
-2. ``packages/<p>/{src,tests}/**``: a ``.py`` file selects ``p`` plus its reverse
-   dependents; any other file (or a new/deleted file) selects the same legs with
-   testmon deselection disabled.
-3. Any other path inside a known package selects its reverse-dependency closure
-   with testmon disabled.
-4. Everything else resolves to ``full``; C99/sanitizer/CI paths also set ``run_tier2``.
+2. ``packages/<p>/{src,tests}/**/*.py`` selects ``p`` plus its reverse dependents; any
+   other, new or deleted package file selects the same legs with testmon disabled.
+3. Everything else is ``full``; C99/sanitizer/CI paths also set ``run_tier2``.
 
-Without ``--event`` it routes the working tree (tracked diff vs ``--base`` plus
-untracked files); with ``--event`` it routes ``git diff base..head`` and any error,
+Without ``--event`` it routes the working tree (diff vs ``--base`` plus untracked
+files); with ``--event`` it routes ``git diff base..head``, and any error,
 ``schedule``/``workflow_dispatch`` or a missing base resolves to full (CI contract).
-``--list [--ext .py] [--all]`` prints the touched files and ``--imports-changed``
-exits 0 when the import graph can differ from ``--base`` (1 otherwise, 2 on git
-errors). Routing is advisory; the full gate and weekly full CI are the backstop.
 """
 
 from __future__ import annotations
@@ -299,18 +291,6 @@ def write_github_output(path: Path, decision: ScopeDecision) -> None:
         handle.writelines(f"{key}={value}\n" for key, value in decision.to_outputs().items())
 
 
-def _list_mode(args: argparse.Namespace) -> int:
-    try:
-        if args.imports_changed:
-            return 0 if imports_changed(args.base) else 1
-        for path in changed_paths(args.base, not args.all, tuple(args.ext) or None):
-            print(path)
-    except RuntimeError as exc:
-        print(f"changed-files: {exc}", file=sys.stderr)
-        return 2
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="HEAD", help="base revision (default: HEAD)")
@@ -318,13 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--head", default="HEAD", help="CI head revision (default: HEAD)")
     parser.add_argument("--github-output", type=Path, default=None, help="$GITHUB_OUTPUT file")
     parser.add_argument("--format", choices=("text", "json"), default="text")
-    parser.add_argument("--list", action="store_true", help="print touched files")
-    parser.add_argument("--ext", action="append", default=[], help="--list suffix filter")
-    parser.add_argument("--all", action="store_true", help="--list includes deleted paths")
-    parser.add_argument("--imports-changed", action="store_true", help="exit 0 if imports moved")
     args = parser.parse_args(argv)
-    if args.list or args.imports_changed:
-        return _list_mode(args)
     try:
         if args.event is None:
             decision = decide_local(args.base)

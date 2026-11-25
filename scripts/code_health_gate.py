@@ -13,57 +13,33 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-if __package__:
-    from .change_scope import changed_paths
-    from .code_health_gate_common import (
-        BASELINE_PATH,
-        POLICY,
-        PROTECTED_EXCEPTION_ROOTS,
-        ROOT,
-        GateError,
-        _load_baseline,
-        _relative,
-        _source_files,
-    )
-    from .code_health_gate_rules import (
-        _c_function_failures,
-        _check_files,
-        _complexity_failures,
-        _exception_failures,
-        _fastcore_parity_failures,
-        _fragment_name_failures,
-        _package_token_advisories,
-        _package_totals,
-        _shallow_shard_advisories,
-        _updated_baseline,
-    )
-else:
-    from change_scope import changed_paths
-    from code_health_gate_common import (
-        BASELINE_PATH,
-        POLICY,
-        PROTECTED_EXCEPTION_ROOTS,
-        ROOT,
-        GateError,
-        _load_baseline,
-        _relative,
-        _source_files,
-    )
-    from code_health_gate_rules import (
-        _c_function_failures,
-        _check_files,
-        _complexity_failures,
-        _exception_failures,
-        _fastcore_parity_failures,
-        _fragment_name_failures,
-        _package_token_advisories,
-        _package_totals,
-        _shallow_shard_advisories,
-        _updated_baseline,
-    )
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.change_scope import changed_paths
+from scripts.code_health_gate_common import (
+    BASELINE_PATH,
+    EXCLUDED_PARTS,
+    POLICY,
+    PROTECTED_EXCEPTION_ROOTS,
+    ROOT,
+    SOURCE_SUFFIXES,
+    GateError,
+    _load_baseline,
+    _relative,
+    _source_files,
+)
+from scripts.code_health_gate_rules import (
+    _c_function_failures,
+    _check_files,
+    _complexity_failures,
+    _exception_failures,
+    _fastcore_parity_failures,
+    _fragment_name_failures,
+    _package_token_advisories,
+    _package_totals,
+    _shallow_shard_advisories,
+    _updated_baseline,
+)
 
-SOURCE_SUFFIXES = (".py", ".c", ".js", ".css", ".html")
-EXCLUDED_PARTS = ("vendor", "__pycache__")
 SOURCE_TOP_LEVELS = ("packages", "src", "scripts")
 
 

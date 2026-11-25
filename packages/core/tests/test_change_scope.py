@@ -34,141 +34,9 @@ def test_docs_only_change_selects_docs_profile() -> None:
     assert decision.skipped  # skipped checks are stated, never silent
 
 
-def test_markdown_inside_packages_is_not_docs() -> None:
-    decision = _decide(["packages/web/README.md"])
-    assert decision.profile == "packages"
-    assert decision.packages == ("web",)
-    assert decision.docs_only is False
-    assert decision.testmon is False  # non-.py rule: no testmon deselection
-
-
-def test_core_py_change_runs_all_six_legs_with_testmon() -> None:
-    decision = _decide(["packages/core/src/moex_spread_lab/core/contracts.py"])
-    assert decision.profile == "packages"
-    assert decision.packages == ALL_SIX
-    assert decision.testmon is True
-    assert decision.perf_equivalence is True
-
-
-def test_reverse_dependency_closures() -> None:
-    cases = {
-        "packages/data/src/moex_spread_lab/data/lake.py": ("data", "strategies", "proof", "web"),
-        "packages/accounting/src/moex_spread_lab/accounting/ledger.py": (
-            "accounting",
-            "strategies",
-            "proof",
-            "web",
-        ),
-        "packages/strategies/src/moex_spread_lab/strategies/carry.py": (
-            "strategies",
-            "proof",
-            "web",
-        ),
-        "packages/proof/src/moex_spread_lab/proof/cohort_models.py": ("proof", "web"),
-        "packages/web/src/moex_spread_lab/web/server.py": ("web",),
-    }
-    for path, legs in cases.items():
-        decision = _decide([path])
-        assert decision.packages == tuple(legs), path
-        assert decision.testmon is True, path
-
-
-def test_package_py_change_touching_multiple_packages_unions_legs() -> None:
-    decision = _decide(
-        [
-            "packages/accounting/src/moex_spread_lab/accounting/ledger.py",
-            "packages/web/src/moex_spread_lab/web/server.py",
-        ]
-    )
-    assert decision.packages == ("accounting", "strategies", "proof", "web")
-
-
-def test_web_only_push_skips_perf_equivalence() -> None:
-    decision = _decide(["packages/web/src/moex_spread_lab/web/server.py"])
-    assert decision.perf_equivalence is False
-
-
-def test_non_py_package_file_runs_full_legs_without_testmon(tmp_path: Path) -> None:
-    decision = _decide(["packages/web/src/moex_spread_lab/web/static/js/app.js"])
-    assert decision.profile == "packages"
-    assert decision.packages == ("web",)
-    assert decision.testmon is False
-    assert decision.check_js_modules is True
-
-
-def test_non_py_snapshot_inside_package_selects_package_closure() -> None:
-    decision = _decide(["packages/proof/tests/golden_output.json"])
-    assert decision.packages == ("proof", "web")
-    assert decision.testmon is False
-
-
-def test_non_py_file_outside_static_does_not_trigger_js_modules() -> None:
-    decision = _decide(["packages/proof/tests/golden_output.json"])
-    assert decision.check_js_modules is False
-
-
-def test_new_py_file_disables_testmon_but_keeps_package_scope() -> None:
-    path = "packages/core/src/moex_spread_lab/core/brand_new_module.py"
-    decision = _decide([path], new_or_deleted=[path])
-    assert decision.packages == ALL_SIX
-    assert decision.testmon is False
-
-
-def test_deleted_py_file_disables_testmon() -> None:
-    path = "packages/web/src/moex_spread_lab/web/gone.py"
-    decision = _decide([path], new_or_deleted=[path])
-    assert decision.packages == ("web",)
-    assert decision.testmon is False
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "pyproject.toml",
-        "uv.lock",
-        ".github/workflows/ci.yml",
-        "config/code-health-baseline.json",
-        "fixtures/research/offline.json",
-        "scripts/check_health.sh",
-        "scripts/change_scope.py",
-        ".basedpyright/baseline.json",
-        ".jscpd.json",
-        "src/moex_spread_lab/cli.py",
-        "tests/proof_fixtures.py",
-        "packages/unknown_package/src/moex_spread_lab/x.py",
-        ".clang-tidy",
-    ],
-)
-def test_unknown_path_resolves_to_full(path: str) -> None:
-    decision = _decide([path])
-    assert decision.profile == "full"
-    assert decision.packages == ALL_SIX
-    assert decision.testmon is False
-    assert decision.perf_equivalence is True
-
-
 def test_empty_change_set_resolves_to_full() -> None:
     decision = _decide([])
-    assert decision.profile == "full"
-    assert decision.packages == ALL_SIX
-
-
-def test_mixed_docs_and_package_change_selects_package_legs() -> None:
-    decision = _decide(["docs/development/ci.md", "packages/web/src/moex_spread_lab/web/server.py"])
-    assert decision.profile == "packages"
-    assert decision.packages == ("web",)
-
-
-def test_docs_mixed_with_unmatched_resolves_to_full() -> None:
-    decision = _decide(["docs/development/ci.md", "scripts/verify.py"])
-    assert decision.profile == "full"
-
-
-def test_tier2_trigger_paths() -> None:
-    assert _decide(["packages/core/src/moex_spread_lab/core/_fastcore.c"]).run_tier2 is True
-    assert _decide(["packages/proof/tests/test_fastcore_parity.py"]).run_tier2 is True
-    assert _decide([".clang-tidy"]).run_tier2 is True
-    assert _decide(["packages/web/src/moex_spread_lab/web/server.py"]).run_tier2 is False
+    assert (decision.profile, decision.packages) == ("full", ALL_SIX)
 
 
 def test_reverse_dependency_table_matches_architecture_dag() -> None:
@@ -213,64 +81,51 @@ def test_decide_ci_head_vs_head_empty_diff_is_full() -> None:
     assert decision.profile == "full"
 
 
-def test_decide_ci_against_real_repo_commits(tmp_path: Path) -> None:
+def _repo_with_web_server(tmp_path: Path):
     def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
-        ).stdout.strip()
+        cmd = ["git", *args]
+        return subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True, text=True).stdout
 
     git("init", "-q")
     git("config", "user.email", "test@example.com")
     git("config", "user.name", "test")
-    src = tmp_path / "packages/web/src/moex_spread_lab/web"
-    src.mkdir(parents=True)
-    target = src / "server.py"
+    target = tmp_path / "packages/web/src/moex_spread_lab/web/server.py"
+    target.parent.mkdir(parents=True)
     target.write_text("x = 1\n", encoding="utf-8")
     git("add", ".")
     git("commit", "-q", "-m", "base")
-    base_sha = git("rev-parse", "HEAD")
-    target.write_text("x = 2\n", encoding="utf-8")
-    git("add", ".")
-    git("commit", "-q", "-m", "edit")
+    return git, git("rev-parse", "HEAD").strip(), target
 
+
+def _commit(git, message: str) -> None:
+    git("add", "-A")
+    git("commit", "-q", "-m", message)
+
+
+def test_decide_ci_against_real_repo_commits(tmp_path: Path) -> None:
+    git, base_sha, target = _repo_with_web_server(tmp_path)
+    target.write_text("x = 2\n", encoding="utf-8")
+    _commit(git, "edit")
     decision = change_scope.decide_ci("push", base_sha=base_sha, head_sha="HEAD", root=tmp_path)
-    assert decision.profile == "packages"
-    assert decision.packages == ("web",)
-    assert decision.perf_equivalence is False
-    # Writing to docs only is docs-only.
-    docs = tmp_path / "docs"
-    docs.mkdir()
-    (docs / "guide.md").write_text("hello\n", encoding="utf-8")
-    git("add", ".")
-    git("commit", "-q", "-m", "docs")
+    assert (decision.profile, decision.packages, decision.perf_equivalence) == (
+        "packages",
+        ("web",),
+        False,
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/guide.md").write_text("hello\n", encoding="utf-8")
+    _commit(git, "docs")
+    # docs paths never widen a package change into a docs-only or full scope
     docs_decision = change_scope.decide_ci(
         "push", base_sha=base_sha, head_sha="HEAD", root=tmp_path
     )
-    # docs paths never widen a package change into a docs-only or full scope
-    assert docs_decision.profile == "packages"
-    assert docs_decision.packages == ("web",)
+    assert (docs_decision.profile, docs_decision.packages) == ("packages", ("web",))
 
 
 def test_decide_ci_detects_deleted_files(tmp_path: Path) -> None:
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
-        ).stdout.strip()
-
-    git("init", "-q")
-    git("config", "user.email", "test@example.com")
-    git("config", "user.name", "test")
-    src = tmp_path / "packages/web/src/moex_spread_lab/web"
-    src.mkdir(parents=True)
-    target = src / "server.py"
-    target.write_text("x = 1\n", encoding="utf-8")
-    git("add", ".")
-    git("commit", "-q", "-m", "base")
-    base_sha = git("rev-parse", "HEAD")
+    git, base_sha, target = _repo_with_web_server(tmp_path)
     target.unlink()
-    git("add", "-A")
-    git("commit", "-q", "-m", "delete")
-
+    _commit(git, "delete")
     decision = change_scope.decide_ci("push", base_sha=base_sha, head_sha="HEAD", root=tmp_path)
     assert decision.packages == ("web",)
     assert decision.testmon is False  # deleted file: no deselection
@@ -365,12 +220,20 @@ ROUTING_TABLE = [
     ([f"{_CORE}/contracts.py", _DATA], "packages", ALL_SIX, True),
     ([_STRAT, _DATA], "packages", _DPW, True),
     (["+docs/shadow.md", f"{_WEB}/server.py"], "packages", _W, True),
+    (["packages/proof/tests/golden_output.json"], "packages", _PW, False),
+    ([f"+{_WEB}/gone.py"], "packages", _W, False),
+    (["packages/data/src/moex_spread_lab/data/lake.py"], "packages", _DPW, True),
     *(
         ([path], "full", ALL_SIX, False)
         for path in (
             "pyproject.toml",
             ".github/workflows/ci.yml",
             "scripts/change_scope.py",
+            "scripts/check_health.sh",
+            "uv.lock",
+            ".jscpd.json",
+            "packages/unknown_package/src/moex_spread_lab/x.py",
+            "packages/proof/tests/test_fastcore_parity.py",
             "fixtures/research/offline.json",
             "tests/proof_fixtures.py",
             "config/code-health-baseline.json",
@@ -381,7 +244,9 @@ ROUTING_TABLE = [
         )
     ),
     (["+docs/shadow.md", "pyproject.toml"], "full", ALL_SIX, False),
+    (["docs/development/ci.md", "scripts/verify.py"], "full", ALL_SIX, False),
 ]
+_TIER2 = (".clang-tidy", "_fastcore.c", "test_fastcore_parity.py", "workflows/ci.yml")
 
 
 @pytest.mark.parametrize(("changes", "profile", "legs", "testmon"), ROUTING_TABLE)
@@ -391,3 +256,7 @@ def test_routing_regression_table(
     paths = [change.removeprefix("+") for change in changes]
     decision = _decide(paths, [change[1:] for change in changes if change.startswith("+")])
     assert (decision.profile, decision.packages, decision.testmon) == (profile, legs, testmon)
+    assert decision.docs_only is (profile == "docs")
+    assert decision.perf_equivalence is (legs not in ((), _W))
+    assert decision.check_js_modules is any("/static/" in path for path in paths)
+    assert decision.run_tier2 is any(path.endswith(_TIER2) for path in paths)

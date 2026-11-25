@@ -61,52 +61,22 @@ def test_file_archetypes_are_classified_from_the_path(archetype, relative):
 
 
 @pytest.mark.parametrize(("archetype", "relative"), ARCHETYPE_PATHS)
-def test_green_band_files_stay_silent(archetype, relative):
+def test_budget_bands_are_green_advisory_or_hard(archetype, relative):
     budget = common.FILE_BUDGETS[archetype]
 
-    assert rules._budget_outcome(relative, _metrics(budget["soft_loc"])) == ([], [])
+    def outcome(loc: int, tokens: int = 1) -> tuple[list[str], list[str]]:
+        return rules._budget_outcome(relative, _metrics(loc, tokens))
 
-
-@pytest.mark.parametrize(("archetype", "relative"), ARCHETYPE_PATHS)
-def test_yellow_band_loc_is_advisory_without_failure(archetype, relative):
-    budget = common.FILE_BUDGETS[archetype]
-
-    failures, advisories = rules._budget_outcome(relative, _metrics(budget["soft_loc"] + 1))
-
-    assert failures == []
-    assert advisories and "advisory band" in advisories[0]
-
-
-@pytest.mark.parametrize(
-    ("archetype", "relative"),
-    [case for case in ARCHETYPE_PATHS if case[0] != "kernel"],
-)
-def test_yellow_band_tokens_is_advisory_without_failure(archetype, relative):
-    budget = common.FILE_BUDGETS[archetype]
-
-    failures, advisories = rules._budget_outcome(relative, _metrics(1, budget["soft_tokens"] + 1))
-
-    assert failures == []
-    assert advisories and "tokens in the" in advisories[0]
-
-
-@pytest.mark.parametrize(("archetype", "relative"), ARCHETYPE_PATHS)
-def test_red_band_over_the_hard_ceiling_fails(archetype, relative):
-    budget = common.FILE_BUDGETS[archetype]
-
-    failures, advisories = rules._budget_outcome(relative, _metrics(budget["hard_loc"] + 1))
-
-    assert failures and "hard ceiling" in failures[0]
-    assert advisories == []
-
-
-def test_kernel_tokens_are_not_budgeted(monkeypatch):
-    """The C99 translation unit is governed by LOC and per-function limits only."""
-    failures, advisories = rules._budget_outcome(
-        "packages/core/src/moex_spread_lab/core/_fastcore.c", _metrics(1, 10**6)
-    )
-
-    assert (failures, advisories) == ([], [])
+    assert outcome(budget["soft_loc"]) == ([], [])  # green stays silent
+    failures, advisories = outcome(budget["soft_loc"] + 1)
+    assert failures == [] and "advisory band" in advisories[0]
+    failures, advisories = outcome(budget["hard_loc"] + 1)
+    assert "hard ceiling" in failures[0] and advisories == []
+    if archetype == "kernel":  # the C99 unit is governed by LOC and per-function limits only
+        assert outcome(1, 10**6) == ([], [])
+    else:
+        failures, advisories = outcome(1, budget["soft_tokens"] + 1)
+        assert failures == [] and "tokens in the" in advisories[0]
 
 
 def test_check_files_reports_yellow_band_without_failing(tmp_path, monkeypatch):
@@ -191,7 +161,7 @@ def test_forbidden_overflow_filenames_fail_unless_grandfathered(tmp_path, monkey
 
 def test_clean_filenames_pass_the_fragmentation_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    source = _write(tmp_path, "scripts/shadow_runner.py", "X = 1\n")
+    source = _write(tmp_path, "scripts/change_scope.py", "X = 1\n")
 
     assert rules._fragment_name_failures([source], _baseline()) == []
 

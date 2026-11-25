@@ -7,38 +7,21 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-if __package__:
-    from .code_health_gate_common import (
-        ALLOW_MARKER,
-        EXCLUDED_PARTS,
-        POLICY,
-        PROTECTED_EXCEPTION_ROOTS,
-        ROOT,
-        GateError,
-        _budget_for,
-        _file_metrics,
-        _fragment_name_problem,
-        _is_compatibility_shim,
-        _package_group,
-        _package_root,
-        _relative,
-    )
-else:
-    from code_health_gate_common import (
-        ALLOW_MARKER,
-        EXCLUDED_PARTS,
-        POLICY,
-        PROTECTED_EXCEPTION_ROOTS,
-        ROOT,
-        GateError,
-        _budget_for,
-        _file_metrics,
-        _fragment_name_problem,
-        _is_compatibility_shim,
-        _package_group,
-        _package_root,
-        _relative,
-    )
+from scripts.code_health_gate_common import (
+    ALLOW_MARKER,
+    EXCLUDED_PARTS,
+    POLICY,
+    PROTECTED_EXCEPTION_ROOTS,
+    ROOT,
+    GateError,
+    _budget_for,
+    _file_metrics,
+    _fragment_name_problem,
+    _is_compatibility_shim,
+    _package_group,
+    _package_root,
+    _relative,
+)
 
 
 def _fastcore_exports(c_source: str) -> tuple[list[str], str | None]:

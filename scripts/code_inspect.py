@@ -11,10 +11,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-if __package__:
-    from .code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
-else:
-    from code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
 
 ROOT = Path(__file__).resolve().parents[1]
 # Size budgets, the token estimator and the complexity ceiling are the gate's own

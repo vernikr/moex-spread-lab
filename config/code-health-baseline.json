@@ -55,26 +55,13 @@
   },
   "guard_files": [],
   "legacy_fragment_files": [
-    "packages/data/src/moex_spread_lab/data/lake/helpers_p72_packages_data_src_moex_spread_lab_data_lake_data_refresh.py",
-    "packages/data/src/moex_spread_lab/data/lake/helpers_p72_packages_data_src_moex_spread_lab_data_lake_parquet_store.py",
-    "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
-    "packages/data/src/moex_spread_lab/data/lake/seal_identity_p72_57.py",
-    "packages/data/src/moex_spread_lab/data/retention/helpers_p72_packages_data_src_moex_spread_lab_data_retention_data_archive_candidates.py",
-    "packages/proof/src/moex_spread_lab/proof/compat_hooks_p72_138.py",
-    "packages/proof/src/moex_spread_lab/proof/families_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_strategy_search.py",
-    "packages/proof/src/moex_spread_lab/proof/pair_plugin_accounting_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting.py",
-    "packages/proof/src/moex_spread_lab/proof/pool_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_pool.py",
-    "packages/proof/src/moex_spread_lab/proof/proof_kernel_p72_packages_proof_src_moex_spread_lab_proof_runtime_proof_kernel.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
     "packages/strategies/tests/test_runner_119.py"
   ],
   "legacy_shallow_shards": [
     "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
-    "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
     "packages/proof/src/moex_spread_lab/proof/service_validation.py",
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
-    "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
     "packages/web/src/moex_spread_lab/web/routes_settings.py",
     "scripts/vulture_whitelist.py"
   ],
@@ -101,7 +88,7 @@
       "baseline_tokens": 36195
     },
     "src": {
-      "baseline_tokens": 3380
+      "baseline_tokens": 13416
     }
   },
   "policy": {

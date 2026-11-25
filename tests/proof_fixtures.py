@@ -5,6 +5,25 @@ import json
 from test_calendar_proof import _build_root as calendar_root
 from test_execution_proof import _build_root as pair_root
 
+# Canonical replay rows over the synthetic `fixture` workspace: the pair-screen
+# mean-reversion winner, the native SR calendar and its flat SRM3/SRU3 sibling.
+PAIR = {
+    "universe": "pair_screen",
+    "pair": "CNYRUBF/CRZ6",
+    "strategy": "mean_reversion",
+    "parameters": {"lookback": 6, "entry_z": 0.8, "exit_z": 0.1},
+    "sizing": "max_affordable",
+}
+CAL = {
+    "universe": "calendar_native",
+    "asset": "SR",
+    "pair": "SRH3/SRM3",
+    "strategy": "zscore_mean_reversion",
+    "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
+    "sizing": "max_affordable",
+}
+FLAT = {**CAL, "pair": "SRM3/SRU3"}
+
 
 def fixture(root):
     pair_root(root)

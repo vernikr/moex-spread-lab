@@ -2,22 +2,14 @@ import json
 import math
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from synthetic_history import weekdays
 
 START, END = "2025-06-17", "2026-10-27"
-
-
-def _weekdays(start: date, count: int) -> list[date]:
-    out, day = [], start
-    while len(out) < count:
-        if day.weekday() < 5:
-            out.append(day)
-        day += timedelta(days=1)
-    return out
 
 
 def _near_close(i: int) -> float:
@@ -65,7 +57,7 @@ def _write_carry_history(root: Path, secid: str, days: list[date], close) -> Non
 
 
 def _build_root(root: Path) -> list[date]:
-    days = _weekdays(date(2025, 6, 17), 55)
+    days = weekdays(date(2025, 6, 17), count=55)
     (root / "data/w1/candles").mkdir(parents=True)
     (root / "data/benchmark").mkdir(parents=True)
     (root / "data/w1").mkdir(parents=True, exist_ok=True)

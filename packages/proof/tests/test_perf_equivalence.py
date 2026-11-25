@@ -32,6 +32,7 @@ from moex_spread_lab.proof.service import (
 )
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from moex_spread_lab.strategies.funding_carry.carry import fetch_history
+from perf_equivalence_case import H1WorkspaceCase
 from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
     _build_h1_workspace,
     _canon,
@@ -124,30 +125,8 @@ def rewrite_same_size(path: Path, old: str, new: str) -> str:
     return mutated
 
 
-class ProofPerfEquivalenceTests(unittest.TestCase):
+class ProofPerfEquivalenceTests(H1WorkspaceCase):
     """Canary slice: the default-discovery contract of the equivalence suite."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
-        cls.root = Path(cls._tmp.name)
-        _build_h1_workspace(cls.root)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._tmp.cleanup()
-
-    def _compare_modes(self, settings: ResearchSettings, fn):
-        with patch.object(ResearchSettings, "load", return_value=settings):
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "1"}):
-                ref_service = ProofService(self.root)
-                expected = fn(ref_service)
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "0"}):
-                fast_service = ProofService(self.root)
-                actual = fn(fast_service)
-        self.assertEqual(_canon_sha(actual), _canon_sha(expected))
-        self.assertEqual(actual, expected)
-        return actual
 
     def test_1h_calendar_proxy_and_native_cohort_and_mixed_universe(self):
         settings = research_settings(timeframe="1h", initial_capital_rub=100000.0)

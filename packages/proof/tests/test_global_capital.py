@@ -14,7 +14,7 @@ from moex_spread_lab.proof.proof_search import _annualized_returns, research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, catalog
-from proof_fixtures import two_calendar_windows
+from proof_fixtures import CAL, FLAT, PAIR, two_calendar_windows
 from test_position_sizing import unit_proof
 
 
@@ -58,22 +58,6 @@ def runtime_excess_pp(proof, marks, days, share):
     return _annualized_returns(proof, marks, split)["annualized_excess_pp"]
 
 
-PAIR = {
-    "universe": "pair_screen",
-    "pair": "CNYRUBF/CRZ6",
-    "strategy": "mean_reversion",
-    "parameters": {"lookback": 6, "entry_z": 0.8, "exit_z": 0.1},
-    "sizing": "max_affordable",
-}
-CAL = {
-    "universe": "calendar_native",
-    "asset": "SR",
-    "pair": "SRH3/SRM3",
-    "strategy": "zscore_mean_reversion",
-    "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
-    "sizing": "max_affordable",
-}
-FLAT = {**CAL, "pair": "SRM3/SRU3"}
 TARGETS = [{k: v for k, v in r.items() if k in ("universe", "asset", "pair")} for r in (PAIR, CAL)]
 
 

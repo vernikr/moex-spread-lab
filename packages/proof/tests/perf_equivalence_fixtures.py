@@ -5,8 +5,9 @@ full-resolution tier clone identical bytes. This module only writes files: it
 constructs no proof service and holds no numeric expectation.
 
 The helper names (``_write_h1_candles``, ``_build_h1_workspace``, ``_canon``,
-``_canon_sha``) are re-exported by each tier module, because the drop-in plugin
-integration test imports them from ``test_perf_equivalence``.
+``_canon_sha``) are re-exported by the canary ``test_perf_equivalence``, because the
+drop-in plugin integration test imports them from there. The class lifecycle and
+the reference-vs-fast comparison live in ``perf_equivalence_case``.
 """
 
 from __future__ import annotations
@@ -14,12 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from proof_fixtures import fixture
+from synthetic_history import iso_weekdays as _weekdays
+from synthetic_history import write_h1_candles as _write_h1_candles
 
 TILL = "2023-06-15"
 
@@ -30,32 +33,6 @@ def _canon(value) -> str:
 
 def _canon_sha(value) -> str:
     return hashlib.sha256(_canon(value).encode("utf-8")).hexdigest()
-
-
-def _weekdays(start: date, count: int) -> list[str]:
-    days, cur = [], start
-    while len(days) < count:
-        if cur.weekday() < 5:
-            days.append(cur.isoformat())
-        cur += timedelta(days=1)
-    return days
-
-
-def _write_h1_candles(root: Path, subdir: str, secid: str, rows: list[dict]) -> Path:
-    path = root / "data/w1" / subdir / f"{secid}_1h.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "iss-candles.v1",
-                "secid": secid,
-                "interval": 60,
-                "rows": rows,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return path
 
 
 def _extend_benchmark(

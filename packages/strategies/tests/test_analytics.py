@@ -12,6 +12,7 @@ from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     load_contracts,
     run_mean_reversion_baseline,
 )
+from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 
 class HistoricalTariffGroupTests(unittest.TestCase):
@@ -73,6 +74,36 @@ def candle_payload(secid, closes, interval=24):
     }
 
 
+SPREADS = (0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0)
+
+
+def spread_rows(*, timestamps=False):
+    """Daily synthetic spread rows around a flat 10.0 far leg and an observed flat LQDT mark."""
+    rows = []
+    for index, spread in enumerate(SPREADS):
+        date = f"2026-01-{index + 1:02d}"
+        row: dict[str, object] = {"date": date}
+        if timestamps:
+            row["timestamp"] = f"{date} 00:00:00"
+        row.update(
+            near_close=10.0 + spread / 1000,
+            far_close=10.0,
+            spread_ticks=spread,
+            benchmark_price=1.0,
+            benchmark_source_kind="observed",
+        )
+        rows.append(row)
+    return rows
+
+
+def contract_terms():
+    """In-memory NEAR/FAR contract terms matching the default synthetic snapshot."""
+    return {
+        "NEAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 900},
+        "FAR": {"lot_size": 1000, "tick_size": 0.001, "tick_value": 1.0, "initial_margin": 1000},
+    }
+
+
 class AnalyticsTests(unittest.TestCase):
     def test_daily_series_uses_tick_safe_spread_and_benchmark(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -83,58 +114,9 @@ class AnalyticsTests(unittest.TestCase):
             (root / "far.json").write_text(
                 json.dumps(candle_payload("FAR", [9.9, 9.95])), encoding="utf-8"
             )
-            (root / "benchmark.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": "2026-01-01",
-                                "price": 1.0,
-                                "source_ticker": "LQDT",
-                                "source_kind": "observed",
-                            },
-                            {
-                                "date": "2026-01-02",
-                                "price": 1.01,
-                                "source_ticker": "LQDT",
-                                "source_kind": "observed",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (root / "contracts.json").write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2026-12-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2027-03-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
+            write_lqdt_lineage(root / "benchmark.json", {"2026-01-01": 1.0, "2026-01-02": 1.01})
+            write_near_far_contracts(
+                root / "contracts.json", near={"expiry": "2026-12-01"}, far={"expiry": "2027-03-01"}
             )
             series = build_daily_series(
                 root / "near.json",
@@ -150,37 +132,12 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(series["rows"][1]["benchmark_source_kind"], "observed")
 
     def test_baseline_reports_gross_result_and_unknown_costs(self):
-        rows = []
-        spreads = [0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0]
-        for index, spread in enumerate(spreads):
-            rows.append(
-                {
-                    "date": f"2026-01-{index + 1:02d}",
-                    "near_close": 10.0 + spread / 1000,
-                    "far_close": 10.0,
-                    "spread_ticks": spread,
-                    "benchmark_price": 1.0,
-                    "benchmark_source_kind": "observed",
-                }
-            )
+        rows = spread_rows()
         result = run_mean_reversion_baseline(
             {
                 "near": "NEAR",
                 "far": "FAR",
-                "contracts": {
-                    "NEAR": {
-                        "lot_size": 1000,
-                        "tick_size": 0.001,
-                        "tick_value": 1.0,
-                        "initial_margin": 900,
-                    },
-                    "FAR": {
-                        "lot_size": 1000,
-                        "tick_size": 0.001,
-                        "tick_value": 1.0,
-                        "initial_margin": 1000,
-                    },
-                },
+                "contracts": contract_terms(),
                 "rows": rows,
                 "provenance": {},
             },
@@ -204,64 +161,11 @@ class AnalyticsTests(unittest.TestCase):
             (root / "far.json").write_text(
                 json.dumps(candle_payload("FAR", [9.9, 9.95, 10.0], interval=10)), encoding="utf-8"
             )
-            (root / "benchmark.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": "2025-12-31",
-                                "price": 1.0,
-                                "source_ticker": "LQDT",
-                                "source_kind": "observed",
-                            },
-                            {
-                                "date": "2026-01-01",
-                                "price": 1.01,
-                                "source_ticker": "LQDT",
-                                "source_kind": "observed",
-                            },
-                            {
-                                "date": "2026-01-02",
-                                "price": 1.02,
-                                "source_ticker": "LQDT",
-                                "source_kind": "observed",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
+            write_lqdt_lineage(
+                root / "benchmark.json", {"2025-12-31": 1.0, "2026-01-01": 1.01, "2026-01-02": 1.02}
             )
-            (root / "contracts.json").write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2026-12-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2027-03-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
+            write_near_far_contracts(
+                root / "contracts.json", near={"expiry": "2026-12-01"}, far={"expiry": "2027-03-01"}
             )
             series = build_series(
                 root / "near.json",
@@ -277,36 +181,11 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(series["rows"][-1]["benchmark_mark_kind"], "daily_close_same_date")
 
     def test_cost_profile_keeps_components_separate_and_reduces_net_value(self):
-        rows = []
-        spreads = [0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0]
-        for index, spread in enumerate(spreads):
-            rows.append(
-                {
-                    "date": f"2026-01-{index + 1:02d}",
-                    "near_close": 10.0 + spread / 1000,
-                    "far_close": 10.0,
-                    "spread_ticks": spread,
-                    "benchmark_price": 1.0,
-                    "benchmark_source_kind": "observed",
-                }
-            )
+        rows = spread_rows()
         series = {
             "near": "NEAR",
             "far": "FAR",
-            "contracts": {
-                "NEAR": {
-                    "lot_size": 1000,
-                    "tick_size": 0.001,
-                    "tick_value": 1.0,
-                    "initial_margin": 900,
-                },
-                "FAR": {
-                    "lot_size": 1000,
-                    "tick_size": 0.001,
-                    "tick_value": 1.0,
-                    "initial_margin": 1000,
-                },
-            },
+            "contracts": contract_terms(),
             "rows": rows,
             "provenance": {},
         }
@@ -324,38 +203,12 @@ class AnalyticsTests(unittest.TestCase):
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
 
     def test_ledger_preserves_nonexecution_and_rebuilds_proxy_metrics(self):
-        rows = []
-        spreads = [0, 10, 20, 30, 20, 10, 0, -10, -20, -10, 0, 10, 20, 10, 0]
-        for index, spread in enumerate(spreads):
-            rows.append(
-                {
-                    "date": f"2026-01-{index + 1:02d}",
-                    "timestamp": f"2026-01-{index + 1:02d} 00:00:00",
-                    "near_close": 10.0 + spread / 1000,
-                    "far_close": 10.0,
-                    "spread_ticks": spread,
-                    "benchmark_price": 1.0,
-                    "benchmark_source_kind": "observed",
-                }
-            )
+        rows = spread_rows(timestamps=True)
         series = {
             "near": "NEAR",
             "far": "FAR",
             "timeframe": "1d",
-            "contracts": {
-                "NEAR": {
-                    "lot_size": 1000,
-                    "tick_size": 0.001,
-                    "tick_value": 1.0,
-                    "initial_margin": 900,
-                },
-                "FAR": {
-                    "lot_size": 1000,
-                    "tick_size": 0.001,
-                    "tick_value": 1.0,
-                    "initial_margin": 1000,
-                },
-            },
+            "contracts": contract_terms(),
             "rows": rows,
             "provenance": {},
         }

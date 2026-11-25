@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.strategies.pair_screener.screener import screen_pairs
+from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 
 class ScreenerTests(unittest.TestCase):
@@ -13,37 +14,11 @@ class ScreenerTests(unittest.TestCase):
             candles = root / "candles"
             candles.mkdir()
             contracts = root / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "iss-intake.v1",
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1,
-                                "tick_size": 0.5,
-                                "tick_value": 5,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1,
-                                "tick_size": 0.05,
-                                "tick_value": 0.5,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
+            write_near_far_contracts(
+                contracts,
+                near={"lot_size": 1, "tick_size": 0.5, "tick_value": 5},
+                far={"lot_size": 1, "tick_size": 0.05, "tick_value": 0.5},
+                schema_version="iss-intake.v1",
             )
             dates = [f"2026-03-{day:02d}" for day in range(1, 26)]
             for secid, offset in (("NEAR", 0.0), ("FAR", 0.5)):
@@ -69,23 +44,7 @@ class ScreenerTests(unittest.TestCase):
                     encoding="utf-8",
                 )
             benchmark = root / "benchmark.json"
-            benchmark.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": date,
-                                "price": 1.0,
-                                "source_kind": "observed",
-                                "source_ticker": "LQDT",
-                            }
-                            for date in dates
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
 
             result = screen_pairs(
                 candles,

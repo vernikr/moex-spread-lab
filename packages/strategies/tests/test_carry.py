@@ -10,6 +10,7 @@ from moex_spread_lab.strategies.funding_carry.carry import (
     build_carry_strategy,
     build_carry_study,
 )
+from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 
 def source(secid, rows):
@@ -25,37 +26,7 @@ class CarryTests(unittest.TestCase):
     def test_vtb_account_risk_screen_uses_no_offset_and_stress_buffers(self):
         with tempfile.TemporaryDirectory() as directory:
             contracts = Path(directory) / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             result = assess_vtb_pair(
                 contracts,
                 "NEAR",
@@ -95,37 +66,7 @@ class CarryTests(unittest.TestCase):
     def test_funding_and_basis_are_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             contracts = Path(directory) / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             result = build_carry_study(
                 source(
                     "NEAR",
@@ -154,36 +95,10 @@ class CarryTests(unittest.TestCase):
     def test_carry_study_normalizes_different_leg_price_units(self):
         with tempfile.TemporaryDirectory() as directory:
             contracts = Path(directory) / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 100,
-                                "tick_size": 0.5,
-                                "tick_value": 5,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1,
-                                "tick_size": 0.05,
-                                "tick_value": 0.5,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
+            write_near_far_contracts(
+                contracts,
+                near={"lot_size": 100, "tick_size": 0.5, "tick_value": 5},
+                far={"lot_size": 1, "tick_size": 0.05, "tick_value": 0.5},
             )
             result = build_carry_study(
                 source(
@@ -214,37 +129,7 @@ class CarryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contracts = root / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
             carry = {
                 "schema_version": "carry-study.v1",
@@ -292,23 +177,7 @@ class CarryTests(unittest.TestCase):
             carry_path = root / "carry.json"
             carry_path.write_text(json.dumps(carry), encoding="utf-8")
             benchmark = root / "benchmark.json"
-            benchmark.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": date,
-                                "price": 1.0,
-                                "source_kind": "observed",
-                                "source_ticker": "LQDT",
-                            }
-                            for date in dates
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
             result = build_carry_strategy(
                 carry,
                 benchmark,
@@ -342,37 +211,7 @@ class CarryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contracts = root / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
             funding = (1.0, 1.0, 1.0, 1.0, -5.0, 3.0)
             carry = {
@@ -390,23 +229,7 @@ class CarryTests(unittest.TestCase):
                 ],
             }
             benchmark = root / "benchmark.json"
-            benchmark.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": d,
-                                "price": 1.0,
-                                "source_kind": "observed",
-                                "source_ticker": "LQDT",
-                            }
-                            for d in dates
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
             kwargs = dict(
                 transaction_cost_scenario="low",
                 initial_capital=30000,
@@ -434,37 +257,7 @@ class CarryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contracts = root / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             dates = [f"2026-12-{day:02d}" for day in range(10, 17)]
             carry = {
                 "schema_version": "carry-study.v1",
@@ -481,23 +274,7 @@ class CarryTests(unittest.TestCase):
                 ],
             }
             benchmark = root / "benchmark.json"
-            benchmark.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": date,
-                                "price": 1.0,
-                                "source_kind": "observed",
-                                "source_ticker": "LQDT",
-                            }
-                            for date in dates
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
             result = build_carry_strategy(
                 carry,
                 benchmark,
@@ -520,37 +297,7 @@ class CarryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contracts = root / "contracts.json"
-            contracts.write_text(
-                json.dumps(
-                    {
-                        "instruments": [
-                            {
-                                "secid": "NEAR",
-                                "stable_id": "n",
-                                "board": "RFUD",
-                                "expiry": "2100-01-01",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 900,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "FAR",
-                                "stable_id": "f",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 1000,
-                                "tick_size": 0.001,
-                                "tick_value": 1,
-                                "initial_margin": 1000,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_near_far_contracts(contracts)
             dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
             carry = {
                 "schema_version": "carry-study.v1",
@@ -569,23 +316,7 @@ class CarryTests(unittest.TestCase):
             carry_path = root / "carry.json"
             carry_path.write_text(json.dumps(carry), encoding="utf-8")
             benchmark = root / "benchmark.json"
-            benchmark.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "lqdt-lineage.v1",
-                        "rows": [
-                            {
-                                "date": date,
-                                "price": 1.0,
-                                "source_kind": "observed",
-                                "source_ticker": "LQDT",
-                            }
-                            for date in dates
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
             result = build_carry_strategy(
                 carry,
                 benchmark,

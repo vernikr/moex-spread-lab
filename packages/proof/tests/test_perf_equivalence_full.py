@@ -22,29 +22,15 @@ import pytest
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
-    _build_h1_workspace,
-    _canon,
-    _canon_sha,
-    _write_h1_candles,
-)
+from perf_equivalence_case import H1WorkspaceCase
+from perf_equivalence_fixtures import _canon
 from perf_equivalence_pool_fixtures import _build_pool_test_workspace
 
 pytestmark = pytest.mark.slow_equiv
 
 
-class ProofPerfEquivalenceFastcoreTests(unittest.TestCase):
+class ProofPerfEquivalenceFastcoreTests(H1WorkspaceCase):
     """C99 fastcore exports must match the pure-Python fallback bit for bit."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
-        cls.root = Path(cls._tmp.name)
-        _build_h1_workspace(cls.root)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._tmp.cleanup()
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):
         from moex_spread_lab.core._fastcore_loader import load_fastcore

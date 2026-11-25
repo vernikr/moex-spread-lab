@@ -207,6 +207,7 @@ extraPaths = [
     "scripts/typings",
     "packages/core/tests",
     "packages/accounting/tests",
+    "packages/proof/tests",
     "tests",
     "packages/strategies/tests/contract",
     "packages/web/tests/browser",
@@ -1593,6 +1594,10 @@ paths = ["docs/research/accepted/2026-10-26-critical-gates.md"]
 [[tool.size-report.columns]]
 label = "docs/research/results/received/R03/source-reports/ex.txt"
 paths = ["docs/research/results/received/R03/source-reports/ex.txt"]
+
+[[tool.size-report.columns]]
+label = "perf_equivalence_case.py"
+paths = ["packages/proof/tests/perf_equivalence_case.py"]
 
 [[tool.size-report.columns]]
 label = "perf_equivalence_fixtures.py"
@@ -3205,6 +3210,14 @@ paths = ["packages/core/tests/test_fastcore_sanitizers.py"]
 [[tool.size-report.columns]]
 label = "proof_fixtures.py"
 paths = ["tests/proof_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "strategy_fixtures.py"
+paths = ["tests/strategy_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "synthetic_history.py"
+paths = ["tests/synthetic_history.py"]
 
 [[tool.size-report.columns]]
 label = "tuning_screen_waiver_helpers_p72_packages_proof_tests_test_tuning_screens.py"

@@ -7,11 +7,7 @@ behind the ``slow_equiv`` marker in ``--pre-push``, CI and the sanitizer gate.
 
 from __future__ import annotations
 
-import os
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -21,40 +17,13 @@ from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
-    _build_h1_workspace,
-    _canon,
-    _canon_sha,
-    _write_h1_candles,
-)
+from perf_equivalence_case import H1WorkspaceCase
 
 pytestmark = pytest.mark.slow_equiv
 
 
-class ProofPerfEquivalencePairTests(unittest.TestCase):
+class ProofPerfEquivalencePairTests(H1WorkspaceCase):
     """Pair-screen cohort: optimized vs batch-only vs single run, plateau and windows."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
-        cls.root = Path(cls._tmp.name)
-        _build_h1_workspace(cls.root)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._tmp.cleanup()
-
-    def _compare_modes(self, settings: ResearchSettings, fn):
-        with patch.object(ResearchSettings, "load", return_value=settings):
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "1"}):
-                ref_service = ProofService(self.root)
-                expected = fn(ref_service)
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "0"}):
-                fast_service = ProofService(self.root)
-                actual = fn(fast_service)
-        self.assertEqual(_canon_sha(actual), _canon_sha(expected))
-        self.assertEqual(actual, expected)
-        return actual
 
     def test_1h_pair_screen_cohort_search_plateau_windows_and_single_run(self):
         settings = ResearchSettings(

@@ -14,7 +14,7 @@ import math
 import tempfile
 import threading
 import unittest
-from datetime import date, timedelta
+from datetime import date
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,8 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
+from synthetic_history import iso_weekdays_until as _weekdays
+from synthetic_history import write_h1_candles as _write_h1_candles
 
 # ---- folded from the retired P7.2 shard calendar_proof_fixtures_p72_packages_proof_tests_test_calendar_proof ----
 TILL = "2023-06-15"
@@ -47,22 +49,6 @@ def _write_history(root: Path, secid: str, rows: list[list]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"url": url, "payload": payload, "raw_response_sha256": "x"}), encoding="utf-8"
-    )
-
-
-def _write_h1_candles(root: Path, secid: str, rows: list[dict]) -> None:
-    path = root / "data/w1/candles" / f"{secid}_1h.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "iss-candles.v1",
-                "secid": secid,
-                "interval": 60,
-                "rows": rows,
-            }
-        ),
-        encoding="utf-8",
     )
 
 
@@ -86,15 +72,6 @@ def _h1_rows(role: str, volume: int, first_session_volume: int | None = None) ->
                 }
             )
     return rows
-
-
-def _weekdays(start: date, end: date) -> list[str]:
-    out, day = [], start
-    while day <= end:
-        if day.weekday() < 5:
-            out.append(day.isoformat())
-        day += timedelta(days=1)
-    return out
 
 
 def _build_root(root: Path) -> None:
@@ -401,9 +378,9 @@ class CalendarProofTests(unittest.TestCase):
         connection.close()
 
     def test_h1_native_spread_has_priority_and_uses_its_own_session_volume_gate(self):
-        _write_h1_candles(self.root, "SRH3", _h1_rows("near", 100))
-        _write_h1_candles(self.root, "SRM3", _h1_rows("far", 100))
-        _write_h1_candles(self.root, "SRH3SRM3", _h1_rows("spread", 5))
+        _write_h1_candles(self.root, "candles", "SRH3", _h1_rows("near", 100))
+        _write_h1_candles(self.root, "candles", "SRM3", _h1_rows("far", 100))
+        _write_h1_candles(self.root, "candles", "SRH3SRM3", _h1_rows("spread", 5))
 
         window = self.data.window("SR", "SRH3/SRM3", "1h")
         self.assertEqual(window["price_source"], "native_h1_spread")
@@ -417,8 +394,8 @@ class CalendarProofTests(unittest.TestCase):
         self.assertNotEqual(window["rows"][0]["spread_price"], 1000.0)
 
     def test_h1_proxy_is_synchronized_causal_and_reconciles(self):
-        _write_h1_candles(self.root, "SRH3", _h1_rows("near", 20))
-        _write_h1_candles(self.root, "SRM3", _h1_rows("far", 20))
+        _write_h1_candles(self.root, "candles", "SRH3", _h1_rows("near", 20))
+        _write_h1_candles(self.root, "candles", "SRM3", _h1_rows("far", 20))
 
         proof = self.data.proof(_zscore_request(quantity=1, window=3, timeframe="1h"))
         assert_h1_proxy_window(self, proof)
@@ -438,8 +415,10 @@ class CalendarProofTests(unittest.TestCase):
         assert_h1_convergence_to_ruonia(self, convergence)
 
     def test_h1_training_gate_uses_only_the_training_prefix(self):
-        _write_h1_candles(self.root, "SRH3", _h1_rows("near", 20, first_session_volume=5))
-        _write_h1_candles(self.root, "SRM3", _h1_rows("far", 20, first_session_volume=5))
+        _write_h1_candles(
+            self.root, "candles", "SRH3", _h1_rows("near", 20, first_session_volume=5)
+        )
+        _write_h1_candles(self.root, "candles", "SRM3", _h1_rows("far", 20, first_session_volume=5))
         strict = ResearchSettings(
             validation_percent=25,
             allow_failed_volume=False,
@@ -459,8 +438,8 @@ class CalendarProofTests(unittest.TestCase):
         self.data.check_training_window("SR", "SRH3/SRM3", 1, permissive)
 
     def test_http_h1_catalog_and_proof_route(self):
-        _write_h1_candles(self.root, "SRH3", _h1_rows("near", 20))
-        _write_h1_candles(self.root, "SRM3", _h1_rows("far", 20))
+        _write_h1_candles(self.root, "candles", "SRH3", _h1_rows("near", 20))
+        _write_h1_candles(self.root, "candles", "SRM3", _h1_rows("far", 20))
         _write_h1_http_prereqs(self.root)
 
         server = _serve_proof_ui(self, self.root)

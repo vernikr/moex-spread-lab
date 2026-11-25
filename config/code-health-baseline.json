@@ -65,16 +65,16 @@
       "baseline_tokens": 43500
     },
     "packages/core": {
-      "baseline_tokens": 59810
+      "baseline_tokens": 57172
     },
     "packages/data": {
       "baseline_tokens": 90306
     },
     "packages/proof": {
-      "baseline_tokens": 176473
+      "baseline_tokens": 175597
     },
     "packages/strategies": {
-      "baseline_tokens": 131676
+      "baseline_tokens": 127293
     },
     "packages/web": {
       "baseline_tokens": 104053

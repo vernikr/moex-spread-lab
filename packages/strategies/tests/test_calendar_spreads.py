@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import date, timedelta
+from datetime import date
 from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
@@ -11,18 +11,10 @@ from moex_spread_lab.strategies.calendar.calendar_spreads import (
     contract_chain,
 )
 from moex_spread_lab.strategies.calendar.proof_payload import build_proof_payload
+from synthetic_history import iso_weekdays_until as _days
 
 TERMS = {"mult": 1.0, "margin_rate": 0.15}
 RUONIA = (["2022-01-01"], {"2022-01-01": 0.15})
-
-
-def _days(start: date, end: date) -> list[str]:
-    out, day = [], start
-    while day <= end:
-        if day.weekday() < 5:
-            out.append(day.isoformat())
-        day += timedelta(days=1)
-    return out
 
 
 def _row(day: str, settle: float, volume: int = 500, opening: float | None = None) -> dict:

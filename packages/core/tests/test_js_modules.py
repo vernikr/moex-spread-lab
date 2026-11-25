@@ -13,7 +13,7 @@ from scripts import check_js_modules as gate
     [
         ("picker.js", "$"),
         ("ledger-cells.js", "state"),
-        ("strategy-plans.js", "activeStrategyName"),
+        ("strategy-controls.js", "sharedInputs"),
         ("ledger.js", "td"),
     ],
 )

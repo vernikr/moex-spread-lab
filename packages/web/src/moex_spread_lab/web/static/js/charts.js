@@ -3,8 +3,7 @@
 import { $, COLORS, chartTime, rub } from './dom.js';
 import { NORM_HINTS, NORM_PANEL, applyNormHint, spreadDisplayValues } from './normalizations.js';
 import { isIntraday, state } from './state.js';
-import { makePane, markValidationStart } from './chart-panes.js';
-import { buildMarkers, buildSeries, chartOpts, paneOptions } from './chart-series.js';
+import { buildMarkers, buildSeries, chartOpts, makePane, markValidationStart, paneOptions } from './chart-series.js';
 import { bindCrosshairTooltips, subscribeTradeClick, syncVisibleRanges } from './chart-sync.js';
 
 export { NORM_HINTS, NORM_PANEL, applyNormHint, spreadDisplayValues };

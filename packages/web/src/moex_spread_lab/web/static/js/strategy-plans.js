@@ -1,7 +1,6 @@
-/** Request builders and cohort plans for the strategy form. */
+/** Form input accessors, request builders and cohort plans for the strategy form. */
 
 import { $ } from './dom.js';
-import { activeInputs, activeStrategyName, formKey, sharedInputs } from './form-inputs.js';
 import {
   calendarStrategySupported,
   currentPair,
@@ -18,6 +17,15 @@ import {
   strategyFamily,
   targetKey,
 } from './state.js';
+
+export const activeInputs = () => state.numericInputs.filter(n => n.isConnected && !n.closest('.hidden'));
+export const sharedInputs = () => [...$('cohort-editor').querySelectorAll('.number-shell input')];
+
+export function activeStrategyName() {
+  return state.universe === 'pair_screen' ? $('strategy').value : $('cstrategy').value;
+}
+
+export const formKey = (key, name) => key + '|' + name;
 
 export function pairRequest() {
   const strategy = $('strategy').value;

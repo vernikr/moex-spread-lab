@@ -1,15 +1,17 @@
 import { $, bindBackdropClose, setSearchProgress } from './dom.js';
 import { configureStrategyControlsCallbacks, changeSharedStrategy, fillStrategy, refreshGroupProfile, syncCalendarParams } from './strategy-controls.js';
-import { activeInputs, activeStrategyName, formKey } from './form-inputs.js';
 import { bindLamp, drawLamps, hidePlateauTip } from './plateau-lamps.js';
 import { familyVariant, state, strategyFamily } from './state.js';
 import {
+  activeInputs,
+  activeStrategyName,
   calendarRequest,
   chartPlan,
   commonPlan,
   currentRequest,
   defaultLeafRequest,
   finishReview,
+  formKey,
   hasSelection,
   invalidForm,
   leafPlan,
@@ -21,7 +23,7 @@ import {
 
 export { hidePlateauTip };
 export { stopProfile } from './plateau-lamps.js';
-export { activeInputs, activeStrategyName, formKey, sharedInputs } from './form-inputs.js';
+export { activeInputs, activeStrategyName, formKey, sharedInputs } from './strategy-plans.js';
 export {
   changeSharedStrategy,
   createParameterField,

@@ -69,7 +69,7 @@
       "baseline_tokens": 43500
     },
     "packages/core": {
-      "baseline_tokens": 59811
+      "baseline_tokens": 59810
     },
     "packages/data": {
       "baseline_tokens": 91822
@@ -81,7 +81,7 @@
       "baseline_tokens": 132778
     },
     "packages/web": {
-      "baseline_tokens": 104505
+      "baseline_tokens": 104053
     },
     "scripts": {
       "baseline_tokens": 36195

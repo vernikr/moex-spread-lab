@@ -1,5 +1,4 @@
 import { $, CATSTATUS_RU, el, fmt } from './dom.js';
-import { sharedInputs } from './form-inputs.js';
 import { bindLamp, hidePlateauTip, runGroupProfileStream, showGroupLampsReading, stopProfile } from './plateau-lamps.js';
 import {
   calendarStrategySupported, currentAsset, currentPair, familyMembers, familyVariant,
@@ -7,7 +6,7 @@ import {
   pairHasLocalData, pairStrategyAvailable, pairUnavailable, settingsKey, state,
   strategyFamily, strategyLabel, strategyOptions, timeframeSupported,
 } from './state.js';
-import { currentRequest, pointError, sharedRequest } from './strategy-plans.js';
+import { currentRequest, pointError, sharedInputs, sharedRequest } from './strategy-plans.js';
 
 let callbacks = {
   bindFocusInput: () => {},

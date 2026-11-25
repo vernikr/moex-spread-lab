@@ -24,13 +24,13 @@ import {
   buildPicker,
   cacheWindowProof,
   configurePickerCallbacks,
+  initColumnResizers,
   openBranch,
   paintWindowReadings,
   refreshChecks,
   refreshWindowReadings,
   stopWindowReadings,
 } from './picker.js';
-import { initColumnResizers } from './picker-columns.js';
 import {
   bindSettings,
   configureSettingsCallbacks,

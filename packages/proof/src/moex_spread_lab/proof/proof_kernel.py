@@ -46,8 +46,8 @@ _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
 _Marks = dict[str, float]
 
-_Admission = Callable[[_Obj, ResearchSettings], "str | None"]
 _Summary = tuple[float, float, float, float, float, bool, bool]
+_ScalarAdmission = Callable[[_Obj, ResearchSettings], "str | None"]
 
 SHORTFALL_REASON = "Свободные средства недостаточны для маржи."
 UNEXPOSED_REASON = "Открытого спреда не было на обучении."
@@ -102,7 +102,7 @@ def measure_scalar_train(
     marks: _Marks,
     split: EvaluationSplit,
     settings: ResearchSettings,
-    admit: _Admission,
+    admit: _ScalarAdmission,
 ) -> _Obj:
     """Score one metrics-only training replay; missing evidence is never a zero."""
     if reason := admit(proof, settings):

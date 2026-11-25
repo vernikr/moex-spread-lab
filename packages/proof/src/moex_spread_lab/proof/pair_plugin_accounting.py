@@ -50,9 +50,7 @@ def _eligible(
     return all(value is not None and value > 0 for value in values)
 
 
-def valid_date_key_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting(
-    key: object, daily: bool
-) -> bool:
+def _valid_date_key(key: object, daily: bool) -> bool:
     if not isinstance(key, str):
         return False
     if daily:
@@ -90,19 +88,9 @@ def _validated_rows(
     try:
         dates: list[str] = [row["date"] for row in window.rows]
         if (
-            any(
-                not valid_date_key_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting(
-                    day, window.timeframe == "1d"
-                )
-                for day in dates
-            )
+            any(not _valid_date_key(day, window.timeframe == "1d") for day in dates)
             or dates != sorted(set(dates))
-            or (
-                through is not None
-                and not valid_date_key_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting(
-                    through, len(through) == 10
-                )
-            )
+            or (through is not None and not _valid_date_key(through, len(through) == 10))
         ):
             raise ValueError
         prefix: list[dict[str, Any]] = [
@@ -120,7 +108,7 @@ def _validated_rows(
     return prefix, analysis_rows
 
 
-def positive_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting(
+def _positive(
     value: Any,
 ) -> float:
     if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
@@ -133,7 +121,7 @@ def _priced_rows(
     prefix: list[dict[str, Any]],
     benchmark_marks: Mapping[str, float],
 ) -> tuple[list[dict[str, Any]], float]:
-    positive = positive_p72_packages_proof_src_moex_spread_lab_proof_runtime_pair_plugin_accounting
+    positive = _positive
     try:
         legs: list[Mapping[str, Any]] = [
             cast(Mapping[str, Any], window.contracts[window.near]),

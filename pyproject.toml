@@ -1983,12 +1983,20 @@ label = "docs/research/results/received/R10/source-reports/cr.txt"
 paths = ["docs/research/results/received/R10/source-reports/cr.txt"]
 
 [[tool.size-report.columns]]
+label = "funding_payloads.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/funding_payloads.py"]
+
+[[tool.size-report.columns]]
 label = "response-template.md"
 paths = ["docs/research/response-template.md"]
 
 [[tool.size-report.columns]]
 label = "docs/research/results/received/R15/source-reports/ex.txt"
 paths = ["docs/research/results/received/R15/source-reports/ex.txt"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/funding_payloads.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/funding_payloads.py"]
 
 [[tool.size-report.columns]]
 label = "storage-policy-2026-11-21.md"
@@ -2071,12 +2079,20 @@ label = "docs/research/results/received/R01/source-reports/cr.txt"
 paths = ["docs/research/results/received/R01/source-reports/cr.txt"]
 
 [[tool.size-report.columns]]
+label = "mean_reversion_blocks.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/mean_reversion_blocks.py"]
+
+[[tool.size-report.columns]]
 label = "pair-intent-boundary.md"
 paths = ["packages/strategies/docs/pair-intent-boundary.md"]
 
 [[tool.size-report.columns]]
 label = "docs/research/results/received/R06/source-reports/ge.txt"
 paths = ["docs/research/results/received/R06/source-reports/ge.txt"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_blocks.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_blocks.py"]
 
 [[tool.size-report.columns]]
 label = "funding-only-strategy.md"
@@ -2475,6 +2491,14 @@ label = "test_calendar_spreads.py"
 paths = ["packages/strategies/tests/test_calendar_spreads.py"]
 
 [[tool.size-report.columns]]
+label = "funding_engine.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/funding_engine.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/funding_engine.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/funding_engine.py"]
+
+[[tool.size-report.columns]]
 label = "iss_coverage.py"
 paths = ["packages/data/src/moex_spread_lab/data/iss/iss_coverage.py"]
 
@@ -2693,6 +2717,14 @@ paths = ["scripts/shadow_regressions.py"]
 [[tool.size-report.columns]]
 label = "sizing_report.py"
 paths = ["packages/accounting/src/moex_spread_lab/accounting/sizing_report.py"]
+
+[[tool.size-report.columns]]
+label = "mean_reversion_payloads.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/mean_reversion_payloads.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_payloads.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_payloads.py"]
 
 [[tool.size-report.columns]]
 label = "test_iss_history_p72_packages_data_src_moex_spread_lab_data_iss_iss_history.py"
@@ -3131,6 +3163,14 @@ label = "test_typing_inspection_tools.py"
 paths = ["packages/core/tests/test_typing_inspection_tools.py"]
 
 [[tool.size-report.columns]]
+label = "mean_reversion_engine.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/mean_reversion_engine.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_engine.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_engine.py"]
+
+[[tool.size-report.columns]]
 label = "calendar_proof_expectations_p72_packages_proof_tests_test_calendar_proof.py"
 paths = ["packages/proof/tests/calendar_proof_expectations_p72_packages_proof_tests_test_calendar_proof.py"]
 
@@ -3267,6 +3307,14 @@ label = "test_data_inventory_facade_p72_packages_data_src_moex_spread_lab_data_r
 paths = ["packages/data/tests/test_data_inventory_facade_p72_packages_data_src_moex_spread_lab_data_retention_data_inventory.py"]
 
 [[tool.size-report.columns]]
+label = "service_pair.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/service_pair.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/service_pair.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/service_pair.py"]
+
+[[tool.size-report.columns]]
 label = "dispatch.py"
 paths = ["packages/web/src/moex_spread_lab/web/dispatch.py"]
 
@@ -3349,6 +3397,14 @@ paths = ["packages/strategies/tests/test_p72_packages_strategies_src_moex_spread
 [[tool.size-report.columns]]
 label = "test_audit.py"
 paths = ["packages/proof/tests/test_audit.py"]
+
+[[tool.size-report.columns]]
+label = "funding_sizing_payload.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/funding_sizing_payload.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/funding_sizing_payload.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/funding_sizing_payload.py"]
 
 [[tool.size-report.columns]]
 label = "helpers_p72_packages_proof_tests_test_perf_equivalence.py"
@@ -3445,6 +3501,14 @@ paths = ["packages/data/src/moex_spread_lab/data/universe/assets.py"]
 [[tool.size-report.columns]]
 label = "funding_fixtures.py"
 paths = ["tests/funding_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "mean_reversion_spec.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/mean_reversion_spec.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_spec.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/mean_reversion_spec.py"]
 
 [[tool.size-report.columns]]
 label = "pair_screener.py"
@@ -3631,6 +3695,14 @@ label = "test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli.py"
 paths = ["packages/proof/tests/test_p72_packages_proof_src_moex_spread_lab_proof_runtime_cli.py"]
 
 [[tool.size-report.columns]]
+label = "funding_notes.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/funding_notes.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/funding_notes.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/funding_notes.py"]
+
+[[tool.size-report.columns]]
 label = "cohort_scores.py"
 paths = ["packages/proof/src/moex_spread_lab/proof/cohort_scores.py"]
 
@@ -3769,6 +3841,14 @@ paths = ["packages/proof/src/moex_spread_lab/proof_runtime/plugin_notes.py"]
 [[tool.size-report.columns]]
 label = "test_landscape_module.py"
 paths = ["packages/proof/tests/test_landscape_module.py"]
+
+[[tool.size-report.columns]]
+label = "service_prepare.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/service_prepare.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/service_prepare.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/service_prepare.py"]
 
 [[tool.size-report.columns]]
 label = "screener_plateau.py"
@@ -3933,6 +4013,14 @@ paths = ["packages/proof/tests/test_strategy_trial_budget.py"]
 [[tool.size-report.columns]]
 label = "test_p72_runner_wildcard_contract.py"
 paths = ["packages/strategies/tests/test_p72_runner_wildcard_contract.py"]
+
+[[tool.size-report.columns]]
+label = "fixed_plugin_series.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/fixed_plugin_series.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_series.py"
+paths = ["packages/proof/src/moex_spread_lab/proof_runtime/fixed_plugin_series.py"]
 
 [[tool.size-report.columns]]
 label = "hashed_json_cache.py"
@@ -4309,3 +4397,23 @@ paths = ["packages/proof/src/moex_spread_lab/proof/__init__.py"]
 [[tool.size-report.columns]]
 label = "scripts/__init__.py"
 paths = ["scripts/__init__.py"]
+
+[[tool.size-report.columns]]
+label = "market_window.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/market_window.py"]
+
+[[tool.size-report.columns]]
+label = "pair_template.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/pair_template.py"]
+
+[[tool.size-report.columns]]
+label = "pair_route.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/pair_route.py"]
+
+[[tool.size-report.columns]]
+label = "carry_route.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/carry_route.py"]
+
+[[tool.size-report.columns]]
+label = "carry_payload.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/carry_payload.py"]

@@ -7,8 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from moex_spread_lab.core import candidate_data
-from moex_spread_lab.core import workstation_bench as bench
+from moex_spread_lab.remote import bench, candidate_data
 
 
 def git(root, *args):

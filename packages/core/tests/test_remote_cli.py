@@ -7,7 +7,8 @@ import json
 
 import pytest
 
-from moex_spread_lab.core import remote_cli, workstation_remote
+from moex_spread_lab.remote import cli as remote_cli
+from moex_spread_lab.remote import workstation as workstation_remote
 
 
 def test_request_sends_bearer_only_in_header(monkeypatch):

@@ -2,7 +2,7 @@
 
 import pytest
 
-from moex_spread_lab.core import remote_cli
+from moex_spread_lab.remote import cli as remote_cli
 
 
 def _patch_options(monkeypatch, diff_output):

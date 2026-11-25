@@ -300,7 +300,7 @@ def main() -> int:
                     root,
                     str(root / ".venv/bin/python3"),
                     "-m",
-                    "moex_spread_lab.core.workstation_bench",
+                    "moex_spread_lab.remote.bench",
                     sys.argv[3],
                 )
             )

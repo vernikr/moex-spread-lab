@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from moex_spread_lab.core import candidate_data, workstation_remote
+from moex_spread_lab.remote import candidate_data
+from moex_spread_lab.remote import workstation as workstation_remote
 
 
 def _checkout(tmp_path: Path) -> tuple[Path, Path]:
@@ -128,7 +129,7 @@ def test_patch_paths_parses_plain_and_quoted_diffs():
 
 
 def test_dependency_inputs_detection():
-    from moex_spread_lab.core.candidate_python import deps_inputs_touched as _deps_inputs_touched
+    from moex_spread_lab.remote.candidate_python import deps_inputs_touched as _deps_inputs_touched
 
     assert _deps_inputs_touched(["uv.lock"])
     assert _deps_inputs_touched(["packages/core/pyproject.toml"])
@@ -139,7 +140,7 @@ def test_dependency_inputs_detection():
 
 
 def test_assert_candidate_python_accepts_shadowed_module(tmp_path):
-    from moex_spread_lab.core.candidate_python import (
+    from moex_spread_lab.remote.candidate_python import (
         assert_candidate_python as _assert_candidate_python,
     )
 
@@ -153,7 +154,7 @@ def test_assert_candidate_python_accepts_shadowed_module(tmp_path):
 
 
 def test_assert_candidate_python_rejects_escape(tmp_path):
-    from moex_spread_lab.core.candidate_python import (
+    from moex_spread_lab.remote.candidate_python import (
         assert_candidate_python as _assert_candidate_python,
     )
 

@@ -18,6 +18,8 @@ from pathlib import Path
 # root-level compatibility shims stay explicit; everything else under a package tree
 # takes the package's layer.
 _CLI_LAYER_KEYS = frozenset({"cli", "core.cli", "data.cli", "accounting.cli"})
+# Root application subpackages (src/moex_spread_lab/<name>/) sit in the cli layer.
+_CLI_PACKAGES = frozenset({"remote"})
 _PACKAGE_HEAD_LAYERS = {
     "core": "core",
     "proof": "proof",
@@ -74,7 +76,7 @@ _ROOT_SHIM_LAYERS = {
 
 
 def derive_layer(key: str) -> str | None:
-    if key in _CLI_LAYER_KEYS:
+    if key in _CLI_LAYER_KEYS or key.split(".", 1)[0] in _CLI_PACKAGES:
         return "cli"
     layer = _PACKAGE_HEAD_LAYERS.get(key.split(".", 1)[0])
     return layer if layer is not None else _ROOT_SHIM_LAYERS.get(key)

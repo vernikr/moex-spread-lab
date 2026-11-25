@@ -1,6 +1,6 @@
 """Candidate interpreter selection for bench worktrees.
 
-Keeps ``workstation_bench`` under the token ceiling; the trust decision
+Keeps ``remote.bench`` under the token ceiling; the trust decision
 (reuse root ``.venv`` with ``PYTHONPATH`` shadowing vs. isolated sync) lives
 here next to the verification that the candidate actually shadows the root.
 """
@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .workstation_remote import is_dependency_input
+from .workstation import is_dependency_input
 
 _NATIVE_BUILD_SUFFIXES = (".c", ".h", ".pyx", ".pxd")
 

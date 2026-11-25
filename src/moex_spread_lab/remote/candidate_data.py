@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-from .w0 import canonical_bytes, sha256_bytes
+from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
 
 SEAL_FILES = frozenset({"h1-seal.json", "h1-seal.enabled.json"})
 _DATA_MODE_ENV = "MOEX_BENCH_DATA"

@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from .workstation_remote import patch_paths
+from .workstation import patch_paths
 
 
 class SubparserRegistry(Protocol):
@@ -132,9 +132,9 @@ def run(args: argparse.Namespace) -> int:
             health = request(base + "/health", token)
             if not health.get("ok"):
                 raise RuntimeError("bridge health check failed")
-        source = (Path(__file__).parent / "workstation_remote.py").read_bytes()
+        source = (Path(__file__).parent / "workstation.py").read_bytes()
         encoded = base64.b64encode(source).decode("ascii")
-        code = f"import base64;exec(compile(base64.b64decode('{encoded}'),'<workstation_remote>','exec'))"
+        code = f"import base64;exec(compile(base64.b64decode('{encoded}'),'<workstation>','exec'))"
         command = _workstation_command(args, code)
         result = request(
             base + "/exec",

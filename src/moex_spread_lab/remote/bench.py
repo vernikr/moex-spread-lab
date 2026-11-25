@@ -4,7 +4,7 @@ Candidate data is provisioned privately by default (APFS copy-on-write clone on
 macOS, a byte copy elsewhere), so candidate code cannot mutate the live data
 through the benchmark root. A read-only-by-convention symlink farm exists as an
 explicit opt-in (``MOEX_BENCH_DATA=symlink``). The candidate is trusted code, not
-a security sandbox; the trust boundary is documented in ``core.candidate_data``.
+a security sandbox; the trust boundary is documented in ``remote.candidate_data``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, cast
 
@@ -33,9 +33,25 @@ from .candidate_python import (
     candidate_pythonpath,
     deps_inputs_touched,
 )
-from .workstation_remote import patch_paths as _patch_paths
-from .workstation_results import normalize_provenance
-from .workstation_suites import suite as _suite
+from .suites import suite as _suite
+from .workstation import patch_paths as _patch_paths
+
+
+def normalize_provenance(full: Any, root: Path | None) -> Any:
+    """Rewrite root-bound provenance paths so isolated worktree results compare equal."""
+    if root is None or not isinstance(full, dict):
+        return full
+    mapping = cast(dict[str, Any], full)
+    raw: Any = mapping.get("provenance")
+    if not isinstance(raw, dict):
+        return mapping
+    provenance = dict(cast(dict[str, Any], raw))
+    for key, entry in provenance.items():
+        if key.endswith("_path") and isinstance(entry, str) and Path(entry).is_absolute():
+            # External paths stay unchanged, and cannot compare equal accidentally.
+            with suppress(ValueError):
+                provenance[key] = "$ROOT/" + str(Path(entry).resolve().relative_to(root.resolve()))
+    return {**mapping, "provenance": provenance}
 
 
 def _cmd(root: Path, *args: str, input_text: str | None = None) -> str:

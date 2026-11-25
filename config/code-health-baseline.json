@@ -70,7 +70,6 @@
   ],
   "legacy_shallow_shards": [
     "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
-    "packages/core/src/moex_spread_lab/core/workstation_results.py",
     "packages/data/src/moex_spread_lab/data/lake/legacy_validation_p72_62.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
     "packages/proof/src/moex_spread_lab/proof/service_validation.py",

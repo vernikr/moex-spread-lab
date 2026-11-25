@@ -11,30 +11,43 @@ from typing import Any, Protocol, cast
 
 import optuna as optuna
 
-from moex_spread_lab.core import w0 as _w0
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.carry import (
     CarryStrategyError as CarryStrategyError,
 )
 
-from . import cohort_models as _cohort_models
-from . import cohort_prepare_helpers as _cohort_prepare_helpers
-from . import cohort_reporting as _cohort_reporting
-from . import proof_kernel as _proof_kernel
-from . import proof_pool as _proof_pool
-from . import remote_cohort_types as _remote_cohort_types
-from . import request_validation as _request_validation
-from . import service as _service
-from .cohort_prepare import PreparationInputs, prepare_cohort
-from .cohort_prepare_helpers import MAX_TARGETS as MAX_TARGETS
+from .cohort_models import Cohort, RemoteCohort
+from .cohort_prepare import MAX_TARGETS as MAX_TARGETS
+
+# Compatibility re-exports used by existing consumers.
+from .cohort_prepare import (
+    PreparationInputs,
+    RemoteCase,
+    RemoteSplit,
+    TrainingSlice,
+    active_seed,
+    confirmation,
+    filter_training,
+    intersect_axes,
+    native_request,
+    prepare_cohort,
+    translate,
+)
+from .cohort_prepare import targets as _targets
 from .cohort_reporting import CohortReport, build_cohort_result
+from .cohort_reporting import shared_unavailable as _unavailable
 from .phase_metrics import measure_phase
-from .proof_kernel import TRIALS, StudyWindow, resolve_seed
+from .proof_kernel import TRIALS, StudyWindow, lamps, ordered, resolve_seed
 from .proof_kernel import Axis as Axis
+from .proof_kernel import tune as _tune
+from .proof_kernel import validate as _validate
 from .proof_pool import get_worker_pool
+from .proof_pool import shared_estimate_weight as _estimate_weight
+from .request_validation import identity
+from .service import shared_benchmark_marks as _benchmark_marks
 from .strategy_catalog import get_strategy_axes
 from .strategy_catalog import resolve_strategy_registry as resolve_strategy_registry
 
@@ -72,32 +85,21 @@ class _CohortLike(Protocol):
     def plateau(self, point: _Obj, *, on_progress: _Step | None = None) -> Any: ...
 
 
-_ch, _pk, _rc = (
-    _cohort_prepare_helpers.__dict__,
-    _proof_kernel.__dict__,
-    _remote_cohort_types.__dict__,
-)
-_run_id: Any = _w0.__dict__["_run_id"]
-_Cohort: Any = _cohort_models.__dict__["_Cohort"]
-_RemoteCohort: Any = _cohort_models.__dict__["_RemoteCohort"]
-_active_seed: Any = _ch["_active_seed"]
-_confirmation: Any = _ch["_confirmation"]
-_filter_training: Any = _ch["_filter_training"]
-_intersect_axes: Any = _ch["_intersect_axes"]
-_native_request: Any = _ch["_native_request"]
-_targets = cast(Callable[[Mapping[str, Any]], list[_Obj]], _ch["_targets"])
-_translate = cast(Callable[[Mapping[str, Any], str], _Obj], _ch["_translate"])
-_unavailable = cast(Callable[[Any, str], _Obj], _cohort_reporting.__dict__["_unavailable"])
-_tune = cast(Callable[..., tuple[_Obj | None, int, list[_Obj]]], _pk["_tune"])
-_validate = cast(Callable[..., None], _pk["_validate"])
-_lamps: Any = _pk["_lamps"]
-_ordered: Any = _pk["_ordered"]
-_estimate_weight = cast(Callable[[Path, _Obj, str], int], _proof_pool.__dict__["_estimate_weight"])
-_RemoteCase: Any = _rc["_RemoteCase"]
-_RemoteSplit: Any = _rc["_RemoteSplit"]
-_TrainingSlice: Any = _rc["_TrainingSlice"]
-_identity: Any = _request_validation.__dict__["_identity"]
-_benchmark_marks = cast(Callable[[Path], dict[str, float]], _service.__dict__["_benchmark_marks"])
+_active_seed = active_seed
+_confirmation = confirmation
+_filter_training = filter_training
+_intersect_axes = intersect_axes
+_native_request = native_request
+_translate = translate
+_RemoteCase = RemoteCase
+_RemoteSplit = RemoteSplit
+_TrainingSlice = TrainingSlice
+_Cohort = Cohort
+_RemoteCohort = RemoteCohort
+_lamps = lamps
+_ordered = ordered
+_identity = identity
+_run_id = run_id
 
 _DEFAULT_STUDY_WINDOW = StudyWindow
 
@@ -367,3 +369,9 @@ def _cohort_result(
             on_progress,
         )
     )
+
+
+# Typed internal exports used by other proof modules.
+call_with_optional_progress = _call_with_optional_progress
+cohort_result = _cohort_result
+shared_prepare_cohort = _prepare_cohort

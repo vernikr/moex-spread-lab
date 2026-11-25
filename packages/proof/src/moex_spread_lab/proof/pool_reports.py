@@ -1,10 +1,13 @@
 """Cohort reports and window batches dispatched to sticky worker slots."""
 
 import weakref
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from statistics import fmean
 from typing import Any
 
 from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.data.lake.bar_types import SealedH1Reader
 
 
 def report_cohort(
@@ -190,3 +193,107 @@ def should_use_pool(pool: Any, count: int, estimated_bars: int, facade: Any) -> 
     if facade.os.environ.get("MOEX_PROOF_FORCE_POOL") == "1":
         return True
     return estimated_bars >= facade.MIN_POOL_BARS or count >= 4
+
+
+type Obj = dict[str, Any]
+type PointMap = dict[str, Obj]
+type EvalFailure = tuple[int, str, str]
+type EvalScore = tuple[int, float, bool]
+type EvalScores = list[EvalScore]
+type EvalResult = tuple[EvalFailure | None, EvalScores]
+type InitItem = tuple[int, Obj, Obj, bool]
+type InitResult = list[tuple[int, str, Obj]]
+type SummaryItem = tuple[int, Obj, Obj]
+type ReportRow = tuple[int, Obj, bool, Obj | None]
+type SummaryRows = list[tuple[int, Obj]]
+
+# Cancellation tokens are opaque callables supplied by the caller.
+type CheckCancelled = Any
+type ProgressCallback = Any
+
+
+def failure_payload(failure: EvalFailure) -> Obj:
+    return {
+        "utility": None,
+        "rank_score": None,
+        "reason": f"{failure[1]}: {failure[2]}",
+    }
+
+
+def score_payload(scores: EvalScores) -> Obj:
+    scores.sort(key=lambda item: item[0])
+    ordered_scores = [item[1] for item in scores]
+    exposed = any(item[2] for item in scores)
+    score = fmean(ordered_scores)
+    return {
+        "rank_score": score,
+        "by_window_pp": ordered_scores,
+        "utility": score if exposed else None,
+        **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
+    }
+
+
+def combine_shards(
+    shard_results: Iterable[EvalResult], initial_scores: Sequence[EvalScore] = ()
+) -> EvalResult:
+    min_fail: EvalFailure | None = None
+    scores = list(initial_scores)
+    for sub_fail, sub_scores in shard_results:
+        if sub_fail is not None and (min_fail is None or sub_fail[0] < min_fail[0]):
+            min_fail = sub_fail
+        scores.extend(sub_scores)
+    return min_fail, scores
+
+
+def point_result(
+    cohort_state: Obj,
+    canary_box: list[int],
+    shard_results: Iterable[EvalResult],
+    initial_scores: Sequence[EvalScore] = (),
+) -> Obj:
+    failure, scores = combine_shards(shard_results, initial_scores)
+    if failure is not None:
+        canary_box[0] = failure[0]
+        cohort_state["canary_active"] = True
+        return failure_payload(failure)
+    return score_payload(scores)
+
+
+def _seal_data(root: Path, cache: dict[str, Any] | None):
+    if cache is not None and "reader" in cache:
+        return cache["reader"], cache["seal"], cache["by_legacy"]
+    reader = SealedH1Reader(root)
+    seal = reader.payload()
+    by_legacy = {e["legacy_path"]: e for e in seal["plan"]["files"]} if seal is not None else {}
+    if cache is not None:
+        cache.update(reader=reader, seal=seal, by_legacy=by_legacy)
+    return reader, seal, by_legacy
+
+
+def _pair_h1_weight(root: Path, contract: str, cache: dict[str, Any] | None) -> int:
+    reader, seal, by_legacy = _seal_data(root, cache)
+    if seal is not None:
+        selected = reader.select(contract).relative_to(reader.root).as_posix()
+        entry = by_legacy.get(selected)
+        return max(100, entry["logical_bytes"] // 128) if entry is not None else 1000
+    for subdir in ("candles-screen", "candles"):
+        path = root / "data/w1" / subdir / f"{contract}_1h.json"
+        try:
+            return max(100, path.stat().st_size // 128)
+        except OSError:
+            pass
+    return 1000
+
+
+def estimate_weight(
+    root: Path, item: dict[str, Any], timeframe: str, *, _seal_cache: dict[str, Any] | None = None
+) -> int:
+    if timeframe == "1h" and item.get("universe") == "pair_screen":
+        parts = str(item.get("pair") or "").split("/")
+        if len(parts) == 2:
+            return _pair_h1_weight(root, parts[1], _seal_cache)
+    return 1000 if timeframe == "1h" else 200
+
+
+# Compatibility for earlier private consumers.
+_estimate_weight = estimate_weight

@@ -148,3 +148,7 @@ def _lamps(
         "green": GREEN,
         "amber": AMBER,
     }
+
+
+# Typed internal exports used by other proof modules.
+lamps = _lamps

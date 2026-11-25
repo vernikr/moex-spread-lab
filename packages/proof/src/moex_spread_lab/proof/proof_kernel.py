@@ -6,40 +6,53 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 
 from __future__ import annotations
 
+import hashlib
 import math as _math
-import sys
+import secrets
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import date as date
 from datetime import datetime as datetime
 from datetime import time as time
 from functools import cached_property
-from typing import Any, cast
+from typing import Any, Protocol, cast
+
+import optuna
 
 from moex_spread_lab.accounting.position_sizing import automatic
-from moex_spread_lab.core import w0 as _core_w0
 from moex_spread_lab.core.evaluation_periods import (
     EvaluationSplit,
     ResearchSettings,
 )
 from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import run_id as _run_id
 
-from . import axis as _axis
-from . import evaluation as _evaluation
-from . import landscape as _landscape
-from . import measure_full as _measure_full
-from . import phase_metrics as _phase_metrics
-from . import proof_seed as _proof_seed
-from . import request_validation as _request_validation
-from . import service as _service
-from . import strategy_catalog as _strategy_catalog
-from . import tuning as _tuning
 from .axis import Axis
+from .axis import ordered as _ordered
+from .evaluation import account_checks as account_checks
+from .evaluation import annualized_returns as _annualized_returns
+from .evaluation import excess_curve as _excess_curve
+from .evaluation import missing_exposure as _missing_exposure
 from .landscape import AMBER as AMBER
 from .landscape import GREEN as GREEN
 from .landscape import Landscape
+from .landscape import lamps as _lamps
+from .phase_metrics import measure_phase as measure_phase
+from .request_validation import EXECUTION_AXES as EXECUTION_AXES
+from .request_validation import compact_result as compact_result
+from .request_validation import execution_axes as execution_axes
+from .request_validation import identity
+from .request_validation import validate as _validate
+from .service import reference_eval as reference_eval
+from .service import shared_mark as _mark
+from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
+from .strategy_catalog import get_strategy_axes as get_strategy_axes
+from .strategy_catalog import get_strategy_registry as get_strategy_registry
 
-# `measure_full` reads `math` back through this module, the facade it is given.
+_identity = identity
+
+# Shared numerical operations used by measurement and tuning.
 math = _math
 
 _Obj = dict[str, Any]
@@ -149,59 +162,204 @@ def measure_scalar_train(
     }
 
 
-# Callable facade types retain the documented monkeypatch boundary.
-_RunId = Callable[[_Obj], str]
-_Ordered = Callable[[Mapping[str, float]], bool]
-_AnnualizedReturns = Callable[[_Obj, _Marks, EvaluationSplit], dict[str, Any]]
-_ExcessCurve = Callable[[_Obj, _Marks], dict[str, float]]
-_MissingExposure = Callable[
-    [_Obj, list[tuple[str, tuple[str, ...]]], EvaluationSplit], tuple[list[str], list[str]]
-]
-_AccountChecks = Callable[[_Obj], dict[str, Any]]
-_Lamps = Callable[..., dict[str, Any]]
-_Identity = Callable[[Mapping[str, Any]], _Obj]
-_Validate = Callable[..., None]
-_CompactResult = Callable[[_Obj], _Obj]
-_ExecutionAxes = Callable[[Mapping[str, Any]], _Axes]
-_Mark = Callable[[list[str], _Marks, str], float]
-_ReferenceEval = Callable[[], bool]
-_GetAdapterIds = Callable[..., frozenset[str]]
-_GetStrategyAxes = Callable[..., dict[str, _Axes]]
-_GetStrategyRegistry = Callable[..., Any]
-_RunTuning = Callable[..., tuple[dict[str, float] | None, int, list[dict[str, float]]]]
-_Admission = Callable[[_Obj, ResearchSettings, Any], str | None]
-_MeasureFull = Callable[[_Obj, _Marks, EvaluationSplit, ResearchSettings, Any], _Obj]
-_MeasurePhase = Callable[[str], Callable[[Callable[..., Any]], Callable[..., Any]]]
-_ResolveSeed = Callable[[int | None], int]
-_DeriveSeed = Callable[..., int]
+SEED = 41
 
-_run_id = cast(_RunId, _core_w0.__dict__["_run_id"])
-_ordered = cast(_Ordered, _axis.__dict__["_ordered"])
-_annualized_returns = cast(_AnnualizedReturns, _evaluation.__dict__["_annualized_returns"])
-_excess_curve = cast(_ExcessCurve, _evaluation.__dict__["_excess_curve"])
-_missing_exposure = cast(_MissingExposure, _evaluation.__dict__["_missing_exposure"])
-account_checks = cast(_AccountChecks, _evaluation.__dict__["account_checks"])
-_lamps = cast(_Lamps, _landscape.__dict__["_lamps"])
-_identity = cast(_Identity, _request_validation.__dict__["_identity"])
-_validate = cast(_Validate, _request_validation.__dict__["_validate"])
-compact_result = cast(_CompactResult, _request_validation.__dict__["compact_result"])
-execution_axes = cast(_ExecutionAxes, _request_validation.__dict__["execution_axes"])
-EXECUTION_AXES: _Axes = cast(_Axes, _request_validation.__dict__["EXECUTION_AXES"])
-_mark = cast(_Mark, _service.__dict__["_mark"])
-reference_eval = cast(_ReferenceEval, _service.__dict__["reference_eval"])
-get_proof_adapter_ids = cast(_GetAdapterIds, _strategy_catalog.__dict__["get_proof_adapter_ids"])
-get_strategy_axes = cast(_GetStrategyAxes, _strategy_catalog.__dict__["get_strategy_axes"])
-get_strategy_registry = cast(
-    _GetStrategyRegistry, _strategy_catalog.__dict__["get_strategy_registry"]
-)
-TuningOptions = _tuning.TuningOptions
-run_tuning = cast(_RunTuning, _tuning.__dict__["run_tuning"])
-measure_phase = cast(_MeasurePhase, _phase_metrics.__dict__["measure_phase"])
-measure_full = cast(_MeasureFull, _measure_full.__dict__["measure_full"])
-admission = cast(_Admission, _measure_full.__dict__["admission"])
-SEED = cast(int, _proof_seed.__dict__["SEED"])
-resolve_seed = cast(_ResolveSeed, _proof_seed.__dict__["resolve_seed"])
-derive_seed = cast(_DeriveSeed, _proof_seed.__dict__["derive_seed"])
+
+def resolve_seed(configured: int | None) -> int:
+    """Turn the global seed preference into the base seed of this run.
+
+    A configured seed of 0 means "no fixed seed": every run draws a fresh base
+    seed so repeated runs explore different parameter proposals. Any other value
+    is used verbatim, which makes every random choice of the run reproducible.
+    """
+    if configured is None:
+        return SEED
+    if type(configured) is not int or configured < 0:
+        raise W0Error("Сид должен быть целым неотрицательным числом.")
+    if configured == 0:
+        return secrets.randbelow(2_147_483_647) + 1
+    return configured
+
+
+def derive_seed(base: int, *parts: object) -> int:
+    """Derive a stable child seed from the run's base seed and a label.
+
+    Independent searches inside one run (one per strategy family) must not
+    propose the same parameter sequence, yet they must stay reproducible
+    together: the child seed depends only on the base seed and the label.
+    """
+    digest = hashlib.sha256(
+        "|".join([str(base), *(str(part) for part in parts)]).encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:4], "big") or 1
+
+
+type Numeric = int | float
+type Point = dict[str, Numeric]
+
+
+class _MeasuredLandscape(Protocol):
+    def measure(self, values: Point) -> Mapping[str, object]: ...
+
+
+@dataclass(frozen=True)
+class TuningOptions:
+    trials: int
+    on_progress: Callable[[int, int], None] | None
+    random_seed: int | None
+    seed_label: object | None
+
+
+def _suggest_point(
+    trial: optuna.trial.Trial,
+    seed: Mapping[str, Numeric],
+    strategy_axes: Mapping[str, Axis],
+    bounds: Mapping[str, Numeric],
+) -> Point:
+    point: Point = dict(seed)
+    for name, axis in strategy_axes.items():
+        high = (
+            min(bounds[name], round(point["entry_z"] - axis.step, 6))
+            if name == "exit_z"
+            else bounds[name]
+        )
+        point[name] = axis.suggest(trial, name, high)
+    return point
+
+
+def run_tuning(
+    land: _MeasuredLandscape,
+    seed: Mapping[str, Numeric],
+    strategy_axes: Mapping[str, Axis],
+    train_size: int,
+    options: TuningOptions,
+) -> tuple[Point | None, int, list[Point]]:
+    base = resolve_seed(options.random_seed)
+    if options.seed_label is not None:
+        base = derive_seed(base, options.seed_label)
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=optuna.samplers.TPESampler(seed=base, n_startup_trials=8),
+    )
+    bounds: dict[str, Numeric] = {
+        name: min(axis.high, train_size - 2) if name in ("lookback", "window") else axis.high
+        for name, axis in strategy_axes.items()
+    }
+    if all(
+        a.contains(seed[k])
+        and seed[k] <= bounds[k]
+        and math.isclose((seed[k] - a.low) / a.step, round((seed[k] - a.low) / a.step))
+        for k, a in strategy_axes.items()
+    ):
+        study.enqueue_trial({k: seed[k] for k in strategy_axes})
+    best: Point | None = None
+    best_score = -math.inf
+    attempts: list[Point] = []
+    for idx in range(options.trials):
+        trial = study.ask()
+        point = _suggest_point(trial, seed, strategy_axes, bounds)
+        measured = land.measure(point)
+        raw_score = measured.get("rank_score", measured["utility"])
+        if raw_score is None:
+            study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+        else:
+            assert isinstance(raw_score, (int, float))
+            score = float(raw_score)
+            study.tell(trial, score)
+            if score > best_score or (score == best_score and point == seed):
+                best, best_score = point, score
+        attempts.append(point)
+        if options.on_progress is not None:
+            options.on_progress(idx + 1, options.trials)
+    return best, len(study.trials), attempts
+
+
+def measure_full(
+    proof: _Obj,
+    marks: _Marks,
+    split: EvaluationSplit,
+    settings: ResearchSettings,
+) -> _Obj:
+    """Measure a continuous ledger; the last training mark is validation's opening balance."""
+    if "_scalar_train_summary" in proof and not split.validation:
+        return _measure_scalar_train(proof, marks, split, settings)
+    if reason := _admission(proof, settings):
+        return {"utility": None, "reason": reason}
+    curve = _excess_curve(proof, marks)
+    train_x = curve[split.training[-1]]
+    train_rate = train_x / len(split.training)
+    result_x, rate, validation_rate = train_x, train_rate, None
+    segments = [("на обучении", split.training)]
+    if split.validation:
+        result_x = curve[split.validation[-1]] - train_x
+        rate = validation_rate = result_x / len(split.validation)
+        segments.append(("на проверке", split.validation))
+    if not all(math.isfinite(v) for v in (train_rate, rate, result_x)):
+        return {"utility": None, "reason": "Нет конечной оценки результата."}
+    # Descriptive P&L is separate from eligibility: a flat, unexposed book is not a plateau.
+    net = {r["date"]: r["cumulative_net_rub"] for r in cast(list[dict[str, Any]], proof["ledger"])}
+    net_change = (
+        net[split.validation[-1]] - net[split.training[-1]]
+        if split.validation
+        else net[split.training[-1]]
+    )
+    metrics = {
+        "net_rub": round(net_change, 2),
+        "lqdt_on_margin_rub": round(net_change - result_x, 2),
+        "train": round(train_rate, 6),
+        "validation": round(validation_rate, 6) if validation_rate is not None else None,
+        "excess_rub": round(result_x, 2),
+        "rub_per_session": round(rate, 6),
+    }
+    missing, reasons = _missing_exposure(proof, segments, split)
+    try:
+        annual = _annualized_returns(proof, marks, split)
+    except W0Error as exc:
+        return {
+            **metrics,
+            "utility": None,
+            "rank_score": None,
+            "reason": " ".join([*reasons, str(exc)]),
+        }
+    if annual.pop("cash_shortfall"):
+        reasons.append("Свободные средства недостаточны для маржи.")
+        return {
+            **metrics,
+            "rank_score": None,
+            "utility": None,
+            "reason": " ".join(reasons),
+        }
+    # An honestly inactive book holds LQDT: include its zero in the fixed denominator.
+    # It is not evidence of a stable trading neighborhood. A risk/data failure is NOT zero.
+    # Benchmark-relative drawdown/shortfall limits no longer veto a candidate: the
+    # measured excess over LQDT is the score, and the risk path stays visible in the
+    # proof itself.
+    score = annual["annualized_excess_pp"]
+    return {
+        **metrics,
+        **annual,
+        "rank_score": score,
+        "utility": None if missing else score,
+        **({"reason": " ".join(reasons)} if reasons else {}),
+    }
+
+
+def admission(proof: _Obj, settings: ResearchSettings) -> str | None:
+    if "min_leg_volume" in proof["window"] and proof["window"]["min_leg_volume"] is None:
+        return "Нет наблюдений с положительным объёмом обеих ног."
+    if not settings.allow_failed_capital and not proof["window"]["passes_capital_screen"]:
+        return "Не пройден стресс-тест капитала."
+    if not settings.allow_failed_volume and not proof["window"]["tradable_every_day"]:
+        return "Не пройдено правило ликвидности."
+    if (
+        proof["selection"]["strategy"] == "mean_reversion"
+        and proof["instrument"]["family"] == "perpetual_quarterly_same_asset"
+        and get_timeframe(proof["selection"].get("timeframe", "1d")).supports_funding_strategy
+        and not proof["provenance"].get("near_funding_history_sha256")
+    ):
+        return "Нет полного ряда SWAPRATE."
+    return None
+
 
 TRIALS = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
@@ -222,7 +380,7 @@ def __getattr__(name: str) -> Any:
 
 
 def _admission(proof: _Obj, settings: ResearchSettings) -> str | None:
-    return admission(proof, settings, sys.modules[__name__])
+    return admission(proof, settings)
 
 
 def _measure_scalar_train(
@@ -250,7 +408,7 @@ def _measure(
     proof: _Obj, marks: _Marks, split: EvaluationSplit, settings: ResearchSettings
 ) -> _Obj:
     """Measure a continuous ledger; validation starts at the last training mark."""
-    return measure_full(proof, marks, split, settings, sys.modules[__name__])
+    return measure_full(proof, marks, split, settings)
 
 
 @measure_phase("optuna_trials")
@@ -398,3 +556,15 @@ class StudyWindow:
 
 # Facade hooks resolved dynamically by `measure_full` and by `proof_search`.
 _FACADE_HOOKS = (_measure_scalar_train, _set_measure_provider)
+
+
+# Typed internal exports used by other proof modules.
+shared_admission = _admission
+lamps = _lamps
+measure = _measure
+shared_measure_scalar_train = _measure_scalar_train
+ordered = _ordered
+run_id = _run_id
+set_measure_provider = _set_measure_provider
+tune = _tune
+validate = _validate

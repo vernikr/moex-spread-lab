@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from moex_spread_lab.proof.screener_math import _annualized, _require_finite
+from moex_spread_lab.proof.screener_search import _annualized, _require_finite
 from moex_spread_lab.proof.screener_search import _annualized as facade_annualized
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
 

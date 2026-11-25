@@ -19,15 +19,10 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import PRICE_FILLS
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import AnalyticsError
 
-from . import pair_plugin_accounting as _accounting
 from .fixed_plugin_payload import fixed_pair_accounting
 from .market_window import ReplaySpec, cached, chart_signal_z, resolve_window
+from .pair_plugin_accounting import prepare_daily_pair_unit as _prepare_unit
 from .pair_template import chart_rows, full_payload, metrics_payload, sizing_unit
-
-_prepare_unit = cast(
-    Callable[..., tuple[dict[str, Any], dict[str, float]]],
-    _accounting.__dict__["prepare_daily_pair_unit"],
-)
 
 
 def check_sizing_request(selection: dict[str, Any]) -> None:
@@ -115,7 +110,7 @@ def builtin_pair_proof(
     execution, provenance = spec.execution, spec.prepared[3]
     snapshot, marks = cached(cache, "snapshot", lambda: _snapshot(spec))
     unit, _ = _prepare_unit(
-        _TEMPLATE_SOURCE if template else cache["plugin"],
+        cast(Any, _TEMPLATE_SOURCE if template else cache["plugin"]),
         snapshot,
         dict(spec.params),
         execution["fill"],

@@ -11,10 +11,10 @@ import optuna
 
 from moex_spread_lab.core.w0 import run_id as _run_id
 
-from . import landscape as _landscape
 from .axis import Axis
 from .landscape import Landscape
-from .proof_seed import resolve_seed
+from .landscape import lamps as _lamps
+from .proof_kernel import resolve_seed
 
 _Obj = dict[str, Any]
 _Metrics = dict[str, Any]
@@ -23,9 +23,6 @@ _Progress = Callable[[int, int], None]
 _OnProgress = Callable[[dict[str, Any]], None]
 # `landscape` is not strict-typed yet; read its private helper through the module
 # namespace so this strict module inherits a callable signature instead of Unknown.
-_lamps = cast(
-    Callable[[Landscape, Mapping[str, float], str | None], _Obj], _landscape.__dict__["_lamps"]
-)
 
 
 class _CaseLike(Protocol):
@@ -222,3 +219,7 @@ def unavailable(case: _LampCaseLike, reason: str) -> _Obj:
 
 # Compatibility facade: `proof_batch` re-exports the private report hook by name.
 _unavailable = unavailable
+
+
+# Typed internal exports used by other proof modules.
+shared_unavailable = _unavailable

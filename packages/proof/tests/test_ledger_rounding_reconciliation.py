@@ -1,12 +1,16 @@
 """Rounding each displayed trade differs from rounding the raw ledger total."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from moex_spread_lab.proof import ledger_blocks
-from moex_spread_lab.proof.pair_payload import _summary_block
-from moex_spread_lab.proof.rounding_totals import apply_raw_trade_totals
+from moex_spread_lab.proof.pair_payload import (
+    PairPayloadSpec,
+    _summary_block,
+    apply_raw_trade_totals,
+)
 
 
 def test_independently_rounded_trades_can_differ_from_unrounded_ledger(monkeypatch):
@@ -44,7 +48,11 @@ def test_independently_rounded_trades_can_differ_from_unrounded_ledger(monkeypat
     monkeypatch.setattr(ledger_blocks, "_ledger_row", capture)
     ledger = ledger_blocks.price_ledger(rows, trades, 1.0, 1.0, 1)
     summary = _summary_block(
-        SimpleNamespace(trades=trades, ledger=ledger, daily_rows=[]), trades, 0.0, 0.0, 0.0
+        cast(PairPayloadSpec, SimpleNamespace(trades=trades, ledger=ledger, daily_rows=[])),
+        trades,
+        0.0,
+        0.0,
+        0.0,
     )
     assert raw[-1] == pytest.approx(sum([0.004] * 3))
     assert sum(t["net_rub"] for t in trades) == 0.0

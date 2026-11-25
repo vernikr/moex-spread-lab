@@ -23,14 +23,6 @@ from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_t
 from . import pair_funding_replay
 
 
-def _choose_hook[T](public: T, private: T, original: T) -> T:
-    return private if private is not original else public
-
-
-def _is_runtime_instance(value: object, expected_type: type[object]) -> bool:
-    return isinstance(value, expected_type)
-
-
 def _has_non_mapping_rows(
     rows: Iterable[object],
 ) -> bool:
@@ -65,7 +57,7 @@ def _validated_rows(
     settings: ResearchSettings,
     through: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    is_instance = _is_runtime_instance
+    is_instance = isinstance
     window_input: object = window
     if not is_instance(window_input, WindowSnapshot):
         raise W0Error("Для расчёта требуется корректное дневное окно пары.")
@@ -191,8 +183,6 @@ _ATTACH_DAILY_UNIT_FUNDING: _DailyUnitFundingAttacher = cast(
 
 # Preserve both the historical public binding and the newer private hook.
 attach_daily_unit_funding = _ATTACH_DAILY_UNIT_FUNDING
-_original_attach = _ATTACH_DAILY_UNIT_FUNDING
-_run_id = _original_run_id = run_id
 
 
 def _daily_funding_journal(
@@ -214,16 +204,16 @@ def _daily_funding_journal(
         or declared["family"] != "perpetual_quarterly_same_asset"
     ):
         raise W0Error("История фондирования неприменима к этой паре.")
-    funding_window_input: object = funding_window
+    funding_window_input = cast(object, funding_window)
     if (
-        not _is_runtime_instance(funding_window_input, FundingWindow)
+        not isinstance(funding_window_input, FundingWindow)
         or funding_window.book.secid != window.near
     ):
         raise W0Error("История фондирования не соответствует ближней ноге пары.")
     eligible_rows = [row for row in rows if row["volume_eligible"]]
-    prepared = _choose_hook(
-        attach_daily_unit_funding, _ATTACH_DAILY_UNIT_FUNDING, _original_attach
-    )(eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot)
+    prepared = attach_daily_unit_funding(
+        eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot
+    )
     prepared_series = cast(list[dict[str, Any]], prepared["series"])
     by_date: dict[str, dict[str, Any]] = {cast(str, row["date"]): row for row in prepared_series}
     journal = [
@@ -329,8 +319,8 @@ def prepare_daily_pair_unit(
         universe=window.universe, pair=window.pair, timeframe=window.timeframe
     )
     validated = plugin.validate_parameters(deepcopy(params) if isolate else params, context)
-    validated_input: object = validated
-    if not _is_runtime_instance(validated_input, dict):
+    validated_input = cast(object, validated)
+    if not isinstance(validated_input, dict):
         raise W0Error("Плагин вернул некорректные параметры.")
     if enforce_compatibility:
         verdict = plugin.check_compatibility(deepcopy(analysis_window), settings)
@@ -359,7 +349,7 @@ def prepare_daily_pair_unit(
         identity = (
             None
             if memo is not None
-            else _choose_hook(run_id, _run_id, _original_run_id)(
+            else run_id(
                 {
                     "selection": selection,
                     "series": journal,

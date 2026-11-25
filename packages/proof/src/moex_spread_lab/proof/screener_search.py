@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date
+from itertools import product
 from typing import Any, TypedDict, cast
 
 from moex_spread_lab.core import universe as _universe
@@ -21,13 +24,6 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
     execution_settings,
 )
 
-from .screener_grid import grid as _grid
-from .screener_grid import neighbors as _neighbors
-from .screener_math import annualized as _annualized
-from .screener_math import require_finite as _require_finite
-from .screener_plateau import select_plateau
-from .screener_trial import TrialContext, evaluate_trials, validation_scores
-
 type _Payload = dict[str, Any]
 
 
@@ -41,6 +37,212 @@ INITIAL_CAPITAL = 30_000.0
 PLATEAU_RATIO = 0.7
 MIN_COMMON_OBSERVATIONS = 80
 MIN_TABLE_OBSERVATIONS = 60
+
+# --- Absorbed screener shards (TD-8): grid, math, plateau, trial ---
+
+
+def require_finite(value: float | None) -> float:
+    if value is None or not math.isfinite(value):
+        raise ScreenerError("non-annualizable training window")
+    return value
+
+
+def annualized(values: list[dict[str, Any]], start: str, end: str) -> float | None:
+    rows = {row["date"]: row for row in values}
+    if start not in rows or end not in rows:
+        return None
+    days = (date.fromisoformat(end) - date.fromisoformat(start)).days
+    first, last = rows[start], rows[end]
+    if days < 30 or min(first["V"], first["B"], last["V"], last["B"]) <= 0:
+        return None
+    strategy = (last["V"] / first["V"]) ** (365 / days) - 1
+    benchmark = (last["B"] / first["B"]) ** (365 / days) - 1
+    return round((strategy - benchmark) * 100, 4)
+
+
+# Compatibility for earlier private consumers.
+_annualized = annualized
+_require_finite = require_finite
+
+
+def grid(strategy: str, seed: dict[str, Any]) -> tuple[list[str], list[tuple[Any, ...]]]:
+    lookbacks = sorted(
+        {value for delta in (-5, 0, 5) if 5 <= (value := seed["lookback"] + delta) <= 80}
+    )
+    if strategy == "funding_only":
+        lookbacks = sorted(
+            {
+                value
+                for delta in (-10, -5, 0, 5, 10)
+                if 5 <= (value := seed["lookback"] + delta) <= 80
+            }
+        )
+        return ["lookback"], [(value,) for value in lookbacks]
+    entries = sorted(
+        {
+            round(value, 3)
+            for delta in (-0.5, 0, 0.5)
+            if 0.5 <= (value := seed["entry_z"] + delta) <= 5
+        }
+    )
+    exits = sorted(
+        {
+            round(value, 3)
+            for delta in (-0.25, 0, 0.25)
+            if 0 <= (value := seed["exit_z"] + delta) < min(entries)
+        }
+    )
+    if len(lookbacks) < 3 or len(entries) < 3 or len(exits) < 3:
+        raise ScreenerError(
+            "choose seed parameters away from the boundaries to search a complete neighborhood"
+        )
+    return ["lookback", "entry_z", "exit_z"], list(product(lookbacks, entries, exits))
+
+
+def neighbors(point: tuple[Any, ...], points: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+    axes = [sorted({item[index] for item in points}) for index in range(len(point))]
+    result: list[tuple[Any, ...]] = []
+    for other in points:
+        changed = [index for index in range(len(point)) if point[index] != other[index]]
+        if len(changed) != 1:
+            continue
+        index = changed[0]
+        if abs(axes[index].index(point[index]) - axes[index].index(other[index])) == 1:
+            result.append(other)
+    return result
+
+
+def select_plateau(
+    strategy: str,
+    axes: list[str],
+    points: list[tuple[Any, ...]],
+    trials: list[dict[str, Any]],
+    neighbors_for: Callable[[tuple[Any, ...], list[tuple[Any, ...]]], list[tuple[Any, ...]]],
+    plateau_ratio: float,
+) -> tuple[
+    dict[tuple[Any, ...], dict[str, Any]],
+    tuple[float, tuple[Any, ...], list[tuple[Any, ...]]] | None,
+]:
+    by_point = {tuple(trial["parameters"][axis] for axis in axes): trial for trial in trials}
+    plateaus: list[tuple[float, tuple[Any, ...], list[tuple[Any, ...]]]] = []
+    for point, trial in by_point.items():
+        if trial["status"] != "evaluated" or trial["train_min_excess_pp"] <= 0:
+            continue
+        neighbors = neighbors_for(point, points)
+        stable = [
+            other
+            for other in neighbors
+            if by_point[other]["status"] == "evaluated"
+            and by_point[other]["train_min_excess_pp"]
+            >= plateau_ratio * trial["train_min_excess_pp"]
+            and by_point[other]["train_min_excess_pp"] > 0
+        ]
+        trial["stable_neighbor_count"] = len(stable)
+        required = 2 if strategy == "funding_only" else 3
+        if len(stable) >= required:
+            trial["plateau"] = True
+            plateaus.append(
+                (
+                    min(by_point[other]["train_min_excess_pp"] for other in (*stable, point)),
+                    point,
+                    stable,
+                )
+            )
+    plateaus.sort(reverse=True)
+    chosen = plateaus[0] if plateaus else None
+    return by_point, chosen
+
+
+@dataclass
+class TrialContext:
+    inputs: ScreenerInputs
+    evaluator: Callable[..., dict[str, Any]]
+    selected: list[str]
+    strategy: str
+    execution: dict[str, Any]
+    axes: list[str]
+    dates: list[str]
+    train_dates: tuple[str, str]
+    segment: Callable[[list[dict[str, Any]], str, str], float | None]
+    require_finite: Callable[[float | None], float]
+    initial_capital: float
+
+
+def evaluate_trials(points: list[tuple[Any, ...]], ctx: TrialContext) -> list[dict[str, Any]]:
+    trials: list[dict[str, Any]] = []
+    for point in points:
+        params = dict(zip(ctx.axes, point, strict=False))
+        trial: dict[str, Any] = {"parameters": params, "status": "evaluated", "reason": None}
+        pair_reports: dict[str, dict[str, Any]] = {}
+        try:
+            for pair in ctx.selected:
+                settings = {
+                    "pair": pair,
+                    "strategy": ctx.strategy,
+                    "parameters": params,
+                    **ctx.execution,
+                }
+                pair_reports[pair] = ctx.evaluator(ctx.inputs, settings, through=ctx.train_dates[1])
+            train = [
+                ctx.segment(pair_reports[pair]["daily"], *ctx.train_dates) for pair in ctx.selected
+            ]
+            checked_train = [ctx.require_finite(value) for value in train]
+            visible_rows = [
+                row
+                for report in pair_reports.values()
+                for row in report["daily"]
+                if ctx.dates[0] <= row["date"] <= ctx.train_dates[1]
+            ]
+            max_dd = max(row["D"] for row in visible_rows) / ctx.initial_capital * 100
+            worst_shortfall = min(row["X"] for row in visible_rows) / ctx.initial_capital * 100
+            trial.update(
+                {
+                    "train_min_excess_pp": round(min(checked_train), 3),
+                    "train_by_pair_pp": {
+                        pair: round(value, 3)
+                        for pair, value in zip(ctx.selected, checked_train, strict=False)
+                    },
+                    "max_excess_drawdown_pct": round(max_dd, 2),
+                    "worst_shortfall_pct": round(worst_shortfall, 2),
+                }
+            )
+            # Benchmark-relative limits are reported, not enforced.
+        except (W0Error, OSError, ValueError) as exc:
+            trial.update({"status": "rejected", "reason": str(exc)})
+        trials.append(trial)
+    return trials
+
+
+def validation_scores(
+    ctx: TrialContext,
+    chosen: tuple[float, tuple[Any, ...], list[tuple[Any, ...]]] | None,
+    by_point: dict[tuple[Any, ...], dict[str, Any]],
+    selected_params: dict[str, Any] | None,
+    split: EvaluationSplit,
+) -> dict[str, Any] | None:
+    if not chosen:
+        return None
+    by_pair = dict(by_point[chosen[1]]["train_by_pair_pp"])
+    if split.validation:
+        by_pair = {}
+        for pair in ctx.selected:
+            report = ctx.evaluator(
+                ctx.inputs,
+                {
+                    "pair": pair,
+                    "strategy": ctx.strategy,
+                    "parameters": selected_params,
+                    **ctx.execution,
+                },
+                through=split.validation[-1],
+            )
+            # Include the first validation session's change by anchoring in training.
+            by_pair[pair] = ctx.segment(report["daily"], ctx.train_dates[1], split.validation[-1])
+    return by_pair
+
+
+_grid = grid
+_neighbors = neighbors
 
 
 def _require_object(value: object, message: str) -> _Payload:

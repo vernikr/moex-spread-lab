@@ -67,9 +67,6 @@ from .payload_tools import (
     result_label,
     sha256_bytes,
 )
-from .service_calendar import calendar_sizing_unit, prepare_fixed
-from .service_sizing import prepare_automatic
-from .service_validation import intent_request, plugin_parameters
 
 _HashedJSONCache: Any = vars(_w0)["_HashedJSONCache"]
 _run_id: Any = vars(_w0)["_run_id"]
@@ -107,17 +104,204 @@ def reference_eval() -> bool:
 
 
 def _plugin_parameters(plugin: Any, request: Any, pair: Any, settings: Any) -> dict[str, Any]:
-    return plugin_parameters(plugin, request, pair, settings, W0Error, PAIR_UNIVERSE)
+    """Validate trusted-plugin parameters against the schema it declares."""
+    from copy import deepcopy
+
+    from moex_spread_lab.core.contracts import InstrumentContext
+    from moex_spread_lab.strategies.base import validate_parameter_map
+
+    context = InstrumentContext(
+        universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe
+    )
+    schema = plugin.parameter_schema(context)
+    clean = validate_parameter_map(request.get("parameters", {}), schema)
+    params = validate_parameter_map(plugin.validate_parameters(deepcopy(clean), context), schema)
+    if params != clean or any(not param.contains(params[param.name]) for param in schema):
+        raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
+    return params
 
 
 def _calendar_sizing_unit(
     root: Any, request: Any, unit: Any, through: Any, metrics_only: bool
 ) -> Any:
-    return calendar_sizing_unit(root, request, unit, through, metrics_only, sys.modules[__name__])
+    if unit.get("schema_version") == "calendar-proof.v1":
+        if through is None:
+            unit = calendar_proof(root, request, unit)
+        else:
+            # Partial (training) replays skip the full _calendar_proof
+            # enrichment (run_id, notes, summary) to save per-trial work,
+            # but the structural markers size_proof/_Terms need must still
+            # be present. `universe` routes _Terms to the native branch;
+            # `run_id` is the unit identity fed into proof run_id (unused
+            # by _measure, only needed when metrics_only is False).
+            unit.setdefault("universe", CALENDAR_UNIVERSE)
+            if not metrics_only:
+                unit.setdefault(
+                    "run_id",
+                    _run_id(
+                        {
+                            "selection": unit.get("selection", {}),
+                            "daily": unit.get("series", []),
+                            "source_hashes": {
+                                k: v
+                                for k, v in cast(
+                                    dict[str, Any], unit.get("provenance") or {}
+                                ).items()
+                                if isinstance(v, str) and "sha256" in k
+                            },
+                        }
+                    ),
+                )
+    return unit
 
 
 def _intent_request(request: Any, registry: Any, settings: Any) -> dict[str, Any]:
-    return intent_request(request, registry, settings)
+    strategy = request.get("strategy", "zscore_mean_reversion")
+    selected_plugin = (
+        registry.get(strategy) if isinstance(strategy, str) and strategy in registry else None
+    )
+    default_fill = (
+        "same_day_settlement"
+        if selected_plugin is not None
+        and selected_plugin.supported_fills == ("same_day_settlement",)
+        else settings.price_fill
+    )
+    return {
+        **request,
+        "quantity": 1,
+        "slippage_ticks": settings.slippage_ticks,
+        **({} if "fill" in request else {"fill": default_fill}),
+    }
+
+
+def prepare_fixed(
+    service: Any,
+    selection: Any,
+    calendar: Any,
+    settings: ResearchSettings,
+    sizing_intents: Any,
+) -> Callable[..., dict[str, Any]]:
+    """Request-scoped replay of one instrument/strategy with different numeric settings.
+
+    Load the selected inputs once, not the entire registry per trial. Outside this
+    request a new session sees refreshed local files. `through` cuts the actual
+    simulator input (including carry's tariff reference), not just its output.
+    """
+    if not isinstance(selection, dict):
+        raise W0Error("выбор должен быть объектом")
+    selection = cast(dict[str, Any], selection)
+    universe = selection.get("universe", CALENDAR_UNIVERSE)
+    if universe == PAIR_UNIVERSE:
+        from moex_spread_lab.strategies.base import carry_proof_plugin_ids
+
+        from .strategy_catalog import get_strategy_registry
+
+        registry = get_strategy_registry()
+        strategy = selection.get("strategy")
+        plugin = (
+            registry.get(strategy)
+            if isinstance(strategy, str) and strategy in carry_proof_plugin_ids(registry)
+            else None
+        )
+        return service._prepare_pair(
+            selection, settings, sizing_intents=sizing_intents, carry_plugin=plugin
+        )
+    if universe != CALENDAR_UNIVERSE:
+        raise W0Error("неизвестная вселенная")
+    spec = get_timeframe(settings.timeframe)
+    if not spec.supports_calendar:
+        raise W0Error(f"{spec.label}: календарный proof не поддерживается на выбранном интервале.")
+    calendar = calendar if calendar is not None else service.calendar_data
+    cal_cache: dict[str, Any] = {}
+
+    def replay(
+        request: Any, through: Any = None, *, metrics_only: bool = False, scalar_summary: Any = None
+    ) -> dict[str, Any]:
+        effective = {
+            **request,
+            "timeframe": settings.timeframe,
+            **({} if "fill" in request else {"fill": settings.price_fill}),
+        }
+        payload = calendar.proof(
+            effective,
+            through=through,
+            initial_capital=settings.initial_capital_rub,
+            timeframe=settings.timeframe,
+            metrics_only=metrics_only,
+            sizing_intents=sizing_intents,
+            _cache=cal_cache,
+        )
+        # The search only needs trades, daily marks and admissions from partial replays.
+        return payload if through is not None else calendar_proof(service.root, effective, payload)
+
+    return replay
+
+
+def prepare_automatic(
+    service: Any,
+    selection: dict[str, Any],
+    calendar: Any,
+    settings: ResearchSettings,
+    registry: Any,
+    strategy: Any,
+) -> Callable[..., dict[str, Any]]:
+    """Automatic sizing for request-scoped proof replays."""
+    replay = service._prepare_fixed(
+        _intent_request(selection, registry, settings),
+        calendar=calendar,
+        settings=settings,
+        sizing_intents=True,
+    )
+    dates, prices = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
+    contracts = _load_instruments(service.root / "data/w1/current-intake.json")
+    marks_cache: dict[str | None, dict[str, float]] = {}
+    scan_cols_cache: dict[str | None, Any] = {}
+
+    def sized_replay(
+        request: Any,
+        through: str | None = None,
+        *,
+        metrics_only: bool = False,
+        scalar_summary: tuple[str, str] | None = None,
+        template: bool = False,
+    ) -> dict[str, Any]:
+        from moex_spread_lab.strategies.base import carry_proof_plugin_ids
+
+        if strategy in carry_proof_plugin_ids(registry) and (
+            not isinstance(request, dict)
+            or not automatic(cast(dict[str, Any], request))
+            or cast(dict[str, Any], request).get("quantity") is not None
+        ):
+            raise W0Error("Запрос не соответствует подготовленному автоматическому размеру carry.")
+        unit = replay(
+            _intent_request(request, registry, settings),
+            through=through,
+            metrics_only=metrics_only,
+            **({"template": True} if template else {}),
+        )
+        unit = _calendar_sizing_unit(service.root, request, unit, through, metrics_only)
+        marks = marks_cache.get(through)
+        if marks is None:
+            if not dates or dates[0] > unit["series"][0]["date"]:
+                raise W0Error("Нет отметки LQDT на начало истории.")
+            marks = {
+                r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
+                for r in unit["series"]
+            }
+            marks_cache[through] = marks
+        return size_proof(
+            unit,
+            marks,
+            settings,
+            contracts,
+            metrics_only=metrics_only,
+            copy_unit=False,
+            _scan_cache=scan_cols_cache if metrics_only else None,
+            _scan_key=through,
+            scalar_summary=scalar_summary if metrics_only else None,
+        )
+
+    return sized_replay
 
 
 def _validate_pair_screen(
@@ -267,9 +451,7 @@ class ProofService:
         registry: Any,
         strategy: Any,
     ) -> Callable[..., dict[str, Any]]:
-        return prepare_automatic(
-            self, selection, calendar, settings, registry, strategy, sys.modules[__name__]
-        )
+        return prepare_automatic(self, selection, calendar, settings, registry, strategy)
 
     def _prepare_fixed(
         self,
@@ -279,9 +461,7 @@ class ProofService:
         settings: ResearchSettings = STRICT_SCREENS,
         sizing_intents: bool = False,
     ) -> Callable[..., dict[str, Any]]:
-        return prepare_fixed(
-            self, selection, calendar, settings, sizing_intents, sys.modules[__name__]
-        )
+        return prepare_fixed(self, selection, calendar, settings, sizing_intents)
 
     def _prepare_pair(
         self,
@@ -332,3 +512,8 @@ if TYPE_CHECKING:
         _validate_pair_request,
         _validate_carry_result,
     )
+
+
+# Typed internal exports used by other proof modules.
+shared_benchmark_marks = _benchmark_marks
+shared_mark = _mark

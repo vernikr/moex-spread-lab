@@ -16,9 +16,8 @@ from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .ledger_blocks import price_ledger
+from .pair_payload import apply_pair_notes, apply_raw_trade_totals, merge_pair_series_row
 from .payload_tools import TradeSpec, fill_block, mark, point_value, trade_block
-from .plugin_notes import apply_pair_notes, merge_pair_series_row
-from .rounding_totals import apply_raw_trade_totals
 
 
 def _trade_blocks(

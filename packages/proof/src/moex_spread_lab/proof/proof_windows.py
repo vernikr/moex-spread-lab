@@ -14,11 +14,13 @@ from moex_spread_lab.core.evaluation_periods import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
-from . import request_validation as _request_validation
+from .pool_reports import estimate_weight as _estimate_weight
 from .proof_kernel import StudyWindow
 from .proof_pool import get_worker_pool
+from .request_validation import compact_result as compact_result
+from .request_validation import identity as _identity
+from .request_validation import validate as _validate
 from .service import benchmark_marks as _benchmark_marks
-from .worker_weight import estimate_weight as _estimate_weight
 
 MAX_WINDOW_REQUESTS = 128
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -49,14 +51,6 @@ class _WindowPoolLike(Protocol):
         check_cancelled: Callable[[], None],
         on_progress: Callable[[int, int], None] | None = None,
     ) -> list[_Obj]: ...
-
-
-# Historical cross-module bindings keep their module-level names as patch points;
-# the sibling modules expose no typed public aliases for these, so typed module
-# bindings go through `__dict__` lookups (P7.2 leaf style) instead of edits there.
-_identity = cast(Callable[[_Obj], _Obj], _request_validation.__dict__["_identity"])
-_validate = cast(Callable[[_Obj], None], _request_validation.__dict__["_validate"])
-compact_result = cast(Callable[[_Obj], _Obj], _request_validation.__dict__["compact_result"])
 
 
 def _settings(root: Path, override: ResearchSettings | None) -> ResearchSettings:

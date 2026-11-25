@@ -20,34 +20,23 @@ from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
-from . import cohort_prepare_helpers as _cohort_prepare_helpers
-from . import proof_batch as _proof_batch
-from . import proof_kernel as _proof_kernel
-from . import strategy_search_prepare as _strategy_search_prepare
 from .axis import Axis
+from .cohort_prepare import targets as _targets
+from .cohort_prepare import translate as _translate
+from .pair_payload import budget
+from .proof_batch import call_with_optional_progress as _call_with_optional_progress
+from .proof_batch import cohort_result as _cohort_result
+from .proof_batch import shared_prepare_cohort as _prepare_cohort
+from .proof_kernel import resolve_seed as resolve_seed
+from .proof_kernel import tune as _tune
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import resolve_strategy_registry
-from .trial_budget import budget
+from .strategy_search_prepare import no_prepared_result as _no_prepared_result
+from .strategy_search_prepare import prepare_candidates as _prepare_candidates
+from .strategy_search_prepare import record_trials as _record_trials
+from .strategy_search_prepare import winner_is_better as _winner_is_better
 
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
-
-
-# Shared type surface and the family allowlist of this leaf (Issue #93).
-def _choose_hook[T](public: T, private: T, original: T) -> T:
-    return private if private is not original else public
-
-
-_original_adapter_ids = get_proof_adapter_ids
-_original_calendar_universe = CALENDAR_UNIVERSE
-_family_hook_provider: Callable[[], tuple[Callable[..., frozenset[str]], str]] | None = None
-
-
-def set_family_hook_provider(
-    provider: Callable[[], tuple[Callable[..., frozenset[str]], str]],
-) -> None:
-    """Supply the owning facade hooks without a reverse import cycle."""
-    global _family_hook_provider
-    _family_hook_provider = provider
 
 
 Obj = dict[str, Any]
@@ -190,14 +179,8 @@ def families(
     The allowlist is intentional: a plugin alone may lack the accounting adapter
     needed to replay it safely; a mixed cohort prefers the active editor's universe.
     """
-    # Resolve the historical search facade globals at call time.
-    facade_ids, facade_calendar = (
-        _family_hook_provider()
-        if _family_hook_provider is not None
-        else (get_proof_adapter_ids, CALENDAR_UNIVERSE)
-    )
-    adapter_ids = _choose_hook(facade_ids, get_proof_adapter_ids, _original_adapter_ids)(registry)
-    calendar = _choose_hook(facade_calendar, CALENDAR_UNIVERSE, _original_calendar_universe)
+    adapter_ids = get_proof_adapter_ids(registry)
+    calendar = CALENDAR_UNIVERSE
     kinds = {str(target["universe"]) for target in targets}
     preferred = _preferred_universe(request.get("strategy"), kinds, registry, calendar)
     result: list[str] = []
@@ -225,43 +208,11 @@ _SettingsLike = SettingsLike
 _Run = Run
 _families = families
 
-# Preserve facade hook identities across module boundaries.
-_call_with_optional_progress = cast(
-    Callable[..., Any], _proof_batch.__dict__["_call_with_optional_progress"]
-)
-_cohort_result = cast(Callable[..., _Obj], _proof_batch.__dict__["_cohort_result"])
-_prepare_cohort = cast(Callable[..., Any], _proof_batch.__dict__["_prepare_cohort"])
-_tune = cast(Callable[..., Any], _proof_kernel.__dict__["_tune"])
-resolve_seed = cast(Callable[[int | None], int], _proof_kernel.__dict__["resolve_seed"])
-_targets = cast(
-    Callable[[Mapping[str, Any]], list[_Target]], _cohort_prepare_helpers.__dict__["_targets"]
-)
-_translate = cast(
-    Callable[[Mapping[str, Any], str], _Obj], _cohort_prepare_helpers.__dict__["_translate"]
-)
-_prepare_candidates = cast(
-    Callable[..., tuple[list[_Prepared], list[_Obj], list[_Obj]]],
-    _strategy_search_prepare.__dict__["prepare_candidates"],
-)
-_record_trials = cast(Callable[..., None], _strategy_search_prepare.__dict__["record_trials"])
-_winner_is_better = cast(Callable[..., bool], _strategy_search_prepare.__dict__["winner_is_better"])
-_no_prepared_result = cast(
-    Callable[..., _Obj], _strategy_search_prepare.__dict__["no_prepared_result"]
-)
-
-
 # Public pre-P7.2 names and current private patch points share their originals.
-prepare_candidates = _original_prepare = _prepare_candidates
-record_trials = _original_record = _record_trials
-winner_is_better = _original_winner = _winner_is_better
-no_prepared_result = _original_empty = _no_prepared_result
-
-
-def _family_hooks() -> tuple[Callable[..., frozenset[str]], str]:
-    return get_proof_adapter_ids, CALENDAR_UNIVERSE
-
-
-set_family_hook_provider(_family_hooks)
+prepare_candidates = _prepare_candidates
+record_trials = _record_trials
+winner_is_better = _winner_is_better
+no_prepared_result = _no_prepared_result
 
 
 def _same_family(a: Any, b: Any, registry: StrategyRegistry) -> bool:
@@ -351,11 +302,9 @@ def _search_family(run: _Run, p_idx: int, prepared: list[_Prepared], total_budge
         status="measured" if best is not None else "no_admissible_candidate",
         training_best_pp=score,
     )
-    _choose_hook(record_trials, _record_trials, _original_record)(
-        run.records, group, proposed, attempts
-    )
+    _record_trials(run.records, group, proposed, attempts)
     # Holdout, trade count and plateau never break cross-family ties.
-    if _choose_hook(winner_is_better, _winner_is_better, _original_winner)(
+    if _winner_is_better(
         best,
         score,
         (run.top, run.winner),
@@ -454,9 +403,7 @@ def strategy_search(
         base_seed=resolve_seed(settings.random_seed),
         on_progress=on_progress,
     )
-    prepared, alternatives, failures = _choose_hook(
-        prepare_candidates, _prepare_candidates, _original_prepare
-    )(
+    prepared, alternatives, failures = _prepare_candidates(
         {
             "service": service,
             "request": request,
@@ -487,9 +434,7 @@ def strategy_search(
     }
     run.base = _base_payload(run, targets, policy)
     if not prepared:
-        return _choose_hook(no_prepared_result, _no_prepared_result, _original_empty)(
-            run.base, failures, request, targets, _run_id
-        )
+        return _no_prepared_result(run.base, failures, request, targets, _run_id)
 
     total_budget = len(prepared) * budget()
     try:

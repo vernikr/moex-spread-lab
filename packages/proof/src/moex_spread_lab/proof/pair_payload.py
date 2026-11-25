@@ -6,7 +6,10 @@ funding engine and the compatibility shim call it directly.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass
+from math import fsum
 from typing import Any
 
 from moex_spread_lab.accounting.costs import (
@@ -22,7 +25,6 @@ from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .payload_tools import PROOF_SCHEMA, clean, observed_min_leg_volume, point_value
-from .rounding_totals import apply_raw_trade_totals
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,3 +243,76 @@ def pair_payload(spec: PairPayloadSpec) -> dict[str, Any]:
     payload = clean(payload)
     payload["run_id"] = _run_identity(spec, payload)
     return payload
+
+
+def apply_raw_trade_totals(
+    summary: dict[str, Any],
+    trades: list[dict[str, Any]],
+    ledger: list[dict[str, Any]],
+    raw_totals: Sequence[float],
+) -> None:
+    """Update summary only; do not mutate the ledger, trade rows or account curve."""
+    gross, costs, net = raw_totals
+    for name, value in (("gross", gross), ("costs", costs), ("net", net)):
+        key = f"{name}_rub"
+        rounded = round(value, 2)
+        displayed_sum = round(fsum(float(t[key]) for t in trades), 2)
+        delta = round(displayed_sum - rounded, 2)
+        summary[key] = rounded
+        delta_key = f"displayed_trade_{name}_rounding_delta_rub"
+        if delta:
+            summary[delta_key] = delta
+        else:
+            summary.pop(delta_key, None)
+    hurdle = fsum(float(t["lqdt_on_margin_rub"]) for t in trades)
+    summary["excess_over_lqdt_rub"] = round(net - hurdle, 2)
+    cumulative = ledger[-1]["cumulative_net_rub"] if ledger else 0.0
+    summary["ledger_reconciliation_rub"] = round(round(net, 2) - cumulative, 2)
+
+
+OPEN_POSITION_NOTE = (
+    "Открытая на конец выборки позиция — принудительный прокси-выход, не исполнимая сделка."
+)
+OPEN_POSITION_PREFIX = OPEN_POSITION_NOTE[:40]
+PLUGIN_SOURCE_NOTE = "Решения — из проверенных намерений плагина; цены и учёт рассчитаны отдельно."
+
+
+def merge_pair_series_row(
+    template_row: dict[str, Any], actual_row: dict[str, Any], *, builtin: bool
+) -> dict[str, Any]:
+    """Merge plugin accounting into one native series row.
+
+    A third-party plugin supplies indicator values of its own, so ``signal_z`` is cleared and
+    its extra columns are kept. A built-in plugin runs the same engine as the native proof, so
+    its row must stay byte-identical to the native one: native columns win and plugin-only
+    columns are dropped.
+    """
+    if builtin:
+        row = {key: actual_row.get(key, value) for key, value in template_row.items()}
+        row["signal_z"] = template_row.get("signal_z")
+        return row
+    return {**template_row, **actual_row, "signal_z": None}
+
+
+def apply_pair_notes(template: dict[str, Any], trades: list[dict[str, Any]]) -> None:
+    """Attach drop-in provenance notes; built-in payloads keep their native wording."""
+    template["notes"] = [
+        note for note in template["notes"] if not note.startswith(OPEN_POSITION_PREFIX)
+    ]
+    if any(trade["open_at_end"] for trade in trades):
+        template["notes"].append(OPEN_POSITION_NOTE)
+    template["notes"].append(PLUGIN_SOURCE_NOTE)
+
+
+TRIALS_PER_STRATEGY = 80
+UI_TRIALS_ENV = "MOEX_UI_SMOKE_TRIALS"
+
+
+def budget() -> int:
+    """Trials per strategy family for this process: 80, or an offline smoke's bound."""
+    if os.environ.get("MOEX_OFFLINE_ONLY") != "1":
+        return TRIALS_PER_STRATEGY
+    raw = os.environ.get(UI_TRIALS_ENV, "").strip()
+    if not raw.isdigit() or int(raw) <= 0:
+        return TRIALS_PER_STRATEGY
+    return min(int(raw), TRIALS_PER_STRATEGY)

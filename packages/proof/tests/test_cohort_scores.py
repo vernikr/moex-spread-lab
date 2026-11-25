@@ -1,8 +1,12 @@
 """Canonical aggregation and adaptive canary regression cases."""
 
 from concurrent.futures import Future
+from unittest.mock import Mock
 
-from moex_spread_lab.proof import cohort_scores
+import pytest
+
+from moex_spread_lab.proof import pool_reports as cohort_scores
+from moex_spread_lab.proof import proof_pool
 from moex_spread_lab.proof.proof_pool import CohortWorkerPool
 
 
@@ -28,6 +32,7 @@ def test_aggregation_preserves_canonical_order_failure_and_inactive_utility():
             ((1, "B", "first"), [(0, 1.0, False)]),
         ]
     )
+    assert failure is not None
     assert failure == (1, "B", "first")
     assert cohort_scores.failure_payload(failure)["reason"] == "B: first"
     assert cohort_scores.score_payload(scores) == {
@@ -84,3 +89,11 @@ def test_canary_switches_and_selects_earliest_failure():
         assert state["canary_active"] is False
     finally:
         pool.shutdown()
+
+
+def test_await_futures_cancels_pending_when_check_raises():
+    futures = [Future(), Future()]
+    with pytest.raises(RuntimeError, match="cancelled"):
+        proof_pool._await_futures(futures, Mock(side_effect=RuntimeError("cancelled")))
+    for future in futures:
+        assert future.cancelled()

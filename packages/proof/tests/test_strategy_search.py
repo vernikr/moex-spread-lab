@@ -17,11 +17,11 @@ from moex_spread_lab.core.settings import (
 )
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof import proof_kernel, proof_search
+from moex_spread_lab.proof.pair_payload import TRIALS_PER_STRATEGY
 from moex_spread_lab.proof.proof_kernel import StudyWindow
 from moex_spread_lab.proof.proof_search import _measure, _tune, _validate, research_run
 from moex_spread_lab.proof.proof_windows import compact_result
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.proof.trial_budget import TRIALS_PER_STRATEGY
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import funding_winner, rising_calendar, screen_failures

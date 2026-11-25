@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from . import axis as _axis
 from .axis import Axis
+from .axis import ordered as _ordered
 from .strategy_catalog import get_strategy_axes
 
 if TYPE_CHECKING:
@@ -18,11 +18,6 @@ if TYPE_CHECKING:
 
 _Request = dict[str, Any]
 _Axes = dict[str, Axis]
-
-# ``axis._ordered`` is a private cross-module facade hook. Resolve it through the
-# owning module's dictionary so strict mode does not treat the alias as private
-# usage while keeping ``request_validation._ordered`` patchable as before.
-_ordered = cast(Callable[[Mapping[str, Any]], bool], _axis.__dict__["_ordered"])
 
 # Fixed-size API/CLI compatibility only. The workbench uses automatic sizing and
 # one immutable global slippage preference, so neither is an optimization axis.
@@ -135,3 +130,8 @@ __all__ = [
     "execution_axes",
     "get_strategy_axes",
 ]
+
+
+# Typed internal exports used by other proof modules.
+identity = _identity
+validate = _validate

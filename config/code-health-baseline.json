@@ -58,7 +58,6 @@
   "legacy_shallow_shards": [
     "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
-    "packages/proof/src/moex_spread_lab/proof/service_validation.py",
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
     "scripts/vulture_whitelist.py"
   ],
@@ -73,7 +72,7 @@
       "baseline_tokens": 90306
     },
     "packages/proof": {
-      "baseline_tokens": 182493
+      "baseline_tokens": 176473
     },
     "packages/strategies": {
       "baseline_tokens": 131676

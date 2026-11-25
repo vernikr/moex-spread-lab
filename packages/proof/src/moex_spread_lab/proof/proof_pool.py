@@ -22,75 +22,41 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
-from . import worker_cohort as _worker_cohort
-from . import worker_window as _worker_window
-from .cohort_scores import (
+from .pool_reports import (
     CheckCancelled,
     EvalFailure,
     EvalResult,
     InitItem,
-    InitResult,
     Obj,
     PointMap,
     ProgressCallback,
-    ReportRow,
-    SummaryItem,
-    SummaryRows,
+    await_futures,
+    canary_failure,
+    estimate_weight,
+    report_cohort,
+    should_use_pool,
 )
-from .cohort_scores import combine_shards as combine_shards
-from .cohort_scores import failure_payload as failure_payload
-from .cohort_scores import point_result as point_result
-from .cohort_scores import score_payload as score_payload
-from .pool_reports import await_futures, canary_failure, report_cohort, should_use_pool
+from .pool_reports import combine_shards as combine_shards
 from .pool_reports import configured_workers as choose_worker_count
+from .pool_reports import failure_payload as failure_payload
+from .pool_reports import point_result as point_result
+from .pool_reports import score_payload as score_payload
 from .pool_reports import shutdown_weak as _shutdown_weak
 from .pool_reports import window_summaries as _window_summaries
 from .proof_kernel import StudyWindow as StudyWindow
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
+from .worker_cohort import WORKER_COHORTS as WORKER_COHORTS
+from .worker_cohort import worker_eval_indices as eval_indices_task
+from .worker_cohort import worker_eval_plateau_batch as eval_plateau_task
+from .worker_cohort import worker_init_cohort as init_cohort_task
+from .worker_cohort import worker_release_cohort as release_cohort_task
+from .worker_cohort import worker_report_cohort as report_cohort_task
 from .worker_metrics import submit_worker
 from .worker_metrics import unwrap_worker_result as unwrap_worker_result
-from .worker_weight import estimate_weight
+from .worker_window import worker_service as worker_service
+from .worker_window import worker_window_summaries as window_summaries_task
 
 window_summaries = _window_summaries
-_original_window_summaries = _window_summaries
-
-
-# Facade hooks resolved by pool_reports at call time.
-def _choose_hook[T](public: T, private: T, original: T) -> T:
-    return private if private is not original else public
-
-
-_wc, _ww = (_worker_cohort.__dict__, _worker_window.__dict__)
-
-WORKER_COHORTS = cast(dict[str, dict[int, tuple[Obj, StudyWindow]]], _wc["_WORKER_COHORTS"])
-init_cohort_task = cast(
-    Callable[
-        [str, str, ResearchSettings, tuple[list[str], dict[str, float]], list[InitItem]],
-        InitResult,
-    ],
-    _wc["_worker_init_cohort"],
-)
-release_cohort_task = cast(Callable[[str], None], _wc["_worker_release_cohort"])
-eval_indices_task = cast(
-    Callable[[str, PointMap, list[int] | None, int | None], EvalResult],
-    _wc["_worker_eval_indices"],
-)
-eval_plateau_task = cast(
-    Callable[[str, list[tuple[int, PointMap]]], dict[int, EvalResult]],
-    _wc["_worker_eval_plateau_batch"],
-)
-report_cohort_task = cast(
-    Callable[[str, PointMap, bool, ResearchSettings], list[ReportRow]],
-    _wc["_worker_report_cohort"],
-)
-window_summaries_task = cast(
-    Callable[
-        [str, ResearchSettings, tuple[list[str], dict[str, float]], list[SummaryItem]],
-        SummaryRows,
-    ],
-    _ww["_worker_window_summaries"],
-)
-worker_service = cast(Callable[[str], Any], _ww["_worker_service"])
 
 
 def plan_shards(
@@ -463,7 +429,7 @@ class CohortWorkerPool:
         check_cancelled: CheckCancelled,
         on_progress: ProgressCallback | None = None,
     ) -> list[Obj]:
-        return _choose_hook(window_summaries, _window_summaries, _original_window_summaries)(
+        return _window_summaries(
             (self, sys.modules[__name__]),
             root,
             settings,
@@ -488,3 +454,7 @@ def get_worker_pool(service: Any) -> CohortWorkerPool:
     if service._pool is None:
         service._pool = CohortWorkerPool()
     return cast(CohortWorkerPool, service._pool)
+
+
+# Typed internal exports used by other proof modules.
+shared_estimate_weight = _estimate_weight

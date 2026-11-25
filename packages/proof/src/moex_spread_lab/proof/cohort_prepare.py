@@ -2,28 +2,32 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, MutableMapping, Sized
 from dataclasses import dataclass
 from statistics import fmean
-from typing import Any, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from moex_spread_lab.core.contracts import (
+    InstrumentContext,
+    plugin_parameter_aliases,
+    plugin_required_asset_capability,
+)
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
-from . import cohort_models as _cohort_models
-from . import cohort_prepare_helpers as _cohort_prepare_helpers
-from . import remote_cohort_types as _remote_cohort_types
-from . import request_validation as _request_validation
 from .axis import Axis
+from .cohort_models import Cohort as _Cohort
+from .cohort_models import RemoteCohort as _RemoteCohort
 from .landscape import Landscape
-from .strategy_catalog import get_strategy_axes
+from .request_validation import execution_axes as execution_axes
+from .request_validation import identity as _identity
+from .strategy_catalog import get_strategy_axes, resolve_strategy_registry
 
 _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
 _Member = tuple[_Obj, Any]
-_CaseT = TypeVar("_CaseT")
 
 
 class _RemoteCaseLike(Protocol):
@@ -50,32 +54,10 @@ class _CohortLike(Protocol):
     ) -> Any: ...
 
 
-class _FilterTrainingFn(Protocol):
-    def __call__(
-        self, members: list[tuple[_Obj, _CaseT]], axes: Mapping[str, Axis], rejected: list[_Obj]
-    ) -> list[tuple[_Obj, _CaseT]]: ...
+MAX_TARGETS = 1024
 
-
-_cm, _ch, _rc = (
-    _cohort_models.__dict__,
-    _cohort_prepare_helpers.__dict__,
-    _remote_cohort_types.__dict__,
-)
-_Cohort = cast(Callable[..., _CohortLike], _cm["_Cohort"])
-_RemoteCohort = cast(Callable[..., _CohortLike], _cm["_RemoteCohort"])
-_active_seed = cast(Callable[..., _Obj], _ch["_active_seed"])
-_confirmation = cast(Callable[[Any, list[_Obj], Sequence[_Member]], _Obj], _ch["_confirmation"])
-_filter_training = cast(_FilterTrainingFn, _ch["_filter_training"])
-_intersect_axes = cast(Callable[[_Axes, Mapping[str, Axis], str], None], _ch["_intersect_axes"])
-_native_request = cast(Callable[..., _Obj], _ch["_native_request"])
-_targets = cast(Callable[[Mapping[str, Any]], list[_Obj]], _ch["_targets"])
-_translate = cast(Callable[[Mapping[str, Any], str], _Obj], _ch["_translate"])
-_TrainingSlice = cast(Callable[[str, str, int], Any], _rc["_TrainingSlice"])
-_RemoteSplit = cast(Callable[[Any], Any], _rc["_RemoteSplit"])
-_RemoteCase = cast(Callable[..., _RemoteCaseLike], _rc["_RemoteCase"])
-execution_axes = cast(
-    Callable[[Mapping[str, Any]], _Axes], _request_validation.__dict__["execution_axes"]
-)
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies import StrategyRegistry
 
 
 @dataclass
@@ -183,17 +165,20 @@ def _remote_cohort(
             ),
         )
 
-    land = Landscape(ctx.axes | execution_axes(cast(Mapping[str, Any], inputs.request)), mean)
-    return _RemoteCohort(
-        active=ctx.active,
-        axes=ctx.axes,
-        seed=ctx.seed,
-        members=members,
-        land=land,
-        pool=pool,
-        cohort_state=cohort_state,
-        distinct_strategies=distinct,
-        check_cancelled=inputs.check_cancelled,
+    land = Landscape(ctx.axes | execution_axes(cast(dict[str, Any], inputs.request)), mean)
+    return cast(
+        _CohortLike,
+        _RemoteCohort(
+            active=ctx.active,
+            axes=ctx.axes,
+            seed=ctx.seed,
+            members=cast(Any, members),
+            land=land,
+            pool=pool,
+            cohort_state=cohort_state,
+            distinct_strategies=distinct,
+            check_cancelled=inputs.check_cancelled,
+        ),
     )
 
 
@@ -315,8 +300,8 @@ def _local_cohort(ctx: _Preparation, members: list[_Member]) -> _CohortLike:
             **({} if exposed else {"reason": "Открытого спреда не было на обучении."}),
         }
 
-    land = Landscape(ctx.axes | execution_axes(cast(Mapping[str, Any], inputs.request)), average)
-    return _Cohort(ctx.active, ctx.axes, ctx.seed, members, land)
+    land = Landscape(ctx.axes | execution_axes(cast(dict[str, Any], inputs.request)), average)
+    return cast(_CohortLike, _Cohort(ctx.active, ctx.axes, ctx.seed, members, land))
 
 
 def _prepare_local(ctx: _Preparation) -> _CohortLike | _Obj:
@@ -358,3 +343,223 @@ def prepare_cohort(inputs: PreparationInputs) -> _CohortLike | _Obj:
     ):
         return _prepare_remote(ctx)
     return _prepare_local(ctx)
+
+
+@dataclass
+class _TrainingSlice:
+    first: str
+    last: str
+    count: int
+
+    def __len__(self) -> int:
+        return self.count
+
+    def __getitem__(self, idx: int) -> str:
+        if idx == 0:
+            return self.first
+        if idx == -1 or idx == self.count - 1:
+            return self.last
+        raise IndexError(idx)
+
+
+@dataclass
+class _RemoteSplit:
+    training: _TrainingSlice
+
+
+@dataclass
+class _RemoteCase:
+    request: dict[str, Any]
+    strategy_axes: dict[str, Any]
+    execution_axes: dict[str, Any]
+    axes: dict[str, Any]
+    seed: dict[str, Any]
+    split: _RemoteSplit
+    _lamp_warning: str | None
+
+    def lamp_warning(self):
+        return self._lamp_warning
+
+
+class _SplitLike(Protocol):
+    @property
+    def training(self) -> Sized: ...
+
+
+class _CaseLike(Protocol):
+    @property
+    def split(self) -> _SplitLike: ...
+
+
+class _SettingsLike(Protocol):
+    def metadata(self) -> Mapping[str, Any]: ...
+
+
+def _parameter_aliases(strategy: str) -> Mapping[str, str]:
+    """Incoming-parameter renames declared by the plugin behind ``strategy``."""
+    try:
+        plugin = resolve_strategy_registry(None).get(strategy)
+    except W0Error:
+        return {}
+    return plugin_parameter_aliases(plugin)
+
+
+def _translate[ValueT](params: Mapping[str, ValueT], strategy: str) -> dict[str, ValueT]:
+    result = dict(params)
+    for source, target in _parameter_aliases(strategy).items():
+        if source in result:
+            result[target] = result.pop(source)
+    return result
+
+
+def _native_request(
+    active: Mapping[str, Any],
+    target: Mapping[str, Any],
+    *,
+    default_price_fill: str = "reference_same_bar",
+    registry: StrategyRegistry | None = None,
+) -> _Obj:
+    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
+
+    registry = resolve_strategy_registry(registry)
+    strategy_axes = get_strategy_axes(registry)
+    strategy = active.get("strategy", "zscore_mean_reversion")
+    if strategy not in strategy_axes:
+        raise W0Error("Неизвестная стратегия подбора")
+    plugin = registry.get(strategy)
+    adapters = [
+        p
+        for p in registry
+        if p.strategy_id in strategy_axes
+        and p.family_id == plugin.family_id
+        and target["universe"] in p.supported_universes
+    ]
+    if not adapters:
+        raise W0Error("Выбранная стратегия неприменима к этому типу пары.")
+    strategy = adapters[0].strategy_id
+    capability = plugin_required_asset_capability(registry.get(strategy))
+    if capability and not ASSETS.get(target["asset"], {}).get(capability):
+        raise W0Error(
+            "Для этого актива не предусмотрена стратегия RUONIA."
+            if capability == "convergence"
+            else f"Для этого актива не предусмотрена возможность «{capability}»."
+        )
+    fill = active.get("fill", default_price_fill)
+    return {
+        **target,
+        "strategy": strategy,
+        **({"fill": fill} if strategy != "funding_only" else {}),
+        **{
+            k: active[k]
+            for k in ("sizing", *execution_axes(cast(dict[str, Any], active)))
+            if k in active
+        },
+        "parameters": _translate(active.get("parameters", {}), strategy),
+    }
+
+
+def _targets(request: Mapping[str, Any]) -> list[_Obj]:
+    raw = request.get("targets")
+    if "targets" not in request or raw == []:
+        return [_identity(request)]
+    # Typed up front only to avoid ``list[Unknown]`` narrowing; the guard below still
+    # decides, at runtime, whether ``raw`` is a list of an admissible size.
+    items = cast(list[object], raw)
+    if not isinstance(raw, list) or not 1 <= len(items) <= MAX_TARGETS:
+        raise W0Error(f"Выберите от 1 до {MAX_TARGETS} окон.")
+    unique: dict[tuple[Any, Any, Any], _Obj] = {}
+    for item in items:
+        window = cast(_Obj, item)
+        if not isinstance(item, dict) or window.keys() - {"universe", "asset", "pair"}:
+            raise W0Error("Ожидается список идентификаторов окон.")
+        t = _identity(window)
+        key = t["universe"], t.get("asset", ""), t["pair"]
+        if key in unique:
+            raise W0Error("Окно указано дважды.")
+        unique[key] = t
+    return [unique[k] for k in sorted(unique)]
+
+
+def _active_seed(
+    request: Mapping[str, Any], active: str, *, registry: StrategyRegistry | None = None
+) -> _Obj:
+    from moex_spread_lab.strategies.calendar.calendar_spreads import ASSETS
+
+    asset: Any = request.get("asset")
+    context = InstrumentContext(
+        universe=request.get("universe", CALENDAR_UNIVERSE),
+        pair=request.get("pair", ""),
+        asset=asset,
+        monthly=bool(ASSETS.get(asset, {}).get("monthly")),
+    )
+    plugin = resolve_strategy_registry(registry).get(active)
+    defaults = {
+        spec.name: spec.default for spec in plugin.parameter_schema(context) if spec.tunable
+    }
+    return {
+        **defaults,
+        **request.get("parameters", {}),
+        **(
+            {
+                "quantity": request.get("quantity", 1),
+                "slippage_ticks": request.get("slippage_ticks", 1.0),
+            }
+            if execution_axes(cast(dict[str, Any], request))
+            else {}
+        ),
+    }
+
+
+def _intersect_axes(
+    axes: MutableMapping[str, Axis], strategy_axes: Mapping[str, Axis], active: str
+) -> None:
+    for name, other in _translate(strategy_axes, active).items():
+        a = axes[name]
+        axes[name] = Axis(max(a.low, other.low), min(a.high, other.high), a.step)
+
+
+def _filter_training[CaseT: _CaseLike](
+    members: Iterable[tuple[_Obj, CaseT]], axes: Mapping[str, Axis], rejected: list[_Obj]
+) -> list[tuple[_Obj, CaseT]]:
+    # Every window must fit the intersection, not merely its individual domain.
+    minimum = max((a.low + 2 for k, a in axes.items() if k in ("window", "lookback")), default=2)
+    compatible: list[tuple[_Obj, CaseT]] = []
+    for target, case in members:
+        if len(case.split.training) >= minimum:
+            compatible.append((target, case))
+        else:
+            rejected.append(
+                {
+                    "target": target,
+                    "reason": f"Для общего окна сигнала нужно не менее {minimum} наблюдений на обучении.",
+                }
+            )
+    return compatible
+
+
+def _confirmation(settings: _SettingsLike, rejected: list[_Obj], members: Sized) -> _Obj:
+    return {
+        "status": "selection_requires_confirmation",
+        **settings.metadata(),
+        "excluded": rejected,
+        "remaining_count": len(members),
+        "trial_count": 0,
+        "selected_parameters": None,
+    }
+
+
+# Supported explicit aliases keep the historical hook objects available without
+# changing the wildcard surface; private attributes remain the patch points.
+active_seed = _active_seed
+confirmation = _confirmation
+filter_training = _filter_training
+intersect_axes = _intersect_axes
+native_request = _native_request
+targets = _targets
+translate = _translate
+
+
+# Typed internal exports used by other proof modules.
+RemoteCase = _RemoteCase
+RemoteSplit = _RemoteSplit
+TrainingSlice = _TrainingSlice

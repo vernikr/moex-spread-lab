@@ -52,3 +52,6 @@ def _ordered(values: Mapping[str, float]) -> bool:
 # supported export that keeps strict mode's ``reportUnusedFunction`` quiet; both
 # names are the same function object. Wildcard exports are frozen to the original set.
 ordered = _ordered
+
+
+# Typed internal exports used by other proof modules.

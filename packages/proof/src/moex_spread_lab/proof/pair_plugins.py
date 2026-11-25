@@ -19,8 +19,13 @@ from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_screener.pair_screener import _pair, execution_settings
 from moex_spread_lab.strategies.registry import BUILTIN_STRATEGY_IDS
 
-from . import pair_plugin_accounting as _pair_plugin_accounting
 from .fixed_plugin_payload import fixed_daily_pair_plugin_payload
+from .pair_payload import (
+    apply_pair_notes,
+    merge_pair_series_row,
+)
+from .pair_plugin_accounting import prepare_daily_pair_unit as _prepare_daily_pair_unit
+from .pair_plugin_accounting import size_daily_pair_plugin as _size_daily_pair_plugin
 from .payload_tools import (
     TradeSpec,
     benchmark_marks,
@@ -28,23 +33,8 @@ from .payload_tools import (
     point_value,
     trade_block,
 )
-from .plugin_notes import (
-    apply_pair_notes,
-    merge_pair_series_row,
-)
 
 _Obj = dict[str, Any]
-
-# ``pair_plugin_accounting`` is not yet on the strict list; bind its callables
-# through explicit signatures so this strict file sees fully-typed calls without
-# changing runtime behavior or the lazy-import contract of the accounting module.
-_prepare_daily_pair_unit = cast(
-    Callable[..., tuple[_Obj, dict[str, float]]],
-    _pair_plugin_accounting.__dict__["prepare_daily_pair_unit"],
-)
-_size_daily_pair_plugin = cast(
-    Callable[..., _Obj], _pair_plugin_accounting.__dict__["size_daily_pair_plugin"]
-)
 
 
 class PairPluginRoute:

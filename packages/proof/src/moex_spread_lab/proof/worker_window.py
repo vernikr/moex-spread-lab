@@ -87,3 +87,6 @@ def _worker_window_summaries(
 # Explicit aliases preserve identities without changing the historical wildcard surface.
 worker_service = _worker_service
 worker_window_summaries = _worker_window_summaries
+
+
+# Typed internal exports used by other proof modules.

@@ -177,3 +177,6 @@ def _missing_exposure(
 annualized_returns = _annualized_returns
 excess_curve = _excess_curve
 missing_exposure = _missing_exposure
+
+
+# Typed internal exports used by other proof modules.

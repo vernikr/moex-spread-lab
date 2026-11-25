@@ -2,7 +2,8 @@
 
 from unittest.mock import patch
 
-from moex_spread_lab.proof import proof_pool, worker_weight
+from moex_spread_lab.proof import pool_reports as worker_weight
+from moex_spread_lab.proof import proof_pool
 
 
 def test_unsealed_weights_use_screen_then_legacy_without_reopening_seal(tmp_path):

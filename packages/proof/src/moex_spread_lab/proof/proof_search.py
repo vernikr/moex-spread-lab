@@ -13,17 +13,32 @@ from moex_spread_lab.core.evaluation_periods import (
 )
 from moex_spread_lab.core.w0 import W0Error
 
-from . import evaluation as _evaluation
 from . import proof_batch as _proof_batch
-from . import proof_kernel as _proof_kernel
 from . import proof_strategy_search as _proof_strategy_search
-from . import request_validation as _request_validation
-from . import service as _service
 from .axis import Axis
+from .evaluation import account_checks as account_checks
+from .evaluation import annualized_returns as _annualized_returns
+from .evaluation import excess_curve as _excess_curve
 from .landscape import AMBER, GREEN, Landscape
-from .proof_kernel import ENTRY, MIN_SESSIONS, TRIALS
-from .proof_seed import SEED, derive_seed, resolve_seed
+from .proof_kernel import ENTRY, MIN_SESSIONS, SEED, TRIALS, derive_seed, resolve_seed
+from .proof_kernel import StudyWindow as StudyWindow
+from .proof_kernel import lamps as _lamps
+from .proof_kernel import measure as _measure
+from .proof_kernel import ordered as _ordered
+from .proof_kernel import run_id as _run_id
+from .proof_kernel import set_measure_provider as _set_measure_provider
+from .proof_kernel import shared_admission as _admission
+from .proof_kernel import shared_measure_scalar_train as _measure_scalar_train
+from .proof_kernel import tune as _tune
 from .request_validation import EXECUTION_AXES
+from .request_validation import compact_result as compact_result
+from .request_validation import execution_axes as execution_axes
+from .request_validation import identity as _identity
+from .request_validation import validate as _validate
+from .service import ProofService as ProofService
+from .service import reference_eval as reference_eval
+from .service import shared_benchmark_marks as _benchmark_marks
+from .service import shared_mark as _mark
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .strategy_catalog import get_strategy_registry as get_strategy_registry
@@ -36,7 +51,6 @@ _Report = dict[str, Any]
 _Check = Callable[[], None]
 _Measure = Callable[[Any, _Marks, EvaluationSplit, ResearchSettings], _Obj]
 _Benchmark = tuple[list[str], dict[str, float]]
-_Search = Callable[..., _Obj | None]
 _ProgressFn = Callable[[_Progress], None]
 _PlateauFn = Callable[[int, int], None]
 
@@ -55,38 +69,6 @@ class _WindowLike(Protocol):
 def _noop() -> None:
     """Default cancellation probe: a run that is never asked to stop."""
 
-
-# The facade re-exports these helpers for out-of-tree readers and the web routes, so
-# they stay private in their owning modules and are read from the module namespace.
-_KERNEL = _proof_kernel.__dict__
-_SERVICE = _service.__dict__
-
-_run_id = cast(Callable[[_Obj], str], _KERNEL["_run_id"])
-_set_measure_provider = cast(
-    Callable[[Callable[[], _Measure]], None], _KERNEL["_set_measure_provider"]
-)
-_admission = cast(Callable[..., str | None], _KERNEL["_admission"])
-_measure = cast(_Measure, _KERNEL["_measure"])
-_measure_scalar_train = cast(_Measure, _KERNEL["_measure_scalar_train"])
-_tune = cast(Callable[..., Any], _KERNEL["_tune"])
-_ordered = cast(Callable[[Mapping[str, float]], bool], _KERNEL["_ordered"])
-_lamps = cast(Callable[..., _Obj], _KERNEL["_lamps"])
-_excess_curve = cast(Callable[[Any, _Marks], _Marks], _evaluation.__dict__["_excess_curve"])
-account_checks = cast(Callable[[Any], _Obj], _evaluation.__dict__["account_checks"])
-_annualized_returns = cast(
-    Callable[[Any, Any, Any], _Obj], _evaluation.__dict__["_annualized_returns"]
-)
-_identity = cast(Callable[[_Request], _Obj], _request_validation.__dict__["_identity"])
-_validate = cast(Callable[[_Request], None], _request_validation.__dict__["_validate"])
-execution_axes = cast(
-    Callable[[_Request], dict[str, Any]], _request_validation.__dict__["execution_axes"]
-)
-compact_result = cast(Callable[[Any], _Obj], _request_validation.__dict__["compact_result"])
-_benchmark_marks = cast(Callable[[Path], _Benchmark], _SERVICE["_benchmark_marks"])
-_mark = cast(Callable[[list[str], dict[str, float], str], float], _SERVICE["_mark"])
-ProofService: Any = _SERVICE["ProofService"]
-reference_eval: Callable[[], bool] = _SERVICE["reference_eval"]
-StudyWindow = cast(Callable[..., _WindowLike], _KERNEL["StudyWindow"])
 
 _set_measure_provider(lambda: _measure)
 
@@ -162,7 +144,7 @@ def research_run(
         raise W0Error("Выбор стратегии выполняется только запросом подбора.")
     if "targets" in request:
         raise W0Error("Журнал исполнения относится к одному открытому окну.")
-    case = StudyWindow(service, request, settings, benchmark)
+    case = StudyWindow(service, cast(dict[str, Any], request), settings, benchmark)
     _emit(on_progress, "prepare", 0, 1, 15.0, "Загрузка и подготовка ряда…")
     _emit(
         on_progress,
@@ -186,7 +168,7 @@ def _batch_search(
     check_cancelled: _Check,
     on_progress: _ProgressFn | None,
 ) -> _Obj | None:
-    search = cast(_Search, _proof_batch.__dict__["batch_search"])
+    search = _proof_batch.batch_search
     return search(service, request, settings, benchmark, check_cancelled, on_progress=on_progress)
 
 
@@ -198,8 +180,15 @@ def _strategy_search(
     check_cancelled: _Check,
     on_progress: _ProgressFn | None,
 ) -> _Obj | None:
-    search = cast(_Search, _proof_strategy_search.__dict__["strategy_search"])
-    return search(service, request, settings, benchmark, check_cancelled, on_progress=on_progress)
+    search = _proof_strategy_search.strategy_search
+    return search(
+        service,
+        cast(dict[str, Any], request),
+        settings,
+        benchmark,
+        check_cancelled,
+        on_progress=on_progress,
+    )
 
 
 def _plateau(case: _WindowLike, on_progress: _ProgressFn | None) -> _Obj:

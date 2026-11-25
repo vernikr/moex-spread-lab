@@ -1,11 +1,12 @@
 """Shared cohort preparation preserves ordering, intersections and exclusions."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof import cohort_prepare_helpers as helpers
+from moex_spread_lab.proof import cohort_prepare as helpers
 from moex_spread_lab.proof import proof_batch
 from moex_spread_lab.proof.axis import Axis
 
@@ -37,7 +38,7 @@ def test_intersection_rejection_and_confirmation_preserve_denominator():
     valid = SimpleNamespace(split=SimpleNamespace(training=list(range(9))))
     rejected = [{"target": {"pair": "E/F"}, "reason": "earlier"}]
     members = helpers._filter_training(
-        [(short_target, short), (valid_target, valid)], axes, rejected
+        cast(Any, [(short_target, short), (valid_target, valid)]), axes, rejected
     )
     assert members == [(valid_target, valid)]
     assert rejected[1] == {
@@ -45,7 +46,7 @@ def test_intersection_rejection_and_confirmation_preserve_denominator():
         "reason": "Для общего окна сигнала нужно не менее 9 наблюдений на обучении.",
     }
     settings = SimpleNamespace(metadata=lambda: {"validation_percent": 25})
-    assert helpers._confirmation(settings, rejected, members) == {
+    assert helpers._confirmation(cast(Any, settings), rejected, members) == {
         "status": "selection_requires_confirmation",
         "validation_percent": 25,
         "excluded": rejected,

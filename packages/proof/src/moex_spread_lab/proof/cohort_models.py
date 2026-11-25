@@ -336,3 +336,8 @@ class _RemoteCohort(_Cohort):
         any_exec_ref = any(exec_ref for _, _, exec_ref, _ in results)
         single = next((s for _, _, _, s in reversed(results) if s is not None), None)
         return rows, any_exec_ref, single
+
+
+# Typed internal exports used by other proof modules.
+Cohort = _Cohort
+RemoteCohort = _RemoteCohort

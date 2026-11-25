@@ -166,6 +166,9 @@ def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
     assert "jscpd" in weekly_yml
     assert "repowise" in weekly_yml
     assert "GITHUB_STEP_SUMMARY" in weekly_yml
+    # size-report: coverage gate plus the code+tests token trend in the summary (#156).
+    assert "uv run size check" in weekly_yml
+    assert "uv run size log -n 20 --category code --category tests" in weekly_yml
 
     assert "check_health.sh" not in macos_yml
     assert jscpd_cfg["threshold"] <= 3.0

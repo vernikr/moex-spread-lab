@@ -39,6 +39,9 @@ jobs:
       - name: Sync locked environment (incl. dev group)
         run: uv sync --frozen
 
+      - name: Size-report coverage gate (every touched path tracked or excluded)
+        run: uv run size check
+
       - name: Ensure clang-tidy and clang sanitizer runtime
         run: |
           if ! command -v clang-tidy >/dev/null 2>&1; then
@@ -80,6 +83,17 @@ jobs:
             --output-md reports/code-health/code-health-digest.md \
             --output-json reports/code-health/code-health-digest.json
           cat reports/code-health/code-health-digest.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Append code + tests token trend (size-report) to $GITHUB_STEP_SUMMARY
+        run: |
+          {
+            echo "## Code + tests token trend (size-report, o200k_base)"
+            echo '```text'
+            uv run size now --category code --category tests
+            echo
+            uv run size log -n 20 --category code --category tests
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify clean tracked/unignored working tree
         run: |

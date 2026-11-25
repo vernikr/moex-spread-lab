@@ -307,6 +307,14 @@ label = "check_health.sh"
 paths = ["scripts/check_health.sh"]
 
 [[tool.size-report.columns]]
+label = "check_health.py"
+paths = ["scripts/check_health.py"]
+
+[[tool.size-report.columns]]
+label = "remote/__init__.py"
+paths = ["src/moex_spread_lab/remote/__init__.py"]
+
+[[tool.size-report.columns]]
 label = "sync_api.pyi"
 paths = ["scripts/typings/playwright/sync_api.pyi"]
 
@@ -1312,7 +1320,7 @@ paths = ["docs/research/results/received/R15/source-reports/gs.txt"]
 
 [[tool.size-report.columns]]
 label = "workstation_bench.py"
-paths = ["packages/core/src/moex_spread_lab/core/workstation_bench.py"]
+paths = ["packages/core/src/moex_spread_lab/core/workstation_bench.py", "src/moex_spread_lab/remote/bench.py"]
 
 [[tool.size-report.columns]]
 label = "R15-neural.md"
@@ -2152,7 +2160,7 @@ paths = ["docs/research/results/received/R03/source-reports/ge.txt"]
 
 [[tool.size-report.columns]]
 label = "workstation_remote.py"
-paths = ["packages/core/src/moex_spread_lab/core/workstation_remote.py"]
+paths = ["packages/core/src/moex_spread_lab/core/workstation_remote.py", "src/moex_spread_lab/remote/workstation.py"]
 
 [[tool.size-report.columns]]
 label = "packages/proof/docs/README.md"
@@ -2616,7 +2624,7 @@ paths = ["tests/test_proof_plateau.py"]
 
 [[tool.size-report.columns]]
 label = "remote_cli.py"
-paths = ["packages/core/src/moex_spread_lab/core/remote_cli.py"]
+paths = ["packages/core/src/moex_spread_lab/core/remote_cli.py", "src/moex_spread_lab/remote/cli.py"]
 
 [[tool.size-report.columns]]
 label = "cohort_prepare_helpers.py"
@@ -2840,7 +2848,7 @@ paths = ["packages/proof/tests/test_perf_equivalence_stream.py"]
 
 [[tool.size-report.columns]]
 label = "candidate_data.py"
-paths = ["packages/core/src/moex_spread_lab/core/candidate_data.py"]
+paths = ["packages/core/src/moex_spread_lab/core/candidate_data.py", "src/moex_spread_lab/remote/candidate_data.py"]
 
 [[tool.size-report.columns]]
 label = "screener.py"
@@ -3652,7 +3660,7 @@ paths = ["packages/strategies/tests/test_p72_packages_strategies_src_moex_spread
 
 [[tool.size-report.columns]]
 label = "workstation_suites.py"
-paths = ["packages/core/src/moex_spread_lab/core/workstation_suites.py"]
+paths = ["packages/core/src/moex_spread_lab/core/workstation_suites.py", "src/moex_spread_lab/remote/suites.py"]
 
 [[tool.size-report.columns]]
 label = "test_cohort_prepare_helpers.py"
@@ -3812,7 +3820,7 @@ paths = ["packages/data/src/moex_spread_lab/data/retention/helpers_p72_packages_
 
 [[tool.size-report.columns]]
 label = "candidate_python.py"
-paths = ["packages/core/src/moex_spread_lab/core/candidate_python.py"]
+paths = ["packages/core/src/moex_spread_lab/core/candidate_python.py", "src/moex_spread_lab/remote/candidate_python.py"]
 
 [[tool.size-report.columns]]
 label = "test_worker_metrics.py"

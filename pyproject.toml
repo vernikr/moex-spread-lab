@@ -88,6 +88,8 @@ testpaths = [
 dev = [
     "basedpyright>=1.28,<2",
     "complexipy>=4.0,<6",
+    "deptry>=0.25.1",
+    "jscpd>=5.4.3",
     "lizard>=1.17,<2",
     "pyarrow-stubs==19.4",
     "pytest>=8.3,<10",

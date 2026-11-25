@@ -25,6 +25,13 @@
 
 - For native GitHub sub-issues, ensure `.github/workflows/issue-parent-sync.yml` exists with `issues: [opened, edited]`, `permissions: issues: write`, and a job calling `vernikr/mother/.github/workflows/issue-parent-sync.yml@v1` (create the caller workflow if missing); then put `<!-- issue-parent: #N -->` on its own line in the child Issue body, or use `<!-- issue-parent: none -->` to detach (or use GraphQL `addSubIssue` directly when `gh` has `repo` scope).
 
+## Writing code
+
+- Не добавляй фич/абстракций сверх задачи. 3 похожие строки лучше преждевременной абстракции.
+- Не добавляй обработку ошибок для невозможных сценариев. Валидируй только на границах системы.
+- По умолчанию без комментариев. Комментируй только WHY.
+- Не объясняй WHAT — имена уже объясняют.
+
 ## GitHub Project & Issue workflow
 
 Full specification: [`docs/development/github-project.md`](docs/development/github-project.md). Board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com/orgs/vernikr/projects/2) (`moex-spread-lab`, linked to `vernikr/moex-spread-lab`; idempotent setup/sync: `./scripts/github_project_bootstrap.sh`).

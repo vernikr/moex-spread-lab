@@ -1,0 +1,1168 @@
+{
+  "schema": 1,
+  "issues": [
+    {
+      "id": 12,
+      "title": "Phase 7: modular-architecture follow-ups",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/12"
+    },
+    {
+      "id": 13,
+      "title": "F6 / P7.2: coordinate parallel code-health work and final integration",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/13"
+    },
+    {
+      "id": 14,
+      "title": "F7: core/accounting test isolation and test-layer import discipline",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/14"
+    },
+    {
+      "id": 15,
+      "title": "F2: unify built-in strategies onto the intent-adapter pipeline",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/15"
+    },
+    {
+      "id": 16,
+      "title": "F5: universe consolidation and proof namespace canonicalization",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/16"
+    },
+    {
+      "id": 17,
+      "title": "Stage 9 S4: shared-capital basket evaluation and search",
+      "state": "open",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/17"
+    },
+    {
+      "id": 18,
+      "title": "Set up the GitHub Project and issue/sub-issue workflow",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/18"
+    },
+    {
+      "id": 19,
+      "title": "Agent performance plan 2: unmet acceptance targets",
+      "state": "open",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/19"
+    },
+    {
+      "id": 20,
+      "title": "S1: bring check_health.sh --changed under 2 s",
+      "state": "open",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/20"
+    },
+    {
+      "id": 21,
+      "title": "S4b: browser smokes below the 45 s stretch target",
+      "state": "open",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/21"
+    },
+    {
+      "id": 22,
+      "title": "S4c: workstation catalog under 0.8 s and candidate setup under 4 s",
+      "state": "open",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/22"
+    },
+    {
+      "id": 23,
+      "title": "S5: code_inspect two-file check under 2 s on the workstation",
+      "state": "open",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/23"
+    },
+    {
+      "id": 24,
+      "title": "S6: warm verification lane (conditional)",
+      "state": "open",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/24"
+    },
+    {
+      "id": 25,
+      "title": "Migrate temporary project plans and execution reports to GitHub Issues",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/25"
+    },
+    {
+      "id": 26,
+      "title": "Migrate plans, execution reports, and repository references into Project #2",
+      "state": "closed",
+      "parent": 25,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/26"
+    },
+    {
+      "id": 27,
+      "title": "Offline research foundations and Stage-9 screener delivery",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/27"
+    },
+    {
+      "id": 28,
+      "title": "Modular architecture and code-health modernization (Phases 0–6)",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/28"
+    },
+    {
+      "id": 29,
+      "title": "Local data archive and retention milestones (Packages A–D)",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/29"
+    },
+    {
+      "id": 30,
+      "title": "Workstation remote-agent testing and benchmark coverage",
+      "state": "open",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/30"
+    },
+    {
+      "id": 31,
+      "title": "W0: reproducible run and evidence manifest",
+      "state": "closed",
+      "parent": 27,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/31"
+    },
+    {
+      "id": 32,
+      "title": "W1–W7: offline research-pipeline synthetic baseline",
+      "state": "closed",
+      "parent": 27,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/32"
+    },
+    {
+      "id": 33,
+      "title": "Stage 9 S1: local research screener",
+      "state": "closed",
+      "parent": 27,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/33"
+    },
+    {
+      "id": 34,
+      "title": "Stage 9 S2: pair table and common-parameter search",
+      "state": "closed",
+      "parent": 27,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/34"
+    },
+    {
+      "id": 35,
+      "title": "Modular workspace migration: Phases 0–6",
+      "state": "closed",
+      "parent": 28,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/35"
+    },
+    {
+      "id": 36,
+      "title": "Automated code-health and AI-readability plan: Steps 1–5",
+      "state": "closed",
+      "parent": 28,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/36"
+    },
+    {
+      "id": 37,
+      "title": "Package A: verified data archive application",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/37"
+    },
+    {
+      "id": 38,
+      "title": "Package B: lossless legacy baseline import",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/38"
+    },
+    {
+      "id": 39,
+      "title": "Package C1: prepare isolated H1 Parquet candidates",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/39"
+    },
+    {
+      "id": 40,
+      "title": "Package C2: activate sealed H1 reads with originals retained",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/40"
+    },
+    {
+      "id": 41,
+      "title": "Package C3: archive active H1 sources with verified recovery",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/41"
+    },
+    {
+      "id": 42,
+      "title": "Package D: storage budget and verified archive catalog",
+      "state": "closed",
+      "parent": 29,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/42"
+    },
+    {
+      "id": 43,
+      "title": "S0: measure the verification loop and publish the baseline",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/43"
+    },
+    {
+      "id": 44,
+      "title": "S1: implement the quiet, CPU-bounded change-aware health gate",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/44"
+    },
+    {
+      "id": 45,
+      "title": "S2: advisory test routing and scoped CI",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/45"
+    },
+    {
+      "id": 46,
+      "title": "S3: two-tier cadence and correctness shadow campaign",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/46"
+    },
+    {
+      "id": 47,
+      "title": "S4a: reduce full offline-suite verification cost",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/47"
+    },
+    {
+      "id": 48,
+      "title": "S4b: shared browser runner and contract-test migration",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/48"
+    },
+    {
+      "id": 49,
+      "title": "S4c: conditional workstation sync, COW candidate setup and catalog cache",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/49"
+    },
+    {
+      "id": 50,
+      "title": "S5: deliver incremental strict typing and code-inspection tooling",
+      "state": "closed",
+      "parent": 19,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/50"
+    },
+    {
+      "id": 51,
+      "title": "Complete the remaining standalone workstation benchmark scope",
+      "state": "open",
+      "parent": 30,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/51"
+    },
+    {
+      "id": 52,
+      "title": "P7.2 strict: data/cli_storage_handlers.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/52"
+    },
+    {
+      "id": 53,
+      "title": "P7.2 strict: data/iss/catalog.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/53"
+    },
+    {
+      "id": 54,
+      "title": "P7.2 strict: data/iss/iss_coverage.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/54"
+    },
+    {
+      "id": 55,
+      "title": "P7.2 strict: data/iss/iss_history.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/55"
+    },
+    {
+      "id": 56,
+      "title": "P7.2 strict: data/iss/iss_http.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/56"
+    },
+    {
+      "id": 57,
+      "title": "P7.2 strict: data/lake/bar_types.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/57"
+    },
+    {
+      "id": 58,
+      "title": "P7.2 strict: data/lake/data_lake.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/58"
+    },
+    {
+      "id": 59,
+      "title": "P7.2 strict: data/lake/data_refresh.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/59"
+    },
+    {
+      "id": 60,
+      "title": "P7.2 strict: data/lake/h1_migration.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/60"
+    },
+    {
+      "id": 61,
+      "title": "P7.2 strict: data/lake/h1_seal.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/61"
+    },
+    {
+      "id": 62,
+      "title": "P7.2 strict: data/lake/legacy_series.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/62"
+    },
+    {
+      "id": 63,
+      "title": "P7.2 strict: data/lake/parquet_catalog.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/63"
+    },
+    {
+      "id": 64,
+      "title": "P7.2 strict: data/lake/parquet_store.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/64"
+    },
+    {
+      "id": 65,
+      "title": "P7.2 strict: data/lake/raw_archive.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/65"
+    },
+    {
+      "id": 66,
+      "title": "P7.2 strict: data/lake/refresh_merge.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/66"
+    },
+    {
+      "id": 67,
+      "title": "P7.2 strict: data/retention/data_archive_candidates.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/67"
+    },
+    {
+      "id": 68,
+      "title": "P7.2 strict: data/retention/data_inventory.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/68"
+    },
+    {
+      "id": 69,
+      "title": "P7.2 strict: data/retention/data_retention.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/69"
+    },
+    {
+      "id": 70,
+      "title": "P7.2 strict: data/retention/h1_archive.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/70"
+    },
+    {
+      "id": 71,
+      "title": "P7.2 strict: data/retention/inventory_policy.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/71"
+    },
+    {
+      "id": 72,
+      "title": "P7.2 strict: data/retention/storage_policy.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/72"
+    },
+    {
+      "id": 73,
+      "title": "P7.2 strict: proof_runtime/audit.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/73"
+    },
+    {
+      "id": 74,
+      "title": "P7.2 strict: proof_runtime/axis.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/74"
+    },
+    {
+      "id": 75,
+      "title": "P7.2 strict: proof_runtime/calendar_adapter.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/75"
+    },
+    {
+      "id": 76,
+      "title": "P7.2 strict: proof_runtime/carry_intent_accounting.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/76"
+    },
+    {
+      "id": 77,
+      "title": "P7.2 strict: proof_runtime/cli.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/77"
+    },
+    {
+      "id": 78,
+      "title": "P7.2 strict: proof_runtime/cohort_models.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/78"
+    },
+    {
+      "id": 79,
+      "title": "P7.2 strict: proof_runtime/cohort_prepare.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/79"
+    },
+    {
+      "id": 80,
+      "title": "P7.2 strict: proof_runtime/cohort_prepare_helpers.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/80"
+    },
+    {
+      "id": 81,
+      "title": "P7.2 strict: proof_runtime/cohort_reporting.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/81"
+    },
+    {
+      "id": 82,
+      "title": "P7.2 strict: proof_runtime/cohort_scores.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/82"
+    },
+    {
+      "id": 83,
+      "title": "P7.2 strict: proof_runtime/evaluation.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/83"
+    },
+    {
+      "id": 84,
+      "title": "P7.2 strict: proof_runtime/funding_engine.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/84"
+    },
+    {
+      "id": 85,
+      "title": "P7.2 strict: proof_runtime/landscape.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/85"
+    },
+    {
+      "id": 86,
+      "title": "P7.2 strict: proof_runtime/pair_funding_replay.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/86"
+    },
+    {
+      "id": 87,
+      "title": "P7.2 strict: proof_runtime/pair_plugin_accounting.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/87"
+    },
+    {
+      "id": 88,
+      "title": "P7.2 strict: proof_runtime/pair_plugins.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/88"
+    },
+    {
+      "id": 89,
+      "title": "P7.2 strict: proof_runtime/proof_batch.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/89"
+    },
+    {
+      "id": 90,
+      "title": "P7.2 strict: proof_runtime/proof_kernel.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/90"
+    },
+    {
+      "id": 91,
+      "title": "P7.2 strict: proof_runtime/proof_pool.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/91"
+    },
+    {
+      "id": 92,
+      "title": "P7.2 strict: proof_runtime/proof_search.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/92"
+    },
+    {
+      "id": 93,
+      "title": "P7.2 strict: proof_runtime/proof_strategy_search.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/93"
+    },
+    {
+      "id": 94,
+      "title": "P7.2 strict: proof_runtime/proof_windows.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/94"
+    },
+    {
+      "id": 95,
+      "title": "P7.2 strict: proof_runtime/request_validation.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/95"
+    },
+    {
+      "id": 96,
+      "title": "P7.2 strict: proof_runtime/screener_search.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/96"
+    },
+    {
+      "id": 97,
+      "title": "P7.2 strict: proof_runtime/service.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/97"
+    },
+    {
+      "id": 98,
+      "title": "P7.2 strict: proof_runtime/tuning.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/98"
+    },
+    {
+      "id": 99,
+      "title": "P7.2 strict: proof_runtime/worker_cohort.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/99"
+    },
+    {
+      "id": 100,
+      "title": "P7.2 strict: proof_runtime/worker_window.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/100"
+    },
+    {
+      "id": 101,
+      "title": "P7.2 strict: strategies/calendar/__init__.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/101"
+    },
+    {
+      "id": 102,
+      "title": "P7.2 strict: strategies/calendar/proof_payload.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/102"
+    },
+    {
+      "id": 103,
+      "title": "P7.2 strict: strategies/funding_carry/carry.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/103"
+    },
+    {
+      "id": 104,
+      "title": "P7.2 strict: strategies/funding_carry/engine.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/104"
+    },
+    {
+      "id": 105,
+      "title": "P7.2 strict: strategies/funding_carry/funding_recheck.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/105"
+    },
+    {
+      "id": 106,
+      "title": "P7.2 strict: strategies/funding_carry/intents.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/106"
+    },
+    {
+      "id": 107,
+      "title": "P7.2 strict: strategies/funding_carry/proof_funding.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/107"
+    },
+    {
+      "id": 108,
+      "title": "P7.2 strict: strategies/funding_carry/strategy_costs.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/108"
+    },
+    {
+      "id": 109,
+      "title": "P7.2 strict: strategies/funding_carry/strategy_runner.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/109"
+    },
+    {
+      "id": 110,
+      "title": "P7.2 strict: strategies/funding_carry/timeline.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/110"
+    },
+    {
+      "id": 111,
+      "title": "P7.2 strict: strategies/pair_mean_reversion/fast_scan.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/111"
+    },
+    {
+      "id": 112,
+      "title": "P7.2 strict: strategies/pair_mean_reversion/series_builder.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/112"
+    },
+    {
+      "id": 113,
+      "title": "P7.2 strict: strategies/pair_screener/__init__.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/113"
+    },
+    {
+      "id": 114,
+      "title": "P7.2 strict: strategies/pair_screener/catalog.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/114"
+    },
+    {
+      "id": 115,
+      "title": "P7.2 strict: strategies/pair_screener/inputs.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/115"
+    },
+    {
+      "id": 116,
+      "title": "P7.2 strict: strategies/pair_screener/intents.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/116"
+    },
+    {
+      "id": 117,
+      "title": "P7.2 strict: strategies/pair_screener/normalization.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/117"
+    },
+    {
+      "id": 118,
+      "title": "P7.2 strict: strategies/pair_screener/pair_screener.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/118"
+    },
+    {
+      "id": 119,
+      "title": "P7.2 strict: strategies/pair_screener/runner.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/119"
+    },
+    {
+      "id": 120,
+      "title": "P7.2 strict: strategies/pair_screener/screener.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/120"
+    },
+    {
+      "id": 121,
+      "title": "P7.2 test health: test_calendar_proof.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/121"
+    },
+    {
+      "id": 122,
+      "title": "P7.2 test health: test_execution_proof.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/122"
+    },
+    {
+      "id": 123,
+      "title": "P7.2 test health: test_global_capital.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/123"
+    },
+    {
+      "id": 124,
+      "title": "P7.2 test health: test_pair_plugin_integration.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/124"
+    },
+    {
+      "id": 125,
+      "title": "P7.2 test health: test_pair_plugin_pipeline.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/125"
+    },
+    {
+      "id": 126,
+      "title": "P7.2 test health: test_pair_plugin_real_proof_parity.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/126"
+    },
+    {
+      "id": 127,
+      "title": "P7.2 test health: test_perf_equivalence.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/127"
+    },
+    {
+      "id": 128,
+      "title": "P7.2 test health: test_proof_batch.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/128"
+    },
+    {
+      "id": 129,
+      "title": "P7.2 test health: test_proof_funding.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/129"
+    },
+    {
+      "id": 130,
+      "title": "P7.2 test health: test_proof_plateau.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/130"
+    },
+    {
+      "id": 131,
+      "title": "P7.2 test health: test_proof_search.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/131"
+    },
+    {
+      "id": 132,
+      "title": "P7.2 test health: test_proof_windows.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/132"
+    },
+    {
+      "id": 133,
+      "title": "P7.2 test health: test_strategy_search.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/133"
+    },
+    {
+      "id": 134,
+      "title": "P7.2 test health: test_tuning_screens.py",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/134"
+    },
+    {
+      "id": 135,
+      "title": "P7.2: audit pre-leaf wildcard and public export compatibility",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/135"
+    },
+    {
+      "id": 136,
+      "title": "P7.2 exports: Data lake and retention",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/136"
+    },
+    {
+      "id": 137,
+      "title": "P7.2 exports: Proof cohort preparation and workers",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/137"
+    },
+    {
+      "id": 138,
+      "title": "P7.2 exports: Proof accounting and search engine",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/138"
+    },
+    {
+      "id": 139,
+      "title": "P7.2 exports: Pair screener strategy inputs and normalization",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/139"
+    },
+    {
+      "id": 140,
+      "title": "P7.W1: enforce packages/*/manifest.json conformance in architecture_gate",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/140"
+    },
+    {
+      "id": 141,
+      "title": "P7.W1: co-locate remaining module docs and repair README links",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/141"
+    },
+    {
+      "id": 142,
+      "title": "P7.W2: purge legacy screener_app re-exports from the web server boundary",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/142"
+    },
+    {
+      "id": 143,
+      "title": "P7.W2: split charts.js under the 400-LOC budget",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/143"
+    },
+    {
+      "id": 144,
+      "title": "P7.W2: split strategy-form.js under the 400-LOC budget",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/144"
+    },
+    {
+      "id": 145,
+      "title": "P7.W2: split picker.js under the 400-LOC budget",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/145"
+    },
+    {
+      "id": 146,
+      "title": "P7.W3: burn down web entries in the health baselines",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/146"
+    },
+    {
+      "id": 147,
+      "title": "Browser smoke: period_settings_smoke.py plateau-tip wording assertion fails on clean main",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/147"
+    },
+    {
+      "id": 148,
+      "title": "F2 slice 4: route funding_only through the carry intent adapter",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/148"
+    },
+    {
+      "id": 149,
+      "title": "F2 slice 5: unify the web strategy schema on /api/strategies",
+      "state": "closed",
+      "parent": 12,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/149"
+    },
+    {
+      "id": 150,
+      "title": "Wire @vernikr/size-report (size table + HTML report)",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/150"
+    },
+    {
+      "id": 151,
+      "title": "Codebase token diet & tiered file-size governance (post-Phase 7)",
+      "state": "closed",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/151"
+    },
+    {
+      "id": 152,
+      "title": "TD-1: Adopt tiered soft/hard file-size budgets & anti-fragmentation gate",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/152"
+    },
+    {
+      "id": 153,
+      "title": "TD-2: Prune & fold 87 P7.2 scaffolding/wildcard-pin test files (~130k tok)",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/153"
+    },
+    {
+      "id": 154,
+      "title": "TD-3: Retire duplicate legacy pair/carry replay engines in msl-proof (~45k tok)",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/154"
+    },
+    {
+      "id": 155,
+      "title": "TD-4: Re-consolidate *p72* source shards & <50-LOC micro-files into deep modules",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/155"
+    },
+    {
+      "id": 156,
+      "title": "TD-5: Slim down scripts/ & meta-tooling, prune internal shims, and extract remote harness from msl-core",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/156"
+    },
+    {
+      "id": 158,
+      "title": "TD-6: align scripts/code_inspect.py with the tiered file budgets (#152)",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/158"
+    },
+    {
+      "id": 159,
+      "title": "TD-7: Repair broken main CI after #155 & prune stale code-health baseline entries",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/159"
+    },
+    {
+      "id": 160,
+      "title": "TD-8: Finish TD-4 deep-module consolidation & retire __dict__/choose_hook indirection in msl-proof",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/160"
+    },
+    {
+      "id": 161,
+      "title": "TD-9: Finish TD-4 deep-module consolidation & retire test_runner_119 / __dict__ casts in msl-data & msl-strategies",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/161"
+    },
+    {
+      "id": 162,
+      "title": "TD-10: Finish TD-4 msl-web consolidation (Python micro-routes/dev-probes & static JS splits) with Browser Smokes",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/162"
+    },
+    {
+      "id": 163,
+      "title": "TD-11: Retire soaked architecture_frozen_head table, deduplicate test builders & reconcile Epic #151",
+      "state": "closed",
+      "parent": 151,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/163"
+    },
+    {
+      "id": 166,
+      "title": "Next-generation codebase & documentation refactoring (AI-agent velocity & 15–50% token reduction)",
+      "state": "open",
+      "parent": null,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/166"
+    },
+    {
+      "id": 167,
+      "title": "Cross-module refactoring — Phase 1 (Pre-modular prerequisites)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/167"
+    },
+    {
+      "id": 168,
+      "title": "Cross-module refactoring — Phase 3 (Post-modular cleanup & consolidation)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/168"
+    },
+    {
+      "id": 169,
+      "title": "Module refactoring: packages/core (msl-core)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/169"
+    },
+    {
+      "id": 170,
+      "title": "Plan & decompose deep refactoring for packages/core",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/170"
+    },
+    {
+      "id": 171,
+      "title": "Module refactoring: packages/data (msl-data)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/171"
+    },
+    {
+      "id": 172,
+      "title": "Plan & decompose deep refactoring for packages/data",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/172"
+    },
+    {
+      "id": 173,
+      "title": "Module refactoring: packages/accounting (msl-accounting)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/173"
+    },
+    {
+      "id": 174,
+      "title": "Plan & decompose deep refactoring for packages/accounting",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/174"
+    },
+    {
+      "id": 175,
+      "title": "Module refactoring: packages/strategies (msl-strategies)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/175"
+    },
+    {
+      "id": 176,
+      "title": "Plan & decompose deep refactoring for packages/strategies",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/176"
+    },
+    {
+      "id": 177,
+      "title": "Module refactoring: packages/proof (msl-proof)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/177"
+    },
+    {
+      "id": 178,
+      "title": "Plan & decompose deep refactoring for packages/proof",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/178"
+    },
+    {
+      "id": 179,
+      "title": "Module refactoring: packages/web (msl-web)",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/179"
+    },
+    {
+      "id": 180,
+      "title": "Plan & decompose deep refactoring for packages/web",
+      "state": "open",
+      "parent": 166,
+      "href": "https://github.com/vernikr/moex-spread-lab/issues/180"
+    }
+  ],
+  "overrides": {}
+}

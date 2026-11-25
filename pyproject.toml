@@ -95,7 +95,7 @@ dev = [
     "pytest-testmon>=2.3,<3",
     "pytest-xdist>=3.6,<4",
     "ruff>=0.9,<1",
-    "size-report[tokens]>=3.3.1",
+    "size-report[tokens]>=3.4.0",
     "vulture>=2.14,<3",
 ]
 
@@ -242,7 +242,7 @@ title = ""
 heading = ""
 fixCommand = "uv run size --write"
 metrics = ["raw", "min", "tok"]
-skip = [".basedpyright/baseline.json", ".clang-tidy", ".gitignore", ".python-version", "config/launchd/local.moex-spread-lab.screener.plist.example", "docs/inputs/moy_online_praym.pdf", "docs/inputs/prof_privilegiya.pdf", "package-lock.json", "packages/web/src/moex_spread_lab/web/vendor/LICENSE.lightweight-charts", "scripts/moex-spread-lab-screener", "uv.lock", "src/moex_spread_lab.egg-info/PKG-INFO", "src/moex_spread_lab/vendor/LICENSE.lightweight-charts"]
+skip = [".basedpyright/baseline.json", ".clang-tidy", ".gitignore", ".python-version", ".size-report-issues.json", "config/launchd/local.moex-spread-lab.screener.plist.example", "docs/inputs/moy_online_praym.pdf", "docs/inputs/prof_privilegiya.pdf", "package-lock.json", "packages/web/src/moex_spread_lab/web/vendor/LICENSE.lightweight-charts", "scripts/moex-spread-lab-screener", "uv.lock", "src/moex_spread_lab.egg-info/PKG-INFO", "src/moex_spread_lab/vendor/LICENSE.lightweight-charts"]
 
 [tool.size-report.minify]
 engine = "strip"
@@ -262,6 +262,11 @@ commitUrl = "https://github.com/vernikr/moex-spread-lab/commit/{sha}"
 [tool.size-report.rows]
 merges = true
 sha = true
+
+[tool.size-report.issues]
+path = ".size-report-issues.json"
+repo = "vernikr/moex-spread-lab"
+project = 2
 
 [[tool.size-report.columns]]
 label = "ci.yml"

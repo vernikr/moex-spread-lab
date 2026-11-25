@@ -2475,8 +2475,8 @@ label = "proof_search_service_p72_packages_proof_tests_test_proof_search.py"
 paths = ["packages/proof/tests/proof_search_service_p72_packages_proof_tests_test_proof_search.py"]
 
 [[tool.size-report.columns]]
-label = "test_runner_119.py"
-paths = ["packages/strategies/tests/test_runner_119.py"]
+label = "test_pair_screener.py"
+paths = ["packages/strategies/tests/test_pair_screener.py", "packages/strategies/tests/test_runner_119.py"]
 
 [[tool.size-report.columns]]
 label = "validation.py"

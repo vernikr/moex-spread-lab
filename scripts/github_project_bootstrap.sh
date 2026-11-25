@@ -133,6 +133,7 @@ if "Work Kind" not in fields:
           {name: "perf", color: RED, description: "Code/runtime performance improvement"},
           {name: "test", color: PINK, description: "Tests, verification coverage, or test infrastructure"},
           {name: "research", color: PURPLE, description: "Research, audit, investigation, or evidence gathering"},
+          {name: "plan", color: BLUE, description: "Planning, decomposition, scoping, or workstream design"},
           {name: "revert", color: GRAY, description: "Revert a previous change"}
         ]}) { projectV2Field { ... on ProjectV2FieldCommon { id name } } } }
     """, projectId=proj_id)

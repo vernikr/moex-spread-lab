@@ -57,7 +57,7 @@ There is no separate `Verify` column: verification is a mandatory pre-push gate 
 ### 2.2 Fields
 
 - **Project fields** (local to Project #2):
-  - `Work Kind`: `feat` | `fix` | `docs` | `refactor` | `chore` | `perf` | `test` | `research` | `revert` (conventional-commit style; `perf` means code/runtime performance, not agent or tooling latency).
+  - `Work Kind`: `feat` | `fix` | `docs` | `refactor` | `chore` | `perf` | `test` | `research` | `plan` | `revert` (conventional-commit style plus `plan`; `perf` means code/runtime performance, not agent or tooling latency).
   - `Module`: `core` | `data` | `accounting` | `strategies` | `proof` | `web` | `Cross-module` (single-select; use the owning package module, or `Cross-module` when work spans modules or is tooling/docs-only).
   - `Verification Gate`:
     - `Docs / Quick` — `scripts/docs_scan.py` + `./scripts/check_health.sh --changed` (docs-only edits).

@@ -237,7 +237,8 @@ def test_shipped_legacy_inventories_only_list_offending_names():
     baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
     offenders = set(baseline["legacy_fragment_files"])
 
-    assert offenders
+    # The inventory may be empty (TD-9 retired the last fragment file); any entry
+    # that remains must still be an offending name, never a stale allowlist slot.
     for relative in offenders:
         assert common._fragment_name_problem(PurePosixPath(relative).name) is not None, relative
 

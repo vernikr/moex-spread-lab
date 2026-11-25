@@ -186,3 +186,18 @@ def build_sim_context(series: dict[str, Any], params: Any) -> SimContext:
 # Shared names inside the pair strategy; retain private entry points.
 round_value = _round
 trade_cost_breakdown = _trade_cost_breakdown
+
+__all__ = [
+    "ANALYTICS_SCHEMA",
+    "COST_SCENARIOS",
+    "REQUIRED_COST_COMPONENTS",
+    "AnalyticsError",
+    "SimContext",
+    "_calendar_days",
+    "_number",
+    "_validate_cost_profile",
+    "build_sim_context",
+    "get_cost_scenario",
+    "round_value",
+    "trade_cost_breakdown",
+]

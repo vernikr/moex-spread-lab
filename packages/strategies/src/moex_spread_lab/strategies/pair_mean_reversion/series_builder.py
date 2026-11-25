@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from moex_spread_lab.core.w0 import load_contracts as _load_w0_contracts
 from moex_spread_lab.core.w0 import read_hashed_json
 
-from . import costs_helper as _costs_helper
 from .costs_helper import (
     ANALYTICS_SCHEMA,
     COST_SCENARIOS,
     REQUIRED_COST_COMPONENTS,
     AnalyticsError,
+    _calendar_days,
+    _number,
+    _validate_cost_profile,
     get_cost_scenario,
 )
 from .costs_helper import (
@@ -23,24 +24,6 @@ from .costs_helper import (
 )
 from .costs_helper import (
     trade_cost_breakdown as _trade_cost_breakdown,
-)
-
-
-class _NumberFn(Protocol):
-    def __call__(self, value: Any, field: str, *, positive: bool = False) -> float: ...
-
-
-# costs_helper keeps these helpers private for in-package use, so rebind them
-# through the owning module's __dict__ with explicit signatures: this facade
-# keeps the shared names and runtime identity while whole-package strict typing
-# sees typed callables instead of private cross-module imports.
-_number: _NumberFn = cast(_NumberFn, _costs_helper.__dict__["_number"])
-_calendar_days: Callable[[str, str], int] = cast(
-    Callable[[str, str], int], _costs_helper.__dict__["_calendar_days"]
-)
-_validate_cost_profile: Callable[[dict[str, Any]], dict[str, Any]] = cast(
-    Callable[[dict[str, Any]], dict[str, Any]],
-    _costs_helper.__dict__["_validate_cost_profile"],
 )
 
 

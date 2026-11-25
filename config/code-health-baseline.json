@@ -54,9 +54,7 @@
     }
   },
   "guard_files": [],
-  "legacy_fragment_files": [
-    "packages/strategies/tests/test_runner_119.py"
-  ],
+  "legacy_fragment_files": [],
   "legacy_shallow_shards": [
     "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
@@ -72,13 +70,13 @@
       "baseline_tokens": 59810
     },
     "packages/data": {
-      "baseline_tokens": 91822
+      "baseline_tokens": 90306
     },
     "packages/proof": {
       "baseline_tokens": 182493
     },
     "packages/strategies": {
-      "baseline_tokens": 132778
+      "baseline_tokens": 131676
     },
     "packages/web": {
       "baseline_tokens": 104053

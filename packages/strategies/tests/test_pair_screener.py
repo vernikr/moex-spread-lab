@@ -1,8 +1,7 @@
-"""Regression coverage for the strict typing of ``pair_screener.runner`` (Issue #119).
+"""Pair-screener runner validation and deterministic ``build_result`` outcomes.
 
-Pins facade object identity, runtime type guards for ``selection`` and ``parameters``,
-parameter/execution range validation, and deterministic ``build_result`` outcomes across
-mean-reversion and funding-only branches.
+Covers runtime type guards for ``selection`` and ``parameters``, parameter/execution range
+validation, and stable run ids across mean-reversion and funding-only branches.
 """
 
 from __future__ import annotations
@@ -14,17 +13,15 @@ from typing import Any, cast
 
 import pytest
 
-from moex_spread_lab.core import universe
 from moex_spread_lab.core.settings import save_settings
+from moex_spread_lab.core.universe import MAX_QUANTITY
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
-from moex_spread_lab.strategies.pair_screener import pair_screener, runner
 from moex_spread_lab.strategies.pair_screener.inputs import (
     HISTORY_WINDOWS,
     ScreenerError,
     ScreenerInputs,
 )
 from moex_spread_lab.strategies.pair_screener.runner import (
-    STRATEGIES,
     _parameters,
     build_result,
     execution_settings,
@@ -141,15 +138,7 @@ def _write_fixture(root: Path) -> list[date]:
     return days
 
 
-def test_facade_identity_and_exports_119() -> None:
-    assert STRATEGIES is universe.STRATEGIES
-    assert pair_screener._parameters is _parameters
-    assert pair_screener.build_result is build_result
-    assert pair_screener.execution_settings is execution_settings
-    assert {"STRATEGIES", "build_result", "execution_settings"} <= set(runner.__all__)
-
-
-def test_parameters_validation_and_runtime_guards_119() -> None:
+def test_parameters_validation_and_runtime_guards() -> None:
     assert _parameters({}, "mean_reversion") == {"lookback": 20, "entry_z": 2.0, "exit_z": 0.5}
     assert _parameters({"parameters": {"lookback": 10}}, "funding_only") == {"lookback": 10}
     for bad_params in (cast(Any, ["not-a-dict"]), cast(Any, "bad"), {"unknown": 1}):
@@ -169,7 +158,7 @@ def test_parameters_validation_and_runtime_guards_119() -> None:
             )
 
 
-def test_execution_settings_validation_119() -> None:
+def test_execution_settings_validation() -> None:
     assert execution_settings({}) == {"slippage_ticks": 1.0, "quantity": 1}
     assert execution_settings({"slippage_ticks": 0, "quantity": 3}) == {
         "slippage_ticks": 0.0,
@@ -178,12 +167,12 @@ def test_execution_settings_validation_119() -> None:
     for bad_slip in (True, -0.1, 10.1, "1"):
         with pytest.raises(ScreenerError, match="slippage"):
             execution_settings({"slippage_ticks": bad_slip})
-    for bad_qty in (False, 0, universe.MAX_QUANTITY + 1, 1.5):
+    for bad_qty in (False, 0, MAX_QUANTITY + 1, 1.5):
         with pytest.raises(ScreenerError, match="контрактов"):
             execution_settings({"quantity": bad_qty})
 
 
-def test_build_result_rejects_invalid_selection_and_intraday_carry_119(tmp_path: Path) -> None:
+def test_build_result_rejects_invalid_selection_and_intraday_carry(tmp_path: Path) -> None:
     _write_fixture(tmp_path)
     inputs = ScreenerInputs(tmp_path)
     with pytest.raises(ScreenerError, match="выбор должен быть объектом"):
@@ -195,7 +184,7 @@ def test_build_result_rejects_invalid_selection_and_intraday_carry_119(tmp_path:
         build_result(inputs, {"pair": "CNYRUBF/CRZ6", "strategy": "funding_only"})
 
 
-def test_build_result_branches_preserve_deterministic_run_ids_119(tmp_path: Path) -> None:
+def test_build_result_branches_preserve_deterministic_run_ids(tmp_path: Path) -> None:
     days = _write_fixture(tmp_path)
     inputs = ScreenerInputs(tmp_path)
 

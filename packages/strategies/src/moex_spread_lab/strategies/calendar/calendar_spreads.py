@@ -12,9 +12,9 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import MarketDataStore
 
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
-from . import adjacent
 from .data_cache import (
     asset_eod_signature,
+    asset_h1_signature,
     build_loaded_dict,
     load_shared_metadata,
     resolve_intraday_till,
@@ -27,8 +27,10 @@ from .data_cache import (
 from .data_cache import (
     is_offline as _is_offline,
 )
+from .h1_candles import fetch_h1_candles, read_h1_candles
 from .h1_windows import (
     asof_before,
+    build_intraday_window,
     candle_timestamp,
     finite_num,
 )
@@ -210,12 +212,24 @@ class CalendarData:
     _through = staticmethod(slice_window_through)
 
     def _fetch_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
-        return adjacent.fetch_h1(self.root, secid, self)
+        """H1 candles for ``secid`` with the view's offline contract."""
+        return fetch_h1_candles(
+            self.root, secid, self._h1_candle_cache, self._h1_fetch_attempted, offline=self.offline
+        )
 
     def _read_h1_candles(
         self, secid: str, *, allow_fetch: bool = True
     ) -> tuple[dict[str, Any] | None, str | None]:
-        return adjacent.read_h1(self, secid, allow_fetch)
+        """Hourly candles through the sealed lake first, cache second, network only if allowed."""
+        return read_h1_candles(
+            self.root,
+            self.bar_store,
+            secid,
+            self._h1_candle_cache,
+            self._h1_fetch_attempted,
+            allow_fetch=allow_fetch,
+            offline=self.offline,
+        )
 
     def _intraday_window(
         self,
@@ -225,12 +239,48 @@ class CalendarData:
         *,
         allow_fetch: bool = True,
     ) -> dict[str, Any] | None:
-        return adjacent.intraday_window(self, asset, daily_window, data, allow_fetch)
+        """Proxy ``far - near`` hourly window, or ``None`` when a leg has no local candles."""
+        near, far = daily_window["near"], daily_window["far"]
+        near_src, _ = self._read_h1_candles(near, allow_fetch=allow_fetch)
+        far_src, _ = self._read_h1_candles(far, allow_fetch=allow_fetch)
+        if near_src is None or far_src is None:
+            return None
+        nat_src, nat_err = self._read_h1_candles(spread_id(near, far), allow_fetch=allow_fetch)
+        return build_intraday_window(
+            asset, daily_window, data, (near_src, far_src, nat_src, nat_err)
+        )
 
     def _intraday_windows_for(
         self, asset: str, *, allow_fetch: bool = True
     ) -> list[dict[str, Any]]:
-        return adjacent.intraday_windows_for(self, asset, allow_fetch)
+        """All H1 windows of one asset, cached by the EOD + H1 signature."""
+        data = self._load_asset(asset) if asset in ASSETS else self._load()
+        eod_sig = self._loaded_assets_sig.get(asset) or self._loaded_sig
+        sig = asset_h1_signature(self.root, self.bar_store, asset, data, eod_sig)
+        fkey = f"_fetched_{asset}"
+        if (
+            asset in self._h1_windows
+            and self._h1_windows_sig.get(asset) == sig
+            and (not allow_fetch or bool(self._h1_windows_sig.get(fkey)))
+        ):
+            return self._h1_windows[asset]
+        wins = (
+            [
+                win
+                for dw in data["windows"].get(asset, [])
+                if (win := self._intraday_window(asset, dw, data, allow_fetch=allow_fetch))
+                is not None
+            ]
+            if asset in ASSETS and asset in data["terms"]
+            else []
+        )
+        self._h1_windows[asset] = wins
+        self._h1_windows_sig[asset] = asset_h1_signature(
+            self.root, self.bar_store, asset, data, eod_sig
+        )
+        if allow_fetch:
+            self._h1_windows_sig[fkey] = (True,)
+        return wins
 
     def catalog(
         self, *, initial_capital: float = INITIAL_CAPITAL, timeframe: str = "1d"

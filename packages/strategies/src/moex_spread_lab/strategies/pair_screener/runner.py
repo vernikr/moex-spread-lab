@@ -38,6 +38,7 @@ __all__ = [
     "ScreenerInputs",
     "StrategyRunOutcome",
     "TimeframeSpec",
+    "_parameters",
     "annotations",
     "assemble_screener_result",
     "assess_vtb_pair",

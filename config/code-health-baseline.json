@@ -83,13 +83,13 @@
       "baseline_tokens": 43500
     },
     "packages/core": {
-      "baseline_tokens": 71987
+      "baseline_tokens": 59811
     },
     "packages/data": {
       "baseline_tokens": 91822
     },
     "packages/proof": {
-      "baseline_tokens": 183474
+      "baseline_tokens": 182493
     },
     "packages/strategies": {
       "baseline_tokens": 132778
@@ -98,7 +98,7 @@
       "baseline_tokens": 104505
     },
     "scripts": {
-      "baseline_tokens": 49067
+      "baseline_tokens": 36195
     },
     "src": {
       "baseline_tokens": 3380

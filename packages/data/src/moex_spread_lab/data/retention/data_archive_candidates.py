@@ -50,7 +50,14 @@ class _CandidateEntry(TypedDict):
     sha256: str
 
 
-__all__ = ["_CandidateEntry", "read_payload_object", "retention_hooks"]
+__all__ = [
+    "_CandidateEntry",
+    "_json_new",
+    "_publish",
+    "read_payload_object",
+    "retention_hooks",
+    "verify_archive",
+]
 
 
 def retention_hooks() -> tuple[_SafeDataPath, _ValidateArchivePath, _PruneEmptyParents]:

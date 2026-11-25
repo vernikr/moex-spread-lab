@@ -8,53 +8,20 @@ import os
 import tarfile
 import tempfile
 import uuid
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import zstandard as zstd
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes, sha256_file
 
-from ..lake import h1_migration as _h1_migration
-from ..lake import h1_seal as _h1_seal
 from ..lake.data_lake import DataLakeError, _atomic_write_json
-from ..lake.h1_seal import SealedH1Reader
-from . import data_archive_candidates as _data_archive_candidates
-from . import data_retention as _data_retention
+from ..lake.h1_migration import build_h1_plan
+from ..lake.h1_seal import SealedH1Reader, verify_sealed_h1
+from .data_archive_candidates import _json_new, _publish, verify_archive
+from .data_retention import _prune_empty_parents, _safe_data_path, _validate_archive_path
 
 SCHEMA = "sealed-h1-archive.v1"
-
-# Rebind the existing cross-module hooks to their original callables. The owning
-# modules keep the untyped definitions (their strict conversions are separate
-# leaves), while this facade keeps its historical public/private names and
-# runtime identity under whole-package strict typing. ``__dict__`` lookup only
-# avoids importing names that are private to another module.
-build_h1_plan: Callable[[Path], dict[str, Any]] = cast(
-    Callable[[Path], dict[str, Any]], _h1_migration.__dict__["build_h1_plan"]
-)
-verify_sealed_h1: Callable[[Path], dict[str, Any]] = cast(
-    Callable[[Path], dict[str, Any]], _h1_seal.__dict__["verify_sealed_h1"]
-)
-_safe_data_path: Callable[[Path, str], Path] = cast(
-    Callable[[Path, str], Path], _data_retention.__dict__["_safe_data_path"]
-)
-_validate_archive_path: Callable[[Path, Path], Path] = cast(
-    Callable[[Path, Path], Path], _data_retention.__dict__["_validate_archive_path"]
-)
-_prune_empty_parents: Callable[[Path, Sequence[Mapping[str, object]]], None] = cast(
-    Callable[[Path, Sequence[Mapping[str, object]]], None],
-    _data_retention.__dict__["_prune_empty_parents"],
-)
-_json_new: Callable[[Path, dict[str, Any]], None] = cast(
-    Callable[[Path, dict[str, Any]], None], _data_archive_candidates.__dict__["_json_new"]
-)
-verify_archive: Callable[[Path, dict[str, Any]], None] = cast(
-    Callable[[Path, dict[str, Any]], None], _data_archive_candidates.__dict__["verify_archive"]
-)
-_publish: Callable[..., dict[str, Any]] = cast(
-    Callable[..., dict[str, Any]], _data_archive_candidates.__dict__["_publish"]
-)
 
 
 def _evidence(path: Path, seal: dict[str, Any]) -> dict[str, Any]:

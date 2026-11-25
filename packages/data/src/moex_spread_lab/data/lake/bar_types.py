@@ -363,6 +363,7 @@ __all__ = [
     "Protocol",
     "SealedH1Reader",
     "W0Error",
+    "_signature",
     "annotations",
     "canonical_bytes",
     "dataclass",

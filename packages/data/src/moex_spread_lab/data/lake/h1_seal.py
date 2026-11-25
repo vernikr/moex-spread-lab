@@ -5,23 +5,22 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from moex_spread_lab.core.w0 import canonical_bytes, sha256_bytes
 
-from . import bar_types as _bar_types
-from . import h1_migration as _h1_migration
 from .bar_types import (
     H1_SEAL_SCHEMA,
     BarSeries,
     DataLakeError,
     SealedH1Reader,
+    _signature,
     reject_sealed_table_write,
     verify_archived_record,
 )
 from .data_lake import ParquetBarStore
+from .h1_migration import build_h1_plan, verify_h1_stage
 
 SCHEMA = H1_SEAL_SCHEMA
 
@@ -37,19 +36,6 @@ __all__ = [
     "verify_archived_record",
     "verify_sealed_h1",
 ]
-
-# Rebind the existing cross-module hooks to their original callables: their
-# owning modules keep the untyped definitions, while this facade keeps its
-# public/private names and runtime identity under whole-package strict typing.
-_signature: Callable[[Path], tuple[int, int, int, int]] = cast(
-    Callable[[Path], tuple[int, int, int, int]], _bar_types.__dict__["_signature"]
-)
-build_h1_plan: Callable[[Path], dict[str, Any]] = cast(
-    Callable[[Path], dict[str, Any]], _h1_migration.__dict__["build_h1_plan"]
-)
-verify_h1_stage: Callable[[Path, Path, Path], dict[str, Any]] = cast(
-    Callable[[Path, Path, Path], dict[str, Any]], _h1_migration.__dict__["verify_h1_stage"]
-)
 
 
 def _new_json(path: Path, value: dict[str, Any]) -> None:

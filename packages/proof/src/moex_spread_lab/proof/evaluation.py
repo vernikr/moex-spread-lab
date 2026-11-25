@@ -8,7 +8,7 @@ from typing import Any
 
 from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
 from moex_spread_lab.accounting.position_sizing import automatic
-from moex_spread_lab.core.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     DEFAULT_INITIAL_CAPITAL_RUB,
     EvaluationSplit,
 )

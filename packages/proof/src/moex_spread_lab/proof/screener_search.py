@@ -12,7 +12,7 @@ from itertools import product
 from typing import Any, TypedDict, cast
 
 from moex_spread_lab.core import universe as _universe
-from moex_spread_lab.core.evaluation_periods import EvaluationSplit, read_settings
+from moex_spread_lab.core.settings import EvaluationSplit, read_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.universe import PAIRS
 from moex_spread_lab.strategies.pair_screener.pair_screener import (

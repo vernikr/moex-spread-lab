@@ -56,7 +56,6 @@
   "guard_files": [],
   "legacy_fragment_files": [],
   "legacy_shallow_shards": [
-    "packages/core/src/moex_spread_lab/core/evaluation_periods.py",
     "packages/proof/src/moex_spread_lab/proof/cli.py",
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
     "scripts/vulture_whitelist.py"

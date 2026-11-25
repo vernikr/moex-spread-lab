@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 

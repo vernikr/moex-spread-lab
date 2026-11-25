@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Protocol, cast
 
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData

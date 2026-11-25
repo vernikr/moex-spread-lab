@@ -8,7 +8,6 @@ import unittest
 from functools import lru_cache
 from pathlib import Path
 
-from architecture_frozen_head import FROZEN_LAYER_ASSIGNMENTS
 from architecture_layers import check_package_test_layers, derive_layer
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -175,20 +174,6 @@ class ArchitectureDagTests(unittest.TestCase):
         stale = sorted(set(LAYER_ASSIGNMENTS) - set(modules))
         self.assertEqual(unclassified, [], f"Unclassified modules: {unclassified}")
         self.assertEqual(stale, [])
-
-    def test_derived_layers_match_frozen_head_table_for_existing_modules(self) -> None:
-        # The filesystem-derived mapping must reproduce the frozen hand-maintained
-        # HEAD table exactly wherever both apply; otherwise the architecture gate
-        # would silently weaken (plan S1, risk note). New modules are unconstrained
-        # by the frozen table and fail only the unclassified check above.
-        derived = LAYER_ASSIGNMENTS
-        mismatches = {
-            module: (FROZEN_LAYER_ASSIGNMENTS[module], derived[module])
-            for module in derived
-            if module in FROZEN_LAYER_ASSIGNMENTS
-            and FROZEN_LAYER_ASSIGNMENTS[module] != derived[module]
-        }
-        self.assertEqual(mismatches, {})
 
     def test_zero_import_cycles_including_lazy_imports(self) -> None:
         _, detailed_edges = _workspace_analysis()

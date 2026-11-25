@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
 from . import proof_kernel as _proof_kernel

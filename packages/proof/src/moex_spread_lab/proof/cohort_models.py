@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from moex_spread_lab.core.contracts import plugin_parameter_aliases
-from moex_spread_lab.core.evaluation_periods import EvaluationSplit, ResearchSettings
+from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
 from .landscape import AMBER, GREEN, Landscape

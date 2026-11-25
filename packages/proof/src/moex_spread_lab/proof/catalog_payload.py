@@ -19,7 +19,7 @@ from moex_spread_lab.core.derived_cache import (
     load_bytes,
     store_bytes,
 )
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
 from moex_spread_lab.core.universe import (
     CALENDAR_UNIVERSE,

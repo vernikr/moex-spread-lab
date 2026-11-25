@@ -6,7 +6,7 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.data.lake.bar_types import SealedH1Reader
 
 

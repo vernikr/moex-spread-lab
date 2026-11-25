@@ -17,7 +17,7 @@ from concurrent.futures import wait as wait
 from pathlib import Path
 from typing import Any, cast
 
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError

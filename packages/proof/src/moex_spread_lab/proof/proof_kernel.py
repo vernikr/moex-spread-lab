@@ -20,7 +20,7 @@ from typing import Any, Protocol, cast
 import optuna
 
 from moex_spread_lab.accounting.position_sizing import automatic
-from moex_spread_lab.core.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     EvaluationSplit,
     ResearchSettings,
 )

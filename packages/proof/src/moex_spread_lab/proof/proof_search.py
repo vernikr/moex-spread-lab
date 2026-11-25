@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from moex_spread_lab.core.evaluation_periods import (
+from moex_spread_lab.core.settings import (
     DEFAULT_INITIAL_CAPITAL_RUB,
     EvaluationSplit,
     ResearchSettings,

@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.position_sizing import automatic
 from moex_spread_lab.core.contracts import WindowSnapshot
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import attach_entry_levels, pair_fill

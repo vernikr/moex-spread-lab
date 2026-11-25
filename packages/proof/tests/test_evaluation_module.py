@@ -5,7 +5,7 @@ import math
 import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.core.evaluation_periods import EvaluationSplit
+from moex_spread_lab.core.settings import EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof import evaluation, proof_kernel, proof_search
 
@@ -34,7 +34,7 @@ def test_validation_uses_continuous_automatic_account_and_reports_shortfall():
         ],
         "trades": [],
     }
-    marks = dict(zip(days, [100, 110, 121], strict=True))
+    marks = dict(zip(days, [100.0, 110.0, 121.0], strict=True))
     split = EvaluationSplit.from_dates(days, 25)
     result = evaluation._annualized_returns(proof, marks, split)
     assert result["calendar_days"] == 365

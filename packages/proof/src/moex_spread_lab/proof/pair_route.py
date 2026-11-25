@@ -13,7 +13,7 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
-from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
+from moex_spread_lab.core.settings import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import PRICE_FILLS

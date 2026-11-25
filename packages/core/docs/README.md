@@ -14,12 +14,12 @@ work plan; live status is in GitHub Issues and Project #2.
 |---|---|---|
 | Run/evidence manifests | `w0.py` | `run-manifest.v1`, `w0.fixture.v1`, `w0.replay.v1`; canonical JSON bytes, hashing, manifest/artifact validation, secret scanning. |
 | File-snapshot cache | `hashed_json_cache.py` | Bounded, thread-safe LRU keyed by immutable file snapshots; every lookup is counted through `cache_metrics.py`. |
-| Research settings | `settings.py` | One immutable `ResearchSettings` snapshot per request plus `EvaluationSplit` for training/validation dates. |
+| Research settings | `settings.py` | One immutable `ResearchSettings` snapshot per request plus `EvaluationSplit` for training/validation dates (root `moex_spread_lab.evaluation_periods` is its external compatibility shim). |
 | Bar intervals | `timeframes.py` | `TIMEFRAMES` registry (`1h`, `1d`); adding an interval is a registry entry plus data for that exact ISS interval. |
 | Universe | `universe.py` | Generic universe IDs (`pair_screen`, `calendar_native`), pair windows, strategy defaults, and contract tickers. |
 | Shared contracts | `contracts.py` | `ParameterSpec`, `InstrumentContext`, `WindowSnapshot`, `StrategyIntentRun`, and the `StrategyPlugin` protocol. |
 | C99 accelerator | `_fastcore.c`, `_fastcore_loader.py` | Optional bit-for-bit accelerator; the pure-Python path stays authoritative. |
-| Diagnostics/support | `cache_metrics.py`, `derived_cache.py`, `evaluation_periods.py`, `json_types.py`, `cli.py` | Supporting runtime; no contract authority. The workstation bridge harness (`moex-spread-lab remote ...`) lives in the root application package `src/moex_spread_lab/remote/`, not in msl-core. |
+| Diagnostics/support | `cache_metrics.py`, `derived_cache.py`, `json_types.py`, `cli.py` | Supporting runtime; no contract authority. The workstation bridge harness (`moex-spread-lab remote ...`) lives in the root application package `src/moex_spread_lab/remote/`, not in msl-core. |
 
 ## 2. Contracts other packages must not silently change
 

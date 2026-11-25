@@ -69,8 +69,10 @@ def _copy_workspace_sources(destination: Path) -> None:
     target = destination / "packages/core/tests/test_architecture_dag.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(DAG_TEST, target)
-    for helper in ("architecture_layers.py", "architecture_frozen_head.py"):
-        shutil.copy2(REPO_ROOT / "packages/core/tests" / helper, target.parent / helper)
+    shutil.copy2(
+        REPO_ROOT / "packages/core/tests/architecture_layers.py",
+        target.parent / "architecture_layers.py",
+    )
 
 
 def _write_probe(root: Path, plugin_source: str) -> None:

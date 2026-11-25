@@ -12,7 +12,7 @@ from typing import Any, Protocol, cast
 import optuna as optuna
 
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
-from moex_spread_lab.core.evaluation_periods import ResearchSettings
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.carry import (

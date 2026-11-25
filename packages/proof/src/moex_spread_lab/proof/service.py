@@ -18,7 +18,7 @@ from moex_spread_lab.accounting.position_sizing import (
     size_proof as size_proof,
 )
 from moex_spread_lab.core.contracts import plugin_is_builtin
-from moex_spread_lab.core.evaluation_periods import STRICT_SCREENS, ResearchSettings
+from moex_spread_lab.core.settings import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
     CALENDAR_UNIVERSE as CALENDAR_UNIVERSE,

@@ -3,8 +3,7 @@
 A module's layer follows from its package directory (packages/<pkg>/src/moex_spread_lab/<top>/...)
 or from the explicit lists in this module — splitting a module never requires editing
 test_architecture_dag.py (plan S1.4). `cli` surfaces that HEAD classified as "cli"
-keep it; root-level compatibility shims stay explicit. See also
-architecture_frozen_head.py for the frozen HEAD table used by the equivalence test.
+keep it; root-level compatibility shims stay explicit.
 """
 
 from __future__ import annotations

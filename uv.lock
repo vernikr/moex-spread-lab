@@ -366,7 +366,7 @@ dev = [
     { name = "pytest-testmon", specifier = ">=2.3,<3" },
     { name = "pytest-xdist", specifier = ">=3.6,<4" },
     { name = "ruff", specifier = ">=0.9,<1" },
-    { name = "size-report", extras = ["tokens"], specifier = ">=3.3.1" },
+    { name = "size-report", extras = ["tokens"], specifier = ">=3.4.0" },
     { name = "vulture", specifier = ">=2.14,<3" },
 ]
 
@@ -800,11 +800,11 @@ wheels = [
 
 [[package]]
 name = "size-report"
-version = "3.3.1"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/54/cb/4b20c95ed7bc03a3ff3e31243c2b0ae5de461e416ad63e578359749ee590/size_report-3.3.1.tar.gz", hash = "sha256:58ecc37321c5ff0db7ba141b09bd7712f18ba6d39d4d8a0d374957d12847f548", size = 162686, upload-time = "2026-11-25T10:37:34.812Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/95/597e961439fc3b982479440478eabda46883922bf0f459a58272dc510722/size_report-3.4.0.tar.gz", hash = "sha256:05276051c3920af24f0fb1345597084cb51b8947938ddf24e931b4686b488e4a", size = 183208, upload-time = "2026-11-25T21:10:46.4Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/e9/69daa7cb78249c42a5165dca11c4f5c095fb4204bc11fa2cddf7e250056a/size_report-3.3.1-py3-none-any.whl", hash = "sha256:499c7283bf502c8b350e328be3a174b48414a71f859bb16697d67027f1db32fb", size = 194783, upload-time = "2026-11-25T10:37:33.669Z" },
+    { url = "https://files.pythonhosted.org/packages/92/00/8dda6e25e551845f149aa1324c8a37def7b9c52c4986e66c515084438208/size_report-3.4.0-py3-none-any.whl", hash = "sha256:f1dc22e4590fdf99037c82533eba8d1df53380b4bd0f36c4868bdc67f80e39b7", size = 215744, upload-time = "2026-11-25T21:10:45.106Z" },
 ]
 
 [package.optional-dependencies]

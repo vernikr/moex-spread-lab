@@ -26,11 +26,7 @@ from moex_spread_lab.core.w0 import canonical_bytes, sha256_file
 
 from .data_inventory import _inspect_file, _policy, build_data_inventory
 from .data_retention import DataRetentionError
-from .helpers_p72_packages_data_src_moex_spread_lab_data_retention_data_archive_candidates import (
-    _CandidateEntry,
-    read_payload_object,
-    retention_hooks,
-)
+from . import data_retention as _retention_module
 
 SCHEMA = "data-archive-candidates.v1"
 GROUPS = {
@@ -40,6 +36,37 @@ GROUPS = {
     "w1/candles/unknown",
     "w1/perpetual-history-discovery",
 }
+
+_SafeDataPath = Callable[[Path, str], Path]
+_ValidateArchivePath = Callable[[Path, Path], Path]
+_PruneEmptyParents = Callable[[Path, Sequence[Mapping[str, object]]], None]
+
+
+class _CandidateEntry(TypedDict):
+    """One verified candidate file as stored in a plan, receipt or manifest."""
+
+    path: str
+    logical_bytes: int
+    sha256: str
+
+
+__all__ = ["_CandidateEntry", "read_payload_object", "retention_hooks"]
+
+
+def retention_hooks() -> tuple[_SafeDataPath, _ValidateArchivePath, _PruneEmptyParents]:
+    """Return the owning module's path-safety hooks in their historical order."""
+    return _data_retention.archive_candidate_hooks()
+
+
+def read_payload_object(path: Path, label: str) -> JsonObject:
+    """Read a plan or receipt as a JSON object; a missing file still raises ``OSError``."""
+    try:
+        decoded: object = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _data_retention.DataRetentionError(f"cannot read {label}: {path}: {exc}") from exc
+    return as_str_dict(decoded, label=label, error=_data_retention.DataRetentionError)
 
 _safe_data_path, _validate_archive_path, _prune_empty_parents = retention_hooks()
 

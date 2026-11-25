@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -15,12 +15,50 @@ import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_bytes, sha256_file
 
-from .seal_identity_p72_57 import check_no_symlink_ancestors as _check_ancestors
-from .seal_identity_p72_57 import validate_seal_record_identity as _validate_identity
-from .seal_identity_p72_57 import verify_sealed_hashes as _verify_hashes
-
 LEGACY_CANDLE_SCHEMA = "iss-candles.v1"
 H1_SEAL_SCHEMA = "h1-sealed-read.v1"
+
+
+def _validate_identity(
+    relative: str, record: dict[str, Any], path_type: type[Path], error_type: type[Exception]
+) -> None:
+    p = path_type(relative)
+    if (
+        p.is_absolute()
+        or ".." in p.parts
+        or len(p.parts) != 4
+        or p.parts[:2] != ("data", "w1")
+        or p.parts[2] not in ("candles", "candles-screen")
+        or record["legacy_path"] != relative
+        or record["timeframe"] != "1h"
+    ):
+        raise error_type("unsafe H1 seal source identity")
+
+
+def _check_ancestors(root: Path, legacy_path: Path, error_type: type[Exception]) -> None:
+    for p in (legacy_path, *legacy_path.parents):
+        if p == root:
+            break
+        if p.is_symlink():
+            raise error_type("symlink H1 source is not allowed")
+
+
+def _verify_hashes(
+    legacy_path: Path,
+    legacy_signature: tuple[int, int, int, int] | None,
+    bars: Path,
+    sources: Path,
+    record: dict[str, Any],
+    hash_file: Callable[[Path], str],
+    error_type: type[Exception],
+) -> None:
+    if legacy_signature is not None and hash_file(legacy_path) != record["legacy_sha256"]:
+        raise error_type("retained H1 JSON changed after sealing; refusing stale Parquet")
+    if (
+        hash_file(bars) != record["parquet_sha256"]
+        or hash_file(sources) != record["sources_sha256"]
+    ):
+        raise error_type("sealed H1 table hash mismatch; refusing fallback")
 
 
 class DataLakeError(W0Error):

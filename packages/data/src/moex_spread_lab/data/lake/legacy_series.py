@@ -19,10 +19,25 @@ from typing import Any, cast
 from moex_spread_lab.core.w0 import canonical_bytes
 
 from .bar_types import LEGACY_CANDLE_SCHEMA, BarSeries, DataLakeError
-from .legacy_validation_p72_62 import validate_price_proxy as _validate_proxy
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+
+
+def _validate_proxy(
+    row: dict[str, Any], close: float | None, path: Path, index: int, error_type: type[Exception]
+) -> None:
+    price_proxy = row.get("price_proxy")
+    if price_proxy is None:
+        return
+    if isinstance(price_proxy, bool) or not isinstance(price_proxy, (int, float, str)):
+        raise error_type(f"legacy candle price_proxy is invalid: {path}[{index}]")
+    try:
+        proxy_value = float(price_proxy)
+    except ValueError as exc:
+        raise error_type(f"legacy candle price_proxy is not numeric: {path}[{index}]") from exc
+    if proxy_value != close:
+        raise error_type(f"legacy candle price_proxy differs from close: {path}[{index}]")
 
 # Freeze the original star-import surface; named aliases below support the facade.
 __all__ = [

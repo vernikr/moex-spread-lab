@@ -8,9 +8,6 @@ from typing import Any
 from moex_spread_lab.accounting.costs import TAKER_RATE_PERCENT
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 
-from ._notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload import (
-    PROOF_NOTES as _PROOF_NOTES,
-)
 from .contracts import ASSETS
 from .contracts import stress_ok as _stress_ok
 from .proof_ledger import (
@@ -23,6 +20,16 @@ from .proof_ledger import (
     simulate_marked_ledger,
     sizing_intents_trades,
 )
+
+_PROOF_NOTES = [
+    "Цена спреда = расчёт дальней минус расчёт ближней (биржевой расчёт спреда там, где он публикуется).",
+    "Даты с нулевым объёмом самого календарного спреда остаются в журнале как наблюдения, но исключены из индикаторов, гейта объёма и симуляции входа/выхода; позиции на них не переоцеваются.",
+    "Исполнение next_open использует цены первых сделок ног за день; исполнение settlement — официальный расчёт.",
+    "Отметки — по расчётным ценам с дневной стоимостью пункта; издержки — опубликованный тариф биржи по обеим ногам плюс проскальзывание один раз на сторону.",
+    "Для контрактов в USD и CNY стоимость пункта дрейфует вместе с валютой, поэтому день-в-день результат немного отличается от арифметики «вход–выход» (показано как дрейф стоимости пункта FX).",
+    "Маржа — запасной коэффициент по сегодняшнему контракту; издержки LQDT — доходность бенчмарка на этой марже, пока позиция открыта.",
+    "Спред показан в % от цены дальней ноги; абсолютные пункты остаются в CSV и во второй строке таблицы.",
+]
 
 
 @dataclass(frozen=True, slots=True)

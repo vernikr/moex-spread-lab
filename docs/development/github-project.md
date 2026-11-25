@@ -11,7 +11,7 @@ Project board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com
 - [4. Creating issues and managing dependencies (CLI & GraphQL)](#4-creating-issues-and-managing-dependencies-cli--graphql)
 - [5. Tracking execution and intermediate progress](#5-tracking-execution-and-intermediate-progress)
 - [6. Plan deviations, partial completion, deferrals, and blockers](#6-plan-deviations-partial-completion-deferrals-and-blockers)
-- [7. Closing protocol and epic reconciliation](#7-closing-protocol-and-epic-reconciliation)
+- [7. Closing protocol and workstream reconciliation](#7-closing-protocol-and-workstream-reconciliation)
 - [8. Bootstrap and UI-only Project workflow settings](#8-bootstrap-and-ui-only-project-workflow-settings)
 
 ---
@@ -27,13 +27,13 @@ Project board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com
 | **Cross-cutting external blockers** | `docs/blockers/bNN-*.md` | Multi-issue broker/tariff/account facts (`b01`, `b02`) | Per-issue execution status |
 | **Module guides** | `packages/<name>/docs/` | Durable guidance owned by one package (contracts, invariants, boundaries, verification) | Cross-cutting governance that belongs in root `docs/development/` |
 | **Durable technical references, runbooks, and formal stage artifacts** | `docs/`, `packages/*/docs/*` (only when retained as lasting engineering/research knowledge) | Stable contracts, reusable procedures, approved decisions, enduring research evidence | Project plans, active checklists, temporary execution reports, mutable delivery status |
-| **Project plans and work items** | **GitHub Issues** (`vernikr/moex-spread-lab`), including comments | Epic plan, goal/scope/non-goals, acceptance criteria, verification gate, work-package slices | Tracked Markdown/JSON copies of the plan or live checklist |
+| **Project plans and work items** | **GitHub Issues** (`vernikr/moex-spread-lab`), including comments | Plan, goal/scope/non-goals, acceptance criteria, verification gate, work-package slices | Tracked Markdown/JSON copies of the plan or live checklist |
 | **Execution reports and delivery history** | **GitHub Issue bodies/comments** | Dated verification/bench evidence, completed work, checkpoints, deviations, deferrals and historical reports | Duplicate repository report files or generated result snapshots |
-| **Operational queue** | **GitHub Project #2** (`orgs/vernikr/projects/2`) | Live `Status`, `Work Kind`, `Priority`, `Effort`, `Business Value`, `Verification Gate`, `Sub-issues progress` | Problem statements (use real Issues, never Project Draft items) |
+| **Operational queue** | **GitHub Project #2** (`orgs/vernikr/projects/2`) | Live `Status`, `Work Kind`, `Module`, `Effort`, `Business Value`, `Verification Gate`, `Sub-issues progress` | Problem statements (use real Issues, never Project Draft items) |
 
 When a project plan/report contains enduring technical rules, keep only the durable rule in its owning reference and link to the Issue for plan/history; do not copy the project document. Archive existing plans/reports in the relevant Issue(s), update inbound links, then delete the repository copies. Never create a `TODO.md` or parallel master backlog. All repository artifacts, Issue titles, bodies, and comments are written in **English** (translate/reframe Russian user requests into concise English Issues while keeping chat replies in Russian).
 
-The current source-document migration and reference cleanup are tracked in [Epic #25](https://github.com/vernikr/moex-spread-lab/issues/25) and [work package #26](https://github.com/vernikr/moex-spread-lab/issues/26); do not restore the migrated copies.
+The current source-document migration and reference cleanup are tracked in [#25](https://github.com/vernikr/moex-spread-lab/issues/25) and [work package #26](https://github.com/vernikr/moex-spread-lab/issues/26); do not restore the migrated copies.
 
 ---
 
@@ -57,7 +57,8 @@ There is no separate `Verify` column: verification is a mandatory pre-push gate 
 ### 2.2 Fields
 
 - **Project fields** (local to Project #2):
-  - `Work Kind`: `Epic` | `Refactor / Health` | `Performance` | `Feature / Slice` | `Research / Audit` | `Decision / Gate` | `Bug / Parity` | `Tooling / Docs`.
+  - `Work Kind`: `feat` | `fix` | `docs` | `refactor` | `chore` | `perf` | `test` | `research` | `revert` (conventional-commit style; `perf` means code/runtime performance, not agent or tooling latency).
+  - `Module`: `core` | `data` | `accounting` | `strategies` | `proof` | `web` | `Cross-module` (single-select; use the owning package module, or `Cross-module` when work spans modules or is tooling/docs-only).
   - `Verification Gate`:
     - `Docs / Quick` — `scripts/docs_scan.py` + `./scripts/check_health.sh --changed` (docs-only edits).
     - `Full Suite` — `./scripts/verify.py --profile full` (standard pre-push gate).
@@ -65,7 +66,6 @@ There is no separate `Verify` column: verification is a mandatory pre-push gate 
     - `Browser Smokes` — `Full Suite` + `MOEX_OFFLINE_ONLY=1 uv run python scripts/run_browser_smokes.py` (mandatory when `packages/web` UI/routes change).
     - `C99 Sanitizers` — `Full Suite` + `clang-tidy` + `scripts/run_sanitized_pytest.py` (mandatory when `_fastcore.c` or pure-Python mirrors change).
 - **Organization Issue fields** (shared across `vernikr` Projects):
-  - `Priority`: `Urgent` | `High` | `Medium` | `Low`.
   - `Effort`: `High` | `Medium` | `Low`.
   - `Business Value`: numeric `0`–`5` (`5` = core Stage-9 research/accounting outcome; `4` = load-bearing architecture/gate; `3` = meaningful agent velocity/hygiene; `1`–`2` = polish or stretch target).
 - **System hierarchy fields**: `Parent issue`, `Sub-issues progress`, `Labels`, `Linked pull requests`.
@@ -75,13 +75,13 @@ There is no separate `Verify` column: verification is a mandatory pre-push gate 
 - **Ownership (`area:*`)** — matches workspace topology for zero-conflict parallel agent routing:
   `area:core`, `area:data`, `area:accounting`, `area:strategies`, `area:proof`, `area:web`, `area:tooling`, `area:docs`.
 - **Structure & lifecycle**:
-  `epic` (parent container), `refactor` (behavior-preserving restructuring), `bug` (regression / parity failure), `research` (intake / parity audit / R01–R15), `decision` (needs or records an owner choice), `blocked`, `deferred`, `plan-deviation`.
+  `refactor` (behavior-preserving restructuring), `bug` (regression / parity failure), `research` (intake / parity audit / R01–R15), `decision` (needs or records an owner choice), `blocked`, `deferred`, `plan-deviation`.
 
 ### 2.4 Views
 
-1. **`All work`** (Table, unfiltered) — full inventory showing `Status`, `Work Kind`, `Priority`, `Effort`, `Business Value`, `Verification Gate`, `Parent issue`, `Sub-issues progress`, `Labels`, `Linked pull requests`.
-2. **`Queue`** (Board, `status:Inbox,Ready,"In Progress",Blocked -label:epic`) — actionable leaf work packages grouped by `Status`. Excludes `[Epic]` containers so an agent scanning `Ready` sees concrete executable packages.
-3. **`Epics & Plans`** (Table, `label:epic`) — high-level progress across multi-slice initiatives via `Sub-issues progress`.
+1. **`All work`** (Table, unfiltered) — full inventory showing `Status`, `Work Kind`, `Module`, `Effort`, `Business Value`, `Verification Gate`, `Parent issue`, `Sub-issues progress`, `Labels`, `Linked pull requests`.
+2. **`Queue`** (Board, `status:Inbox,Ready,"In Progress",Blocked`) — actionable leaf work packages grouped by `Status`.
+3. **`Workstreams & Plans`** (Table, grouped or filtered by parent workstream) — high-level progress across multi-slice initiatives via `Parent issue` / `Sub-issues progress`.
 4. **`Blocked & Deferred`** (Table, `status:Blocked,Deferred`) — items waiting on upstream dependencies, owner decisions, or revisit conditions.
 
 ---
@@ -91,30 +91,30 @@ There is no separate `Verify` column: verification is a mandatory pre-push gate 
 Use **at most two Issue levels** plus an in-body checklist. Over-decomposing into dozens of 50-LOC child Issues creates API/triage overhead and violates the S3 autonomy rule (`AGENTS.md`).
 
 ```text
-Level 1: [Epic] Issue (label: epic, Type: Task)
+Level 1: Parent workstream Issue (Type: Task)
   └── Level 2: Work Package Sub-Issue (native GitHub sub-issue, 1 coherent pushable deliverable)
         └── Level 3: "- [ ] Slice ..." markdown task list inside the Work Package body (atomic local commits)
 ```
 
 ### Rules of decomposition
 
-1. **Level 1 — `[Epic] <Plan or Stage-9 initiative>`**:
-   - Created when work spans multiple sessions or packages. The Epic body/comments are the canonical plan; link only to durable repository contracts/evidence, not to a plan file (examples: `#12` Phase 7 follow-ups, `#17` Stage 9 S4 basket, `#19` Agent performance plan 2).
+1. **Level 1 — `<Plan or Stage-9 initiative>` parent issue**:
+   - Created when work spans multiple sessions or packages. The parent issue body/comments are the canonical plan; link only to durable repository contracts/evidence, not to a plan file (examples: #12 Phase 7 follow-ups, #17 Stage 9 S4 basket, #19 Agent performance plan 2).
    - Body states: `Goal`, durable `References` (if any), `Exit criteria`, `Non-goals`, and execution order. Preserve superseded or completed plans as clearly marked historical Issue comments, not repository copies.
 2. **Level 2 — Work Package (native sub-issue)**:
    - Represents **one coherent, independently verifiable deliverable** pushed to `origin/main` after `./scripts/verify.py --profile full` passes (typically 1–5 inner sub-slices, ideally scoped to one `packages/<name>/` subtree or one contract-first cross-package slice).
-   - Attached to its parent `[Epic]` as a **native GitHub sub-issue** (never just a plain text link) so GitHub computes `Parent issue` and `Sub-issues progress` automatically.
+   - Attached to its parent workstream as a **native GitHub sub-issue** (never just a plain text link) so GitHub computes `Parent issue` and `Sub-issues progress` automatically.
 3. **Level 3 — Inner Sub-Slices (checkboxes inside Level 2)**:
    - Listed under `## Slices` in the Work Package body (for example, `- [ ] service.py`, `- [ ] proof_kernel.py`).
    - Executed continuously within one turn using atomic local commits and `--profile affected` / `--profile quick`, without creating separate Issues.
 4. **Just-in-time (JIT) child creation**:
-   - If a high-risk Work Package (e.g., `#15` F2 unifying 4 built-in strategy families) is too large for a single deliverable when started, promote it to a sub-epic or split out one sibling sub-issue per family **when starting work**, not weeks in advance. Never pre-populate speculative sub-issues for gated/unapproved initiatives (like `#17` S4 while blocked on an owner decision).
+   - If a high-risk Work Package (e.g., `#15` F2 unifying 4 built-in strategy families) is too large for a single deliverable when started, promote it to a child workstream or split out one sibling sub-issue per family **when starting work**, not weeks in advance. Never pre-populate speculative sub-issues for gated/unapproved initiatives (like #17 S4 while blocked on an owner decision).
 
 ---
 
 ## 4. Creating issues and managing dependencies (CLI & GraphQL)
 
-Before modifying tracked repository files, find the open Issue covering the work or create one (`.github/ISSUE_TEMPLATE/{epic,work-package,bug}.yml` define the expected sections). Trivial typos bundled into an active Issue do not need a separate Issue.
+Before modifying tracked repository files, find the open Issue covering the work or create one (`.github/ISSUE_TEMPLATE/{workstream,work-package,bug}.yml` define the expected sections). Trivial typos bundled into an active Issue do not need a separate Issue.
 
 ### 4.1 Create an Issue and add it to Project #2
 
@@ -169,8 +169,8 @@ When Work Package B must not start before Work Package A finishes (for example, 
 ## 5. Tracking execution and intermediate progress
 
 1. **Claiming work**:
-   - Pick an unblocked item in `Ready` (highest `Priority` / `Business Value`, disjoint `area:*` from any concurrent session).
-   - Set Project `Status` to `In Progress` (and parent `[Epic]` to `In Progress` if it was `Inbox`/`Ready`).
+   - Pick an unblocked item in `Ready` (highest `Business Value` / `Effort` fit, disjoint `area:*` from any concurrent session).
+   - Set Project `Status` to `In Progress` (and the parent workstream to `In Progress` if it was `Inbox`/`Ready`).
 2. **During a turn (S3 cadence)**:
    - Execute inner sub-slices continuously with local Conventional Commits (`refactor(proof): ... (refs #13)`) and `--profile affected` / `--profile quick`. Do **not** spam GitHub comments after every 10-minute inner commit.
 3. **Intermediate checkpoint (multi-turn / partial handoff)**:
@@ -218,9 +218,9 @@ When part of a Work Package is complete, green, and valuable on `main`, while th
 1. **Never close the whole Issue as `completed` while silently skipping acceptance criteria**, and never leave half-done uncommitted code.
 2. **Split cleanly**:
    - Narrow the current Issue's scope and acceptance criteria to the delivered, fully verified part (add `plan-deviation` explaining the split), pass `./scripts/verify.py --profile full`, push, and close it as `completed` with evidence.
-   - Create a **new follow-up sub-issue** under the same `[Epic]` for the remaining scope.
+   - Create a **new follow-up sub-issue** under the same parent workstream for the remaining scope.
 3. Classify the remainder honestly:
-   - If actionable later without risk: set `Status` = `Ready` (with updated `Priority` / `Effort`).
+   - If actionable later without risk: set `Status` = `Ready` (with updated `Effort` / `Business Value` as needed).
    - If intentionally postponed until a condition holds: apply the **Deferral protocol** below.
 
 ### 6.4 Deferring work (`Deferred`) vs retiring work (`not_planned`)
@@ -231,13 +231,13 @@ When part of a Work Package is complete, green, and valuable on `main`, while th
   **Deferred:** <measured or architectural reason>.
   **Revisit when:** <concrete trigger condition>.
   ```
-  Deferred items stay out of the active `Queue` view (`-status:Deferred`) while remaining visible in `Blocked & Deferred` and `All work` and tracked in the parent `[Epic]` sub-issue rollup.
+  Deferred items stay out of the active `Queue` view (`-status:Deferred`) while remaining visible in `Blocked & Deferred` and `All work` and tracked in the parent workstream sub-issue rollup.
 - **Close as `not_planned` (`gh issue close N --reason "not planned"`, `Status` = `Done`)**:
   Use when measurements or an owner decision permanently retire a target (e.g., a speculative optimization proven net-negative). Post the measured rationale in the Issue before closing; do not create a repository plan/report copy.
 
 ---
 
-## 7. Closing protocol and epic reconciliation
+## 7. Closing protocol and workstream reconciliation
 
 Before closing an Issue as `completed`:
 
@@ -246,7 +246,7 @@ Before closing an Issue as `completed`:
 3. Update affected durable contracts, runbooks and references in `docs/` or `packages/*/docs/`; temporary execution evidence remains in GitHub Issues only.
 4. Close the Issue with `Closes #N` in the final commit/PR or via `gh issue close N --reason completed --comment "..."` citing the pushed `main` SHA and gate summary; set Project `Status` = `Done`.
 5. **Unblock downstream work**: check the Issue's `blocking` list (`gh api graphql ...`); for any downstream Issue whose blockers are now all closed, remove its `blocked` label and move its Project `Status` to `Ready`.
-6. **Reconcile parent `[Epic]`**: when an epic's sub-issues are all closed (`completed` or `not_planned`) or only `Deferred` items remain that the owner chose not to include in the current milestone, verify exit criteria and update the Epic body/comments (the canonical plan record). Then close the `[Epic]` (moving any still-open `Deferred` children to standalone or next-phase epic if appropriate, or keeping the `[Epic]` open in `Deferred` while deferred children remain).
+6. **Reconcile parent workstream**: when a workstream's sub-issues are all closed (`completed` or `not_planned`) or only `Deferred` items remain that the owner chose not to include in the current milestone, verify exit criteria and update the workstream body/comments (the canonical plan record). Then close the workstream (moving any still-open `Deferred` children to standalone or a next-phase workstream if appropriate, or keeping the workstream open in `Deferred` while deferred children remain).
 
 ---
 
@@ -260,4 +260,4 @@ GitHub's GraphQL API does not expose write mutations for built-in Project v2 aut
 2. **Item added to project**: set `Status` -> `Inbox`.
 3. **Item reopened**: set `Status` -> `Inbox`.
 
-Agents must **not** assume UI auto-add is active: when creating an Issue via CLI/API, always add it to Project #2 and set its `Status`, `Work Kind`, `Priority`, `Effort`, `Business Value`, and `Verification Gate` explicitly.
+Agents must **not** assume UI auto-add is active: when creating an Issue via CLI/API, always add it to Project #2 and set its `Status`, `Work Kind`, `Module`, `Effort`, `Business Value`, and `Verification Gate` explicitly.

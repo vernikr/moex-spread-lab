@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Idempotently ensures the organization GitHub Project v2 `moex-spread-lab`
 # exists in `vernikr`, links it to `vernikr/moex-spread-lab`, configures its
-# Status / Work Kind / Verification Gate fields, attaches org Issue fields
-# (Priority, Effort, Business Value), creates the four standard views, and
+# Status / Work Kind / Module / Verification Gate fields, attaches org Issue fields
+# (Effort, Business Value), creates the four standard views, and
 # syncs all open repository issues onto the Project.
 #
 # Requires: `gh` authenticated with `project` and `repo` scopes (e.g. GH_TOKEN).
@@ -121,23 +121,38 @@ mutation {{
 """)
 
 if "Work Kind" not in fields:
-    gql(f"""
-    mutation {{
-      createProjectV2Field(input: {{
-        projectId: "{proj_id}", dataType: SINGLE_SELECT, name: "Work Kind",
+    gql("""
+    mutation($projectId: ID!) { createProjectV2Field(input: {
+        projectId: $projectId, dataType: SINGLE_SELECT, name: "Work Kind",
         singleSelectOptions: [
-          {{name: "Epic", color: PURPLE, description: "Multi-slice plan, stage gate, or workstream parent"}},
-          {{name: "Refactor / Health", color: BLUE, description: "Behavior-preserving decomposition, strict typing, code-health ratchet"}},
-          {{name: "Performance", color: ORANGE, description: "Agent task-latency, runtime, or CI verification optimization"}},
-          {{name: "Feature / Slice", color: GREEN, description: "Stage-9 product slice, strategy plugin, or proof capability"}},
-          {{name: "Research / Audit", color: PINK, description: "Market data intake, parity audit, or external research R01-R15"}},
-          {{name: "Decision / Gate", color: RED, description: "Owner decision, risk/account blocker (b01/b02), or stage gate"}},
-          {{name: "Bug / Parity", color: YELLOW, description: "Regression, run_id/hash parity defect, or gate failure"}},
-          {{name: "Tooling / Docs", color: GRAY, description: "Scripts, CI workflows, remote bridge, governance docs"}}
-        ]
-      }}) {{ projectV2Field {{ ... on ProjectV2SingleSelectField {{ id }} }} }}
-    }}
-    """)
+          {name: "feat", color: GREEN, description: "New capability or user-visible slice"},
+          {name: "fix", color: YELLOW, description: "Bug fix, parity defect, or regression correction"},
+          {name: "docs", color: GRAY, description: "Documentation, guides, or governance text"},
+          {name: "refactor", color: BLUE, description: "Behavior-preserving restructuring or code health"},
+          {name: "chore", color: ORANGE, description: "Maintenance, tooling, workflow, or process work"},
+          {name: "perf", color: RED, description: "Code/runtime performance improvement"},
+          {name: "test", color: PINK, description: "Tests, verification coverage, or test infrastructure"},
+          {name: "research", color: PURPLE, description: "Research, audit, investigation, or evidence gathering"},
+          {name: "revert", color: GRAY, description: "Revert a previous change"}
+        ]}) { projectV2Field { ... on ProjectV2FieldCommon { id name } } } }
+    """, projectId=proj_id)
+    print("  + created field 'Work Kind'")
+
+if "Module" not in fields:
+    gql("""
+    mutation($projectId: ID!) { createProjectV2Field(input: {
+        projectId: $projectId, dataType: SINGLE_SELECT, name: "Module",
+        singleSelectOptions: [
+          {name: "core", color: BLUE, description: "packages/core (msl-core)"},
+          {name: "data", color: GREEN, description: "packages/data (msl-data)"},
+          {name: "accounting", color: YELLOW, description: "packages/accounting (msl-accounting)"},
+          {name: "strategies", color: ORANGE, description: "packages/strategies (msl-strategies)"},
+          {name: "proof", color: PURPLE, description: "packages/proof (msl-proof)"},
+          {name: "web", color: PINK, description: "packages/web (msl-web)"},
+          {name: "Cross-module", color: GRAY, description: "Cross-cutting, tooling, docs, or multi-module work"}
+        ]}) { projectV2Field { ... on ProjectV2FieldCommon { id name } } } }
+    """, projectId=proj_id)
+    print("  + created field 'Module'")
 
 if "Verification Gate" not in fields:
     gql(f"""
@@ -156,7 +171,7 @@ if "Verification Gate" not in fields:
     """)
 
 org_fields = {f["name"]: f["id"] for f in meta["organization"]["issueFields"]["nodes"] if f}
-for fname in ("Priority", "Effort", "Business Value"):
+for fname in ("Effort", "Business Value"):
     if fname in org_fields and fname not in fields:
         gql("""
         mutation($proj: ID!, $ifid: ID!) {

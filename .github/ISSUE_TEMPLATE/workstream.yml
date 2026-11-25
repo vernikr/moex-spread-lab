@@ -1,22 +1,21 @@
-name: Epic (multi-slice plan or stage gate)
-description: Parent container for a multi-package refactor, performance campaign, or Stage-9 slice
-title: "[Epic] "
-labels: ["epic"]
+name: Workstream (multi-slice plan or stage gate)
+description: Parent container for a multi-package plan, refactor, or Stage-9 initiative
+title: ""
 type: Task
 body:
   - type: textarea
     id: goal
     attributes:
       label: Goal
-      description: Business or architectural outcome when this epic completes.
+      description: Business or architectural outcome when this workstream completes.
     validations:
       required: true
   - type: textarea
     id: source
     attributes:
       label: Source & authority
-      description: Link to canonical plan/decision/blocker doc in `docs/` (do not duplicate plan prose here).
-      placeholder: "`docs/development/<plan>.md`, `docs/decisions.md` (A-xx)"
+      description: Link to canonical decision/blocker docs in `docs/` (do not duplicate plan prose here).
+      placeholder: "`docs/decisions.md` (A-xx), `docs/blockers/bNN-*.md`"
     validations:
       required: true
   - type: textarea
@@ -27,7 +26,7 @@ body:
       value: |
         - [ ] Every sub-issue is closed as `completed`, or explicitly `deferred` / closed as `not_planned` with recorded rationale.
         - [ ] Stage-9 invariants hold (`run_id` parity, equivalence tiers, code-health baselines only decrease).
-        - [ ] Canonical docs in `docs/` reflect final status and link this epic instead of keeping a separate checklist.
+        - [ ] Canonical docs in `docs/` reflect final status and link this workstream instead of keeping a separate checklist.
     validations:
       required: true
   - type: textarea

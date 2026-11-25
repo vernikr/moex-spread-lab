@@ -1,4 +1,4 @@
-name: Bug / Parity Regression
+name: Bug / Regression
 description: Numerical/hash drift, broken invariant, test failure, or UI regression
 title: "[Bug] "
 labels: ["bug"]

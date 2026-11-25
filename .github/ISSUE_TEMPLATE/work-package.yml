@@ -6,8 +6,8 @@ body:
   - type: input
     id: parent
     attributes:
-      label: Parent Epic (optional)
-      description: If part of an epic, put `#N` and also include `<!-- issue-parent: #N -->` on its own line when creating via non-GraphQL tools.
+      label: Parent workstream (optional)
+      description: If part of a workstream, put `#N` and also include `<!-- issue-parent: #N -->` on its own line when creating via non-GraphQL tools.
       placeholder: "#12"
   - type: textarea
     id: goal

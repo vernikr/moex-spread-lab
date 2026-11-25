@@ -2,7 +2,7 @@
 
 import pytest
 
-from moex_spread_lab.web import dev_worker_rss as sampling
+from moex_spread_lab.web import routes_dev as sampling
 
 
 def test_peak_and_incomplete_samples(monkeypatch):

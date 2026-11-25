@@ -99,7 +99,7 @@ def test_validation_rejects_invalid_types_and_override(server):
 
 
 def test_discovery_record_is_atomic_and_removed_only_by_owner(tmp_path):
-    from moex_spread_lab.web.server_instance import remove_instance, write_instance
+    from moex_spread_lab.web.server import remove_instance, write_instance
 
     first = write_instance(tmp_path, 1234)
     path = tmp_path / "data/analytics/server-instance.json"
@@ -141,7 +141,7 @@ def test_optimization_matches_saved_route_without_new_history(server):
 def test_pool_census_counts_live_workers_only():
     from types import SimpleNamespace
 
-    from moex_spread_lab.web.dev_pool_metrics import pool_snapshot
+    from moex_spread_lab.web.routes_dev import pool_snapshot
 
     assert pool_snapshot(SimpleNamespace(_proof=None))["active_pool_workers"] == 0
     live = SimpleNamespace(pid=17, is_alive=lambda: True)
@@ -178,7 +178,7 @@ def test_probe_reports_real_request_thread_cache_lookups(server):
 def test_worker_resource_sampling_is_labeled_and_handles_process_exit(monkeypatch):
     from types import SimpleNamespace
 
-    from moex_spread_lab.web import dev_pool_resources as resources
+    from moex_spread_lab.web import routes_dev as resources
 
     assert resources._cpu_seconds("1-02:03:04.5") == 93784.5
     monkeypatch.setattr(
@@ -278,7 +278,7 @@ def test_profile_has_twenty_rows_without_global_truncation(server):
 
 
 def test_diagnostic_missing_cache_and_missing_binary(tmp_path, monkeypatch):
-    from moex_spread_lab.web import dev_diagnostics
+    from moex_spread_lab.web import routes_dev as dev_diagnostics
 
     assert dev_diagnostics.calendar_cache_count(tmp_path) == 0
     monkeypatch.setattr(dev_diagnostics._fastcore_loader, "__file__", str(tmp_path / "loader.py"))

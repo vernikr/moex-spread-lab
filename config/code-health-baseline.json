@@ -62,7 +62,6 @@
     "packages/proof/src/moex_spread_lab/proof/cli.py",
     "packages/proof/src/moex_spread_lab/proof/service_validation.py",
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
-    "packages/web/src/moex_spread_lab/web/routes_settings.py",
     "scripts/vulture_whitelist.py"
   ],
   "packages": {

@@ -1,19 +1,31 @@
-"""Loopback-only, non-persisting diagnostics for the workstation screener."""
+"""Loopback-only, non-persisting diagnostics for the workstation screener.
+
+`health` and `probe` back `/api/dev/*`; their read-only helpers (fastcore/cache census,
+profile summary, pool/worker census, RSS sampling) never start a pool or write to disk.
+"""
 
 from __future__ import annotations
 
 import cProfile
+import io
 import json
 import math
 import os
+import pstats
 import resource
 import statistics
 import subprocess
 import sys
+import sysconfig
+import threading
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core import _fastcore_loader
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
@@ -24,12 +36,173 @@ from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.worker_metrics import collect_worker_metrics
 
-from .dev_diagnostics import calendar_cache_count, fastcore_binary, profile_summary
-from .dev_pool_metrics import pool_snapshot
-from .dev_worker_rss import sample_worker_rss
-
 _STARTED = time.monotonic()
 _STARTED_AT = datetime.now(UTC).isoformat()
+
+
+def fastcore_binary(root: Path) -> tuple[bool, str | None]:
+    """Report the normal binary's presence and privacy-preserving location, not load state."""
+    path = (
+        Path(_fastcore_loader.__file__)
+        .resolve()
+        .with_name("_fastcore" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so"))
+    )
+    if not path.is_file():
+        return False, None
+    try:
+        return True, "$ROOT/" + path.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return True, "$EXTERNAL/" + path.name
+
+
+def calendar_cache_count(root: Path) -> int | None:
+    """Count regular JSON files directly in the calendar EOD cache; None means unreadable."""
+    try:
+        with os.scandir(root / "data/spread-history-cache") as entries:
+            return sum(entry.name.endswith(".json") and entry.is_file() for entry in entries)
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        return None
+
+
+def profile_summary(profiler: cProfile.Profile) -> str:
+    """Top 20 cumulative functions, retaining all rows and bounding each line."""
+    stream = io.StringIO()
+    pstats.Stats(profiler, stream=stream).strip_dirs().sort_stats("cumulative").print_stats(20)
+    return "\n".join(line[:240] for line in stream.getvalue().splitlines()) + "\n"
+
+
+def _cpu_seconds(value: str) -> float:
+    days = 0
+    if "-" in value:
+        raw_days, value = value.split("-", 1)
+        days = int(raw_days)
+    parts = [float(part) for part in value.split(":")]
+    if len(parts) not in (2, 3):
+        raise ValueError("unexpected ps time")
+    total = 0.0
+    for part in parts:
+        total = total * 60 + part
+    return total + days * 86400
+
+
+def worker_resources(pids: set[int]) -> dict[str, int | float | bool | None]:
+    if not pids:
+        return {"sampled_workers": 0, "rss_kb": 0, "cpu_lifetime_ms": 0, "complete": True}
+    try:
+        proc = subprocess.run(
+            ["ps", "-o", "pid=,rss=,time=", "-p", ",".join(map(str, sorted(pids)))],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+        rows = [line.split() for line in proc.stdout.splitlines() if line.strip()]
+        found = {int(row[0]) for row in rows}
+        rss = sum(int(row[1]) for row in rows)
+        cpu_ms = round(sum(_cpu_seconds(row[2]) for row in rows) * 1000, 1)
+        return {
+            "sampled_workers": len(found),
+            "rss_kb": rss,
+            "cpu_lifetime_ms": cpu_ms,
+            "complete": found == pids,
+        }
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+        return {"sampled_workers": 0, "rss_kb": None, "cpu_lifetime_ms": None, "complete": False}
+
+
+def pool_snapshot(store: Any, *, resources: bool = False) -> dict[str, Any]:
+    proof = getattr(store, "_proof", None)
+    pool = getattr(proof, "_pool", None)
+    if pool is None:
+        result: dict[str, Any] = {
+            "pool_initialized": False,
+            "worker_slots": 0,
+            "active_pool_workers": 0,
+        }
+        if resources:
+            result["worker_resources"] = worker_resources(set())
+        return result
+    executors = list(getattr(pool, "_worker_slots", ()))
+    default = getattr(pool, "_executor", None)
+    if default is not None:
+        executors.append(default)
+    live: set[int] = set()
+    for executor in executors:
+        # ProcessPoolExecutor exposes no public process census; this is a
+        # best-effort snapshot of its currently registered child processes.
+        processes = getattr(executor, "_processes", None) or {}
+        for child in processes.copy().values():
+            if child.pid is not None and child.is_alive():
+                live.add(child.pid)
+    result = {
+        "pool_initialized": True,
+        "worker_slots": len(executors),
+        "active_pool_workers": len(live),
+    }
+    if resources:
+        result["worker_resources"] = worker_resources(live)
+    return result
+
+
+class WorkerRSSSampler:
+    """Peak observed aggregate pool RSS, not an exact instantaneous maximum."""
+
+    def __init__(self, store: Any, interval: float = 0.1):
+        self.store = store
+        self.interval = interval
+        self.samples = 0
+        self.incomplete = 0
+        self.peak_kb: int | None = None
+        self.max_workers = 0
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True, name="probe-worker-rss")
+
+    def _sample(self) -> None:
+        try:
+            pool = pool_snapshot(self.store, resources=True)
+            census = pool["worker_resources"]
+            if not census["complete"] or census["rss_kb"] is None:
+                self.incomplete += 1
+                return
+            self.samples += 1
+            rss = int(census["rss_kb"])
+            self.peak_kb = max(self.peak_kb if self.peak_kb is not None else 0, rss)
+            self.max_workers = max(self.max_workers, census["sampled_workers"])
+        except (OSError, RuntimeError, KeyError, TypeError, ValueError):
+            self.incomplete += 1
+
+    def _run(self) -> None:
+        while not self.stop.is_set():
+            self._sample()
+            self.stop.wait(self.interval)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "sample_interval_ms": round(self.interval * 1000),
+            "samples": self.samples,
+            "incomplete_samples": self.incomplete,
+            "max_workers_sampled": self.max_workers,
+            "sampler_stopped": not self.thread.is_alive(),
+            "peak_sampled_pool_rss_kb": self.peak_kb,
+        }
+
+
+@contextmanager
+def sample_worker_rss(store: Any, enabled: bool) -> Generator[WorkerRSSSampler | None]:
+    if not enabled:
+        yield None
+        return
+    sampler = WorkerRSSSampler(store)
+    sampler.thread.start()
+    try:
+        yield sampler
+    finally:
+        sampler.stop.set()
+        sampler.thread.join(timeout=3)
+        if not sampler.thread.is_alive():
+            sampler._sample()
 
 
 def health(store: Any, port: int) -> dict[str, Any]:

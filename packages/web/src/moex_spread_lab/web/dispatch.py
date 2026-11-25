@@ -1,33 +1,104 @@
-"""GET/POST dispatch for the loopback server.
+"""GET/POST dispatch for the loopback server, plus the settings and legacy routes.
 
 `dispatch_get` answers API reads and static assets; `dispatch_post` validates the body
-and hands the selection to the settings, proof or legacy route modules.
+and hands the selection to the settings, proof or legacy screener handlers. The
+global-settings/timeframe routes and the legacy S2 pair-screener APIs live here; the
+proof routes stay in `routes_proof` and the loopback diagnostics in `routes_dev`.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
+from moex_spread_lab.core.settings import read_settings, save_settings
+from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof.screener_search import optimize, screen_table
 from moex_spread_lab.proof.web_legacy import ScreenerError
 
 from .routes_dev import health, probe
-from .routes_legacy import LEGACY_POST_ROUTES, handle_get_legacy, handle_post_legacy
 from .routes_proof import (
     LARGE_PROOF_POST_ROUTES,
     PROOF_POST_ROUTES,
     handle_get_proof,
     handle_post_proof,
 )
-from .routes_settings import handle_get_settings, handle_post_settings
 
+LEGACY_POST_ROUTES = frozenset({"/api/run", "/api/screen", "/api/optimize"})
 ALL_POST_ROUTES = (
     frozenset({"/api/settings", "/api/dev/probe"}) | LEGACY_POST_ROUTES | PROOF_POST_ROUTES
 )
 _MAX_BODY = 192 * 1024
 _SMALL_BODY = 8192
+
+
+def handle_get_settings(path: str, store: Any) -> tuple[bool, Any]:
+    """Dispatch GET settings/timeframes routes. Returns ``(handled, payload)``."""
+    if path == "/api/settings":
+        return True, read_settings(store.inputs.root)
+    if path == "/api/timeframes":
+        return True, timeframe_options()
+    return False, None
+
+
+def handle_post_settings(path: str, selection: Any, store: Any) -> tuple[bool, Any]:
+    """Dispatch POST ``/api/settings``. Returns ``(handled, payload)``."""
+    if path == "/api/settings":
+        with store.lock:
+            return True, save_settings(store.inputs.root, selection)
+    return False, None
+
+
+def handle_get_legacy(
+    path: str,
+    store: Any,
+    *,
+    catalog_fn: Callable[..., dict[str, Any]],
+) -> tuple[bool, Any]:
+    """Dispatch GET ``/api/catalog``, ``/api/runs``, and ``/api/searches``."""
+    if path == "/api/catalog":
+        settings = read_settings(store.inputs.root)
+        return True, catalog_fn(
+            store.inputs,
+            initial_capital=settings["initial_capital_rub"],
+            timeframe=settings["timeframe"],
+        )
+    if path == "/api/runs":
+        return True, store.list_runs()
+    if path == "/api/searches":
+        return True, store.list_searches()
+    return False, None
+
+
+def handle_post_legacy(
+    path: str,
+    selection: Any,
+    store: Any,
+    *,
+    build_result_fn: Callable[..., dict[str, Any]],
+) -> tuple[bool, Any]:
+    """Dispatch POST ``/api/run``, ``/api/screen``, and ``/api/optimize``."""
+    if path not in LEGACY_POST_ROUTES:
+        return False, None
+    if path == "/api/run":
+        result = build_result_fn(store.inputs, selection)
+        store.save(result)
+        return True, result
+    active_timeframe = get_timeframe(read_settings(store.inputs.root)["timeframe"])
+    if active_timeframe.intraday:
+        raise ScreenerError(
+            "Пакетный screener пока работает только на 1d; для выбранного интервала используйте pair-proof."
+        )
+    if path == "/api/screen":
+        result = screen_table(store.inputs, selection)
+        store.save_screen(result)
+        return True, result
+    result = optimize(store.inputs, selection)
+    store.save_search(result)
+    return True, result
 
 
 def dispatch_get(handler: Any, store: Any, path: str, catalog_fn: Any) -> None:

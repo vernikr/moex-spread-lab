@@ -13,8 +13,9 @@ work plan; live status is in GitHub Issues and Project #2. Proof semantics
 
 ## 1. Routing surface
 
-`dispatch.py` is the single GET/POST table; route modules decide *what* to answer,
-never *how* to frame it.
+`dispatch.py` is the single GET/POST table and also owns the small settings and
+legacy-screener handlers; route modules decide *what* to answer, never *how* to
+frame it.
 
 | Route | Method | Owner module | Purpose |
 |---|---|---|---|
@@ -22,8 +23,8 @@ never *how* to frame it.
 | `/static/**`, `/vendor/**` | GET | `static_assets.py` | Same-origin assets; the vendored chart bundle is served locally. |
 | `/api/proof/catalog`, `/api/strategies` | GET | `routes_proof.py` | Universe catalog and the discovered `StrategyPlugin` registry. |
 | `/api/proof/run`, `/api/proof/optimize`, `/api/proof/plateau`, `/api/proof/windows` | POST | `routes_proof.py` | Proof run, cohort search, plateau report and window summaries. |
-| `/api/settings`, `/api/timeframes` | GET/POST | `routes_settings.py` | Global research preferences and the timeframe registry. |
-| `/api/catalog`, `/api/runs`, `/api/searches`, `/api/run`, `/api/screen`, `/api/optimize` | GET/POST | `routes_legacy.py` | Legacy S2 screener compatibility APIs; not used by the proof UI. |
+| `/api/settings`, `/api/timeframes` | GET/POST | `dispatch.py` | Global research preferences and the timeframe registry. |
+| `/api/catalog`, `/api/runs`, `/api/searches`, `/api/run`, `/api/screen`, `/api/optimize` | GET/POST | `dispatch.py` | Legacy S2 screener compatibility APIs; not used by the proof UI. |
 | `/api/dev/*` | GET/POST | `routes_dev.py` | Non-persisting diagnostics (health, probe, pool/worker/RSS metrics). |
 
 `LARGE_PROOF_POST_ROUTES` raises the request-body cap for the chart-bearing proof

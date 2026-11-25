@@ -8,7 +8,7 @@ Only trusted offline inputs are accepted.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from datetime import date as date
 from datetime import datetime as datetime
@@ -26,9 +26,8 @@ from . import pair_funding_replay
 def _choose_hook[T](public: T, private: T, original: T) -> T:
     return private if private is not original else public
 
-def _is_runtime_instance(
-    value: object, expected_type: type[object]
-) -> bool:
+
+def _is_runtime_instance(value: object, expected_type: type[object]) -> bool:
     return isinstance(value, expected_type)
 
 
@@ -85,9 +84,7 @@ def _validated_rows(
         or window.near == window.far
         or not is_instance(marks_input, Mapping)
         or not window.rows
-        or _has_non_mapping_rows(
-            window.rows
-        )
+        or _has_non_mapping_rows(window.rows)
     ):
         raise W0Error("Для расчёта требуется корректное дневное окно пары.")
     try:
@@ -115,13 +112,7 @@ def _validated_rows(
             or (row["date"][:10] if len(through) == 10 else row["date"]) <= through
         ]
 
-        analysis_rows = [
-            row
-            for row in prefix
-            if _eligible(
-                row
-            )
-        ]
+        analysis_rows = [row for row in prefix if _eligible(row)]
         if len(analysis_rows) < 2:
             raise ValueError
     except (ValueError, KeyError, TypeError, OverflowError):
@@ -175,14 +166,13 @@ def _priced_rows(
                     "near_open": near_open,
                     "far_open": far_open,
                     "spread": round(spread, 8),
-                    "volume_eligible": _eligible(
-                        raw
-                    ),
+                    "volume_eligible": _eligible(raw),
                 }
             )
     except (TypeError, KeyError, ValueError, OverflowError, ZeroDivisionError):
         raise W0Error("Нет достоверных цен или параметров обеих ног пары.") from None
     return rows, lot
+
 
 _COMPATIBILITY_HOOKS = (_eligible, _has_non_mapping_rows)
 

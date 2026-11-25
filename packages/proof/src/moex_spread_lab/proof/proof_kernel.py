@@ -38,7 +38,6 @@ from .axis import Axis
 from .landscape import AMBER as AMBER
 from .landscape import GREEN as GREEN
 from .landscape import Landscape
-from datetime import date, datetime, time
 
 # `measure_full` reads `math` back through this module, the facade it is given.
 math = _math
@@ -148,6 +147,7 @@ def measure_scalar_train(
         "utility": None if reasons else score,
         **({"reason": " ".join(reasons)} if reasons else {}),
     }
+
 
 # Callable facade types retain the documented monkeypatch boundary.
 _RunId = Callable[[_Obj], str]

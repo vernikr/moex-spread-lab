@@ -14,19 +14,19 @@ import os
 import subprocess
 import tarfile
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import zstandard as zstd
 
 from moex_spread_lab.core.json_types import JsonObject
-from moex_spread_lab.core.w0 import canonical_bytes, sha256_file
+from moex_spread_lab.core.w0 import as_str_dict, canonical_bytes, sha256_file
 
+from . import data_retention as _data_retention
 from .data_inventory import _inspect_file, _policy, build_data_inventory
 from .data_retention import DataRetentionError
-from . import data_retention as _retention_module
 
 SCHEMA = "data-archive-candidates.v1"
 GROUPS = {
@@ -67,6 +67,7 @@ def read_payload_object(path: Path, label: str) -> JsonObject:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise _data_retention.DataRetentionError(f"cannot read {label}: {path}: {exc}") from exc
     return as_str_dict(decoded, label=label, error=_data_retention.DataRetentionError)
+
 
 _safe_data_path, _validate_archive_path, _prune_empty_parents = retention_hooks()
 

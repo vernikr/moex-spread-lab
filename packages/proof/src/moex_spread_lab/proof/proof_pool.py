@@ -22,6 +22,8 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error as W0Error
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError as CarryStrategyError
 
+from . import worker_cohort as _worker_cohort
+from . import worker_window as _worker_window
 from .cohort_scores import (
     CheckCancelled,
     EvalFailure,
@@ -43,13 +45,19 @@ from .proof_kernel import StudyWindow as StudyWindow
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
 from .worker_metrics import submit_worker
 from .worker_metrics import unwrap_worker_result as unwrap_worker_result
+from .cohort_scores import InitResult, ReportRow, SummaryItem, SummaryRows
+from .worker_weight import estimate_weight
 
 window_summaries = _window_summaries
 _original_window_summaries = _window_summaries
 
+
 # Facade hooks resolved by pool_reports at call time.
 def _choose_hook[T](public: T, private: T, original: T) -> T:
     return private if private is not original else public
+
+
+_wc, _ww = (_worker_cohort.__dict__, _worker_window.__dict__)
 
 WORKER_COHORTS = cast(dict[str, dict[int, tuple[Obj, StudyWindow]]], _wc["_WORKER_COHORTS"])
 init_cohort_task = cast(
@@ -177,6 +185,7 @@ def cohort_state(
         "owner_of": owner_of,
         "results": merge_init_results(chunks),
     }
+
 
 _WORKER_COHORTS = WORKER_COHORTS
 _worker_report_cohort = report_cohort_task

@@ -7,12 +7,14 @@ funding carry keeps its mandatory same-day settlement (explicit user decision).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any, cast
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Protocol, cast
 
 import optuna
 
-from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id as _run_id
 from moex_spread_lab.strategies.base import StrategyRegistry
@@ -22,15 +24,23 @@ from . import cohort_prepare_helpers as _cohort_prepare_helpers
 from . import proof_batch as _proof_batch
 from . import proof_kernel as _proof_kernel
 from . import strategy_search_prepare as _strategy_search_prepare
+from .axis import Axis
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import resolve_strategy_registry
 from .trial_budget import budget
 
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 
+
 # Shared type surface and the family allowlist of this leaf (Issue #93).
 def _choose_hook[T](public: T, private: T, original: T) -> T:
     return private if private is not original else public
+
+
+_original_adapter_ids = get_proof_adapter_ids
+_original_calendar_universe = CALENDAR_UNIVERSE
+_family_hook_provider: Callable[[], tuple[Callable[..., frozenset[str]], str]] | None = None
+
 
 def set_family_hook_provider(
     provider: Callable[[], tuple[Callable[..., frozenset[str]], str]],
@@ -199,6 +209,7 @@ def families(
         if match is not None:
             result.append(match.strategy_id)
     return result
+
 
 _Obj = Obj
 _Target = Target

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import fcntl
+import hashlib
+import json
+import os
+import tempfile
+from collections.abc import Generator, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import ExitStack
-from datetime import date
+from contextlib import ExitStack, contextmanager
+from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 from ..iss.catalog import (
     DEFAULT_BOARD,
@@ -16,7 +21,6 @@ from ..iss.catalog import (
     fetch_candle_series,
 )
 from .data_lake import ParquetBarStore
-from typing import Protocol
 from .refresh_merge import (
     REFRESH_SCHEMA,
     DataRefreshError,
@@ -25,6 +29,7 @@ from .refresh_merge import (
     build_merged_payload,
     plan_single_target,
 )
+
 
 class TargetStateProtocol(Protocol):
     @property
@@ -122,6 +127,7 @@ def parse_candle_row(row: object) -> tuple[str, dict[str, Any]] | None:
     if not isinstance(begin, str):
         return None
     return begin, dict(typed_row)
+
 
 _REFRESH_OPTIONS = frozenset(
     {

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import sha256_file
 
@@ -21,8 +22,6 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Protocol
 from .legacy_series import LegacyCandleSeries
 from .parquet_catalog import (
     BAR_DATASET_SCHEMA,
@@ -36,6 +35,7 @@ from .parquet_catalog import (
     verify_dataset_against_legacy,
 )
 from .raw_archive import RawResponseArchive
+
 
 class TableCalls(Protocol):
     """`pyarrow.Table` members consumed by the store, typed over the incomplete stubs."""
@@ -93,6 +93,7 @@ def manifest_records(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         record for item in cast("list[object]", entries) if (record := as_dict(item)) is not None
     ]
+
 
 # Typed import-time bindings for private hooks of other-owned modules.
 _component: Callable[[Any, str], str] = cast(

@@ -102,19 +102,44 @@ def test_whole_suite_workflows_name_every_slow_tier(workflow: str) -> None:
         assert path.name in source, f"{workflow} never names {path.name}"
 
 
+class _QuotaFile:
+    """Stand-in for the cgroup v2 quota file that ``cpu_budget()`` reads."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def read_text(self) -> str:
+        return self._text
+
+
 def test_worker_count_is_cgroup_aware_and_overridable(monkeypatch) -> None:
-    """S4a item 5: the default follows the usable CPU budget, never the host count."""
+    """S4a item 5: the default follows the usable CPU budget, never the host count.
+
+    ``os.sched_getaffinity`` exists on Linux only, and ``cpu_budget()`` guards its call
+    with ``hasattr``; this test has to guard it the same way instead of assuming Linux.
+    Either way the cgroup quota and the explicit override must still bound the budget,
+    so the platform-independent half of the contract is asserted everywhere and the
+    affinity half only where the platform actually provides affinity.
+    """
     from scripts import verify
 
     monkeypatch.delenv("MSL_VERIFY_WORKERS", raising=False)
     assert verify.worker_count() >= 1
     monkeypatch.setattr(verify.os, "cpu_count", lambda: 32)
-    monkeypatch.setattr(verify.os, "sched_getaffinity", lambda _pid: set(range(2)))
-    assert verify.worker_count() == 2, "affinity must cap the host count"
+    monkeypatch.setattr(verify, "Path", lambda _path: _QuotaFile("max 100000"))  # no quota
+    if hasattr(verify.os, "sched_getaffinity"):
+        monkeypatch.setattr(verify.os, "sched_getaffinity", lambda _pid: set(range(2)))
+        assert verify.worker_count() == 2, "affinity must cap the host count"
+    else:
+        assert verify.worker_count() == 32, "without affinity the host count is the budget"
+
+    budget = verify.worker_count()
+    monkeypatch.setattr(verify, "Path", lambda _path: _QuotaFile("300000 100000"))
+    assert verify.worker_count() == min(budget, 3), "a cgroup quota bounds the budget anywhere"
     monkeypatch.setenv("MSL_VERIFY_WORKERS", "5")
     assert verify.worker_count() == 5
     monkeypatch.setenv("MSL_VERIFY_WORKERS", "nonsense")
-    assert verify.worker_count() == 2
+    assert verify.worker_count() == min(budget, 3), "a non-numeric override keeps the budget"
 
 
 def test_shared_builders_live_outside_the_test_modules() -> None:

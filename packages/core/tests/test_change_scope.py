@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from scripts import change_scope, docs_scan, verify_record
+from scripts import change_scope, docs_scan, verify
 
 from test_architecture_dag import ALLOWED_LAYER_TARGETS
 
@@ -330,5 +330,64 @@ def test_credential_scanner_does_not_match_sk_substrings_in_normal_prose(tmp_pat
     findings, _ = docs_scan.scan_docs_files([str(prose)])
 
     assert findings == []
-    assert verify_record.sanitize("task-to-verified-main") == "task-to-verified-main"
-    assert verify_record.sanitize("sk-1234567890abcdef") == "sk-<redacted>"
+    assert verify.sanitize("task-to-verified-main") == "task-to-verified-main"
+    assert verify.sanitize("sk-1234567890abcdef") == "sk-<redacted>"
+
+
+# Router regression table (formerly the shadow scenario catalogue): each row is a
+# change set -> (profile, legs, testmon). "+path" marks a new file.
+_WEB, _PROOF = "packages/web/src/moex_spread_lab/web", "packages/proof/src/moex_spread_lab/proof"
+_ACCT = "packages/accounting/src/moex_spread_lab/accounting/ledger.py"
+_CORE = "packages/core/src/moex_spread_lab/core"
+_DATA = "packages/data/src/moex_spread_lab/data/cli.py"
+_STRAT = "packages/strategies/src/moex_spread_lab/strategies/funding_carry/engine.py"
+_W, _PW, _SPW = ("web",), ("proof", "web"), ("strategies", "proof", "web")
+_APW, _DPW = ("accounting", "strategies", "proof", "web"), ("data", "strategies", "proof", "web")
+ROUTING_TABLE = [
+    (["+docs/development/shadow-test.md"], "docs", (), False),
+    (["+docs/guides/shadow.rst", "README.md", "AGENTS.md", "+docs/shadow.md"], "docs", (), False),
+    ([f"{_WEB}/server.py"], "packages", _W, True),
+    (["packages/web/tests/test_screener_app.py"], "packages", _W, True),
+    ([f"{_PROOF}/cohort_models.py"], "packages", _PW, True),
+    ([_STRAT], "packages", _SPW, True),
+    ([_ACCT], "packages", _APW, True),
+    ([_DATA], "packages", _DPW, True),
+    ([f"{_CORE}/contracts.py"], "packages", ALL_SIX, True),
+    ([f"{_WEB}/static/js/app.js"], "packages", _W, False),
+    ([f"{_WEB}/static/css/layout.css"], "packages", _W, False),
+    ([f"{_WEB}/static/index.html"], "packages", _W, False),
+    (["packages/proof/manifest.json"], "packages", _PW, False),
+    (["+packages/web/README.md"], "packages", _W, False),
+    ([f"+{_WEB}/shadow_new.py"], "packages", _W, False),
+    ([f"+{_CORE}/shadow_new.py"], "packages", ALL_SIX, False),
+    ([f"{_WEB}/server.py", _ACCT], "packages", _APW, True),
+    ([f"{_PROOF}/cohort_models.py", f"{_WEB}/server.py"], "packages", _PW, True),
+    ([f"{_CORE}/contracts.py", _DATA], "packages", ALL_SIX, True),
+    ([_STRAT, _DATA], "packages", _DPW, True),
+    (["+docs/shadow.md", f"{_WEB}/server.py"], "packages", _W, True),
+    *(
+        ([path], "full", ALL_SIX, False)
+        for path in (
+            "pyproject.toml",
+            ".github/workflows/ci.yml",
+            "scripts/change_scope.py",
+            "fixtures/research/offline.json",
+            "tests/proof_fixtures.py",
+            "config/code-health-baseline.json",
+            ".basedpyright/baseline.json",
+            "src/moex_spread_lab/cli.py",
+            ".clang-tidy",
+            f"{_CORE}/_fastcore.c",
+        )
+    ),
+    (["+docs/shadow.md", "pyproject.toml"], "full", ALL_SIX, False),
+]
+
+
+@pytest.mark.parametrize(("changes", "profile", "legs", "testmon"), ROUTING_TABLE)
+def test_routing_regression_table(
+    changes: list[str], profile: str, legs: tuple, testmon: bool
+) -> None:
+    paths = [change.removeprefix("+") for change in changes]
+    decision = _decide(paths, [change[1:] for change in changes if change.startswith("+")])
+    assert (decision.profile, decision.packages, decision.testmon) == (profile, legs, testmon)

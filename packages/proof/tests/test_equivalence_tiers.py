@@ -104,17 +104,17 @@ def test_whole_suite_workflows_name_every_slow_tier(workflow: str) -> None:
 
 def test_worker_count_is_cgroup_aware_and_overridable(monkeypatch) -> None:
     """S4a item 5: the default follows the usable CPU budget, never the host count."""
-    from scripts import verify_workers
+    from scripts import verify
 
     monkeypatch.delenv("MSL_VERIFY_WORKERS", raising=False)
-    assert verify_workers.worker_count() >= 1
-    monkeypatch.setattr(verify_workers.os, "cpu_count", lambda: 32)
-    monkeypatch.setattr(verify_workers.os, "sched_getaffinity", lambda _pid: set(range(2)))
-    assert verify_workers.worker_count() == 2, "affinity must cap the host count"
+    assert verify.worker_count() >= 1
+    monkeypatch.setattr(verify.os, "cpu_count", lambda: 32)
+    monkeypatch.setattr(verify.os, "sched_getaffinity", lambda _pid: set(range(2)))
+    assert verify.worker_count() == 2, "affinity must cap the host count"
     monkeypatch.setenv("MSL_VERIFY_WORKERS", "5")
-    assert verify_workers.worker_count() == 5
+    assert verify.worker_count() == 5
     monkeypatch.setenv("MSL_VERIFY_WORKERS", "nonsense")
-    assert verify_workers.worker_count() == 2
+    assert verify.worker_count() == 2
 
 
 def test_shared_builders_live_outside_the_test_modules() -> None:

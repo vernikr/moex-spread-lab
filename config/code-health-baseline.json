@@ -77,7 +77,6 @@
     "packages/proof/src/moex_spread_lab/proof/web_legacy.py",
     "packages/strategies/src/moex_spread_lab/strategies/calendar/_notes_p72_packages_strategies_src_moex_spread_lab_strategies_calendar_proof_payload.py",
     "packages/web/src/moex_spread_lab/web/routes_settings.py",
-    "scripts/verify_workers.py",
     "scripts/vulture_whitelist.py"
   ],
   "packages": {

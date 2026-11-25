@@ -1,34 +1,45 @@
 #!/usr/bin/env python3
 """Documented launcher for agent task verification (plans S2 item 1, S4a item 1).
 
-Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-only
-scan or router-scoped legs with advisory testmon and the always-run set; full
-fallback when no path matches), and ``full``/``pre-push`` (full health gate and
-whole suite, including every parity tier). stdlib-only launcher; it does not
-replace the health ratchet. Steps run through ``scripts/verify_record.py``.
-Browser smokes are run separately by the scheduled ``scripts/run_browser_smokes.py``
-job and are reported as not run here. pytest uses ``-n <cpu_count> --dist loadfile
--q --tb=short`` with ``MOEX_OFFLINE_ONLY=1``; ``TESTMON_DATAFILE`` defaults to
+Profiles: ``quick`` (``check_health.sh --changed``), ``affected`` (docs-only scan
+or router-scoped legs with advisory testmon and the always-run set; full fallback
+when no path matches) and ``full``/``pre-push`` (full health gate and the whole
+suite, every parity tier). Browser smokes run in the scheduled
+``scripts/run_browser_smokes.py`` job and are reported as not run here. pytest uses
+``-n <workers> --dist loadfile -q --tb=short``; ``TESTMON_DATAFILE`` defaults to
 ``<repo>/.testmondata`` (gitignored).
-``TESTMON_DATAFILE`` defaults to ``<repo>/.testmondata`` (gitignored).
+
+Every step runs with ``MOEX_OFFLINE_ONLY=1`` and ``UV_NO_SYNC=1`` and appends one
+sanitized JSON line (``msl.verification-record/1``) to ``reports/perf/records.jsonl``
+(gitignored; override with ``--records`` or ``MSL_VERIFICATION_RECORDS``). Home and
+repository paths and credential-shaped tokens are redacted; raw output never enters
+a record.
+
+Workers (S4a item 5): the A/B on a pinned 2-vCPU runner measured ``-n 0`` 73.5 s,
+``-n 2`` 42.5 s, ``-n 3`` 37.5 s and ``-n 4`` 37.0 s, so the default is the usable CPU
+budget (affinity and cgroup quota aware); ``MSL_VERIFY_WORKERS`` overrides it.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
+import platform
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts import change_scope  # noqa: E402  (path inserted above)
-from scripts.verify_workers import worker_count  # noqa: E402
 
 EQUIVALENCE_TIERS = (
     "packages/proof/tests/test_perf_equivalence.py",
@@ -40,96 +51,173 @@ EQUIVALENCE_TIERS = (
 FASTCORE_PARITY = "packages/proof/tests/test_fastcore_parity.py"
 PARITY_TRIGGER_PACKAGES = frozenset({"core", "proof", "accounting"})
 PROFILES = ("quick", "affected", "full", "pre-push")
-TIMEOUT_CODES = frozenset({124, 137, 143})
 BROWSER_SKIPPED = "browser smokes (separate scheduled job; not run by verify profiles)"
 ALWAYS_RUN_RE = re.compile(
     r"(subprocess|proof_pool|moex_spread_lab[._]cli|cli\.main|moex-spread-lab)"
 )
+DEFAULT_RECORDS = ROOT / "reports" / "perf" / "records.jsonl"
+HEALTH_CMD = ["bash", "scripts/check_health.sh"]
+_REDACTIONS = (
+    (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "ghp_<redacted>"),
+    (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "github_pat_<redacted>"),
+    (re.compile(r"Bearer\s+[A-Za-z0-9._~+/-]+=*", re.I), "Bearer <redacted>"),
+    (re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{10,}"), "sk-<redacted>"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "AKIA<redacted>"),
+    (
+        re.compile(r"((?:token|secret|password|api[_-]?key)\W{1,4})[^\s,;&]{8,}", re.I),
+        r"\1<redacted>",
+    ),
+)
+STEP_TASK_CLASS = {
+    "docs-scan": "docs-check",
+    "health-changed": "changed-gate",
+    "health-full": "full-gate",
+    "architecture": "architecture-gate",
+    "always-run": "always-run-suite",
+    "pytest-affected": "affected-suite",
+    "suite-full": "full-suite",
+}
+
+
+def cpu_budget() -> int:
+    """CPUs this process may actually use: host count, affinity, then cgroup quota."""
+    count = os.cpu_count() or 1
+    if hasattr(os, "sched_getaffinity"):
+        count = min(count, len(os.sched_getaffinity(0)))
+    try:
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()[:2]
+        if quota != "max":
+            count = min(count, max(1, int(quota) // int(period)))
+    except (OSError, ValueError):
+        pass
+    return max(1, count)
+
+
+def worker_count() -> int:
+    """``MSL_VERIFY_WORKERS`` wins when it is a positive integer, else the CPU budget."""
+    override = os.environ.get("MSL_VERIFY_WORKERS", "")
+    return int(override) if override.isdigit() and int(override) > 0 else cpu_budget()
+
+
+def sanitize(text: str) -> str:
+    text = text.replace(str(ROOT), "<ROOT>").replace(str(Path.home()), "<HOME>")
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def python_cmd() -> list[str]:
     venv_python = ROOT / ".venv" / "bin" / "python"
-    if venv_python.is_file():
-        return [str(venv_python)]
-    return ["uv", "run", "--no-sync", "python"]
-
-
-HEALTH_CMD = ["bash", "scripts/check_health.sh"]
-STEP_META = {
-    "docs-scan": ("docs-check", "docs-scan"),
-    "health-changed": ("changed-gate", "check_health.sh"),
-    "health-full": ("full-gate", "check_health.sh"),
-    "architecture": ("architecture-gate", "architecture_gate.py"),
-    "always-run": ("always-run-suite", "pytest"),
-    "pytest-affected": ("affected-suite", "pytest"),
-    "suite-full": ("full-suite", "pytest"),
-}
+    return [str(venv_python)] if venv_python.is_file() else ["uv", "run", "--no-sync", "python"]
 
 
 @dataclass(frozen=True)
 class Step:
     key: str
-    task_class: str
-    check: str
     reason: str
     command: list[str]
 
 
-def step(key: str, reason: str, command: list[str]) -> Step:
-    task_class, check = STEP_META[key]
-    return Step(key, task_class, check, reason, command)
+def _git(*args: str) -> str:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True, timeout=120
+        ).stdout
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return ""
 
 
-@dataclass
-class StepResult:
-    key: str
-    status: str
-    secs: float
+def _fingerprint(head: str) -> str:
+    digest = hashlib.sha256(head.encode())
+    digest.update(_git("diff", "--binary", "HEAD").encode(errors="surrogateescape"))
+    for rel in sorted(
+        filter(None, _git("ls-files", "--others", "--exclude-standard", "-z").split("\0"))
+    ):
+        digest.update(rel.encode())
+        try:
+            digest.update((ROOT / rel).read_bytes())
+        except OSError:
+            digest.update(b"<unreadable>")
+    return "sha256:" + digest.hexdigest()
 
 
-def _status_of(returncode: int) -> str:
-    """Exit code -> reported status (124/137/143 are the runner's timeout codes)."""
-    if returncode in TIMEOUT_CODES:
+def _status_of(returncode: int, detail: dict[str, str] | None = None) -> str:
+    """Exit code (or check_health detail) -> status; 124/137/143 are timeouts."""
+    statuses = list((detail or {}).values())
+    for wanted in ("failed", "timeout", "unavailable"):
+        if wanted in statuses:
+            return wanted
+    if returncode in (124, 137, 143):
         return "timeout"
     return {0: "passed", 127: "unavailable"}.get(returncode, "failed")
 
 
-def run_step(*, step: Step, records: str | None, dry_run: bool) -> StepResult:
+def _record(step: Step, started: datetime, wall: float, rc: int, detail: dict | None) -> dict:
+    head = _git("rev-parse", "HEAD").strip() or "unknown"
+    workers = worker_count() if "pytest" in step.command else os.cpu_count() or 1
+    return {
+        "schema": "msl.verification-record/1",
+        "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "task_class": STEP_TASK_CLASS[step.key],
+        "phase": "S2",
+        "base_sha": _git("merge-base", "HEAD", "origin/main").strip() or None,
+        "head_sha": head,
+        "candidate_fingerprint": _fingerprint(head),
+        "selected_checks": [{"name": step.key, "reason": sanitize(step.reason)}],
+        "runner": {
+            "platform": sys.platform,
+            "machine": platform.machine(),
+            "cpu_count": os.cpu_count() or 1,
+            "python": platform.python_version(),
+        },
+        "workers": workers,
+        "offline_only": True,
+        "durations": {"call_s": round(wall, 3)},
+        "outcome": _status_of(rc, detail),
+        "phase_started": started.isoformat(timespec="seconds"),
+        "phase_finished": datetime.now(UTC).isoformat(timespec="seconds"),
+        "command": [sanitize(item) for item in step.command],
+        "checks_detail": detail,
+    }
+
+
+def run_step(step: Step, records: Path, dry_run: bool) -> tuple[str, float]:
     if dry_run:
         print(f"dry-run [{step.key}]: {' '.join(step.command)}")
-        return StepResult(step.key, "not run", 0.0)
-    started = time.monotonic()
-    env = os.environ.copy()
-    if records:
-        env["MSL_VERIFICATION_RECORDS"] = records
-    label = f"{step.check}:{step.reason}"
-    cmd = [
-        *python_cmd(),
-        str(ROOT / "scripts" / "verify_record.py"),
-        "--task-class",
-        step.task_class,
-        "--phase",
-        "S2",
-        "--check",
-        label,
-        *(["--records", records] if records else []),
-        "--",
-        *step.command,
-    ]
-    try:
-        rc = subprocess.run(cmd, cwd=ROOT, env=env, check=False).returncode
-    except OSError as exc:
-        print(f"verify: cannot launch {step.check}: {exc}", file=sys.stderr)
-        rc = 127
-    return StepResult(step.key, _status_of(rc), time.monotonic() - started)
+        return "not run", 0.0
+    started, t0 = datetime.now(UTC), time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="msl-verify-") as tmp:
+        status_file = Path(tmp) / "health.json"
+        env = {
+            **os.environ,
+            "MOEX_OFFLINE_ONLY": "1",
+            "UV_NO_SYNC": "1",
+            "MSL_HEALTH_STATUS_FILE": str(status_file),
+        }
+        try:
+            rc = subprocess.run(step.command, cwd=ROOT, env=env, check=False).returncode
+        except OSError as exc:
+            print(f"verify: cannot launch {step.key}: {exc}", file=sys.stderr)
+            rc = 127
+        try:
+            detail = {
+                str(k): str(v) for k, v in json.loads(status_file.read_text())["checks"].items()
+            }
+        except (OSError, ValueError, KeyError, AttributeError):
+            detail = None
+    wall = time.monotonic() - t0
+    record = _record(step, started, wall, rc, detail)
+    records.parent.mkdir(parents=True, exist_ok=True)
+    with records.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+    shown = records.relative_to(ROOT) if records.is_relative_to(ROOT) else sanitize(str(records))
+    print(f"verify-record: outcome={record['outcome']} wall={wall:.2f}s record={shown}")
+    return record["outcome"], wall
 
 
 def pytest_cmd(extra: list[str], marker: str = "not slow_equiv") -> list[str]:
-    """pytest command with an explicit marker selection.
-
-    ``pyproject.toml`` deselects ``slow_equiv`` (plan S4a), so ``marker=""`` must reach
-    pytest as ``-m ""``; omitting the flag lets ``addopts`` drop parity tests silently.
-    """
+    """pytest with an explicit marker: ``marker=""`` must reach pytest as ``-m ""``,
+    or ``addopts`` silently drops the slow_equiv parity tier (plan S4a)."""
     flags = ["-m", "pytest", "-m", marker, "-n", str(worker_count()), "--dist", "loadfile"]
     return [*python_cmd(), *flags, "-q", "--tb=short", *extra]
 
@@ -140,21 +228,10 @@ def always_run_files(legs: list[str]) -> list[str]:
     for leg in legs:
         tests_dir = ROOT / "packages" / leg / "tests"
         for file in sorted(tests_dir.rglob("test_*.py")) if tests_dir.is_dir() else ():
-            if "browser" in file.relative_to(tests_dir).parts:
-                continue
             text = file.read_text(encoding="utf-8", errors="ignore")
-            if ALWAYS_RUN_RE.search(text):
+            if "browser" not in file.relative_to(tests_dir).parts and ALWAYS_RUN_RE.search(text):
                 files.append(str(file.relative_to(ROOT)))
     return files
-
-
-def plan_affected(base: str) -> tuple[change_scope.ScopeDecision, list[str]]:
-    try:
-        paths, nod = change_scope.local_change_set(base)
-    except RuntimeError as exc:
-        print(f"verify: {exc}; falling back to full profile")
-        paths, nod = ["__router_error__"], set()
-    return change_scope.decide_paths(paths, new_or_deleted=nod), paths
 
 
 def _testmon_available() -> bool:
@@ -167,65 +244,49 @@ def _testmon_available() -> bool:
     return probe.returncode == 0
 
 
-def _affected_steps(
-    base: str,
-) -> tuple[list[Step], list[str], str]:
-    decision, paths = plan_affected(base)
-    touched = change_scope.touched_packages(paths)
-    legs = list(decision.packages)
-    os.environ["TESTMON_DATAFILE"] = os.environ.get("TESTMON_DATAFILE", str(ROOT / ".testmondata"))
-    skipped = [BROWSER_SKIPPED]
+def _docs_steps(paths: list[str]) -> tuple[list[Step], list[str], str]:
+    docs = [p for p in paths if change_scope.is_docs_path(p)]
+    reason = (
+        f"docs-only change ({len(docs)} file(s)): whitespace, conflict markers, credential tokens"
+    )
+    skipped = ["check_health.sh", "pytest", "architecture gate"]
+    steps = [Step("docs-scan", reason, [*python_cmd(), "scripts/docs_scan.py", *docs])]
+    return steps, [BROWSER_SKIPPED, *(f"{name} (docs-only)" for name in skipped)], "affected/docs"
 
+
+def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
+    try:
+        paths, nod = change_scope.local_change_set(base)
+    except RuntimeError as exc:
+        print(f"verify: {exc}; falling back to full profile")
+        paths, nod = ["__router_error__"], set()
+    decision = change_scope.decide_paths(paths, new_or_deleted=nod)
     if decision.profile == "docs":
-        docs_changed = [p for p in paths if change_scope.is_docs_path(p)]
-        steps = [
-            step(
-                "docs-scan",
-                (
-                    f"docs-only change ({len(docs_changed)} file(s)): whitespace, "
-                    "conflict markers, credential tokens"
-                ),
-                [*python_cmd(), "scripts/docs_scan.py", *docs_changed],
-            )
-        ]
-        return (
-            steps,
-            [
-                *skipped,
-                "check_health.sh (docs-only)",
-                "pytest (docs-only)",
-                "architecture gate (docs-only)",
-            ],
-            "affected/docs",
-        )
-
+        return _docs_steps(paths)
     if decision.profile == "full":
         print(
             f"verify: no scoped path applies — falling back to full ({'; '.join(decision.reasons)})"
         )
         return build_steps("full", base)
-
-    always = always_run_files(legs)
-    parity_triggered = bool(PARITY_TRIGGER_PACKAGES.intersection(touched))
+    os.environ.setdefault("TESTMON_DATAFILE", str(ROOT / ".testmondata"))
+    legs = list(decision.packages)
+    triggers = sorted(PARITY_TRIGGER_PACKAGES.intersection(change_scope.touched_packages(paths)))
     parity = [rel for rel in (*EQUIVALENCE_TIERS, FASTCORE_PARITY) if (ROOT / rel).is_file()]
-    triggered_parity: list[str] = parity if parity_triggered else []
-    always_files: list[str] = list(dict.fromkeys([*always, *triggered_parity]))
-    browser_dirs = [
+    always = always_run_files(legs)
+    always_files: list[str] = list(dict.fromkeys([*always, *(parity if triggers else [])]))
+    browser = [
         f"packages/{leg}/tests/browser"
         for leg in legs
-        if (ROOT / "packages" / leg / "tests" / "browser").is_dir()
+        if (ROOT / f"packages/{leg}/tests/browser").is_dir()
     ]
-    ignore_args: list[str] = [
-        f"--ignore={rel}" for rel in dict.fromkeys([*always, *parity, *browser_dirs])
-    ]
-
+    ignores = [f"--ignore={rel}" for rel in dict.fromkeys([*always, *parity, *browser])]
     steps = [
-        step(
+        Step(
             "health-changed",
             f"affected profile (--changed --base {base})",
             [*HEALTH_CMD, "--changed", "--base", base],
         ),
-        step(
+        Step(
             "architecture",
             "affected profile always runs the architecture gate",
             [*python_cmd(), "scripts/architecture_gate.py"],
@@ -233,78 +294,71 @@ def _affected_steps(
     ]
     if always_files:
         trigger = (
-            "perf-equivalence/fastcore-parity triggered by "
-            + ",".join(sorted(PARITY_TRIGGER_PACKAGES.intersection(touched)))
-            + "; "
-            if parity_triggered
+            f"perf-equivalence/fastcore-parity triggered by {','.join(triggers)}; "
+            if triggers
             else ""
         )
-        steps.append(
-            step(
-                "always-run",
-                f"subprocess/CLI/proof_pool and {trigger}{len(always_files)} file(s), testmon disabled",
-                pytest_cmd(["-p", "no:testmon", *always_files]),
-            )
+        reason = (
+            f"subprocess/CLI/proof_pool and {trigger}{len(always_files)} file(s), testmon disabled"
         )
+        steps.append(Step("always-run", reason, pytest_cmd(["-p", "no:testmon", *always_files])))
     leg_dirs = [f"packages/{leg}/tests" for leg in legs]
     if decision.testmon and _testmon_available():
+        reason = f"affected (advisory) selection over legs: {','.join(legs)}"
         steps.append(
-            step(
-                "pytest-affected",
-                f"affected (advisory) selection over legs: {','.join(legs)}",
-                pytest_cmd(["--testmon", *leg_dirs, *ignore_args]),
-            )
+            Step("pytest-affected", reason, pytest_cmd(["--testmon", *leg_dirs, *ignores]))
         )
     else:
-        if decision.testmon:
-            print("verify: pytest-testmon not importable; legs run WITHOUT deselection")
-        else:
-            print(f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full")
+        why = "pytest-testmon not importable; legs run WITHOUT deselection"
+        print(
+            f"verify: {why}"
+            if decision.testmon
+            else f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full"
+        )
         steps.append(
-            step(
+            Step(
                 "pytest-affected",
                 f"full legs (no deselection): {','.join(legs)}",
                 pytest_cmd(leg_dirs, marker=""),
             )
         )
-    skipped += ["vulture (full gate only)", "full suite (use --profile full)", *decision.skipped]
+    skipped = [
+        BROWSER_SKIPPED,
+        "vulture (full gate only)",
+        "full suite (use --profile full)",
+        *decision.skipped,
+    ]
     return steps, skipped, "affected"
 
 
 def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
     """Return ``(steps, skipped, label)`` for a profile (no execution)."""
     if profile == "quick":
+        steps = [
+            Step(
+                "health-changed",
+                f"quick profile (--changed --base {base})",
+                [*HEALTH_CMD, "--changed", "--base", base],
+            )
+        ]
         return (
-            [
-                step(
-                    "health-changed",
-                    f"quick profile (--changed --base {base})",
-                    [*HEALTH_CMD, "--changed", "--base", base],
-                )
-            ],
-            [
-                BROWSER_SKIPPED,
-                "pytest (quick profile)",
-                "vulture (full gate only)",
-            ],
+            steps,
+            [BROWSER_SKIPPED, "pytest (quick profile)", "vulture (full gate only)"],
             "quick",
         )
     if profile in ("pre-push", "full"):
+        steps = [
+            Step("health-full", f"{profile} profile (full gate)", list(HEALTH_CMD)),
+            Step(
+                "suite-full",
+                f"{profile}: whole suite, every parity tier (no deselection)",
+                pytest_cmd([], marker=""),
+            ),
+        ]
         extra = (
             ["testmon deselection (never on the pre-push path)"] if profile == "pre-push" else []
         )
-        return (
-            [
-                step("health-full", f"{profile} profile (full gate)", list(HEALTH_CMD)),
-                step(
-                    "suite-full",
-                    f"{profile}: whole suite, every parity tier (no deselection)",
-                    pytest_cmd([], marker=""),
-                ),
-            ],
-            [BROWSER_SKIPPED, *extra],
-            profile,
-        )
+        return steps, [BROWSER_SKIPPED, *extra], profile
     return _affected_steps(base)
 
 
@@ -315,29 +369,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--records", default=None, help="JSONL path for measurement records")
     parser.add_argument("--dry-run", action="store_true", help="print steps, run nothing")
     args = parser.parse_args(argv)
-
-    if args.records:
-        os.environ["MSL_VERIFICATION_RECORDS"] = args.records
+    records = Path(args.records or os.environ.get("MSL_VERIFICATION_RECORDS") or DEFAULT_RECORDS)
     started = time.monotonic()
     steps, skipped, label = build_steps(args.profile, args.base)
-    results = [run_step(step=step, records=args.records, dry_run=args.dry_run) for step in steps]
-    wall = time.monotonic() - started
-
-    statuses = {result.status for result in results}
+    results = [(step.key, *run_step(step, records, args.dry_run)) for step in steps]
+    statuses = {status for _, status, _ in results}
     if statuses & {"failed", "timeout"}:
         overall, rc = "FAILED", 1
     elif "unavailable" in statuses:
         overall, rc = "UNAVAILABLE", 2
     else:
         overall, rc = "PASSED", 0
-
-    advisory = label.startswith("affected")
-    print()
-    print(f"verify ({label}): {overall} in {wall:.1f}s")
-    if advisory:
+    print(f"\nverify ({label}): {overall} in {time.monotonic() - started:.1f}s")
+    if label.startswith("affected"):
         print("note: affected is advisory, NOT full verification")
-    for result in results:
-        print(f"  {result.status:<12} {result.key:<16} {result.secs:.1f}s")
+    for key, status, secs in results:
+        print(f"  {status:<12} {key:<16} {secs:.1f}s")
     if not args.dry_run and skipped:
         print(f"skipped: {'; '.join(dict.fromkeys(skipped))}")
     return rc

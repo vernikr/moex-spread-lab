@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .changed_files import changed_paths
+    from .change_scope import changed_paths
     from .code_health_gate_common import (
         BASELINE_PATH,
         POLICY,
@@ -38,7 +38,7 @@ if __package__:
         _updated_baseline,
     )
 else:
-    from changed_files import changed_paths
+    from change_scope import changed_paths
     from code_health_gate_common import (
         BASELINE_PATH,
         POLICY,

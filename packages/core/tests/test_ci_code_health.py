@@ -6,25 +6,27 @@ import json
 import sqlite3
 from pathlib import Path
 
+from scripts import change_scope
 from scripts import render_code_health_digest as digest
-from scripts import should_run_c_tier2 as tier2
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_matches_c_tier2_filters_c_and_python_paths() -> None:
-    assert tier2.matches_c_tier2(["packages/core/src/moex_spread_lab/core/_fastcore.c"])
-    assert tier2.matches_c_tier2(["packages/core/src/moex_spread_lab/core/_fastcore_loader.py"])
-    assert tier2.matches_c_tier2([".clang-tidy"])
-    assert tier2.matches_c_tier2(["scripts/run_sanitized_pytest.py"])
+    assert change_scope.matches_c_tier2(["packages/core/src/moex_spread_lab/core/_fastcore.c"])
+    assert change_scope.matches_c_tier2(
+        ["packages/core/src/moex_spread_lab/core/_fastcore_loader.py"]
+    )
+    assert change_scope.matches_c_tier2([".clang-tidy"])
+    assert change_scope.matches_c_tier2(["scripts/run_sanitized_pytest.py"])
     for tier in (
         "test_perf_equivalence_pair.py",
         "test_perf_equivalence_pool.py",
         "test_perf_equivalence_stream.py",
         "test_perf_equivalence_full.py",
     ):
-        assert tier2.matches_c_tier2([f"packages/proof/tests/{tier}"])
-    assert not tier2.matches_c_tier2(
+        assert change_scope.matches_c_tier2([f"packages/proof/tests/{tier}"])
+    assert not change_scope.matches_c_tier2(
         [
             "packages/web/src/moex_spread_lab/web/server.py",
             "docs/development/ci.md",
@@ -33,14 +35,10 @@ def test_matches_c_tier2_filters_c_and_python_paths() -> None:
 
 
 def test_decide_tier2_handles_schedule_and_missing_base(tmp_path: Path) -> None:
-    run_sched, reason_sched = tier2.decide_tier2(event_name="schedule", root=tmp_path)
-    assert run_sched is True
-    assert "schedule" in reason_sched
-
-    run_null, _ = tier2.decide_tier2(
-        event_name="push", base_sha="0" * 40, head_sha="HEAD", root=tmp_path
-    )
-    assert run_null is True
+    scheduled = change_scope.decide_ci("schedule", root=tmp_path)
+    assert scheduled.run_tier2 is True
+    assert "schedule" in scheduled.reasons[0]
+    assert change_scope.decide_ci("push", "0" * 40, "HEAD", tmp_path).run_tier2 is True
 
 
 def test_render_code_health_digest_produces_markdown_tables(tmp_path: Path) -> None:
@@ -143,7 +141,8 @@ def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
 
     assert "code-health:" in ci_yml
     assert "./scripts/check_health.sh" in ci_yml
-    assert "scripts/should_run_c_tier2.py" in ci_yml
+    assert ci_yml.count("python3 scripts/change_scope.py") == 2  # scope job + Tier 2 step
+    assert "steps.tier2.outputs.run_tier2 == 'true'" in ci_yml
     assert "scripts/run_sanitized_pytest.py" in ci_yml
     # S2 scoped CI: path router gates the package matrix and perf-equivalence;
     # ci-ok gives one stable required-check name (Agent Performance Issue #19, S2).

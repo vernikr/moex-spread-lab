@@ -130,7 +130,7 @@ if "Work Kind" not in fields:
           {name: "docs", color: GRAY, description: "Documentation, guides, or governance text"},
           {name: "refactor", color: BLUE, description: "Behavior-preserving restructuring or code health"},
           {name: "chore", color: ORANGE, description: "Maintenance, tooling, workflow, or process work"},
-          {name: "perf", color: RED, description: "Code/runtime performance improvement"},
+          {name: "perf", color: RED, description: "Code/runtime performance, disk-space, or memory optimization"},
           {name: "test", color: PINK, description: "Tests, verification coverage, or test infrastructure"},
           {name: "research", color: PURPLE, description: "Research, audit, investigation, or evidence gathering"},
           {name: "plan", color: BLUE, description: "Planning, decomposition, scoping, or workstream design"},

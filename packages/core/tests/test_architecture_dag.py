@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import ast
 import re
+import tempfile
 import unittest
 from functools import lru_cache
 from pathlib import Path
 
-from architecture_layers import check_package_test_layers, derive_layer
+from architecture_layers import (
+    _ROOT_SHIM_LAYERS,
+    _optional_compat_aliases,
+    check_package_test_layers,
+    check_test_file_layers,
+    derive_layer,
+    expand_compat_candidates,
+    package_head_layers,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UMBRELLA_DIR = REPO_ROOT / "src" / "moex_spread_lab"
@@ -34,11 +43,13 @@ def _module_key(pkg_root: Path, file_path: Path) -> str | None:
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
-def _discover_modules() -> dict[str, Path]:
+def _discover_modules(repo_root: Path = REPO_ROOT) -> dict[str, Path]:
     discovered: dict[str, Path] = {}
+    umbrella_dir = repo_root / "src" / "moex_spread_lab"
+    packages_dir = repo_root / "packages"
     roots = [
-        UMBRELLA_DIR,
-        *(sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab")) if PACKAGES_DIR.is_dir() else ()),
+        *([umbrella_dir] if umbrella_dir.is_dir() else []),
+        *(sorted(packages_dir.glob("*/src/moex_spread_lab")) if packages_dir.is_dir() else ()),
     ]
     for root in roots:
         for path in sorted(root.rglob("*.py")):
@@ -47,11 +58,17 @@ def _discover_modules() -> dict[str, Path]:
     return discovered
 
 
+def _layer_assignments(modules: dict[str, Path], repo_root: Path = REPO_ROOT) -> dict[str, str]:
+    return {
+        key: layer
+        for key in modules
+        if (layer := derive_layer(key, repo_root=repo_root)) is not None
+    }
+
+
 # Live mapping: filesystem-derived (see architecture_layers.derive_layer). Splitting
 # a module never requires editing this test.
-LAYER_ASSIGNMENTS: dict[str, str] = {
-    key: layer for key in _discover_modules() if (layer := derive_layer(key)) is not None
-}
+LAYER_ASSIGNMENTS: dict[str, str] = _layer_assignments(_discover_modules(), REPO_ROOT)
 
 
 # A new strategy is a new folder: it is classified and isolation-checked from disk,
@@ -70,6 +87,8 @@ def _resolve_internal_target(
     module: str | None,
     alias_name: str | None,
     known_modules: set[str],
+    *,
+    alias_roots: dict[str, str] | None = None,
 ) -> set[str]:
     results: set[str] = set()
     if level == 0:
@@ -94,7 +113,7 @@ def _resolve_internal_target(
         else:
             candidates = [prefix] if prefix else []
 
-    for probe in candidates:
+    for probe in expand_compat_candidates(candidates, alias_roots or {}):
         while probe:
             if probe in known_modules and probe != current_key:
                 results.add(probe)
@@ -105,8 +124,11 @@ def _resolve_internal_target(
     return results
 
 
-def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, int]]]:
+def _build_import_graph(
+    modules: dict[str, Path], *, repo_root: Path = REPO_ROOT
+) -> dict[str, set[tuple[str, int]]]:
     known = set(modules)
+    alias_roots = _optional_compat_aliases(repo_root)
     edges: dict[str, set[tuple[str, int]]] = {name: set() for name in modules}
     for name, path in modules.items():
         is_init = path.name == "__init__.py"
@@ -115,20 +137,34 @@ def _build_import_graph(modules: dict[str, Path]) -> dict[str, set[tuple[str, in
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     for tgt in _resolve_internal_target(
-                        name, is_init, node.level, node.module, alias.name, known
+                        name,
+                        is_init,
+                        node.level,
+                        node.module,
+                        alias.name,
+                        known,
+                        alias_roots=alias_roots,
                     ):
                         edges[name].add((tgt, node.lineno))
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    for tgt in _resolve_internal_target(name, is_init, 0, None, alias.name, known):
+                    for tgt in _resolve_internal_target(
+                        name,
+                        is_init,
+                        0,
+                        None,
+                        alias.name,
+                        known,
+                        alias_roots=alias_roots,
+                    ):
                         edges[name].add((tgt, node.lineno))
     return edges
 
 
 @lru_cache(maxsize=1)
 def _workspace_analysis() -> tuple[dict[str, Path], dict[str, set[tuple[str, int]]]]:
-    modules = _discover_modules()
-    return modules, _build_import_graph(modules)
+    modules = _discover_modules(REPO_ROOT)
+    return modules, _build_import_graph(modules, repo_root=REPO_ROOT)
 
 
 def _tarjan_sccs(adjacency: dict[str, set[str]]) -> list[list[str]]:
@@ -193,7 +229,7 @@ class ArchitectureDagTests(unittest.TestCase):
 
     def test_extracted_packages_do_not_import_umbrella_modules(self) -> None:
         _, detailed_edges = _workspace_analysis()
-        roots = {"core", "data", "accounting", "strategies", "proof", "proof_runtime", "web"}
+        roots = set(package_head_layers(REPO_ROOT))
         prefixes = tuple(f"{r}." for r in roots)
         violations = [
             f"{src}:{lineno} -> {dst} (umbrella import forbidden)"
@@ -258,9 +294,10 @@ class ArchitectureDagTests(unittest.TestCase):
         )
 
     def test_workspace_code_and_tests_do_not_import_compatibility_shims(self) -> None:
-        shim_names = {
+        disk_shims = {
             p.stem for p in UMBRELLA_DIR.glob("*.py") if p.name not in {"__init__.py", "cli.py"}
         }
+        shim_names = disk_shims | (set(_ROOT_SHIM_LAYERS) - set(package_head_layers(REPO_ROOT)))
         candidates = [
             *sorted(PACKAGES_DIR.glob("*/src/moex_spread_lab/**/*.py")),
             *sorted(PACKAGES_DIR.glob("*/tests/**/*.py")),
@@ -294,6 +331,92 @@ class ArchitectureDagTests(unittest.TestCase):
             violations,
             "Package test-layer upward import violations:\n  " + "\n  ".join(violations),
         )
+
+    def test_upward_test_import_gate_rejects_new_and_stale_allowlist_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            test_file = root / "packages/data/tests/test_sample.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "from moex_spread_lab.web import server\n",
+                encoding="utf-8",
+            )
+            allowed = ALLOWED_LAYER_TARGETS["data"] | {"cli"}
+            violations = check_test_file_layers(
+                test_file, root, "data", allowed, allowlist=frozenset()
+            )
+            self.assertEqual(len(violations), 1)
+            self.assertIn("packages/data/tests/test_sample.py:1 (data)", violations[0])
+            self.assertIn("moex_spread_lab.web (web)", violations[0])
+
+            # Stale allowlist entry on an existing clean file fails the upper-bound check.
+            test_file.write_text("from moex_spread_lab.core import w0\n", encoding="utf-8")
+            stale = check_test_file_layers(
+                test_file,
+                root,
+                "data",
+                allowed,
+                allowlist=frozenset({("packages/data/tests/test_sample.py", "web.server")}),
+            )
+            self.assertEqual(len(stale), 1)
+            self.assertIn("stale LEGACY_UPWARD_TEST_IMPORTS entry", stale[0])
+
+            # Deleted allowlisted file path does not block package-scoped PRs before #168.
+            clean_pkg = check_package_test_layers(
+                root / "packages/data",
+                root,
+                ALLOWED_LAYER_TARGETS,
+                allowlist=frozenset({("packages/data/tests/deleted_legacy.py", "web.server")}),
+            )
+            self.assertEqual(clean_pkg, [])
+
+    def test_proof_runtime_registration_handles_presence_and_absence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            core_mod = root / "packages/core/src/moex_spread_lab/core/sample.py"
+            proof_mod = root / "packages/proof/src/moex_spread_lab/proof/service.py"
+            core_mod.parent.mkdir(parents=True)
+            proof_mod.parent.mkdir(parents=True)
+            core_mod.write_text(
+                "from moex_spread_lab.proof_runtime import service\n",
+                encoding="utf-8",
+            )
+            proof_mod.write_text("X = 1\n", encoding="utf-8")
+
+            # When proof_runtime is absent on disk, discovery/classification succeeds cleanly.
+            self.assertNotIn("proof_runtime", package_head_layers(root))
+            modules_absent = _discover_modules(root)
+            layers_absent = _layer_assignments(modules_absent, root)
+            self.assertEqual(set(modules_absent), set(layers_absent))
+
+            # When proof_runtime is present on disk, upward imports through the alias fail DAG.
+            pr_init = root / "packages/proof/src/moex_spread_lab/proof_runtime/__init__.py"
+            pr_init.parent.mkdir(parents=True)
+            pr_init.write_text("", encoding="utf-8")
+            self.assertEqual(package_head_layers(root).get("proof_runtime"), "proof")
+            modules_present = _discover_modules(root)
+            layers_present = _layer_assignments(modules_present, root)
+            edges = _build_import_graph(modules_present, repo_root=root)
+            dag_violations = [
+                f"{src} -> {dst}"
+                for src, targets in edges.items()
+                for dst, _ in targets
+                if layers_present[dst] not in ALLOWED_LAYER_TARGETS[layers_present[src]]
+            ]
+            self.assertIn("core.sample -> proof.service", dag_violations)
+
+            # Package test upward-import check also catches proof_runtime imports.
+            core_test = root / "packages/core/tests/test_upward_alias.py"
+            core_test.parent.mkdir(parents=True)
+            core_test.write_text(
+                "from moex_spread_lab.proof_runtime import service\n",
+                encoding="utf-8",
+            )
+            test_violations = check_package_test_layers(
+                root / "packages/core", root, ALLOWED_LAYER_TARGETS, allowlist=frozenset()
+            )
+            self.assertEqual(len(test_violations), 1)
+            self.assertIn("moex_spread_lab.proof_runtime (proof)", test_violations[0])
 
 
 if __name__ == "__main__":

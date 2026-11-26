@@ -16,6 +16,7 @@ def archive_case(prepared, tmp_path):  # noqa: F811  # fixture shadows import
     ParquetBarStore(root).import_legacy(intake)
     activate_h1(root, plan, candidate)
     seal = SealedH1Reader(root).payload()
+    assert seal is not None
     evidence = root / "evidence.json"
     evidence.write_text(
         json.dumps(
@@ -50,10 +51,13 @@ def _prepare(case):
 
 def test_archive_restore_then_explicit_apply_and_missing_json_maintenance(archive_case):
     root, intake, screen, candidate, evidence, archive, ap = archive_case
-    from moex_spread_lab.proof.proof_pool import _estimate_weight
-
-    target = {"universe": "pair_screen", "pair": "FAR/NEAR"}
-    expected_weight = _estimate_weight(root, target, "1h")
+    reader_before = SealedH1Reader(root)
+    selected_before = reader_before.select("NEAR")
+    rel_screen = str(screen.resolve().relative_to(root.resolve()))
+    payload_before = reader_before.payload()
+    assert payload_before is not None
+    record_before = payload_before["records"][rel_screen]
+    assert selected_before == screen and record_before["row_count"] == 3
     receipt = _prepare(archive_case)
     assert receipt["restore_verified_files"] == 2
     assert intake.exists() and screen.exists()
@@ -63,10 +67,15 @@ def test_archive_restore_then_explicit_apply_and_missing_json_maintenance(archiv
         result = execute(root, ap, "apply")
     assert result["status"] == "applied" and len(result["deleted"]) == 2
     assert not intake.exists() and not screen.exists()
-    assert _estimate_weight(root, target, "1h") == expected_weight
+    reader_after = SealedH1Reader(root)
+    payload_after = reader_after.payload()
+    series_after = reader_after.read(screen)
+    assert payload_after is not None and series_after is not None
+    assert reader_after.select("NEAR") == screen
+    assert payload_after["records"][rel_screen] == record_before
     assert ParquetBarStore(root).verify_all()["datasets"][0]["verification_basis"] == "sealed_h1"
     assert ParquetBarStore(root, candidate / "candles-screen").verify_all()["dataset_count"] == 1
-    assert SealedH1Reader(root).read(screen).rows[0]["close"] == 20.0
+    assert series_after.rows[0]["close"] == 20.0
     with pytest.raises(DataLakeError):
         ParquetBarStore(root, candidate / "candles-screen").compact(force=True)
     # An unrelated missing dataset never acquires a substitute just because a seal exists.

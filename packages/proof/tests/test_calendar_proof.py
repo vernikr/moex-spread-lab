@@ -8,27 +8,24 @@ both were extracted under P7.2 test-health work (Issue #121) so this module
 meets the code-health limits without its size baseline entry.
 """
 
-import http.client
 import json
 import math
 import tempfile
-import threading
 import unittest
 from datetime import date
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
     HISTORY_FIELDS,
     HISTORY_FROM,
     CalendarData,
 )
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore, make_handler
 from synthetic_history import iso_weekdays_until as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
 
@@ -145,26 +142,8 @@ def _zscore_request(quantity: int = 2, window: int = 20, timeframe: str | None =
     return request
 
 
-def _serve_proof_ui(testcase: unittest.TestCase, root: Path) -> ThreadingHTTPServer:
-    """Serve the proof UI on an ephemeral port; cleanups mirror the inline blocks."""
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(root)))
-    )
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    testcase.addCleanup(server.server_close)
-    testcase.addCleanup(server.shutdown)
-    return server
-
-
-def _proof_headers(server: ThreadingHTTPServer) -> dict[str, str]:
-    return {
-        "Content-Type": "application/json",
-        "Origin": f"http://127.0.0.1:{server.server_port}",
-    }
-
-
 def _write_h1_http_prereqs(root: Path) -> None:
-    """Historical contracts and research settings for the H1 HTTP catalog/proof route."""
+    """Historical contracts and research settings for the H1 catalog/proof service."""
     historical_path = root / "data/w1/historical-contracts.json"
     historical_path.write_text(
         json.dumps(
@@ -351,31 +330,14 @@ class CalendarProofTests(unittest.TestCase):
             with self.assertRaises(W0Error):
                 self.data.proof(bad)
 
-    def test_http_routes_serve_page_catalog_and_proof(self):
-        server = _serve_proof_ui(self, self.root)
-        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        connection.request("GET", "/proof")
-        page = connection.getresponse()
-        self.assertEqual(page.status, 200)
-        self.assertIn("Доказательство исполнения".encode(), page.read())
-        connection.request("GET", "/api/proof/catalog")
-        catalog = connection.getresponse()
-        self.assertEqual(catalog.status, 200)
-        catalog.read()
-        headers = _proof_headers(server)
-        connection.request(
-            "POST", "/api/proof/run", json.dumps({"asset": "SR", "pair": "SRH3/SRM3"}), headers
-        )
-        run = connection.getresponse()
-        self.assertEqual(run.status, 200)
-        self.assertEqual(json.loads(run.read())["selection"]["pair"], "SRH3/SRM3")
-        connection.request(
-            "POST", "/api/proof/run", json.dumps({"asset": "SR", "pair": "nope"}), headers
-        )
-        bad = connection.getresponse()
-        self.assertEqual(bad.status, 400)
-        bad.read()
-        connection.close()
+    def test_service_routes_serve_catalog_and_proof_and_reject_invalid_pair(self):
+        service = ProofService(self.root)
+        catalog = service.catalog()
+        self.assertIn("assets", catalog)
+        run = research_run(service, {"asset": "SR", "pair": "SRH3/SRM3"}, optimize=False)
+        self.assertEqual(run["selection"]["pair"], "SRH3/SRM3")
+        with self.assertRaises(W0Error):
+            research_run(service, {"asset": "SR", "pair": "nope"}, optimize=False)
 
     def test_h1_native_spread_has_priority_and_uses_its_own_session_volume_gate(self):
         _write_h1_candles(self.root, "candles", "SRH3", _h1_rows("near", 100))
@@ -437,17 +399,13 @@ class CalendarProofTests(unittest.TestCase):
         )
         self.data.check_training_window("SR", "SRH3/SRM3", 1, permissive)
 
-    def test_http_h1_catalog_and_proof_route(self):
+    def test_service_h1_catalog_and_proof_route(self):
         _write_h1_candles(self.root, "candles", "SRH3", _h1_rows("near", 20))
         _write_h1_candles(self.root, "candles", "SRM3", _h1_rows("far", 20))
         _write_h1_http_prereqs(self.root)
 
-        server = _serve_proof_ui(self, self.root)
-        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        connection.request("GET", "/api/proof/catalog")
-        catalog_response = connection.getresponse()
-        self.assertEqual(catalog_response.status, 200)
-        catalog = json.loads(catalog_response.read())
+        service = ProofService(self.root)
+        catalog = service.catalog()
         self.assertEqual(catalog["timeframe"], "1h")
         by_id = {item["id"]: item for item in catalog["timeframes"]}
         self.assertTrue(by_id["1h"]["supports_calendar"])
@@ -462,7 +420,6 @@ class CalendarProofTests(unittest.TestCase):
         self.assertEqual(catalog_window["price_source"], "synthetic_leg_proxy")
         self.assertEqual(catalog_window["liquidity_source"], "matched_near_far_session_volume")
 
-        headers = _proof_headers(server)
         request = {
             "universe": "calendar_native",
             "asset": "SR",
@@ -472,11 +429,7 @@ class CalendarProofTests(unittest.TestCase):
             "sizing": "max_affordable",
             "parameters": {"entry_z": 1.5, "exit_z": 0.5, "window": 3},
         }
-        connection.request("POST", "/api/proof/run", json.dumps(request), headers)
-        response = connection.getresponse()
-        body = response.read()
-        self.assertEqual(response.status, 200, body.decode())
-        proof = json.loads(body)
+        proof = research_run(service, request, optimize=False)
         self.assertEqual(proof["selection"]["timeframe"], "1h")
         self.assertEqual(proof["window"]["price_source"], "synthetic_leg_proxy")
         self.assertEqual(proof["window"]["liquidity_gate_unit"], "контр./сессию")
@@ -491,11 +444,8 @@ class CalendarProofTests(unittest.TestCase):
         self.assertGreater(proof["summary"]["cost_totals"]["exchange_clearing"], 0)
         self.assertGreater(proof["summary"]["cost_totals"]["slippage"], 0)
         json.dumps(proof, allow_nan=False)
-        connection.close()
 
     def test_service_calendar_payload_adds_instrument_provenance_and_run_id(self):
-        from moex_spread_lab.proof.service import ProofService
-
         proof = ProofService(self.root).proof({"universe": "calendar_native", **_zscore_request()})
         assert_instrument_provenance(self, proof)
 

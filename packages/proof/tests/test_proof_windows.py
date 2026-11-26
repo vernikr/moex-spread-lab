@@ -6,15 +6,12 @@ detailed band, fill and compact-row expectations live in
 ``proof_windows_expectations_p72_packages_proof_tests_test_proof_windows``.
 """
 
-import http.client
 import json
 import math
 import statistics
 import tempfile
-import threading
 import unittest
 from copy import deepcopy
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -28,9 +25,7 @@ from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     AnalyticsError,
     run_mean_reversion_baseline,
 )
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
-from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import CAL, FLAT, PAIR, two_calendar_windows
 
 # ---- folded from the retired P7.2 shard proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows (PAIR/CAL/FLAT now in proof_fixtures) ----
@@ -354,28 +349,7 @@ class WindowSummaryTests(FixtureCase):
         self.assertEqual(pair["tradable_every_day"], proof["window"]["tradable_every_day"])
         self.assertTrue(math.isfinite(pair["max_pair_margin_rub"]))
 
-    def test_http_table_endpoint_is_read_only_and_local_origin_only(self):
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), make_handler(ScreenerStore(ScreenerInputs(self.root)))
-        )
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        conn = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        self.addCleanup(conn.close)
-        headers = {"Content-Type": "application/json"}
-        body = json.dumps({"requests": [PAIR, CAL]})
-        conn.request("POST", "/api/proof/windows", body, headers)
-        response = conn.getresponse()
-        self.assertEqual(response.status, 200)
-        self.assertEqual(len(json.loads(response.read())["rows"]), 2)
+    def test_window_summaries_is_read_only_and_returns_requested_rows(self):
+        result = window_summaries(self.service, {"requests": [PAIR, CAL]})
+        self.assertEqual(len(result["rows"]), 2)
         self.assertFalse(settings_path(self.root).exists())
-        conn.request(
-            "POST",
-            "/api/proof/windows",
-            body,
-            {**headers, "Origin": "https://example.invalid"},
-        )
-        response = conn.getresponse()
-        self.assertEqual(response.status, 403)
-        response.read()

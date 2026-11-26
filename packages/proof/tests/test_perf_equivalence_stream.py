@@ -1,7 +1,8 @@
 """Streaming-progress tier of the bit-for-bit equivalence suite (plan S4a).
 
-The NDJSON progress stream over a loopback ``ThreadingHTTPServer`` must match the
-plain JSON response bit for bit on every endpoint, with monotonic percentages.
+Progress callbacks across every proof entrypoint (``research_run``, ``checked_plateau``,
+``window_summaries``) must match the non-streaming payloads bit for bit, with monotonic
+percentages and well-formed stage/label/count fields.
 Split from the worker-pool tier so each file stays inside the health gate's
 new-file budget; both carry ``pytest.mark.slow_equiv`` and run together in every
 whole-suite path (``--pre-push``, CI perf-equivalence, sanitizer gate).
@@ -9,20 +10,19 @@ whole-suite path (``--pre-push``, CI perf-equivalence, sanitizer gate).
 
 from __future__ import annotations
 
-import json
 import tempfile
-import threading
 import unittest
-import urllib.request
-from http.server import ThreadingHTTPServer
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof.service import PAIR_UNIVERSE
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore, make_handler
+from moex_spread_lab.proof.proof_batch import checked_plateau
+from moex_spread_lab.proof.proof_pool import get_worker_pool
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.proof_windows import window_summaries
+from moex_spread_lab.proof.service import PAIR_UNIVERSE, ProofService
 from perf_equivalence_fixtures import _canon
 from perf_equivalence_pool_fixtures import _build_pool_test_workspace
 
@@ -37,41 +37,42 @@ class ProofPerfEquivalenceStreamingTests(unittest.TestCase):
         assert_streaming_progress_matches_plain_json(self)
 
 
-def _stream_client(base_url: str):
-    """Return ``(post_json, post_stream)`` helpers for the loopback test server."""
+def _service_runner(service: ProofService):
+    """Return ``(run_plain, run_stream)`` helpers backed directly by Layer-3 proof APIs."""
 
-    def post_json(endpoint: str, body: dict):
-        req = urllib.request.Request(
-            f"{base_url}{endpoint}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+    def invoke(endpoint: str, body: dict, on_progress):
+        payload = deepcopy(body)
+        diagnostics = payload.pop("include_plateau", False) is True
+        if endpoint == "/api/proof/run":
+            return research_run(
+                service,
+                payload,
+                optimize=False,
+                include_plateau=diagnostics,
+                on_progress=on_progress,
+            )
+        if endpoint == "/api/proof/optimize":
+            return research_run(
+                service,
+                payload,
+                optimize=True,
+                on_progress=on_progress,
+            )
+        if endpoint == "/api/proof/plateau":
+            return checked_plateau(service, payload, on_progress=on_progress)
+        if endpoint == "/api/proof/windows":
+            return window_summaries(service, payload, on_progress=on_progress)
+        raise AssertionError(f"Unknown proof endpoint: {endpoint}")
 
-    def post_stream(endpoint: str, body: dict):
-        req = urllib.request.Request(
-            f"{base_url}{endpoint}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json", "X-Progress-Stream": "1"},
-        )
-        events, result = [], None
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            assert "application/x-ndjson" in resp.headers.get("Content-Type", "")
-            for raw in resp:
-                line = raw.decode("utf-8").strip()
-                if not line:
-                    continue
-                msg = json.loads(line)
-                if msg["type"] == "progress":
-                    events.append(msg)
-                elif msg["type"] == "result":
-                    result = msg["data"]
-                else:
-                    raise AssertionError(f"Unexpected stream message: {msg}")
+    def run_plain(endpoint: str, body: dict):
+        return invoke(endpoint, body, None)
+
+    def run_stream(endpoint: str, body: dict):
+        events: list[dict] = []
+        result = invoke(endpoint, body, lambda ev: events.append({"type": "progress", **ev}))
         return events, result
 
-    return post_json, post_stream
+    return run_plain, run_stream
 
 
 def _assert_stream_contract(
@@ -91,25 +92,20 @@ def _assert_stream_contract(
 
 
 def assert_streaming_progress_matches_plain_json(case) -> None:
-    """Every streamed endpoint must match its plain JSON body bit for bit."""
+    """Every streamed entrypoint must match its non-streaming payload bit for bit."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         _build_pool_test_workspace(root)
-        store = ScreenerStore(ScreenerInputs(root))
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        post_json, post_stream = _stream_client(f"http://127.0.0.1:{server.server_port}")
+        service = ProofService(root, pool_factory=get_worker_pool)
+        run_plain, run_stream = _service_runner(service)
         try:
             bodies = _stream_bodies()
             for endpoint, body, min_events in bodies:
-                plain = post_json(endpoint, body)
-                events, streamed = post_stream(endpoint, body)
+                plain = run_plain(endpoint, body)
+                events, streamed = run_stream(endpoint, body)
                 _assert_stream_contract(case, endpoint, plain, events, streamed, min_events)
-            _assert_static_ui_contract(case)
         finally:
-            server.shutdown()
-            server.server_close()
-            store.close()
+            service.close()
 
 
 def _stream_bodies() -> list[tuple[str, dict, int]]:
@@ -162,26 +158,6 @@ def _stream_bodies() -> list[tuple[str, dict, int]]:
         ("/api/proof/plateau", plat_body, 2),
         ("/api/proof/windows", win_body, 2),
     ]
-
-
-def _assert_static_ui_contract(case) -> None:
-    static_dir = Path(__file__).resolve().parents[3] / "packages/web/src/moex_spread_lab/web/static"
-    ui_bundle = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted(static_dir.rglob("*")) if path.is_file()
-    )
-    case.assertNotIn("render-progress-run", ui_bundle)
-    case.assertIn('aria-valuemin="0"', ui_bundle)
-    case.assertIn('aria-valuemax="100"', ui_bundle)
-    case.assertIn("apiStream", ui_bundle)
-    case.assertIn("progress-pill", ui_bundle)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 if __name__ == "__main__":

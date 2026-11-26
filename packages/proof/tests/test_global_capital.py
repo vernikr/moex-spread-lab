@@ -9,6 +9,7 @@ from pathlib import Path
 
 from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings, save_settings
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import _annualized_returns, research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
@@ -244,6 +245,67 @@ class CapitalReplayTests(unittest.TestCase):
                 )
                 self.assertEqual(row["evaluation"]["initial_capital_rub"], initial)
             self.assertEqual(requests, before)
+
+    def test_slippage_preference_and_continuous_validation_prefix_are_preserved(
+        self,
+    ):
+        save_settings(self.root, {"slippage_ticks": 2.5, "validation_percent": 25})
+        for request in (
+            PAIR,
+            CAL,
+            {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}},
+            {
+                **FLAT,
+                "strategy": "convergence_to_ruonia",
+                "fill": "next_close",
+                "parameters": {"threshold_pp": 0.1},
+            },
+        ):
+            with self.subTest(strategy=request["strategy"]):
+                p = self.run_proof({**request, "slippage_ticks": 0})
+                self.assertEqual(p["selection"]["slippage_ticks"], 2.5)
+                self.assertIsNone(p["selection"]["quantity"])
+                self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
+                self.assertEqual(self.run_proof(p["selection"])["run_id"], p["run_id"])
+        cal_run = self.run_proof(CAL)
+        cutoff = cal_run["evaluation"]["periods"]["training"][-1]
+        replay = self.service.prepare(CAL, settings=ResearchSettings.load(self.root))
+        prefix = replay(CAL, through=cutoff)
+        self.assertEqual(
+            [
+                (t["entry"]["date"], t["quantity"])
+                for t in cal_run["trades"]
+                if t["entry"]["date"] < cutoff
+            ],
+            [
+                (t["entry"]["date"], t["quantity"])
+                for t in prefix["trades"]
+                if t["entry"]["date"] < cutoff
+            ],
+        )
+        self.assertEqual(
+            [r for r in cal_run["ledger"] if r["date"] < cutoff],
+            [r for r in prefix["ledger"] if r["date"] < cutoff],
+        )
+
+    def test_unfundable_margin_skips_entries_while_null_margin_fails_closed(self):
+        path = self.root / "data/w1/current-intake.json"
+        data = json.loads(path.read_text())
+        for c in data["instruments"]:
+            if c["secid"] in ("CNYRUBF", "CRZ6"):
+                c["initial_margin"] = 16000
+        path.write_text(json.dumps(data))
+        p = self.run_proof(PAIR)
+        self.assertFalse(p["trades"])
+        self.assertGreater(p["summary"]["skipped_entries"], 0)
+        self.assertAlmostEqual(p["evaluation"]["result"]["annualized_excess_pp"], 0, places=7)
+        self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
+        for c in data["instruments"]:
+            if c["secid"] == "CNYRUBF":
+                c["initial_margin"] = None
+        path.write_text(json.dumps(data))
+        with self.assertRaises(W0Error):
+            self.run_proof(PAIR)
 
     def test_legacy_nonresearch_catalog_does_not_implicitly_load_the_preference(self):
         before = catalog(ScreenerInputs(self.root))

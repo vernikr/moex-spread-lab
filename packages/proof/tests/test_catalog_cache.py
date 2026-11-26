@@ -9,18 +9,18 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import canonical_bytes
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore
+from moex_spread_lab.proof.proof_pool import get_worker_pool
+from moex_spread_lab.proof.service import ProofService
 from proof_fixtures import two_calendar_windows
 
 
-def _catalog_bytes(store: ScreenerStore) -> tuple[dict, bytes]:
-    payload = store.proof.catalog()
+def _catalog_bytes(service: ProofService) -> tuple[dict, bytes]:
+    payload = service.catalog()
     return payload, canonical_bytes(payload)
 
 
-def _fresh_store(root: Path) -> ScreenerStore:
-    return ScreenerStore(ScreenerInputs(root))
+def _fresh_service(root: Path) -> ProofService:
+    return ProofService(root, pool_factory=get_worker_pool)
 
 
 def _same_size_flip(raw: bytes) -> bytes:
@@ -37,14 +37,14 @@ class DerivedCatalogCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
-            first_store = _fresh_store(root)
-            first, first_bytes = _catalog_bytes(first_store)
-            first_store.close()
+            first_service = _fresh_service(root)
+            first, first_bytes = _catalog_bytes(first_service)
+            first_service.close()
             # A restart drops every in-memory structure; the derived cache is the
             # only thing allowed to survive, and it must reproduce the same bytes.
-            second_store = _fresh_store(root)
-            second, second_bytes = _catalog_bytes(second_store)
-            second_store.close()
+            second_service = _fresh_service(root)
+            second, second_bytes = _catalog_bytes(second_service)
+            second_service.close()
             self.assertEqual(first, second)
             self.assertEqual(first_bytes, second_bytes)
             cache_files = list((root / "data" / "analytics" / "derived-cache").glob("*.json"))
@@ -57,7 +57,7 @@ class DerivedCatalogCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
-            store = _fresh_store(root)
+            service = _fresh_service(root)
             try:
                 calls = []
                 original_build = catalog_payload._build_catalog
@@ -68,13 +68,13 @@ class DerivedCatalogCacheTests(unittest.TestCase):
 
                 catalog_payload._build_catalog = counting_build
                 try:
-                    store.proof.catalog()
-                    store.proof.catalog()
+                    service.catalog()
+                    service.catalog()
                 finally:
                     catalog_payload._build_catalog = original_build
                 self.assertEqual(len(calls), 1)
             finally:
-                store.close()
+                service.close()
 
     def test_same_size_same_mtime_tick_edit_invalidates(self) -> None:
         from moex_spread_lab.proof import catalog_payload
@@ -82,9 +82,9 @@ class DerivedCatalogCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
-            store = _fresh_store(root)
+            service = _fresh_service(root)
             try:
-                store.proof.catalog()
+                service.catalog()
                 target = next((root / "data" / "spread-history-cache").glob("*.json"))
                 raw = target.read_bytes()
                 size = len(raw)
@@ -103,38 +103,38 @@ class DerivedCatalogCacheTests(unittest.TestCase):
 
                 catalog_payload._build_catalog = counting_build
                 try:
-                    store.proof.catalog()
+                    service.catalog()
                 finally:
                     catalog_payload._build_catalog = original_build
                 self.assertEqual(len(calls), 1, "stale cache served after a content edit")
             finally:
-                store.close()
+                service.close()
 
     def test_disabled_cache_never_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
             os.environ["MOEX_DERIVED_CACHE"] = "0"
-            store = _fresh_store(root)
+            service = _fresh_service(root)
             try:
-                store.proof.catalog()
+                service.catalog()
             finally:
-                store.close()
+                service.close()
             self.assertFalse((root / "data" / "analytics" / "derived-cache").exists())
 
     def test_cached_catalog_warm_path_is_fast(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             two_calendar_windows(root)
-            store = _fresh_store(root)
+            service = _fresh_service(root)
             try:
-                store.proof.catalog()
+                service.catalog()
                 started = time.perf_counter()
                 for _ in range(5):
-                    store.proof.catalog()
+                    service.catalog()
                 elapsed = time.perf_counter() - started
             finally:
-                store.close()
+                service.close()
             self.assertLess(elapsed, 2.0)
 
 

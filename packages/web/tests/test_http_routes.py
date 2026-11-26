@@ -11,11 +11,12 @@ import unittest
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 import moex_spread_lab.web.server as web_server
 import moex_spread_lab.web.strategy_registry as strategy_registry
-from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec
+from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec, StrategyPlugin
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
@@ -133,6 +134,18 @@ class WebHttpRoutesTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["content-type"], "application/javascript; charset=utf-8")
         self.assertGreater(len(raw), 100_000)
+
+        static_dir = Path(web_server.__file__).resolve().parent / "static"
+        ui_bundle = "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(static_dir.rglob("*")) if p.is_file()
+        )
+        self.assertNotIn("render-progress-run", ui_bundle)
+        self.assertIn('aria-valuemin="0"', ui_bundle)
+        self.assertIn('aria-valuemax="100"', ui_bundle)
+        self.assertIn("apiStream", ui_bundle)
+        self.assertIn("progress-pill", ui_bundle)
+        self.assertIn('id="auto-tune"', ui_bundle)
+        self.assertNotIn("К скринеру пар", ui_bundle)
 
     def test_static_path_traversal_and_missing_assets_rejected(self) -> None:
         for bad_path in (
@@ -267,8 +280,8 @@ class WebHttpRoutesTests(unittest.TestCase):
                 )
 
         merged = strategy_registry.get_strategy_registry().as_dict()
-        merged["custom_pair_alpha"] = CustomPairPlugin()
-        merged["custom_cal_spread"] = CustomCalendarPlugin()
+        merged["custom_pair_alpha"] = cast(StrategyPlugin, CustomPairPlugin())
+        merged["custom_cal_spread"] = cast(StrategyPlugin, CustomCalendarPlugin())
         custom_registry = StrategyRegistry(merged)
 
         with mock.patch.object(
@@ -287,6 +300,87 @@ class WebHttpRoutesTests(unittest.TestCase):
             cal_ctx = by_id["custom_cal_spread"]["context_parameters"]["calendar_native"]["1d"]
             self.assertEqual(cal_ctx["quarterly"][0]["default"], 2.2)
             self.assertEqual(cal_ctx["monthly"][0]["default"], 1.6)
+
+    def test_proof_ndjson_streaming_search_lock_409_and_large_body_cap(self) -> None:
+        import sys as _sys
+
+        for extra in (
+            Path(__file__).resolve().parents[3] / "packages/proof/tests",
+            Path(__file__).resolve().parents[3] / "tests",
+        ):
+            if str(extra) not in _sys.path:
+                _sys.path.insert(0, str(extra))
+        from proof_fixtures import two_calendar_windows
+
+        two_calendar_windows(self.root)
+        # 1. Busy search lock returns 409; confirmation-only preview is not persisted.
+        large_confirm = {
+            "universe": "pair_screen",
+            "pair": "CNYRUBF/CRZ6",
+            "strategy": "funding_only",
+            "targets": [
+                {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6"},
+                *[
+                    {"universe": "calendar_native", "asset": "SR", "pair": f"W{i}/T{i}"}
+                    for i in range(200)
+                ],
+            ],
+        }
+        with self.store.proof_search_lock:
+            status, _, _ = self._request("POST", "/api/proof/optimize", body=large_confirm)
+            self.assertEqual(status, 409)
+        status, _, raw = self._request("POST", "/api/proof/optimize", body=large_confirm)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)["remaining_count"], 1)
+        self.assertFalse((self.root / "data/analytics/proof-searches.jsonl").exists())
+
+        # 2. Successful optimize persists to proof-searches.jsonl; NDJSON stream matches JSON.
+        opt_req = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
+        from moex_spread_lab.core.settings import save_settings
+
+        save_settings(self.root, {"random_seed": 41})
+        status, _, plain_raw = self._request("POST", "/api/proof/optimize", body=opt_req)
+        self.assertEqual(status, 200)
+        plain = json.loads(plain_raw)
+        logs = (self.root / "data/analytics/proof-searches.jsonl").read_text().splitlines()
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(json.loads(logs[0])["run_id"], plain["run_id"])
+
+        status, hdrs, stream_raw = self._request(
+            "POST",
+            "/api/proof/optimize",
+            body=opt_req,
+            headers={"X-Progress-Stream": "1"},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("application/x-ndjson", hdrs["content-type"])
+        frames = [json.loads(line) for line in stream_raw.decode("utf-8").splitlines() if line]
+        self.assertTrue(any(f["type"] == "progress" for f in frames))
+        self.assertEqual(frames[-1]["type"], "result")
+        self.assertEqual(frames[-1]["data"], plain)
+
+        # 3. Large body cap (>192 KiB) returns 400; cross-origin POST returns 403.
+        conn = HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            oversized = b'{"targets":[]}' + b" " * (193 * 1024)
+            conn.request(
+                "POST",
+                "/api/proof/plateau",
+                body=oversized,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            resp.read()
+            self.assertEqual(resp.status, 400)
+        finally:
+            conn.close()
+        status, _, _ = self._request(
+            "POST",
+            "/api/proof/windows",
+            body={"requests": [opt_req]},
+            headers={"Origin": "https://evil.example"},
+        )
+        self.assertEqual(status, 403)
 
 
 if __name__ == "__main__":

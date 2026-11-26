@@ -47,31 +47,64 @@ def test_budget_partition_and_limit(tmp_path):
     assert all(p.read_bytes() == b for p, b in before.items())
 
 
-def test_budget_run_details_ttl_matches_gc_run_artifacts_dry_run(tmp_path):
-    from moex_spread_lab.accounting.run_artifacts import (
-        gc_run_artifacts,
-        pin_run_artifact,
-        publish_baseline_artifact,
+def _write_run_artifact(
+    artifact_dir: Path,
+    *,
+    expires_at: str,
+    pinned: bool,
+    detail_status: str = "available",
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("daily", "trades"):
+        if detail_status == "available":
+            (artifact_dir / f"{name}.parquet").write_bytes(b"PAR1-detail")
+    manifest = {
+        "schema_version": "research-run-artifact.v1",
+        "artifact_id": f"run-{artifact_dir.name}",
+        "retention": {
+            "detail_status": detail_status,
+            "pinned": pinned,
+            "expires_at": expires_at,
+        },
+        "details": {
+            "daily": {"file": "daily.parquet"},
+            "trades": {"file": "trades.parquet"},
+        },
+    }
+    (artifact_dir / "manifest.json").write_bytes(canonical_bytes(manifest))
+
+
+def test_budget_run_details_ttl_classifies_expired_retained_and_pinned(tmp_path):
+    runs_root = tmp_path / "data/analytics/runs"
+    _write_run_artifact(
+        runs_root / "expired",
+        expires_at="2020-01-01T00:00:00+00:00",
+        pinned=False,
+    )
+    _write_run_artifact(
+        runs_root / "retained",
+        expires_at="2099-01-01T00:00:00+00:00",
+        pinned=False,
+    )
+    _write_run_artifact(
+        runs_root / "pinned",
+        expires_at="2020-01-01T00:00:00+00:00",
+        pinned=True,
+    )
+    _write_run_artifact(
+        runs_root / "pruned",
+        expires_at="2020-01-01T00:00:00+00:00",
+        pinned=False,
+        detail_status="expired",
     )
 
-    baseline = {
-        "schema_version": "analytical-baseline.v1",
-        "parameters": {"decision_delay_bars": 1},
-        "summary": {"final_X": 0.0, "trade_count": 0},
-        "daily": [{"date": "2026-01-01", "timestamp": "2026-01-01 00:00:00"}],
-        "trades": [],
-    }
-    runs_root = tmp_path / "data/analytics/runs"
-    publish_baseline_artifact(runs_root / "expired", baseline, retention_days=0, pin=False)
-    publish_baseline_artifact(runs_root / "retained", baseline, retention_days=30, pin=False)
-    publish_baseline_artifact(runs_root / "pinned", baseline, retention_days=0, pin=True)
-    pin_run_artifact(runs_root / "pinned", pinned=True)
-
     budget = storage_budget(tmp_path)
-    expected = gc_run_artifacts(runs_root, dry_run=True)
-    assert budget["ttl_dry_run"]["run_details"] == expected
-    assert expected["expired_artifact_count"] == 1
-    assert expected["retained_artifact_count"] == 2
+    assert budget["ttl_dry_run"]["run_details"] == {
+        "status": "dry_run",
+        "expired_artifact_count": 1,
+        "retained_artifact_count": 2,
+        "planned_detail_files": ["expired/daily.parquet", "expired/trades.parquet"],
+    }
 
 
 def test_budget_rejects_links_overlap_negative(tmp_path):

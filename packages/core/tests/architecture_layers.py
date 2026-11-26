@@ -25,7 +25,6 @@ _PACKAGE_HEAD_LAYERS = {
     "data": "data",
     "accounting": "accounting",
     "strategies": "strategies",
-    "proof_runtime": "proof",
     "web": "web",
 }
 _ROOT_SHIM_LAYERS = {
@@ -73,11 +72,44 @@ _ROOT_SHIM_LAYERS = {
 }
 
 
-def derive_layer(key: str) -> str | None:
+def _optional_compat_aliases(repo_root: Path | None = None) -> dict[str, str]:
+    """Return optional compatibility root aliases mapped to canonical package heads."""
+    if repo_root is None:
+        return {"proof_runtime": "proof"}
+    proof_runtime_dir = (
+        repo_root / "packages" / "proof" / "src" / "moex_spread_lab" / "proof_runtime"
+    )
+    return {"proof_runtime": "proof"} if proof_runtime_dir.exists() else {}
+
+
+def expand_compat_candidates(candidates: list[str], aliases: dict[str, str]) -> list[str]:
+    """Append canonical module targets for compatibility-alias roots."""
+    expanded: list[str] = []
+    for cand in candidates:
+        expanded.append(cand)
+        head, sep, rest = cand.partition(".")
+        if head in aliases:
+            target = aliases[head]
+            expanded.append(f"{target}.{rest}" if sep else target)
+    return expanded
+
+
+def package_head_layers(repo_root: Path | None = None) -> dict[str, str]:
+    """Return canonical package heads plus optional compatibility heads present on disk."""
+    layers = dict(_PACKAGE_HEAD_LAYERS)
+    for alias, target in _optional_compat_aliases(repo_root).items():
+        layers[alias] = _PACKAGE_HEAD_LAYERS[target]
+    return layers
+
+
+def derive_layer(key: str, *, repo_root: Path | None = None) -> str | None:
     if key in _CLI_LAYER_KEYS or key.split(".", 1)[0] in _CLI_PACKAGES:
         return "cli"
-    layer = _PACKAGE_HEAD_LAYERS.get(key.split(".", 1)[0])
-    return layer if layer is not None else _ROOT_SHIM_LAYERS.get(key)
+    head = key.split(".", 1)[0]
+    layer = package_head_layers(repo_root).get(head)
+    if layer is not None:
+        return layer
+    return _ROOT_SHIM_LAYERS.get(key)
 
 
 # Package test suites map to their owning package's layer.
@@ -90,26 +122,16 @@ PACKAGE_TEST_LAYERS: dict[str, str] = {
     "web": "web",
 }
 
-# Legacy cross-layer integration imports in test suites awaiting their respective
-# wave refactors (F7 / #14). Wave 1 strictly isolates msl-core (zero exceptions);
-# strategies and web are also clean. Legacy imports for data, accounting and
-# proof are ratcheted here so no new upward import can be introduced.
+# Frozen upper-bound allowlist of remaining cross-layer package test imports.
+# Pre-W2 (#230) eliminated all upward test imports in data, owned accounting files,
+# and proof->web. The two remaining accounting entries belong to unowned legacy W4/W5/W6
+# analytical test suites scheduled for retirement in Wave 1 of the accounting reduction
+# epic (#190, #191) and final allowlist cleanup in #168 (#197).
+# Existing files on disk MUST exercise every allowlisted entry listed for them; stale
+# entries on existing files fail the gate immediately. Entries whose test file was
+# deleted by a package-scoped PR remain tolerated until #168 cleans deleted-file entries.
 LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
     {
-        ("packages/data/tests/test_h1_archive.py", "proof.proof_pool"),
-        ("packages/data/tests/test_h1_seal.py", "strategies.calendar.calendar_spreads"),
-        ("packages/data/tests/test_h1_seal.py", "strategies.pair_screener.pair_screener"),
-        ("packages/data/tests/test_storage_policy.py", "accounting.run_artifacts"),
-        ("packages/data/tests/test_store_cutover.py", "strategies.calendar.calendar_spreads"),
-        ("packages/data/tests/test_store_cutover.py", "strategies.pair_screener.screener"),
-        ("packages/data/tests/test_store_cutover.py", "strategies.pair_screener.pair_screener"),
-        (
-            "packages/accounting/tests/test_execution_accounting.py",
-            "strategies.pair_mean_reversion.analytics",
-        ),
-        ("packages/accounting/tests/test_position_sizing.py", "proof.proof_batch"),
-        ("packages/accounting/tests/test_position_sizing.py", "proof.proof_search"),
-        ("packages/accounting/tests/test_position_sizing.py", "proof.service"),
         (
             "packages/accounting/tests/test_run_artifacts.py",
             "strategies.pair_mean_reversion.analytics",
@@ -118,25 +140,6 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
             "packages/accounting/tests/test_validation.py",
             "strategies.pair_mean_reversion.analytics",
         ),
-        (
-            "packages/proof/tests/test_calendar_proof.py",
-            "web.server",
-        ),
-        (
-            "packages/proof/tests/test_proof_search.py",
-            "web.server",
-        ),
-        (
-            "packages/proof/tests/test_strategy_search.py",
-            "web.server",
-        ),
-        ("packages/proof/tests/test_audit.py", "web.server"),
-        ("packages/proof/tests/test_catalog_cache.py", "web.server"),
-        ("packages/proof/tests/test_global_capital.py", "web.server"),
-        ("packages/proof/tests/test_perf_equivalence_stream.py", "web.server"),
-        ("packages/proof/tests/test_proof_batch.py", "web.server"),
-        ("packages/proof/tests/test_proof_plateau.py", "web.server"),
-        ("packages/proof/tests/test_proof_windows.py", "web.server"),
     }
 )
 
@@ -165,36 +168,66 @@ def resolve_target_layer(target: str) -> str | None:
     return None
 
 
-def is_legacy_test_import_exception(rel: str, target: str) -> bool:
+def matched_legacy_test_import(rel: str, target: str) -> tuple[str, str] | None:
     parts = target.split(".")
-    return any(
-        (rel, ".".join(parts[:i])) in LEGACY_UPWARD_TEST_IMPORTS for i in range(1, len(parts) + 1)
-    )
+    for i in range(1, len(parts) + 1):
+        entry = (rel, ".".join(parts[:i]))
+        if entry in LEGACY_UPWARD_TEST_IMPORTS:
+            return entry
+    return None
+
+
+def is_legacy_test_import_exception(rel: str, target: str) -> bool:
+    return matched_legacy_test_import(rel, target) is not None
 
 
 def check_test_file_layers(
-    path: Path, repo_root: Path, pkg_layer: str, allowed: frozenset[str]
+    path: Path,
+    repo_root: Path,
+    pkg_layer: str,
+    allowed: frozenset[str],
+    *,
+    allowlist: frozenset[tuple[str, str]] = LEGACY_UPWARD_TEST_IMPORTS,
 ) -> list[str]:
-    rel = str(path.relative_to(repo_root))
+    rel = path.relative_to(repo_root).as_posix()
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     violations: list[str] = []
+    used_allowlist: set[tuple[str, str]] = set()
+    parts_allowlist = {entry for entry in allowlist if entry[0] == rel}
     for node in ast.walk(tree):
         lineno = getattr(node, "lineno", 1)
         for target in extract_msl_import_targets(node):
             layer = resolve_target_layer(target)
-            if (
-                layer is not None
-                and layer not in allowed
-                and not is_legacy_test_import_exception(rel, target)
-            ):
+            if layer is None or layer in allowed:
+                continue
+            matched = next(
+                (
+                    (rel, ".".join(target.split(".")[:i]))
+                    for i in range(1, len(target.split(".")) + 1)
+                    if (rel, ".".join(target.split(".")[:i])) in parts_allowlist
+                ),
+                None,
+            )
+            if matched is not None:
+                used_allowlist.add(matched)
+            else:
                 violations.append(
                     f"{rel}:{lineno} ({pkg_layer}) -> moex_spread_lab.{target} ({layer})"
                 )
+    for stale_rel, stale_target in sorted(parts_allowlist - used_allowlist):
+        violations.append(
+            f"{stale_rel} -> moex_spread_lab.{stale_target} "
+            "(stale LEGACY_UPWARD_TEST_IMPORTS entry: file no longer imports target)"
+        )
     return violations
 
 
 def check_package_test_layers(
-    pkg_dir: Path, repo_root: Path, allowed_targets: dict[str, frozenset[str]]
+    pkg_dir: Path,
+    repo_root: Path,
+    allowed_targets: dict[str, frozenset[str]],
+    *,
+    allowlist: frozenset[tuple[str, str]] = LEGACY_UPWARD_TEST_IMPORTS,
 ) -> list[str]:
     tests_dir = pkg_dir / "tests"
     pkg_layer = PACKAGE_TEST_LAYERS.get(pkg_dir.name)
@@ -204,5 +237,5 @@ def check_package_test_layers(
     return [
         v
         for path in sorted(tests_dir.rglob("*.py"))
-        for v in check_test_file_layers(path, repo_root, pkg_layer, allowed)
+        for v in check_test_file_layers(path, repo_root, pkg_layer, allowed, allowlist=allowlist)
     ]

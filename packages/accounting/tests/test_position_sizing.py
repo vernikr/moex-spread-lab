@@ -1,15 +1,14 @@
-"""Automatic proof sizing: finite cash, causality, costs and search agreement."""
+"""Automatic proof sizing: finite cash, causality, costs and settings validation."""
 
-import json
 import math
 import tempfile
 import unittest
 from copy import deepcopy
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from typing import Any
 
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, maximum_quantity, size_proof
+from moex_spread_lab.accounting.position_sizing import maximum_quantity, size_proof
 from moex_spread_lab.core.settings import (
     ResearchSettings,
     read_settings,
@@ -17,10 +16,6 @@ from moex_spread_lab.core.settings import (
     settings_path,
 )
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof.proof_batch import checked_plateau
-from moex_spread_lab.proof.proof_search import _tune, research_run
-from moex_spread_lab.proof.service import ProofService
-from proof_fixtures import fixture
 
 
 def unit_proof(near=(50000, 49000, 49000, 49200), entries=((0, 1), (2, 3)), *, margin=5000):
@@ -116,7 +111,8 @@ class MaximumQuantityTests(unittest.TestCase):
         self.assertEqual(maximum_quantity(30000, 31000, {"fee": 0}, stress=False), 0)
         self.assertEqual(maximum_quantity(0, 5000, {"fee": 0}, stress=False), 0)
         self.assertEqual(maximum_quantity(30000, 100, {"fee": 0}, stress=False), 300)
-        for margin in (0, None, -1, math.inf, math.nan, True):
+        bad_margins: tuple[Any, ...] = (0, None, -1, math.inf, math.nan, True)
+        for margin in bad_margins:
             with self.subTest(margin=margin), self.assertRaises(W0Error):
                 maximum_quantity(30000, margin, {"fee": 0}, stress=False)
 
@@ -327,168 +323,20 @@ class FundedSizingTests(unittest.TestCase):
                 self.assert_reconciles(p)
 
 
-class SizingIntegrationTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        fixture(self.root)
-        self.svc = ProofService(self.root)
-        self.cal = {
-            "universe": "calendar_native",
-            "asset": "SR",
-            "pair": "SRH3/SRM3",
-            "strategy": "zscore_mean_reversion",
-            "fill": "next_open",
-            "sizing": AUTO_SIZING,
-            "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
-        }
-        self.pair = {
-            "universe": "pair_screen",
-            "pair": "CNYRUBF/CRZ6",
-            "strategy": "mean_reversion",
-            "sizing": AUTO_SIZING,
-            "parameters": {"lookback": 6, "entry_z": 0.8, "exit_z": 0.1},
-        }
-
+class SizingSettingsTests(unittest.TestCase):
     def test_settings_migrate_persist_and_reject_invalid_slippage(self):
-        path = settings_path(self.root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        legacy = '{"validation_percent": 12.5, "allow_failed_volume": false}\n'
-        path.write_text(legacy)
-        self.assertEqual(read_settings(self.root)["slippage_ticks"], 1.0)
-        self.assertEqual(path.read_text(), legacy)
-        save_settings(self.root, {"slippage_ticks": 2.5})
-        self.assertEqual(read_settings(self.root)["validation_percent"], 12.5)
-        self.assertFalse(read_settings(self.root)["allow_failed_volume"])
-        for value in (True, False, None, "1", -0.1, 10.1, math.inf, math.nan):
-            with self.subTest(value=value), self.assertRaises(W0Error):
-                save_settings(self.root, {"slippage_ticks": value})
-        self.assertEqual(read_settings(self.root)["slippage_ticks"], 2.5)
-
-    def test_all_strategies_reconcile_and_use_the_global_preference(self):
-        save_settings(self.root, {"slippage_ticks": 2.5})
-        carry = {**self.pair, "strategy": "funding_only", "parameters": {"lookback": 8}}
-        for request in (self.cal, self.pair, carry):
-            with self.subTest(strategy=request["strategy"]):
-                p = research_run(
-                    self.svc,
-                    {**request, "slippage_ticks": 0},
-                    optimize=False,
-                    include_plateau=False,
-                )
-                self.assertEqual(p["selection"]["slippage_ticks"], 2.5)
-                self.assertIsNone(p["selection"]["quantity"])
-                self.assertGreater(len(p["trades"]), 0)
-                self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-                self.assertEqual(p["sizing"]["additional_funding_rub"], 0)
-                self.assertEqual(
-                    research_run(self.svc, p["selection"], optimize=False, include_plateau=False)[
-                        "run_id"
-                    ],
-                    p["run_id"],
-                )
-
-    def test_ruonia_parameters_and_close_fill_can_be_replayed(self):
-        req = {
-            **self.cal,
-            "strategy": "convergence_to_ruonia",
-            "fill": "next_close",
-            "parameters": {"threshold_pp": 0.1},
-        }
-        p = research_run(self.svc, req, optimize=False, include_plateau=False)
-        self.assertEqual(p["selection"]["parameters"], {"threshold_pp": 0.1})
-        self.assertEqual(
-            research_run(self.svc, p["selection"], optimize=False, include_plateau=False)["run_id"],
-            p["run_id"],
-        )
-        self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-
-    def test_checked_search_and_lamps_use_one_automatic_rule_not_a_quantity_axis(self):
-        req = {
-            **self.pair,
-            "targets": [
-                {k: r[k] for k in ("universe", "asset", "pair") if k in r}
-                for r in (self.pair, self.cal)
-            ],
-        }
-        r = research_run(self.svc, req, optimize=True)
-        self.assertEqual(r["status"], "maximum_found")
-        self.assertEqual(set(r["plateau"]["fields"]), {"lookback", "entry_z", "exit_z"})
-        self.assertNotIn("quantity", r["selected_parameters"])
-        preview = checked_plateau(self.svc, {**req, "parameters": r["selected_parameters"]})
-        self.assertEqual(preview["plateau"], r["plateau"])
-        for member in r["group"]["members"]:
-            proof = research_run(
-                self.svc, member["selection"], optimize=False, include_plateau=False
-            )
-            self.assertEqual(proof["run_id"], member["run_id"])
-            self.assertEqual(proof["evaluation"], member["evaluation"])
-
-    def test_validation_replay_is_continuous_and_training_prefix_is_identical(self):
-        save_settings(self.root, {"validation_percent": 25})
-        p = research_run(self.svc, self.cal, optimize=False, include_plateau=False)
-        cutoff = p["evaluation"]["periods"]["training"][-1]
-        replay = self.svc.prepare(self.cal, settings=ResearchSettings.load(self.root))
-        prefix = replay(self.cal, through=cutoff)
-        a = [
-            (t["entry"]["date"], t["quantity"]) for t in p["trades"] if t["entry"]["date"] < cutoff
-        ]
-        b = [
-            (t["entry"]["date"], t["quantity"])
-            for t in prefix["trades"]
-            if t["entry"]["date"] < cutoff
-        ]
-        self.assertEqual(a, b)
-        self.assertEqual(
-            [r for r in p["ledger"] if r["date"] < cutoff],
-            [r for r in prefix["ledger"] if r["date"] < cutoff],
-        )
-        self.assertTrue(p["evaluation"]["periods"]["validation"])
-        self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-
-    def test_settings_are_snapshotted_for_every_member_of_a_search(self):
-        def change(*args, **kwargs):
-            save_settings(self.root, {"slippage_ticks": 4})
-            return _tune(*args, **kwargs)
-
-        with patch("moex_spread_lab.proof.proof_batch._tune", side_effect=change):
-            result = research_run(
-                self.svc,
-                {
-                    **self.cal,
-                    "targets": [
-                        {
-                            "universe": "calendar_native",
-                            "asset": "SR",
-                            "pair": "SRH3/SRM3",
-                        }
-                    ],
-                },
-                optimize=True,
-            )
-        self.assertEqual(result["group"]["slippage_ticks"], 1.0)
-        self.assertTrue(
-            all(m["selection"]["slippage_ticks"] == 1 for m in result["group"]["members"])
-        )
-        next_ = research_run(self.svc, self.cal, optimize=False, include_plateau=False)
-        self.assertEqual(next_["selection"]["slippage_ticks"], 4)
-
-    def test_no_minimum_lot_uses_no_trade_without_bypassing_data_requirements(self):
-        path = self.root / "data/w1/current-intake.json"
-        data = json.loads(path.read_text())
-        for c in data["instruments"]:
-            if c["secid"] in ("CNYRUBF", "CRZ6"):
-                c["initial_margin"] = 16000
-        path.write_text(json.dumps(data))
-        p = research_run(self.svc, self.pair, optimize=False, include_plateau=False)
-        self.assertFalse(p["trades"])
-        self.assertGreater(p["summary"]["skipped_entries"], 0)
-        self.assertAlmostEqual(p["evaluation"]["result"]["annualized_excess_pp"], 0, places=7)
-        self.assertEqual(p["summary"]["ledger_reconciliation_rub"], 0)
-        for c in data["instruments"]:
-            if c["secid"] == "CNYRUBF":
-                c["initial_margin"] = None
-        path.write_text(json.dumps(data))
-        with self.assertRaises(W0Error):
-            research_run(self.svc, self.pair, optimize=False, include_plateau=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = settings_path(root)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            legacy = '{"validation_percent": 12.5, "allow_failed_volume": false}\n'
+            path.write_text(legacy)
+            self.assertEqual(read_settings(root)["slippage_ticks"], 1.0)
+            self.assertEqual(path.read_text(), legacy)
+            save_settings(root, {"slippage_ticks": 2.5})
+            self.assertEqual(read_settings(root)["validation_percent"], 12.5)
+            self.assertFalse(read_settings(root)["allow_failed_volume"])
+            for value in (True, False, None, "1", -0.1, 10.1, math.inf, math.nan):
+                with self.subTest(value=value), self.assertRaises(W0Error):
+                    save_settings(root, {"slippage_ticks": value})
+            self.assertEqual(read_settings(root)["slippage_ticks"], 2.5)

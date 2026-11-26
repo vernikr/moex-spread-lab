@@ -1,11 +1,8 @@
 """Strategy choice is train-only, fixed-cohort and explicit about native execution."""
 
-import http.client
 import json
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,8 +19,6 @@ from moex_spread_lab.proof.proof_kernel import StudyWindow
 from moex_spread_lab.proof.proof_search import _measure, _tune, _validate, research_run
 from moex_spread_lab.proof.proof_windows import compact_result
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import funding_winner, rising_calendar, screen_failures
 from test_global_capital import FLAT, PAIR, TARGETS
 from test_position_sizing import unit_proof
@@ -185,29 +180,14 @@ class StrategyReportCases(unittest.TestCase):
             research_run(self.service, {**PAIR, "optimize_strategy": True}, optimize=False)
         _validate({**PAIR, "optimize_strategy": False})
 
-    def test_http_ui_path_records_every_family_and_only_the_final_selection(self):
-        store = ScreenerStore(ScreenerInputs(self.root))
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=20)
-        self.addCleanup(connection.close)
-        connection.request(
-            "POST",
-            "/api/proof/optimize",
-            json.dumps({**PAIR, "optimize_strategy": True}),
-            {"Content-Type": "application/json"},
-        )
-        response = connection.getresponse()
-        self.assertEqual(response.status, 200)
-        result = json.load(response)
+    def test_strategy_search_records_every_family_and_returns_run_id_only_for_winner(self):
+        result = self.search()
         self.assertEqual(result["selected_strategy"], "funding_only")
-        logs = (self.root / "data/analytics/proof-searches.jsonl").read_text().splitlines()
-        self.assertEqual(len(logs), 1)
-        logged = json.loads(logs[0])
-        self.assertTrue(logged.pop("recorded_at"))
-        self.assertEqual(logged, result)
+        self.assertTrue(result.get("run_id"))
+        self.assertEqual(
+            {item["strategy"] for item in result["strategy_search"]["alternatives"]},
+            {"mean_reversion", "funding_only"},
+        )
 
 
 # ---- folded from the retired P7.2 shard strategy_search_dash_p72_packages_proof_tests_test_strategy_search ----

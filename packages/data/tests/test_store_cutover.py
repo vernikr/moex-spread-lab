@@ -5,10 +5,45 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from moex_spread_lab.data.lake.data_lake import LegacyJsonBarStore, MarketDataStore, ParquetBarStore
-from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.strategies.pair_screener.screener import _normalized_series
+from moex_spread_lab.core.w0 import load_contracts, sha256_file
+from moex_spread_lab.data.lake.data_lake import (
+    BarSeries,
+    LegacyJsonBarStore,
+    MarketDataStore,
+    ParquetBarStore,
+)
+
+
+def _pair_bars_and_provenance(
+    near_series: BarSeries,
+    far_series: BarSeries,
+    benchmark_path: Path,
+    contracts_path: Path,
+) -> tuple[list[dict[str, object]], dict[str, str]]:
+    benchmark_sha = sha256_file(benchmark_path)
+    _, contracts_sha = load_contracts(contracts_path, "NEAR", "FAR")
+    rows = []
+    for near_row, far_row in zip(near_series.rows, far_series.rows, strict=True):
+        assert near_row["begin"] == far_row["begin"]
+        rows.append(
+            {
+                "begin": near_row["begin"],
+                "near_open": near_row["open"],
+                "near_close": near_row["close"],
+                "near_volume": near_row["volume"],
+                "far_open": far_row["open"],
+                "far_close": far_row["close"],
+                "far_volume": far_row["volume"],
+                "price_proxy_kind": near_row["price_proxy_kind"],
+            }
+        )
+    provenance = {
+        "near_sha256": near_series.source_sha256,
+        "far_sha256": far_series.source_sha256,
+        "benchmark_sha256": benchmark_sha,
+        "contracts_sha256": contracts_sha,
+    }
+    return rows, provenance
 
 
 class StoreCutoverTests(unittest.TestCase):
@@ -154,8 +189,8 @@ class StoreCutoverTests(unittest.TestCase):
             far = self._write_series(root, "FAR", "1d", 24, [9.0, 9.2, 9.4])
             benchmark, contracts = self._benchmark_and_contracts(root)
             legacy = LegacyJsonBarStore()
-            expected = _normalized_series(
-                legacy.read(near), legacy.read(far), benchmark, contracts, near="NEAR", far="FAR"
+            expected = _pair_bars_and_provenance(
+                legacy.read(near), legacy.read(far), benchmark, contracts
             )
 
             parquet = ParquetBarStore(root)
@@ -163,17 +198,20 @@ class StoreCutoverTests(unittest.TestCase):
             parquet.import_legacy(far)
             store = MarketDataStore(root)
             near_parquet, far_parquet = store.read(near), store.read(far)
-            actual = _normalized_series(
-                near_parquet, far_parquet, benchmark, contracts, near="NEAR", far="FAR"
-            )
+            actual = _pair_bars_and_provenance(near_parquet, far_parquet, benchmark, contracts)
 
             self.assertEqual(near_parquet.backend, "parquet")
             self.assertEqual(far_parquet.backend, "parquet")
-            self.assertEqual(ScreenerInputs(root).bars("NEAR/FAR", "NEAR", "1d").backend, "parquet")
+            self.assertEqual(near_parquet.source_sha256, legacy.read(near).source_sha256)
+            self.assertEqual(far_parquet.source_sha256, legacy.read(far).source_sha256)
             projected = store.read(near, columns=("begin", "open", "close", "volume"))
             self.assertEqual(projected.backend, "parquet")
             self.assertEqual(
                 set(projected.rows[0]), {"begin", "open", "close", "volume", "price_proxy_kind"}
+            )
+            self.assertEqual(
+                projected.rows,
+                legacy.read(near, columns=("begin", "open", "close", "volume")).rows,
             )
             self.assertEqual(actual, expected)
 
@@ -222,13 +260,26 @@ class StoreCutoverTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = self._write_series(root, "H1", "1h", 60, [100.0, 101.0, 102.0])
-            legacy_source, legacy_error = CalendarData(root)._read_h1_candles("H1")
+            legacy_store = MarketDataStore(root)
+            selected_legacy = legacy_store.select_h1("H1")
+            assert selected_legacy is not None
+            legacy_series = legacy_store.read(
+                selected_legacy, columns=("begin", "open", "close", "volume")
+            )
             ParquetBarStore(root).import_legacy(path)
-            parquet_source, parquet_error = CalendarData(root)._read_h1_candles("H1")
+            parquet_store = MarketDataStore(root)
+            selected_parquet = parquet_store.select_h1("H1")
+            assert selected_parquet is not None
+            parquet_series = parquet_store.read(
+                selected_parquet, columns=("begin", "open", "close", "volume")
+            )
 
-            self.assertIsNone(legacy_error)
-            self.assertIsNone(parquet_error)
-            self.assertEqual(parquet_source, legacy_source)
+            self.assertEqual(selected_legacy, path)
+            self.assertEqual(selected_parquet, path)
+            self.assertEqual(legacy_series.backend, "legacy_json")
+            self.assertEqual(parquet_series.backend, "parquet")
+            self.assertEqual(parquet_series.source_sha256, legacy_series.source_sha256)
+            self.assertEqual(parquet_series.rows, legacy_series.rows)
 
 
 if __name__ == "__main__":

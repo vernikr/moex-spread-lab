@@ -1,12 +1,9 @@
-"""Fixed-cohort proof search: real disjoint fixture histories, accounting, admission and HTTP."""
+"""Fixed-cohort proof search: real disjoint fixture histories, accounting and admission."""
 
-import http.client
 import json
 import tempfile
-import threading
 import unittest
 from datetime import date
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,8 +13,6 @@ from moex_spread_lab.proof.proof_batch import MAX_TARGETS, _targets
 from moex_spread_lab.proof.proof_search import TRIALS, _annualized_returns, research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.calendar import calendar_spreads
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import fixture
 
 # ---- folded from the retired P7.2 shard helpers_p72_packages_proof_tests_test_proof_batch ----
@@ -103,7 +98,7 @@ class AnnualizationTests(unittest.TestCase):
         # Hand calculation: one year between marks. 3k margin held during the
         # +10% interval then released; reserve earns no LQDT. Book earns 600 net.
         days = ["2021-01-01", "2022-01-01", "2023-01-01"]
-        marks = dict(zip(days, [100, 110, 121], strict=True))
+        marks: dict[str, float] = dict(zip(days, [100.0, 110.0, 121.0], strict=True))
         proof = {
             "ledger": [
                 {"date": d, "cumulative_net_rub": v}
@@ -294,38 +289,16 @@ class CohortTests(CohortCase):
             with self.assertRaises(W0Error):
                 _targets({**ACTIVE, "targets": raw})
 
-    def test_large_confirmation_preview_is_not_logged_and_searches_are_serialized(self):
-        store = ScreenerStore(ScreenerInputs(self.root))
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=15)
-        self.addCleanup(conn.close)
+    def test_large_confirmation_preview_has_no_run_id_and_cancellation_aborts(self):
         req = {
             **P,
             "strategy": "funding_only",
             "targets": [P, *[{**C, "pair": f"W{i}/T{i}"} for i in range(200)]],
         }
-        data = json.dumps(req)
-        self.assertGreater(len(data), 8192)
-
-        def post():
-            conn.request(
-                "POST",
-                "/api/proof/optimize",
-                data,
-                {"Content-Type": "application/json"},
-            )
-            resp = conn.getresponse()
-            return resp.status, json.load(resp)
-
-        with store.proof_search_lock:
-            self.assertEqual(post()[0], 409)
-        status, result = post()
-        self.assertEqual(
-            (status, len(result["excluded"]), result["remaining_count"]), (200, 200, 1)
-        )
+        self.assertGreater(len(json.dumps(req)), 8192)
+        result = research_run(self.service, req, optimize=True)
+        self.assertEqual((len(result["excluded"]), result["remaining_count"]), (200, 1))
+        self.assertIsNone(result.get("run_id"))
         self.assertFalse((self.root / "data/analytics/proof-searches.jsonl").exists())
         with self.assertRaises(ConnectionAbortedError):
             research_run(

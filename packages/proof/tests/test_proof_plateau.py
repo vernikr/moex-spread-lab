@@ -1,11 +1,8 @@
 """The live checked-window diagnostics must profile the mean, not a selected row or mean of colors."""
 
-import http.client
 import json
 import tempfile
-import threading
 import unittest
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from statistics import fmean
 from typing import Any
@@ -16,8 +13,6 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import fixture
 from test_proof_batch import ACTIVE, C, P
 
@@ -183,35 +178,10 @@ class CheckedPlateauTests(unittest.TestCase):
                 check_cancelled=lambda: (_ for _ in ()).throw(ConnectionAbortedError()),
             )
 
-    def test_endpoint_accepts_whole_catalog_sized_bodies_and_is_read_only_loopback(
-        self,
-    ):
-        store = ScreenerStore(ScreenerInputs(self.root))
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        conn = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        self.addCleanup(conn.close)
-
-        def post(body, extra=None):
-            conn.request(
-                "POST",
-                "/api/proof/plateau",
-                body,
-                {"Content-Type": "application/json", **(extra or {})},
-            )
-            r = conn.getresponse()
-            return r.status, json.load(r)
-
-        body = json.dumps(self.req) + " " * 9000
-        status, result = post(body)
-        self.assertEqual(status, 200)
+    def test_checked_plateau_is_read_only_and_repeatable(self):
+        result = checked_plateau(self.service, self.req)
         self.assertEqual(result, self.profile())
-        self.assertEqual(post(body, {"Origin": "https://example.org"})[0], 403)
-        self.assertEqual(post(body + " " * (192 * 1024))[0], 400)
         self.assertFalse((self.root / "data/analytics/proof-searches.jsonl").exists())
-        self.assertFalse(store.proof_profile_lock.locked())
 
 
 def assert_neighbour_is_member_mean(

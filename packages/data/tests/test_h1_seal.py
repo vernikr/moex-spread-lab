@@ -7,8 +7,16 @@ from moex_spread_lab.cli import main
 from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore
 from moex_spread_lab.data.lake.h1_migration import stage_h1, write_h1_plan
 from moex_spread_lab.data.lake.h1_seal import activate_h1, deactivate_h1, verify_sealed_h1
-from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+
+
+def _read_projected_h1(store: MarketDataStore, secid: str):
+    path = store.select_h1(secid)
+    assert path is not None
+    series = store.read(path, columns=("begin", "open", "close", "volume"))
+    return (
+        series.source_sha256,
+        [(r["begin"], r["open"], r["close"], r["volume"]) for r in series.rows],
+    )
 
 
 @pytest.fixture
@@ -27,21 +35,21 @@ def prepared(tmp_path):
 
 def test_no_json_read_and_screen_priority_and_calendar_equivalence(prepared):
     root, intake, screen, plan, candidate = prepared
-    before = CalendarData(root)._read_h1_candles("NEAR")
+    before = _read_projected_h1(MarketDataStore(root), "NEAR")
     activate_h1(root, plan, candidate)
     store = MarketDataStore(root)
     source = store.read(screen)
     assert source.backend == "sealed_parquet"
     intake.unlink()
     screen.unlink()
-    inputs = ScreenerInputs(root)
-    assert inputs.candles("NEAR/FAR", "NEAR", "1h") == screen
-    assert inputs.bar_store.source_available(screen)
-    after = store.read(screen, columns=("begin", "open", "close", "volume"))
+    fresh_store = MarketDataStore(root)
+    assert fresh_store.select_h1("NEAR") == screen
+    assert fresh_store.source_available(screen)
+    after = fresh_store.read(screen, columns=("begin", "open", "close", "volume"))
     assert after.rows[0]["close"] == 20.0
     assert after.source_sha256 == source.source_sha256
     assert after.source_path == str(screen)
-    assert CalendarData(root)._read_h1_candles("NEAR") == before
+    assert _read_projected_h1(fresh_store, "NEAR") == before
     assert verify_sealed_h1(root)["retained_json_count"] == 0
     with pytest.raises(DataLakeError):
         deactivate_h1(root)
@@ -79,9 +87,10 @@ def test_missing_preferred_parquet_never_selects_intake(prepared):
     activate_h1(root, plan, candidate)
     screen.unlink()
     next((candidate / "candles-screen").rglob("data.parquet")).unlink()
-    assert ScreenerInputs(root).candles("NEAR/FAR", "NEAR", "1h") == screen
+    store = MarketDataStore(root)
+    assert store.select_h1("NEAR") == screen
     with pytest.raises(DataLakeError):
-        ScreenerInputs(root).bars("NEAR/FAR", "NEAR", "1h")
+        store.read(screen)
 
 
 def test_new_screened_copy_invalidates_selection(prepared):
@@ -93,10 +102,11 @@ def test_new_screened_copy_invalidates_selection(prepared):
     stage_h1(root, plan, new_candidate)
     activate_h1(root, plan, new_candidate)
     screen.write_bytes(intake.read_bytes())
+    store = MarketDataStore(root)
     with pytest.raises(DataLakeError):
-        ScreenerInputs(root).candles("NEAR/FAR", "NEAR", "1h")
+        store.select_h1("NEAR")
     with pytest.raises(DataLakeError):
-        MarketDataStore(root).read(intake)
+        store.read(intake)
 
 
 def test_deactivation_requires_originals_and_preserves_evidence(prepared):

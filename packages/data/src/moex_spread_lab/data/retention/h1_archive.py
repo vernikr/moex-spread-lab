@@ -12,6 +12,5 @@ def execute(
     mode: str,
     archive: Path | None = None,
     evidence: Path | None = None,
-    retry_restored: bool = False,
 ) -> dict[str, Any]:
     raise W0Error("H1 migration archive has been retired; use data-archive for rebuildable caches")

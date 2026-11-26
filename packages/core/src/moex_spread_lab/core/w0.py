@@ -1,4 +1,4 @@
-"""Stage-9 W0: offline manifests, fixture replay and secret scanning."""
+"""Stage-9 W0: offline run manifests and secret scanning."""
 
 from __future__ import annotations
 
@@ -16,8 +16,6 @@ from .hashed_json_cache import HashedJSONCache as _HashedJSONCache
 from .json_types import as_str_dict, load_object
 
 MANIFEST_SCHEMA = "run-manifest.v1"
-FIXTURE_SCHEMA = "w0.fixture.v1"
-REPLAY_SCHEMA = "w0.replay.v1"
 
 SECRET_PATTERNS = (
     re.compile(rb"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -30,7 +28,7 @@ SECRET_PATTERNS = (
 
 
 class W0Error(ValueError):
-    """Raised when a W0 manifest or fixture is invalid."""
+    """Raised when a W0 manifest is invalid."""
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -59,8 +57,6 @@ def load_json(path: Path) -> dict[str, Any]:
     try:
         return cast(dict[str, Any], load_object(path, label=f"JSON: {path}", error=W0Error))
     except FileNotFoundError as exc:
-        raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
-    except W0Error as exc:
         raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
 
 
@@ -109,11 +105,8 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
-def _run_id(
-    identity: dict[str, Any],
-) -> str:
-    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+def _run_id(identity: dict[str, Any]) -> str:
+    return sha256_bytes(canonical_bytes(identity))[:16]
 
 
 # Public name for cross-package use; retain the existing private entry point.
@@ -123,7 +116,7 @@ run_id = _run_id
 def _validate_contract_number(
     value: Any, field: str, *, error: type[W0Error] = W0Error, positive: bool = False
 ) -> float:
-    if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+    if type(value) not in (int, float) or not math.isfinite(float(value)):
         raise error(f"{field} must be a finite number")
     number = float(value)
     if positive and number <= 0:
@@ -228,48 +221,43 @@ def _resolve(root: Path, relative: str) -> Path:
     return path
 
 
-def validate_manifest(manifest_path: Path) -> dict[str, Any]:
-    root = manifest_path.resolve().parents[1]
-    manifest = load_json(manifest_path)
+def _validate_manifest_header(manifest: dict[str, Any]) -> None:
     if _require(manifest, "schema_version", "run manifest") != MANIFEST_SCHEMA:
         raise W0Error("unsupported run manifest schema")
-    run_id = _require(manifest, "run_id", "run manifest")
-    if not isinstance(run_id, str) or not run_id:
+    run_id_value = _require(manifest, "run_id", "run manifest")
+    if not isinstance(run_id_value, str) or not run_id_value:
         raise W0Error("run_id must be a non-empty string")
     if _require(manifest, "configuration", "run manifest").get("network_access") is not False:
         raise W0Error("W0 requires configuration.network_access=false")
     trial_counter = _require(manifest, "trial_counter", "run manifest")
-    if not isinstance(trial_counter, int) or trial_counter < 0:
+    if type(trial_counter) is not int or trial_counter < 0:
         raise W0Error("trial_counter must be a non-negative integer")
-
-    expected_hash = manifest_config_hash(manifest)
-    if manifest.get("config_hash") != expected_hash:
+    if manifest.get("config_hash") != manifest_config_hash(manifest):
         raise W0Error("config_hash does not match the canonical run manifest")
 
-    modules = _require(manifest, "modules", "run manifest")
-    if not isinstance(modules, list) or not modules:
-        raise W0Error("run manifest must pin at least one module")
-    for module_value in cast(list[object], modules):
-        if not isinstance(module_value, dict):
-            raise W0Error("module pin must be an object")
-        module = cast(dict[str, Any], module_value)
-        module_path = _resolve(root, cast(str, _require(module, "manifest_path", "module pin")))
-        if sha256_file(module_path) != _require(module, "manifest_sha256", "module pin"):
-            raise W0Error(f"module manifest hash mismatch: {module_path}")
 
-    artifacts = _require(manifest, "artifacts", "run manifest")
-    if not isinstance(artifacts, list):
-        raise W0Error("artifacts must be a list")
-    for artifact_value in cast(list[object], artifacts):
-        if not isinstance(artifact_value, dict):
-            raise W0Error("artifact pin must be an object")
-        artifact = cast(dict[str, Any], artifact_value)
-        artifact_path = _resolve(root, cast(str, _require(artifact, "path", "artifact pin")))
-        if sha256_file(artifact_path) != _require(artifact, "sha256", "artifact pin"):
-            raise W0Error(f"artifact hash mismatch: {artifact_path}")
-        if not _require(artifact, "rights_status", "artifact pin"):
-            raise W0Error(f"artifact rights_status is empty: {artifact_path}")
+def _check_manifest_pins(
+    root: Path,
+    pins: list[object],
+    *,
+    path_key: str,
+    hash_key: str,
+    kind: str,
+    hash_label: str,
+    check_rights: bool = False,
+) -> None:
+    for pin_value in pins:
+        if not isinstance(pin_value, dict):
+            raise W0Error(f"{kind} pin must be an object")
+        pin = cast(dict[str, Any], pin_value)
+        pin_path = _resolve(root, cast(str, _require(pin, path_key, f"{kind} pin")))
+        if sha256_file(pin_path) != _require(pin, hash_key, f"{kind} pin"):
+            raise W0Error(f"{hash_label} hash mismatch: {pin_path}")
+        if check_rights and not _require(pin, "rights_status", f"{kind} pin"):
+            raise W0Error(f"{kind} rights_status is empty: {pin_path}")
 
+
+def _validate_source_requests(manifest: dict[str, Any]) -> None:
     requests = _require(manifest, "source_requests", "run manifest")
     if not isinstance(requests, list):
         raise W0Error("source_requests must be a list")
@@ -281,48 +269,36 @@ def validate_manifest(manifest_path: Path) -> dict[str, Any]:
         if request.get("network_required") is not False:
             raise W0Error("W0 source requests must declare network_required=false")
 
+
+def validate_manifest(manifest_path: Path) -> dict[str, Any]:
+    root = manifest_path.resolve().parents[1]
+    manifest = load_json(manifest_path)
+    _validate_manifest_header(manifest)
+    modules = _require(manifest, "modules", "run manifest")
+    if not isinstance(modules, list) or not modules:
+        raise W0Error("run manifest must pin at least one module")
+    _check_manifest_pins(
+        root,
+        cast(list[object], modules),
+        path_key="manifest_path",
+        hash_key="manifest_sha256",
+        kind="module",
+        hash_label="module manifest",
+    )
+    artifacts = _require(manifest, "artifacts", "run manifest")
+    if not isinstance(artifacts, list):
+        raise W0Error("artifacts must be a list")
+    _check_manifest_pins(
+        root,
+        cast(list[object], artifacts),
+        path_key="path",
+        hash_key="sha256",
+        kind="artifact",
+        hash_label="artifact",
+        check_rights=True,
+    )
+    _validate_source_requests(manifest)
     return manifest
-
-
-def normalize_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
-    if _require(fixture, "schema_version", "fixture") != FIXTURE_SCHEMA:
-        raise W0Error("unsupported W0 fixture schema")
-    records = _require(fixture, "records", "fixture")
-    if not isinstance(records, list):
-        raise W0Error("fixture records must be a list")
-    normalized_records: list[dict[str, Any]] = []
-    for record_value in cast(list[object], records):
-        if not isinstance(record_value, dict):
-            raise W0Error("fixture record must be an object")
-        record = cast(dict[str, Any], record_value)
-        record_id = _require(record, "record_id", "fixture record")
-        normalized_records.append(dict(record, record_id=record_id))
-    normalized_records.sort(key=lambda record: record["record_id"])
-    return {
-        "schema_version": FIXTURE_SCHEMA,
-        "fixture_id": _require(fixture, "fixture_id", "fixture"),
-        "source": _require(fixture, "source", "fixture"),
-        "records": normalized_records,
-    }
-
-
-def replay(manifest_path: Path, fixture_path: Path) -> dict[str, Any]:
-    manifest = validate_manifest(manifest_path)
-    fixture = load_json(fixture_path)
-    normalized = normalize_fixture(fixture)
-    fixture_hash = sha256_file(fixture_path)
-    normalized_hash = sha256_bytes(canonical_bytes(normalized))
-    return {
-        "schema_version": REPLAY_SCHEMA,
-        "run_id": manifest["run_id"],
-        "config_hash": manifest["config_hash"],
-        "trial_counter": manifest["trial_counter"],
-        "fixture_hash": fixture_hash,
-        "normalized_fixture_hash": normalized_hash,
-        "network_access": False,
-        "record_count": len(normalized["records"]),
-        "normalized_fixture": normalized,
-    }
 
 
 def iter_scan_files(root: Path) -> Iterable[Path]:
@@ -330,8 +306,7 @@ def iter_scan_files(root: Path) -> Iterable[Path]:
     for path in sorted(root.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
             continue
-        if path.stat().st_size <= 5 * 1024 * 1024:
-            yield path
+        yield path
 
 
 def scan_secrets(root: Path, *, tracked_only: bool = False) -> list[dict[str, str]]:

@@ -4,13 +4,35 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import (
+    W0Error,
     canonical_bytes,
+    load_contracts,
     manifest_config_hash,
-    normalize_fixture,
+    run_id,
     scan_secrets,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def _write_intake(directory: str, *, lot_size: object = 1, tick_size: object = 0.1) -> Path:
+    path = Path(directory) / "intake.json"
+    instruments = [
+        {
+            "secid": secid,
+            "stable_id": secid.lower(),
+            "board": "RFUD",
+            "expiry": "2026-12-17",
+            "lot_size": lot_size,
+            "tick_size": tick_size,
+            "tick_value": 1.0,
+            "initial_margin": 100.0,
+            "source_vintage": "current_snapshot",
+        }
+        for secid in ("NEAR", "FAR")
+    ]
+    path.write_text(json.dumps({"instruments": instruments}), encoding="utf-8")
+    return path
 
 
 class W0Tests(unittest.TestCase):
@@ -21,12 +43,37 @@ class W0Tests(unittest.TestCase):
         manifest = json.loads((ROOT / "config/run-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["config_hash"], manifest_config_hash(manifest))
 
-    def test_fixture_normalization_is_sorted(self):
-        fixture = json.loads((ROOT / "fixtures/w0/replay.json").read_text(encoding="utf-8"))
-        normalized = normalize_fixture(fixture)
-        self.assertEqual(
-            [r["record_id"] for r in normalized["records"]], ["probe-001", "probe-002"]
-        )
+    def test_run_id_is_stable_and_order_independent(self):
+        identity = {"b": 2, "a": 1}
+        self.assertEqual(run_id(identity), run_id({"a": 1, "b": 2}))
+        self.assertEqual(len(run_id(identity)), 16)
+
+    def test_run_id_rejects_non_finite_numbers(self):
+        with self.assertRaises(ValueError):
+            run_id({"value": float("nan")})
+        with self.assertRaises(ValueError):
+            run_id({"value": float("inf")})
+
+    def test_load_contracts_accepts_valid_intake(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selected, digest = load_contracts(_write_intake(directory), "NEAR", "FAR")
+        self.assertEqual(selected["NEAR"]["lot_size"], 1)
+        self.assertEqual(selected["FAR"]["tick_size"], 0.1)
+        self.assertEqual(len(digest), 64)
+
+    def test_load_contracts_rejects_bool_lot_size(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory, lot_size=True)
+            with self.assertRaises(W0Error) as ctx:
+                load_contracts(path, "NEAR", "FAR")
+            self.assertIn("must be a finite number", str(ctx.exception))
+
+    def test_load_contracts_rejects_nan_tick_size(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = _write_intake(directory, tick_size=float("nan"))
+            with self.assertRaises(W0Error) as ctx:
+                load_contracts(path, "NEAR", "FAR")
+            self.assertIn("must be a finite number", str(ctx.exception))
 
     def test_secret_scan_detects_private_key_pattern(self):
         with tempfile.TemporaryDirectory() as directory:

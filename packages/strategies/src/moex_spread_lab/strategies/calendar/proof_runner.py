@@ -15,9 +15,7 @@ from moex_spread_lab.core.w0 import W0Error
 from ..base import StrategyRegistry
 from ..calendar_eval import FILLS, account_trades, strategy_runner
 from .catalog_builder import build_1d_catalog, build_h1_catalog, enrich_proof_window_and_notes
-from .contracts import ASSETS, STRATEGIES
-from .contracts import positive_spread_volume_rows as _positive_spread_volume_rows
-from .contracts import zscore_options as _zscore_options
+from .contracts import ASSETS, STRATEGIES, positive_spread_volume_rows, zscore_options
 from .intents import calendar_intent_trades
 from .proof_payload import build_proof_payload
 
@@ -164,7 +162,7 @@ def _validate_proof_params(
     if not isinstance(raw_params, dict):
         raise W0Error("unknown strategy parameter")
     raw_params = cast(dict[str, Any], raw_params)
-    options: dict[str, Any] = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset)}
+    options: dict[str, Any] = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset)}
     if generic:
         plugin_params = _validate_plugin_params(
             asset, pair, timeframe, strategy, raw_params, registry
@@ -210,7 +208,7 @@ def _prepare_analysis_rows(
     elig_cache = cache.setdefault("daily_eligible", {}) if cache is not None else None
     if elig_cache is not None and through in elig_cache:
         return window, elig_cache[through]
-    analysis_rows = _prepare_daily_eligibility(_positive_spread_volume_rows(window["rows"]))
+    analysis_rows = _prepare_daily_eligibility(positive_spread_volume_rows(window["rows"]))
     if len(analysis_rows) < 2:
         raise W0Error("fewer than two positive-volume calendar-spread observations")
     if elig_cache is not None:
@@ -235,7 +233,7 @@ def _resolve_calendar_params(
         return options, threshold, None
     plugin_params = _validate_plugin_params(asset, pair, timeframe, strategy, raw_params, registry)
     if strategy not in STRATEGIES:
-        options = {"entry_z": 1.5, "exit_z": 0.5, **_zscore_options(asset), **plugin_params}
+        options = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset), **plugin_params}
         options["window"] = int(options["window"])
         return options, 1.0, plugin_params
     # Built-ins keep their historical envelope; the plugin re-validates exactly that map so the

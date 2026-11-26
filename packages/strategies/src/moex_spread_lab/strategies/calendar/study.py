@@ -31,31 +31,15 @@ from .contracts import (
     SYNTHETIC_TRIANGLE_PAIRS,
     ZSCORE_OPTIONS,
     contract_chain,
+    fx_factors,
+    positive_spread_volume_rows,
+    ruonia,
     spread_id,
+    stress_ok,
+    terms,
+    zscore_options,
 )
-from .contracts import (
-    calendar_strategy_runner as _calendar_strategy_runner,
-)
-from .contracts import (
-    fx_factors as _fx_factors,
-)
-from .contracts import (
-    positive_spread_volume_rows as _positive_spread_volume_rows,
-)
-from .contracts import (
-    ruonia as _ruonia,
-)
-from .contracts import (
-    stress_ok as _stress_ok,
-)
-from .contracts import (
-    terms as _terms,
-)
-from .contracts import (
-    zscore_options as _zscore_options,
-)
-from .loaders import cached_till_date, fetch_inputs
-from .loaders import offline_loader as _offline
+from .loaders import cached_till_date, fetch_inputs, offline_loader
 
 
 def _build_daily_window_row(
@@ -162,7 +146,7 @@ def build_windows(
             )
             for d in days
         ]
-        eligible_volumes = [float(r["min_volume"]) for r in _positive_spread_volume_rows(rows)]
+        eligible_volumes = [float(r["min_volume"]) for r in positive_spread_volume_rows(rows)]
         windows.append(
             {
                 "pair": f"{near}/{far}",
@@ -180,7 +164,7 @@ def build_windows(
     return windows
 
 
-def _span_years(windows: list[dict[str, Any]]) -> float:
+def span_years(windows: list[dict[str, Any]]) -> float:
     return (
         date.fromisoformat(windows[-1]["near_expiry"])
         - date.fromisoformat(windows[0]["first_date"])
@@ -196,7 +180,7 @@ def _evaluate_asset_study(
     if not windows:
         return {"status": "no_complete_windows"}
     eligible = {w["pair"]: w["rows"] for w in windows if w["min_spread_volume"] >= MIN_DAILY_VOLUME}
-    years = _span_years(windows)
+    years = span_years(windows)
     raw_variants = (
         evaluate_variants(
             eligible,
@@ -206,7 +190,7 @@ def _evaluate_asset_study(
             reference_cost=False,
             skip_dividend_windows_in_zscore=False,
             close_at_end=True,
-            zscore_options=_zscore_options(asset),
+            zscore_options=zscore_options(asset),
         )
         if eligible
         else []
@@ -247,7 +231,7 @@ def _evaluate_asset_study(
                 "min_spread_volume": w["min_spread_volume"],
                 "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
                 "max_pair_margin_rub": w["max_pair_margin_rub"],
-                "passes_capital_screen": _stress_ok(w["max_pair_margin_rub"]),
+                "passes_capital_screen": stress_ok(w["max_pair_margin_rub"]),
             }
             for w in windows
         ],
@@ -270,15 +254,15 @@ def run_calendar_study(
     )
     histories = fetch_fn(cache_dir, assets, till_date)
     benchmark = read_benchmark(benchmark_path)
-    ruonia = _ruonia(benchmark_cache_dir / "CBR_RUONIA.json")
-    terms = _terms(contracts_path, assets)
-    factors = _fx_factors(histories)
+    ruonia_rates = ruonia(benchmark_cache_dir / "CBR_RUONIA.json")
+    contract_terms = terms(contracts_path, assets)
+    factors = fx_factors(histories)
     profile = tariff_profile(slippage_ticks)
     report = {
         asset: _evaluate_asset_study(
             asset,
-            build_windows(histories, asset, terms[asset], ruonia, factors)
-            if asset in terms
+            build_windows(histories, asset, contract_terms[asset], ruonia_rates, factors)
+            if asset in contract_terms
             else [],
             benchmark,
             profile,
@@ -315,19 +299,17 @@ __all__ = [
     "STRATEGIES",
     "SYNTHETIC_TRIANGLE_PAIRS",
     "ZSCORE_OPTIONS",
-    "_calendar_strategy_runner",
-    "_fx_factors",
-    "_offline",
-    "_positive_spread_volume_rows",
-    "_ruonia",
-    "_span_years",
-    "_stress_ok",
-    "_terms",
-    "_zscore_options",
     "build_windows",
     "cached_till_date",
     "contract_chain",
     "fetch_inputs",
+    "fx_factors",
+    "offline_loader",
+    "positive_spread_volume_rows",
     "run_calendar_study",
+    "ruonia",
     "spread_id",
+    "stress_ok",
+    "terms",
+    "zscore_options",
 ]

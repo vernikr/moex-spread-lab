@@ -16,6 +16,7 @@ from .data_cache import (
     asset_eod_signature,
     asset_h1_signature,
     build_loaded_dict,
+    is_offline,
     load_shared_metadata,
     resolve_intraday_till,
     run_calendar_data_proof,
@@ -24,10 +25,7 @@ from .data_cache import (
     stat_extras,
     validate_training_window,
 )
-from .data_cache import (
-    is_offline as _is_offline,
-)
-from .h1_candles import fetch_h1_candles, read_h1_candles
+from .h1_candles import read_h1_candles
 from .h1_windows import (
     asof_before,
     build_intraday_window,
@@ -35,10 +33,8 @@ from .h1_windows import (
     finite_num,
 )
 from .loaders import cached_till_date, fetch_inputs
-from .proof_ledger import elapsed_days as _elapsed_days
-from .proof_payload import clean_payload as _clean
-from .proof_payload import proof_payload as _proof_payload
-from .proof_payload import rel_pct as _rel_pct
+from .proof_ledger import elapsed_days
+from .proof_payload import clean_payload, rel_pct
 from .proof_runner import build_1d_catalog, build_h1_catalog
 from .study import (
     ASSETS,
@@ -56,18 +52,13 @@ from .study import (
     STRATEGIES,
     SYNTHETIC_TRIANGLE_PAIRS,
     ZSCORE_OPTIONS,
-    _calendar_strategy_runner,
-    _fx_factors,
-    _offline,
-    _positive_spread_volume_rows,
-    _ruonia,
-    _span_years,
-    _stress_ok,
-    _terms,
-    _zscore_options,
     build_windows,
     contract_chain,
+    fx_factors,
+    offline_loader,
+    positive_spread_volume_rows,
     spread_id,
+    stress_ok,
 )
 from .study import run_calendar_study as _run_calendar_study
 
@@ -163,7 +154,7 @@ class CalendarData:
         sig = asset_eod_signature(self.cache, asset, meta["till"], meta["extras_sig"])
         if asset in self._loaded_assets and self._loaded_assets_sig.get(asset) == sig:
             return self._loaded_assets[asset]
-        offline = self.offline or _is_offline(
+        offline = self.offline or is_offline(
             asset in self._asset_fetched_once, self._eod_fetched_once
         )
         histories = fetch_inputs(
@@ -171,11 +162,11 @@ class CalendarData:
             (asset,),
             meta["till"],
             delay_seconds=0 if offline else 0.05,
-            opener=_offline if offline else None,
+            opener=offline_loader if offline else None,
         )
         self._asset_fetched_once.add(asset)
         sig = asset_eod_signature(self.cache, asset, meta["till"], meta["extras_sig"])
-        data = build_loaded_dict(meta, histories, (asset,), _fx_factors, build_windows)
+        data = build_loaded_dict(meta, histories, (asset,), fx_factors, build_windows)
         self._loaded_assets[asset] = data
         self._loaded_assets_sig[asset] = sig
         self._h1_windows.pop(asset, None)
@@ -187,17 +178,17 @@ class CalendarData:
         if self._loaded is not None and self._loaded_sig == sig:
             return self._loaded
         meta = self._shared_metadata()
-        offline = self.offline or _is_offline(self._eod_fetched_once)
+        offline = self.offline or is_offline(self._eod_fetched_once)
         histories = fetch_inputs(
             self.cache,
             tuple(ASSETS),
             meta["till"],
             delay_seconds=0 if offline else 0.05,
-            opener=_offline if offline else None,
+            opener=offline_loader if offline else None,
         )
         self._eod_fetched_once = True
         self._loaded = build_loaded_dict(
-            self._shared_metadata(), histories, tuple(ASSETS), _fx_factors, build_windows
+            self._shared_metadata(), histories, tuple(ASSETS), fx_factors, build_windows
         )
         self._loaded_sig = self._eod_signature()
         self._loaded_assets.clear()
@@ -210,12 +201,6 @@ class CalendarData:
     _number = staticmethod(finite_num)
     _asof_before = staticmethod(asof_before)
     _through = staticmethod(slice_window_through)
-
-    def _fetch_h1_candles(self, secid: str) -> tuple[dict[str, Any] | None, str | None]:
-        """H1 candles for ``secid`` with the view's offline contract."""
-        return fetch_h1_candles(
-            self.root, secid, self._h1_candle_cache, self._h1_fetch_attempted, offline=self.offline
-        )
 
     def _read_h1_candles(
         self, secid: str, *, allow_fetch: bool = True
@@ -354,26 +339,18 @@ __all__ = [
     "SYNTHETIC_TRIANGLE_PAIRS",
     "ZSCORE_OPTIONS",
     "CalendarData",
-    "_calendar_strategy_runner",
-    "_clean",
-    "_elapsed_days",
-    "_fx_factors",
-    "_offline",
-    "_positive_spread_volume_rows",
-    "_proof_payload",
-    "_rel_pct",
-    "_ruonia",
-    "_span_years",
-    "_stress_ok",
-    "_terms",
-    "_zscore_options",
     "account_trades",
     "build_windows",
     "cached_till_date",
+    "clean_payload",
     "contract_chain",
+    "elapsed_days",
     "evaluate_variants",
     "fetch_inputs",
+    "positive_spread_volume_rows",
     "read_benchmark",
+    "rel_pct",
     "run_calendar_study",
     "spread_id",
+    "stress_ok",
 ]

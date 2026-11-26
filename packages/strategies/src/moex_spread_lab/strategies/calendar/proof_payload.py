@@ -8,8 +8,7 @@ from typing import Any
 from moex_spread_lab.accounting.costs import TAKER_RATE_PERCENT
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 
-from .contracts import ASSETS
-from .contracts import stress_ok as _stress_ok
+from .contracts import ASSETS, stress_ok
 from .proof_ledger import (
     clean_payload,
     compact_series,
@@ -71,7 +70,7 @@ def _base_proof_envelope(
         "tradable_every_day": window.get(
             "tradable_every_day", (window.get("min_spread_volume") or 0) >= MIN_DAILY_VOLUME
         ),
-        "passes_capital_screen": _stress_ok(
+        "passes_capital_screen": stress_ok(
             window["max_pair_margin_rub"], ctx.quantity, ctx.initial_capital
         ),
         "max_pair_margin_rub": window["max_pair_margin_rub"],

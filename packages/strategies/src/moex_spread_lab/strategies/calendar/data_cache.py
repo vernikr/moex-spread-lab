@@ -20,19 +20,11 @@ from .contracts import (
     HISTORY_FROM,
     STRATEGIES,
     contract_chain,
+    positive_spread_volume_rows,
+    ruonia,
     spread_id,
-)
-from .contracts import (
-    positive_spread_volume_rows as _positive_spread_volume_rows,
-)
-from .contracts import (
-    ruonia as _ruonia,
-)
-from .contracts import (
-    stress_ok as _stress_ok,
-)
-from .contracts import (
-    terms as _terms,
+    stress_ok,
+    terms,
 )
 from .proof_runner import execute_calendar_proof
 from .study import cached_till_date
@@ -170,7 +162,7 @@ def slice_window_through(window: dict[str, Any], day: str) -> dict[str, Any]:
             "max_pair_margin_rub": round(max(float(r["margin"]) for r in rows), 2),
         }
     rows = [row for row in window["rows"] if row["date"] <= day]
-    eligible = _positive_spread_volume_rows(rows)
+    eligible = positive_spread_volume_rows(rows)
     if len(eligible) < 2:
         raise W0Error("Недостаточно наблюдений для проверки параметров")
     return {
@@ -193,7 +185,7 @@ def validate_training_window(
         observations = (
             [r["date"] for r in window["rows"] if r.get("signal_eligible")]
             if timeframe == "1h"
-            else [r["date"] for r in _positive_spread_volume_rows(window["rows"])]
+            else [r["date"] for r in positive_spread_volume_rows(window["rows"])]
         )
         cutoff = EvaluationSplit.from_dates(observations, settings.validation_percent).training[-1]
         window = slice_window_through(window, cutoff)
@@ -205,7 +197,7 @@ def validate_training_window(
         )
         if not vol_ok:
             raise W0Error("Не пройдено правило ликвидности на обучении.")
-    if not settings.allow_failed_capital and not _stress_ok(
+    if not settings.allow_failed_capital and not stress_ok(
         window["max_pair_margin_rub"], quantity, settings.initial_capital_rub
     ):
         raise W0Error("Не пройден стресс-тест капитала на обучении.")
@@ -297,7 +289,7 @@ def run_calendar_data_proof(
     )
 
 
-def _is_offline(*flags: bool) -> bool:
+def is_offline(*flags: bool) -> bool:
     return (
         os.environ.get("MOEX_OFFLINE_ONLY") == "1"
         or "PYTEST_CURRENT_TEST" in os.environ
@@ -335,18 +327,14 @@ def load_shared_metadata(root: Path, cache: Path, read_benchmark_fn: Any) -> dic
     till = cached_till_date(cache)
     if till is None:
         raise W0Error("calendar history is not cached; run calendar-study first")
-    terms = _terms(root / "data/w1/current-intake.json", tuple(ASSETS))
-    ruonia = _ruonia(root / "data/benchmark-cache/CBR_RUONIA.json")
+    contract_terms = terms(root / "data/w1/current-intake.json", tuple(ASSETS))
+    ruonia_rates = ruonia(root / "data/benchmark-cache/CBR_RUONIA.json")
     benchmark = read_benchmark_fn(root / "data/benchmark/lqdt-lineage.json")
     return {
         "till": till,
-        "terms": terms,
-        "ruonia": ruonia,
+        "terms": contract_terms,
+        "ruonia": ruonia_rates,
         "benchmark": benchmark,
         "benchmark_dates": sorted(benchmark),
         "extras_sig": tuple(extras),
     }
-
-
-# Public intra-package name; retain the private alias.
-is_offline = _is_offline

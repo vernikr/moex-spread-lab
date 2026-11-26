@@ -5,10 +5,10 @@ from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
-    _positive_spread_volume_rows,
-    _stress_ok,
     build_windows,
     contract_chain,
+    positive_spread_volume_rows,
+    stress_ok,
 )
 from moex_spread_lab.strategies.calendar.proof_payload import build_proof_payload
 from synthetic_history import iso_weekdays_until as _days
@@ -68,7 +68,7 @@ class CalendarSpreadTests(unittest.TestCase):
         self.assertEqual(window["min_spread_volume"], 500)
         row = next(r for r in window["rows"] if r["date"] == day)
         self.assertEqual(row["min_volume"], 0)
-        eligible = _positive_spread_volume_rows(window["rows"])
+        eligible = positive_spread_volume_rows(window["rows"])
         self.assertNotIn(day, {r["date"] for r in eligible})
         self.assertEqual(len(window["rows"]), len(eligible) + 1)
 
@@ -83,9 +83,9 @@ class CalendarSpreadTests(unittest.TestCase):
         self.assertEqual(separate["exchange_clearing"], native["exchange_clearing"])
 
     def test_capital_screen_uses_stress_multiples_and_buffers(self):
-        self.assertTrue(_stress_ok(6000))
-        self.assertFalse(_stress_ok(10500))
-        self.assertFalse(_stress_ok(4000, quantity=3))
+        self.assertTrue(stress_ok(6000))
+        self.assertFalse(stress_ok(10500))
+        self.assertFalse(stress_ok(4000, quantity=3))
 
 
 def _proof_row(day: str, near: float, far: float, volume: int = 500) -> dict:

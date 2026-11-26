@@ -36,7 +36,7 @@ from moex_spread_lab.data.universe.assets import (
 )
 
 from ..base import ZSCORE_CALENDAR_OPTIONS
-from ..calendar_eval import FILLS, strategy_runner
+from ..calendar_eval import FILLS
 
 HISTORY_FIELDS = (
     "TRADEDATE",
@@ -59,14 +59,12 @@ MIN_H1_CALENDAR_OBSERVATIONS = 22
 MIN_H1_NATIVE_SESSION_VOLUME = MIN_DAILY_VOLUME
 MIN_H1_PROXY_LEG_SESSION_VOLUME = MIN_DAILY_VOLUME
 
-_calendar_strategy_runner = strategy_runner
-
 
 def spread_id(near: str, far: str) -> str:
     return near + far
 
 
-def _ruonia(benchmark_cache: Path) -> tuple[list[str], dict[str, float]]:
+def ruonia(benchmark_cache: Path) -> tuple[list[str], dict[str, float]]:
     try:
         rows = json.loads(benchmark_cache.read_text(encoding="utf-8"))["rows"]
         rates = {str(row["date"]): float(row["rate"]) / 100 for row in rows}
@@ -79,7 +77,7 @@ def _is_pos_num(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0
 
 
-def _terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+def terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str, Any]]:
     try:
         instruments = [
             r
@@ -117,7 +115,7 @@ def _terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str,
     return terms
 
 
-def _fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, dict[str, float]]:
+def fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, dict[str, float]]:
     """RUB value of a point relative to today, from the front quarterly contract of Si or CR."""
     factors: dict[str, dict[str, float]] = {}
     for kind, asset in FX_SOURCE.items():
@@ -141,26 +139,16 @@ def _fx_factors(histories: dict[str, dict[str, dict[str, Any]]]) -> dict[str, di
     return factors
 
 
-def _positive_spread_volume_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def positive_spread_volume_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         row for row in rows if row.get("min_volume") is not None and float(row["min_volume"]) > 0
     ]
 
 
-def _stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIAL_CAPITAL) -> bool:
+def stress_ok(margin: float, quantity: int = 1, initial_capital: float = INITIAL_CAPITAL) -> bool:
     buffers = (DEFAULT_STRESS_VM_BUFFER + DEFAULT_UNCERTAINTY_BUFFER) * quantity
     return 3 * margin * quantity + buffers <= initial_capital
 
 
-def _zscore_options(asset: str) -> dict[str, Any]:
+def zscore_options(asset: str) -> dict[str, Any]:
     return dict(ZSCORE_OPTIONS["monthly" if ASSETS[asset].get("monthly") else "quarterly"])
-
-
-# Public intra-package names preserve existing private aliases for callers.
-ruonia = _ruonia
-terms = _terms
-fx_factors = _fx_factors
-positive_spread_volume_rows = _positive_spread_volume_rows
-stress_ok = _stress_ok
-zscore_options = _zscore_options
-calendar_strategy_runner = _calendar_strategy_runner

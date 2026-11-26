@@ -30,6 +30,30 @@ frame it.
 `LARGE_PROOF_POST_ROUTES` raises the request-body cap for the chart-bearing proof
 routes; every other route keeps the small cap.
 
+### 1.1 Preserved S2 compatibility surface (do not retire without owner approval)
+
+`README.md`, `packages/proof/docs/execution-proof.md` and `docs/decisions.md` still
+name the S2 screener API as a supported compatibility path, so the routes below stay
+even though the proof UI never calls them. Inventory recorded by issue #209:
+
+- `/api/run`, `/api/screen`, `/api/optimize` — `dispatch.py` (`LEGACY_POST_ROUTES`,
+  `handle_post_legacy`), persisting through `store.save`, `save_screen` and
+  `save_search`; `/api/runs` and `/api/searches` read that history back.
+- `/api/catalog` — `handle_get_legacy`, fed by the injected `catalog` callable that
+  `server.py` binds to
+  `moex_spread_lab.strategies.pair_screener.pair_screener.catalog`.
+- Backing implementation: `moex_spread_lab.proof.screener_search.{screen_table,
+  optimize}` and the root shim `src/moex_spread_lab/screener_search.py`, which
+  `packages/proof/tests/test_package_compatibility.py` pins as the same object as
+  `moex_spread_lab.proof.screener_search`.
+- The web modules import the canonical
+  `moex_spread_lab.strategies.pair_screener.pair_screener` symbols directly; the
+  former `moex_spread_lab.proof.web_legacy` indirection has no callers left inside
+  `packages/web`, so removing that shard does not change any route answer.
+- No frontend, CLI or browser-smoke caller proves retirement: the contract is guarded
+  by `packages/web/tests/test_screener_app.py` (route answers, error payloads,
+  canonical imports, preserved module surface).
+
 ## 2. Security and locality contract
 
 - **Loopback by default.** The host/origin guard in `http_handler.py` accepts only
@@ -63,10 +87,17 @@ routes; every other route keeps the small cap.
 
 ## 4. Boundaries
 
-- `msl-web` is Layer 4: it may consume `msl-core` and `msl-proof`. Direct
-  `msl-strategies`/`msl-data` imports survive only to feed the legacy
-  `screener_app` compatibility alias and are Phase 7 cleanup scope, not a pattern
-  to extend.
+- `msl-web` is Layer 4: it may consume `msl-core`, `msl-proof` and the shared
+  `msl-strategies` pair-screener domain logic that the legacy S2 routes and the
+  `screener_app` alias need. `msl-strategies` is still only a transitive dependency
+  of `msl-proof` in `packages/web/pyproject.toml` and
+  `packages/web/manifest.json`; declaring that edge is module-contract
+  reconciliation work, not part of a route or UI change.
+- Remaining runtime `msl-proof` imports: `proof.screener_search` (`dispatch.py`),
+  `proof.proof_batch`/`proof.proof_search`/`proof.proof_windows` (`routes_proof.py`),
+  `proof.proof_pool`/`proof.service` (`store.py`), `proof.strategy_catalog`
+  (`strategy_registry.py`) and `proof.phase_metrics`/`proof.proof_pool`/
+  `proof.worker_metrics` (`routes_dev.py`).
 - Consequences (capital, risk, fills, costs, validation) are computed downstream;
   a UI change must never alter them. Relaxing a research screen in the dialog does
   not add funding or trading authority.

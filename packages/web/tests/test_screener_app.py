@@ -469,6 +469,68 @@ class ScreenerAppTests(unittest.TestCase):
 
             _offline_only("https://iss.moex.com/")
 
+    def test_web_modules_import_canonical_pair_screener_symbols(self):
+        from moex_spread_lab.strategies.pair_screener import pair_screener
+        from moex_spread_lab.web import dispatch, routes_proof, server, store
+
+        web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
+        legacy_users = [
+            path.name
+            for path in sorted(web_src.rglob("*.py"))
+            if "web_legacy" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(legacy_users, [])
+        self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(routes_proof.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(store.ScreenerInputs, pair_screener.ScreenerInputs)
+        self.assertIs(server._pair_screener, pair_screener)
+        for name in ("catalog", "build_result", "ScreenerInputs", "ScreenerError"):
+            self.assertFalse(hasattr(server, name), name)
+
+    def test_legacy_route_contract_answers_are_preserved(self):
+        from moex_spread_lab.core.settings import save_settings
+        from moex_spread_lab.web.dispatch import ALL_POST_ROUTES, LEGACY_POST_ROUTES
+
+        self.assertEqual(LEGACY_POST_ROUTES, {"/api/run", "/api/screen", "/api/optimize"})
+        self.assertLessEqual(LEGACY_POST_ROUTES, ALL_POST_ROUTES)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+        origin = {"Origin": f"http://127.0.0.1:{server.server_port}"}
+        json_headers = {"Content-Type": "application/json"}
+
+        def call(method, path, body=None, headers=None):
+            connection.request(method, path, body, {**origin, **(headers or {})})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+
+        self.assertEqual(call("GET", "/api/catalog")[0], 200)
+        self.assertEqual(call("GET", "/api/runs"), (200, []))
+        self.assertEqual(call("GET", "/api/searches"), (200, []))
+        self.assertEqual(call("GET", "/api/missing"), (404, {"error": "not found"}))
+        self.assertEqual(
+            call("POST", "/api/missing", "{}", json_headers), (404, {"error": "not found"})
+        )
+        self.assertEqual(
+            call("POST", "/api/run", "{}", {"Content-Type": "text/plain"}),
+            (415, {"error": "JSON body required"}),
+        )
+        selection = json.dumps({"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"})
+        self.assertEqual(call("POST", "/api/run", selection, json_headers)[0], 200)
+        save_settings(self.root, {"timeframe": "1h"})
+        for route in ("/api/screen", "/api/optimize"):
+            status, body = call("POST", route, selection, json_headers)
+            self.assertEqual(status, 400)
+            self.assertIn("pair-proof", body["error"])
+        oversized = json.dumps({"strategy": "mean_reversion", "pad": "x" * 9000})
+        status, body = call("POST", "/api/screen", oversized, json_headers)
+        self.assertEqual(status, 400)
+        self.assertIn("размер запроса", body["error"])
+        connection.close()
+
 
 if __name__ == "__main__":
     unittest.main()

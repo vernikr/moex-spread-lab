@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.proof import web_legacy as _legacy
+from moex_spread_lab.strategies.pair_screener import pair_screener as _pair_screener
 
 from .dispatch import dispatch_get, dispatch_post, split_path
 from .http_handler import LoopbackHandler
@@ -35,7 +35,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self.send_json(403, {"error": "local host only"})
                 return
-            dispatch_get(self, store, split_path(self.path), _legacy.catalog)
+            dispatch_get(self, store, split_path(self.path), _pair_screener.catalog)
 
         def do_POST(self) -> None:
             if (
@@ -45,7 +45,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self.send_json(403, {"error": "local origin only"})
                 return
-            dispatch_post(self, store, split_path(self.path), _legacy.build_result)
+            dispatch_post(self, store, split_path(self.path), _pair_screener.build_result)
 
     return Handler
 
@@ -90,11 +90,11 @@ def remove_instance(root: Path, identity: str) -> None:
         pass
 
 
-def serve(inputs: _legacy.ScreenerInputs, port: int = 8765, host: str = "127.0.0.1") -> None:
+def serve(inputs: _pair_screener.ScreenerInputs, port: int = 8765, host: str = "127.0.0.1") -> None:
     if not 0 <= port <= 65535:
-        raise _legacy.ScreenerError("порт должен быть в диапазоне 0–65535")
+        raise _pair_screener.ScreenerError("порт должен быть в диапазоне 0–65535")
     if host not in {"127.0.0.1", "0.0.0.0"}:
-        raise _legacy.ScreenerError("host должен быть 127.0.0.1 или 0.0.0.0")
+        raise _pair_screener.ScreenerError("host должен быть 127.0.0.1 или 0.0.0.0")
     store = ScreenerStore(inputs)
     server = ThreadingHTTPServer((host, port), make_handler(store))
     identity = None

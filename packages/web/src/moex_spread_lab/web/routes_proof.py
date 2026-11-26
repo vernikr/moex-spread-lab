@@ -10,7 +10,7 @@ from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
-from moex_spread_lab.proof.web_legacy import ScreenerError
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
 
 from .strategy_registry import strategy_registry_payload
 

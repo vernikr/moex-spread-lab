@@ -18,24 +18,10 @@ def _register_baseline_and_carry(subparsers: Any, handler: Handler) -> None:
     baseline_parser.add_argument("--benchmark", type=Path, required=True)
     baseline_parser.add_argument("--contracts", type=Path, required=True)
     baseline_parser.add_argument(
-        "--output-dir",
+        "--output",
         type=Path,
         required=True,
-        help="new directory for summary.json and Parquet details",
-    )
-    baseline_parser.add_argument(
-        "--legacy-json",
-        type=Path,
-        help="explicit compatibility export of the full pretty JSON report",
-    )
-    baseline_parser.add_argument(
-        "--retention-days",
-        type=int,
-        default=30,
-        help="retain unpinned Parquet details for this many days",
-    )
-    baseline_parser.add_argument(
-        "--pin", action="store_true", help="retain this evidence run's Parquet details without TTL"
+        help="path for the analytical-baseline.v1 JSON report",
     )
     baseline_parser.add_argument("--near", default="CNYRUBF")
     baseline_parser.add_argument("--far", default="CRZ6")

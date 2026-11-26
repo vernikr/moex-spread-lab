@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.accounting.run_artifacts import load_run_artifact
 from moex_spread_lab.strategies.cli import _run_analytical_baseline_cmd
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     build_daily_series,
@@ -209,7 +208,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
 
-    def test_baseline_cli_publishes_consumable_artifact_and_legacy_export(self):
+    def test_baseline_cli_writes_consumable_json_report(self):
         series = {
             "near": "NEAR",
             "far": "FAR",
@@ -237,10 +236,7 @@ class AnalyticsTests(unittest.TestCase):
                 quantity=1,
                 decision_delay_bars=1,
                 analysis_role="primary_baseline",
-                output_dir=root / "run",
-                retention_days=14,
-                pin=False,
-                legacy_json=root / "legacy.json",
+                output=root / "baseline.json",
             )
             output = StringIO()
             with (
@@ -251,36 +247,34 @@ class AnalyticsTests(unittest.TestCase):
                 redirect_stdout(output),
             ):
                 self.assertEqual(_run_analytical_baseline_cmd(args), 0)
-            report, _ = load_run_artifact(args.output_dir)
-            self.assertEqual(report, json.loads(args.legacy_json.read_text(encoding="utf-8")))
-            self.assertEqual(json.loads(output.getvalue())["artifact_dir"], str(args.output_dir))
-            for source in (args.output_dir, args.legacy_json):
-                with self.subTest(source=source):
-                    ledger_path = root / "ledger.json"
-                    subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "moex_spread_lab.cli",
-                            "execution-ledger",
-                            "--baseline",
-                            str(source),
-                            "--output",
-                            str(ledger_path),
-                        ],
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-                    self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
-                    self.assertEqual(
-                        ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],
-                        ledger["summary"]["execution_attempt_count"],
-                    )
-                    self.assertEqual(ledger["summary"]["final_X"], report["summary"]["final_X"])
-                    self.assertTrue(ledger["gates"]["W5_event_replay"])
-                    self.assertFalse(ledger["summary"]["executable_value_available"])
+            report = json.loads(args.output.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], "analytical-baseline.v1")
+            self.assertEqual(json.loads(output.getvalue())["output"], str(args.output))
+            ledger_path = root / "ledger.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "moex_spread_lab.cli",
+                    "execution-ledger",
+                    "--baseline",
+                    str(args.output),
+                    "--output",
+                    str(ledger_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+            self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
+            self.assertEqual(
+                ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],
+                ledger["summary"]["execution_attempt_count"],
+            )
+            self.assertEqual(ledger["summary"]["final_X"], report["summary"]["final_X"])
+            self.assertTrue(ledger["gates"]["W5_event_replay"])
+            self.assertFalse(ledger["summary"]["executable_value_available"])
 
 
 if __name__ == "__main__":

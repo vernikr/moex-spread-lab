@@ -8,19 +8,15 @@
     "vtb_account_risk_screen",
     "matched_lqdt_wealth_overlay",
     "causal_position_sizing",
-    "execution_ledger",
-    "chronological_validation",
-    "w1_w7_research_pipeline"
+    "execution_ledger"
   ],
   "inputs": [
-    "run-manifest.v1",
-    "w0.fixture.v1",
+    "iss-intake.v1",
     "analytical-baseline.v1"
   ],
   "outputs": [
-    "execution-ledger.v1",
-    "validation-report.v1",
-    "research-run-artifact.v1"
+    "vtb-account-risk.v1",
+    "execution-ledger.v1"
   ],
   "dependencies": [
     "moex-spread-lab.core"

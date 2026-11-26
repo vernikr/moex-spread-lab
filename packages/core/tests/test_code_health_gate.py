@@ -12,11 +12,13 @@ from scripts import code_health_gate_common as common
 from scripts import code_health_gate_rules as rules
 from scripts import code_inspect
 
+CORE = "packages/core/src/moex_spread_lab/core"
+KERNEL = f"{CORE}/_fastcore.c"
 ARCHETYPE_PATHS = [
-    ("production", "packages/core/src/moex_spread_lab/core/probe.py"),
-    ("declarative", "packages/core/src/moex_spread_lab/core/contracts.py"),
+    ("production", f"{CORE}/probe.py"),
+    ("declarative", f"{CORE}/contracts.py"),
     ("tests", "packages/core/tests/test_probe.py"),
-    ("kernel", "packages/core/src/moex_spread_lab/core/_fastcore.c"),
+    ("kernel", KERNEL),
 ]
 SOURCE = "def probe(value):\n\n    return 'тест' if value else None\n\n\n# trailing comment\n"
 
@@ -46,9 +48,7 @@ def _write(tmp_path, relative: str, text: str):
 
 def test_existing_file_growth_is_blocked_for_loc_and_tokens(tmp_path, monkeypatch):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    source = tmp_path / "src" / "existing.py"
-    source.parent.mkdir()
-    source.write_text("x" * 400 + "\nsecond\n", encoding="utf-8")
+    source = _write(tmp_path, "src/existing.py", "x" * 400 + "\nsecond\n")
     baseline = _baseline()
     baseline["files"]["src/existing.py"] = {"baseline_loc": 1, "baseline_tokens": 1}
 
@@ -181,18 +181,11 @@ def test_main_exits_zero_in_the_green_and_yellow_bands(monkeypatch, tmp_path, ca
 def test_main_exits_one_above_every_archetype_hard_ceiling(monkeypatch, tmp_path, capsys):
     for relative in (
         "scripts/oversized.py",
-        "packages/core/src/moex_spread_lab/core/contracts.py",
+        f"{CORE}/contracts.py",
         "packages/core/tests/test_oversized.py",
     ):
-        archetype = common._archetype_for(relative)
-        code, out = _run_gate(
-            monkeypatch,
-            tmp_path,
-            relative,
-            "x = 1\n",
-            common.FILE_BUDGETS[archetype]["hard_loc"] + 1,
-            capsys,
-        )
+        over_hard = common.FILE_BUDGETS[common._archetype_for(relative)]["hard_loc"] + 1
+        code, out = _run_gate(monkeypatch, tmp_path, relative, "x = 1\n", over_hard, capsys)
         assert code == 1, relative
         assert "hard ceiling" in out, relative
 
@@ -201,36 +194,26 @@ def test_forbidden_overflow_filenames_fail_unless_grandfathered(tmp_path, monkey
     monkeypatch.setattr(common, "ROOT", tmp_path)
     p72 = _write(tmp_path, "packages/data/tests/test_helpers_p72_lake.py", "def test_x(): pass\n")
     numbered = _write(tmp_path, "packages/proof/tests/test_runner_119.py", "def test_y(): pass\n")
-    encoded = _write(
-        tmp_path,
-        "packages/core/src/moex_spread_lab/core/helpers_packages_core_src_w0.py",
-        "X = 1\n",
-    )
+    encoded = _write(tmp_path, f"{CORE}/helpers_packages_core_src_w0.py", "X = 1\n")
+    clean = _write(tmp_path, "scripts/change_scope.py", "X = 1\n")
     baseline = _baseline()
     baseline["legacy_fragment_files"] = ["packages/data/tests/test_helpers_p72_lake.py"]
 
-    failures = rules._fragment_name_failures([p72, numbered, encoded], baseline)
+    failures = rules._fragment_name_failures([p72, numbered, encoded, clean], baseline)
 
     assert not any("p72" in failure.split(":")[0] for failure in failures)
     assert len(failures) == 2
     assert any("issue-numbered shard" in failure for failure in failures)
     assert any("path-encoded shard" in failure for failure in failures)
-
-
-def test_clean_filenames_pass_the_fragmentation_guard(tmp_path, monkeypatch):
-    monkeypatch.setattr(common, "ROOT", tmp_path)
-    source = _write(tmp_path, "scripts/change_scope.py", "X = 1\n")
-
-    assert rules._fragment_name_failures([source], _baseline()) == []
+    assert rules._fragment_name_failures([clean], _baseline()) == []
 
 
 def test_shallow_single_caller_shard_is_an_advisory_only(tmp_path, monkeypatch):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    package = "packages/core/src/moex_spread_lab/core"
-    shard = _write(tmp_path, f"{package}/helper_bits.py", "VALUE = 1\n")
+    shard = _write(tmp_path, f"{CORE}/helper_bits.py", "VALUE = 1\n")
     caller = _write(
         tmp_path,
-        f"{package}/engine.py",
+        f"{CORE}/engine.py",
         "# padding\n" * 40 + "from moex_spread_lab.core.helper_bits import VALUE\n",
     )
     files = [shard, caller]
@@ -240,10 +223,12 @@ def test_shallow_single_caller_shard_is_an_advisory_only(tmp_path, monkeypatch):
     advisories = rules._shallow_shard_advisories(files, metrics, baseline)
     assert any("helper_bits.py" in advisory for advisory in advisories)
     assert any("intra-package caller" in advisory for advisory in advisories)
+    grandfathered = {**baseline, "legacy_shallow_shards": [f"{CORE}/helper_bits.py"]}
+    assert rules._shallow_shard_advisories(files, metrics, grandfathered) == []
 
     second = _write(
         tmp_path,
-        f"{package}/cli.py",
+        f"{CORE}/cli.py",
         "# padding\n" * 40 + "from moex_spread_lab.core import helper_bits\n",
     )
     files.append(second)
@@ -251,18 +236,7 @@ def test_shallow_single_caller_shard_is_an_advisory_only(tmp_path, monkeypatch):
     assert rules._shallow_shard_advisories(files, metrics, baseline) == []
 
 
-def test_shallow_shard_advisory_respects_the_legacy_inventory(tmp_path, monkeypatch):
-    monkeypatch.setattr(common, "ROOT", tmp_path)
-    package = "packages/core/src/moex_spread_lab/core"
-    shard = _write(tmp_path, f"{package}/helper_bits.py", "VALUE = 1\n")
-    baseline = _baseline()
-    baseline["legacy_shallow_shards"] = [f"{package}/helper_bits.py"]
-    _, metrics, _ = rules._check_files([shard], baseline)
-
-    assert rules._shallow_shard_advisories([shard], metrics, baseline) == []
-
-
-def test_package_token_growth_is_surfaced_as_an_advisory():
+def test_package_token_growth_is_an_advisory_outside_the_tolerance():
     baseline = _baseline()
     baseline["packages"]["packages/core"] = {"baseline_tokens": 1000}
 
@@ -274,30 +248,18 @@ def test_package_token_growth_is_surfaced_as_an_advisory():
         "packages/core: source tokens grew from 1000 to 1300 (+300)" in a for a in advisories
     )
     assert any("packages/data" in advisory for advisory in advisories)
-
-
-def test_package_token_growth_inside_the_tolerance_stays_silent():
-    baseline = _baseline()
-    baseline["packages"]["packages/core"] = {"baseline_tokens": 1000}
-
     assert rules._package_token_advisories({"packages/core": 1019}, baseline) == []
 
 
-def test_shipped_baseline_entries_are_justified_by_the_tiered_policy():
+def test_shipped_baseline_is_justified_by_the_tiered_policy():
     baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
 
     for relative, entry in baseline["files"].items():
         metrics = {"loc": int(entry["baseline_loc"]), "tokens": int(entry["baseline_tokens"])}
         assert not rules._baseline_entry_is_obsolete(relative, metrics), relative
-
-
-def test_shipped_legacy_inventories_only_list_offending_names():
-    baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
-    offenders = set(baseline["legacy_fragment_files"])
-
-    # The inventory may be empty; any entry that remains must still be an offending
-    # name, never a stale allowlist slot.
-    for relative in offenders:
+    # The fragment inventory may be empty; any entry that remains must still be an
+    # offending name, never a stale allowlist slot.
+    for relative in baseline["legacy_fragment_files"]:
         assert common._fragment_name_problem(PurePosixPath(relative).name) is not None, relative
 
 
@@ -324,12 +286,11 @@ def test_complexity_and_c_function_ratchets_block_new_and_growing_outliers():
 
 
 def test_broad_exception_requires_adjacent_justification(tmp_path, monkeypatch):
-    root = tmp_path / "protected"
-    root.mkdir()
-    source = root / "guarded.py"
+    source = _write(
+        tmp_path, "protected/guarded.py", "try:\n    pass\nexcept Exception:\n    pass\n"
+    )
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    monkeypatch.setattr(rules, "PROTECTED_EXCEPTION_ROOTS", (root,))
-    source.write_text("try:\n    pass\nexcept Exception:\n    pass\n", encoding="utf-8")
+    monkeypatch.setattr(rules, "PROTECTED_EXCEPTION_ROOTS", (source.parent,))
 
     assert rules._exception_failures()
 
@@ -341,26 +302,23 @@ def test_broad_exception_requires_adjacent_justification(tmp_path, monkeypatch):
 
 
 def test_fastcore_exports_require_a_python_parity_inventory(tmp_path, monkeypatch):
-    root = tmp_path
-    c_file = root / "packages/core/src/moex_spread_lab/core/_fastcore.c"
-    test_file = root / "packages/proof/tests/test_fastcore_parity.py"
-    c_file.parent.mkdir(parents=True)
-    test_file.parent.mkdir(parents=True)
-    c_file.write_text(
+    _write(
+        tmp_path,
+        KERNEL,
         "static PyMethodDef FastCoreMethods[] = {\n"
         '    {"probe_method", probe, METH_VARARGS, "probe"},\n'
         "    {NULL, NULL, 0, NULL}\n};\n",
-        encoding="utf-8",
     )
-    test_file.write_text(
+    test_file = _write(
+        tmp_path,
+        "packages/proof/tests/test_fastcore_parity.py",
         "FASTCORE_EXPORT_PARITY_TESTS = {\n"
         "    'probe_method': 'packages/proof/tests/test_fastcore_parity.py::test_probe'\n"
         "}\n"
         "def test_probe():\n"
         "    return True\n",
-        encoding="utf-8",
     )
-    monkeypatch.setattr(rules, "ROOT", root)
+    monkeypatch.setattr(rules, "ROOT", tmp_path)
 
     assert rules._fastcore_parity_failures() == []
     test_file.write_text(
@@ -371,16 +329,11 @@ def test_fastcore_exports_require_a_python_parity_inventory(tmp_path, monkeypatc
 
 
 def test_baseline_update_only_lowers_or_removes_existing_entries():
+    huge, fits = f"{CORE}/huge.py", f"{CORE}/fits.py"
     baseline = _baseline()
     baseline["files"] = {
-        "packages/core/src/moex_spread_lab/core/huge.py": {
-            "baseline_loc": 720,
-            "baseline_tokens": 7400,
-        },
-        "packages/core/src/moex_spread_lab/core/fits.py": {
-            "baseline_loc": 450,
-            "baseline_tokens": 3800,
-        },
+        huge: {"baseline_loc": 720, "baseline_tokens": 7400},
+        fits: {"baseline_loc": 450, "baseline_tokens": 3800},
     }
     baseline["complexity"] = {"old.py::still_high": 20, "old.py::resolved": 18}
     baseline["c_functions"] = {
@@ -391,8 +344,8 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
     updated = rules._updated_baseline(
         baseline,
         {
-            "packages/core/src/moex_spread_lab/core/huge.py": {"loc": 700, "tokens": 7200},
-            "packages/core/src/moex_spread_lab/core/fits.py": {"loc": 430, "tokens": 3700},
+            huge: {"loc": 700, "tokens": 7200},
+            fits: {"loc": 430, "tokens": 3700},
             "new.py": {"loc": 10, "tokens": 20},
         },
         {"old.py::still_high": 17, "old.py::resolved": 15},
@@ -402,12 +355,7 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
         },
     )
 
-    assert updated["files"] == {
-        "packages/core/src/moex_spread_lab/core/huge.py": {
-            "baseline_loc": 700,
-            "baseline_tokens": 7200,
-        }
-    }
+    assert updated["files"] == {huge: {"baseline_loc": 700, "baseline_tokens": 7200}}
     assert updated["complexity"] == {"old.py::still_high": 17}
     assert updated["c_functions"] == {
         "old.c::still_high": {"baseline_nloc": 110, "baseline_ccn": 17, "baseline_parameters": 8}
@@ -416,43 +364,36 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
 
 def test_baseline_update_keeps_the_kernel_ratchet_above_the_soft_target(tmp_path, monkeypatch):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    kernel = _write(tmp_path, "packages/core/src/moex_spread_lab/core/_fastcore.c", "int x;\n")
+    kernel = _write(tmp_path, KERNEL, "int x;\n")
     baseline = _baseline()
-    baseline["files"]["packages/core/src/moex_spread_lab/core/_fastcore.c"] = {
-        "baseline_loc": 1400,
-        "baseline_tokens": 13000,
-    }
-    metrics = {"packages/core/src/moex_spread_lab/core/_fastcore.c": {"loc": 1314, "tokens": 12500}}
+    baseline["files"][KERNEL] = {"baseline_loc": 1400, "baseline_tokens": 13000}
 
-    updated = rules._updated_baseline(baseline, metrics, {}, {}, [kernel])
-    assert updated["files"]["packages/core/src/moex_spread_lab/core/_fastcore.c"] == {
-        "baseline_loc": 1314,
-        "baseline_tokens": 12500,
-    }
+    above = {KERNEL: {"loc": 1314, "tokens": 12500}}
+    updated = rules._updated_baseline(baseline, above, {}, {}, [kernel])
+    assert updated["files"][KERNEL] == {"baseline_loc": 1314, "baseline_tokens": 12500}
 
-    inside = {"packages/core/src/moex_spread_lab/core/_fastcore.c": {"loc": 880, "tokens": 8000}}
+    inside = {KERNEL: {"loc": 880, "tokens": 8000}}
     assert rules._updated_baseline(baseline, inside, {}, {}, [kernel])["files"] == {}
 
 
 def test_baseline_update_shrinks_legacy_fragment_and_shard_inventories(tmp_path, monkeypatch):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    package = "packages/core/src/moex_spread_lab/core"
-    p72 = _write(tmp_path, f"{package}/legacy_p72_shard.py", "VALUE = 1\n")
-    tiny = _write(tmp_path, f"{package}/tiny.py", "VALUE = 2\n")
+    p72 = _write(tmp_path, f"{CORE}/legacy_p72_shard.py", "VALUE = 1\n")
+    tiny = _write(tmp_path, f"{CORE}/tiny.py", "VALUE = 2\n")
     baseline = _baseline()
-    baseline["legacy_fragment_files"] = [f"{package}/legacy_p72_shard.py", f"{package}/gone_p72.py"]
-    baseline["legacy_shallow_shards"] = [f"{package}/tiny.py", f"{package}/gone.py"]
+    baseline["legacy_fragment_files"] = [f"{CORE}/legacy_p72_shard.py", f"{CORE}/gone_p72.py"]
+    baseline["legacy_shallow_shards"] = [f"{CORE}/tiny.py", f"{CORE}/gone.py"]
     baseline["packages"] = {
         "packages/core": {"baseline_tokens": 9000},
         "packages/gone": {"baseline_tokens": 10},
     }
     metrics = {
-        f"{package}/legacy_p72_shard.py": {"loc": 3, "tokens": 30},
-        f"{package}/tiny.py": {"loc": 1, "tokens": 10},
+        f"{CORE}/legacy_p72_shard.py": {"loc": 3, "tokens": 30},
+        f"{CORE}/tiny.py": {"loc": 1, "tokens": 10},
     }
 
     updated = rules._updated_baseline(baseline, metrics, {}, {}, [p72, tiny])
 
-    assert updated["legacy_fragment_files"] == [f"{package}/legacy_p72_shard.py"]
-    assert updated["legacy_shallow_shards"] == [f"{package}/tiny.py"]
+    assert updated["legacy_fragment_files"] == [f"{CORE}/legacy_p72_shard.py"]
+    assert updated["legacy_shallow_shards"] == [f"{CORE}/tiny.py"]
     assert updated["packages"] == {"packages/core": {"baseline_tokens": 40}}

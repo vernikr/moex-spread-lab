@@ -44,15 +44,11 @@ The result is `exploratory_inconclusive`, not a profitability conclusion:
 - the benchmark is a price-path analytical proxy, not an account statement reconciliation;
 - no live broker access, order submission or trading occurred.
 
-Run reproducibly from the repository root:
+Reproduce from the repository root with the scheduler baseline that owns the contract; the
+`analytical-baseline` CLI subcommand was retired in #237 and the report format is unchanged:
 
 ```bash
-uv run python -m moex_spread_lab.cli analytical-baseline \
-  --near-candles data/w1/candles/CNYRUBF_1d.json \
-  --far-candles data/w1/candles/CRZ6_1d.json \
-  --benchmark data/benchmark/lqdt-lineage.json \
-  --contracts data/w1/current-intake.json \
-  --output data/analytics/cnyrubf-crz6-1d-baseline.json
+uv run python -c "from moex_spread_lab.strategies.pair_mean_reversion.analytics import build_series, get_cost_scenario, run_mean_reversion_baseline as run; import json; s=build_series('data/w1/candles/CNYRUBF_1d.json','data/w1/candles/CRZ6_1d.json','data/benchmark/lqdt-lineage.json','data/w1/current-intake.json',near='CNYRUBF',far='CRZ6'); json.dump(run(s, lookback=20, entry_z=2.0, exit_z=0.5, decision_delay_bars=1, cost_profile=get_cost_scenario('base')), open('data/analytics/cnyrubf-crz6-1d-baseline.json','w'))"
 ```
 
 ### Output format

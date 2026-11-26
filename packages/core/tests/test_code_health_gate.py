@@ -87,17 +87,6 @@ def test_budget_bands_are_green_advisory_or_hard(archetype, relative):
         assert "hard ceiling" in outcome(1, budget["hard_tokens"] + 1, band="over-hard")[0][0]
 
 
-def test_check_files_reports_yellow_band_without_failing(tmp_path, monkeypatch):
-    monkeypatch.setattr(common, "ROOT", tmp_path)
-    source = _write(tmp_path, "scripts/borderline.py", "line\n" * 401)
-
-    failures, metrics, advisories = rules._check_files([source], _baseline())
-
-    assert failures == []
-    assert "scripts/borderline.py" in metrics
-    assert any("advisory band" in advisory for advisory in advisories)
-
-
 @pytest.mark.parametrize(("archetype", "relative"), ARCHETYPE_PATHS)
 def test_inspect_check_prints_the_gate_loc_and_tokens(
     tmp_path, monkeypatch, capsys, archetype, relative
@@ -148,9 +137,9 @@ def outer(value):
     assert code_inspect._complexity(inner) == 2
 
 
-def _run_gate(monkeypatch, tmp_path, relative: str, line: str, repeats: int, capsys):
+def _run_gate(monkeypatch, tmp_path, relative: str, repeats: int, capsys):
     monkeypatch.setattr(common, "ROOT", tmp_path)
-    source = _write(tmp_path, relative, line * repeats)
+    source = _write(tmp_path, relative, "x = 1\n" * repeats)
     baseline = _baseline()
     baseline["packages"] = {
         group: {"baseline_tokens": 10**9} for group in ("scripts", "packages/core", "packages/data")
@@ -166,28 +155,19 @@ def _run_gate(monkeypatch, tmp_path, relative: str, line: str, repeats: int, cap
     return code, capsys.readouterr().out
 
 
-def test_main_exits_zero_in_the_green_and_yellow_bands(monkeypatch, tmp_path, capsys):
-    green, green_out = _run_gate(monkeypatch, tmp_path, "scripts/green.py", "x = 1\n", 400, capsys)
-    yellow, yellow_out = _run_gate(
-        monkeypatch, tmp_path, "packages/core/tests/test_big.py", "x = 1\n", 601, capsys
-    )
-
-    assert green == 0
-    assert "advisory: " not in green_out
-    assert yellow == 0
-    assert "advisory: packages/core/tests/test_big.py" in yellow_out
-
-
-def test_main_exits_one_above_every_archetype_hard_ceiling(monkeypatch, tmp_path, capsys):
+def test_main_exit_codes_follow_the_bands(monkeypatch, tmp_path, capsys):
+    green, out = _run_gate(monkeypatch, tmp_path, "scripts/green.py", 400, capsys)
+    assert green == 0 and "advisory: " not in out
+    yellow, out = _run_gate(monkeypatch, tmp_path, "packages/core/tests/test_big.py", 601, capsys)
+    assert yellow == 0 and "advisory: packages/core/tests/test_big.py" in out
     for relative in (
         "scripts/oversized.py",
         f"{CORE}/contracts.py",
         "packages/core/tests/test_oversized.py",
     ):
         over_hard = common.FILE_BUDGETS[common._archetype_for(relative)]["hard_loc"] + 1
-        code, out = _run_gate(monkeypatch, tmp_path, relative, "x = 1\n", over_hard, capsys)
-        assert code == 1, relative
-        assert "hard ceiling" in out, relative
+        code, out = _run_gate(monkeypatch, tmp_path, relative, over_hard, capsys)
+        assert code == 1 and "hard ceiling" in out, relative
 
 
 def test_forbidden_overflow_filenames_fail_unless_grandfathered(tmp_path, monkeypatch):
@@ -362,38 +342,33 @@ def test_baseline_update_only_lowers_or_removes_existing_entries():
     }
 
 
-def test_baseline_update_keeps_the_kernel_ratchet_above_the_soft_target(tmp_path, monkeypatch):
+def test_baseline_update_keeps_the_kernel_ratchet_and_shrinks_legacy_inventories(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(common, "ROOT", tmp_path)
     kernel = _write(tmp_path, KERNEL, "int x;\n")
-    baseline = _baseline()
-    baseline["files"][KERNEL] = {"baseline_loc": 1400, "baseline_tokens": 13000}
-
-    above = {KERNEL: {"loc": 1314, "tokens": 12500}}
-    updated = rules._updated_baseline(baseline, above, {}, {}, [kernel])
-    assert updated["files"][KERNEL] == {"baseline_loc": 1314, "baseline_tokens": 12500}
-
-    inside = {KERNEL: {"loc": 880, "tokens": 8000}}
-    assert rules._updated_baseline(baseline, inside, {}, {}, [kernel])["files"] == {}
-
-
-def test_baseline_update_shrinks_legacy_fragment_and_shard_inventories(tmp_path, monkeypatch):
-    monkeypatch.setattr(common, "ROOT", tmp_path)
     p72 = _write(tmp_path, f"{CORE}/legacy_p72_shard.py", "VALUE = 1\n")
     tiny = _write(tmp_path, f"{CORE}/tiny.py", "VALUE = 2\n")
     baseline = _baseline()
+    baseline["files"][KERNEL] = {"baseline_loc": 1400, "baseline_tokens": 13000}
     baseline["legacy_fragment_files"] = [f"{CORE}/legacy_p72_shard.py", f"{CORE}/gone_p72.py"]
     baseline["legacy_shallow_shards"] = [f"{CORE}/tiny.py", f"{CORE}/gone.py"]
     baseline["packages"] = {
-        "packages/core": {"baseline_tokens": 9000},
+        "packages/core": {"baseline_tokens": 20000},
         "packages/gone": {"baseline_tokens": 10},
     }
     metrics = {
+        KERNEL: {"loc": 1314, "tokens": 12500},
         f"{CORE}/legacy_p72_shard.py": {"loc": 3, "tokens": 30},
         f"{CORE}/tiny.py": {"loc": 1, "tokens": 10},
     }
 
-    updated = rules._updated_baseline(baseline, metrics, {}, {}, [p72, tiny])
+    updated = rules._updated_baseline(baseline, metrics, {}, {}, [kernel, p72, tiny])
 
+    # The C99 kernel ratchet stays while it is above the soft target, and only lowers.
+    assert updated["files"][KERNEL] == {"baseline_loc": 1314, "baseline_tokens": 12500}
     assert updated["legacy_fragment_files"] == [f"{CORE}/legacy_p72_shard.py"]
     assert updated["legacy_shallow_shards"] == [f"{CORE}/tiny.py"]
-    assert updated["packages"] == {"packages/core": {"baseline_tokens": 40}}
+    assert updated["packages"] == {"packages/core": {"baseline_tokens": 12540}}
+    inside = {KERNEL: {"loc": 880, "tokens": 8000}}
+    assert rules._updated_baseline(baseline, inside, {}, {}, [kernel])["files"] == {}

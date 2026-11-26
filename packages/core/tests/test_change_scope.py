@@ -23,20 +23,30 @@ def _decide(
     return change_scope.decide_paths(paths, new_or_deleted=new_or_deleted or ())
 
 
-def test_docs_only_change_selects_docs_profile() -> None:
+def test_docs_only_profile_states_skipped_legs_in_outputs_and_report() -> None:
     decision = _decide(["docs/development/ci.md", "README.md", "AGENTS.md", "docs/guides/x.rst"])
-    assert decision.profile == "docs"
-    assert decision.docs_only is True
-    assert decision.packages == ()
-    assert decision.testmon is False
-    assert decision.perf_equivalence is False
-    assert decision.run_tier2 is False
+    assert (decision.profile, decision.docs_only, decision.packages) == ("docs", True, ())
+    assert not (decision.testmon or decision.perf_equivalence or decision.run_tier2)
     assert decision.skipped  # skipped checks are stated, never silent
+    values = decision.to_outputs()
+    assert (values["docs_only"], values["has_packages"]) == ("true", "false")
+    assert values["perf_equivalence"] == "false" and json.loads(values["packages"]) == []
+    report = change_scope.render_report(decision)
+    assert "scope: docs" in report and "skipped:" in report
 
 
-def test_empty_change_set_resolves_to_full() -> None:
-    decision = _decide([])
-    assert (decision.profile, decision.packages) == ("full", ALL_SIX)
+def test_github_output_writer_and_empty_change_set(tmp_path: Path) -> None:
+    assert (_decide([]).profile, _decide([]).packages) == ("full", ALL_SIX)
+    out = tmp_path / "output.txt"
+    change_scope.write_github_output(
+        out, _decide(["packages/web/src/moex_spread_lab/web/server.py"])
+    )
+    values = dict(
+        line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line
+    )
+    assert (values["docs_only"], values["has_packages"]) == ("false", "true")
+    assert json.loads(values["packages"]) == ["web"]
+    assert (values["run_tier2"], values["perf_equivalence"]) == ("false", "false")
 
 
 def test_reverse_dependency_table_matches_architecture_dag() -> None:
@@ -110,35 +120,9 @@ def test_decide_ci_against_real_repo_commits(tmp_path: Path) -> None:
     assert (deleted.packages, deleted.testmon) == (("web",), False)  # deleted file: no deselection
 
 
-def test_github_output_writer(tmp_path: Path) -> None:
-    decision = _decide(["packages/web/src/moex_spread_lab/web/server.py"])
-    out = tmp_path / "output.txt"
-    change_scope.write_github_output(out, decision)
-    values = dict(
-        line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line
-    )
-    assert values["docs_only"] == "false"
-    assert json.loads(values["packages"]) == ["web"]
-    assert values["has_packages"] == "true"
-    assert values["run_tier2"] == "false"
-    assert values["perf_equivalence"] == "false"
-
-
-def test_docs_only_outputs_and_report_state_the_skipped_legs() -> None:
-    decision = _decide(["docs/development/ci.md"])
-    values = decision.to_outputs()
-    assert values["docs_only"] == "true"
-    assert json.loads(values["packages"]) == []
-    assert values["has_packages"] == "false"
-    assert values["perf_equivalence"] == "false"
-    report = change_scope.render_report(decision)
-    assert "scope: docs" in report
-    assert "skipped:" in report
-
-
-def test_scan_docs_files_flags_problems(tmp_path: Path) -> None:
+def test_scan_docs_files_flags_problems_but_not_sk_prose(tmp_path: Path) -> None:
     clean = tmp_path / "clean.md"
-    clean.write_text("hello world\n", encoding="utf-8")
+    clean.write_text("task-to-verified-main is a workflow metric\n", encoding="utf-8")
     dirty = tmp_path / "dirty.md"
     dirty.write_text(
         "trailing space   \n<<<<<<< HEAD\nsecret: ghp_" + "a" * 36 + "\n", encoding="utf-8"
@@ -146,21 +130,9 @@ def test_scan_docs_files_flags_problems(tmp_path: Path) -> None:
 
     findings, _ = docs_scan.scan_docs_files([str(clean), str(dirty)])
     text = "\n".join(findings)
-    assert "trailing whitespace" in text
-    assert "conflict marker" in text
+    assert "trailing whitespace" in text and "conflict marker" in text
     assert "credential-shaped" in text
-
-    findings_clean, _ = docs_scan.scan_docs_files([str(clean)])
-    assert findings_clean == []
-
-
-def test_credential_scanner_does_not_match_sk_substrings_in_normal_prose(tmp_path: Path) -> None:
-    prose = tmp_path / "prose.md"
-    prose.write_text("task-to-verified-main is a workflow metric\n", encoding="utf-8")
-
-    findings, _ = docs_scan.scan_docs_files([str(prose)])
-
-    assert findings == []
+    assert docs_scan.scan_docs_files([str(clean)]) == ([], [])
     assert verify.sanitize("task-to-verified-main") == "task-to-verified-main"
     assert verify.sanitize("sk-1234567890abcdef") == "sk-<redacted>"
 

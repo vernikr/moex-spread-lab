@@ -7,51 +7,53 @@ import shutil
 import pytest
 from scripts import check_js_modules as gate
 
+_ALIAS_CHAIN = {
+    "base.js": "export const value = 1;\n",
+    "middle.js": "export { value as renamed } from './base.js';\n",
+    "use.js": "import { renamed as local } from './middle.js';\nlocal();\n",
+}
+# (module files, fragment pairs that must co-occur in one reported error each)
+BROKEN_TREES = [
+    (
+        {"provider.js": "export function helper() {}\n", "consumer.js": "helper();\n"},
+        (("consumer.js", "helper"),),
+    ),
+    (
+        {**_ALIAS_CHAIN, "base.js": "export const other = 1;\n"},
+        (("middle.js", "value"), ("use.js", "renamed")),
+    ),
+    (
+        {
+            "base.js": "export const x = 1;\n",
+            "use.js": "import { x } from './base.js';\nimport { x as y } from './base.js';\n"
+            "import { z } from './missing.js';\n",
+        },
+        (("duplicate import",), ("missing.js",)),
+    ),
+]
 
-def test_current_modules_pass_the_gate():
+
+def _write_tree(directory, files):
+    for name, text in files.items():
+        (directory / name).write_text(text, encoding="utf-8")
+
+
+def test_current_modules_and_a_transitive_alias_chain_pass(tmp_path):
     assert gate.check_modules(gate.JS_DIR) == []
-
-
-def test_missing_sibling_import_is_detected(tmp_path):
-    (tmp_path / "provider.js").write_text("export function helper() {}\n", encoding="utf-8")
-    (tmp_path / "consumer.js").write_text("helper();\n", encoding="utf-8")
-
-    errors = gate.check_modules(tmp_path, syntax=False)
-
-    assert any("consumer.js" in error and "helper" in error for error in errors)
-
-
-def test_transitive_aliases_and_missing_exports(tmp_path):
-    (tmp_path / "base.js").write_text("export const value = 1;\n", encoding="utf-8")
-    (tmp_path / "middle.js").write_text(
-        "export { value as renamed } from './base.js';\n", encoding="utf-8"
-    )
-    (tmp_path / "use.js").write_text(
-        "import { renamed as local } from './middle.js';\nlocal();\n", encoding="utf-8"
-    )
+    _write_tree(tmp_path, _ALIAS_CHAIN)
     assert gate.check_modules(tmp_path, syntax=False) == []
-    (tmp_path / "base.js").write_text("export const other = 1;\n", encoding="utf-8")
-    errors = gate.check_modules(tmp_path, syntax=False)
-    assert any("middle.js" in error and "value" in error for error in errors)
-    assert any("use.js" in error and "renamed" in error for error in errors)
 
 
-def test_duplicate_imports_and_missing_module(tmp_path):
-    (tmp_path / "base.js").write_text("export const x = 1;\n", encoding="utf-8")
-    (tmp_path / "use.js").write_text(
-        "import { x } from './base.js';\nimport { x as y } from './base.js';\n"
-        "import { z } from './missing.js';\n",
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize(("files", "pairs"), BROKEN_TREES)
+def test_broken_trees_report_each_binding_error(tmp_path, files, pairs):
+    _write_tree(tmp_path, files)
     errors = gate.check_modules(tmp_path, syntax=False)
-    assert any("duplicate import" in error for error in errors)
-    assert any("missing.js" in error for error in errors)
+    for pair in pairs:
+        assert any(all(fragment in error for fragment in pair) for error in errors), errors
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="Node is optional")
 def test_syntax_check_covers_every_module(tmp_path):
-    (tmp_path / "a.js").write_text("export const ok = 1;\n", encoding="utf-8")
-    (tmp_path / "z.js").write_text("const bad = ;\n", encoding="utf-8")
-    assert any(
-        "z.js" in error and "syntax" in error.lower() for error in gate.check_modules(tmp_path)
-    )
+    _write_tree(tmp_path, {"a.js": "export const ok = 1;\n", "z.js": "const bad = ;\n"})
+    errors = gate.check_modules(tmp_path)
+    assert any("z.js" in error and "syntax" in error.lower() for error in errors)

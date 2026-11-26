@@ -331,5 +331,4 @@ __all__ = [
     "DATA_LAKE_SCHEMA",
     "SOURCE_SCHEMA",
     "ParquetBarStore",
-    "_atomic_write_parquet",
 ]

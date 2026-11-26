@@ -113,8 +113,10 @@ def test_existing_output_data_root_and_failure_journal(inputs):
     with pytest.raises(FileExistsError):
         stage_h1(root, path, output)
     output.rmdir()
-    with patch.object(ParquetBarStore, "import_legacy", side_effect=DataLakeError("injected")):
-        with pytest.raises(DataLakeError):
-            stage_h1(root, path, output)
+    with (
+        patch.object(ParquetBarStore, "import_legacy", side_effect=DataLakeError("injected")),
+        pytest.raises(DataLakeError),
+    ):
+        stage_h1(root, path, output)
     assert json.loads((output / "h1-stage.json").read_text())["status"] == "failed"
     assert intake.exists() and screen.exists()

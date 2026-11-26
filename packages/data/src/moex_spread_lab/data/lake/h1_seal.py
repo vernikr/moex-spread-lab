@@ -15,7 +15,6 @@ from .bar_types import (
     BarSeries,
     DataLakeError,
     SealedH1Reader,
-    _signature,
     reject_sealed_table_write,
     verify_archived_record,
 )
@@ -29,7 +28,6 @@ __all__ = [
     "BarSeries",
     "DataLakeError",
     "SealedH1Reader",
-    "_signature",
     "activate_h1",
     "deactivate_h1",
     "reject_sealed_table_write",

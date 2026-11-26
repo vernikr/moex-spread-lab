@@ -323,7 +323,6 @@ __all__ = [
     "BarStore",
     "DataLakeError",
     "SealedH1Reader",
-    "_signature",
     "reject_sealed_table_write",
     "verify_archived_record",
 ]

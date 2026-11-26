@@ -20,12 +20,7 @@ from .bar_types import (
 )
 from .io import atomic_write_json as _atomic_write_json
 from .legacy_series import LegacyCandleSeries, LegacyJsonBarStore
-from .legacy_series import component as _component
-from .legacy_series import integer as _integer
-from .legacy_series import number as _number
 from .legacy_series import read_legacy_series as _read_legacy_series
-from .legacy_series import source_key as _source_key
-from .legacy_series import timestamp as _timestamp
 from .market_store import MarketDataStore
 from .parquet_catalog import (
     BAR_DATASET_SCHEMA,
@@ -33,10 +28,8 @@ from .parquet_catalog import (
     DATA_LAKE_SCHEMA,
     SOURCE_SCHEMA,
 )
-from .parquet_catalog import atomic_write_parquet as _atomic_write_parquet
 from .parquet_store import ParquetBarStore
 from .raw_archive import RAW_ARCHIVE_SCHEMA, RawResponseArchive
-from .raw_archive import atomic_write_bytes as _atomic_write_bytes
 
 __all__ = [
     "BAR_DATASET_SCHEMA",
@@ -54,15 +47,8 @@ __all__ = [
     "ParquetBarStore",
     "RawResponseArchive",
     "SealedH1Reader",
-    "_atomic_write_bytes",
     "_atomic_write_json",
-    "_atomic_write_parquet",
-    "_component",
-    "_integer",
-    "_number",
     "_read_legacy_series",
-    "_source_key",
-    "_timestamp",
     "reject_sealed_table_write",
     "sha256_file",
     "verify_archived_record",

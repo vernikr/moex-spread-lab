@@ -39,11 +39,8 @@ _STARTED_AT = datetime.now(UTC).isoformat()
 
 def fastcore_binary(root: Path) -> tuple[bool, str | None]:
     """Report the normal binary's presence and privacy-preserving location, not load state."""
-    path = (
-        Path(_fastcore_loader.__file__)
-        .resolve()
-        .with_name("_fastcore" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so"))
-    )
+    suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+    path = Path(_fastcore_loader.__file__).resolve().with_name("_fastcore" + suffix)
     if not path.is_file():
         return False, None
     try:
@@ -201,11 +198,10 @@ def health(store: Any, port: int) -> dict[str, Any]:
 
     def git(*args: str) -> str | None:
         try:
-            proc = subprocess.run(
-                ["git", *args], cwd=root, capture_output=True, text=True, check=False, timeout=3
-            )
-            return proc.stdout.strip() if proc.returncode == 0 else None
-        except (OSError, subprocess.TimeoutExpired):
+            return subprocess.check_output(
+                ["git", *args], cwd=root, text=True, stderr=subprocess.DEVNULL, timeout=3
+            ).strip()
+        except (OSError, subprocess.SubprocessError):
             return None
 
     dirty = git("status", "--porcelain", "--untracked-files=no")
@@ -317,11 +313,9 @@ def _summary(result: Any) -> dict[str, Any]:
         if isinstance(value, dict):
             compact[key] = _summary_fields(key, value)
     compact.update(
-        {
-            f"{k}_count": len(result[k])
-            for k in ["rows", "assets", "trades", "ledger", "series"]
-            if isinstance(result.get(k), list)
-        }
+        (f"{k}_count", len(result[k]))
+        for k in ["rows", "assets", "trades", "ledger", "series"]
+        if isinstance(result.get(k), list)
     )
     bounded: dict[str, Any] = {}
     used = 2  # Braces; preserve default JSON separators and the UTF-8 wire budget.

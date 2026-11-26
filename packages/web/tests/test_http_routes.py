@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import cast
 from unittest import mock
 
+import moex_spread_lab.web.routes_proof as strategy_registry
 import moex_spread_lab.web.server as web_server
-import moex_spread_lab.web.strategy_registry as strategy_registry
 from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec, StrategyPlugin
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin

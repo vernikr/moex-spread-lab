@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from moex_spread_lab.web.strategy_registry import strategy_registry_payload
+from moex_spread_lab.web.routes_proof import strategy_registry_payload
 
 _JS_DIR = Path(__file__).resolve().parents[1] / "src" / "moex_spread_lab" / "web" / "static" / "js"
 

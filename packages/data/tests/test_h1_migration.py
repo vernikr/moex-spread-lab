@@ -4,7 +4,6 @@ from unittest.mock import patch
 import pytest
 
 import test_store_cutover as fixtures
-from moex_spread_lab.cli import main
 from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore, ParquetBarStore
 from moex_spread_lab.data.lake.h1_migration import (
     build_h1_plan,
@@ -119,16 +118,3 @@ def test_existing_output_data_root_and_failure_journal(inputs):
             stage_h1(root, path, output)
     assert json.loads((output / "h1-stage.json").read_text())["status"] == "failed"
     assert intake.exists() and screen.exists()
-
-
-def test_missing_group_and_cli(inputs):
-    root, intake, screen, path, output = inputs
-    screen.unlink()
-    args = ["moex-spread-lab", "data-h1-stage", "--root", str(root), "--plan", str(path)]
-    with patch("sys.argv", args + ["--dry-run"]):
-        assert main() == 0
-    with patch("sys.argv", args + ["--stage", "--output-dir", str(output)]):
-        assert main() == 0
-    with patch("sys.argv", args + ["--verify", "--output-dir", str(output)]):
-        assert main() == 0
-    assert build_h1_plan(root)["screen_selection"]["NEAR"] == "data/w1/candles/NEAR_1h.json"

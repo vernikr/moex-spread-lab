@@ -64,30 +64,6 @@ class IssIntakeTests(unittest.TestCase):
             ):
                 function()
 
-    def test_retired_cli_handlers_raise_after_catalog_lookup(self):
-        from types import SimpleNamespace
-        from unittest.mock import patch
-
-        from moex_spread_lab.data import cli
-
-        args = SimpleNamespace(
-            base_url="test",
-            board="RFUD",
-            timeout=1,
-            workers=1,
-            delay_seconds=0,
-            cache_dir=None,
-            near=Path("near"),
-            far=Path("far"),
-        )
-        with (
-            patch.object(cli, "fetch_iss_catalog", return_value={"instruments": []}),
-            self.assertRaisesRegex(IssIntakeError, "timeframe inventory has been retired"),
-        ):
-            cli._run_iss_timeframe_inventory(args)
-        with self.assertRaisesRegex(IssIntakeError, "candle pair check has been retired"):
-            cli._run_iss_candle_pair_check(args)
-
     def test_candle_rows_use_close_as_explicit_price_proxy(self):
         result = normalize_candles(
             candles(

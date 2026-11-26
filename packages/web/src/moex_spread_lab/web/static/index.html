@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MOEX Spread Lab · Доказательство исполнения</title>
 <link rel="stylesheet" href="/static/css/layout.css">
-<link rel="stylesheet" href="/static/css/picker.css">
-<link rel="stylesheet" href="/static/css/charts.css">
-<link rel="stylesheet" href="/static/css/ledger.css">
 </head>
 <body>
 <div class="render-progress" id="render-progress" role="progressbar" aria-label="Выполняется анализ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ожидание" aria-hidden="true"><span id="render-progress-bar" aria-hidden="true"></span></div>
@@ -64,7 +61,7 @@
 
   <div class="layout" id="layout">
     <aside class="panel side" id="col-selection">
-      <div id="selection-controls" style="display:flex;flex-direction:column;gap:6px;flex:1;min-height:0">
+      <div id="selection-controls">
         <div id="selection-lists" class="selection-lists">
           <section class="pick-panel" aria-labelledby="asset-label"><h2 id="asset-label">Тип пары / основной актив</h2><label class="pick-all"><input type="checkbox" class="pick-check" id="all-assets" aria-label="Все активы">Все</label><div id="main-asset" class="pick-list" role="group" aria-labelledby="asset-label"></div></section>
           <section class="pick-panel" aria-labelledby="window-label"><h2 id="window-label">Исторические пары</h2><label class="pick-all"><input type="checkbox" class="pick-check" id="all-windows" aria-label="Все окна открытого актива">Все</label><div id="window-list" class="pick-list" role="group" aria-labelledby="window-label"></div></section>
@@ -104,13 +101,13 @@
       <div class="norm-hint" id="norm-hint"></div>
       <section id="strategy-form" class="strategy-block" aria-label="Стратегия и параметры">
         <div id="focus-editor">
-          <div id="pair-controls" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+          <div id="pair-controls">
             <div class="hint" id="pair-hint"></div>
             <div class="control"><label for="strategy">Стратегия</label><select id="strategy"></select></div>
             <div class="sidegrid" id="pair-params"></div>
             <div class="sidegrid" id="pair-plugin-params"></div>
           </div>
-          <div id="calendar-controls" class="hidden" style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+          <div id="calendar-controls" class="hidden">
             <div class="control"><label for="cstrategy">Стратегия</label><select id="cstrategy"></select></div>
             <div class="sidegrid" id="calendar-params"></div>
           </div>

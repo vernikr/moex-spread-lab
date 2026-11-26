@@ -103,7 +103,7 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertIn('<script type="module" src="/static/js/app.js"></script>', text)
             self.assertNotIn("<style>", text)
 
-        for css_name in ("layout.css", "picker.css", "charts.css", "ledger.css"):
+        for css_name in ("layout.css",):
             status, headers, raw = self._request("GET", f"/static/css/{css_name}")
             self.assertEqual(status, 200, css_name)
             self.assertEqual(headers["content-type"], "text/css; charset=utf-8")

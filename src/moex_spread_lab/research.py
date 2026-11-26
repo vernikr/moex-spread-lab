@@ -1,3 +1,1 @@
-"""Backward-compatible shim for ``moex_spread_lab.accounting.research``."""
-
-from moex_spread_lab.accounting.research import *  # noqa: F403
+"""Backward-compatible shim; the W1-W7 research pipeline was removed in #190."""

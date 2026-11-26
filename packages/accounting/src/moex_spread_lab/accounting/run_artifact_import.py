@@ -22,7 +22,6 @@ from .run_artifacts import (
     publish_baseline_artifact,
     verify_run_artifact,
 )
-from .validation import build_validation
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -63,17 +62,9 @@ def _consumer_checks(report_path: Path, work: Path, label: str) -> dict[str, str
     for key in ("baseline_path", "baseline_sha256"):
         ledger["input_provenance"].pop(key, None)
     ledger_digest = sha256_bytes(canonical_bytes(ledger))
-    validation = build_validation(report_path, ledger_path, [report_path])
-    for key in ("baseline_path", "baseline_sha256", "ledger_path", "ledger_sha256"):
-        validation["input_provenance"].pop(key, None)
-    for item in validation["sensitivity"]:
-        item.pop("path", None)
-        item.pop("sha256", None)
-    validation_digest = sha256_bytes(canonical_bytes(validation))
     ledger_path.unlink()
     return {
         "execution_ledger_sha256": ledger_digest,
-        "validate_analytics_sha256": validation_digest,
     }
 
 

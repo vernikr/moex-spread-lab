@@ -1,3 +1,1 @@
-"""Backward-compatible shim for ``moex_spread_lab.accounting.validation``."""
-
-from moex_spread_lab.accounting.validation import *  # noqa: F403
+"""Backward-compatible shim; sealed 60/20/20 W7 validation was removed in #190."""

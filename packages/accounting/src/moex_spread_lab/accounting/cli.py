@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.accounting.research import run_research_pipeline
 from moex_spread_lab.core.w0 import W0Error, write_json
 
 
@@ -57,32 +56,12 @@ def register(subparsers: Any) -> None:
     artifact_gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
     artifact_gc_parser.set_defaults(_msl_cli_handler=run)
 
-    pipeline_parser = subparsers.add_parser(
-        "research-pipeline", help="run offline W1-W7 research waves"
-    )
-    pipeline_parser.add_argument("--manifest", type=Path, required=True)
-    pipeline_parser.add_argument("--fixture", type=Path, required=True)
-    pipeline_parser.add_argument("--output", type=Path, required=True)
-    pipeline_parser.set_defaults(_msl_cli_handler=run)
-
     ledger_parser = subparsers.add_parser(
         "execution-ledger", help="build a rebuildable analytical execution and portfolio ledger"
     )
     ledger_parser.add_argument("--baseline", type=Path, required=True)
     ledger_parser.add_argument("--output", type=Path, required=True)
     ledger_parser.set_defaults(_msl_cli_handler=run)
-
-    validation_parser = subparsers.add_parser(
-        "validate-analytics",
-        help="reproduce the historical W7 protocol (not the interactive screener split)",
-    )
-    validation_parser.add_argument("--baseline", type=Path, required=True)
-    validation_parser.add_argument("--ledger", type=Path, required=True)
-    validation_parser.add_argument("--sensitivity", type=Path, action="append", default=[])
-    validation_parser.add_argument("--output", type=Path, required=True)
-    validation_parser.add_argument("--train-fraction", type=float, default=0.6)
-    validation_parser.add_argument("--confirmation-fraction", type=float, default=0.2)
-    validation_parser.set_defaults(_msl_cli_handler=run)
 
     account_risk_parser = subparsers.add_parser(
         "account-risk-check", help="run the working VTB EBS/KPUR margin stress screen"
@@ -153,22 +132,6 @@ def _run_artifact_gc_cmd(args: Any) -> int:
     return 0
 
 
-def _run_research_pipeline_cmd(args: Any) -> int:
-    result = run_research_pipeline(args.manifest, args.fixture)
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "all_fixture_gates_passed": result["all_fixture_gates_passed"],
-                "release_state": result["release_state"],
-                "report_hash": result["report_hash"],
-            },
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
 def _run_execution_ledger_cmd(args: Any) -> int:
     from moex_spread_lab.accounting.ledger import build_ledger
 
@@ -182,35 +145,6 @@ def _run_execution_ledger_cmd(args: Any) -> int:
                 "execution_attempt_count": result["summary"]["execution_attempt_count"],
                 "final_X": result["summary"]["final_X"],
                 "executable_value_available": result["summary"]["executable_value_available"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _run_validate_analytics_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting.validation import build_validation
-
-    result = build_validation(
-        args.baseline,
-        args.ledger,
-        args.sensitivity,
-        train_fraction=args.train_fraction,
-        confirmation_fraction=args.confirmation_fraction,
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "release_state": result["release_state"],
-                "verdict": result["verdict"],
-                "timeframe": result["timeframe"],
-                "sealed_confirmation_rows": result["splits"]["sealed_confirmation"]["row_count"],
-                "final_X": result["splits"]["sealed_confirmation"]["final_X"],
-                "blocker_count": len(result["conclusion_blockers"]),
                 "output": str(args.output),
             },
             ensure_ascii=False,
@@ -266,9 +200,7 @@ _DISPATCH = {
     "run-artifact-import": _run_artifact_import_cmd,
     "run-artifact-pin": _run_artifact_pin_cmd,
     "run-artifact-gc": _run_artifact_gc_cmd,
-    "research-pipeline": _run_research_pipeline_cmd,
     "execution-ledger": _run_execution_ledger_cmd,
-    "validate-analytics": _run_validate_analytics_cmd,
     "account-risk-check": _run_account_risk_cmd,
 }
 

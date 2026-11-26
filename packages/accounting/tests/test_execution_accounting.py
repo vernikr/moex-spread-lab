@@ -1,3 +1,4 @@
+import importlib
 import json
 import tempfile
 import unittest
@@ -193,6 +194,18 @@ class OpenFillTests(unittest.TestCase):
         self.assertEqual(attempts[0]["decision_at"], "2026-03-24 00:00:00")
         self.assertEqual(ledger["projection"][1]["reserved_margin_proxy"], 2_000.0)
         self.assertGreater(ledger["portfolio"]["costs"]["total_by_component"]["slippage"], 0)
+
+
+class RetiredSubsystemTests(unittest.TestCase):
+    def test_research_and_validation_modules_are_removed(self):
+        for name in (
+            "moex_spread_lab.accounting.research",
+            "moex_spread_lab.accounting.research_intake",
+            "moex_spread_lab.accounting.research_simulation",
+            "moex_spread_lab.accounting.validation",
+        ):
+            with self.assertRaises(ModuleNotFoundError):
+                importlib.import_module(name)
 
 
 if __name__ == "__main__":

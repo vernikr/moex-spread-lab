@@ -9,8 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from moex_spread_lab.accounting import load_run_artifact
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.accounting.run_artifacts import load_run_artifact
 from moex_spread_lab.strategies.cli import _run_analytical_baseline_cmd
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     build_daily_series,

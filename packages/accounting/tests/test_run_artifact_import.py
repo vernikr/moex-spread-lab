@@ -35,7 +35,7 @@ def test_import_roundtrip_and_lineage(legacy):
     assert manifest["retention"]["detail_ttl_days"] == 30
     assert manifest["retention"]["pinned"] is False
     assert result["consumer_fingerprints"] == manifest["legacy_import"]["consumer_fingerprints"]
-    assert len(result["consumer_fingerprints"]) == 2
+    assert len(result["consumer_fingerprints"]) == 1
     assert set(p.name for p in output.iterdir()) == {
         "summary.json",
         "manifest.json",

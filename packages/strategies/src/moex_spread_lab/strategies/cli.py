@@ -30,7 +30,10 @@ def _load_cost_profile_arg(args: Any, get_scenario: Callable[[str], dict[str, An
 
 
 def _run_analytical_baseline_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting import publish_baseline_artifact, write_legacy_json
+    from moex_spread_lab.accounting.run_artifacts import (
+        publish_baseline_artifact,
+        write_legacy_json,
+    )
     from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
         build_series,
         get_cost_scenario,

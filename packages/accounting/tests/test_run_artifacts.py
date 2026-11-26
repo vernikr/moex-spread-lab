@@ -13,7 +13,6 @@ from moex_spread_lab.accounting.run_artifacts import (
     verify_run_artifact,
     write_legacy_json,
 )
-from moex_spread_lab.accounting.validation import build_validation
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
 
@@ -83,13 +82,7 @@ class RunArtifactTests(unittest.TestCase):
             self.assertEqual(load_run_artifact(artifact_dir)[0], baseline)
 
             ledger = build_ledger(artifact_dir)
-            ledger_path = root / "ledger.json"
-            ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
-            validation = build_validation(artifact_dir, ledger_path, [artifact_dir])
             self.assertEqual(ledger["summary"]["final_X"], baseline["summary"]["final_X"])
-            self.assertEqual(
-                validation["sensitivity"][0]["trade_count"], baseline["summary"]["trade_count"]
-            )
 
             legacy_path = root / "legacy.json"
             write_legacy_json(legacy_path, baseline)

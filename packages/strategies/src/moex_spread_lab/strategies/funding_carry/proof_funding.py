@@ -6,7 +6,6 @@ filtering its volume. A retrospectively estimated payment is not an observed sig
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
@@ -16,8 +15,8 @@ from typing import Any
 from moex_spread_lab.core.settings import EvaluationSplit
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as _catalog
-from moex_spread_lab.data.iss.catalog import fetch_history
 
+from ..pair_data import daily_volumes, history_source, positive_leg_days
 from .funding_recheck import format_evidence_notes
 from .timeline import (
     DSVD_NOTICE,
@@ -40,20 +39,8 @@ HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
 PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 
 
-def _default_offline_only(*_args: Any, **_kwargs: Any) -> Any:
-    raise OSError("local screener does not download data; run the documented intake first")
-
-
 def _default_history_source(inputs: Any, pair_id: str, secid: str) -> dict[str, Any]:
-    start, end = HISTORY_WINDOWS[pair_id]
-    return fetch_history(
-        secid,
-        start,
-        end,
-        cache_dir=inputs.history_cache(pair_id),
-        delay_seconds=0,
-        opener=_default_offline_only,
-    )
+    return history_source(inputs.root, pair_id, secid)
 
 
 def _leg_daily_volumes(inputs: Any, pair_id: str, secid: str) -> dict[str, float | None] | None:
@@ -61,25 +48,7 @@ def _leg_daily_volumes(inputs: Any, pair_id: str, secid: str) -> dict[str, float
         series = inputs.bars(pair_id, secid, columns=("begin", "volume"))
     except W0Error:
         return None
-    vols: dict[str, float | None] = {}
-    invalid: set[str] = set()
-    for row in series.rows:
-        begin = row.get("begin")
-        if not isinstance(begin, str) or len(begin) < 10:
-            continue
-        day = begin[:10]
-        value = row.get("volume")
-        if value is None or isinstance(value, bool):
-            invalid.add(day)
-            continue
-        number = float(value)
-        if not math.isfinite(number) or number < 0:
-            invalid.add(day)
-            continue
-        vols[day] = float(vols.get(day) or 0.0) + number
-    for day in invalid:
-        vols[day] = None
-    return vols
+    return daily_volumes(series.rows)
 
 
 def _default_positive_volume_dates(inputs: Any, pair: Mapping[str, str]) -> set[str]:
@@ -87,14 +56,7 @@ def _default_positive_volume_dates(inputs: Any, pair: Mapping[str, str]) -> set[
     far_vols = _leg_daily_volumes(inputs, pair["pair_id"], pair["far"])
     if near_vols is None or far_vols is None:
         return set()
-    return {
-        day
-        for day in set(near_vols) & set(far_vols)
-        if (nv := near_vols.get(day)) is not None
-        and float(nv) > 0
-        and (fv := far_vols.get(day)) is not None
-        and float(fv) > 0
-    }
+    return positive_leg_days(near_vols, far_vols)
 
 
 class ProofFunding:
@@ -152,7 +114,15 @@ class ProofFunding:
             self._timelines[key] = book
         return self._timelines[key]
 
+    def _settled_dates(self, key: tuple[Path, str, str, str], pid: str, secid: str) -> set[str]:
+        try:
+            source = self._sources.get(key) or self._history_fn(self.inputs, pid, secid)
+            return {str(r["TRADEDATE"]) for r in source["rows"] if has_settle(r)}
+        except (ValueError, OSError, TypeError, KeyError):
+            return set()
+
     def market_dates(self) -> set[str]:
+        """Every cleared session present in the local pair histories."""
         if self._market_dates is None:
             dates: set[str] = set()
             seen: set[tuple[Path, str, str, str]] = set()
@@ -165,11 +135,7 @@ class ProofFunding:
                     if key in seen or not (directory / f"{secid}-{a}-{b}-0.json").is_file():
                         continue
                     seen.add(key)
-                    try:
-                        source = self._sources.get(key) or self._history_fn(self.inputs, pid, secid)
-                        dates.update(str(r["TRADEDATE"]) for r in source["rows"] if has_settle(r))
-                    except (ValueError, OSError, TypeError, KeyError):
-                        continue
+                    dates |= self._settled_dates(key, pid, secid)
             self._market_dates = dates
         return self._market_dates
 
@@ -263,15 +229,6 @@ class FundingWindow:
             else None
         )
         self.resolve = cache(self._resolve)
-        self.resolve_full = cache(self._resolve_full)
-
-    def _resolve_full(self) -> FundingEvidence:
-        """Uncut evidence for the whole window, used by the full proof payload.
-
-        The cut (`through`) only limits the strategy's decisions, not the funding marks
-        that are needed to value every journal row of the full period.
-        """
-        return self._resolve(None)
 
     def _resolve(self, through: str | None = None) -> FundingEvidence:
         marks = self.book.require(self.days, through=through, training_end=self.training_end)

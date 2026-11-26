@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict
 
 from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data import universe as _catalog
 from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
 
 from ..funding_carry.carry import fetch_history
 from ..funding_carry.proof_funding import ProofFunding
+from ..pair_data import (
+    HISTORY_WINDOWS,
+    PAIRS,
+    VolumeMap,
+    daily_volumes,
+    history_cache_dir,
+    history_source,
+    leg_volumes,
+    positive_leg_days,
+)
 from .screener import _normalized_series
-
-HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
-PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 
 __all__ = [
     "DEFAULT_TIMEFRAME",
@@ -46,6 +51,13 @@ __all__ = [
     "get_timeframe",
     "pair_price_inputs",
 ]
+
+
+class CandleSummary(TypedDict):
+    """Timestamps and per-session volumes read once per leg series."""
+
+    timestamps: frozenset[str]
+    volumes: dict[str, float | None]
 
 
 class ScreenerError(W0Error):
@@ -94,10 +106,12 @@ class ScreenerInputs:
         return self.bar_store.read(self.candles(pair_id, secid, timeframe), columns=columns)
 
     def history_cache(self, pair_id: str) -> Path:
-        folder = (
-            "carry-history-cache" if pair_id == "CNYRUBF/CRZ6" else "carry-screen-history-cache"
-        )
-        return self.root / "data" / folder
+        return history_cache_dir(self.root, pair_id)
+
+
+def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
+    """The screener never downloads; the intake run owns every ISS request."""
+    raise OSError("local screener does not download data; run the documented intake first")
 
 
 def _pair(pair_id: Any) -> dict[str, str]:
@@ -107,88 +121,50 @@ def _pair(pair_id: Any) -> dict[str, str]:
     raise ScreenerError("пара не входит в допущенный исследовательский реестр")
 
 
-def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
-    raise OSError("local screener does not download data; run the documented intake first")
+_CANDLE_SUMMARY_CACHE: HashedJSONCache[tuple[Any, ...], CandleSummary] = HashedJSONCache(2048)
 
 
-_CANDLE_SUMMARY_CACHE: HashedJSONCache[tuple[Any, ...], dict[str, Any]] = HashedJSONCache(2048)
-
-
-def _parse_row_volume(row: Mapping[str, Any]) -> tuple[str | None, float | None, bool]:
-    begin = row.get("begin")
-    if not isinstance(begin, str) or len(begin) < 10:
-        return None, None, False
-    day = begin[:10]
-    value = row.get("volume")
-    if value is None or isinstance(value, bool):
-        return day, None, True
-    number = float(value)
-    if not math.isfinite(number) or number < 0:
-        return day, None, True
-    return day, number, False
-
-
-def _candle_summary(series: BarSeries) -> dict[str, Any]:
+def _candle_summary(series: BarSeries) -> CandleSummary:
+    """Cached candle timestamps and per-session volumes for one leg."""
     cached = _CANDLE_SUMMARY_CACHE.get(series.cache_key)
     if cached is not None:
         return cached
-    timestamps: set[str] = set()
-    volumes: dict[str, float | None] = {}
-    invalid_days: set[str] = set()
-    for row in series.rows:
-        begin = row.get("begin")
-        if begin and row.get("close") is not None:
-            timestamps.add(str(begin))
-        day, num, invalid = _parse_row_volume(row)
-        if day is None:
-            continue
-        if invalid:
-            invalid_days.add(day)
-        elif num is not None:
-            volumes[day] = float(volumes.get(day) or 0.0) + num
-    for day in invalid_days:
-        volumes[day] = None
-    result: dict[str, Any] = {"timestamps": frozenset(timestamps), "volumes": volumes}
+    timestamps = {
+        str(row["begin"])
+        for row in series.rows
+        if row.get("begin") and row.get("close") is not None
+    }
+    result = CandleSummary(timestamps=frozenset(timestamps), volumes=daily_volumes(series.rows))
     _CANDLE_SUMMARY_CACHE.put(series.cache_key, result)
     return result
+
+
+def _leg_summaries(
+    inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME
+) -> tuple[CandleSummary, CandleSummary] | None:
+    summaries: list[CandleSummary] = []
+    for secid in (pair["near"], pair["far"]):
+        try:
+            summaries.append(
+                _candle_summary(
+                    inputs.bars(
+                        pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume")
+                    )
+                )
+            )
+        except W0Error:
+            return None
+    return summaries[0], summaries[1]
 
 
 def _session_volumes(
     inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME
 ) -> dict[str, dict[str, float | None]] | None:
-    legs: dict[str, dict[str, float | None]] = {}
-    for secid in (pair["near"], pair["far"]):
-        try:
-            summary = _candle_summary(
-                inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume"))
-            )
-        except W0Error:
-            return None
-        legs[secid] = dict(summary["volumes"])
-    return legs
-
-
-def _is_positive_day(
-    legs: dict[str, dict[str, float | None]], pair: dict[str, str], day: str
-) -> bool:
-    for secid in (pair["near"], pair["far"]):
-        val = legs[secid].get(day)
-        if val is None or float(val) <= 0:
-            return False
-    return True
-
-
-def _leg_volumes(
-    inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME
-) -> dict[str, float] | None:
-    legs = _session_volumes(inputs, pair, timeframe)
-    if legs is None:
+    summaries = _leg_summaries(inputs, pair, timeframe)
+    if summaries is None:
         return None
-    days = set(legs[pair["near"]]) & set(legs[pair["far"]])
-    eligible = [day for day in days if _is_positive_day(legs, pair, day)]
-    if not eligible:
-        return None
-    return {secid: min(float(cast(float, legs[secid][day])) for day in eligible) for secid in legs}
+    near_sum, far_sum = summaries
+    return {pair["near"]: dict(near_sum["volumes"]), pair["far"]: dict(far_sum["volumes"])}
 
 
 def _positive_leg_volume_dates(
@@ -197,26 +173,32 @@ def _positive_leg_volume_dates(
     legs = _session_volumes(inputs, pair, timeframe)
     if legs is None:
         return set()
-    return {
-        day
-        for day in set(legs[pair["near"]]) & set(legs[pair["far"]])
-        if _is_positive_day(legs, pair, day)
-    }
+    return positive_leg_days(_volumes(legs, pair, "near"), _volumes(legs, pair, "far"))
+
+
+def _volumes(legs: dict[str, dict[str, float | None]], pair: dict[str, str], leg: str) -> VolumeMap:
+    return legs[pair[leg]]
+
+
+def _leg_volumes(
+    inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME
+) -> dict[str, float] | None:
+    legs = _session_volumes(inputs, pair, timeframe)
+    if legs is None:
+        return None
+    near, far = _volumes(legs, pair, "near"), _volumes(legs, pair, "far")
+    best = leg_volumes(near, far)
+    return None if best is None else {pair["near"]: best["near"], pair["far"]: best["far"]}
 
 
 def _pair_history_span(
     inputs: ScreenerInputs, pair: dict[str, str], timeframe: str = DEFAULT_TIMEFRAME
 ) -> tuple[str | None, str | None, int, set[str]]:
-    legs: list[frozenset[str]] = []
-    for secid in (pair["near"], pair["far"]):
-        try:
-            summary = _candle_summary(
-                inputs.bars(pair["pair_id"], secid, timeframe, columns=("begin", "close", "volume"))
-            )
-        except W0Error:
-            return None, None, 0, set()
-        legs.append(summary["timestamps"])
-    common = legs[0] & legs[1]
+    summaries = _leg_summaries(inputs, pair, timeframe)
+    if summaries is None:
+        return None, None, 0, set()
+    near_sum, far_sum = summaries
+    common: frozenset[str] = near_sum["timestamps"] & far_sum["timestamps"]
     if not common:
         return None, None, 0, set()
     return min(common)[:10], max(common)[:10], len(common), {ts[:10] for ts in common}
@@ -229,15 +211,7 @@ def _history_source(
     *,
     fetch_fn: Callable[..., dict[str, Any]] = fetch_history,
 ) -> dict[str, Any]:
-    start, end = HISTORY_WINDOWS[pair_id]
-    return fetch_fn(
-        secid,
-        start,
-        end,
-        cache_dir=inputs.history_cache(pair_id),
-        delay_seconds=0,
-        opener=_offline_only,
-    )
+    return history_source(inputs.root, pair_id, secid, fetch_fn=fetch_fn)
 
 
 def _make_proof_funding(

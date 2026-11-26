@@ -213,7 +213,7 @@ def _find_cycles(adjacency: dict[str, set[str]]) -> list[list[str]]:
 
 
 def _strategy_isolation_violations(edges: Edges, plugins: frozenset[str]) -> list[str]:
-    shared = {"strategies", "strategies.base", "strategies.calendar_eval"}
+    shared = {"strategies", "strategies.base", "strategies.calendar_eval", "strategies.pair_data"}
     violations: list[str] = []
     for src, targets in sorted(edges.items()):
         parts = src.split(".")

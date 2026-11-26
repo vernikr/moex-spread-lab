@@ -141,6 +141,47 @@ def _cap_check(
     return regime, cap_per_unit, status
 
 
+def _basis_pnl(
+    date_key: str,
+    previous_date: str | None,
+    legs: tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]],
+    multipliers: tuple[float, float],
+) -> float:
+    if previous_date is None:
+        return 0.0
+    near_rows, far_rows = legs
+    near_mult, far_mult = multipliers
+    near_change = near_rows[date_key]["settle"] - near_rows[previous_date]["settle"]
+    far_change = far_rows[date_key]["settle"] - far_rows[previous_date]["settle"]
+    return far_change * far_mult - near_change * near_mult
+
+
+def _swaprate_for(date_key: str, near: str, near_row: Mapping[str, Any], mark: Any) -> float:
+    swaprate = mark.value if mark else near_row["swaprate"]
+    if swaprate is None:
+        raise CarryError(f"missing {near} SWAPRATE on {date_key}")
+    return float(swaprate)
+
+
+def _regime_fields(
+    date_key: str,
+    previous_date: str | None,
+    swaprate: float,
+    near_rows: dict[str, dict[str, Any]],
+    regimes: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    regime, cap_per_unit, cap_status = _cap_check(
+        date_key, previous_date, swaprate, near_rows, regimes
+    )
+    return {
+        "funding_regime_id": regime["id"] if regime else "not_modelled",
+        "funding_k1": regime.get("k1") if regime else None,
+        "funding_k2": regime.get("k2") if regime else None,
+        "funding_cap_per_unit": _round(cap_per_unit) if cap_per_unit is not None else None,
+        "funding_cap_status": cap_status,
+    }
+
+
 def _build_study_rows(
     common_dates: list[str],
     near: str,
@@ -157,20 +198,11 @@ def _build_study_rows(
     previous_date: str | None = None
     for date_key in common_dates:
         near_row, far_row = near_rows[date_key], far_rows[date_key]
-        daily_basis_pnl = (
-            0.0
-            if previous_date is None
-            else (far_row["settle"] - far_rows[previous_date]["settle"]) * far_mult
-            - (near_row["settle"] - near_rows[previous_date]["settle"]) * near_mult
-        )
         mark = funding_marks[date_key] if funding_marks is not None else None
-        swaprate = mark.value if mark else near_row["swaprate"]
-        if swaprate is None:
-            raise CarryError(f"missing {near} SWAPRATE on {date_key}")
-        funding_received = 0.0 if previous_date is None else float(swaprate) * near_lot_size
-        regime, cap_per_unit, cap_status = _cap_check(
-            date_key, previous_date, float(swaprate), near_rows, regimes
-        )
+        swaprate = _swaprate_for(date_key, near, near_row, mark)
+        daily_basis_pnl = _basis_pnl(date_key, previous_date, legs, (near_mult, far_mult))
+        funding_received = 0.0 if previous_date is None else swaprate * near_lot_size
+        regime_fields = _regime_fields(date_key, previous_date, swaprate, near_rows, regimes)
         cumulative_mark += daily_basis_pnl
         cumulative_funding += funding_received
         rows.append(
@@ -185,11 +217,7 @@ def _build_study_rows(
                 "daily_basis_pnl_short_near_long_far": _round(daily_basis_pnl),
                 "daily_funding_received_short_near": _round(funding_received),
                 "daily_gross_carry_pnl": _round(daily_basis_pnl + funding_received),
-                "funding_regime_id": regime["id"] if regime else "not_modelled",
-                "funding_k1": regime.get("k1") if regime else None,
-                "funding_k2": regime.get("k2") if regime else None,
-                "funding_cap_per_unit": _round(cap_per_unit) if cap_per_unit is not None else None,
-                "funding_cap_status": cap_status,
+                **regime_fields,
                 "cumulative_basis_pnl": _round(cumulative_mark),
                 "cumulative_funding_received": _round(cumulative_funding),
                 "cumulative_gross_carry_pnl": _round(cumulative_mark + cumulative_funding),

@@ -133,8 +133,7 @@ class FundingCarryPlugin:
         *,
         far_point_value_rub: float = 1.0,
     ) -> list[EntryBandPoint]:
-        if fill not in self.supported_fills:
-            raise W0Error("Выбранный режим исполнения не поддерживается этой стратегией.")
+        """Funding entries come from the rate history, so only dates are bandable."""
         self.validate_parameters(params)
         return [EntryBandPoint(date=str(row.get("date", ""))) for row in series]
 

@@ -19,6 +19,7 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as _catalog
 
 from ..funding_carry.carry import fetch_history
+from ..pair_data import leg_volumes, positive_leg_days
 from .inputs import ScreenerInputs, _candle_summary, _make_proof_funding
 
 # Typed aliases of the core research registry: same objects, precise static types.
@@ -89,24 +90,15 @@ def _pair_bar_stats(
     history_from, history_to, obs = (
         (min(common_ts)[:10], max(common_ts)[:10], len(common_ts)) if common_ts else (None, None, 0)
     )
-    near_vols, far_vols = near_sum["volumes"], far_sum["volumes"]
-    pos_days = {
-        day
-        for day in set(near_vols) & set(far_vols)
-        if (nv := near_vols.get(day)) is not None
-        and float(nv) > 0
-        and (fv := far_vols.get(day)) is not None
-        and float(fv) > 0
-    }
-    volumes = (
-        {
-            near: min(float(near_vols[d]) for d in pos_days),
-            far: min(float(far_vols[d]) for d in pos_days),
-        }
-        if pos_days
-        else None
+    pos_days = positive_leg_days(near_sum["volumes"], far_sum["volumes"])
+    best = leg_volumes(near_sum["volumes"], far_sum["volumes"])
+    return (
+        history_from,
+        history_to,
+        obs,
+        pos_days,
+        (None if best is None else {near: best["near"], far: best["far"]}),
     )
-    return history_from, history_to, obs, pos_days, volumes
 
 
 def _resolve_proof_availability(

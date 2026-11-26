@@ -37,6 +37,7 @@ LEDGER_JS = (
 FROM_LEDGER = {
     "funding_rub": "funding_rub",
     "position": "position",
+    "contracts_held": "quantity",
     "event": "event",
     "day_pnl_rub": "mark_pnl_rub",
     "costs_rub": "costs_rub",
@@ -47,10 +48,6 @@ FROM_LEDGER = {
 FROM_TRADES = {"entry_contracts": "entry", "exit_contracts": "exit"}
 # Columns the export computes from other series fields instead of copying one.
 DERIVED = {"period", "signal"}
-# `contracts_held` reads `l.quantity`, a key no ledger row carries, so the column always exports
-# empty. Pinned as the only allowed gap: the test fails if a second column starts reading a
-# missing field, and fails again once the column is fixed and this entry is stale.
-KNOWN_EMPTY = {"contracts_held": "quantity"}
 
 
 def ledger_source() -> str:
@@ -70,8 +67,25 @@ def csv_columns() -> list[str]:
     return re.findall(r"'([a-z0-9_]+)'", block.group(1))
 
 
+def _post_proof(port: int, body_obj: dict) -> dict:
+    conn = HTTPConnection("127.0.0.1", port, timeout=60)
+    conn.request(
+        "POST",
+        "/api/proof/run",
+        json.dumps(body_obj),
+        {"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    body = response.read()
+    conn.close()
+    assert response.status == 200, body[:400]
+    data = json.loads(body)
+    assert data["series"] and data["ledger"] and data["trades"], sorted(data)
+    return data
+
+
 @pytest.fixture(scope="module")
-def payload() -> dict:
+def payloads() -> dict[str, dict]:
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -89,31 +103,31 @@ def payload() -> dict:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            conn = HTTPConnection("127.0.0.1", server.server_port, timeout=60)
-            conn.request(
-                "POST",
-                "/api/proof/run",
-                json.dumps(request("mean_reversion")),
-                {"Content-Type": "application/json"},
-            )
-            response = conn.getresponse()
-            body = response.read()
-            conn.close()
-            assert response.status == 200, body[:400]
-            data = json.loads(body)
+            sized_mr = {**request("mean_reversion"), "sizing": "max_affordable"}
+            sized_mr.pop("quantity")
+            return {
+                "fixed_mr": _post_proof(server.server_port, request("mean_reversion")),
+                "fixed_carry": _post_proof(
+                    server.server_port, {**request("funding_only"), "quantity": 2}
+                ),
+                "sized_mr": _post_proof(server.server_port, sized_mr),
+            }
         finally:
             server.shutdown()
             server.server_close()
             store.close()
             thread.join()
-    assert data["series"] and data["ledger"] and data["trades"], sorted(data)
-    return data
+
+
+@pytest.fixture(scope="module")
+def payload(payloads: dict[str, dict]) -> dict:
+    return payloads["fixed_mr"]
 
 
 def test_every_exported_column_is_unique_and_accounted_for(payload: dict) -> None:
     columns = csv_columns()
     assert len(columns) == len(set(columns)) == 38, columns
-    known = set(FROM_LEDGER) | set(FROM_TRADES) | DERIVED | set(KNOWN_EMPTY)
+    known = set(FROM_LEDGER) | set(FROM_TRADES) | DERIVED
     series_columns = [c for c in columns if c not in known]
     # A funding field only appears on the rows it applies to, so "somewhere in the series" is the
     # contract; the price columns must be on every row or the export is silently short.
@@ -125,14 +139,24 @@ def test_every_exported_column_is_unique_and_accounted_for(payload: dict) -> Non
     assert {"funding_rate_kind", "funding_left_rate", "funding_right_rate"} <= set(series_columns)
 
 
-def test_ledger_and_trade_columns_still_read_their_fields(payload: dict) -> None:
-    ledger, trade = payload["ledger"], payload["trades"][0]
-    absent = {f for f in FROM_LEDGER.values() if not any(f in row for row in ledger)}
-    still_empty = {f for f in KNOWN_EMPTY.values() if not any(f in row for row in ledger)}
-    assert absent - still_empty == set(), absent
-    assert still_empty == set(KNOWN_EMPTY.values()), "a documented empty column now resolves"
-    broken = sorted(c for c, side in FROM_TRADES.items() if "date" not in trade[side])
-    assert broken == [] and "quantity" in trade, broken
+def test_ledger_and_trade_columns_still_read_their_fields(payloads: dict[str, dict]) -> None:
+    assert "l?.quantity," in export_source()
+    for label, data in payloads.items():
+        ledger, trade = data["ledger"], data["trades"][0]
+        absent = {f for f in FROM_LEDGER.values() if not any(f in row for row in ledger)}
+        assert absent == set(), (label, absent)
+        assert all(
+            "quantity" in row
+            and type(row["quantity"]) is int
+            and row["quantity"] >= 0
+            and (row["position"] == 0) == (row["quantity"] == 0)
+            for row in ledger
+        ), label
+        held = {row["quantity"] for row in ledger if row["position"] != 0}
+        assert held and held <= {t["quantity"] for t in data["trades"]}, (label, held)
+        assert any(row["position"] == 0 and row["quantity"] == 0 for row in ledger), label
+        broken = sorted(c for c, side in FROM_TRADES.items() if "date" not in trade[side])
+        assert broken == [] and "quantity" in trade, (label, broken)
 
 
 def test_preamble_only_interpolates_fields_the_payload_carries(payload: dict) -> None:

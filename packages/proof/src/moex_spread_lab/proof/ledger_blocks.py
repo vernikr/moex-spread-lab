@@ -60,6 +60,7 @@ def _entry_step(
         sum(cast(dict[str, float], entry["costs"] or {}).values()),
         {
             "sign": sign,
+            "quantity": int(quantity),
             "near": row["near"],
             "far": row["far"],
         },
@@ -81,6 +82,7 @@ def _ledger_row(
         "session_date": row.get("session_date", day[:10]),
         "benchmark_mark_date": row.get("benchmark_mark_date"),
         "position": position["sign"] if position else 0,
+        "quantity": position["quantity"] if position else 0,
         "mark_pnl_rub": round(step_mark, 2),
         "funding_rub": row.get("funding_rub"),
         "costs_rub": round(step_cost, 2),
@@ -139,22 +141,29 @@ def funding_ledger(
     by_exit = {trade["exit"]["date"]: trade for trade in trades}
     labels = events(trades)
     cumulative = 0.0
+    held_quantity = 0
     ledger: list[dict[str, Any]] = []
     for row in daily_rows:
         day = row["date"]
         step_mark = float(row["gross_pnl_increment"])
         step_cost = 0.0
-        entering = by_entry.get(day)
-        if entering is not None:
-            step_cost += sum(cast(dict[str, float], entering["entry"]["costs"] or {}).values())
         exiting = by_exit.get(day)
+        entering = by_entry.get(day)
         if exiting is not None and not exiting["open_at_end"]:
             step_cost += sum(cast(dict[str, float], exiting["exit"]["costs"] or {}).values())
+            held_quantity = 0
+        if entering is not None:
+            step_cost += sum(cast(dict[str, float], entering["entry"]["costs"] or {}).values())
+            held_quantity = int(entering.get("quantity", 1))
+            if exiting is entering and not entering["open_at_end"]:
+                held_quantity = 0
         cumulative += step_mark - step_cost
+        is_open = bool(row["position"])
         ledger.append(
             {
                 "date": day,
-                "position": -1 if row["position"] else 0,
+                "position": -1 if is_open else 0,
+                "quantity": held_quantity if is_open else 0,
                 "mark_pnl_rub": round(step_mark, 2),
                 "funding_rub": round(row["daily_funding_included_rub"], 2),
                 "costs_rub": round(step_cost, 2),

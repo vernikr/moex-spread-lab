@@ -3,14 +3,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.strategies.cli import _run_analytical_baseline_cmd
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     build_daily_series,
     build_series,
@@ -208,7 +203,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
 
-    def test_baseline_cli_writes_consumable_json_report(self):
+    def test_baseline_report_stays_consumable_by_the_execution_ledger(self):
+        """The scheduler baseline report keeps feeding `execution-ledger` after the CLI cut."""
         series = {
             "near": "NEAR",
             "far": "FAR",
@@ -219,16 +215,8 @@ class AnalyticsTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            args = SimpleNamespace(
-                near_candles=root / "near",
-                far_candles=root / "far",
-                benchmark=root / "benchmark",
-                contracts=root / "contracts",
-                near="NEAR",
-                far="FAR",
-                interval=24,
-                cost_scenario=None,
-                cost_profile=None,
+            report = run_mean_reversion_baseline(
+                series,
                 initial_capital=30000,
                 lookback=3,
                 entry_z=1.0,
@@ -236,20 +224,9 @@ class AnalyticsTests(unittest.TestCase):
                 quantity=1,
                 decision_delay_bars=1,
                 analysis_role="primary_baseline",
-                output=root / "baseline.json",
             )
-            output = StringIO()
-            with (
-                patch(
-                    "moex_spread_lab.strategies.pair_mean_reversion.analytics.build_series",
-                    return_value=series,
-                ),
-                redirect_stdout(output),
-            ):
-                self.assertEqual(_run_analytical_baseline_cmd(args), 0)
-            report = json.loads(args.output.read_text(encoding="utf-8"))
-            self.assertEqual(report["schema_version"], "analytical-baseline.v1")
-            self.assertEqual(json.loads(output.getvalue())["output"], str(args.output))
+            baseline_path = root / "baseline.json"
+            baseline_path.write_text(json.dumps(report), encoding="utf-8")
             ledger_path = root / "ledger.json"
             subprocess.run(
                 [
@@ -258,7 +235,7 @@ class AnalyticsTests(unittest.TestCase):
                     "moex_spread_lab.cli",
                     "execution-ledger",
                     "--baseline",
-                    str(args.output),
+                    str(baseline_path),
                     "--output",
                     str(ledger_path),
                 ],
@@ -267,6 +244,7 @@ class AnalyticsTests(unittest.TestCase):
                 text=True,
             )
             ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], "analytical-baseline.v1")
             self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
             self.assertEqual(
                 ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],

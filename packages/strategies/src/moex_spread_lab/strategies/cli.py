@@ -4,159 +4,49 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
-from moex_spread_lab.core.w0 import W0Error, write_json
+from moex_spread_lab.core.w0 import write_json
 
-from .cli_parsers import register_strategy_parsers
+
+def _register_calendar_study(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "calendar-study",
+        help="study native MOEX calendar spreads over front windows (fetches and caches ISS history)",
+    )
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--till-date", required=True)
+    parser.add_argument("--slippage-ticks", type=float, default=1.0)
+    parser.add_argument(
+        "--assets",
+        nargs="+",
+        default=None,
+        help="asset prefixes; default is every registered asset",
+    )
+    parser.add_argument("--output", type=Path, required=True)
+    parser.set_defaults(_msl_cli_handler=run)
+
+
+def _register_screener_run(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "screener-run", help="replay one local screener configuration as JSON"
+    )
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--pair", required=True)
+    parser.add_argument("--strategy", choices=("mean_reversion", "funding_only"), required=True)
+    parser.add_argument("--slippage-ticks", type=float, default=1.0)
+    parser.add_argument("--quantity", type=int, default=1)
+    parser.add_argument("--lookback", type=int, default=20)
+    parser.add_argument("--entry-z", type=float, default=2.0)
+    parser.add_argument("--exit-z", type=float, default=0.5)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.set_defaults(_msl_cli_handler=run)
 
 
 def register(subparsers: Any) -> None:
-    register_strategy_parsers(subparsers, run)
-
-
-def _load_cost_profile_arg(args: Any, get_scenario: Callable[[str], dict[str, Any]]) -> Any:
-    if args.cost_scenario:
-        return get_scenario(args.cost_scenario)
-    if args.cost_profile:
-        try:
-            profile = json.loads(args.cost_profile.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise W0Error(f"cannot read cost profile {args.cost_profile}: {exc}") from exc
-        if not isinstance(profile, dict):
-            raise W0Error("cost profile must be a JSON object")
-        return cast(dict[str, Any], profile)
-    return None
-
-
-def _run_analytical_baseline_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
-        build_series,
-        get_cost_scenario,
-        run_mean_reversion_baseline,
-    )
-
-    series = build_series(
-        args.near_candles,
-        args.far_candles,
-        args.benchmark,
-        args.contracts,
-        near=args.near,
-        far=args.far,
-        interval=args.interval,
-    )
-    cost_profile = _load_cost_profile_arg(args, get_cost_scenario)
-    result = run_mean_reversion_baseline(
-        series,
-        initial_capital=args.initial_capital,
-        lookback=args.lookback,
-        entry_z=args.entry_z,
-        exit_z=args.exit_z,
-        quantity=args.quantity,
-        decision_delay_bars=args.decision_delay_bars,
-        analysis_role=args.analysis_role,
-        cost_profile=cost_profile,
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "release_state": result["release_state"],
-                "timeframe": result["timeframe"],
-                "analysis_role": result["analysis_role"],
-                "first_date": result["summary"]["first_date"],
-                "last_date": result["summary"]["last_date"],
-                "common_row_count": result["summary"]["common_row_count"],
-                "trade_count": result["summary"]["trade_count"],
-                "gross_pnl": result["summary"]["gross_pnl"],
-                "final_X": result["summary"]["final_X"],
-                "max_drawdown_D": result["summary"]["max_drawdown_D"],
-                "cost_status": result["costs"]["status"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _run_carry_study_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.funding_carry.carry import build_carry_study, fetch_history
-
-    near_source, far_source = (
-        fetch_history(
-            secid,
-            args.from_date,
-            args.till_date,
-            cache_dir=args.cache_dir,
-            delay_seconds=args.delay_seconds,
-            timeout=args.timeout,
-        )
-        for secid in (args.near, args.far)
-    )
-    result = build_carry_study(
-        near_source,
-        far_source,
-        args.contracts,
-        near=args.near,
-        far=args.far,
-        funding_regimes=None if args.near == "CNYRUBF" else (),
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "release_state": result["release_state"],
-                "study_role": result["study_role"],
-                "near": result["near"],
-                "far": result["far"],
-                "common_row_count": result["summary"]["common_row_count"],
-                "total_basis_pnl": result["summary"]["total_basis_pnl"],
-                "total_funding_received": result["summary"]["total_funding_received"],
-                "total_gross_carry_pnl": result["summary"]["total_gross_carry_pnl"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _run_carry_strategy_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy
-
-    try:
-        carry_study = json.loads(args.carry_study.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise W0Error(f"cannot read carry study {args.carry_study}: {exc}") from exc
-    result = build_carry_strategy(
-        carry_study,
-        args.benchmark,
-        args.contracts,
-        transaction_cost_scenario=args.cost_scenario,
-        initial_capital=args.initial_capital,
-        strategy_variant="funding_only" if args.hypothesis == "h3-funding-only" else "basis_median",
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "rule_id": result["rule_id"],
-                "release_state": result["release_state"],
-                "closed_trade_count": result["summary"]["closed_trade_count"],
-                "open_trade_count": result["summary"]["open_trade_count"],
-                "final_X": result["summary"]["final_X"],
-                "gross_pnl": result["summary"]["gross_pnl"],
-                "transaction_costs": result["summary"]["transaction_costs"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
+    _register_calendar_study(subparsers)
+    _register_screener_run(subparsers)
 
 
 def _run_screener_run_cmd(args: Any) -> int:
@@ -181,11 +71,7 @@ def _run_screener_run_cmd(args: Any) -> int:
     write_json(args.output, result)
     print(
         json.dumps(
-            {
-                "run_id": result["run_id"],
-                "status": result["status"],
-                "output": str(args.output),
-            },
+            {"run_id": result["run_id"], "status": result["status"], "output": str(args.output)},
             sort_keys=True,
         )
     )
@@ -222,25 +108,15 @@ def _run_calendar_study_cmd(args: Any) -> int:
         for variant in item.get("variants", []):
             print(
                 json.dumps(
-                    {"asset": asset, **{k: variant[k] for k in summary_keys}},
-                    sort_keys=True,
+                    {"asset": asset, **{k: variant[k] for k in summary_keys}}, sort_keys=True
                 )
             )
     return 0
 
 
-def _run_funding_screen_cmd(args: Any) -> int:
-    del args
-    raise W0Error("funding-screen has been retired")
-
-
 _DISPATCH: dict[str, Callable[[Any], int]] = {
-    "analytical-baseline": _run_analytical_baseline_cmd,
-    "carry-study": _run_carry_study_cmd,
-    "carry-strategy": _run_carry_strategy_cmd,
-    "screener-run": _run_screener_run_cmd,
     "calendar-study": _run_calendar_study_cmd,
-    "funding-screen": _run_funding_screen_cmd,
+    "screener-run": _run_screener_run_cmd,
 }
 
 

@@ -1,13 +1,14 @@
+import argparse
 import importlib
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
-from types import SimpleNamespace
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
-from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.strategies.cli import run as run_strategies_cli
+from moex_spread_lab.strategies.cli import register as register_strategy_cli
 from moex_spread_lab.strategies.funding_carry.carry import (
     CarryStrategyError,
     _transaction_cost_profile,
@@ -399,11 +400,16 @@ class CarryTests(unittest.TestCase):
                     ],
                 )
 
-    def test_retired_funding_screen_stays_deleted_and_cli_fails_closed(self):
+    def test_retired_study_commands_stay_deleted(self):
         with self.assertRaises(ModuleNotFoundError):
             importlib.import_module("moex_spread_lab.strategies.funding_carry.funding_screen")
-        with self.assertRaisesRegex(W0Error, "funding-screen has been retired"):
-            run_strategies_cli(SimpleNamespace(command="funding-screen"))
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("moex_spread_lab.strategies.cli_parsers")
+        parser = argparse.ArgumentParser(prog="moex-spread-lab")
+        register_strategy_cli(parser.add_subparsers(dest="command", required=True))
+        for retired in ("funding-screen", "carry-study", "carry-strategy", "analytical-baseline"):
+            with self.assertRaises(SystemExit), redirect_stderr(StringIO()):
+                parser.parse_args([retired])
 
 
 if __name__ == "__main__":

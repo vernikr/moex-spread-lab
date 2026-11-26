@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error, load_contracts
 
@@ -15,19 +15,8 @@ DEFAULT_UNCERTAINTY_BUFFER = 5_000.0
 DEFAULT_KEY_RATE = 0.14
 
 
-class _Scenario(TypedDict):
-    id: str
-    description: str
-    margin_requirement_rub: float
-    vm_buffer_rub: float
-    uncertainty_buffer_rub: float
-    total_required_rub: float
-    remaining_capital_rub: float
-    passed: bool
-
-
 class AccountRiskError(W0Error):
-    """Raised when the working account-risk calculation cannot be built."""
+    pass
 
 
 def _round(value: float) -> float:
@@ -41,72 +30,48 @@ def ebs_undercovered_margin_charge(
     key_rate: float = DEFAULT_KEY_RATE,
     days: int = 1,
 ) -> float:
-    """Calculate the published EBS under-covered-margin sensitivity."""
     if gross_margin < 0 or rub_cash < 0 or key_rate < 0 or days < 0:
         raise AccountRiskError("margin, cash, rate and days must be non-negative")
-    uncovered = max(gross_margin - rub_cash, 0.0)
-    return uncovered * (key_rate + 0.02) * days / 365.0
+    return max(gross_margin - rub_cash, 0.0) * (key_rate + 0.02) * days / 365.0
 
 
 def _observed_loss(observed_daily_pnl: Iterable[float] | None) -> float:
     if observed_daily_pnl is None:
         return 0.0
     values = [float(value) for value in observed_daily_pnl]
-    if not values:
-        return 0.0
-    return max(0.0, -min(values))
+    return max(0.0, -min(values)) if values else 0.0
 
 
-_ASSESS_OPTIONS = frozenset(
-    {
-        "initial_capital",
-        "stress_vm_buffer",
-        "uncertainty_buffer",
-        "key_rate",
-        "observed_daily_pnl",
-        "quantity",
-    }
-)
-
-
-def assess_vtb_pair(
+def assess_vtb_pair(  # noqa: PLR0913  # public keyword-only stress screen API preserved for callers
     contracts_path: Path,
     near: str,
     far: str,
-    **options: Any,
+    *,
+    initial_capital: float = DEFAULT_INITIAL_CAPITAL,
+    stress_vm_buffer: float = DEFAULT_STRESS_VM_BUFFER,
+    uncertainty_buffer: float = DEFAULT_UNCERTAINTY_BUFFER,
+    key_rate: float = DEFAULT_KEY_RATE,
+    observed_daily_pnl: Iterable[float] | None = None,
+    quantity: int = 1,
 ) -> dict[str, Any]:
-    """Assess minimum-lot capital under the project's working VTB profile.
-
-    This is a fail-closed research screen. It does not claim the broker's
-    client-specific margin or offset calculation and never credits LQDT as
-    strategy cash.
-    """
-    unknown = set(options) - _ASSESS_OPTIONS
-    if unknown:
-        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
-    initial_capital = float(options.get("initial_capital", DEFAULT_INITIAL_CAPITAL))
-    stress_vm_buffer = float(options.get("stress_vm_buffer", DEFAULT_STRESS_VM_BUFFER))
-    uncertainty_buffer = float(options.get("uncertainty_buffer", DEFAULT_UNCERTAINTY_BUFFER))
-    key_rate = float(options.get("key_rate", DEFAULT_KEY_RATE))
-    observed_daily_pnl: Iterable[float] | None = options.get("observed_daily_pnl")
-    quantity = int(options.get("quantity", 1))
+    """Fail-closed working VTB capital screen; never credits LQDT as strategy cash."""
     if initial_capital <= 0 or stress_vm_buffer < 0 or uncertainty_buffer < 0:
         raise AccountRiskError("capital and buffers must be positive or zero")
     if key_rate < 0:
         raise AccountRiskError("key rate must be non-negative")
-    contracts, contracts_hash = load_contracts(contracts_path, near, far)
-    near_contract = contracts[near]
-    far_contract = contracts[far]
     if quantity < 1:
         raise AccountRiskError("quantity must be a positive integer")
-    near_margin = float(near_contract["initial_margin"]) * quantity
-    far_margin = float(far_contract["initial_margin"]) * quantity
+
+    contracts, contracts_hash = load_contracts(contracts_path, near, far)
+    near_margin = float(contracts[near]["initial_margin"]) * quantity
+    far_margin = float(contracts[far]["initial_margin"]) * quantity
     pair_margin = near_margin + far_margin
     one_leg_margin = max(near_margin, far_margin)
     observed_worst_loss = _observed_loss(observed_daily_pnl) * quantity
     effective_vm_buffer = max(stress_vm_buffer * quantity, observed_worst_loss)
 
-    scenario_specs = (
+    scenarios: list[dict[str, Any]] = []
+    for scenario_id, margin, description in (
         ("current_snapshot_no_offset", pair_margin, "current ISS margin sum; no offset credit"),
         (
             "single_leg_failure",
@@ -115,9 +80,7 @@ def assess_vtb_pair(
         ),
         ("two_times_margin_shock", pair_margin * 2.0, "2x pair margin shock"),
         ("three_times_margin_shock", pair_margin * 3.0, "3x pair margin shock"),
-    )
-    scenarios: list[_Scenario] = []
-    for scenario_id, margin, description in scenario_specs:
+    ):
         total_required = margin + effective_vm_buffer + uncertainty_buffer
         scenarios.append(
             {
@@ -132,16 +95,6 @@ def assess_vtb_pair(
             }
         )
 
-    zero_cash_charge = ebs_undercovered_margin_charge(
-        pair_margin,
-        0.0,
-        key_rate=key_rate,
-    )
-    full_cash_charge = ebs_undercovered_margin_charge(
-        pair_margin,
-        initial_capital,
-        key_rate=key_rate,
-    )
     return {
         "schema_version": ACCOUNT_RISK_SCHEMA,
         "profile_id": "vtb_ebs_kpur_working_profile",
@@ -156,7 +109,7 @@ def assess_vtb_pair(
         "pair": {
             "near": near,
             "far": far,
-            "quantity_per_leg": quantity,
+            "quantity_per_leg": int(quantity),
             "near_initial_margin_rub": _round(near_margin),
             "far_initial_margin_rub": _round(far_margin),
             "pair_margin_no_offset_rub": _round(pair_margin),
@@ -169,13 +122,17 @@ def assess_vtb_pair(
             "observed_worst_daily_loss_rub": _round(observed_worst_loss),
             "effective_vm_buffer_rub": _round(effective_vm_buffer),
             "uncertainty_buffer_rub": _round(uncertainty_buffer),
-            "key_rate_assumption": key_rate,
+            "key_rate_assumption": float(key_rate),
             "basis": "R07_working_stress_proposal_plus_current_pair_snapshot",
         },
         "ebs_undercovered_margin_sensitivity": {
             "formula": "max(ГО - RubCash, 0) * (key_rate + 2%) * days / 365",
-            "one_day_zero_rub_cash_charge_rub": _round(zero_cash_charge),
-            "one_day_full_initial_capital_cash_charge_rub": _round(full_cash_charge),
+            "one_day_zero_rub_cash_charge_rub": _round(
+                ebs_undercovered_margin_charge(pair_margin, 0.0, key_rate=key_rate)
+            ),
+            "one_day_full_initial_capital_cash_charge_rub": _round(
+                ebs_undercovered_margin_charge(pair_margin, initial_capital, key_rate=key_rate)
+            ),
             "charge_status": "sensitivity_not_historical_account_charge",
         },
         "scenarios": scenarios,

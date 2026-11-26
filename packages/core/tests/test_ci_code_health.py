@@ -1,4 +1,5 @@
-"""Unit tests for Step 3 CI Tier 2 path filtering, weekly digest rendering, and workflow wiring."""
+"""Unit tests for Step 3 CI Tier 2 path filtering, weekly digest rendering, workflow wiring
+and the unified typecheck namespace view."""
 
 from __future__ import annotations
 
@@ -6,7 +7,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from scripts import change_scope
+import pytest
+from scripts import change_scope, typecheck_workspace
 from scripts import render_code_health_digest as digest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -173,3 +175,66 @@ def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
     assert "check_health.sh" not in macos_yml
     assert jscpd_cfg["threshold"] <= 3.0
     assert "c" in jscpd_cfg["format"]
+
+
+@pytest.fixture
+def namespace_root(tmp_path: Path) -> Path:
+    for relative in (
+        "packages/core/src/moex_spread_lab/core",
+        "packages/data/src/moex_spread_lab/data",
+        "packages/accounting/src/moex_spread_lab/accounting",
+        "packages/strategies/src/moex_spread_lab/strategies",
+        "packages/proof/src/moex_spread_lab/proof",
+        "packages/web/src/moex_spread_lab/web",
+        "src/moex_spread_lab",
+    ):
+        directory = tmp_path / relative
+        directory.mkdir(parents=True)
+        (directory / "__init__.py").write_text("\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_typecheck_view_unifies_namespace_roots_and_is_reproducible(namespace_root: Path) -> None:
+    for relative in (
+        "packages/core/src/moex_spread_lab/.DS_Store",
+        "src/moex_spread_lab/.DS_Store",
+    ):
+        (namespace_root / relative).write_bytes(b"macOS metadata")
+
+    view = typecheck_workspace.build_view(namespace_root)
+
+    # one symlink per namespace entry; macOS metadata never enters the view
+    assert {path.name for path in (view / "moex_spread_lab").iterdir()} == {
+        "__init__.py",
+        "accounting",
+        "core",
+        "data",
+        "proof",
+        "strategies",
+        "web",
+    }
+    core = view / "moex_spread_lab/core"
+    assert core.is_symlink()
+    assert core.resolve() == namespace_root / "packages/core/src/moex_spread_lab/core"
+
+    stale = view / "moex_spread_lab/stale.py"
+    stale.symlink_to(namespace_root / "src/moex_spread_lab/__init__.py")
+    typecheck_workspace.build_view(namespace_root)
+    assert not stale.exists()
+
+
+def test_typecheck_view_refuses_to_delete_unmanaged_directory(namespace_root: Path) -> None:
+    generated = namespace_root / ".typecheck_typings"
+    generated.mkdir()
+    marker = generated / "keep.txt"
+    marker.write_text("user data", encoding="utf-8")
+
+    with pytest.raises(typecheck_workspace.ViewError, match="unmarked"):
+        typecheck_workspace.build_view(namespace_root)
+    assert marker.read_text(encoding="utf-8") == "user data"
+
+
+def test_typecheck_view_reports_namespace_collisions(namespace_root: Path) -> None:
+    (namespace_root / "packages/data/src/moex_spread_lab/core").mkdir()
+    with pytest.raises(typecheck_workspace.ViewError, match="duplicate namespace"):
+        typecheck_workspace.build_view(namespace_root)

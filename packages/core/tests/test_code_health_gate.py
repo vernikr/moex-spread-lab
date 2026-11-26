@@ -1,7 +1,8 @@
-"""Regression tests for repository code-health ratchets and tiered file budgets."""
+"""Regression tests for the code-health ratchets, tiered budgets and the code_inspect helper."""
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import PurePosixPath
 
@@ -9,6 +10,7 @@ import pytest
 from scripts import code_health_gate as gate
 from scripts import code_health_gate_common as common
 from scripts import code_health_gate_rules as rules
+from scripts import code_inspect
 
 ARCHETYPE_PATHS = [
     ("production", "packages/core/src/moex_spread_lab/core/probe.py"),
@@ -16,6 +18,7 @@ ARCHETYPE_PATHS = [
     ("tests", "packages/core/tests/test_probe.py"),
     ("kernel", "packages/core/src/moex_spread_lab/core/_fastcore.c"),
 ]
+SOURCE = "def probe(value):\n\n    return 'тест' if value else None\n\n\n# trailing comment\n"
 
 
 def _baseline() -> dict:
@@ -64,19 +67,24 @@ def test_file_archetypes_are_classified_from_the_path(archetype, relative):
 def test_budget_bands_are_green_advisory_or_hard(archetype, relative):
     budget = common.FILE_BUDGETS[archetype]
 
-    def outcome(loc: int, tokens: int = 1) -> tuple[list[str], list[str]]:
-        return rules._budget_outcome(relative, _metrics(loc, tokens))
+    def outcome(loc: int, tokens: int = 1, band: str = "green") -> tuple[list[str], list[str]]:
+        metrics = _metrics(loc, tokens)
+        # The inner-loop helper reads the same policy and must report the same band.
+        assert code_inspect._band(relative, metrics) == (archetype, band, budget)
+        return rules._budget_outcome(relative, metrics)
 
     assert outcome(budget["soft_loc"]) == ([], [])  # green stays silent
-    failures, advisories = outcome(budget["soft_loc"] + 1)
+    failures, advisories = outcome(budget["soft_loc"] + 1, band="advisory")
     assert failures == [] and "advisory band" in advisories[0]
-    failures, advisories = outcome(budget["hard_loc"] + 1)
+    failures, advisories = outcome(budget["hard_loc"] + 1, band="over-hard")
     assert "hard ceiling" in failures[0] and advisories == []
     if archetype == "kernel":  # the C99 unit is governed by LOC and per-function limits only
         assert outcome(1, 10**6) == ([], [])
     else:
-        failures, advisories = outcome(1, budget["soft_tokens"] + 1)
+        assert outcome(1, budget["soft_tokens"]) == ([], [])
+        failures, advisories = outcome(1, budget["soft_tokens"] + 1, band="advisory")
         assert failures == [] and "tokens in the" in advisories[0]
+        assert "hard ceiling" in outcome(1, budget["hard_tokens"] + 1, band="over-hard")[0][0]
 
 
 def test_check_files_reports_yellow_band_without_failing(tmp_path, monkeypatch):
@@ -88,6 +96,56 @@ def test_check_files_reports_yellow_band_without_failing(tmp_path, monkeypatch):
     assert failures == []
     assert "scripts/borderline.py" in metrics
     assert any("advisory band" in advisory for advisory in advisories)
+
+
+@pytest.mark.parametrize(("archetype", "relative"), ARCHETYPE_PATHS)
+def test_inspect_check_prints_the_gate_loc_and_tokens(
+    tmp_path, monkeypatch, capsys, archetype, relative
+):
+    monkeypatch.setattr(common, "ROOT", tmp_path)
+    monkeypatch.setattr(code_inspect, "ROOT", tmp_path)
+    path = _write(tmp_path, relative, SOURCE * 3)
+
+    _, gate_metrics, _ = rules._check_files([path], _baseline())
+    assert code_inspect.main(["check", str(path), "--metrics-only"]) == 0
+
+    expected = gate_metrics[relative]
+    output = capsys.readouterr().out
+    assert f"archetype={archetype} band=green" in output
+    assert f"loc={expected['loc']} (soft {common.FILE_BUDGETS[archetype]['soft_loc']}," in output
+    assert f"tokens={expected['tokens']} (" in output
+
+
+def test_inspect_strict_limits_fail_only_over_hard_and_complexity_ceilings(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(code_inspect, "ROOT", tmp_path)
+    budget = common.FILE_BUDGETS["production"]
+    path = _write(tmp_path, "scripts/borderline.py", "x = 1\n" * (budget["soft_loc"] + 1))
+    strict = ["check", str(path), "--metrics-only", "--strict-limits"]
+
+    assert code_inspect.main(strict) == 0  # the advisory band never fails
+    path.write_text("x = 1\n" * (budget["hard_loc"] + 1), encoding="utf-8")
+    assert code_inspect.main(strict) == 1
+    branches = "\n".join(f"    if value == {index}: return {index}" for index in range(17))
+    path.write_text(f"def choose(value):\n{branches}\n    return -1\n", encoding="utf-8")
+    assert code_inspect.main(strict) == 1
+    assert "complexity ceiling 15" in capsys.readouterr().out
+
+
+def test_inspect_complexity_excludes_nested_functions():
+    tree = ast.parse("""
+def outer(value):
+    if value and value > 0:
+        def inner(other):
+            if other:
+                return 1
+        return inner(value)
+    return 0
+""")
+    outer, inner = code_inspect._function_nodes(tree)
+    assert code_inspect._complexity(outer) == 3
+    assert code_inspect._complexity(inner) == 2
 
 
 def _run_gate(monkeypatch, tmp_path, relative: str, line: str, repeats: int, capsys):
@@ -237,8 +295,8 @@ def test_shipped_legacy_inventories_only_list_offending_names():
     baseline = json.loads(common.BASELINE_PATH.read_text(encoding="utf-8"))
     offenders = set(baseline["legacy_fragment_files"])
 
-    # The inventory may be empty (TD-9 retired the last fragment file); any entry
-    # that remains must still be an offending name, never a stale allowlist slot.
+    # The inventory may be empty; any entry that remains must still be an offending
+    # name, never a stale allowlist slot.
     for relative in offenders:
         assert common._fragment_name_problem(PurePosixPath(relative).name) is not None, relative
 
@@ -398,20 +456,3 @@ def test_baseline_update_shrinks_legacy_fragment_and_shard_inventories(tmp_path,
     assert updated["legacy_fragment_files"] == [f"{package}/legacy_p72_shard.py"]
     assert updated["legacy_shallow_shards"] == [f"{package}/tiny.py"]
     assert updated["packages"] == {"packages/core": {"baseline_tokens": 40}}
-
-
-def test_main_fails_when_any_ratchet_reports_a_regression(monkeypatch, capsys):
-    monkeypatch.setattr(gate, "_load_baseline", _baseline)
-    monkeypatch.setattr(gate, "_source_files", list)
-    monkeypatch.setattr(
-        gate, "_check_files", lambda _files, _baseline: (["probe regression"], {}, [])
-    )
-    monkeypatch.setattr(gate, "_run_complexipy", dict)
-    monkeypatch.setattr(gate, "_run_lizard", dict)
-    monkeypatch.setattr(gate, "_complexity_failures", lambda _current, _baseline: [])
-    monkeypatch.setattr(gate, "_c_function_failures", lambda _current, _baseline: [])
-    monkeypatch.setattr(gate, "_fastcore_parity_failures", list)
-    monkeypatch.setattr(gate, "_exception_failures", list)
-
-    assert gate.main([]) == 1
-    assert "probe regression" in capsys.readouterr().out

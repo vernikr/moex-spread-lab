@@ -18,8 +18,8 @@ handlers; route modules decide *what* to answer, never *how* to frame it.
 
 | Route | Method | Owner module | Purpose |
 |---|---|---|---|
-| `/`, `/proof` | GET | `static_assets.py`, `http_handler.py` | The same workbench page; deep links carry only selection IDs. |
-| `/static/**`, `/vendor/**` | GET | `static_assets.py` | Same-origin assets; the vendored chart bundle is served locally. |
+| `/`, `/proof` | GET | `http_handler.py` | The same workbench page; deep links carry only selection IDs. |
+| `/static/**`, `/vendor/**` | GET | `http_handler.py` | Same-origin assets; the vendored chart bundle is served locally. |
 | `/api/proof/catalog`, `/api/strategies` | GET | `routes_proof.py` | Universe catalog and the discovered `StrategyPlugin` registry. |
 | `/api/proof/run`, `/api/proof/optimize`, `/api/proof/plateau`, `/api/proof/windows` | POST | `routes_proof.py` | Proof run, cohort search, plateau report and window summaries. |
 | `/api/settings`, `/api/timeframes` | GET/POST | `dispatch.py` | Global research preferences and the timeframe registry. |
@@ -92,7 +92,7 @@ backed by `packages/web/tests/test_screener_app.py`; the proof UI, `/api/proof/*
   reconciliation work, not part of a route or UI change.
 - Remaining runtime `msl-proof` imports: `proof.proof_batch`/`proof.proof_search`/
   `proof.proof_windows` (`routes_proof.py`), `proof.proof_pool`/`proof.service`
-  (`store.py`), `proof.strategy_catalog` (`strategy_registry.py`) and
+  (`server.py`), `proof.strategy_catalog` (`routes_proof.py`) and
   `proof.phase_metrics`/`proof.proof_pool`/`proof.worker_metrics` (`routes_dev.py`).
 - Consequences (capital, risk, fills, costs, validation) are computed downstream;
   a UI change must never alter them. Relaxing a research screen in the dialog does

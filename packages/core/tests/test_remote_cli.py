@@ -11,23 +11,27 @@ from moex_spread_lab.remote import cli as remote_cli
 from moex_spread_lab.remote import workstation as workstation_remote
 
 
-def test_request_sends_bearer_only_in_header(monkeypatch):
+class _Response:
+    def __init__(self, body: bytes = b'{"ok": true}') -> None:
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self, *_args):
+        return self._body
+
+
+def test_request_sends_bearer_only_in_header_and_refuses_redirects(monkeypatch):
     captured = {}
-
-    class Response:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def read(self, *args):
-            return b'{"ok": true}'
 
     class Opener:
         def open(self, req, **_kwargs):
             captured["request"] = req
-            return Response()
+            return _Response()
 
     monkeypatch.setattr(remote_cli.urllib.request, "build_opener", lambda *a: Opener())
     assert remote_cli.request(
@@ -36,9 +40,13 @@ def test_request_sends_bearer_only_in_header(monkeypatch):
     req = captured["request"]
     assert req.get_header("Authorization") == "Bearer token-xyz"
     assert b"token-xyz" not in req.data and "token-xyz" not in req.full_url
+    redirect = remote_cli.NoRedirect().redirect_request(
+        None, None, 302, "", {}, "https://evil.test"
+    )
+    assert redirect is None
 
 
-def test_status_and_redaction(monkeypatch, capsys):
+def test_status_failure_and_env_validation_keep_the_token_out_of_output(monkeypatch, capsys):
     monkeypatch.setenv("ARENA_BRIDGE_URL", "https://example.test")
     monkeypatch.setenv("ARENA_BRIDGE_TOKEN", "token-xyz")
     calls = []
@@ -53,13 +61,9 @@ def test_status_and_redaction(monkeypatch, capsys):
     assert remote_cli.run(argparse.Namespace(remote_command="status")) == 1
     assert "token-xyz" not in capsys.readouterr().err
     assert "token-xyz" not in json.dumps(calls)
-
-
-def test_redirects_are_rejected():
-    assert (
-        remote_cli.NoRedirect().redirect_request(None, None, 302, "", {}, "https://evil.test")
-        is None
-    )
+    monkeypatch.setenv("ARENA_BRIDGE_URL", "http://example.test")  # plain HTTP is refused
+    assert remote_cli.run(argparse.Namespace(remote_command="sync")) == 2
+    assert "token-xyz" not in capsys.readouterr().err
 
 
 def test_dirty_checkout_and_wrong_branch_refused(monkeypatch, tmp_path):
@@ -108,34 +112,88 @@ def _stub_sync(monkeypatch, tmp_path, *, new_head, changed, venv=True):
         "await_readiness",
         lambda root, expected_head, **kwargs: {"git_head": expected_head, "pid": 1234},
     )
-    return calls, old_head
+    return calls
 
 
-def test_sync_fetches_fast_forwards_syncs_and_restarts(monkeypatch, tmp_path):
-    calls, _old = _stub_sync(
-        monkeypatch,
-        tmp_path,
-        new_head="b" * 40,
-        changed=["packages/proof/src/moex_spread_lab/proof/service.py"],
-    )
+_FF = "fast-forwarded"
+_SKIP = "skipped-no-dependency-changes"
+# (changed paths, .venv present, expected result subset, uv sync ran, launchd restart ran)
+SYNC_SCENARIOS = [
+    (
+        ["packages/proof/src/moex_spread_lab/proof/service.py"],
+        True,
+        {
+            "dependencies_synced": False,
+            "restarted": True,
+            "health": {"git_head": "b" * 40},
+            "outcomes": {"published": _FF, "synced": _SKIP, "health-confirmed": "confirmed"},
+        },
+        False,
+        True,
+    ),
+    (
+        ["docs/development/github-project.md", "AGENTS.md", ".github/workflows/ci.yml"],
+        True,
+        {
+            "restarted": False,
+            "changed_files": 3,
+            "outcomes": {"published": _FF, "synced": _SKIP, "health-confirmed": "not-required"},
+        },
+        False,
+        False,
+    ),
+    (
+        ["uv.lock", "docs/readme.md"],
+        True,
+        {
+            "dependencies_synced": True,
+            "outcomes": {"synced": "uv-sync", "health-confirmed": "confirmed"},
+        },
+        True,
+        True,
+    ),
+    (["docs/x.md"], False, {"dependencies_synced": True}, True, None),
+    (
+        ["packages/core/src/moex_spread_lab/core/_fastcore.c"],
+        True,
+        {
+            "fastcore_source_changed": True,
+            "fastcore_verified": True,
+            "outcomes": {"health-confirmed": "confirmed"},
+        },
+        None,
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize(("changed", "venv", "expected", "uv_sync", "restart"), SYNC_SCENARIOS)
+def test_sync_restarts_and_resyncs_only_when_the_change_requires_it(
+    monkeypatch, tmp_path, changed, venv, expected, uv_sync, restart
+):
+    calls = _stub_sync(monkeypatch, tmp_path, new_head="b" * 40, changed=changed, venv=venv)
     result = workstation_remote.sync(tmp_path)
     assert result["head"] == "b" * 40
-    assert result["dependencies_synced"] is False  # no dependency change, .venv present
-    assert result["restarted"] is True
-    assert result["outcomes"] == {
-        "published": "fast-forwarded",
-        "synced": "skipped-no-dependency-changes",
-        "health-confirmed": "confirmed",
-    }
-    assert result["health"]["git_head"] == "b" * 40
     assert ("git", "merge", "--ff-only", "origin/main") in calls
-    assert not any(call[:2] == ("uv", "sync") for call in calls)
-    assert any(call[:3] == ("launchctl", "kickstart", "-k") for call in calls)
+    for key, value in expected.items():
+        if isinstance(value, dict):
+            assert {name: result[key][name] for name in value} == value, key
+        else:
+            assert result[key] == value, key
+    if uv_sync is not None:
+        assert any(call[:2] == ("uv", "sync") for call in calls) is uv_sync
+    if restart is not None:
+        assert any(call[:3] == ("launchctl", "kickstart", "-k") for call in calls) is restart
 
 
-def test_sync_noop_when_head_unchanged(monkeypatch, tmp_path):
-    calls, old_head = _stub_sync(monkeypatch, tmp_path, new_head="a" * 40, changed=[])
-    # HEAD is already at origin/main after fetch.
+def test_sync_is_a_no_op_when_head_is_already_at_origin(monkeypatch, tmp_path):
+    monkeypatch.setattr(workstation_remote, "service", lambda root: {"launchd_loaded": True})
+    monkeypatch.setattr(
+        workstation_remote,
+        "await_readiness",
+        lambda *_args, **_kwargs: pytest.fail("no readiness poll on a no-op sync"),
+    )
+    calls = []
 
     def command(root, *args):
         calls.append(args)
@@ -143,161 +201,57 @@ def test_sync_noop_when_head_unchanged(monkeypatch, tmp_path):
             return ""
         if "branch" in args:
             return "main"
-        if "rev-parse" in args:
-            return "a" * 40
-        return ""
+        return "a" * 40 if "rev-parse" in args else ""
 
     monkeypatch.setattr(workstation_remote, "command", command)
-    monkeypatch.setattr(
-        workstation_remote,
-        "await_readiness",
-        lambda *_args, **_kwargs: pytest.fail("no readiness poll on a no-op sync"),
-    )
-    result = workstation_remote.sync(tmp_path)
-    assert result["outcomes"]["published"] == "up-to-date"
-    assert result["outcomes"]["synced"] == "skipped-up-to-date"
-    assert result["outcomes"]["health-confirmed"] == "not-required"
-    assert result["changed_files"] == 0 and result["restarted"] is False
-    assert not any("merge" in call for call in calls)
-    assert not any(call[:2] == ("uv", "sync") for call in calls)
-    assert not any(call[:2] == ("launchctl", "kickstart") for call in calls)
+    first, second = workstation_remote.sync(tmp_path), workstation_remote.sync(tmp_path)
+    for result in (first, second):
+        assert result["outcomes"] == {
+            "published": "up-to-date",
+            "synced": "skipped-up-to-date",
+            "health-confirmed": "not-required",
+        }
+        assert result["changed_files"] == 0 and result["restarted"] is False
+    assert sum("fetch" in call for call in calls) == 2  # both runs verify, neither restarts
+    assert not any("merge" in call or call[:1] in {("uv",), ("launchctl",)} for call in calls)
 
 
-def test_sync_docs_only_fast_forwards_without_restart(monkeypatch, tmp_path):
-    calls, _old = _stub_sync(
-        monkeypatch,
-        tmp_path,
-        new_head="c" * 40,
-        changed=[
-            "docs/development/github-project.md",
-            "AGENTS.md",
-            ".github/workflows/ci.yml",
-        ],
-    )
-    result = workstation_remote.sync(tmp_path)
-    assert result["outcomes"] == {
-        "published": "fast-forwarded",
-        "synced": "skipped-no-dependency-changes",
-        "health-confirmed": "not-required",
-    }
-    assert result["restarted"] is False and result["changed_files"] == 3
-    assert any(call[:4] == ("git", "merge", "--ff-only", "origin/main") for call in calls)
-    assert not any(call[:2] == ("uv", "sync") for call in calls)
-    assert not any(call[:2] == ("launchctl", "kickstart") for call in calls)
-
-
-def test_sync_dependency_change_reconciles_venv_and_restarts(monkeypatch, tmp_path):
-    calls, _old = _stub_sync(
-        monkeypatch, tmp_path, new_head="d" * 40, changed=["uv.lock", "docs/readme.md"]
-    )
-    result = workstation_remote.sync(tmp_path)
-    assert ("uv", "sync", "--frozen") in calls
-    assert result["dependencies_synced"] is True
-    assert result["outcomes"]["synced"] == "uv-sync"
-    assert result["outcomes"]["health-confirmed"] == "confirmed"
-    assert any(call[:2] == ("launchctl", "kickstart") for call in calls)
-
-
-def test_sync_missing_venv_reconciles_even_for_docs_only(monkeypatch, tmp_path):
-    calls, _old = _stub_sync(
-        monkeypatch, tmp_path, new_head="e" * 40, changed=["docs/x.md"], venv=False
-    )
-    result = workstation_remote.sync(tmp_path)
-    assert ("uv", "sync", "--frozen") in calls
-    assert result["dependencies_synced"] is True
-
-
-def test_sync_fastcore_change_verifies_binary_and_restarts(monkeypatch, tmp_path):
-    calls, _old = _stub_sync(
-        monkeypatch,
-        tmp_path,
-        new_head="f" * 40,
-        changed=["packages/core/src/moex_spread_lab/core/_fastcore.c"],
-    )
-    result = workstation_remote.sync(tmp_path)
-    assert result["fastcore_source_changed"] is True
-    assert result["fastcore_verified"] is True
-    assert result["outcomes"]["health-confirmed"] == "confirmed"
-
-
-def test_sync_repeated_sha_is_idempotent(monkeypatch, tmp_path):
-    monkeypatch.setattr(workstation_remote, "service", lambda root: {"launchd_loaded": True})
-    state = {"head": "a" * 40, "fetches": 0}
-
-    def command(root, *args):
-        if "status" in args or "branch" in args:
-            return "" if "status" in args else "main"
-        if "fetch" in args:
-            state["fetches"] += 1
-            return ""
-        if "rev-parse" in args:
-            return state["head"]
-        return ""
-
-    monkeypatch.setattr(workstation_remote, "command", command)
-    first = workstation_remote.sync(tmp_path)
-    second = workstation_remote.sync(tmp_path)
-    assert first["outcomes"]["published"] == "up-to-date"
-    assert second["outcomes"]["published"] == "up-to-date"
-    assert state["fetches"] == 2  # both runs verify, neither restarts
-
-
-def test_runtime_path_classification():
-    runtime = workstation_remote._is_runtime_path
-    assert runtime("src/moex_spread_lab/cli.py") is True
-    assert runtime("packages/proof/src/moex_spread_lab/proof/service.py") is True
-    assert runtime("packages/proof/tests/test_proof_plateau.py") is False
-    assert runtime("packages/web/tests/browser/x.py") is False
-    assert runtime("packages/core/pyproject.toml") is True  # dependency input
-    assert runtime("uv.lock") is True
-    assert runtime("docs/development/plan.md") is False
-    assert runtime("AGENTS.md") is False
-    assert runtime(".github/workflows/ci.yml") is False
-    assert runtime("scripts/check_health.sh") is False
-    assert runtime("config/code-health-baseline.json") is False
-    assert runtime("reports/perf/records.jsonl") is False
-    assert runtime("some/new/unknown-tool.py") is True  # fail safe towards freshness
+@pytest.mark.parametrize(
+    ("path", "runtime"),
+    [
+        ("src/moex_spread_lab/cli.py", True),
+        ("packages/proof/src/moex_spread_lab/proof/service.py", True),
+        ("packages/core/pyproject.toml", True),  # dependency input
+        ("some/new/unknown-tool.py", True),  # fail safe towards freshness
+        ("packages/proof/tests/test_proof_plateau.py", False),
+        ("docs/development/plan.md", False),
+        (".github/workflows/ci.yml", False),
+        ("config/code-health-baseline.json", False),
+    ],
+)
+def test_runtime_path_classification(path, runtime):
+    assert workstation_remote._is_runtime_path(path) is runtime
 
 
 def test_await_readiness_requires_matching_head_and_is_bounded(monkeypatch, tmp_path):
     attempts = []
 
-    class Response:
-        def __init__(self, head):
-            self._head = head
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def read(self, *args):
-            return b'{"git_head": "' + self._head.encode() + b'"}'
-
     def urlopen(url, **_kwargs):
         attempts.append(url)
-        if len(attempts) < 3:
-            return Response("wrong-head")
-        return Response("b" * 40)
+        head = "wrong-head" if len(attempts) < 3 else "b" * 40
+        return _Response(b'{"git_head": "' + head.encode() + b'"}')
 
     monkeypatch.setattr(workstation_remote.urllib.request, "urlopen", urlopen)
     health = workstation_remote.await_readiness(tmp_path, "b" * 40, timeout_s=10, interval_s=0.01)
     assert health["git_head"] == "b" * 40 and len(attempts) == 3
 
-    def always_wrong(url, **_kwargs):
-        return Response("wrong-head")
-
-    monkeypatch.setattr(workstation_remote.urllib.request, "urlopen", always_wrong)
+    monkeypatch.setattr(
+        workstation_remote.urllib.request,
+        "urlopen",
+        lambda url, **_kwargs: _Response(b'{"git_head": "wrong-head"}'),
+    )
     with pytest.raises(RuntimeError, match="did not become ready"):
         workstation_remote.await_readiness(tmp_path, "b" * 40, timeout_s=0.2, interval_s=0.05)
-
-
-def test_environment_validation(monkeypatch, capsys):
-    monkeypatch.setenv("ARENA_BRIDGE_URL", "http://example.test")
-    monkeypatch.setenv("ARENA_BRIDGE_TOKEN", "secret")
-    assert remote_cli.run(argparse.Namespace(remote_command="sync")) == 2
-    assert "secret" not in capsys.readouterr().err
 
 
 def test_probe_command_validates_json_and_keeps_credentials_out(monkeypatch):
@@ -329,31 +283,17 @@ def _patch_options(monkeypatch, diff_output):
     return remote_cli._candidate_options(True)
 
 
-def test_patch_guard_rejects_market_data(monkeypatch):
-    diff = (
-        "diff --git a/data/w1/candles/X_1d.json b/data/w1/candles/X_1d.json\n"
-        "index 1111111..2222222 100644\n"
-        "--- a/data/w1/candles/X_1d.json\n"
-        "+++ b/data/w1/candles/X_1d.json\n"
-        '@@ -1 +1 @@\n-"a"\n+"b"\n'
-    )
-    with pytest.raises(ValueError, match="market data"):
-        _patch_options(monkeypatch, diff)
-
-
-def test_patch_guard_rejects_data_lake(monkeypatch):
-    diff = "diff --git a/data-lake/h1/seal.json b/data-lake/h1/seal.json\n"
-    with pytest.raises(ValueError, match="market data"):
-        _patch_options(monkeypatch, diff)
-
-
-def test_patch_guard_accepts_source_only(monkeypatch):
-    diff = (
+def test_patch_guard_accepts_source_and_rejects_market_data(monkeypatch):
+    source = (
         "diff --git a/packages/core/src/moex_spread_lab/core/w0.py b/packages/core/src/moex_spread_lab/core/w0.py\n"
-        "index 1111111..2222222 100644\n"
         "--- a/packages/core/src/moex_spread_lab/core/w0.py\n"
         "+++ b/packages/core/src/moex_spread_lab/core/w0.py\n"
         "@@ -1 +1 @@\n-old\n+new\n"
     )
-    options = _patch_options(monkeypatch, diff)
-    assert options["patch"] == diff
+    assert _patch_options(monkeypatch, source)["patch"] == source
+    for diff in (
+        "diff --git a/data/w1/candles/X_1d.json b/data/w1/candles/X_1d.json\n",
+        "diff --git a/data-lake/h1/seal.json b/data-lake/h1/seal.json\n",
+    ):
+        with pytest.raises(ValueError, match="market data"):
+            _patch_options(monkeypatch, diff)

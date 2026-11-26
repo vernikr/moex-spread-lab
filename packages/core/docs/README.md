@@ -12,7 +12,7 @@ work plan; live status is in GitHub Issues and Project #2.
 
 | Area | Module | Durable rule |
 |---|---|---|
-| Run/evidence manifests | `w0.py` | `run-manifest.v1`, `w0.fixture.v1`, `w0.replay.v1`; canonical JSON bytes, hashing, manifest/artifact validation, secret scanning. |
+| Run/evidence manifests | `w0.py` | `run-manifest.v1`; canonical JSON bytes, hashing, manifest/artifact validation, secret scanning. |
 | File-snapshot cache | `hashed_json_cache.py` | Bounded, thread-safe LRU keyed by immutable file snapshots; every lookup is counted through `cache_metrics.py`. |
 | Research settings | `settings.py` | One immutable `ResearchSettings` snapshot per request plus `EvaluationSplit` for training/validation dates (root `moex_spread_lab.evaluation_periods` is its external compatibility shim). |
 | Bar intervals | `timeframes.py` | `TIMEFRAMES` registry (`1h`, `1d`); adding an interval is a registry entry plus data for that exact ISS interval. |

@@ -38,7 +38,6 @@
   },
   "complexity": {
     "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
-    "packages/core/src/moex_spread_lab/core/w0.py::validate_manifest": 28,
     "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_data_and_accounting_siblings_are_strictly_isolated": 16,
     "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_workspace_code_and_tests_do_not_import_compatibility_shims": 21,
     "packages/core/tests/test_architecture_dag.py::_build_import_graph": 25,

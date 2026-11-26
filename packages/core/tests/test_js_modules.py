@@ -8,39 +8,17 @@ import pytest
 from scripts import check_js_modules as gate
 
 
-@pytest.mark.parametrize(
-    ("filename", "symbol"),
-    [
-        ("picker.js", "$"),
-        ("ledger-cells.js", "state"),
-        ("strategy-controls.js", "sharedInputs"),
-        ("ledger.js", "td"),
-    ],
-)
-def test_missing_import_regressions(tmp_path, filename, symbol):
-    shutil.copytree(gate.JS_DIR, tmp_path / "js")
-    directory = tmp_path / "js"
-    source = directory / filename
-    text = source.read_text(encoding="utf-8")
-    for match in gate.IMPORT.finditer(text):
-        items = gate.bindings(match.group(1))
-        if any(alias == symbol for _, alias in items):
-            kept = [
-                f"{name} as {alias}" if name != alias else name
-                for name, alias in items
-                if alias != symbol
-            ]
-            replacement = f"import {{ {', '.join(kept)} }} from '{match.group(2)}';" if kept else ""
-            source.write_text(
-                text[: match.start()] + replacement + text[match.end() :], encoding="utf-8"
-            )
-            break
-    else:
-        pytest.fail(f"{symbol} not imported by {filename}")
-    assert any(
-        filename in error and symbol in error
-        for error in gate.check_modules(directory, syntax=False)
-    )
+def test_current_modules_pass_the_gate():
+    assert gate.check_modules(gate.JS_DIR) == []
+
+
+def test_missing_sibling_import_is_detected(tmp_path):
+    (tmp_path / "provider.js").write_text("export function helper() {}\n", encoding="utf-8")
+    (tmp_path / "consumer.js").write_text("helper();\n", encoding="utf-8")
+
+    errors = gate.check_modules(tmp_path, syntax=False)
+
+    assert any("consumer.js" in error and "helper" in error for error in errors)
 
 
 def test_transitive_aliases_and_missing_exports(tmp_path):

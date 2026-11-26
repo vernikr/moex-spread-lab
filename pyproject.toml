@@ -244,7 +244,7 @@ title = ""
 heading = ""
 fixCommand = "uv run size --write"
 metrics = ["raw", "min", "tok"]
-skip = [".basedpyright/baseline.json", ".clang-tidy", ".gitignore", ".python-version", ".size-report-issues.json", "config/launchd/local.moex-spread-lab.screener.plist.example", "docs/inputs/moy_online_praym.pdf", "docs/inputs/prof_privilegiya.pdf", "package-lock.json", "packages/web/src/moex_spread_lab/web/vendor/LICENSE.lightweight-charts", "scripts/moex-spread-lab-screener", "uv.lock", "src/moex_spread_lab.egg-info/PKG-INFO", "src/moex_spread_lab/vendor/LICENSE.lightweight-charts"]
+skip = [".basedpyright/baseline.json", ".clang-tidy", ".gitignore", ".python-version", ".size-report-issues.json", "config/launchd/local.moex-spread-lab.screener.plist.example", "docs/inputs/moy_online_praym.pdf", "docs/inputs/prof_privilegiya.pdf", "package-lock.json", "packages/core/tests/cli_help_hashes.json", "packages/web/src/moex_spread_lab/web/vendor/LICENSE.lightweight-charts", "scripts/moex-spread-lab-screener", "uv.lock", "src/moex_spread_lab.egg-info/PKG-INFO", "src/moex_spread_lab/vendor/LICENSE.lightweight-charts"]
 
 [tool.size-report.minify]
 engine = "strip"
@@ -503,8 +503,24 @@ label = "bug.yml"
 paths = [".github/ISSUE_TEMPLATE/bug.yml"]
 
 [[tool.size-report.columns]]
-label = "cli_help_hashes.json"
-paths = ["packages/core/tests/cli_help_hashes.json"]
+label = "workstream.yml"
+paths = [".github/ISSUE_TEMPLATE/workstream.yml"]
+
+[[tool.size-report.columns]]
+label = "ai-slop-cleaner/SKILL.md"
+paths = [".claude/skills/ai-slop-cleaner/SKILL.md"]
+
+[[tool.size-report.columns]]
+label = "goal-sloc/SKILL.md"
+paths = [".claude/skills/goal-sloc/SKILL.md"]
+
+[[tool.size-report.columns]]
+label = "goal-sloc references"
+paths = [
+    ".claude/skills/goal-sloc/references/flutter-sloc-reference.md",
+    ".claude/skills/goal-sloc/references/minimal-tools.md",
+    ".claude/skills/goal-sloc/references/preflight-checklist.md",
+]
 
 [[tool.size-report.columns]]
 label = "R08.md"

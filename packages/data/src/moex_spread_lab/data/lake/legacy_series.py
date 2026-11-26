@@ -1,9 +1,4 @@
-"""Legacy `iss-candles.v1` JSON parser, validator, and compatibility reader.
-
-P7.2 (#62): JSON boundaries are narrowed with `cast`s placed after the existing
-runtime checks; payloads, error text and the `__all__` wildcard surface are
-unchanged.
-"""
+"""Legacy `iss-candles.v1` JSON parser, validator, and compatibility reader."""
 
 from __future__ import annotations
 
@@ -22,23 +17,6 @@ from .bar_types import LEGACY_CANDLE_SCHEMA, BarSeries, DataLakeError
 
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
-
-
-def _validate_proxy(
-    row: dict[str, Any], close: float | None, path: Path, index: int, error_type: type[Exception]
-) -> None:
-    price_proxy = row.get("price_proxy")
-    if price_proxy is None:
-        return
-    if isinstance(price_proxy, bool) or not isinstance(price_proxy, (int, float, str)):
-        raise error_type(f"legacy candle price_proxy is invalid: {path}[{index}]")
-    try:
-        proxy_value = float(price_proxy)
-    except ValueError as exc:
-        raise error_type(f"legacy candle price_proxy is not numeric: {path}[{index}]") from exc
-    if proxy_value != close:
-        raise error_type(f"legacy candle price_proxy differs from close: {path}[{index}]")
-
 
 __all__ = [
     "LEGACY_CANDLE_SCHEMA",
@@ -141,7 +119,17 @@ def _validate_semantics(
 
 
 def _validate_price_proxy(row: dict[str, Any], close: float | None, path: Path, index: int) -> None:
-    _validate_proxy(row, close, path, index, DataLakeError)
+    price_proxy = row.get("price_proxy")
+    if price_proxy is None:
+        return
+    if isinstance(price_proxy, bool) or not isinstance(price_proxy, (int, float, str)):
+        raise DataLakeError(f"legacy candle price_proxy is invalid: {path}[{index}]")
+    try:
+        proxy_value = float(price_proxy)
+    except ValueError as exc:
+        raise DataLakeError(f"legacy candle price_proxy is not numeric: {path}[{index}]") from exc
+    if proxy_value != close:
+        raise DataLakeError(f"legacy candle price_proxy differs from close: {path}[{index}]")
 
 
 def _record_row_source(
@@ -242,6 +230,7 @@ def _read_legacy_series(path: Path) -> LegacyCandleSeries:
     resolved = path.resolve()
     raw, payload = _load_legacy_payload(resolved, path)
     secid, timeframe, interval, board, rows = _validate_legacy_header(payload, path)
+    raw_from, raw_till = payload.get("from"), payload.get("till")
     unset = object()
     semantic_values: dict[str, Any] = {"price_proxy_kind": unset, "price_proxy_assumption": unset}
     sources: list[dict[str, Any]] = []
@@ -259,8 +248,8 @@ def _read_legacy_series(path: Path) -> LegacyCandleSeries:
         board=board,
         interval=interval,
         timeframe=timeframe,
-        from_date=payload.get("from") if isinstance(payload.get("from"), str) else None,
-        till_date=payload.get("till") if isinstance(payload.get("till"), str) else None,
+        from_date=raw_from if isinstance(raw_from, str) else None,
+        till_date=raw_till if isinstance(raw_till, str) else None,
         legacy_metadata={key: value for key, value in payload.items() if key != "rows"},
         row_semantics={
             "price_proxy_kind": semantic_values["price_proxy_kind"],
@@ -285,21 +274,15 @@ class LegacyJsonBarStore:
     """Compatibility reader for existing ``iss-candles.v1`` files.
 
     It intentionally accepts the historical lightweight fixture shape too. The
-    stricter ``_read_legacy_series`` remains the importer validation boundary.
+    stricter ``read_legacy_series`` remains the importer validation boundary.
     """
 
     def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
+        raw, document = _load_legacy_payload(legacy_path, legacy_path)
         try:
-            raw = legacy_path.read_bytes()
-            payload = json.loads(raw)
             stat = legacy_path.stat()
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        except OSError as exc:
             raise DataLakeError(f"cannot read legacy candle JSON: {legacy_path}: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {legacy_path}")
-        document = cast("dict[str, Any]", payload)
-        if document.get("schema_version") != LEGACY_CANDLE_SCHEMA:
-            raise DataLakeError(f"legacy file is not {LEGACY_CANDLE_SCHEMA}: {legacy_path}")
         raw_rows = document.get("rows")
         if not isinstance(raw_rows, list):
             raise DataLakeError(f"legacy candle rows must be a list: {legacy_path}")
@@ -310,16 +293,13 @@ class LegacyJsonBarStore:
         interval = document.get("interval")
         if isinstance(interval, bool) or not isinstance(interval, int):
             interval = None
-        secid = document.get("secid") if isinstance(document.get("secid"), str) else None
-        timeframe = (
-            document.get("timeframe") if isinstance(document.get("timeframe"), str) else None
-        )
+        secid, timeframe = document.get("secid"), document.get("timeframe")
         col_tuple = tuple(columns) if columns is not None else None
         return BarSeries(
             schema_version=LEGACY_CANDLE_SCHEMA,
-            secid=secid,
+            secid=secid if isinstance(secid, str) else None,
             interval=interval,
-            timeframe=timeframe,
+            timeframe=timeframe if isinstance(timeframe, str) else None,
             rows=tuple(_project_legacy_row(row, col_tuple) for row in rows),
             source_path=str(legacy_path),
             source_sha256=hashlib.sha256(raw).hexdigest(),
@@ -330,8 +310,4 @@ class LegacyJsonBarStore:
 
 
 component = _component
-integer = _integer
-number = _number
 read_legacy_series = _read_legacy_series
-source_key = _source_key
-timestamp = _timestamp

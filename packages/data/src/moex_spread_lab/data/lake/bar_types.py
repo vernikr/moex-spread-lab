@@ -1,10 +1,10 @@
-"""Shared bar-series types, atomic JSON writer, and read-side H1 seal guard."""
+"""Shared bar-series types and the read-side H1 seal guard."""
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -18,10 +18,8 @@ LEGACY_CANDLE_SCHEMA = "iss-candles.v1"
 H1_SEAL_SCHEMA = "h1-sealed-read.v1"
 
 
-def _validate_identity(
-    relative: str, record: dict[str, Any], path_type: type[Path], error_type: type[Exception]
-) -> None:
-    p = path_type(relative)
+def _validate_identity(relative: str, record: dict[str, Any]) -> None:
+    p = Path(relative)
     if (
         p.is_absolute()
         or ".." in p.parts
@@ -31,33 +29,31 @@ def _validate_identity(
         or record["legacy_path"] != relative
         or record["timeframe"] != "1h"
     ):
-        raise error_type("unsafe H1 seal source identity")
+        raise DataLakeError("unsafe H1 seal source identity")
 
 
-def _check_ancestors(root: Path, legacy_path: Path, error_type: type[Exception]) -> None:
+def _check_symlink_ancestors(root: Path, legacy_path: Path) -> None:
     for p in (legacy_path, *legacy_path.parents):
         if p == root:
             break
         if p.is_symlink():
-            raise error_type("symlink H1 source is not allowed")
+            raise DataLakeError("symlink H1 source is not allowed")
 
 
-def _verify_hashes(
+def _verify_sealed_hashes(
     legacy_path: Path,
     legacy_signature: tuple[int, int, int, int] | None,
     bars: Path,
     sources: Path,
     record: dict[str, Any],
-    hash_file: Callable[[Path], str],
-    error_type: type[Exception],
 ) -> None:
-    if legacy_signature is not None and hash_file(legacy_path) != record["legacy_sha256"]:
-        raise error_type("retained H1 JSON changed after sealing; refusing stale Parquet")
+    if legacy_signature is not None and sha256_file(legacy_path) != record["legacy_sha256"]:
+        raise DataLakeError("retained H1 JSON changed after sealing; refusing stale Parquet")
     if (
-        hash_file(bars) != record["parquet_sha256"]
-        or hash_file(sources) != record["sources_sha256"]
+        sha256_file(bars) != record["parquet_sha256"]
+        or sha256_file(sources) != record["sources_sha256"]
     ):
-        raise error_type("sealed H1 table hash mismatch; refusing fallback")
+        raise DataLakeError("sealed H1 table hash mismatch; refusing fallback")
 
 
 class DataLakeError(W0Error):
@@ -93,10 +89,6 @@ def _signature(path: Path) -> tuple[int, int, int, int]:
     return (st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
 
 
-def _validate_seal_record_identity(relative: str, record: dict[str, Any]) -> None:
-    _validate_identity(relative, record, Path, DataLakeError)
-
-
 def _validate_seal_payload(root: Path, value: dict[str, Any], marker: dict[str, Any]) -> None:
     if (
         value.get("schema_version") != H1_SEAL_SCHEMA
@@ -110,13 +102,9 @@ def _validate_seal_payload(root: Path, value: dict[str, Any], marker: dict[str, 
     if set(value["records"]) != expected:
         raise DataLakeError("H1 seal membership mismatch")
     for relative, record in value["records"].items():
-        _validate_seal_record_identity(relative, record)
+        _validate_identity(relative, record)
     if any(p not in expected for p in plan["screen_selection"].values()):
         raise DataLakeError("invalid H1 seal selection")
-
-
-def _check_no_symlink_ancestors(root: Path, legacy_path: Path) -> None:
-    _check_ancestors(root, legacy_path, DataLakeError)
 
 
 def _resolve_sealed_table_paths(root: Path, record: dict[str, Any]) -> tuple[Path, Path]:
@@ -127,16 +115,6 @@ def _resolve_sealed_table_paths(root: Path, record: dict[str, Any]) -> tuple[Pat
         if not path.resolve().is_relative_to(lake_root) or path.is_symlink():
             raise DataLakeError("sealed tables must remain inside data-lake")
     return bars, sources
-
-
-def _verify_sealed_hashes(
-    legacy_path: Path,
-    legacy_signature: tuple[int, int, int, int] | None,
-    bars: Path,
-    sources: Path,
-    record: dict[str, Any],
-) -> None:
-    _verify_hashes(legacy_path, legacy_signature, bars, sources, record, sha256_file, DataLakeError)
 
 
 def _load_sealed_bar_series(
@@ -225,7 +203,7 @@ class SealedH1Reader:
         record = value["records"].get(relative)
         if record is None:
             raise DataLakeError(f"H1 input is not sealed: {relative}")
-        _check_no_symlink_ancestors(self.root, legacy_path)
+        _check_symlink_ancestors(self.root, legacy_path)
         self.select(record["secid"])
         bars, sources = _resolve_sealed_table_paths(self.root, record)
         legacy_sig = _signature(legacy_path) if os.path.lexists(legacy_path) else None
@@ -269,7 +247,7 @@ def _check_archived_mirror_tables(
         ("bars_path", "parquet_sha256"),
         ("sources_path", "sources_sha256"),
     ):
-        path = store._record_path(record[path_key])
+        path = store.record_path(record[path_key])
         if sha256_file(path) != record[hash_key]:
             raise DataLakeError("archived mirror file hash mismatch")
         if not _cast(Any, pq.ParquetFile(path).read)().equals(

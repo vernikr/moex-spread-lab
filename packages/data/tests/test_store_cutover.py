@@ -3,7 +3,6 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from moex_spread_lab.core.w0 import load_contracts, sha256_file
 from moex_spread_lab.data.lake.data_lake import (
@@ -47,13 +46,13 @@ def _pair_bars_and_provenance(
 
 
 class StoreCutoverTests(unittest.TestCase):
-    def test_record_path_preserves_private_override(self):
+    def test_record_path_resolves_relative_values_against_the_store_root(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = ParquetBarStore(Path(directory))
-            expected = Path(directory) / "override.parquet"
-            with patch.object(store, "_record_path", return_value=expected) as resolve:
-                self.assertEqual(store.record_path("bars.parquet"), expected)
-                resolve.assert_called_once_with("bars.parquet")
+            root = Path(directory)
+            store = ParquetBarStore(root)
+            absolute = root / "elsewhere" / "bars.parquet"
+            self.assertEqual(store.record_path("bars.parquet"), root / "bars.parquet")
+            self.assertEqual(store.record_path(str(absolute)), absolute)
 
     def _write_series(
         self,

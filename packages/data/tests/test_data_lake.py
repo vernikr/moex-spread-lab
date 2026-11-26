@@ -122,7 +122,7 @@ class DataLakeTests(unittest.TestCase):
             legacy = self._legacy(root)
             store = ParquetBarStore(root)
             store.lake_root.mkdir()
-            old_catalog = store.catalog_path
+            old_catalog = store.lake_root / "catalog.duckdb"
             old_catalog.write_bytes(b"obsolete catalog")
             record = store.import_legacy(legacy)
             self.assertEqual(store.verify_legacy(legacy)["status"], "verified")

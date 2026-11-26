@@ -52,7 +52,7 @@ SOURCE_SCHEMA = pa.schema(
 )
 
 
-def _atomic_write_parquet(path: Path, table: pa.Table) -> None:
+def atomic_write_parquet(path: Path, table: pa.Table) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -87,21 +87,17 @@ def upsert_manifest(
     manifest_path: Path, current_manifest: dict[str, Any], record: dict[str, Any]
 ) -> None:
     manifest = dict(current_manifest)
-    datasets: list[Any] = list(manifest["datasets"])
+    datasets = [
+        _cast("dict[str, Any]", entry) for entry in manifest["datasets"] if isinstance(entry, dict)
+    ]
     previous = next(
-        (
-            _cast(dict[str, Any], entry)
-            for entry in datasets
-            if isinstance(entry, dict)
-            and _cast(dict[str, Any], entry).get("dataset_id") == record["dataset_id"]
-        ),
-        None,
+        (entry for entry in datasets if entry.get("dataset_id") == record["dataset_id"]), None
     )
     if previous is not None and previous != record:
         revisions = manifest.setdefault("dataset_revisions", [])
         if not isinstance(revisions, list):
             raise DataLakeError("data-lake manifest dataset_revisions must be a list")
-        _cast(list[Any], revisions).append(
+        _cast("list[Any]", revisions).append(
             {
                 "dataset_id": record["dataset_id"],
                 "replaced_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -113,6 +109,10 @@ def upsert_manifest(
     manifest["datasets"] = sorted(entries, key=lambda item: item["dataset_id"])
     manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     _atomic_write_json(manifest_path, manifest)
+
+
+def _relative_to_root(root: Path, path: Path) -> str:
+    return str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
 
 
 def build_import_record(
@@ -130,18 +130,12 @@ def build_import_record(
         "last_begin": series.bars[-1]["begin"],
         "from": series.from_date,
         "till": series.till_date,
-        "legacy_path": str(series.path.relative_to(root))
-        if series.path.is_relative_to(root)
-        else str(series.path),
+        "legacy_path": _relative_to_root(root, series.path),
         "legacy_sha256": series.sha256,
         "legacy_metadata": series.legacy_metadata,
         "row_semantics": series.row_semantics,
-        "bars_path": str(bars_path.relative_to(root))
-        if bars_path.is_relative_to(root)
-        else str(bars_path),
-        "sources_path": str(sources_path.relative_to(root))
-        if sources_path.is_relative_to(root)
-        else str(sources_path),
+        "bars_path": _relative_to_root(root, bars_path),
+        "sources_path": _relative_to_root(root, sources_path),
         "parquet_sha256": sha256_file(bars_path),
         "sources_sha256": sha256_file(sources_path),
         "source_page_count": len(series.sources),
@@ -199,4 +193,3 @@ __all__ = [
     "upsert_manifest",
     "verify_dataset_against_legacy",
 ]
-atomic_write_parquet = _atomic_write_parquet

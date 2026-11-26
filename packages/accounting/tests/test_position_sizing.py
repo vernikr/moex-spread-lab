@@ -1,4 +1,4 @@
-"""Automatic proof sizing: finite cash, causality, costs and settings validation."""
+"""Automatic proof sizing: finite cash, causality, costs, ledger quantities, settings."""
 
 import math
 import tempfile
@@ -32,7 +32,7 @@ def unit_proof(near=(50000, 49000, 49000, 49200), entries=((0, 1), (2, 3)), *, m
             "funding_rub": None,
             "funding_contracts": 0,
         }
-        for d, n in zip(days, near)
+        for d, n in zip(days, near, strict=True)
     ]
     trades = []
     for number, (a, b) in enumerate(entries, 1):
@@ -103,6 +103,17 @@ def native_proof(*, entries=((0, 1),)):
     return proof, marks
 
 
+def replay(proof, marks, contracts=None, settings=None):
+    return size_proof(proof, marks, settings or ResearchSettings(), contracts or {})
+
+
+def _assert_quantity_invariants(ledger: list[dict]) -> None:
+    for row in ledger:
+        qty = row["quantity"]
+        assert type(qty) is int and qty >= 0, row
+        assert (row["position"] == 0) == (qty == 0), row
+
+
 class MaximumQuantityTests(unittest.TestCase):
     def test_exact_capital_boundary_fees_stress_and_no_form_ceiling(self):
         self.assertEqual(maximum_quantity(30000, 5000, {"fee": 0}, stress=False), 6)
@@ -135,9 +146,6 @@ class MaximumQuantityTests(unittest.TestCase):
 
 
 class FundedSizingTests(unittest.TestCase):
-    def replay(self, proof, marks, contracts=None, settings=None):
-        return size_proof(proof, marks, settings or ResearchSettings(), contracts or {})
-
     def assert_reconciles(self, proof):
         self.assertEqual(proof["summary"]["ledger_reconciliation_rub"], 0)
         self.assertAlmostEqual(
@@ -154,7 +162,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_losses_resize_the_next_entry_but_never_an_open_position(self):
         unit, marks, contracts = unit_proof()
-        proof = self.replay(unit, marks, contracts)
+        proof = replay(unit, marks, contracts)
         self.assertEqual([t["quantity"] for t in proof["trades"]], [5, 4])
         self.assertEqual([r["quantity"] for r in proof["ledger"]], [5, 0, 4, 0])
         self.assertLess(proof["trades"][1]["sizing"]["available_capital_rub"], 25000)
@@ -164,7 +172,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_profits_do_not_expand_the_original_entry_envelope(self):
         unit, marks, contracts = unit_proof(near=(50000, 51000, 51000, 51000))
-        proof = self.replay(unit, marks, contracts)
+        proof = replay(unit, marks, contracts)
         self.assertGreater(proof["ledger"][1]["account_value_rub"], 30000)
         self.assertEqual([t["quantity"] for t in proof["trades"]], [5, 5])
         self.assertEqual(proof["trades"][1]["sizing"]["available_capital_rub"], 30000)
@@ -172,7 +180,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_unaffordable_intents_are_zero_exposure_not_fictional_trades(self):
         unit, marks, contracts = unit_proof(margin=31000)
-        proof = self.replay(unit, marks, contracts)
+        proof = replay(unit, marks, contracts)
         self.assertFalse(proof["trades"])
         self.assertEqual(len(proof["skipped_entries"]), 2)
         self.assertTrue(all(t["quantity"] == 0 and t["reason"] for t in proof["skipped_entries"]))
@@ -186,7 +194,7 @@ class FundedSizingTests(unittest.TestCase):
         # The 10k excess-drawdown trigger is gone: a book that falls behind LQDT
         # keeps trading. Only a cash shortfall can stop new entries.
         unit, marks, contracts = unit_proof(near=(50000, 47800, 47800, 48000))
-        proof = self.replay(unit, marks, contracts)
+        proof = replay(unit, marks, contracts)
         self.assertEqual(len(proof["trades"]), 2)
         self.assertEqual(proof["skipped_entries"], [])
         self.assertGreaterEqual(proof["summary"]["max_excess_drawdown_rub"], 10000)
@@ -194,14 +202,14 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_stress_preference_changes_size_without_changing_raw_window_verdict(self):
         unit, marks, contracts = unit_proof()
-        proof = self.replay(unit, marks, contracts, ResearchSettings(allow_failed_capital=False))
+        proof = replay(unit, marks, contracts, ResearchSettings(allow_failed_capital=False))
         self.assertTrue(proof["window"]["passes_capital_screen"])
         self.assertEqual([t["quantity"] for t in proof["trades"]], [1, 1])
         self.assert_reconciles(proof)
 
     def test_native_slippage_uses_actual_tick_value_once_per_side(self):
         unit, marks = native_proof()
-        proof = self.replay(unit, marks, settings=ResearchSettings(slippage_ticks=2.5))
+        proof = replay(unit, marks, settings=ResearchSettings(slippage_ticks=2.5))
         t = proof["trades"][0]
         # 3 RUB/point * 2 points/tick; one native spread book, not two legs.
         self.assertEqual(t["entry"]["costs"]["slippage"], 2.5 * 6 * t["quantity"])
@@ -210,14 +218,14 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_entry_size_does_not_use_its_close_future_exit_fx_or_benchmark_return(self):
         unit, marks = native_proof(entries=((1, 2),))
-        base = self.replay(unit, marks)
+        base = replay(unit, marks)
         changed = deepcopy(unit)
         changed["series"][1]["point_value_rub"] = 30.0  # same-day FX close, after entry
         changed["series"][1]["spread"] = 1000000
         changed["trades"][0]["exit"]["far_price"] = 10000000
         changed_marks = dict(marks)
         changed_marks[changed["series"][1]["date"]] = 100.0
-        altered = self.replay(changed, changed_marks)
+        altered = replay(changed, changed_marks)
         self.assertEqual(base["trades"][0]["quantity"], altered["trades"][0]["quantity"])
         self.assertEqual(
             base["trades"][0]["entry"]["costs"], altered["trades"][0]["entry"]["costs"]
@@ -228,7 +236,7 @@ class FundedSizingTests(unittest.TestCase):
         for i, row in enumerate(unit["series"]):
             row["funding_rub"] = 2.0 if i % 2 == 0 else 0.0
             row["funding_contracts"] = 1 if i % 2 == 0 else 0
-        proof = self.replay(unit, marks, contracts)
+        proof = replay(unit, marks, contracts)
         for t in proof["trades"]:
             self.assertEqual(t["funding_rub"], 2 * t["quantity"])
         self.assertEqual(proof["ledger"][1]["funding_rub"], 0)
@@ -236,7 +244,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_automatic_account_has_no_former_fifty_contract_ceiling(self):
         unit, marks, contracts = unit_proof(near=(50000, 50000), entries=((0, 1),), margin=100)
-        p = self.replay(unit, marks, contracts)
+        p = replay(unit, marks, contracts)
         self.assertGreater(p["trades"][0]["quantity"], 50)
         self.assert_reconciles(p)
 
@@ -247,7 +255,7 @@ class FundedSizingTests(unittest.TestCase):
         unit["series"][1].update(near=200000, far=200000)
         unit["trades"][0]["exit"].update(near_price=200000, far_price=200000)
         unit["trades"][1]["entry"].update(near_price=200000, far_price=200000)
-        p = self.replay(unit, marks)
+        p = replay(unit, marks)
         self.assertEqual([t["quantity"] for t in p["trades"]], [18, 3])
         self.assertEqual([t["sizing"]["margin_per_pair_rub"] for t in p["trades"]], [1500, 6000])
         self.assert_reconciles(p)
@@ -258,7 +266,7 @@ class FundedSizingTests(unittest.TestCase):
         unit["series"][1]["point_value_rub"] = 4
         unit["series"][2]["point_value_rub"] = 30
         unit["trades"][0]["exit"]["spread_fill"] = 200
-        p = self.replay(unit, marks)
+        p = replay(unit, marks)
         t = p["trades"][0]
         self.assertEqual(p["ledger"][1]["mark_pnl_rub"], 100 * 4 * t["quantity"])
         self.assertEqual(p["ledger"][2]["mark_pnl_rub"], 100 * 4 * t["quantity"])
@@ -270,7 +278,7 @@ class FundedSizingTests(unittest.TestCase):
     ):
         unit, marks = native_proof(entries=((0, 2),))
         unit["series"][1].update(volume_eligible=False, spread=1000000, near=1000000, far=1000000)
-        p = self.replay(unit, marks)
+        p = replay(unit, marks)
         self.assertEqual(p["ledger"][0]["posted_margin_rub"], p["ledger"][1]["posted_margin_rub"])
         self.assertEqual(p["ledger"][1]["mark_pnl_rub"], 0)
         self.assertEqual(p["ledger"][0]["quantity"], p["ledger"][1]["quantity"])
@@ -279,7 +287,7 @@ class FundedSizingTests(unittest.TestCase):
 
     def test_prior_exit_changes_same_row_resources_before_resizing(self):
         unit, marks, contracts = unit_proof(entries=((0, 1), (1, 3)))
-        p = self.replay(unit, marks, contracts)
+        p = replay(unit, marks, contracts)
         self.assertEqual([t["quantity"] for t in p["trades"]], [5, 4])
         self.assertIn("EXIT #1 + ENTRY #2", p["ledger"][1]["event"])
         self.assert_reconciles(p)
@@ -288,7 +296,7 @@ class FundedSizingTests(unittest.TestCase):
         unit, marks, contracts = unit_proof(
             near=(50000, 47800, 47800, 48000), entries=((0, 1), (1, 3))
         )
-        p = self.replay(unit, marks, contracts)
+        p = replay(unit, marks, contracts)
         self.assertEqual(len(p["trades"]), 2)
         self.assertEqual(p["skipped_entries"], [])
         self.assert_reconciles(p)
@@ -297,7 +305,7 @@ class FundedSizingTests(unittest.TestCase):
         unit, marks, contracts = unit_proof(margin=31000)
         for row in unit["series"]:
             row.update(funding_rub=300, funding_contracts=1)
-        p = self.replay(unit, marks, contracts)
+        p = replay(unit, marks, contracts)
         self.assertTrue(all(r["funding_rub"] == r["funding_contracts"] == 0 for r in p["series"]))
         self.assertEqual(p["summary"]["gross_rub"], 0)
         self.assert_reconciles(p)
@@ -312,7 +320,7 @@ class FundedSizingTests(unittest.TestCase):
                 unit["series"][-1].update(funding_rub=2, funding_contracts=1)
                 if funding_only:
                     unit["selection"].update(strategy="funding_only", fill="same_day_settlement")
-                p = self.replay(unit, marks, contracts)
+                p = replay(unit, marks, contracts)
                 t = p["trades"][0]
                 self.assertEqual(p["summary"]["open_positions"], 1)
                 self.assertEqual(t["funding_rub"], 2 * t["quantity"])
@@ -321,6 +329,67 @@ class FundedSizingTests(unittest.TestCase):
                     sum(t["entry"]["costs"].values()) * (1 if funding_only else 2),
                 )
                 self.assert_reconciles(p)
+
+
+class SizingRoundingTests(unittest.TestCase):
+    def test_sizing_discards_fixed_template_rounding_disclosures(self):
+        proof, marks, contracts = unit_proof()
+        for component in ("gross", "costs", "net"):
+            proof["summary"][f"displayed_trade_{component}_rounding_delta_rub"] = 42
+        result = replay(proof, marks, contracts)
+        self.assertFalse(any("rounding_delta" in key for key in result["summary"]))
+
+    def test_sizing_ledger_quantity_on_same_row_exit_and_reentry(self):
+        unit, marks, contracts = unit_proof(entries=((0, 1), (1, 3)))
+        result = replay(unit, marks, contracts)
+        _assert_quantity_invariants(result["ledger"])
+        self.assertEqual([t["quantity"] for t in result["trades"]], [5, 4])
+        self.assertEqual([r["quantity"] for r in result["ledger"]], [5, 4, 4, 0])
+        self.assertEqual(result["ledger"][1]["event"], "EXIT #1 + ENTRY #2")
+
+    def test_sizing_ledger_quantity_on_same_day_entry_and_exit_is_flat(self):
+        unit, marks, contracts = unit_proof(near=(50000, 50100, 50100), entries=((1, 1),))
+        result = replay(unit, marks, contracts)
+        _assert_quantity_invariants(result["ledger"])
+        self.assertEqual([t["quantity"] for t in result["trades"]], [5])
+        self.assertEqual(
+            [(r["position"], r["quantity"]) for r in result["ledger"]], [(0, 0), (0, 0), (0, 0)]
+        )
+
+    def test_sizing_ledger_quantity_on_terminal_open_at_end_row(self):
+        for funding_only in (False, True):
+            with self.subTest(funding_only=funding_only):
+                unit, marks, contracts = unit_proof(
+                    near=(50000, 50000, 50000, 50000), entries=((0, 3),)
+                )
+                unit["trades"][0]["open_at_end"] = True
+                unit["series"][-1].update(funding_rub=2, funding_contracts=1)
+                if funding_only:
+                    unit["selection"].update(strategy="funding_only", fill="same_day_settlement")
+                result = replay(unit, marks, contracts)
+                qty = result["trades"][0]["quantity"]
+                _assert_quantity_invariants(result["ledger"])
+                self.assertEqual([r["quantity"] for r in result["ledger"]], [qty, qty, qty, 0])
+                self.assertEqual(result["trades"][0]["funding_rub"], 2 * qty)
+
+    def test_sizing_ledger_quantity_on_skipped_entry_and_ineligible_row(self):
+        skipped_unit, skipped_marks, skipped_contracts = unit_proof(margin=31000)
+        skipped = replay(skipped_unit, skipped_marks, skipped_contracts)
+        _assert_quantity_invariants(skipped["ledger"])
+        self.assertTrue(skipped["skipped_entries"] and not skipped["trades"])
+        self.assertTrue(all(r["quantity"] == 0 for r in skipped["ledger"]))
+
+        unit, marks, contracts = unit_proof(near=(50000, 50100, 50200, 50300), entries=((0, 2),))
+        unit["series"][1]["volume_eligible"] = False
+        unit["series"][3]["volume_eligible"] = False
+        result = replay(unit, marks, contracts)
+        qty = result["trades"][0]["quantity"]
+        _assert_quantity_invariants(result["ledger"])
+        self.assertEqual(
+            [(r["position"], r["quantity"]) for r in result["ledger"]],
+            [(1, qty), (1, qty), (0, 0), (0, 0)],
+        )
+        self.assertEqual(result["ledger"][1]["mark_pnl_rub"], 0.0)
 
 
 class SizingSettingsTests(unittest.TestCase):

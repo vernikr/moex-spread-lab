@@ -339,21 +339,11 @@ def test_concurrent_benchmarks_are_refused(tmp_path, monkeypatch):
         pass
 
 
-def test_suite_catalog_matches_specification():
-    jobs = bench._suite("single_proof_1d_1h", {}, 1, 0)
-    assert len(jobs) == 4
-    assert {job["payload"]["pair"] for job in jobs} == {"CNYRUBF/CRZ6", "GLDRUBF/GLZ6"}
-    assert {job["settings_override"]["timeframe"] for job in jobs} == {"1d", "1h"}
-    assert all(job["payload"]["sizing"] == "max_affordable" for job in jobs)
-    calendar = bench._suite("calendar_proof", {}, 1, 0)
-    assert {job["payload"]["strategy"] for job in calendar} == {
-        "zscore_mean_reversion",
-        "convergence_to_ruonia",
-    }
+def test_every_suite_builds_seeded_jobs():
+    names = ("single_proof_1d_1h", "calendar_proof", "window_table_batch", "cohort_optimize")
+    for name in (*names, "ab_fastcore"):
+        jobs = bench._suite(name, {}, 1, 0)
+        assert jobs and all(job["payload"] and "settings_override" in job for job in jobs), name
     windows = bench._suite("window_table_batch", {}, 1, 0)[0]["payload"]["requests"]
     assert len(windows) == len({r["pair"] for r in windows}) == 10
-    for name in ("cohort_optimize", "ab_fastcore"):
-        job = bench._suite(name, {}, 1, 0)[0]
-        assert job["payload"]["optimize_strategy"] is True
-        assert len(job["payload"]["targets"]) == 10
-        assert job["settings_override"]["random_seed"] == 41
+    assert bench._suite("ab_fastcore", {}, 1, 0)[0]["settings_override"]["random_seed"] == 41

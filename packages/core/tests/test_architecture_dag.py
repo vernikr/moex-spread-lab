@@ -6,6 +6,7 @@ import ast
 import re
 import tempfile
 import unittest
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
@@ -212,40 +213,40 @@ def _find_cycles(adjacency: dict[str, set[str]]) -> list[list[str]]:
     return cycles
 
 
+def _edge_violations(edges: Edges, verdict: Callable[[str, str], str | None]) -> list[str]:
+    """Collect ``verdict(src, dst)`` messages over every import edge, in source order."""
+    return [
+        f"{src}:{lineno} {message}"
+        for src, targets in sorted(edges.items())
+        for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
+        if (message := verdict(src, dst)) is not None
+    ]
+
+
 def _strategy_isolation_violations(edges: Edges, plugins: frozenset[str]) -> list[str]:
     shared = {"strategies", "strategies.base", "strategies.calendar_eval", "strategies.pair_data"}
-    violations: list[str] = []
-    for src, targets in sorted(edges.items()):
+
+    def verdict(src: str, dst: str) -> str | None:
         parts = src.split(".")
         if parts[0] != "strategies" or len(parts) < 2 or parts[1] not in plugins:
-            continue
+            return None
         own = f"strategies.{parts[1]}"
-        for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-            if (
-                dst.startswith(("core", "data", "accounting", f"{own}."))
-                or dst in shared
-                or dst == own
-            ):
-                continue
-            violations.append(f"{src}:{lineno} -> {dst}")
-    return violations
+        allowed = dst.startswith(("core", "data", "accounting", f"{own}.")) or dst in shared
+        return None if allowed or dst == own else f"-> {dst}"
 
-
-def _sibling_violations_for_pkg(edges: Edges, layers: dict[str, str], pkg: str) -> list[str]:
-    violations: list[str] = []
-    for src, targets in sorted(edges.items()):
-        if src != pkg and not src.startswith(f"{pkg}."):
-            continue
-        for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0])):
-            if layers[dst] not in {"core", pkg}:
-                violations.append(f"{src}:{lineno} ({pkg}) -> {dst} ({layers[dst]})")
-    return violations
+    return _edge_violations(edges, verdict)
 
 
 def _sibling_violations(edges: Edges, layers: dict[str, str]) -> list[str]:
-    return [
-        v for pkg in ("data", "accounting") for v in _sibling_violations_for_pkg(edges, layers, pkg)
-    ]
+    def verdict_for(pkg: str) -> Callable[[str, str], str | None]:
+        def verdict(src: str, dst: str) -> str | None:
+            if (src == pkg or src.startswith(f"{pkg}.")) and layers[dst] not in {"core", pkg}:
+                return f"({pkg}) -> {dst} ({layers[dst]})"
+            return None
+
+        return verdict
+
+    return [v for pkg in ("data", "accounting") for v in _edge_violations(edges, verdict_for(pkg))]
 
 
 def _adjacency(edges: Edges) -> dict[str, set[str]]:
@@ -253,12 +254,12 @@ def _adjacency(edges: Edges) -> dict[str, set[str]]:
 
 
 def _layer_violations(edges: Edges, layers: dict[str, str]) -> list[str]:
-    return [
-        f"{src}:{lineno} ({layers[src]}) -> {dst} ({layers[dst]})"
-        for src, targets in sorted(edges.items())
-        for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
-        if layers[dst] not in ALLOWED_LAYER_TARGETS[layers[src]]
-    ]
+    def verdict(src: str, dst: str) -> str | None:
+        if layers[dst] in ALLOWED_LAYER_TARGETS[layers[src]]:
+            return None
+        return f"({layers[src]}) -> {dst} ({layers[dst]})"
+
+    return _edge_violations(edges, verdict)
 
 
 def _shim_names() -> set[str]:
@@ -351,14 +352,16 @@ class ArchitectureDagTests(unittest.TestCase):
         _, edges = _workspace_analysis()
         roots = set(package_head_layers(REPO_ROOT))
         prefixes = tuple(f"{r}." for r in roots)
-        violations = [
-            f"{src}:{lineno} -> {dst} (umbrella import forbidden)"
-            for src, targets in sorted(edges.items())
-            if src in roots or src.startswith(prefixes)
-            for dst, lineno in sorted(targets, key=lambda item: (item[1], item[0]))
-            if dst not in roots and not dst.startswith(prefixes)
-        ]
-        self._assert_clean(violations, "Umbrella imports forbidden")
+
+        def in_packages(name: str) -> bool:
+            return name in roots or name.startswith(prefixes)
+
+        def verdict(src: str, dst: str) -> str | None:
+            if in_packages(src) and not in_packages(dst):
+                return f"-> {dst} (umbrella import forbidden)"
+            return None
+
+        self._assert_clean(_edge_violations(edges, verdict), "Umbrella imports forbidden")
 
     def test_frontend_es_module_import_dag_is_acyclic(self) -> None:
         js_dir = PACKAGES_DIR / "web" / "src" / "moex_spread_lab" / "web" / "static" / "js"

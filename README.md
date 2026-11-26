@@ -31,7 +31,7 @@ The six `packages/*` workspace members own the research runtime, while the root 
 | `packages/proof` (`msl-proof`) | 3 | Proof orchestration, replay adapters, cohort search and audit |
 | `packages/web` (`msl-web`) | 4 | Loopback HTTP server/routes and modular same-origin UI |
 
-Default agent work is scoped to one package subtree, including its tests/docs/fixtures. Cross-package changes start with a contract and conformance test; `data` and `accounting` remain independent siblings. Internal code and tests use canonical package imports. Root modules beyond `cli.py` and `__init__.py` are backward-compatibility shims; each shim names its canonical target, and workspace code/tests must use canonical imports.
+Default agent work is scoped to one package subtree, including its tests/docs/fixtures. Cross-package changes start with a contract and conformance test; `data` and `accounting` remain independent siblings. Internal code and tests use canonical package imports. Root modules beyond `cli.py` and `__init__.py` are backward-compatibility shims; each shim names its canonical target, and workspace code/tests must use canonical imports. The accounting `build_ledger` and baseline artifact publisher remain supported consumers of `analytical-baseline.v1` JSON and verified `research-run-artifact.v1` directories; the strategies baseline CLI continues publishing the latter. Historical research records below are evidence, not current execution or trading authorization.
 
 ```sh
 uv run pytest packages/proof/tests -q          # focused package suite

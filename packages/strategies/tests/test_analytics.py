@@ -1,10 +1,16 @@
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.accounting.ledger import build_ledger
+from moex_spread_lab.accounting.run_artifacts import load_run_artifact
+from moex_spread_lab.strategies.cli import _run_analytical_baseline_cmd
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     build_daily_series,
     build_series,
@@ -201,6 +207,55 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(result["summary"]["modeled_costs"], 0)
         self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
+
+    def test_baseline_cli_publishes_consumable_artifact_and_legacy_export(self):
+        series = {
+            "near": "NEAR",
+            "far": "FAR",
+            "timeframe": "1d",
+            "contracts": contract_terms(),
+            "rows": spread_rows(timestamps=True),
+            "provenance": {},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(
+                near_candles=root / "near",
+                far_candles=root / "far",
+                benchmark=root / "benchmark",
+                contracts=root / "contracts",
+                near="NEAR",
+                far="FAR",
+                interval=24,
+                cost_scenario=None,
+                cost_profile=None,
+                initial_capital=30000,
+                lookback=3,
+                entry_z=1.0,
+                exit_z=0.5,
+                quantity=1,
+                decision_delay_bars=1,
+                analysis_role="primary_baseline",
+                output_dir=root / "run",
+                retention_days=14,
+                pin=False,
+                legacy_json=root / "legacy.json",
+            )
+            output = StringIO()
+            with (
+                patch(
+                    "moex_spread_lab.strategies.pair_mean_reversion.analytics.build_series",
+                    return_value=series,
+                ),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(_run_analytical_baseline_cmd(args), 0)
+            report, _ = load_run_artifact(args.output_dir)
+            self.assertEqual(report, json.loads(args.legacy_json.read_text(encoding="utf-8")))
+            self.assertEqual(json.loads(output.getvalue())["artifact_dir"], str(args.output_dir))
+            self.assertEqual(
+                build_ledger(args.output_dir)["summary"]["final_X"], report["summary"]["final_X"]
+            )
 
     def test_ledger_preserves_nonexecution_and_rebuilds_proxy_metrics(self):
         rows = spread_rows(timestamps=True)

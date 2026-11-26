@@ -65,6 +65,6 @@ The first four may be researched from public primary documents. The project will
 - `docs/research/results/received/R02/R02.md`, sections 2.5 and 3.2: received tariff research with dated MOEX/NCC and VTB findings.
 - `docs/inputs/moy_online_praym.pdf`: current user-provided VTB tariff evidence, received 2026-11-03 and recorded under A-09.
 - `data/w1/current-intake.json`: current ISS snapshot, explicitly marked `current_snapshot_fallback_assumed`.
-- `packages/strategies/docs/analytical-baseline.md`: the tested price-only baseline and its proxy boundaries.
+- [Analytical baseline](../../packages/strategies/docs/analytical-baseline.md): the tested price-only baseline and its proxy boundaries.
 
 This document is an evidence audit, not a strategy approval or a trading recommendation.

@@ -121,3 +121,19 @@ def test_nonfinite_preferences_are_rejected_without_changing_saved_settings(tmp_
             with pytest.raises(W0Error):
                 save_settings(tmp_path, {key: value})
             assert read_settings(tmp_path) == saved
+
+
+def test_failed_atomic_replace_preserves_settings_and_removes_temp(tmp_path, monkeypatch):
+    from moex_spread_lab.core import settings
+
+    saved = save_settings(tmp_path, {"validation_percent": 5})
+    path = settings_path(tmp_path)
+
+    def fail_replace(source, destination):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(settings.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="replace failed"):
+        save_settings(tmp_path, {"validation_percent": 10})
+    assert read_settings(tmp_path) == saved
+    assert list(path.parent.iterdir()) == [path]

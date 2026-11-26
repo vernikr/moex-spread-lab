@@ -22,6 +22,8 @@ from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlug
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
+PREVIEW = "8765-x.e2b.app"
+
 
 class WebPackageArchitectureTests(unittest.TestCase):
     def test_server_does_not_export_legacy_fetch_history(self) -> None:
@@ -380,6 +382,82 @@ class WebHttpRoutesTests(unittest.TestCase):
             headers={"Origin": "https://evil.example"},
         )
         self.assertEqual(status, 403)
+
+    def _status(self, host: str, origin: str | None = None) -> int:
+        headers = {"Host": host}
+        if origin is not None:
+            headers["Origin"] = origin
+        status, _, _ = self._request("GET", "/", headers=headers)
+        return status
+
+    def test_default_stays_loopback_only(self) -> None:
+        self.assertEqual(self._status(f"127.0.0.1:{self.port}"), 200)
+        self.assertEqual(self._status(PREVIEW), 403)
+        self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 403)
+
+    def test_exact_preview_host_is_admitted_with_its_origin(self) -> None:
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):
+            self.assertEqual(self._status(PREVIEW), 200)
+            self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 200)
+            self.assertEqual(self._status("evil.example:8899"), 403)
+            self.assertEqual(self._status(PREVIEW, "https://evil.example"), 403)
+
+    def test_wildcard_is_an_explicit_opt_in(self) -> None:
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "*"}):
+            self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 200)
+
+    def test_retired_s2_routes_answer_not_found(self) -> None:
+        for path in ("/api/catalog", "/api/runs", "/api/searches"):
+            status, _, _ = self._request("GET", path)
+            self.assertEqual(status, 404)
+        for path in ("/api/run", "/api/screen", "/api/optimize"):
+            status, _, _ = self._request("POST", path, body={})
+            self.assertEqual(status, 404)
+        status, _, _ = self._request("GET", "/api/timeframes")
+        self.assertEqual(status, 200)
+        status, _, _ = self._request("GET", "/api/settings")
+        self.assertEqual(status, 200)
+
+    def test_http_rejects_cross_origin_proof_run(self) -> None:
+        status, _, _ = self._request(
+            "POST",
+            "/api/proof/run",
+            body={},
+            headers={"Content-Type": "application/json", "Origin": "https://untrusted.example"},
+        )
+        self.assertEqual(status, 403)
+
+    def test_web_modules_import_canonical_pair_screener_symbols(self) -> None:
+        from moex_spread_lab.strategies.pair_screener import pair_screener
+        from moex_spread_lab.web import dispatch, routes_proof, server
+
+        web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
+        retired_refs = [
+            path.name
+            for path in sorted(web_src.rglob("*.py"))
+            if "web_legacy" in path.read_text(encoding="utf-8")
+            or "proof.screener_search" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(retired_refs, [])
+        self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(routes_proof.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(server._pair_screener, pair_screener)
+        for name in ("catalog", "build_result", "ScreenerInputs", "ScreenerError"):
+            self.assertFalse(hasattr(server, name), name)
+
+    def test_s2_compatibility_surface_is_retired(self) -> None:
+        from moex_spread_lab.web.dispatch import ALL_POST_ROUTES
+
+        self.assertEqual(ALL_POST_ROUTES & {"/api/run", "/api/screen", "/api/optimize"}, set())
+        for module in ("moex_spread_lab.screener_search", "moex_spread_lab.proof.screener_search"):
+            with self.assertRaises(ModuleNotFoundError):
+                __import__(module)
+        store_methods = {
+            name
+            for name in dir(web_server.ScreenerStore)
+            if name in {"save", "list_runs", "list_searches", "save_screen", "save_search"}
+        }
+        self.assertEqual(store_methods, set())
 
 
 if __name__ == "__main__":

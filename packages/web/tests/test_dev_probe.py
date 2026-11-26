@@ -277,3 +277,43 @@ def test_diagnostic_missing_cache_and_missing_binary(tmp_path, monkeypatch):
     assert dev_diagnostics.calendar_cache_count(tmp_path) == 0
     monkeypatch.setattr(dev_diagnostics._fastcore_loader, "__file__", str(tmp_path / "loader.py"))
     assert dev_diagnostics.fastcore_binary(tmp_path) == (False, None)
+
+
+def test_peak_and_incomplete_samples(monkeypatch):
+    from moex_spread_lab.web import routes_dev as sampling
+
+    values = iter(
+        [
+            {"worker_resources": {"complete": True, "rss_kb": 100, "sampled_workers": 2}},
+            {"worker_resources": {"complete": False, "rss_kb": 900, "sampled_workers": 1}},
+            {"worker_resources": {"complete": True, "rss_kb": 125, "sampled_workers": 1}},
+        ]
+    )
+    monkeypatch.setattr(sampling, "pool_snapshot", lambda *args, **kwargs: next(values))
+    sampler = sampling.WorkerRSSSampler(object())
+    for _ in range(3):
+        sampler._sample()
+    assert sampler.snapshot() == {
+        "sample_interval_ms": 100,
+        "samples": 2,
+        "incomplete_samples": 1,
+        "max_workers_sampled": 2,
+        "sampler_stopped": True,
+        "peak_sampled_pool_rss_kb": 125,
+    }
+
+
+def test_disabled_and_exception_cleanup(monkeypatch):
+    from moex_spread_lab.web import routes_dev as sampling
+
+    monkeypatch.setattr(
+        sampling,
+        "pool_snapshot",
+        lambda *a, **k: {"worker_resources": {"complete": True, "rss_kb": 0, "sampled_workers": 0}},
+    )
+    with sampling.sample_worker_rss(object(), False) as disabled:
+        assert disabled is None
+    with pytest.raises(ValueError), sampling.sample_worker_rss(object(), True) as sampler:
+        raise ValueError("failure")
+    assert sampler is not None and not sampler.thread.is_alive()
+    assert sampler.snapshot()["samples"] >= 1

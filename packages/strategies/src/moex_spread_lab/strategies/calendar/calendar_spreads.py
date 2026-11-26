@@ -60,6 +60,11 @@ from .study import (
 )
 from .study import run_calendar_study as _run_calendar_study
 
+# Legacy spellings the root backward-compatibility shim still re-exports; that shim is deleted by
+# the cross-package issue, so this is the only surviving private alias pair.
+_positive_spread_volume_rows = positive_spread_volume_rows
+_stress_ok = stress_ok
+
 
 def run_calendar_study(
     cache_dir: Path,
@@ -337,6 +342,8 @@ __all__ = [
     "SYNTHETIC_TRIANGLE_PAIRS",
     "ZSCORE_OPTIONS",
     "CalendarData",
+    "_positive_spread_volume_rows",
+    "_stress_ok",
     "account_trades",
     "build_windows",
     "cached_till_date",

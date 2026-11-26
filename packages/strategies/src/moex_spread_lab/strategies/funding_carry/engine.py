@@ -11,12 +11,6 @@ from .carry import (
     fetch_history,
 )
 from .funding_recheck import recheck
-from .funding_screen import (
-    FUNDING_SCREEN_PAIRS,
-    FUNDING_SCREEN_SCHEMA,
-    FundingScreenError,
-    screen_funding_pairs,
-)
 from .proof_funding import (
     DSVD_NOTICE,
     FX_NEW_REGIME,
@@ -39,8 +33,6 @@ __all__ = [
     "CARRY_SCHEMA",
     "DSVD_NOTICE",
     "FUNDING_REGIMES",
-    "FUNDING_SCREEN_PAIRS",
-    "FUNDING_SCREEN_SCHEMA",
     "FX_NEW_REGIME",
     "FX_PERPETUALS",
     "LAUNCH_PERPETUALS",
@@ -51,7 +43,6 @@ __all__ = [
     "CarryError",
     "CarryStrategyError",
     "FundingEvidence",
-    "FundingScreenError",
     "FundingTimeline",
     "FundingWindow",
     "ProofFunding",
@@ -62,6 +53,5 @@ __all__ = [
     "published_rates",
     "read_supplement",
     "recheck",
-    "screen_funding_pairs",
     "supplement_path",
 ]

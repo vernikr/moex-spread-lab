@@ -1,3 +1,1 @@
-"""Backward-compatible shim for ``moex_spread_lab.strategies.funding_carry.funding_screen``."""
-
-from moex_spread_lab.strategies.funding_carry.funding_screen import *  # noqa: F403
+"""Backward-compatible shim; ``funding_carry.funding_screen`` was retired in #233."""

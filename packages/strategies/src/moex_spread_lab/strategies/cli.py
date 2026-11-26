@@ -230,34 +230,8 @@ def _run_calendar_study_cmd(args: Any) -> int:
 
 
 def _run_funding_screen_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.funding_carry.funding_screen import screen_funding_pairs
-
-    result = screen_funding_pairs(
-        contracts_path=args.contracts,
-        benchmark_path=args.benchmark,
-        cache_dir=args.cache_dir,
-        from_date=args.from_date,
-        till_date=args.till_date,
-        initial_capital=args.initial_capital,
-        cost_scenario=args.cost_scenario,
-        delay_seconds=args.delay_seconds,
-        timeout=args.timeout,
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "schema_version": result["schema_version"],
-                "candidate_count": result["summary"]["candidate_count"],
-                "stress_pass_count": result["summary"]["stress_pass_count"],
-                "positive_final_X_count": result["summary"]["positive_final_X_count"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
+    del args
+    raise W0Error("funding-screen has been retired")
 
 
 _DISPATCH: dict[str, Callable[[Any], int]] = {

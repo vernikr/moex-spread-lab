@@ -1,9 +1,13 @@
+import importlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.strategies.cli import run as run_strategies_cli
 from moex_spread_lab.strategies.funding_carry.carry import (
     CarryStrategyError,
     _transaction_cost_profile,
@@ -332,6 +336,12 @@ class CarryTests(unittest.TestCase):
             result["parameters"]["entry_condition"], "mean_previous_2_daily_funding_received > 0"
         )
         self.assertEqual(result["hypothesis"], "funding_only_carry")
+
+    def test_retired_funding_screen_stays_deleted_and_cli_fails_closed(self):
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("moex_spread_lab.strategies.funding_carry.funding_screen")
+        with self.assertRaisesRegex(W0Error, "funding-screen has been retired"):
+            run_strategies_cli(SimpleNamespace(command="funding-screen"))
 
 
 if __name__ == "__main__":

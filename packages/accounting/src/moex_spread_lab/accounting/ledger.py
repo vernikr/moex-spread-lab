@@ -6,9 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from moex_spread_lab.core.w0 import W0Error
-
-from .run_artifacts import load_report
+from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 
 LEDGER_SCHEMA = "execution-ledger.v1"
 
@@ -134,7 +132,9 @@ def rebuild_projection(events: list[Any]) -> dict[str, Any]:
 
 
 def build_ledger(baseline_path: Path) -> dict[str, Any]:
-    baseline, baseline_hash = load_report(baseline_path, error=LedgerError)
+    baseline, baseline_hash = read_hashed_json(
+        baseline_path, error=LedgerError, label="analytical report"
+    )
     if baseline.get("schema_version") != "analytical-baseline.v1":
         raise LedgerError("unsupported analytical baseline schema")
     rows = baseline.get("daily")

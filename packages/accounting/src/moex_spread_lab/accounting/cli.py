@@ -10,52 +10,6 @@ from moex_spread_lab.core.w0 import W0Error, write_json
 
 
 def register(subparsers: Any) -> None:
-    artifact_import = subparsers.add_parser(
-        "run-artifact-import",
-        help="verify and import legacy analytical-baseline.v1 JSON without deleting it",
-    )
-    artifact_import.add_argument("--legacy", type=Path, required=True)
-    artifact_import.add_argument("--output-dir", type=Path, required=True)
-    artifact_import.add_argument(
-        "--expected-sha256", help="required source hash when restoring from an archive manifest"
-    )
-    artifact_import.add_argument("--retention-days", type=int, default=30)
-    artifact_import.add_argument(
-        "--pin", action="store_true", help="explicitly retain important evidence details"
-    )
-    artifact_import.set_defaults(_msl_cli_handler=run)
-
-    artifact_pin_parser = subparsers.add_parser(
-        "run-artifact-pin", help="pin or unpin a compact evidence run's Parquet details"
-    )
-    artifact_pin_parser.add_argument("--artifact-dir", type=Path, required=True)
-    artifact_pin_group = artifact_pin_parser.add_mutually_exclusive_group()
-    artifact_pin_group.add_argument(
-        "--pin", action="store_true", help="keep details without TTL; this is the default"
-    )
-    artifact_pin_group.add_argument(
-        "--unpin", action="store_true", help="restart the artifact's configured detail TTL"
-    )
-    artifact_pin_parser.add_argument("--format", choices=("summary", "json"), default="summary")
-    artifact_pin_parser.set_defaults(_msl_cli_handler=run)
-
-    artifact_gc_parser = subparsers.add_parser(
-        "run-artifact-gc", help="plan or collect expired unpinned Parquet run details"
-    )
-    artifact_gc_parser.add_argument("--root", type=Path, default=Path.cwd())
-    artifact_gc_parser.add_argument("--runs-root", type=Path, default=Path("data/analytics/runs"))
-    artifact_gc_mode = artifact_gc_parser.add_mutually_exclusive_group()
-    artifact_gc_mode.add_argument(
-        "--dry-run", action="store_true", help="report detail files only; this is the default"
-    )
-    artifact_gc_mode.add_argument(
-        "--apply",
-        action="store_true",
-        help="remove expired detail files while preserving summaries and manifests",
-    )
-    artifact_gc_parser.add_argument("--format", choices=("summary", "json"), default="summary")
-    artifact_gc_parser.set_defaults(_msl_cli_handler=run)
-
     ledger_parser = subparsers.add_parser(
         "execution-ledger", help="build a rebuildable analytical execution and portfolio ledger"
     )
@@ -76,60 +30,6 @@ def register(subparsers: Any) -> None:
     account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
     account_risk_parser.set_defaults(_msl_cli_handler=run)
-
-
-def _run_artifact_import_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting.run_artifact_import import import_baseline_artifact
-
-    try:
-        result = import_baseline_artifact(
-            args.legacy,
-            args.output_dir,
-            expected_sha256=args.expected_sha256,
-            retention_days=args.retention_days,
-            pin=args.pin,
-        )
-    except OSError as exc:
-        raise W0Error(f"legacy import failed: {exc}") from exc
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
-
-def _run_artifact_pin_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting.run_artifacts import pin_run_artifact
-
-    manifest = pin_run_artifact(args.artifact_dir, pinned=not args.unpin)
-    status = "pinned" if not args.unpin else "unpinned"
-    payload = (
-        {"status": status, "manifest": manifest}
-        if args.format == "json"
-        else {
-            "status": status,
-            "artifact_id": manifest["artifact_id"],
-            "pinned": manifest["retention"]["pinned"],
-            "expires_at": manifest["retention"]["expires_at"],
-        }
-    )
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    return 0
-
-
-def _run_artifact_gc_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting.run_artifacts import gc_run_artifacts
-
-    root = args.root.resolve()
-    runs_root = args.runs_root if args.runs_root.is_absolute() else root / args.runs_root
-    output = gc_run_artifacts(runs_root, dry_run=not args.apply)
-    payload = (
-        output
-        if args.format == "json"
-        else {
-            key: output[key]
-            for key in ("status", "expired_artifact_count", "retained_artifact_count")
-        }
-    )
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    return 0
 
 
 def _run_execution_ledger_cmd(args: Any) -> int:
@@ -197,9 +97,6 @@ def _run_account_risk_cmd(args: Any) -> int:
 
 
 _DISPATCH = {
-    "run-artifact-import": _run_artifact_import_cmd,
-    "run-artifact-pin": _run_artifact_pin_cmd,
-    "run-artifact-gc": _run_artifact_gc_cmd,
     "execution-ledger": _run_execution_ledger_cmd,
     "account-risk-check": _run_account_risk_cmd,
 }

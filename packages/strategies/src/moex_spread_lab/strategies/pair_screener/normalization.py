@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
 from moex_spread_lab.core.timeframes import get_timeframe, timeframe_for_interval
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
@@ -16,29 +17,25 @@ from ..pair_mean_reversion.analytics import load_contracts
 
 # Preserve pre-leaf wildcard bindings as well as the declared screener hooks.
 __all__ = [
-    "Any",
     "BarSeries",
-    "Collection",
     "DataLakeError",
     "LegacyJsonBarStore",
-    "Path",
     "ScreenError",
     "W0Error",
     "_bar_series",
     "_normalized_series",
     "_read_json",
     "_round",
-    "annotations",
-    "bisect_left",
     "get_timeframe",
     "load_contracts",
-    "partial",
     "read_hashed_json",
     "timeframe_for_interval",
 ]
 
 _NORM_EXTRA_OPTS = frozenset({"prior_benchmark_dates", "timeframe"})
-_NORMALIZED_BY_TS_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
+_NORMALIZED_BY_TS_CACHE: HashedJSONCache[tuple[Any, ...], dict[str, dict[str, Any]]] = (
+    HashedJSONCache(1024)
+)
 
 
 class ScreenError(W0Error):
@@ -85,9 +82,7 @@ def _rows_by_ts(series: BarSeries) -> dict[str, dict[str, Any]]:
         for row in series.rows
         if (ts := _canonical_timestamp(row)) and row.get("close") is not None
     }
-    if len(_NORMALIZED_BY_TS_CACHE) > 1024:
-        _NORMALIZED_BY_TS_CACHE.clear()
-    _NORMALIZED_BY_TS_CACHE[series.cache_key] = mapped
+    _NORMALIZED_BY_TS_CACHE.put(series.cache_key, mapped)
     return mapped
 
 

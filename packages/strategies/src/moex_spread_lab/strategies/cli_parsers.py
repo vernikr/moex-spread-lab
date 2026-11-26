@@ -83,17 +83,6 @@ def _register_baseline_and_carry(subparsers: Any, handler: Handler) -> None:
 
 
 def _register_screens_and_studies(subparsers: Any, handler: Handler) -> None:
-    screen_parser = subparsers.add_parser(
-        "pair-screen",
-        help="screen documented futures pairs with the fixed H1 control and account stress gate",
-    )
-    screen_parser.add_argument("--candles-dir", type=Path, required=True)
-    screen_parser.add_argument("--benchmark", type=Path, required=True)
-    screen_parser.add_argument("--contracts", type=Path, required=True)
-    screen_parser.add_argument("--output", type=Path, required=True)
-    screen_parser.add_argument("--initial-capital", type=float, default=30000.0)
-    screen_parser.set_defaults(_msl_cli_handler=handler)
-
     funding_screen_parser = subparsers.add_parser(
         "funding-screen",
         help="screen flagship perpetual-to-quarterly pairs with the frozen funding-only hypothesis",

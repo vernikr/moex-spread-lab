@@ -9,6 +9,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, cast
 
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as _catalog
@@ -21,20 +22,13 @@ from .screener import _normalized_series
 HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
 PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 
-# Facade hooks plus the pre-P7.2 wildcard surface (Issue #139): the pre-leaf
-# star names stay importable via `from ...inputs import *`, including its
-# incidental imports.
 __all__ = [
     "DEFAULT_TIMEFRAME",
     "HISTORY_WINDOWS",
     "PAIRS",
     "_CANDLE_SUMMARY_CACHE",
-    "Any",
     "BarSeries",
-    "Callable",
-    "Mapping",
     "MarketDataStore",
-    "Path",
     "ProofFunding",
     "ScreenerError",
     "ScreenerInputs",
@@ -48,12 +42,8 @@ __all__ = [
     "_pair_history_span",
     "_positive_leg_volume_dates",
     "_session_volumes",
-    "annotations",
-    "cached_property",
-    "dataclass",
     "fetch_history",
     "get_timeframe",
-    "math",
     "pair_price_inputs",
 ]
 
@@ -84,14 +74,6 @@ class ScreenerInputs:
     @property
     def history(self) -> Path:
         return self.root / "data/analytics/screener-runs.jsonl"
-
-    @property
-    def screen_history(self) -> Path:
-        return self.root / "data/analytics/screener-screens.jsonl"
-
-    @property
-    def search_history(self) -> Path:
-        return self.root / "data/analytics/screener-searches.jsonl"
 
     def candles(self, pair_id: str, secid: str, timeframe: str = DEFAULT_TIMEFRAME) -> Path:
         spec = get_timeframe(timeframe)
@@ -129,7 +111,7 @@ def _offline_only(*_args: Any, **_kwargs: Any) -> Any:
     raise OSError("local screener does not download data; run the documented intake first")
 
 
-_CANDLE_SUMMARY_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+_CANDLE_SUMMARY_CACHE: HashedJSONCache[tuple[Any, ...], dict[str, Any]] = HashedJSONCache(2048)
 
 
 def _parse_row_volume(row: Mapping[str, Any]) -> tuple[str | None, float | None, bool]:
@@ -167,9 +149,7 @@ def _candle_summary(series: BarSeries) -> dict[str, Any]:
     for day in invalid_days:
         volumes[day] = None
     result: dict[str, Any] = {"timestamps": frozenset(timestamps), "volumes": volumes}
-    if len(_CANDLE_SUMMARY_CACHE) > 2048:
-        _CANDLE_SUMMARY_CACHE.clear()
-    _CANDLE_SUMMARY_CACHE[series.cache_key] = result
+    _CANDLE_SUMMARY_CACHE.put(series.cache_key, result)
     return result
 
 

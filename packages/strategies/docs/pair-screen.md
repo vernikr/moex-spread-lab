@@ -39,9 +39,11 @@ Summary:
 
 The negative H1 results do not reject the economic carry hypothesis for the perpetual-to-quarterly family. They do show that the existing price-only mean-reversion control is not a sufficient reason to advance any of these pairs.
 
-## Reproduce
+## Historical reproduction
 
-The screen uses locally downloaded, ignored ISS candle artifacts and the existing benchmark/catalog:
+This result is a dated historical record. The legacy `pair-screen` CLI/API was retired in #234 when the proof workbench became the supported pair-research surface; the command below is retained only as evidence of the original intake recipe and no longer reproduces a screen result. New analyses should use the proof workbench.
+
+The original screen used locally downloaded, ignored ISS candle artifacts and the existing benchmark/catalog:
 
 ```bash
 uv run python -m moex_spread_lab.cli iss-candles \

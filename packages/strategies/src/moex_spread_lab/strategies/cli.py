@@ -159,32 +159,6 @@ def _run_carry_strategy_cmd(args: Any) -> int:
     return 0
 
 
-def _run_pair_screen_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.pair_screener.screener import screen_pairs
-
-    result = screen_pairs(
-        args.candles_dir,
-        args.benchmark,
-        args.contracts,
-        initial_capital=args.initial_capital,
-    )
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "schema_version": result["schema_version"],
-                "candidate_count": result["summary"]["candidate_count"],
-                "stress_pass_count": result["summary"]["stress_pass_count"],
-                "positive_h1_control_count": result["summary"]["positive_h1_control_count"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
 def _run_screener_run_cmd(args: Any) -> int:
     from moex_spread_lab.strategies.pair_screener.pair_screener import (
         ScreenerInputs,
@@ -309,7 +283,6 @@ _DISPATCH: dict[str, Callable[[Any], int]] = {
     "analytical-baseline": _run_analytical_baseline_cmd,
     "carry-study": _run_carry_study_cmd,
     "carry-strategy": _run_carry_strategy_cmd,
-    "pair-screen": _run_pair_screen_cmd,
     "screener-run": _run_screener_run_cmd,
     "calendar-study": _run_calendar_study_cmd,
     "s3-reference": _run_s3_reference_cmd,

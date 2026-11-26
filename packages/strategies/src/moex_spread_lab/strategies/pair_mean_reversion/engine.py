@@ -150,6 +150,39 @@ def _close_trade(
     state.entry_signal_z = None
 
 
+def _exit_side_cost(ctx: SimContext, cur_legs: tuple[float, float]) -> dict[str, float] | None:
+    """Tariff cost charged on the closing fill, or ``None`` when tariffs are off."""
+    if not (ctx.tariff_costs and ctx.normalized_cost is not None):
+        return None
+    cur_near, cur_far = cur_legs
+    return side_cost(
+        ctx.normalized_cost,
+        [(ctx.near_contract, cur_near), (ctx.far_contract, cur_far)],
+        ctx.params.quantity,
+    )
+
+
+def _round_trip_cost(
+    ctx: SimContext,
+    state: _SimState,
+    date_key: str,
+    exit_bd: dict[str, float] | None,
+) -> dict[str, float] | None:
+    """Full round-trip cost breakdown: entry side already paid, plus the exit side."""
+    if ctx.tariff_costs and state.entry_breakdown is not None and exit_bd is not None:
+        return {key: state.entry_breakdown[key] + exit_bd[key] for key in exit_bd}
+    if ctx.normalized_cost is None:
+        return None
+    return _trade_cost_breakdown(
+        ctx.normalized_cost,
+        entry_timestamp=state.entry_date or date_key,
+        exit_timestamp=date_key,
+        quantity=ctx.params.quantity,
+        near_contract=ctx.near_contract,
+        far_contract=ctx.far_contract,
+    )
+
+
 def _append_priced_trade(
     ctx: SimContext,
     state: _SimState,
@@ -162,38 +195,13 @@ def _append_priced_trade(
     direction, entry_sp, exit_sp, sig_z = meta
     price_gross = _pnl_at(ctx, state, cur_near, cur_far)
     gross = price_gross + state.trade_funding
-    exit_bd = (
-        side_cost(
-            ctx.normalized_cost,
-            [(ctx.near_contract, cur_near), (ctx.far_contract, cur_far)],
-            ctx.params.quantity,
-        )
-        if ctx.tariff_costs and ctx.normalized_cost is not None
-        else None
-    )
-    if ctx.tariff_costs and state.entry_breakdown is not None and exit_bd is not None:
-        breakdown: dict[str, float] | None = {
-            key: state.entry_breakdown[key] + exit_bd[key] for key in exit_bd
-        }
-    elif ctx.normalized_cost is not None:
-        breakdown = _trade_cost_breakdown(
-            ctx.normalized_cost,
-            entry_timestamp=state.entry_date or date_key,
-            exit_timestamp=date_key,
-            quantity=ctx.params.quantity,
-            near_contract=ctx.near_contract,
-            far_contract=ctx.far_contract,
-        )
-    else:
-        breakdown = None
+    exit_bd = _exit_side_cost(ctx, cur_legs)
+    breakdown = _round_trip_cost(ctx, state, date_key, exit_bd)
     cost = sum(breakdown.values()) if breakdown is not None else 0.0
     state.realized_gross += price_gross
-    state.realized_costs += (
-        sum(exit_bd.values()) if (ctx.tariff_costs and exit_bd is not None) else cost
-    )
+    state.realized_costs += sum(exit_bd.values()) if exit_bd is not None else cost
     if breakdown is not None:
-        inc_map = exit_bd if (ctx.tariff_costs and exit_bd is not None) else breakdown
-        for component, value in inc_map.items():
+        for component, value in (exit_bd or breakdown).items():
             state.cost_totals[component] += value
     tick_size = float(ctx.near_contract["tick_size"])
     state.trades.append(

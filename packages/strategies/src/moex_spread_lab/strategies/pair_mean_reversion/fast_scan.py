@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import Any, cast
@@ -107,6 +107,57 @@ def parse_baseline_params(options: dict[str, Any]) -> BaselineParams:
     return params
 
 
+def _fills(row: dict[str, Any], use_open: bool) -> tuple[Any, Any]:
+    return (
+        (row["near_open"], row["far_open"]) if use_open else (row["near_close"], row["far_close"])
+    )
+
+
+def _fast_trade_row(
+    rows: list[dict[str, Any]],
+    params: BaselineParams,
+    near_multiplier: float,
+    far_multiplier: float,
+    trade: tuple[int, int, int, float, bool],
+) -> dict[str, Any]:
+    """One journal row of the C scan: settlement is always by close, fills follow the mode."""
+    e_idx, x_idx, pos_val, sig_z, forced = trade
+    entry_row, exit_row = rows[e_idx], rows[x_idx]
+    e_near, e_far = _fills(entry_row, params.fill == "open")
+    x_near, x_far = _fills(exit_row, params.fill == "open" and not forced)
+    return {
+        "entry_date": entry_row.get("timestamp", entry_row["date"]),
+        "exit_date": exit_row.get("timestamp", exit_row["date"]),
+        "direction": "long_near_short_far" if pos_val > 0 else "short_near_long_far",
+        "quantity": params.quantity,
+        "entry_near_fill": e_near,
+        "entry_far_fill": e_far,
+        "exit_near_fill": x_near,
+        "exit_far_fill": x_far,
+        "entry_spread_fill": _round(e_near * near_multiplier - e_far * far_multiplier),
+        "exit_spread_fill": _round(x_near * near_multiplier - x_far * far_multiplier),
+        "entry_signal_z": _round(sig_z),
+        "exit_reason": "end_of_sample" if forced else "mean_reversion_exit",
+    }
+
+
+def _fast_daily_row(
+    row: dict[str, Any],
+    act: int,
+    pos_val: int,
+    swaprates: Mapping[str, float],
+    lot_q: float,
+) -> dict[str, Any]:
+    day = row["date"]
+    swaprate = swaprates.get(day) if pos_val else None
+    return {
+        "date": day,
+        "action": _ACTION_NAMES[act],
+        "position": 0 if act == 5 else pos_val,
+        "funding_rub": _round(-pos_val * float(swaprate) * lot_q) if swaprate is not None else 0.0,
+    }
+
+
 def try_fast_intents_scan(
     rows: list[dict[str, Any]],
     params: BaselineParams,
@@ -119,7 +170,6 @@ def try_fast_intents_scan(
     fc = load_fastcore()
     if fc is None:
         return None
-    use_open = params.fill == "open"
     trade_tuples, action_pairs = fc.mean_reversion_scan(
         params.precomputed_z,
         len(rows),
@@ -129,53 +179,19 @@ def try_fast_intents_scan(
         params.exit_z,
         bool(params.funding_swaprates),
     )
-    trades: list[dict[str, Any]] = []
-    typed_trade_tuples = cast(list[tuple[int, int, int, float, bool]], trade_tuples)
-    for e_idx, x_idx, pos_val, sig_z, forced in typed_trade_tuples:
-        e_row, x_row = rows[e_idx], rows[x_idx]
-        e_near, e_far = (
-            (e_row["near_open"], e_row["far_open"])
-            if use_open
-            else (e_row["near_close"], e_row["far_close"])
+    trades = [
+        _fast_trade_row(
+            rows, params, near_multiplier, far_multiplier, (e_idx, x_idx, pos_val, sig_z, forced)
         )
-        if forced:
-            x_near, x_far = x_row["near_close"], x_row["far_close"]
-            reason = "end_of_sample"
-        else:
-            x_near, x_far = (
-                (x_row["near_open"], x_row["far_open"])
-                if use_open
-                else (x_row["near_close"], x_row["far_close"])
-            )
-            reason = "mean_reversion_exit"
-        trades.append(
-            {
-                "entry_date": e_row.get("timestamp", e_row["date"]),
-                "exit_date": x_row.get("timestamp", x_row["date"]),
-                "direction": "long_near_short_far" if pos_val > 0 else "short_near_long_far",
-                "quantity": params.quantity,
-                "entry_near_fill": e_near,
-                "entry_far_fill": e_far,
-                "exit_near_fill": x_near,
-                "exit_far_fill": x_far,
-                "entry_spread_fill": _round(e_near * near_multiplier - e_far * far_multiplier),
-                "exit_spread_fill": _round(x_near * near_multiplier - x_far * far_multiplier),
-                "entry_signal_z": _round(sig_z),
-                "exit_reason": reason,
-            }
+        for e_idx, x_idx, pos_val, sig_z, forced in cast(
+            list[tuple[int, int, int, float, bool]], trade_tuples
         )
+    ]
     daily: list[dict[str, Any]] = []
     if params.funding_swaprates and action_pairs is not None:
         lot_q = lot_size * params.quantity
         daily = [
-            {
-                "date": (d := row["date"]),
-                "action": _ACTION_NAMES[act],
-                "position": 0 if act == 5 else pos_val,
-                "funding_rub": _round(-pos_val * float(sw) * lot_q)
-                if (pos_val and (sw := params.funding_swaprates.get(d)) is not None)
-                else 0.0,
-            }
+            _fast_daily_row(row, act, pos_val, params.funding_swaprates, lot_q)
             for row, (act, pos_val) in zip(
                 rows, cast(list[tuple[int, int]], action_pairs), strict=True
             )

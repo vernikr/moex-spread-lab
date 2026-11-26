@@ -1,26 +1,29 @@
 # LQDT benchmark lineage
 
-The benchmark has two explicit layers:
+The LQDT benchmark has two explicit layers (`A-07`):
 
 ```text
-observed: VTBM -> LQDT
-extended proxy: CBR_RUONIA -> FXMM -> RUSFAR -> VTBM -> LQDT
+observed:        VTBM -> LQDT
+extended proxy:  CBR_RUONIA -> FXMM -> RUSFAR -> VTBM -> LQDT
 ```
 
-`VTBM` and `LQDT` are the observed benchmark layer. `FXMM` is an observed exchange price used only as an explicitly labelled predecessor proxy; `RUSFAR` and `CBR_RUONIA` are rate series converted into cumulative-price proxies. None of the proxy periods is an observed LQDT price. The return-stitching method follows the inspected reference project: correct VTBM's internal 1000:1 split, calculate daily returns, prefer the newest available source on overlapping dates and reconstruct the historical level backwards from the latest observed LQDT price.
+- `VTBM` and `LQDT` are the observed benchmark layer; only this segment supports a clean actual-fund benchmark conclusion.
+- `FXMM` is an observed exchange price used only as an explicitly labelled predecessor proxy. `RUSFAR` and `CBR_RUONIA` are rate series compounded into cumulative price proxies (ACT/365, base 1000); no proxy period is an observed LQDT price.
+- Stitching follows the reference methodology: correct the VTBM internal 1000:1 split, compute daily returns, prefer the newest available source on overlapping dates and reconstruct the historical level backwards from the latest observed LQDT price. Missing source rows stay missing; no rate or price is invented.
 
-Run:
+## Sources
+
+- `FXMM`, `VTBM`, `LQDT` and `RUSFAR` come from MOEX ISS history and reference endpoints; each output row keeps its source ticker, source kind, board provenance and response hashes.
+- `CBR_RUONIA` comes from the CBR RUONIA HTML table, requested in bounded yearly chunks; when a response contains no rows, the current XLSX export endpoint (`posted=False`, `backUrl=/hd_base/ruonia/dynamics/`) is used and parsed with `openpyxl`. The method used is recorded per chunk; if both responses are unavailable or unparseable the run stays `exploratory_proxy_only` and reports `CBR_RUONIA` as missing.
+
+## Run
 
 ```bash
 uv run python -m moex_spread_lab.cli benchmark-lineage \
   --from-date 2010-01-01 \
-  --till-date 2026-10-27 \
+  --till-date <session date> \
   --output data/benchmark/lqdt-lineage.json \
   --cache-dir data/benchmark-cache
 ```
 
-The CBR adapter follows the reference project's recovery path: request the RUONIA HTML table in bounded yearly chunks, then use the current XLSX export endpoint (`posted=False`, `backUrl=/hd_base/ruonia/dynamics/`) when the HTML response contains no rows. The XLSX is parsed through the small `openpyxl` dependency. The output keeps source ticker, source kind, board provenance, response hashes and the method used per chunk. If both CBR responses are unavailable or unparseable, the run remains `exploratory_proxy_only` and reports `CBR_RUONIA` as missing; no rate rows are invented. Only the `observed` VTBM/LQDT segment is eligible for a clean actual-fund benchmark conclusion.
-
-## Verified intake
-
-The 2026-11-03 run recovered CBR RUONIA from 2010-01-11 through 2026-10-27: 4,139 daily rates across 17 yearly chunks, all via the HTML method. The complete lineage now has 4,227 rows and status `observed_plus_labelled_proxy`; the observed VTBM/LQDT layer still begins on 2020-01-20. The ignored local artifact is `data/benchmark/lqdt-lineage.json`.
+The output (`lqdt-lineage.v1`) is written under git-ignored `data/` and records the stitched series, the method used per chunk and the source hashes.

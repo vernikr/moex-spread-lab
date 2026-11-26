@@ -1,509 +1,115 @@
-# Local market-data inventory and retention (Phase 0)
+# Local data lifecycle and verified candidate archival
 
-## Purpose
+`packages/data` owns the local, git-ignored market-data footprint: the on-disk
+layout, the read contract consumed by offline modules, incremental refresh
+invariants, and read-only storage monitoring with explicit verified archival.
+All market data is local-only under rights assumption `A-05`, must never be
+committed and is never redistributed. Paths below are relative to a run `--root`.
 
-Phase 0 adds a read-only inventory before any storage migration or cleanup. It makes the ignored local `data/` tree observable without changing downloaded market data, caches, research results, or runtime behavior.
+## On-disk layout
 
-The inventory is a planning and evidence aid only. A path marked `archive_candidate` or `rebuildable_cache` is **not** an authorization to delete it. Preserve a pinned source/dataset manifest for any result that must remain reproducible.
-
-## Command
-
-From the repository root:
-
-```sh
-# Fast size-and-policy status; does not parse JSON payloads or write a file.
-uv run python -m moex_spread_lab.cli data-inventory --root . --fast
-
-# Full manifest: schema, row counts, date ranges and SHA-256 of every local file.
-uv run python -m moex_spread_lab.cli data-inventory \
-  --root . \
-  --hashes \
-  --output data/analytics/data-inventory.json
-```
-
-The command writes only when `--output` is explicitly supplied. Otherwise it prints a compact JSON summary. The optional output remains under ignored `data/`; do not commit local data manifests that expose workstation paths or inventory.
-
-## Classifications
-
-| Classification | Meaning | Current retention posture |
+| Path | Content | Posture |
 |---|---|---|
-| `active_input` | Offline reader consumes it directly. | Keep while the corresponding research branch is active. |
-| `derived_runtime` | Local UI settings or short run history. | Keep with rotation. |
-| `rebuildable_cache` | Intake cache, not a screener runtime input. | TTL or rebuild after an explicit review. |
-| `archive_candidate` | Legacy/unregistered timeframe or discovery artifact. | Pin relevant runs, then archive rather than delete. |
-| `derived_archive_candidate` | Detailed generated analysis result. | Keep summary and run manifest; archive detail. |
-| `unclassified` | No policy registered. | Review manually; never delete automatically. |
-
-The current policy treats 1d and 1h `w1/candles/` series as active because those are the registered runtime timeframes. Other timeframe outputs, `candles-common`, and discovery artifacts are candidates for archival only. FORTS history caches are classified as active inputs because offline funding proof reads them.
-
-## Manifest contents and limits
-
-The full inventory records each file's relative path, logical and allocated bytes, mtime, policy, schema/timeframe metadata where available, row count/date range where discoverable, and optional SHA-256. It also aggregates datasets and reports potential reclaimable bytes for candidates. That byte total intentionally requires review; it is not a deletion plan.
-
-The scanner does not follow symbolic links and does not emit source URLs or credential values from local JSON. JSON inspection can be expensive for multi-gigabyte data trees; use `--fast` for routine status and `--hashes` only when preparing a pinned snapshot.
-
-## Phase 1: verified rebuildable-cache archive
-
-Phase 1 is deliberately narrower than a general cleanup: it archives only files classified as `rebuildable_cache` by a pinned, SHA-256 inventory. The archive must live outside `data/`, contains an embedded manifest, and every member hash is verified before any source file is removed. Active inputs and `archive_candidate` datasets are never selected by this command.
-
-```sh
-# Inspect the exact destructive plan. This changes nothing.
-uv run python -m moex_spread_lab.cli data-archive \
-  --root . \
-  --manifest data/analytics/data-inventory.json \
-  --archive ../moex-spread-lab-archives/rebuildable-cache-YYYYMMDD.tar.gz
-
-# Only after reviewing the plan, create and verify the archive, then remove matching cache files.
-uv run python -m moex_spread_lab.cli data-archive \
-  --root . \
-  --manifest data/analytics/data-inventory.json \
-  --archive ../moex-spread-lab-archives/rebuildable-cache-YYYYMMDD.tar.gz \
-  --apply
-```
-
-The command rejects a stale manifest, a missing or changed source, an existing archive destination, an archive path inside `data/`, symbolic links, and a manifest without file hashes. If archiving fails before verification, no source is deleted. If a source cannot be deleted after a verified archive exists, the verified archive remains the recovery copy and the command reports the failure.
-
-## Phase 2: Parquet pilot store
-
-Phase 2 adds a typed local store beside, not instead of, legacy JSON. `data-lake/` is ignored local state. It contains Zstandard-compressed Parquet bars, a deduplicated Parquet source-page manifest, `manifest.json`, and a DuckDB catalog. No screener reader is switched in this phase and no legacy candle JSON is removed.
-
-The v1 bars schema preserves the legacy timestamp strings and IEEE-754 `float64` OHLCV values. This intentionally prioritizes migration equivalence; integer-tick or decimal storage is a later, separately tested change. Repeated `secid`, timeframe, interval, proxy assumption and source URL/hash are moved out of every bar. `source_page_id` joins a bar to its one-per-page provenance row.
-
-```sh
-uv run python -m moex_spread_lab.cli data-import-candles \
-  --root . \
-  --legacy data/w1/candles/CNYRUBF_1d.json \
-  --legacy data/w1/candles/CRZ6_1d.json \
-  --legacy data/w1/candles/CNYRUBF_1h.json \
-  --legacy data/w1/candles/CRZ6_1h.json \
-  --verify
-```
-
-The importer refuses an existing dataset unless `--replace` is explicit. `--verify` compares Parquet bars and source-page provenance with the legacy JSON and checks the DuckDB catalog plus recorded SHA-256 values.
-
-## Phase 3: verified read-path cutover
-
-`MarketDataStore` is the narrow compatibility adapter used by the screener, its audit, funding timeline and hourly calendar reader. It returns `BarSeries`, so business logic receives normalized bars rather than a JSON `Path`.
-
-A Parquet dataset is selected only when both conditions hold: its manifest names the exact legacy JSON file selected by the old lookup order, and the current file SHA-256 equals the manifest's `legacy_sha256`. The resulting series deliberately reports that legacy path and hash in provenance, preserving existing run identities. A different `candles-screen` copy, a changed legacy JSON, an unimported series, or a missing data lake remains on `LegacyJsonBarStore` automatically.
-
-The Phase-2 CNYRUBF/CRZ6 pilot can therefore accelerate matching `data/w1/candles` inputs without changing a preferred `candles-screen` source. Legacy JSON remains the compatibility input and is not removed in this phase.
-
-Callers may request the columns they need; Parquet reads use PyArrow column projection while the JSON compatibility reader applies the same logical projection. Series-level price-proxy semantics are restored from the verified manifest so this physical optimization does not change normalized output.
-
-
-## Phase 4: incremental ingestion, raw retention and maintenance
-
-`data-refresh` keeps the retained legacy JSON compatibility file and its verified Parquet mirror in lockstep. For an existing dataset it reads the recorded watermark and requests only the observed-session overlap before that watermark through `--till-date`; the default overlap is five sessions. If the watermark already reaches `--till-date`, it makes **zero** network requests. A first backfill (or `--full-refresh`) needs `--from-date`.
-
-```bash
-# First dataset: bounded to two ISS workers and 90-day request chunks.
-uv run python -m moex_spread_lab.cli data-refresh \
-  --root . --secid CNYRUBF --interval 60 \
-  --from-date 2026-01-01 --till-date 2026-11-20
-
-# Incremental run: derives the start from the verified watermark.
-uv run python -m moex_spread_lab.cli data-refresh \
-  --root . --secid CNYRUBF --interval 60 --till-date 2026-11-21
-```
-
-Fresh ISS bodies are retained under `data-lake/raw/` as exact Zstandard-compressed `.json.zst` files. The raw manifest records canonical request SHA-256, response SHA-256, received time, TTL and pin state; its identity includes all three hashes so repeated identical responses remain separately auditable. Default retention is 30 days; `--pin-raw` protects bodies produced by an important run. Use `data-pin-raw --entry-id …` later to pin a registered response. When a lake dataset is replaced, the prior dataset record is appended to `manifest.json`'s `dataset_revisions` history rather than being silently discarded.
-
-```bash
-# Integrity verification includes Parquet, source-page provenance, DuckDB catalog and raw bodies.
-uv run python -m moex_spread_lab.cli data-verify --root .
-
-# Existing imports are already a single Zstd file per dataset; force performs a verified rewrite.
-uv run python -m moex_spread_lab.cli data-compact --root . --force
-
-# Collection is non-destructive by default. Only --apply removes expired unpinned raw files/orphans.
-uv run python -m moex_spread_lab.cli data-gc --root . --dry-run
-uv run python -m moex_spread_lab.cli data-gc --root . --apply
-```
-
-The refresh takes an exclusive per-dataset writer lock before reading the watermark and holds it through fetch, publish and verification. It merges on the candle `begin` key, sorts deterministically, atomically publishes the JSON file, upserts its mirror and then runs the same legacy-versus-Parquet verification used by the importer. It does not delete legacy JSON or alter active screen-first source selection.
-
-## Phase 5: compact research run artifacts
-
-Analytical baseline and sensitivity runs are evidence artifacts with a compact control plane and large detail plane. `analytical-baseline --output-dir …` atomically publishes a *new* run directory containing `summary.json`, `daily.parquet`, `trades.parquet` and `manifest.json`. The manifest is `research-run-artifact.v1`; it records the run/artifact ID, input/evidence hashes, component SHA-256 hashes, Parquet row/column counts and detail retention state. Publication stages all files beside the target and refuses to replace an existing directory.
-
-`summary.json` retains the reusable research facts: result schema, release state, pair/timeframe identity, parameters, costs/economics, summary measures and input provenance. It intentionally excludes detailed bars and trades. `daily.parquet` and `trades.parquet` use Zstandard compression. The CLI only writes the older monolithic pretty JSON when `--legacy-json` is explicitly supplied. Existing `execution-ledger` and `validate-analytics` consumers accept a verified run directory as well as that legacy JSON format.
-
-Each new artifact gets a 30-day detail TTL by default; use `--retention-days N` to set it for that run and `--pin` for evidence that must retain its details indefinitely. Collection never removes `summary.json` or `manifest.json`, and it does nothing until `--apply` is explicit:
-
-```bash
-# Review only; default root is data/analytics/runs under --root.
-uv run python -m moex_spread_lab.cli run-artifact-gc --root . --dry-run --format json
-
-# Pin an important run, or later restart its configured TTL.
-uv run python -m moex_spread_lab.cli run-artifact-pin \
-  --artifact-dir data/analytics/runs/cnyrubf-crz6-1d-baseline --pin
-uv run python -m moex_spread_lab.cli run-artifact-pin \
-  --artifact-dir data/analytics/runs/cnyrubf-crz6-1d-baseline --unpin
-
-# Only after reviewing the dry-run plan, collect expired and unpinned detail files.
-uv run python -m moex_spread_lab.cli run-artifact-gc --root . --apply --format json
-```
-
-After collection the manifest records `detail_status=collected`; the compact result and its provenance remain inspectable, but consumers which require `daily`/`trades` fail closed rather than inventing a replay. A pin protects details from collection. Integrity verification happens automatically when a compact artifact is read: its summary and each required detail file must match the manifest SHA-256 and recorded table shape.
-
-## Storage optimization package A (0.4.0)
-
-`data-archive-candidates` is separate from the older rebuildable-cache command.
-It accepts only its own versioned dry-run plan, never globs or an arbitrary list
-of paths. Older ad-hoc November 20 plans must be regenerated and compared before
-approval. Planning hashes the inventory and deterministically selects the five
-reviewed groups: analytics/derived, common candles, 10m/unknown candles and
-perpetual-history discovery. Analytics selection is deliberately narrower than
-inventory classification: only top-level schema-bearing JSON reports, excluding
-`data-*`/`archive-*` control files, runtime histories/settings and compact runs.
-Active H1, screened candles, benchmark, funding/calendar caches and unclassified
-files are never selected. No active reader contract changes in this package.
-
-```sh
-# Use fresh paths outside data/. Planning never overwrites an earlier plan.
-uv run moex-spread-lab data-archive-candidates --root . --dry-run \
-  --plan ../archives/candidates-plan.json --archive ../archives/candidates.tar.zst
-
-# Only after separate review/approval; does NOT delete originals.
-uv run moex-spread-lab data-archive-candidates --root . --archive-only \
-  --plan ../archives/candidates-plan.json
-
-# Separate destructive step, only in a maintenance window with writers stopped.
-uv run moex-spread-lab data-archive-candidates --root . --apply \
-  --plan ../archives/candidates-plan.json
-```
-
-The archive embeds `manifest.json` (paths, logical bytes, SHA-256, source
-fingerprint, commit and UTC creation time). Zstandard level 19 compression is
-streamed with a checksum, into a same-directory staging file. Full streamed
-member verification rejects missing/extra/duplicate/non-regular members and
-manifest/size/hash mismatches. Sources are revalidated before atomic no-clobber
-publication. A `.verified.json` sidecar records the archive SHA-256 and embedded
-manifest; apply requires it and repeats full archive and source verification.
-An existing destination is never overwritten.
-
-Apply creates a `.apply.json` journal before deleting anything, records deleted
-paths and completion/interruption, and prunes empty parents only at the end.
-It checks **all** sources before the first unlink and each source again immediately
-before unlink. An advisory repository lock excludes concurrent invocations of
-this CLI; it cannot stop other applications writing files. Use a maintenance
-window. Filesystem failure or external mutation during deletion can leave a
-partial operation; this is not a filesystem transaction. The verified archive
-remains the recovery source. A hard process kill can leave the journal at
-`prepared`; reconcile remaining paths against the manifest rather than retrying
-blindly. No automatic resume or automatic production cleanup is implemented.
-
-Restore into a **new empty staging directory**, not over the running checkout:
-`tar --zstd -xf candidates.tar.zst -C RESTORE_DIR` (with GNU tar/zstd), then compare
-all restored `data/<path>` sizes and SHA-256 values to `manifest.json`. Review
-before copying back to the original paths. Keep the archive, verification
-receipt, plan and apply journal together; schedule a review before any archive
-retention decision. Moving an archive within one disk is not itself a saving.
-
-Validation covers isolated-fixture archive/apply/restore, protected inputs, stale
-sources, path traversal, symlinks, corruption, malformed members and publication
-races. The dated Package A operation and its measured outcome are recorded in
-[GitHub Issue #37](https://github.com/vernikr/moex-spread-lab/issues/37); this
-runbook intentionally does not duplicate that execution report. Package B's
-importer is described below; the C1–C3 H1 safety and maintenance procedures follow.
-
-## Package B: verified legacy baseline import (0.5.0)
-
-```sh
-uv run moex-spread-lab run-artifact-import \
-  --legacy RESTORE_DIR/data/analytics/report.json \
-  --expected-sha256 HASH_FROM_VERIFIED_ARCHIVE_MANIFEST \
-  --output-dir data/analytics/runs/legacy-report
-```
-
-Only `analytical-baseline.v1` is accepted. Other schemas, including calendar
-studies, stay losslessly archived; there is no generic schema conversion.
-Import never deletes or edits the source. When the source was archived by
-package A, first verify that archive and restore needed members into temporary
-staging, checking each against its manifest. Do not permanently restore legacy
-pretty JSON into `data/`. The importer checks `--expected-sha256` when supplied;
-it does not itself authenticate an archive or extract it.
-
-Before publication, import freezes the exact source bytes and creates the four
-Phase-5 files in private staging. It requires canonical JSON equality of the
-**complete** rehydrated report, including all daily/trade rows, summaries,
-parameters, provenance, final X and drawdown. It rejects duplicate JSON keys,
-non-finite numbers and any lossy Arrow inference (including dropped sparse row
-keys, added nulls or numeric type coercion), rather than silently normalizing
-legacy evidence. Reports must also be valid inputs to the existing ledger and
-validation consumers, including validation's minimum ten chronological rows.
-
-It runs `execution-ledger` and `validate-analytics` logic for both source and
-compact artifact. All output must match except the explicitly expected container
-path/content-identity fields: ledger's baseline path/hash, validation's baseline
-and ledger path/hash, and sensitivity path/hash. Original market input provenance
-is not stripped. Sensitivity validation includes the imported report itself.
-The two normalized result fingerprints are retained in `manifest.legacy_import`,
-along with exact legacy byte SHA-256, original filename and canonical report
-SHA-256. This lineage is bound into the artifact identity. Existing non-imported
-Phase-5 artifacts retain their identities and remain readable.
-
-Source SHA-256 is checked again before atomic no-replace directory publication
-(Linux/macOS). Existing files, empty directories and symlinks cannot be replaced,
-even if created during staging. Import failure cleans its temporary files and
-leaves the source and any existing artifact untouched. No automatic retry/resume
-or overwrite is provided. A batch can retain successfully imported artifacts if
-a later item fails; record per-item results before continuing.
-
-Default detail retention is 30 days, unpinned. Use `--pin` only for selected
-important evidence; `--retention-days` is explicit. Original reports remain
-recoverable from the verified archive regardless of compact-detail TTL.
-
-This migration adds convenient compact research detail alongside package A's
-archive; it is **not additional disk reclamation** relative to archive-only
-storage. Measure the resulting size and do not count the already-removed JSON a
-second time. The dated Package B execution evidence is preserved in [GitHub
-Issue #38](https://github.com/vernikr/moex-spread-lab/issues/38); exact import
-counts, allocation and smoke-test results belong to that Issue.
-
-## Package C1: complete H1 inventory and isolated candidate lakes (0.6.0)
-
-```sh
-uv run moex-spread-lab data-h1-stage --root . --dry-run \
-  --plan ../archives/h1-plan.json
-uv run moex-spread-lab data-h1-stage --root . --stage \
-  --plan ../archives/h1-plan.json --output-dir data-lake/candidates/h1-review
-uv run moex-spread-lab data-h1-stage --root . --verify \
-  --plan ../archives/h1-plan.json --output-dir data-lake/candidates/h1-review
-```
-
-This is **preparation**, not runtime activation or an archive/delete operation.
-The deterministic plan inventories every runtime-named `*_1h.json` in both
-`data/w1/candles` and `data/w1/candles-screen`. It checks filename/SECID, H1/60-minute
-identity, importer semantics and strictly ordered timestamps, recording source
-SHA-256, rows, time bounds and source-page counts. The per-SECID selection map
-retains screen-first priority, including both copies where present. Source
-symlinks are rejected. Empty/invalid series fail closed rather than being
-silently omitted from the reviewed set.
-
-Before staging or verification, the CLI regenerates and compares the entire
-plan. Newly added screened copies, missing files, changed bytes, altered paths
-or changed selection invalidate it. Plans are exclusive-create, not overwritten.
-The importer binds its source hash to the bytes actually parsed, avoiding a
-separate post-parse file read for the recorded identity.
-
-A fresh candidate directory is required, outside `data/`. It contains independent
-`candles/` and `candles-screen/` lakes (Parquet bars, provenance tables, DuckDB
-catalog and manifest). This avoids the existing lake's timeframe/SECID identity
-collision across source folders. No existing default lake manifest/catalog is
-replaced, and `MarketDataStore` does not discover these candidates automatically.
-
-Each imported source is semantically verified against its JSON: all normalized
-OHLCV/value/timestamp rows, deduplicated source-page provenance, metadata,
-price-proxy semantics, row counts/time bounds, file SHA-256 and catalog identity.
-The full batch is reverified and sources re-enumerated before it receives
-`verified_candidate`. `h1-stage.json` records per-source evidence and Parquet
-logical/allocated bytes. An interruption/failure leaves a non-activated batch
-with `staging`/`failed` status for inspection; there is no automatic resume,
-replacement, cleanup of evidence, or activation. Use a fresh output directory
-after resolving a failed run. Concurrent source writers should be stopped for a
-stable snapshot; even a completed candidate is revalidated by `--verify`.
-
-Candidate staging **adds temporary mirror storage** while retaining every JSON.
-It does not by itself activate Parquet reads or make source deletion safe. Any
-sealed reader must preserve exact-path source identity and fail-closed selection
-when JSON is absent, integrate all production readers, and pass rollback and
-fixed-regression checks. Any later archival/removal is a separate supervised
-operation that must demonstrate net gain; a compression ratio alone is never
-authorization.
-
-The dated C1 inventory, parity and allocation results are recorded in [GitHub
-Issue #39](https://github.com/vernikr/moex-spread-lab/issues/39). This procedure
-is limited to the candidate-staging contract; activation and any source archival
-are separate, explicitly gated operations described below.
-
-## Package C2: explicit sealed H1 reads (0.7.0)
-
-```sh
-# Stop project writers/service for activation. All source JSON must still match C1.
-uv run moex-spread-lab data-h1-seal --root . --activate \
-  --plan ../archives/h1-plan.json --candidate data-lake/candidates/h1-review
-uv run moex-spread-lab data-h1-seal --root . --verify
-
-# Rollback only after every original JSON and source selection is restored.
-uv run moex-spread-lab data-h1-seal --root . --deactivate
-```
-
-Activation revalidates the candidate against its complete source plan and copies
-its exact-path records into `data-lake/h1-seal.json`. The exclusive-created
-`h1-seal.enabled.json` binds the canonical seal SHA-256. Existing activation is
-never overwritten. A marker without a seal, missing marker, invalid control
-content or mismatched digest fails closed, not back to JSON. Interrupted
-activation leaves evidence requiring inspection. Stop the service for control
-changes; a partial change may intentionally make H1 unavailable.
-
-The sealed reader uses the immutable copied records, not a mutable candidate
-manifest lookup by SECID. It verifies both Parquet bars and source-page file
-hashes before reading. Original JSON is optional; if present it must still match
-the sealed source hash. Changed JSON, new preferred screened copies, missing or
-corrupt Parquet, unsealed paths and source symlinks are errors. There is no
-fallback to JSON or an alternate source once H1 sealing applies. Non-H1 reads
-retain the old contract. Content verification is cached against file inode,
-size, mtime and ctime plus seal/marker signatures; changed signatures invalidate
-the cache. These local hashes detect corruption, not malicious rewriting of all
-trusted controls by a privileged actor.
-
-`ScreenerInputs` and the calendar H1 reader share sealed source selection.
-Screen availability and audit checks use the source adapter rather than requiring
-JSON existence. A sealed screened path remains selected after its JSON disappears.
-The reader preserves the original path/hash in provenance, restores price-proxy
-semantics and supports column projection. Its backend is `sealed_parquet`.
-
-`--verify` checks all sealed paths, even with JSON absent. The older default
-lake's `data-verify` still requires its pilot legacy inputs; resolving that
-maintenance contract is an additional prerequisite before actual JSON archival.
-Neither C1 staging nor C2 activation authorizes deletion (`source_deletion_allowed`
-remains false). There is no source archive/delete operation in this CLI.
-
-Deactivation first rebuilds the full H1 plan and requires every original JSON,
-identity/hash and selected path to match. It keeps control-file evidence in a
-unique `data-lake/h1-seal-history/` directory before removing live controls.
-Do not manually remove activation files to bypass a failed rollback check.
-Reactivation from a verified C1 plan is supported. An interrupted control change
-may remain fail-closed until inspected; control operations are not a multi-file
-filesystem transaction.
-
-Tests cover missing JSON, distinct preferred/nonpreferred copies, calendar
-reader equality, provenance, projection, warm-cache corruption, missing controls,
-source changes, new screened sources, unknown inputs, symlinks, immutable copied
-records and repeated activate/deactivate rehearsals. Production fixed cases,
-search/plateau performance and active-JSON archive/restore each require separate
-Issue-backed evidence; fixture success alone is not authority to remove originals.
-
-The dated C2 activation, parity, rollback and reactivation evidence is preserved
-in [GitHub Issue #40](https://github.com/vernikr/moex-spread-lab/issues/40).
-C3's separate archive/extraction/apply contract is described in the next section;
-its dated operation and recovery record are in [GitHub Issue #41](https://github.com/vernikr/moex-spread-lab/issues/41).
-
-## Package C3: reviewed active-H1 archival (0.8.0)
-
-`data-h1-archive` is separate from non-runtime candidate cleanup. It can only
-archive the **entire exact active seal**, never free globs, paths or an arbitrary
-subset. The preflight requires every original JSON and source priority to still
-match the sealed plan, plus passing operator evidence bound to both source
-fingerprint and canonical seal SHA-256. Evidence JSON has `checks` entries
-`regression`, `performance`, `ui_smoke`, all `passed`; preserve the supporting
-case results and measurements, not just those labels. This records a supervised
-operator gate, not independent cryptographic attestation of test execution.
-
-```sh
-uv run moex-spread-lab data-h1-archive --root . --dry-run \
-  --plan ../archives/h1-archive-plan.json --archive ../archives/h1.tar.zst \
-  --evidence ../archives/h1-cutover-evidence.json
-uv run moex-spread-lab data-h1-archive --root . --archive-only \
-  --plan ../archives/h1-archive-plan.json
-# Separate supervised maintenance step, after reviewing the receipt and gain.
-uv run moex-spread-lab data-h1-archive --root . --apply \
-  --plan ../archives/h1-archive-plan.json
-```
-
-Archive-only uses staged Zstd-19 tar, embedded manifest with source hashes and
-release commit, full streamed verification and atomic no-clobber publication.
-It then extracts every member into new temporary staging, verifies every restored
-size/hash and manifest, and removes only this temporary restore copy. Originals
-remain untouched. The receipt binds the archive hash and full restore result.
-
-Both archive-only and apply require **at least 80% measured net allocated gain**.
-The deliberately conservative calculation charges the entire retained `data-lake`
-and the entire archive/evidence directory, including old files, against selected
-source allocation. Failure leaves sources intact and any already-published
-archive for inspection, without a successful receipt. No threshold override is
-provided. Apply repeats receipt/archive/restore-count checks, seal verification,
-all-source selection/hash validation, evidence binding and storage measurement
-before the first unlink. It records each deleted path durably, verifies sealed
-reads afterwards and never changes the active seal. Stop source writers and the
-service during apply; the shared archival lock excludes the archive CLIs, not
-arbitrary external applications. Interrupted apply is not a transaction or
-implicitly resumable operation: reconcile its journal and restore only verified
-missing members if rollback is necessary.
-
-The seal's `source_deletion_allowed=false` means **activation alone never permits
-removal**. Only the separately reviewed plan, passing gates, restore receipt and
-explicit archive `--apply` authorize this narrow operation. Afterwards the seal
-continues to preserve original source identity; deactivation still requires
-restoring all original JSON and exact selections.
-
-Maintenance now supports archived H1: `data-verify` compares exact-path retained
-pilot/candidate records with the authoritative sealed semantics, verifies both
-Parquet files, metadata and catalog, and never substitutes an unrelated source.
-Missing nonsealed/daily sources still fail. Forced compaction or import into an
-active sealed table is refused; H1 refresh refuses an active seal **before**
-network or JSON writes. Worker-pool weighting uses sealed original logical sizes,
-so deleting JSON does not silently change sharding thresholds. Original byte
-hashes, not a newly generated JSON serialization, remain the recovery identity.
-
-After apply, use `data-h1-seal --verify` plus default and candidate `data-verify`.
-C1 `data-h1-stage --verify` deliberately still requires the original source plan;
-it is a staging preflight, not the post-archive maintenance command. Restore into
-new empty staging first, verify member hashes, and copy only missing originals
-without overwriting changed files before guarded `data-h1-seal --deactivate`.
-
-### Restored retry (0.8.1)
-
-If a supervised wrapper restored **all** originals after an apply/post-check
-failure, retry is explicit: `data-h1-archive --apply --retry-restored --plan …`.
-All original hashes, selection, seal, evidence, archive and gain gates are checked
-again. The matching previous journal is retained under a unique `.attempt-*`
-name before a new journal is created. Default apply still refuses an existing
-journal; this is not partial resume and never skips missing originals. Record the
-failure/recovery reason separately. OS Finder `.DS_Store` metadata may change
-independently; report that separately without modifying it or exempting research
-inputs from integrity checks.
-
-## Package D: steady-state monitoring and recovery catalog (0.9.0)
-
-`storage-budget --root . [--archives-root ../archives] [--output NEW.json]`
-reports logical and allocated file bytes by disjoint class: active inputs,
-archive candidates, derived archives/runtime, unclassified/cache, compact run
-artifacts, raw, retained lake and optional external archives/evidence. It includes
-**dry-run only** default raw/run TTL plans; it never authorizes deletion. Optional
-`--max-allocated-bytes N` returns exit code 2 when exceeded, after emitting the
-report. No arbitrary machine budget is imposed by default. Outputs are exclusive
-(no overwrite). Counts sum file allocation and can overcount hardlinks/clones;
-concurrent writers mean this is monitoring, not an atomic storage snapshot.
-Candidate H1 and pilot mirrors are counted in retained lake, never as disposable
-archive candidates. Nested candidate raw stores are counted but not GC targets.
-
-`archive-catalog --archive ../archives/FILE.tar.zst [--archive OTHER.tar.zst]
---review-date YYYY-MM-DD --output ../archives/NEW-catalog.json` checks each
-archive SHA against its verified receipt and streams every member to verify the
-embedded manifest and content hashes. The catalog includes the full embedded
-manifest, release commit, archive/receipt/manifest hashes, measured size, restore
-instructions and a future review date. It does not extract, mutate receipts,
-expire archives, or prove an independent backup exists. Only the A/C verified
-receipt format is supported; unknown archive formats must not be labeled verified.
-Do not overwrite old catalogs: retain dated snapshots beside the archives.
-
-### Operating cadence (manual; no automatic deletion job installed)
-
-- Weekly and after imports: run `storage-budget` with the archive directory;
-  compare snapshots and investigate growth, including unclassified files. A budget
-  alert triggers review, never deletion. Set an explicit byte limit only after
-  choosing the workstation's operating budget.
-- Raw ISS remains 30-day TTL; pin only evidence requests. Before any explicit
-  `data-gc --apply`, save/review `data-gc --dry-run --format json` and verify the
-  raw archive. Review orphan files separately; do not blindly approve them.
-- Compact runs keep summaries/manifests. Details retain their configured 30-day
-  TTL unless explicitly pinned. Review `run-artifact-gc --dry-run --format json`
-  before an explicit apply; do not unpin research evidence just to meet budget.
-  Generate pretty legacy JSON only with the existing `--legacy-json` option.
-- After lake growth, verify datasets before considering compaction. **Never force
-  compact/import an active sealed H1 table.** Existing H1 guards remain in force.
-  Record Parquet row groups and fresh-reader timings for any proposed compaction;
-  OS-cache-warm measurements are not cold-disk evidence. No scheduled compaction
-  is installed or required while the active seal is immutable.
-- At archive review, rerun `archive-catalog`, check independent backup availability
-  and rehearse extraction in new staging when recovery procedures change. The
-  review date is not expiry; recovery archives for deleted sources stay protected.
-- During supervised applies, stop writers, retain before/after evidence, verify
-  runtime, then restart service. Existing explicit GC/apply commands are the only
-  mutation paths; these monitoring/catalog commands have no `--apply` mode.
-
-The dated Package D storage-budget/catalog execution report is preserved in
-[GitHub Issue #42](https://github.com/vernikr/moex-spread-lab/issues/42).
+| `data/w1/candles/`, `data/w1/candles-screen/` | normalized `iss-candles.v1` candle JSON; screened copies are the preferred runtime inputs | `active_input` |
+| `data/w1/current-intake.json`, `data/w1/historical-contracts.json` | current contract snapshot and fallback terms; hashed into proof provenance | `active_input` |
+| `data/w1/*-cache/`, `data/benchmark-cache/` | resumable intake caches; never runtime inputs | `rebuildable_cache` |
+| `data/analytics/` | runtime settings, screen/run histories and user state (not market data) | `derived_runtime` |
+| `data-lake/` | verified Parquet mirror of the JSON series with its authoritative `manifest.json` (`market-data-lake.v1`) | derived mirror |
+| `data-lake/raw/` | retained raw ISS response bodies as exact `.json.zst` files | TTL retention |
+| `data-lake/h1-seal.json`, `data-lake/h1-seal.enabled.json` | H1 seal control files: immutable copied records plus activation marker | control |
+| caller-selected root outside `data/` and `data-lake/` (e.g. `../archives`) | verified `.tar.zst` archives, receipts, plans, apply journals, catalogs | `archives_and_evidence` |
+
+The lake manifest is authoritative; a dataset record binds the dataset
+identity, row range, source-page provenance and the exact legacy path plus
+`legacy_sha256` it mirrors. Obsolete catalogs are ignored.
+
+## Bar read contract
+
+Offline readers consume `BarSeries` — normalized candle rows detached from
+storage — through the `BarStore` protocol. `MarketDataStore` routes each legacy
+JSON path:
+
+1. a `*_1h.json` input inside an activated H1 seal reads as `sealed_parquet`;
+2. otherwise a registered Parquet dataset whose record names this exact file
+   and whose recorded `legacy_sha256` still matches the current file reads as
+   `parquet`;
+3. otherwise `legacy_json` reads the `iss-candles.v1` JSON directly.
+
+Callers may project columns; each backend restores the same provenance
+(`source_path`, `source_sha256`, price-proxy semantics), so the physical
+backend never changes normalized output. H1 selection is screen-first: the
+`candles-screen` copy wins while it exists, and a sealed selection keeps
+reading the sealed source after its JSON disappears. A changed source file, an
+unimported series or a missing lake transparently falls back to JSON; offline
+readers never touch the network.
+
+## Incremental refresh
+
+`data-refresh` keeps each retained legacy JSON file and its verified Parquet
+mirror in lockstep:
+
+- a first dataset (or `--full-refresh`) requires `--from-date`; incremental
+  runs derive the start from the stored watermark minus `--overlap-sessions`
+  (default 5) and make zero network requests when the watermark already
+  reaches `--till-date`;
+- fetches are bounded (`--chunk-days`, `--workers`, `--retries`); chunks merge
+  on the candle `begin` key, sort deterministically and publish atomically
+  under an exclusive per-dataset writer lock, then re-run the
+  legacy-versus-Parquet verification;
+- fresh ISS bodies are retained under `data-lake/raw/` with
+  request/response/receipt-time SHA-256 identity; unpinned entries expire
+  after a default 30-day TTL, and `--pin-raw` or `data-pin-raw --entry-id …`
+  protects evidence responses;
+- `data-verify` checks every registered dataset and raw body; `data-compact`
+  rewrites datasets as canonical Zstd Parquet files and refuses an active
+  sealed table; `data-gc --apply` — after its default dry-run — removes only
+  expired unpinned raw bodies and orphans; `data-import-candles` performs a
+  one-off verified import of legacy JSON (`--replace` explicit).
+
+## H1 sealed reads
+
+H1 (60-minute) series may be sealed into immutable Parquet reads:
+
+- `data-h1-stage --plan … --stage | --verify` builds and revalidates an
+  isolated candidate lake (independent `candles/` and `candles-screen/`
+  stores) from a deterministic plan of every `*_1h.json` in both source
+  folders; staging never activates reads and never deletes sources;
+- `data-h1-seal --activate --plan … --candidate …` copies the verified records
+  into `data-lake/h1-seal.json` and binds the seal SHA-256 into
+  `h1-seal.enabled.json`; `--verify` rechecks every sealed path;
+  `--deactivate` restores JSON routing only after every original file and
+  selection is restored;
+- sealed reads verify table and source hashes (cached per
+  inode/size/mtime/ctime signature) and fail closed on missing controls,
+  changed JSON, new preferred screened copies, symlinks or unsealed paths —
+  there is no fallback to JSON or an alternate source while a seal applies;
+- sealing never deletes or rewrites sources; refresh or import into an active
+  sealed table is refused until the seal is deactivated with restored JSON.
+
+## Storage budget and archival
+
+Monitoring is read-only; nothing deletes without an explicit, verified command.
+
+- `storage-budget --root . [--archives-root …] [--max-allocated-bytes N]`
+  reports logical/allocated bytes per disjoint scope (`data`, `data-lake`,
+  external archives) across retention classes — active inputs, rebuildable
+  caches, archive candidates, derived runtime and analysis results, raw and
+  retained lake — plus TTL dry-runs. Exit code 2 signals an exceeded explicit
+  budget; a budget alert triggers review, never deletion.
+- `data-inventory [--fast | --hashes --output …]` builds the pinned SHA-256
+  inventory manifest consumed by archival commands.
+- `data-archive --manifest … --archive … [--apply]` archives only
+  `rebuildable_cache` files into a verified, manifest-embedded tar outside
+  `data/`; sources are removed only after full member verification.
+- `data-archive-candidates` plans, archives and — in a separate maintenance
+  window with writers stopped — applies reviewed archival of the selected
+  non-runtime groups. Every step is plan-bound and revalidated against current
+  file hashes, publishes no-clobber archives and receipts, records a durable
+  apply journal, and requires an advisory lock. Restore into a new empty
+  staging directory and compare restored sizes and SHA-256 against the
+  embedded manifest before copying anything back.
+- `archive-catalog --archive … --review-date … --output …` verifies each
+  archive against its receipt and all member hashes and publishes a dated
+  recovery catalog. Keep archives, receipts, plans, journals and catalogs
+  together; a review date is not an expiry, and recovery archives for removed
+  sources stay protected.

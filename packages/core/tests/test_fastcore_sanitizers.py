@@ -137,7 +137,7 @@ def test_sizing_propagates_funding_key_comparison_errors(field: str) -> None:
         def __hash__(self) -> int:
             return hash(field)
 
-        def __eq__(self, other: object) -> bool:
+        def __eq__(self, _other: object) -> bool:
             raise MemoryError("funding lookup failed")
 
     fastcore = loader.load_fastcore()

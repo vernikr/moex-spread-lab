@@ -129,7 +129,7 @@ def test_failed_atomic_replace_preserves_settings_and_removes_temp(tmp_path, mon
     saved = save_settings(tmp_path, {"validation_percent": 5})
     path = settings_path(tmp_path)
 
-    def fail_replace(source, destination):
+    def fail_replace(*_paths: object) -> None:
         raise OSError("replace failed")
 
     monkeypatch.setattr(settings.os, "replace", fail_replace)

@@ -13,13 +13,12 @@ from typing import Any, cast
 
 from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.contracts import StrategyPlugin, plugin_proof_adapter
-from moex_spread_lab.core.universe import PAIR_UNIVERSE
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
 _STRATEGIES_DIR = Path(__file__).resolve().parent
-# One memo entry: ``(key, registry)``. The key is the strategies-directory listing
-# plus the current ``entry_points`` function object, so a patched discovery source
-# (tests) or a new plugin folder is never served from a stale cache.
+# Memo entry keyed by strategies-dir listing + current entry_points callable so
+# patched discovery sources or added plugin folders never hit a stale cache.
 _DISCOVERY_CACHE: dict[str, object] = {}
 _PRICE_FILL_KEYS = frozenset({"next_open", "next_close", "reference_same_bar"})
 _NON_PLUGIN_SUBPACKAGES = frozenset({"calendar", "pair_screener"})
@@ -57,17 +56,11 @@ class StrategyRegistry:
     def values(self) -> tuple[StrategyPlugin, ...]:
         return tuple(self._plugins.values())
 
-    def items(self) -> tuple[tuple[str, StrategyPlugin], ...]:
-        return tuple(self._plugins.items())
-
     def get(self, strategy_id: str) -> StrategyPlugin:
         try:
             return self._plugins[strategy_id]
         except KeyError as exc:
             raise W0Error(f"Неизвестная стратегия: {strategy_id}") from exc
-
-    def for_universe(self, universe: str) -> tuple[StrategyPlugin, ...]:
-        return tuple(p for p in self._plugins.values() if universe in p.supported_universes)
 
     def as_dict(self) -> dict[str, StrategyPlugin]:
         return dict(self._plugins)
@@ -80,10 +73,15 @@ def _family_counts(plugins: tuple[StrategyPlugin, ...]) -> dict[str, int]:
     return counts
 
 
+def _has_price_fills(plugin: StrategyPlugin) -> bool:
+    return (
+        len(plugin.supported_fills) == len(_PRICE_FILL_KEYS)
+        and frozenset(plugin.supported_fills) == _PRICE_FILL_KEYS
+    )
+
+
 def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     """Opt in only unambiguous calendar price-intent plugins to generic proof."""
-    from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-
     plugins = registry.values()
     counts = _family_counts(plugins)
     return frozenset(
@@ -91,8 +89,7 @@ def calendar_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         for p in plugins
         if plugin_proof_adapter(p) == "calendar_price_intents.v1"
         and p.supported_universes == frozenset({CALENDAR_UNIVERSE})
-        and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
-        and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
+        and _has_price_fills(p)
         and counts[p.family_id] == 1
     )
 
@@ -120,18 +117,14 @@ def daily_pair_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
             )
         )
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
-        and len(p.supported_fills) == len(_PRICE_FILL_KEYS)
-        and frozenset(p.supported_fills) == _PRICE_FILL_KEYS
-        # Third-party plugins opt in only when their family is unambiguous. The fixed pair
-        # strategies are identified by id, so their calendar sibling is no obstacle.
+        and _has_price_fills(p)
+        # Third-party plugins opt in only when their family is unambiguous.
         and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
     )
 
 
 def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
     """Opt in unique, daily short-near settlement-intent carry families."""
-    from moex_spread_lab.core.universe import PAIR_UNIVERSE
-
     plugins = registry.values()
     counts = _family_counts(plugins)
     return frozenset(
@@ -141,8 +134,6 @@ def carry_proof_plugin_ids(registry: StrategyRegistry) -> frozenset[str]:
         and p.supported_universes == frozenset({PAIR_UNIVERSE})
         and p.supported_fills == ("same_day_settlement",)
         and p.requires_daily_bars is True
-        # Third-party plugins opt in only when their family is unambiguous; the
-        # built-in carry engine is identified by id.
         and (p.strategy_id in BUILTIN_STRATEGY_IDS or counts[p.family_id] == 1)
         and bool(p.parameter_schema())
         and all(spec.tunable for spec in p.parameter_schema())
@@ -196,12 +187,6 @@ def _load_subpackage_plugin(
 
 
 def _strategies_dir_signature(strategies_dir: Path) -> tuple[str, ...] | None:
-    """Names of entries beside this module; ``None`` when the directory is unreadable.
-
-    A strategy is a new folder, so this snapshot changes exactly when a plugin folder
-    is added, removed or renamed. Any error degrades to "do not cache" instead of
-    hiding a plugin.
-    """
     try:
         with os.scandir(strategies_dir) as entries:
             return tuple(sorted(entry.name for entry in entries))
@@ -212,13 +197,8 @@ def _strategies_dir_signature(strategies_dir: Path) -> tuple[str, ...] | None:
 def discover_strategies(*, extra_paths: tuple[Path, ...] = ()) -> StrategyRegistry:
     """Auto-discover strategy plugins via ``pkgutil.iter_modules`` and entry points.
 
-    Results are memoized per process (plan S4a): a workspace proof search calls this
-    thousands of times, and every call re-scans all installed distributions for entry
-    points (~5 ms each, the single largest term in the offline proof suite). The memo
-    key is the ``strategies`` directory listing plus the ``entry_points`` function
-    object, so a new plugin folder or a patched discovery source invalidates it.
-    Callers that install an entry point at runtime (``refresh=True``) call
-    :func:`clear_discovery_cache` first. ``extra_paths`` callers always scan directly.
+    Memoized per process by directory signature and ``entry_points`` identity; callers
+    adding entry points at runtime call :func:`clear_discovery_cache` first.
     """
     if extra_paths:
         return _discover_uncached(extra_paths)

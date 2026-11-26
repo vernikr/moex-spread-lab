@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
-import importlib.metadata
 import math
 from array import array
 from collections.abc import Mapping
@@ -11,15 +9,7 @@ from datetime import date, datetime
 from typing import Any, cast
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
-from moex_spread_lab.core.contracts import (
-    CompatibilityVerdict,
-    EntryBandPoint,
-    InstrumentContext,
-    ParameterSpec,
-    StrategyIntentRun,
-    StrategyPlugin,
-    WindowSnapshot,
-)
+from moex_spread_lab.core.contracts import CompatibilityVerdict, ParameterSpec, WindowSnapshot
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
@@ -30,8 +20,6 @@ from .registry import (
     daily_pair_proof_plugin_ids,
     discover_strategies,
 )
-
-_importlib_metadata = importlib.metadata
 
 PRICE_FILLS: dict[str, tuple[int, str]] = {
     "next_open": (1, "open"),
@@ -72,7 +60,7 @@ def population_rolling_stats(values: list[float]) -> tuple[float, float]:
     """Population mean and standard deviation (used by ordinary pair mean reversion)."""
     n = len(values)
     mean = sum(values) / n
-    variance = sum([(value - mean) ** 2 for value in values]) / n
+    variance = sum((value - mean) ** 2 for value in values) / n
     return mean, math.sqrt(variance)
 
 
@@ -150,44 +138,25 @@ def check_calendar_liquidity(
     window: WindowSnapshot, settings: ResearchSettings | None
 ) -> tuple[CompatibilityVerdict | None, list[dict[str, Any]]]:
     """Shared 1h/1d calendar window liquidity check for calendar plugins."""
-    if window.timeframe == "1h":
+    hourly = window.timeframe == "1h"
+    if hourly:
         eligible = [
             r for r in window.rows if r.get("volume_eligible", (r.get("min_volume") or 0) > 0)
         ]
-        if len(eligible) < 2:
-            return (
-                CompatibilityVerdict(
-                    False, "fewer than two causally liquidity-eligible hourly observations"
-                ),
-                [],
-            )
-        if (
-            settings is not None
-            and not settings.allow_failed_volume
-            and not window.extra.get("tradable_every_session", True)
-        ):
-            return (
-                CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении."),
-                [],
-            )
-        return None, eligible
-    eligible = [r for r in window.rows if (r.get("min_volume") or 0) > 0]
+        too_few = "fewer than two causally liquidity-eligible hourly observations"
+    else:
+        eligible = [r for r in window.rows if (r.get("min_volume") or 0) > 0]
+        too_few = "fewer than two positive-volume calendar-spread observations"
     if len(eligible) < 2:
-        return (
-            CompatibilityVerdict(
-                False, "fewer than two positive-volume calendar-spread observations"
-            ),
-            [],
+        return CompatibilityVerdict(False, too_few), []
+    if settings is not None and not settings.allow_failed_volume:
+        failed_volume = (
+            not window.extra.get("tradable_every_session", True)
+            if hourly
+            else min(float(r["min_volume"]) for r in eligible) < MIN_DAILY_VOLUME
         )
-    if (
-        settings is not None
-        and not settings.allow_failed_volume
-        and min(float(r["min_volume"]) for r in eligible) < MIN_DAILY_VOLUME
-    ):
-        return (
-            CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении."),
-            [],
-        )
+        if failed_volume:
+            return CompatibilityVerdict(False, "Не пройдено правило ликвидности на обучении."), []
     return None, eligible
 
 
@@ -241,14 +210,7 @@ __all__ = [
     "PRICE_FILLS",
     "REFERENCE_WARNING",
     "ZSCORE_CALENDAR_OPTIONS",
-    "CompatibilityVerdict",
-    "EntryBandPoint",
-    "InstrumentContext",
-    "ParameterSpec",
-    "StrategyIntentRun",
-    "StrategyPlugin",
     "StrategyRegistry",
-    "WindowSnapshot",
     "calendar_price",
     "calendar_proof_plugin_ids",
     "calendar_row_buffers",
@@ -258,7 +220,6 @@ __all__ = [
     "daily_pair_proof_plugin_ids",
     "discover_strategies",
     "elapsed_calendar_days",
-    "importlib",
     "make_calendar_trade",
     "population_rolling_stats",
     "row_ts_days",

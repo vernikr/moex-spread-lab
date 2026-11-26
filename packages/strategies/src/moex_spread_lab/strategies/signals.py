@@ -1,8 +1,4 @@
-"""Signal-date entry boundaries in the raw spread's own price units.
-
-Delegates per-strategy causal band calculation to the registered ``StrategyPlugin``
-so adding new strategy folders never requires editing shared signal attachment logic.
-"""
+"""Signal-date entry boundaries in the raw spread's own price units."""
 
 from __future__ import annotations
 
@@ -18,21 +14,20 @@ from .base import (
     discover_strategies,
 )
 
+_SETTLEMENT_FILLS = ("same_day_settlement",)
+
 
 def pair_fill(
     request: dict[str, Any], strategy: str, *, default_price_fill: str = "reference_same_bar"
 ) -> str:
     registry = discover_strategies()
     plugin = registry.get(strategy) if strategy in registry else None
-    if plugin is not None and plugin.supported_fills == ("same_day_settlement",):
-        default = "same_day_settlement"
-        allowed: tuple[str, ...] | dict[str, Any] = plugin.supported_fills
-    elif strategy == "funding_only":
-        default = "same_day_settlement"
-        allowed = ("same_day_settlement",)
-    else:
-        default = default_price_fill
-        allowed = plugin.supported_fills if plugin is not None else PRICE_FILLS
+    allowed: tuple[str, ...] | dict[str, Any] = (
+        plugin.supported_fills
+        if plugin is not None
+        else (_SETTLEMENT_FILLS if strategy == "funding_only" else PRICE_FILLS)
+    )
+    default = _SETTLEMENT_FILLS[0] if allowed == _SETTLEMENT_FILLS else default_price_fill
     fill = request.get("fill", default)
     if not isinstance(fill, str) or fill not in allowed:
         raise W0Error("Выбранный режим исполнения не поддерживается этой стратегией.")
@@ -42,16 +37,12 @@ def pair_fill(
 def attach_entry_levels(proof: dict[str, Any]) -> None:
     """Attach two causal entry bands without changing any signal, trade or indicator."""
     selection = proof["selection"]
-    strategy = selection["strategy"]
-    native = proof.get("universe") == "calendar_native"
-    params = selection["parameters"]
     fill = selection.get("fill", "reference_same_bar")
     reference = fill == "reference_same_bar"
     proof["execution_reference"] = selection["execution_reference"] = reference
 
-    registry = discover_strategies()
-    plugin = registry.get(strategy)
-    if plugin.supported_fills == ("same_day_settlement",):
+    plugin = discover_strategies().get(selection["strategy"])
+    if plugin.supported_fills == _SETTLEMENT_FILLS:
         proof["signal_levels"] = {
             "kind": "not_price_based",
             "note": NON_PRICE_SIGNAL_NOTE_RU,
@@ -64,10 +55,14 @@ def attach_entry_levels(proof: dict[str, Any]) -> None:
         "note": ENTRY_BAND_NOTE_RU,
         "fill_delay_bars": 0 if reference else 1,
     }
-    far_point = 1.0 if native else float(proof["instrument"]["far_point_value_rub"])
+    far_point = (
+        1.0
+        if proof.get("universe") == "calendar_native"
+        else float(proof["instrument"]["far_point_value_rub"])
+    )
     bands = plugin.compute_entry_bands(
         proof["series"],
-        params,
+        selection["parameters"],
         fill,
         far_point_value_rub=far_point,
     )

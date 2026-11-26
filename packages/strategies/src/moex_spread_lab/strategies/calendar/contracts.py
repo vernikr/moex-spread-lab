@@ -73,7 +73,7 @@ def ruonia(benchmark_cache: Path) -> tuple[list[str], dict[str, float]]:
     return sorted(rates), rates
 
 
-def _is_pos_num(v: Any) -> bool:
+def is_pos_num(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0
 
 
@@ -100,7 +100,7 @@ def terms(contracts_path: Path, assets: tuple[str, ...]) -> dict[str, dict[str, 
             continue
         row = live[0]
         if not all(
-            _is_pos_num(row.get(k))
+            is_pos_num(row.get(k))
             for k in ("tick_value", "tick_size", "initial_margin", "settlement")
         ):
             continue

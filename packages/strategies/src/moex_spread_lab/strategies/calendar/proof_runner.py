@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from copy import deepcopy
 from typing import Any, TypedDict, cast
 
@@ -13,7 +12,7 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
 from ..base import StrategyRegistry
-from ..calendar_eval import FILLS, account_trades, strategy_runner
+from ..calendar_eval import FILLS, account_trades
 from .catalog_builder import build_1d_catalog, build_h1_catalog, enrich_proof_window_and_notes
 from .contracts import ASSETS, STRATEGIES, positive_spread_volume_rows, zscore_options
 from .intents import calendar_intent_trades
@@ -150,43 +149,6 @@ def _validate_plugin_params(
     return plugin_params
 
 
-def _validate_proof_params(
-    asset: str,
-    pair: str,
-    timeframe: str,
-    strategy: str,
-    raw_params: Any,
-    generic: bool,
-    registry: StrategyRegistry,
-) -> tuple[dict[str, Any], float, dict[str, Any] | None]:
-    if not isinstance(raw_params, dict):
-        raise W0Error("unknown strategy parameter")
-    raw_params = cast(dict[str, Any], raw_params)
-    options: dict[str, Any] = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset)}
-    if generic:
-        plugin_params = _validate_plugin_params(
-            asset, pair, timeframe, strategy, raw_params, registry
-        )
-        options["window"] = int(options["window"])
-        return options, 1.0, plugin_params
-    if set(raw_params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
-        raise W0Error("unknown strategy parameter")
-    for key in ("entry_z", "exit_z", "window"):
-        if key in raw_params:
-            options[key] = raw_params[key]
-    threshold = float(raw_params.get("threshold_pp", 1.0))
-    if not all(
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value > 0
-        for value in (*options.values(), threshold)
-    ):
-        raise W0Error("strategy parameters must be positive finite numbers")
-    options["window"] = int(options["window"])
-    return options, threshold, None
-
-
 def _prepare_analysis_rows(
     window: dict[str, Any],
     timeframe: str,
@@ -222,15 +184,9 @@ def _resolve_calendar_params(
     timeframe: str,
     strategy: str,
     raw_params: dict[str, Any],
-    generic: bool,
     registry: StrategyRegistry,
-) -> tuple[dict[str, Any], float, dict[str, Any] | None]:
-    """Resolve the historical envelope and the plugin parameter map for one proof replay."""
-    if not generic:
-        options, threshold, _ = _validate_proof_params(
-            asset, pair, timeframe, strategy, raw_params, False, registry
-        )
-        return options, threshold, None
+) -> tuple[dict[str, Any], float, dict[str, Any]]:
+    """Resolve the parameter envelope and the validated plugin map for one proof replay."""
     plugin_params = _validate_plugin_params(asset, pair, timeframe, strategy, raw_params, registry)
     if strategy not in STRATEGIES:
         options = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset), **plugin_params}
@@ -238,9 +194,14 @@ def _resolve_calendar_params(
         return options, 1.0, plugin_params
     # Built-ins keep their historical envelope; the plugin re-validates exactly that map so the
     # declared parameters (and therefore the payload) stay bit-for-bit identical.
-    options, threshold, _ = _validate_proof_params(
-        asset, pair, timeframe, strategy, raw_params, False, registry
+    options = {"entry_z": 1.5, "exit_z": 0.5, **zscore_options(asset)}
+    if set(raw_params) - {"entry_z", "exit_z", "window", "threshold_pp"}:
+        raise W0Error("unknown strategy parameter")
+    options.update(
+        {key: raw_params[key] for key in ("entry_z", "exit_z", "window") if key in raw_params}
     )
+    threshold = float(raw_params.get("threshold_pp", 1.0))
+    options["window"] = int(options["window"])
     plugin = registry.get(strategy)
     context = _instrument_context(asset, pair, timeframe)
     names = tuple(spec.name for spec in plugin.parameter_schema(context))
@@ -267,7 +228,6 @@ def execute_calendar_proof(
     fill_label: str = req["fill_label"]
     quantity: int = req["quantity"]
     slippage: float = req["slippage"]
-    generic: bool = req["generic"]
     registry: StrategyRegistry = req["registry"]
     through: str | None = req.get("through")
     initial_capital: float = req.get("initial_capital", INITIAL_CAPITAL)
@@ -275,14 +235,13 @@ def execute_calendar_proof(
     sizing_intents: bool = bool(req.get("sizing_intents", False))
     cache: dict[str, Any] | None = req.get("cache")
 
-    delay, fill = next((d, f) for label, d, f in FILLS if label == fill_label)
-    # ``req["raw_params"]`` is the selection map the historical envelope and the payload used to
-    # resolve thresholds from. The built-in calendar plugins declare the same adapter, so they
-    # join the intent pipeline while still being handed exactly that map: their own schema fills
+    fill = next(f for label, _delay, f in FILLS if label == fill_label)
+    # Built-in calendar plugins declare the same adapter as external ones, so they join the
+    # intent pipeline while still being handed exactly this parameter map: their own schema fills
     # any default (window, entry_z, exit_z, threshold_pp) before the intents are produced.
     raw_params: dict[str, Any] = cast(dict[str, Any], req["raw_params"])
     options, threshold, plugin_params = _resolve_calendar_params(
-        asset, pair, timeframe, strategy, raw_params, generic, registry
+        asset, pair, timeframe, strategy, raw_params, registry
     )
     profile = {**tariff_profile(slippage), "tariff_group": ASSETS[asset]["group"]}
     z_cache = cache.setdefault("z", {}) if cache is not None else None
@@ -291,41 +250,25 @@ def execute_calendar_proof(
         window, timeframe, fill, quantity, through, cache
     )
     native_order = bool(window.get("native_spread_order", True))
-    need_plugin_params = generic and strategy not in STRATEGIES
-    if generic:
-        assert plugin_params is not None
-        snapshot = intent_snapshot(
-            window,
-            analysis_rows,
-            asset=asset,
-            pair=pair,
-            timeframe=timeframe,
-            market={
-                "capital": initial_capital,
-                "slippage": slippage,
-                "native_order": native_order,
-                "assets": ASSETS,
-                "shared_cache": (z_cache, z_cache_key),
-            },
-        )
-        plugin = registry.get(strategy)
-        verdict = plugin.check_compatibility(deepcopy(snapshot))
-        if not verdict.compatible:
-            raise W0Error(verdict.reason or "Плагин несовместим с выбранным окном.")
-        per_pair = {pair: calendar_intent_trades(plugin, snapshot, plugin_params, fill_label)}
-    else:
-        runner = strategy_runner(
-            strategy,
-            delay=delay,
-            fill=fill,
-            close_at_end=True,
-            skip_dividend_windows_in_zscore=False,
-            threshold=threshold,
-            zscore_options=options,
-            z_cache=z_cache,
-            z_cache_key=z_cache_key,
-        )
-        per_pair = {pair: runner(analysis_rows)}
+    snapshot = intent_snapshot(
+        window,
+        analysis_rows,
+        asset=asset,
+        pair=pair,
+        timeframe=timeframe,
+        market={
+            "capital": initial_capital,
+            "slippage": slippage,
+            "native_order": native_order,
+            "assets": ASSETS,
+            "shared_cache": (z_cache, z_cache_key),
+        },
+    )
+    plugin = registry.get(strategy)
+    verdict = plugin.check_compatibility(deepcopy(snapshot))
+    if not verdict.compatible:
+        raise W0Error(verdict.reason or "Плагин несовместим с выбранным окном.")
+    per_pair = {pair: calendar_intent_trades(plugin, snapshot, plugin_params, fill_label)}
     if metrics_only and sizing_intents:
         account: dict[str, Any] = {
             "trade_list": [
@@ -370,8 +313,7 @@ def execute_calendar_proof(
         series_cache=series_cache,
         series_key=series_key,
     )
-    if need_plugin_params:
-        assert plugin_params is not None
+    if strategy not in STRATEGIES:
         payload["selection"]["parameters"] = plugin_params
     price_source = window.get("price_source", "native_daily_spread")
     payload["selection"].update({"timeframe": timeframe, "price_source": price_source})

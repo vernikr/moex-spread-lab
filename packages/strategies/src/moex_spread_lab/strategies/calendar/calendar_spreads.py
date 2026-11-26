@@ -33,8 +33,6 @@ from .h1_windows import (
     finite_num,
 )
 from .loaders import cached_till_date, fetch_inputs
-from .proof_ledger import elapsed_days
-from .proof_payload import clean_payload, rel_pct
 from .proof_runner import build_1d_catalog, build_h1_catalog
 from .study import (
     ASSETS,
@@ -342,14 +340,11 @@ __all__ = [
     "account_trades",
     "build_windows",
     "cached_till_date",
-    "clean_payload",
     "contract_chain",
-    "elapsed_days",
     "evaluate_variants",
     "fetch_inputs",
     "positive_spread_volume_rows",
     "read_benchmark",
-    "rel_pct",
     "run_calendar_study",
     "spread_id",
     "stress_ok",

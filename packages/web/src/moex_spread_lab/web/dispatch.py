@@ -1,22 +1,20 @@
-"""GET/POST dispatch for the loopback server, plus the settings and legacy routes.
+"""GET/POST dispatch for the loopback server and the settings/timeframe routes.
 
 `dispatch_get` answers API reads and static assets; `dispatch_post` validates the body
-and hands the selection to the settings, proof or legacy screener handlers. The
-global-settings/timeframe routes and the legacy S2 pair-screener APIs live here; the
-proof routes stay in `routes_proof` and the loopback diagnostics in `routes_dev`.
+and hands the selection to the settings or proof handlers. The global-settings and
+timeframe routes live here; the proof routes stay in `routes_proof` and the loopback
+diagnostics in `routes_dev`.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
 from moex_spread_lab.core.settings import read_settings, save_settings
-from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
+from moex_spread_lab.core.timeframes import timeframe_options
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof.screener_search import optimize, screen_table
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
 
 from .routes_dev import health, probe
@@ -27,10 +25,7 @@ from .routes_proof import (
     handle_post_proof,
 )
 
-LEGACY_POST_ROUTES = frozenset({"/api/run", "/api/screen", "/api/optimize"})
-ALL_POST_ROUTES = (
-    frozenset({"/api/settings", "/api/dev/probe"}) | LEGACY_POST_ROUTES | PROOF_POST_ROUTES
-)
+ALL_POST_ROUTES = frozenset({"/api/settings", "/api/dev/probe"}) | PROOF_POST_ROUTES
 _MAX_BODY = 192 * 1024
 _SMALL_BODY = 8192
 
@@ -52,57 +47,8 @@ def handle_post_settings(path: str, selection: Any, store: Any) -> tuple[bool, A
     return False, None
 
 
-def handle_get_legacy(
-    path: str,
-    store: Any,
-    *,
-    catalog_fn: Callable[..., dict[str, Any]],
-) -> tuple[bool, Any]:
-    """Dispatch GET ``/api/catalog``, ``/api/runs``, and ``/api/searches``."""
-    if path == "/api/catalog":
-        settings = read_settings(store.inputs.root)
-        return True, catalog_fn(
-            store.inputs,
-            initial_capital=settings["initial_capital_rub"],
-            timeframe=settings["timeframe"],
-        )
-    if path == "/api/runs":
-        return True, store.list_runs()
-    if path == "/api/searches":
-        return True, store.list_searches()
-    return False, None
-
-
-def handle_post_legacy(
-    path: str,
-    selection: Any,
-    store: Any,
-    *,
-    build_result_fn: Callable[..., dict[str, Any]],
-) -> tuple[bool, Any]:
-    """Dispatch POST ``/api/run``, ``/api/screen``, and ``/api/optimize``."""
-    if path not in LEGACY_POST_ROUTES:
-        return False, None
-    if path == "/api/run":
-        result = build_result_fn(store.inputs, selection)
-        store.save(result)
-        return True, result
-    active_timeframe = get_timeframe(read_settings(store.inputs.root)["timeframe"])
-    if active_timeframe.intraday:
-        raise ScreenerError(
-            "Пакетный screener пока работает только на 1d; для выбранного интервала используйте pair-proof."
-        )
-    if path == "/api/screen":
-        result = screen_table(store.inputs, selection)
-        store.save_screen(result)
-        return True, result
-    result = optimize(store.inputs, selection)
-    store.save_search(result)
-    return True, result
-
-
-def dispatch_get(handler: Any, store: Any, path: str, catalog_fn: Any) -> None:
-    """Answer one GET: static asset, then settings/proof/legacy API reads."""
+def dispatch_get(handler: Any, store: Any, path: str) -> None:
+    """Answer one GET: static asset, then the settings and proof API reads."""
     if path == "/api/dev/health":
         handler.send_json(200, health(store, handler.server_port()))
         return
@@ -112,7 +58,6 @@ def dispatch_get(handler: Any, store: Any, path: str, catalog_fn: Any) -> None:
         for reader in (
             lambda: handle_get_settings(path, store),
             lambda: handle_get_proof(path, store),
-            lambda: handle_get_legacy(path, store, catalog_fn=catalog_fn),
         ):
             handled, payload = reader()
             if handled:
@@ -141,7 +86,7 @@ class _UnsupportedMediaType(Exception):
     """Raised when the POST body is not declared as JSON."""
 
 
-def _post_result(handler: Any, store: Any, path: str, selection: Any, build_result: Any):
+def _post_result(handler: Any, store: Any, path: str, selection: Any):
     """Run the matching route module; returns `(already_sent, result)`."""
     if path == "/api/dev/probe":
         return False, probe(store, selection, handler.check_connected)
@@ -158,20 +103,17 @@ def _post_result(handler: Any, store: Any, path: str, selection: Any, build_resu
         send_json=handler.send_json,
         check_connected=handler.check_connected,
     )
-    if handled:
-        return already_sent, result
-    handled, result = handle_post_legacy(path, selection, store, build_result_fn=build_result)
-    return False, result
+    return already_sent, result
 
 
-def dispatch_post(handler: Any, store: Any, path: str, build_result: Any) -> None:
+def dispatch_post(handler: Any, store: Any, path: str) -> None:
     """Answer one POST with validated framing, then the first route that handles it."""
     if path not in ALL_POST_ROUTES:
         handler.send_json(404, {"error": "not found"})
         return
     try:
         selection = _read_selection(handler, path)
-        already_sent, result = _post_result(handler, store, path, selection, build_result)
+        already_sent, result = _post_result(handler, store, path, selection)
     except _UnsupportedMediaType:
         handler.send_json(415, {"error": "JSON body required"})
         return

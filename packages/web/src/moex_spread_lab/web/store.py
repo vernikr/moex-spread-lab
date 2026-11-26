@@ -50,12 +50,6 @@ class ScreenerStore:
             return []
         return [json.loads(line) for line in lines[-20:] if line]
 
-    def list_runs(self) -> list[dict[str, Any]]:
-        return self._recent(self.inputs.history)
-
-    def list_searches(self) -> list[dict[str, Any]]:
-        return self._recent(self.inputs.search_history)
-
     def _save(self, path: Path, result: dict[str, Any]) -> None:
         with self.lock:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,20 +58,6 @@ class ScreenerStore:
             record = {**result, "recorded_at": datetime.now(UTC).isoformat()}
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
-
-    def save(self, result: dict[str, Any]) -> None:
-        self._save(self.inputs.history, result)
-
-    def save_screen(self, result: dict[str, Any]) -> None:
-        compact = {key: result[key] for key in ("run_id", "schema_version", "selection")}
-        compact["pairs"] = [
-            {key: row[key] for key in ("id", "status", "metrics", "evaluation") if key in row}
-            for row in result["pairs"]
-        ]
-        self._save(self.inputs.screen_history, compact)
-
-    def save_search(self, result: dict[str, Any]) -> None:
-        self._save(self.inputs.search_history, result)
 
     def save_proof_search(self, result: dict[str, Any]) -> None:
         self._save(self.inputs.history.parent / "proof-searches.jsonl", result)

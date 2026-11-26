@@ -1,7 +1,8 @@
 """Assemble the `execution-proof.v1` payload shared by both pair strategies.
 
-`screener_search` enriches the mean-reversion payload with tuning screens; the
-funding engine and the compatibility shim call it directly.
+The pair strategies and the funding engine fill the shared structs; the retired S2
+`screener_search` shim that used to enrich the mean-reversion payload was deleted on
+2026-11-26 (issue #243).
 """
 
 from __future__ import annotations

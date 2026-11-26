@@ -4,7 +4,7 @@ The local workbench evaluates ordinary pairs and native calendar spreads on cach
 
 ## Homepage, automatic parameters and stability lamps (2026-11-18)
 
-`/` and `/proof` serve the same screen and accept the same deep links. The old S2 homepage and its back-link have been removed. Its compatibility API (`/api/optimize`) still implements the original hand-coded neighborhood grid; it is **not** used by the proof UI.
+`/` and `/proof` serve the same screen and accept the same deep links. The old S2 homepage and its back-link have been removed. Its compatibility API (`/api/optimize` with the hand-coded neighborhood grid, plus `/api/screen`, `/api/run`, `/api/catalog`, `/api/runs` and `/api/searches`) was **retired on 2026-11-26** with `proof/screener_search.py` and the `moex_spread_lab.screener_search` shim (issue #243); the proof UI never called it.
 
 ### Scope and compatibility
 
@@ -63,7 +63,7 @@ Optional Chromium regressions (synthetic data): install Chromium with `uv run --
 - **Настройки → Сид случайности** is one project-wide research preference, `random_seed`, default **0**, stored with the split/screens/slippage/capital. The UI/API accept an integer **0–2,147,483,647**; strings, booleans, floats and out-of-range values are rejected without replacing the file. Old settings files receive the default without being rewritten; partial saves preserve every other preference.
 - The seed is the base for **every** random choice in the project, today the Optuna TPESampler proposals. A non-zero seed is used verbatim, so the same seed reproduces the same proposals and the same winner. `0` means "no fixed seed": a fresh base seed is drawn once per run, so a repeated run may propose different parameters and reach a different winner. The drawn base seed is reported as `seed_used` next to the configured `seed` in the search metadata, so any run can be replayed by pinning that value.
 - One base seed is drawn per run; each strategy family derives a stable child seed from it, so two families never propose the same parameter sequence while the whole run stays reproducible from the base.
-- The **10k excess-drawdown and 15k shortfall limits relative to LQDT no longer reject a strategy**. They are not enforced in the proof search, not enforced in the legacy S2 grid (`/api/screen`, `/api/optimize`) and no longer pause new entries inside the replay. A candidate that falls behind LQDT stays admissible and is scored by its measured annualized excess over LQDT; the drawdown, the shortfall and the free-cash path stay visible in the proof, the ledger and the reported summary.
+- The **10k excess-drawdown and 15k shortfall limits relative to LQDT no longer reject a strategy**. They are not enforced in the proof search, not enforced in the legacy S2 grid (retired with the rest of the S2 surface on 2026-11-26) and no longer pause new entries inside the replay. A candidate that falls behind LQDT stays admissible and is scored by its measured annualized excess over LQDT; the drawdown, the shortfall and the free-cash path stay visible in the proof, the ledger and the reported summary.
 - Only **negative free cash** still stops new entries inside a replay: without free cash no margin can be posted. A cash shortfall still invalidates scoring for the affected window; it never injects money.
 - These are **research-hypothesis changes only**. They do not change the pilot's approved funding, emergency-money rules, the fixed RUB 5k buffers / 10k risk trigger / 15k shortfall boundary, broker authority, or any statement about executable returns. The workbench remains an offline research tool without a broker connection or a shared-capital basket.
 
@@ -74,7 +74,7 @@ Optional Chromium regressions (synthetic data): install Chromium with `uv run --
 
 ## Payload and compatibility
 
-`ProofService` dispatches `/api/proof/*` to `pair_screen` or `calendar_native` (the default if `universe` is omitted). `execution-proof.v1` extends `calendar-proof.v1` with a common `series`, `trades`, `ledger`, `summary`, `instrument`, and hashed `provenance`. Deep links carry only `universe`, `pair`, `asset`, and `strategy`. Raw proof and legacy `/api/run` retain their original gates.
+`ProofService` dispatches `/api/proof/*` to `pair_screen` or `calendar_native` (the default if `universe` is omitted). `execution-proof.v1` extends `calendar-proof.v1` with a common `series`, `trades`, `ledger`, `summary`, `instrument`, and hashed `provenance`. Deep links carry only `universe`, `pair`, `asset`, and `strategy`. Raw proof retains its original gates; the legacy `/api/run` route no longer exists.
 
 Charts use vendored Lightweight Charts 5.3.0 (Apache-2.0), served same-origin without a CDN. The evidence panel and CSV expose run ID, selection, price role and provenance. Calendar `far_expiry` requires a matching current-intake record; the calendar UI takes its observation count from the series.
 

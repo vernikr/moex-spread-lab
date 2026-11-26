@@ -10,8 +10,7 @@ from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from moex_spread_lab.data.universe import HISTORICAL_PERPETUAL_PAIRS, HISTORY_WINDOWS, PAIRS
-from moex_spread_lab.proof.screener_search import screen_table
+from moex_spread_lab.data.universe import HISTORICAL_PERPETUAL_PAIRS, HISTORY_WINDOWS
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerError,
@@ -227,42 +226,6 @@ class ScreenerAppTests(unittest.TestCase):
             build_result(self.inputs, {**base, "pair": "GLDRUBF/GLZ6"})["run_id"],
         )
 
-    def test_table_applies_one_rule_to_all_rows_and_withholds_short_history(self):
-        table = screen_table(
-            self.inputs,
-            {
-                "strategy": "mean_reversion",
-                "parameters": {"lookback": 15, "entry_z": 1.5, "exit_z": 0.4},
-                "slippage_ticks": 1.0,
-            },
-        )
-        rows = {row["id"]: row for row in table["pairs"]}
-        self.assertGreaterEqual(len(rows), 12)
-        self.assertEqual(rows["CNYRUBF/CRZ6"]["status"], "short_history")
-        self.assertEqual(rows["GLDRUBF/GLZ6"]["status"], "short_history")
-        self.assertIsNone(rows["CNYRUBF/CRZ6"]["metrics"]["annualized_excess_pp"])
-        self.assertEqual(rows["GLDRUBF/GLZ6"]["chart"][0]["strategy_index"], 100)
-        self.assertTrue(all("rub" not in key.lower() for key in rows["GLDRUBF/GLZ6"]["metrics"]))
-        self.assertEqual(rows["CRZ6/CRH7"]["status"], "unavailable")
-
-    def test_legacy_manual_run_and_table_use_the_same_global_share(self):
-        from moex_spread_lab.core.settings import save_settings
-
-        save_settings(self.root, {"validation_percent": 20})
-        selection = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
-        result = build_result(self.inputs, selection)
-        e = result["evaluation"]
-        self.assertEqual(e["result_basis"], "validation")
-        self.assertEqual(e["observations"], {"training": 40, "validation": 10})
-        ledger = result["daily"]
-        self.assertAlmostEqual(
-            e["result"]["excess_rub"], ledger[-1]["X"] - ledger[39]["X"], delta=0.02
-        )
-        table = screen_table(self.inputs, {"strategy": "mean_reversion"})
-        row = next(r for r in table["pairs"] if r["id"] == selection["pair"])
-        self.assertEqual(row["evaluation"]["periods"], e["periods"])
-        self.assertIsNone(row["evaluation"]["result"]["annualized_excess_pp"])
-
     def test_pair_with_a_thin_day_is_excluded_and_quantity_scales_margin(self):
         path = self.inputs.candles("GLDRUBF/GLZ6", "GLZ6")
         payload = json.loads(path.read_text())
@@ -272,8 +235,6 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(entry["status"], "excluded_thin_leg")
         self.assertEqual(entry["min_leg_daily_volume"], 10)
         self.assertFalse(any(entry["strategies"].values()))
-        table = screen_table(self.inputs, {"strategy": "mean_reversion"})
-        self.assertEqual({r["id"]: r for r in table["pairs"]}["GLDRUBF/GLZ6"]["status"], "excluded")
         base = {"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
         one = build_result(self.inputs, base)
         two = build_result(self.inputs, {**base, "quantity": 2})
@@ -381,71 +342,28 @@ class ScreenerAppTests(unittest.TestCase):
         with self.assertRaises(ScreenerError):
             build_result(self.inputs, {"pair": "UNKNOWN/PAIR", "strategy": "mean_reversion"})
 
-    def test_loopback_http_and_saved_result(self):
+    def test_retired_s2_routes_answer_not_found(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        connection.request("GET", "/api/catalog")
-        response = connection.getresponse()
-        self.assertEqual(response.status, 200)
-        self.assertIn("pairs", json.loads(response.read()))
-        connection.request("GET", "/api/timeframes")
-        timeframes_response = connection.getresponse()
-        self.assertEqual(timeframes_response.status, 200)
-        timeframes = json.loads(timeframes_response.read())
-        self.assertEqual([item["id"] for item in timeframes], ["1h", "1d"])
-        hourly = next(item for item in timeframes if item["id"] == "1h")
-        self.assertTrue(hourly["intraday"])
-        self.assertTrue(hourly["supports_pair_proof"])
-        self.assertTrue(hourly["supports_calendar"])
-        self.assertFalse(hourly["supports_funding_strategy"])
-        connection.request("GET", "/api/settings")
-        settings_response = connection.getresponse()
-        self.assertEqual(settings_response.status, 200)
-        self.assertEqual(json.loads(settings_response.read())["timeframe"], "1d")
-        payload = json.dumps({"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"})
-        headers = {
-            "Content-Type": "application/json",
-            "Origin": f"http://127.0.0.1:{server.server_port}",
-        }
-        connection.request("POST", "/api/run", payload, headers)
-        response = connection.getresponse()
-        self.assertEqual(response.status, 200)
-        result = json.loads(response.read())
-        self.assertEqual(len(ScreenerStore(self.inputs).list_runs()), 1)
-        connection.request("POST", "/api/run", payload, headers)
-        repeated = connection.getresponse()
-        self.assertEqual(repeated.status, 200)
-        repeated.read()
-        screen_payload = json.dumps(
-            {
-                "strategy": "mean_reversion",
-                "parameters": {"lookback": 20, "entry_z": 2, "exit_z": 0.5},
-            }
-        )
-        connection.request("POST", "/api/screen", screen_payload, headers)
-        screen_response = connection.getresponse()
-        self.assertEqual(screen_response.status, 200)
-        self.assertEqual(len(json.loads(screen_response.read())["pairs"]), len(PAIRS))
-        self.assertEqual(len(ScreenerStore(self.inputs)._recent(self.inputs.screen_history)), 1)
-        search_payload = json.dumps({"pairs": ["CNYRUBF/CRZ6"], "strategy": "mean_reversion"})
-        connection.request("POST", "/api/optimize", search_payload, headers)
-        short_history = connection.getresponse()
-        self.assertEqual(short_history.status, 400)
-        self.assertIn("common dates", json.loads(short_history.read())["error"])
-        settings_payload = json.dumps({"timeframe": "1h"})
-        connection.request("POST", "/api/settings", settings_payload, headers)
-        saved_settings = connection.getresponse()
-        self.assertEqual(saved_settings.status, 200)
-        self.assertEqual(json.loads(saved_settings.read())["timeframe"], "1h")
-        connection.request("GET", "/api/settings")
-        self.assertEqual(json.loads(connection.getresponse().read())["timeframe"], "1h")
+        origin = f"http://127.0.0.1:{server.server_port}"
+        headers = {"Content-Type": "application/json", "Origin": origin}
+
+        def call(method, path, body=None):
+            connection.request(method, path, body, headers)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+
+        for path in ("/api/catalog", "/api/runs", "/api/searches"):
+            self.assertEqual(call("GET", path), (404, {"error": "not found"}))
+        for path in ("/api/run", "/api/screen", "/api/optimize"):
+            self.assertEqual(call("POST", path, "{}"), (404, {"error": "not found"}))
+        self.assertEqual(call("GET", "/api/timeframes")[0], 200)
+        self.assertEqual(call("GET", "/api/settings")[0], 200)
         connection.close()
-        self.assertEqual(len(ScreenerStore(self.inputs).list_runs()), 1)
-        self.assertEqual(result["run_id"], ScreenerStore(self.inputs).list_runs()[0]["run_id"])
 
     def test_http_rejects_cross_origin_and_network_fallback(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
@@ -456,7 +374,7 @@ class ScreenerAppTests(unittest.TestCase):
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
         connection.request(
             "POST",
-            "/api/run",
+            "/api/proof/run",
             "{}",
             {"Content-Type": "application/json", "Origin": "https://untrusted.example"},
         )
@@ -474,12 +392,13 @@ class ScreenerAppTests(unittest.TestCase):
         from moex_spread_lab.web import dispatch, routes_proof, server, store
 
         web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
-        legacy_users = [
+        retired_refs = [
             path.name
             for path in sorted(web_src.rglob("*.py"))
             if "web_legacy" in path.read_text(encoding="utf-8")
+            or "proof.screener_search" in path.read_text(encoding="utf-8")
         ]
-        self.assertEqual(legacy_users, [])
+        self.assertEqual(retired_refs, [])
         self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
         self.assertIs(routes_proof.ScreenerError, pair_screener.ScreenerError)
         self.assertIs(store.ScreenerInputs, pair_screener.ScreenerInputs)
@@ -487,49 +406,19 @@ class ScreenerAppTests(unittest.TestCase):
         for name in ("catalog", "build_result", "ScreenerInputs", "ScreenerError"):
             self.assertFalse(hasattr(server, name), name)
 
-    def test_legacy_route_contract_answers_are_preserved(self):
-        from moex_spread_lab.core.settings import save_settings
-        from moex_spread_lab.web.dispatch import ALL_POST_ROUTES, LEGACY_POST_ROUTES
+    def test_s2_compatibility_surface_is_retired(self):
+        from moex_spread_lab.web.dispatch import ALL_POST_ROUTES
 
-        self.assertEqual(LEGACY_POST_ROUTES, {"/api/run", "/api/screen", "/api/optimize"})
-        self.assertLessEqual(LEGACY_POST_ROUTES, ALL_POST_ROUTES)
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(ScreenerStore(self.inputs)))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
-        origin = {"Origin": f"http://127.0.0.1:{server.server_port}"}
-        json_headers = {"Content-Type": "application/json"}
-
-        def call(method, path, body=None, headers=None):
-            connection.request(method, path, body, {**origin, **(headers or {})})
-            response = connection.getresponse()
-            return response.status, json.loads(response.read())
-
-        self.assertEqual(call("GET", "/api/catalog")[0], 200)
-        self.assertEqual(call("GET", "/api/runs"), (200, []))
-        self.assertEqual(call("GET", "/api/searches"), (200, []))
-        self.assertEqual(call("GET", "/api/missing"), (404, {"error": "not found"}))
-        self.assertEqual(
-            call("POST", "/api/missing", "{}", json_headers), (404, {"error": "not found"})
-        )
-        self.assertEqual(
-            call("POST", "/api/run", "{}", {"Content-Type": "text/plain"}),
-            (415, {"error": "JSON body required"}),
-        )
-        selection = json.dumps({"pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"})
-        self.assertEqual(call("POST", "/api/run", selection, json_headers)[0], 200)
-        save_settings(self.root, {"timeframe": "1h"})
-        for route in ("/api/screen", "/api/optimize"):
-            status, body = call("POST", route, selection, json_headers)
-            self.assertEqual(status, 400)
-            self.assertIn("pair-proof", body["error"])
-        oversized = json.dumps({"strategy": "mean_reversion", "pad": "x" * 9000})
-        status, body = call("POST", "/api/screen", oversized, json_headers)
-        self.assertEqual(status, 400)
-        self.assertIn("размер запроса", body["error"])
-        connection.close()
+        self.assertEqual(ALL_POST_ROUTES & {"/api/run", "/api/screen", "/api/optimize"}, set())
+        for module in ("moex_spread_lab.screener_search", "moex_spread_lab.proof.screener_search"):
+            with self.assertRaises(ModuleNotFoundError):
+                __import__(module)
+        store_methods = {
+            name
+            for name in dir(ScreenerStore)
+            if name in {"save", "list_runs", "list_searches", "save_screen", "save_search"}
+        }
+        self.assertEqual(store_methods, set())
 
 
 if __name__ == "__main__":

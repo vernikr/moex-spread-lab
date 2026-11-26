@@ -63,7 +63,6 @@ _ROOT_SHIM_LAYERS = {
     "s3_reference": "strategies",
     "screener": "strategies",
     "audit": "proof",
-    "screener_search": "proof",
     "proof": "proof",
     "proof_pool": "proof",
     "proof_windows": "proof",
@@ -138,7 +137,6 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
         ("packages/proof/tests/test_proof_batch.py", "web.server"),
         ("packages/proof/tests/test_proof_plateau.py", "web.server"),
         ("packages/proof/tests/test_proof_windows.py", "web.server"),
-        ("packages/proof/tests/test_screener_search.py", "web.server"),
     }
 )
 

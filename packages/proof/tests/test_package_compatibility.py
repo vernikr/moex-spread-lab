@@ -13,7 +13,6 @@ import pytest
         ("proof_strategy_search", "proof_strategy_search"),
         ("proof_windows", "proof_windows"),
         ("proof_pool", "proof_pool"),
-        ("screener_search", "screener_search"),
         ("audit", "audit"),
     ],
 )
@@ -33,7 +32,6 @@ def test_legacy_module_is_same_object(old, new):
         "proof_pool",
         "proof_windows",
         "audit",
-        "screener_search",
         "calendar_adapter",
         "cohort_models",
     ],
@@ -57,6 +55,18 @@ def test_builtin_replays_use_the_canonical_intent_pipeline():
 
     assert service.run_mean_reversion is pair_route.builtin_pair_proof
     assert service.run_funding is carry_payload.run_carry
+
+
+@pytest.mark.parametrize("module", ["screener_search", "web_legacy"])
+def test_retired_s2_modules_stay_deleted(module):
+    """The owner-approved S2 retirement (issue #243) keeps these modules gone."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(f"moex_spread_lab.proof.{module}")
+
+
+def test_retired_root_screener_search_shim_stays_deleted():
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("moex_spread_lab.screener_search")
 
 
 @pytest.mark.parametrize(

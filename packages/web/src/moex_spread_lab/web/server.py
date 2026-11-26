@@ -35,7 +35,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self.send_json(403, {"error": "local host only"})
                 return
-            dispatch_get(self, store, split_path(self.path), _pair_screener.catalog)
+            dispatch_get(self, store, split_path(self.path))
 
         def do_POST(self) -> None:
             if (
@@ -45,7 +45,7 @@ def make_handler(store: ScreenerStore) -> type[BaseHTTPRequestHandler]:
             ):
                 self.send_json(403, {"error": "local origin only"})
                 return
-            dispatch_post(self, store, split_path(self.path), _pair_screener.build_result)
+            dispatch_post(self, store, split_path(self.path))
 
     return Handler
 

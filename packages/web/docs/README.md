@@ -13,9 +13,8 @@ work plan; live status is in GitHub Issues and Project #2. Proof semantics
 
 ## 1. Routing surface
 
-`dispatch.py` is the single GET/POST table and also owns the small settings and
-legacy-screener handlers; route modules decide *what* to answer, never *how* to
-frame it.
+`dispatch.py` is the single GET/POST table and also owns the small settings
+handlers; route modules decide *what* to answer, never *how* to frame it.
 
 | Route | Method | Owner module | Purpose |
 |---|---|---|---|
@@ -24,35 +23,33 @@ frame it.
 | `/api/proof/catalog`, `/api/strategies` | GET | `routes_proof.py` | Universe catalog and the discovered `StrategyPlugin` registry. |
 | `/api/proof/run`, `/api/proof/optimize`, `/api/proof/plateau`, `/api/proof/windows` | POST | `routes_proof.py` | Proof run, cohort search, plateau report and window summaries. |
 | `/api/settings`, `/api/timeframes` | GET/POST | `dispatch.py` | Global research preferences and the timeframe registry. |
-| `/api/catalog`, `/api/runs`, `/api/searches`, `/api/run`, `/api/screen`, `/api/optimize` | GET/POST | `dispatch.py` | Legacy S2 screener compatibility APIs; not used by the proof UI. |
 | `/api/dev/*` | GET/POST | `routes_dev.py` | Non-persisting diagnostics (health, probe, pool/worker/RSS metrics). |
 
 `LARGE_PROOF_POST_ROUTES` raises the request-body cap for the chart-bearing proof
 routes; every other route keeps the small cap.
 
-### 1.1 Preserved S2 compatibility surface (do not retire without owner approval)
+### 1.1 Retired S2 compatibility surface (2026-11-26)
 
-`README.md`, `packages/proof/docs/execution-proof.md` and `docs/decisions.md` still
-name the S2 screener API as a supported compatibility path, so the routes below stay
-even though the proof UI never calls them. Inventory recorded by issue #209:
+The owner retired the S2 compatibility API on 2026-11-26 (issue #243, recorded in
+`docs/decisions.md`). Removed in that change:
 
-- `/api/run`, `/api/screen`, `/api/optimize` — `dispatch.py` (`LEGACY_POST_ROUTES`,
-  `handle_post_legacy`), persisting through `store.save`, `save_screen` and
-  `save_search`; `/api/runs` and `/api/searches` read that history back.
-- `/api/catalog` — `handle_get_legacy`, fed by the injected `catalog` callable that
-  `server.py` binds to
-  `moex_spread_lab.strategies.pair_screener.pair_screener.catalog`.
-- Backing implementation: `moex_spread_lab.proof.screener_search.{screen_table,
-  optimize}` and the root shim `src/moex_spread_lab/screener_search.py`, which
-  `packages/proof/tests/test_package_compatibility.py` pins as the same object as
-  `moex_spread_lab.proof.screener_search`.
-- The web modules import the canonical
-  `moex_spread_lab.strategies.pair_screener.pair_screener` symbols directly; the
-  former `moex_spread_lab.proof.web_legacy` indirection has no callers left inside
-  `packages/web`, so removing that shard does not change any route answer.
-- No frontend, CLI or browser-smoke caller proves retirement: the contract is guarded
-  by `packages/web/tests/test_screener_app.py` (route answers, error payloads,
-  canonical imports, preserved module surface).
+- `/api/run`, `/api/screen`, `/api/optimize`, `/api/catalog`, `/api/runs`,
+  `/api/searches` and the `LEGACY_POST_ROUTES`/`handle_*_legacy` handlers in
+  `dispatch.py`; unknown paths now answer `404 {"error": "not found"}`.
+- The S2 persistence helpers on `ScreenerStore` (`save`, `save_screen`, `save_search`,
+  `list_runs`, `list_searches`). The store keeps `save_proof_search` and the
+  `proof-searches.jsonl` history.
+- `moex_spread_lab.proof.screener_search` (batch table + hand-coded neighborhood
+  grid), `moex_spread_lab.proof.web_legacy` and the root shim
+  `moex_spread_lab.screener_search`.
+- `packages/proof/tests/test_screener_search.py`, `test_screener_math.py` and the
+  root-shim identity assertion in `test_package_compatibility.py`; the retired
+  modules now have negative "stays deleted" tests instead.
+
+The domain logic those routes exposed (`strategies.pair_screener.pair_screener`:
+`catalog`, `build_result`, `ScreenerInputs`, `ScreenerError`) is untouched and still
+backed by `packages/web/tests/test_screener_app.py`; the proof UI, `/api/proof/*`,
+`/api/settings`, `/api/timeframes` and `/api/dev/*` are unchanged.
 
 ## 2. Security and locality contract
 
@@ -93,11 +90,10 @@ even though the proof UI never calls them. Inventory recorded by issue #209:
   of `msl-proof` in `packages/web/pyproject.toml` and
   `packages/web/manifest.json`; declaring that edge is module-contract
   reconciliation work, not part of a route or UI change.
-- Remaining runtime `msl-proof` imports: `proof.screener_search` (`dispatch.py`),
-  `proof.proof_batch`/`proof.proof_search`/`proof.proof_windows` (`routes_proof.py`),
-  `proof.proof_pool`/`proof.service` (`store.py`), `proof.strategy_catalog`
-  (`strategy_registry.py`) and `proof.phase_metrics`/`proof.proof_pool`/
-  `proof.worker_metrics` (`routes_dev.py`).
+- Remaining runtime `msl-proof` imports: `proof.proof_batch`/`proof.proof_search`/
+  `proof.proof_windows` (`routes_proof.py`), `proof.proof_pool`/`proof.service`
+  (`store.py`), `proof.strategy_catalog` (`strategy_registry.py`) and
+  `proof.phase_metrics`/`proof.proof_pool`/`proof.worker_metrics` (`routes_dev.py`).
 - Consequences (capital, risk, fills, costs, validation) are computed downstream;
   a UI change must never alter them. Relaxing a research screen in the dialog does
   not add funding or trading authority.

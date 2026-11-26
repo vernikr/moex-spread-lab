@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -15,7 +16,7 @@ from typing import Any, TypedDict, cast
 from moex_spread_lab.core.json_types import JsonObject, JsonValue, as_str_dict
 from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_file
 
-from .data_inventory import DATA_INVENTORY_SCHEMA
+from .data_inventory import DATA_INVENTORY_SCHEMA, _inspect_file, _policy
 
 DATA_ARCHIVE_SCHEMA = "data-archive.v1"
 _ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
@@ -130,6 +131,8 @@ def _load_inventory_manifest(path: Path, root: Path) -> JsonObject:
 
 
 def _safe_data_path(root: Path, relative: str) -> Path:
+    if (root / "data").is_symlink():
+        raise DataRetentionError("symlink data root is not supported")
     data_root = (root / "data").resolve()
     relative_path = Path(relative)
     if relative_path.is_absolute() or ".." in relative_path.parts:
@@ -168,6 +171,8 @@ def _selected_entries(manifest: JsonObject, root: Path) -> list[_CacheEntry]:
         source = _safe_data_path(root, relative)
         if not source.is_file():
             raise DataRetentionError(f"manifest cache file is missing: {relative}")
+        if _policy(relative, _inspect_file(source)).classification != _REBUILDABLE_CACHE:
+            raise DataRetentionError(f"manifest path is not a rebuildable cache: {relative}")
         if sha256_file(source) != digest:
             raise DataRetentionError(f"manifest cache hash no longer matches: {relative}")
         selected.append(
@@ -236,40 +241,62 @@ def _archive_manifest(plan: _ArchivePlan) -> dict[str, Any]:
     }
 
 
-def _add_manifest(handle: tarfile.TarFile, manifest: dict[str, Any]) -> None:
-    body = canonical_bytes(manifest) + b"\n"
-    info = tarfile.TarInfo(_ARCHIVE_MANIFEST_NAME)
-    info.size = len(body)
-    info.mtime = int(datetime.now(UTC).timestamp())
-    handle.addfile(info, io.BytesIO(body))
+def write_tar(
+    handle: tarfile.TarFile,
+    root: Path,
+    files: Sequence[Mapping[str, Any]],
+    manifest_name: str,
+    manifest_bytes: bytes,
+) -> None:
+    info = tarfile.TarInfo(manifest_name)
+    info.size = len(manifest_bytes)
+    handle.addfile(info, io.BytesIO(manifest_bytes))
+    for entry in files:
+        info = tarfile.TarInfo("data/" + entry["path"])
+        info.size = entry["logical_bytes"]
+        with _safe_data_path(root, entry["path"]).open("rb") as source:
+            handle.addfile(info, source)
 
 
-def _verify_archive_member(handle: tarfile.TarFile, name: str, expected_hash: str) -> None:
-    import hashlib
-
-    member = handle.getmember(name)
-    source = handle.extractfile(member)
-    if source is None:
-        raise DataRetentionError(f"cannot read archived member: {name}")
+def _verify_tar_member(
+    handle: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    expected: Mapping[str, Mapping[str, Any]],
+    manifest_name: str,
+    manifest_bytes: bytes,
+) -> None:
+    body = handle.extractfile(member)
+    if body is None:
+        raise DataRetentionError("cannot read regular archive member")
+    if member.name == manifest_name:
+        if member.size != len(manifest_bytes) or body.read() != manifest_bytes:
+            raise DataRetentionError("embedded manifest mismatch")
+        return
+    entry = expected.get(member.name)
+    if entry is None or member.size != entry["logical_bytes"]:
+        raise DataRetentionError("unexpected archive member or size")
     digest = hashlib.sha256()
-    with source as reader:
-        while block := reader.read(1024 * 1024):
-            digest.update(block)
-    if digest.hexdigest() != expected_hash:
-        raise DataRetentionError(f"archived member hash mismatch: {name}")
+    while block := body.read(1024 * 1024):
+        digest.update(block)
+    if digest.hexdigest() != entry["sha256"]:
+        raise DataRetentionError("archive member hash mismatch")
 
 
-def _verify_archive(archive_path: Path, files: Sequence[_CacheEntry]) -> None:
-    expected = {f"data/{entry['path']}": entry["sha256"] for entry in files}
-    with tarfile.open(archive_path, "r:gz") as handle:
-        names = set(handle.getnames())
-        if _ARCHIVE_MANIFEST_NAME not in names:
-            raise DataRetentionError("archive is missing its embedded manifest")
-        missing = sorted(set(expected) - names)
-        if missing:
-            raise DataRetentionError(f"archive is missing expected members: {missing[:3]}")
-        for name, expected_hash in expected.items():
-            _verify_archive_member(handle, name, expected_hash)
+def verify_tar(
+    handle: tarfile.TarFile,
+    files: Sequence[Mapping[str, Any]],
+    manifest_name: str,
+    manifest_bytes: bytes,
+) -> None:
+    expected = {"data/" + entry["path"]: entry for entry in files}
+    seen: set[str] = set()
+    for member in handle:
+        if member.name in seen or not member.isfile():
+            raise DataRetentionError("duplicate or non-regular archive member")
+        seen.add(member.name)
+        _verify_tar_member(handle, member, expected, manifest_name, manifest_bytes)
+    if seen != set(expected) | {manifest_name}:
+        raise DataRetentionError("missing archive member")
 
 
 def _prune_empty_parents(root: Path, files: Sequence[Mapping[str, object]]) -> None:
@@ -305,13 +332,17 @@ def archive_rebuildable_caches(
             delete=False,
         ) as handle:
             temporary = Path(handle.name)
+        manifest_bytes = canonical_bytes(_archive_manifest(plan)) + b"\n"
         with tarfile.open(temporary, "w:gz", compresslevel=6) as handle:
-            for entry in files:
-                source = _safe_data_path(root, entry["path"])
-                handle.add(source, arcname=f"data/{entry['path']}", recursive=False)
-            _add_manifest(handle, _archive_manifest(plan))
-        _verify_archive(temporary, files)
-        os.replace(temporary, archive)
+            write_tar(handle, root, files, _ARCHIVE_MANIFEST_NAME, manifest_bytes)
+        with tarfile.open(temporary, "r:gz") as handle:
+            verify_tar(handle, files, _ARCHIVE_MANIFEST_NAME, manifest_bytes)
+        for entry in files:
+            source = _safe_data_path(root, entry["path"])
+            if not source.is_file() or sha256_file(source) != entry["sha256"]:
+                raise DataRetentionError(f"source changed before publication: {entry['path']}")
+        os.link(temporary, archive)
+        temporary.unlink()
         temporary = None
         for entry in files:
             source = _safe_data_path(root, entry["path"])
@@ -330,8 +361,3 @@ def archive_rebuildable_caches(
         "archive_logical_bytes": archive.stat().st_size,
         "deleted_file_count": len(files),
     }
-
-
-def archive_candidate_hooks():
-    """Return the current path hooks, preserving late-bound monkeypatch points."""
-    return _safe_data_path, _validate_archive_path, _prune_empty_parents

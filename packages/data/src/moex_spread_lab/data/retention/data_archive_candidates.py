@@ -8,13 +8,10 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
-import io
 import json
 import os
-import subprocess
 import tarfile
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -26,7 +23,12 @@ from moex_spread_lab.core.w0 import as_str_dict, canonical_bytes, sha256_file
 
 from . import data_retention as _data_retention
 from .data_inventory import _inspect_file, _policy, build_data_inventory
-from .data_retention import DataRetentionError
+from .data_retention import (
+    DataRetentionError,
+    _prune_empty_parents,
+    _safe_data_path,
+    _validate_archive_path,
+)
 
 SCHEMA = "data-archive-candidates.v1"
 GROUPS = {
@@ -37,10 +39,6 @@ GROUPS = {
     "w1/perpetual-history-discovery",
 }
 
-_SafeDataPath = Callable[[Path, str], Path]
-_ValidateArchivePath = Callable[[Path, Path], Path]
-_PruneEmptyParents = Callable[[Path, Sequence[Mapping[str, object]]], None]
-
 
 class _CandidateEntry(TypedDict):
     """One verified candidate file as stored in a plan, receipt or manifest."""
@@ -48,21 +46,6 @@ class _CandidateEntry(TypedDict):
     path: str
     logical_bytes: int
     sha256: str
-
-
-__all__ = [
-    "_CandidateEntry",
-    "_json_new",
-    "_publish",
-    "read_payload_object",
-    "retention_hooks",
-    "verify_archive",
-]
-
-
-def retention_hooks() -> tuple[_SafeDataPath, _ValidateArchivePath, _PruneEmptyParents]:
-    """Return the owning module's path-safety hooks in their historical order."""
-    return _data_retention.archive_candidate_hooks()
 
 
 def read_payload_object(path: Path, label: str) -> JsonObject:
@@ -74,9 +57,6 @@ def read_payload_object(path: Path, label: str) -> JsonObject:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise _data_retention.DataRetentionError(f"cannot read {label}: {path}: {exc}") from exc
     return as_str_dict(decoded, label=label, error=_data_retention.DataRetentionError)
-
-
-_safe_data_path, _validate_archive_path, _prune_empty_parents = retention_hooks()
 
 
 def _eligible(path: str, metadata: dict[str, Any]) -> bool:
@@ -143,6 +123,27 @@ def build_plan(root: Path, archive: Path) -> dict[str, Any]:
     }
 
 
+def _validate_entry(entry: JsonObject, root: Path, seen: set[str]) -> None:
+    relative = entry.get("path")
+    if (
+        not isinstance(relative, str)
+        or not relative
+        or relative == "."
+        or Path(relative).as_posix() != relative
+        or relative in seen
+    ):
+        raise DataRetentionError("invalid or duplicate candidate path")
+    source = _safe_data_path(root, relative)
+    if (
+        not source.is_file()
+        or not _eligible(relative, _inspect_file(source))
+        or source.stat().st_size != entry.get("logical_bytes")
+        or sha256_file(source) != entry.get("sha256")
+    ):
+        raise DataRetentionError(f"stale or ineligible candidate: {relative}")
+    seen.add(relative)
+
+
 def _validate(plan: JsonObject, root: Path) -> None:
     if plan.get("schema_version") != SCHEMA or plan.get("root") != str(root.resolve()):
         raise DataRetentionError(
@@ -153,24 +154,7 @@ def _validate(plan: JsonObject, root: Path) -> None:
         raise DataRetentionError("plan must contain candidates")
     seen: set[str] = set()
     for entry in cast(list[JsonObject], files):
-        relative = entry.get("path")
-        if (
-            not isinstance(relative, str)
-            or not relative
-            or relative == "."
-            or Path(relative).as_posix() != relative
-            or relative in seen
-        ):
-            raise DataRetentionError("invalid or duplicate candidate path")
-        source = _safe_data_path(root, relative)
-        if (
-            not source.is_file()
-            or not _eligible(relative, _inspect_file(source))
-            or source.stat().st_size != entry.get("logical_bytes")
-            or sha256_file(source) != entry.get("sha256")
-        ):
-            raise DataRetentionError(f"stale or ineligible candidate: {relative}")
-        seen.add(relative)
+        _validate_entry(entry, root, seen)
     entries = _entries(plan)
     if entries != sorted(entries, key=lambda e: e["path"]) or _fingerprint(entries) != plan.get(
         "source_fingerprint"
@@ -179,59 +163,25 @@ def _validate(plan: JsonObject, root: Path) -> None:
     _validate_archive_path(root, Path(cast(str, plan["archive"])))
 
 
-def _verify_tar_member(
-    tar: tarfile.TarFile,
-    member: tarfile.TarInfo,
-    expected: dict[str, _CandidateEntry],
-    manifest_bytes: bytes,
-) -> None:
-    body = tar.extractfile(member)
-    if body is None:
-        raise DataRetentionError("cannot read regular archive member")
-    if member.name == "manifest.json":
-        if member.size != len(manifest_bytes) or body.read() != manifest_bytes:
-            raise DataRetentionError("embedded manifest mismatch")
-        return
-    entry = expected.get(member.name)
-    if entry is None or member.size != entry["logical_bytes"]:
-        raise DataRetentionError("unexpected archive member or size")
-    digest = hashlib.sha256()
-    while block := body.read(1024 * 1024):
-        digest.update(block)
-    if digest.hexdigest() != entry["sha256"]:
-        raise DataRetentionError("archive member hash mismatch")
-
-
 def verify_archive(path: Path, manifest: JsonObject) -> None:
-    expected = {"data/" + entry["path"]: entry for entry in _entries(manifest)}
-    manifest_bytes = canonical_bytes(manifest)
-    seen: set[str] = set()
     with path.open("rb") as raw, zstd.ZstdDecompressor().stream_reader(raw) as stream:
         with tarfile.open(fileobj=stream, mode="r|") as tar:
-            for member in tar:
-                if member.name in seen or not member.isfile():
-                    raise DataRetentionError("duplicate or non-regular archive member")
-                seen.add(member.name)
-                _verify_tar_member(tar, member, expected, manifest_bytes)
+            _data_retention.verify_tar(
+                tar, _entries(manifest), "manifest.json", canonical_bytes(manifest)
+            )
         while stream.read(1024 * 1024):
             pass
-    if seen != set(expected) | {"manifest.json"}:
-        raise DataRetentionError("missing archive member")
 
 
 def _publish(
     root: Path,
     plan: JsonObject,
     archive: Path,
-    *,
-    validate_sources: Callable[[JsonObject, Path], None] | None = None,
 ) -> JsonObject:
     if archive.exists() or archive.is_symlink():
         raise DataRetentionError("archive destination already exists")
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     manifest: JsonObject = {
         **plan,
-        "git_commit": commit,
         "created_at": datetime.now(UTC).isoformat(),
     }
     archive.parent.mkdir(parents=True, exist_ok=True)
@@ -245,20 +195,13 @@ def _publish(
                 ) as stream,
                 tarfile.open(fileobj=stream, mode="w|") as tar,
             ):
-                body = canonical_bytes(manifest)
-                info = tarfile.TarInfo("manifest.json")
-                info.size = len(body)
-                tar.addfile(info, io.BytesIO(body))
-                for entry in _entries(manifest):
-                    source = _safe_data_path(root, entry["path"])
-                    info = tarfile.TarInfo("data/" + entry["path"])
-                    info.size = entry["logical_bytes"]
-                    with source.open("rb") as handle:
-                        tar.addfile(info, handle)
+                _data_retention.write_tar(
+                    tar, root, _entries(manifest), "manifest.json", canonical_bytes(manifest)
+                )
             raw.flush()
             os.fsync(raw.fileno())
         verify_archive(staging, manifest)
-        (_validate if validate_sources is None else validate_sources)(plan, root)
+        _validate(plan, root)
         # Atomic, no-clobber publication on the same filesystem.
         os.link(staging, archive)
     finally:
@@ -328,7 +271,7 @@ def _apply_candidates(
     return result
 
 
-def execute(root: Path, plan_path: Path, mode: str, archive: Path | None = None) -> JsonObject:
+def execute(root: Path, plan_path: Path, mode: str, archive: Path | None = None) -> dict[str, Any]:
     """Create a deterministic plan, publish only, or explicitly remove verified sources."""
     resolved_root = root.resolve()
     plan_path = _validate_archive_path(resolved_root, plan_path)

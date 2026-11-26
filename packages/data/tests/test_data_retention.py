@@ -1,99 +1,94 @@
 import json
 import tarfile
-import tempfile
-import unittest
-from pathlib import Path
 
+import pytest
+
+from moex_spread_lab.data.retention import data_retention as retention
 from moex_spread_lab.data.retention.data_inventory import build_data_inventory
-from moex_spread_lab.data.retention.data_retention import (
-    DATA_ARCHIVE_SCHEMA,
-    DataRetentionError,
-    archive_rebuildable_caches,
-    plan_rebuildable_cache_archive,
-)
+from moex_spread_lab.data.retention.data_retention import DataRetentionError
 
 
-class DataRetentionTests(unittest.TestCase):
-    def _write(self, root: Path, relative: str, body: bytes) -> Path:
-        path = root / "data" / relative
+@pytest.fixture
+def cache_case(tmp_path):
+    data = tmp_path / "data"
+    paths = [data / "w1/candles-cache/X/60/page.json", data / "w1/candleborders-cache/X.json"]
+    active = data / "w1/candles/X_1h.json"
+    for path in [*paths, active]:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(body)
-        return path
-
-    def _manifest(self, root: Path) -> Path:
-        manifest = build_data_inventory(root, include_hashes=True)
-        path = root / "inventory.json"
-        path.write_text(json.dumps(manifest), encoding="utf-8")
-        return path
-
-    def test_plan_selects_only_verified_rebuildable_cache(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self._write(root, "w1/candles-cache/CRZ6/60/page-000000.json", b'{"rows":[]}')
-            self._write(root, "w1/candles/CNYRUBF_1h.json", b'{"timeframe":"1h","rows":[]}')
-            manifest = self._manifest(root)
-            archive = root / "archives" / "cache.tar.gz"
-            plan = plan_rebuildable_cache_archive(root, manifest, archive)
-
-        self.assertEqual(plan["schema_version"], DATA_ARCHIVE_SCHEMA)
-        self.assertEqual(plan["status"], "planned")
-        self.assertEqual(plan["file_count"], 1)
-        self.assertEqual(plan["files"][0]["path"], "w1/candles-cache/CRZ6/60/page-000000.json")
-        self.assertTrue(plan["requires_apply"])
-
-    def test_archive_verifies_before_removing_cache_and_preserves_active_input(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            first = self._write(root, "w1/candles-cache/CRZ6/60/page-000000.json", b'{"rows":[1]}')
-            second = self._write(root, "w1/candleborders-cache/CRZ6.json", b'{"borders":[]}')
-            active = self._write(
-                root, "w1/candles/CNYRUBF_1h.json", b'{"timeframe":"1h","rows":[]}'
-            )
-            manifest = self._manifest(root)
-            archive = root / "archives" / "verified-cache.tar.gz"
-            result = archive_rebuildable_caches(root, manifest, archive)
-
-            self.assertEqual(result["status"], "archived")
-            self.assertEqual(result["deleted_file_count"], 2)
-            self.assertFalse(first.exists())
-            self.assertFalse(second.exists())
-            self.assertTrue(active.exists())
-            self.assertTrue(archive.is_file())
-            with tarfile.open(archive, "r:gz") as handle:
-                self.assertIn("archive-manifest.json", handle.getnames())
-                self.assertIn("data/w1/candles-cache/CRZ6/60/page-000000.json", handle.getnames())
-                embedded = json.loads(handle.extractfile("archive-manifest.json").read())
-            self.assertEqual(embedded["schema_version"], DATA_ARCHIVE_SCHEMA)
-            self.assertEqual(len(embedded["files"]), 2)
-
-    def test_symbolic_link_replacement_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = self._write(root, "w1/candles-cache/CRZ6/60/page-000000.json", b'{"rows":[]}')
-            manifest = self._manifest(root)
-            external = root / "external.json"
-            external.write_bytes(b'{"rows":["external"]}')
-            source.unlink()
-            source.symlink_to(external)
-            with self.assertRaises(DataRetentionError):
-                plan_rebuildable_cache_archive(
-                    root, manifest, root / "archives" / "link-cache.tar.gz"
-                )
-            self.assertTrue(source.is_symlink())
-            self.assertTrue(external.exists())
-
-    def test_stale_manifest_refuses_archive_without_deleting_source(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = self._write(root, "w1/candles-cache/CRZ6/60/page-000000.json", b'{"rows":[]}')
-            manifest = self._manifest(root)
-            source.write_bytes(b'{"rows":["changed"]}')
-            archive = root / "archives" / "stale-cache.tar.gz"
-            with self.assertRaises(DataRetentionError):
-                archive_rebuildable_caches(root, manifest, archive)
-            self.assertTrue(source.exists())
-            self.assertFalse(archive.exists())
+        path.write_text('{"rows": []}')
+    manifest = tmp_path / "inventory.json"
+    manifest.write_text(json.dumps(build_data_inventory(tmp_path, include_hashes=True)))
+    return tmp_path, paths, active, manifest, tmp_path / "archive.tar.gz"
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_plan_and_archive(cache_case):
+    root, sources, active, manifest, archive = cache_case
+    plan = retention.plan_rebuildable_cache_archive(root, manifest, archive)
+    assert plan["schema_version"] == retention.DATA_ARCHIVE_SCHEMA
+    assert plan["status"] == "planned" and plan["file_count"] == 2 and plan["requires_apply"]
+    result = retention.archive_rebuildable_caches(root, manifest, archive)
+    assert result["status"] == "archived" and result["deleted_file_count"] == 2
+    assert not any(path.exists() for path in sources) and active.exists()
+    with tarfile.open(archive, "r:gz") as handle:
+        names = set(handle.getnames())
+        assert names == {
+            "archive-manifest.json",
+            *(f"data/{p.relative_to(root / 'data')}" for p in sources),
+        }
+        embedded = handle.extractfile("archive-manifest.json")
+        assert embedded is not None
+        assert len(json.load(embedded)["files"]) == 2
+
+
+@pytest.mark.parametrize("fault", ["symlink", "stale", "forged", "data-root"])
+def test_refuses_unsafe_sources_without_deletion(cache_case, fault):
+    root, sources, active, manifest, archive = cache_case
+    if fault == "symlink":
+        sources[0].unlink()
+        sources[0].symlink_to(active)
+    elif fault == "stale":
+        sources[0].write_text("changed")
+    elif fault == "forged":
+        value = json.loads(manifest.read_text())
+        entry = next(item for item in value["files"] if item["path"].endswith("X_1h.json"))
+        entry["classification"] = "rebuildable_cache"
+        manifest.write_text(json.dumps(value))
+    else:
+        (root / "data").rename(root / "moved")
+        (root / "data").symlink_to(root / "moved", target_is_directory=True)
+    with pytest.raises(DataRetentionError):
+        retention.archive_rebuildable_caches(root, manifest, archive)
+    assert not archive.exists()
+    assert all(path.exists() for path in sources) and active.exists()
+
+
+def test_publication_never_overwrites_concurrent_archive(cache_case, monkeypatch):
+    root, sources, active, manifest, archive = cache_case
+    verify = retention.verify_tar
+
+    def race(*args):
+        verify(*args)
+        archive.write_bytes(b"other writer")
+
+    monkeypatch.setattr(retention, "verify_tar", race)
+    with pytest.raises(FileExistsError):
+        retention.archive_rebuildable_caches(root, manifest, archive)
+    assert archive.read_bytes() == b"other writer"
+    assert all(path.exists() for path in sources) and active.exists()
+    assert not list(root.glob(".archive.tar.gz.*"))
+
+
+def test_source_changed_during_verification_is_not_published(cache_case, monkeypatch):
+    root, sources, active, manifest, archive = cache_case
+    verify = retention.verify_tar
+
+    def change_source(*args):
+        verify(*args)
+        sources[-1].write_text("changed")
+
+    monkeypatch.setattr(retention, "verify_tar", change_source)
+    with pytest.raises(DataRetentionError, match="before publication"):
+        retention.archive_rebuildable_caches(root, manifest, archive)
+    assert not archive.exists()
+    assert all(path.exists() for path in sources) and active.exists()
+    assert not list(root.glob(".archive.tar.gz.*"))

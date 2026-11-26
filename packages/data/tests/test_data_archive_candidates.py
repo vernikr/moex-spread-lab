@@ -1,6 +1,5 @@
 import io
 import json
-import subprocess
 import tarfile
 from pathlib import Path
 
@@ -20,22 +19,6 @@ from moex_spread_lab.data.retention.data_retention import DataRetentionError
 def setup(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "test",
-        ],
-        cwd=root,
-        check=True,
-    )
     files = {
         "analytics/report.json": {"schema_version": "analytical-baseline.v1"},
         "w1/candles-common/A_1m.json": {"timeframe": "1m"},
@@ -76,7 +59,9 @@ def test_roundtrip_and_protection(setup):
     with tarfile.open(fileobj=io.BytesIO(payload)) as tar:
         assert len(tar.getmembers()) == 4
         for entry in result["files"]:
-            assert tar.extractfile("data/" + entry["path"]).read() == before[entry["path"]]
+            member = tar.extractfile("data/" + entry["path"])
+            assert member is not None
+            assert member.read() == before[entry["path"]]
     applied = execute(root, path, "apply")
     assert len(applied["deleted"]) == 3
     for name, body in before.items():
@@ -85,26 +70,20 @@ def test_roundtrip_and_protection(setup):
     assert json.loads(Path(str(archive) + ".apply.json").read_text())["status"] == "applied"
 
 
-@pytest.mark.parametrize("mode", ["archive-only", "apply"])
-def test_stale_last_source_deletes_nothing(setup, mode):
+@pytest.mark.parametrize("fault", ["stale-archive", "stale-apply", "corrupt", "no-receipt"])
+def test_failed_apply_does_not_delete_sources(setup, fault):
     root, path, archive = setup
     result = plan(setup)
-    if mode == "apply":
+    if fault in {"stale-apply", "corrupt"}:
         execute(root, path, "archive-only")
-    (root / "data" / result["files"][-1]["path"]).write_text('{"timeframe":"10m","changed":true}')
-    with pytest.raises(DataRetentionError):
+    if fault.startswith("stale"):
+        (root / "data" / result["files"][-1]["path"]).write_text("{}")
+    if fault == "corrupt":
+        archive.write_bytes(archive.read_bytes()[:30])
+    mode = "archive-only" if fault == "stale-archive" else "apply"
+    with pytest.raises(FileNotFoundError if fault == "no-receipt" else DataRetentionError):
         execute(root, path, mode)
-    assert all((root / "data" / e["path"]).exists() for e in result["files"])
-
-
-def test_corrupt_archive_deletes_nothing(setup):
-    root, path, archive = setup
-    result = plan(setup)
-    execute(root, path, "archive-only")
-    archive.write_bytes(archive.read_bytes()[:30])
-    with pytest.raises(DataRetentionError):
-        execute(root, path, "apply")
-    assert all((root / "data" / e["path"]).exists() for e in result["files"])
+    assert all((root / "data" / entry["path"]).exists() for entry in result["files"])
 
 
 @pytest.mark.parametrize(
@@ -144,8 +123,30 @@ def test_existing_destination_and_symlink(setup):
 def test_member_verification(setup, fault):
     root, path, archive = setup
     plan(setup)
-    record = execute(root, path, "archive-only")
-    manifest = record["manifest"]
+    manifest = execute(root, path, "archive-only")["manifest"]
+    archive.write_bytes(_faulty_archive(root, manifest, fault))
+    with pytest.raises(DataRetentionError):
+        verify_archive(archive, manifest)
+
+
+def _add_faulty_member(tar, root, entry, fault):
+    if fault == "missing":
+        return
+    body = (root / "data" / entry["path"]).read_bytes()
+    if fault == "hash":
+        body = b"x" * len(body)
+    info = tarfile.TarInfo("data/" + entry["path"])
+    info.size = len(body)
+    if fault == "symlink":
+        info.type = tarfile.SYMTYPE
+        info.linkname = "elsewhere"
+        info.size = 0
+    tar.addfile(info, io.BytesIO(body))
+    if fault == "duplicate":
+        tar.addfile(info, io.BytesIO(body))
+
+
+def _faulty_archive(root, manifest, fault):
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
         body = canonical_bytes(manifest) if fault != "manifest" else b"{}"
@@ -153,67 +154,33 @@ def test_member_verification(setup, fault):
         info.size = len(body)
         tar.addfile(info, io.BytesIO(body))
         for i, entry in enumerate(manifest["files"]):
-            if i == 0 and fault == "missing":
-                continue
-            body = (root / "data" / entry["path"]).read_bytes()
-            if i == 0 and fault == "hash":
-                body = b"x" * len(body)
-            info = tarfile.TarInfo("data/" + entry["path"])
-            info.size = len(body)
-            if i == 0 and fault == "symlink":
-                info.type = tarfile.SYMTYPE
-                info.linkname = "elsewhere"
-                info.size = 0
-            tar.addfile(info, io.BytesIO(body))
-            if i == 0 and fault == "duplicate":
-                tar.addfile(info, io.BytesIO(body))
+            _add_faulty_member(tar, root, entry, fault if i == 0 else "")
         if fault == "extra":
             tar.addfile(tarfile.TarInfo("extra"))
-    archive.write_bytes(zstd.ZstdCompressor().compress(buf.getvalue()))
-    with pytest.raises(DataRetentionError):
-        verify_archive(archive, manifest)
+    return zstd.ZstdCompressor().compress(buf.getvalue())
 
 
-def test_no_apply_without_receipt(setup):
-    root, path, archive = setup
-    result = plan(setup)
-    with pytest.raises(FileNotFoundError):
-        execute(root, path, "apply")
-    assert all((root / "data" / e["path"]).exists() for e in result["files"])
-
-
-def test_publication_race_never_overwrites(setup, monkeypatch):
+@pytest.mark.parametrize("fault", ["publication-race", "source-changed"])
+def test_publication_races_fail_closed(setup, monkeypatch, fault):
     import moex_spread_lab.data.retention.data_archive_candidates as module
 
     root, path, archive = setup
     result = plan(setup)
     original = module.verify_archive
 
-    def racing_verify(staging, manifest):
+    def race(staging, manifest):
         original(staging, manifest)
-        archive.write_bytes(b"other publisher")
+        if fault == "publication-race":
+            archive.write_bytes(b"other publisher")
+        else:
+            (root / "data" / result["files"][-1]["path"]).write_text("{}")
 
-    monkeypatch.setattr(module, "verify_archive", racing_verify)
-    with pytest.raises(FileExistsError):
+    monkeypatch.setattr(module, "verify_archive", race)
+    with pytest.raises(FileExistsError if fault == "publication-race" else DataRetentionError):
         execute(root, path, "archive-only")
-    assert archive.read_bytes() == b"other publisher"
-    assert all((root / "data" / e["path"]).exists() for e in result["files"])
+    if fault == "publication-race":
+        assert archive.read_bytes() == b"other publisher"
+    else:
+        assert not archive.exists()
+    assert all((root / "data" / entry["path"]).exists() for entry in result["files"])
     assert not list(archive.parent.glob(".archive.tar.zst.*"))
-
-
-def test_source_changed_during_archive_is_not_published(setup, monkeypatch):
-    import moex_spread_lab.data.retention.data_archive_candidates as module
-
-    root, path, archive = setup
-    result = plan(setup)
-    original = module.verify_archive
-
-    def change_source(staging, manifest):
-        original(staging, manifest)
-        (root / "data" / result["files"][-1]["path"]).write_text("{}")
-
-    monkeypatch.setattr(module, "verify_archive", change_source)
-    with pytest.raises(DataRetentionError):
-        execute(root, path, "archive-only")
-    assert not archive.exists()
-    assert all((root / "data" / e["path"]).exists() for e in result["files"])

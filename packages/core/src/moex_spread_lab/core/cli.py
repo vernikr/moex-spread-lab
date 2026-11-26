@@ -3,33 +3,13 @@
 from __future__ import annotations
 
 import json
-from argparse import ArgumentParser
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-from .w0 import replay, scan_secrets, validate_manifest, write_json
-
-
-class _SubparserRegistry(Protocol):
-    def add_parser(self, name: str, **kwargs: Any) -> ArgumentParser: ...
+from .w0 import scan_secrets, validate_manifest
 
 
-class _CoreCLIArgs(Protocol):
-    command: str
-    manifest: Path
-    fixture: Path
-    output: Path
-    root: Path
-    tracked_only: bool
-
-
-def register(subparsers: _SubparserRegistry) -> None:
-    replay_parser = subparsers.add_parser("replay", help="replay an offline fixture")
-    replay_parser.add_argument("--manifest", type=Path, required=True)
-    replay_parser.add_argument("--fixture", type=Path, required=True)
-    replay_parser.add_argument("--output", type=Path, required=True)
-    replay_parser.set_defaults(_msl_cli_handler=run)
-
+def register(subparsers: Any) -> None:
     validate_parser = subparsers.add_parser("validate-manifest", help="validate a run manifest")
     validate_parser.add_argument("--manifest", type=Path, required=True)
     validate_parser.set_defaults(_msl_cli_handler=run)
@@ -42,16 +22,7 @@ def register(subparsers: _SubparserRegistry) -> None:
     scan_parser.set_defaults(_msl_cli_handler=run)
 
 
-def run(args: _CoreCLIArgs) -> int:
-    if args.command == "replay":
-        result = replay(args.manifest, args.fixture)
-        write_json(args.output, result)
-        print(
-            json.dumps(
-                {key: result[key] for key in result if key != "normalized_fixture"}, sort_keys=True
-            )
-        )
-        return 0
+def run(args: Any) -> int:
     if args.command == "validate-manifest":
         manifest = validate_manifest(args.manifest)
         print(

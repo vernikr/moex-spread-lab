@@ -73,16 +73,14 @@ def test_duplicate_plugin_command_is_rejected():
         cli.build_parser()
 
 
-def test_core_replay_help_keeps_supported_arguments(capsys):
+def test_core_validate_manifest_help_keeps_supported_arguments(capsys):
     with patch.object(
         cli, "entry_points", return_value=[EntryPoint("msl-core", register_core_cli)]
     ):
         parser = cli.build_parser()
         with pytest.raises(SystemExit) as exit_info:
-            parser.parse_args(["replay", "--help"])
+            parser.parse_args(["validate-manifest", "--help"])
 
     assert exit_info.value.code == 0
     help_text = capsys.readouterr().out
     assert "--manifest" in help_text
-    assert "--fixture" in help_text
-    assert "--output" in help_text

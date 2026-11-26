@@ -1,25 +1,12 @@
-"""Read-only MOEX EOD history and funding-aware CNY carry decomposition."""
+"""Compatibility re-exports for MOEX EOD history and funding-carry evaluation."""
 
 from __future__ import annotations
 
 from moex_spread_lab.core.w0 import load_contracts
-from moex_spread_lab.data.iss.catalog import (
-    HISTORY_FIELDS,
-    HISTORY_SCHEMA,
-    IssHistoryError,
-    _history_url,
-)
+from moex_spread_lab.data.iss.catalog import HISTORY_FIELDS, _history_url
 
-from .strategy_costs import (
-    BENCHMARK_PARSED_CACHE as _BENCHMARK_PARSED_CACHE,
-)
-from .strategy_costs import (
-    benchmark_rows as _benchmark_rows,
-)
-from .strategy_costs import (
-    transaction_cost_profile as _transaction_cost_profile,
-)
-from .strategy_runner import build_carry_strategy
+from .engine import build_carry_strategy
+from .engine import transaction_cost_profile as _transaction_cost_profile
 from .study import (
     CARRY_SCHEMA,
     FUNDING_REGIMES,
@@ -37,13 +24,9 @@ __all__ = [
     "CARRY_SCHEMA",
     "FUNDING_REGIMES",
     "HISTORY_FIELDS",
-    "HISTORY_SCHEMA",
     "STRATEGY_SCHEMA",
-    "_BENCHMARK_PARSED_CACHE",
     "CarryError",
     "CarryStrategyError",
-    "IssHistoryError",
-    "_benchmark_rows",
     "_funding_regime",
     "_history_url",
     "_normalize_history",

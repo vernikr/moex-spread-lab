@@ -335,7 +335,69 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(
             result["parameters"]["entry_condition"], "mean_previous_2_daily_funding_received > 0"
         )
+        self.assertEqual(
+            result["parameters"]["exit_conditions"],
+            [
+                "mean_previous_2_daily_funding_received <= 0",
+                "date >= far_expiry - 5 calendar days",
+            ],
+        )
         self.assertEqual(result["hypothesis"], "funding_only_carry")
+
+    def test_exit_conditions_reflect_warmup_observations_for_both_variants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contracts = root / "contracts.json"
+            write_near_far_contracts(contracts)
+            dates = [f"2026-01-{day:02d}" for day in range(1, 15)]
+            carry = {
+                "schema_version": "carry-study.v1",
+                "near": "NEAR",
+                "far": "FAR",
+                "rows": [
+                    {
+                        "date": d,
+                        "basis_far_minus_near": 1.0,
+                        "daily_funding_received_short_near": 1.0,
+                        "daily_gross_carry_pnl": 1.0,
+                    }
+                    for d in dates
+                ],
+            }
+            benchmark = root / "benchmark.json"
+            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
+            for warmup in (7, 12):
+                basis = build_carry_strategy(
+                    carry,
+                    benchmark,
+                    contracts,
+                    transaction_cost_scenario="low",
+                    warmup_observations=warmup,
+                    strategy_variant="basis_median",
+                )
+                funding_only = build_carry_strategy(
+                    carry,
+                    benchmark,
+                    contracts,
+                    transaction_cost_scenario="low",
+                    warmup_observations=warmup,
+                    strategy_variant="funding_only",
+                )
+                self.assertEqual(
+                    basis["parameters"]["exit_conditions"],
+                    [
+                        f"current_basis >= median_previous_{warmup}_basis",
+                        f"mean_previous_{warmup}_daily_funding_received <= 0",
+                        "date >= far_expiry - 5 calendar days",
+                    ],
+                )
+                self.assertEqual(
+                    funding_only["parameters"]["exit_conditions"],
+                    [
+                        f"mean_previous_{warmup}_daily_funding_received <= 0",
+                        "date >= far_expiry - 5 calendar days",
+                    ],
+                )
 
     def test_retired_funding_screen_stays_deleted_and_cli_fails_closed(self):
         with self.assertRaises(ModuleNotFoundError):

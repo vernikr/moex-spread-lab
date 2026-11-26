@@ -1,4 +1,5 @@
-"""Layer 0 (`msl-core`): W0 hashing, timeframes, settings, universe, contracts, and C99 `_fastcore`."""
+"""Layer 0 (`msl-core`): canonical hashing and run manifests (`w0`), settings, timeframes,
+universe IDs, strategy contracts, derived cache, and the optional C99 `_fastcore`."""
 
 from . import contracts, settings, timeframes, universe, w0
 from ._fastcore_loader import load_fastcore

@@ -5,21 +5,24 @@
   "kind": "core",
   "capabilities": [
     "canonical_hash",
-    "hashed_json_cache",
     "manifest_validation",
     "secret_scan",
-    "timeframe_registry",
+    "contract_intake",
+    "hashed_json_cache",
+    "derived_cache",
     "research_settings",
+    "timeframe_registry",
     "universe_registry",
+    "strategy_contracts",
     "c99_fastcore_accelerator"
   ],
   "inputs": [
     "run-manifest.v1",
-    "w0.fixture.v1",
     "iss-intake.v1"
   ],
   "outputs": [
-    "w0.replay.v1"
+    "msl.derived-cache/2",
+    "research-settings.json"
   ],
   "dependencies": [],
   "owner": "project-core",

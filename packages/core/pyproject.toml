@@ -1,7 +1,7 @@
 [project]
 name = "msl-core"
 version = "0.9.0"
-description = "MOEX Spread Lab Layer 0 core: W0 hashing, timeframes, settings, universe, and C99 fastcore"
+description = "MOEX Spread Lab Layer 0 core: canonical hashing, run manifests, settings, timeframes, universe IDs, strategy contracts, derived cache, and C99 fastcore"
 requires-python = ">=3.12,<3.13"
 dependencies = []
 

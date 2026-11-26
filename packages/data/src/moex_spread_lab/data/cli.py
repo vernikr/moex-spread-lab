@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
 from collections.abc import Callable
-from functools import partial
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from moex_spread_lab.core.w0 import write_json
-from moex_spread_lab.data.iss.catalog import (
-    fetch_candle_coverage,
-    fetch_iss_catalog,
-    write_timeframe_inventory,
+from moex_spread_lab.core.w0 import W0Error, write_json
+from moex_spread_lab.data.benchmark.lineage import build_lineage, collect_benchmark_sources
+from moex_spread_lab.data.iss.catalog import fetch_candle_series, fetch_iss_catalog
+from moex_spread_lab.data.lake.data_lake import ParquetBarStore
+from moex_spread_lab.data.lake.data_refresh import RefreshTarget, refresh_candle_datasets
+from moex_spread_lab.data.lake.h1_seal import activate_h1, deactivate_h1, verify_sealed_h1
+from moex_spread_lab.data.retention.data_inventory import build_data_inventory
+from moex_spread_lab.data.retention.data_retention import (
+    archive_rebuildable_caches,
+    plan_rebuildable_cache_archive,
 )
+from moex_spread_lab.data.retention.storage_policy import publish_report, storage_budget
 
 from .cli_parsers import (
     register_h1_parsers,
@@ -22,7 +25,6 @@ from .cli_parsers import (
     register_lake_parsers,
     register_retention_parsers,
 )
-from .cli_storage_handlers import STORAGE_DISPATCH
 
 
 def register(subparsers: Any) -> None:
@@ -32,61 +34,28 @@ def register(subparsers: Any) -> None:
     register_iss_and_benchmark_parsers(subparsers, run)
 
 
+def _emit(payload: Any) -> None:
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
 def _run_iss_intake(args: Any) -> int:
     result = fetch_iss_catalog(
-        base_url=args.base_url,
-        board=args.board,
-        near_secid=args.near,
-        far_secid=args.far,
+        base_url=args.base_url, board=args.board, near_secid=args.near, far_secid=args.far
     )
     write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "admission_status": result["admission_status"],
-                "candidate": result["candidate"]["candidate_id"],
-                "instrument_count": result["instrument_count"],
-                "raw_response_sha256": result["source"]["raw_response_sha256"],
-                "rights_status": result["source"]["rights_status"],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _run_iss_timeframe_inventory(args: Any) -> int:
-    catalog = fetch_iss_catalog(base_url=args.base_url, board=args.board)
-    inventory = fetch_candle_coverage(
-        catalog["instruments"],
-        base_url=args.base_url,
-        board=args.board,
-        timeout=args.timeout,
-        workers=args.workers,
-        delay_seconds=args.delay_seconds,
-        cache_dir=args.cache_dir,
-    )
-    write_timeframe_inventory(inventory, args.output, args.csv_output)
-    print(
-        json.dumps(
-            {
-                "instrument_count": inventory["instrument_count"],
-                "coverage_status_counts": inventory["coverage_status_counts"],
-                "minimum_timeframe_counts": inventory["minimum_timeframe_counts"],
-                "output": str(args.output),
-                "csv_output": str(args.csv_output) if args.csv_output else None,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    _emit(
+        {
+            "admission_status": result["admission_status"],
+            "candidate": result["candidate"]["candidate_id"],
+            "instrument_count": result["instrument_count"],
+            "raw_response_sha256": result["source"]["raw_response_sha256"],
+            "rights_status": result["source"]["rights_status"],
+        }
     )
     return 0
 
 
 def _run_iss_candles(args: Any) -> int:
-    from moex_spread_lab.data.iss.catalog import fetch_candle_series
-
     results: list[dict[str, Any]] = []
     for secid in args.secid:
         for interval in args.interval:
@@ -126,177 +95,204 @@ def _run_iss_candles(args: Any) -> int:
             "series": results,
         },
     )
-    print(
-        json.dumps({"series": results, "summary": str(summary)}, ensure_ascii=False, sort_keys=True)
-    )
+    _emit({"series": results, "summary": str(summary)})
     return 0
-
-
-def _run_iss_candle_pair_check(args: Any) -> int:
-    from moex_spread_lab.data.iss.catalog import analyze_candle_pair
-
-    result = analyze_candle_pair(args.near, args.far)
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "timeframe": result["timeframe"],
-                "common_timestamp_count": result["synchronization"]["common_timestamp_count"],
-                "near_only_count": result["synchronization"]["near_only_count"],
-                "far_only_count": result["synchronization"]["far_only_count"],
-                "status": result["synchronization"]["pair_analytical_status"],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _load_or_fetch_benchmark_source(
-    cache_dir: Path,
-    ticker: str,
-    from_date: str,
-    till_date: str,
-    delay_seconds: float,
-    fetch: Callable[..., dict[str, Any]],
-    *,
-    valid: Callable[[dict[str, Any]], bool] = lambda _: True,
-) -> dict[str, Any]:
-    path = cache_dir / f"{ticker}.json"
-    try:
-        cached = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        cached = None
-    if (
-        isinstance(cached, dict)
-        and cached.get("from") == from_date
-        and cached.get("till") == till_date
-        and valid(cached)
-    ):
-        return cached
-    source = fetch(from_date, till_date, delay_seconds=delay_seconds)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-    return source
-
-
-def _format_benchmark_source_report(source: dict[str, Any], **details: Any) -> dict[str, Any]:
-    rows = source["rows"]
-    boards = Counter(row.get("board") or "not_applicable" for row in rows)
-    return {
-        "source": source["source"],
-        "row_count": len(rows),
-        "raw_response_hashes": source["raw_response_hashes"],
-        "first_date": rows[0]["date"] if rows else None,
-        "last_date": rows[-1]["date"] if rows else None,
-        "board_row_counts": dict(boards),
-        **details,
-    }
-
-
-def _collect_benchmark_sources(
-    args: Any,
-) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
-    from moex_spread_lab.data.benchmark.lineage import (
-        fetch_cbr_ruonia_rates,
-        fetch_moex_history,
-        fetch_rusfar_rates,
-        rate_rows_to_price,
-    )
-
-    raw_sources: dict[str, list[dict[str, Any]]] = {}
-    source_reports: dict[str, dict[str, Any]] = {}
-    for ticker in ("FXMM", "VTBM", "LQDT"):
-        source = _load_or_fetch_benchmark_source(
-            args.cache_dir,
-            ticker,
-            args.from_date,
-            args.till_date,
-            args.delay_seconds,
-            partial(fetch_moex_history, ticker),
-        )
-        raw_sources[ticker] = source["rows"]
-        source_reports[ticker] = _format_benchmark_source_report(
-            source, board=source.get("board"), page_count=source["page_count"]
-        )
-    rusfar = _load_or_fetch_benchmark_source(
-        args.cache_dir,
-        "RUSFAR",
-        args.from_date,
-        args.till_date,
-        args.delay_seconds,
-        fetch_rusfar_rates,
-    )
-    raw_sources["RUSFAR"] = rate_rows_to_price(rusfar["rows"], "RUSFAR")
-    source_reports["RUSFAR"] = _format_benchmark_source_report(
-        rusfar, page_count=rusfar["page_count"]
-    )
-    ruonia = _load_or_fetch_benchmark_source(
-        args.cache_dir,
-        "CBR_RUONIA",
-        args.from_date,
-        args.till_date,
-        args.delay_seconds,
-        fetch_cbr_ruonia_rates,
-        valid=lambda value: value.get("status") == "available" and "methods" in value,
-    )
-    if ruonia["rows"]:
-        raw_sources["CBR_RUONIA"] = rate_rows_to_price(ruonia["rows"], "CBR_RUONIA")
-    source_reports["CBR_RUONIA"] = _format_benchmark_source_report(
-        ruonia,
-        request_count=ruonia["request_count"],
-        methods=ruonia.get("methods", []),
-        status=ruonia["status"],
-    )
-    return raw_sources, source_reports
 
 
 def _run_benchmark_lineage(args: Any) -> int:
-    from moex_spread_lab.data.benchmark.lineage import build_lineage
-
-    raw_sources, source_reports = _collect_benchmark_sources(args)
-    missing_sources = [
-        ticker
-        for ticker in ("CBR_RUONIA", "RUSFAR", "FXMM", "VTBM", "LQDT")
-        if not raw_sources.get(ticker)
+    raw_sources, source_reports = collect_benchmark_sources(
+        args.cache_dir, args.from_date, args.till_date, args.delay_seconds
+    )
+    missing = [
+        t for t in ("CBR_RUONIA", "RUSFAR", "FXMM", "VTBM", "LQDT") if not raw_sources.get(t)
     ]
     result = build_lineage(raw_sources)
     result["source_reports"] = source_reports
-    result["missing_sources"] = missing_sources
+    result["missing_sources"] = missing
     result["release_state"] = (
-        "observed_plus_labelled_proxy" if not missing_sources else "exploratory_proxy_only"
+        "observed_plus_labelled_proxy" if not missing else "exploratory_proxy_only"
     )
     write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "extended_start": result["extended_start"],
-                "extended_end": result["extended_end"],
-                "observed_start": result["observed_start"],
-                "row_count": len(result["rows"]),
-                "source_rows": result["source_rows"],
-                "missing_sources": result["missing_sources"],
-                "release_state": result["release_state"],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    _emit(
+        {
+            "extended_start": result["extended_start"],
+            "extended_end": result["extended_end"],
+            "observed_start": result["observed_start"],
+            "row_count": len(result["rows"]),
+            "source_rows": result["source_rows"],
+            "missing_sources": missing,
+            "release_state": result["release_state"],
+        }
     )
     return 0
 
 
-_ISS_DISPATCH = {
+def _run_h1_seal(args: Any) -> int:
+    try:
+        if args.activate:
+            if args.plan is None or args.candidate is None:
+                raise W0Error("activation requires --plan and --candidate")
+            result = activate_h1(args.root, args.plan, args.candidate)
+        else:
+            if args.plan is not None or args.candidate is not None:
+                raise W0Error("--plan/--candidate apply only to activation")
+            result = verify_sealed_h1(args.root) if args.verify else deactivate_h1(args.root)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise W0Error(f"H1 seal operation failed: {exc}") from exc
+    _emit(result)
+    return 0
+
+
+def _run_data_inventory(args: Any) -> int:
+    result = build_data_inventory(args.root, include_hashes=args.hashes, inspect_json=not args.fast)
+    if args.output:
+        write_json(args.output, result)
+    summary = (
+        result
+        if args.format == "json"
+        else {
+            "status": "ok",
+            "schema_version": result["schema_version"],
+            "summary": result["summary"],
+            "output": str(args.output) if args.output else None,
+        }
+    )
+    _emit(summary)
+    return 0
+
+
+def _run_storage_policy(args: Any) -> int:
+    try:
+        result = storage_budget(args.root, args.archives_root, args.max_allocated_bytes)
+        if args.output:
+            publish_report(args.output, result)
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise W0Error(f"storage policy report failed: {exc}") from exc
+    _emit(result)
+    return 0
+
+
+_ARCHIVE_KEYS = (
+    "schema_version",
+    "status",
+    "archive",
+    "classification",
+    "file_count",
+    "logical_bytes",
+    "allocated_bytes",
+    "archive_logical_bytes",
+    "deleted_file_count",
+    "requires_apply",
+)
+
+
+def _run_data_archive(args: Any) -> int:
+    result = (
+        archive_rebuildable_caches(args.root, args.manifest, args.archive)
+        if args.apply
+        else plan_rebuildable_cache_archive(args.root, args.manifest, args.archive)
+    )
+    _emit(result if args.format == "json" else {k: result[k] for k in _ARCHIVE_KEYS if k in result})
+    return 0
+
+
+def _run_import_candles(args: Any) -> int:
+    lake_root = args.lake_root if args.lake_root.is_absolute() else args.root / args.lake_root
+    store = ParquetBarStore(args.root, lake_root)
+    records: list[dict[str, Any]] = []
+    for legacy in args.legacy:
+        record = store.import_legacy(legacy, replace=args.replace)
+        if args.verify:
+            record["verification"] = store.verify_legacy(legacy)
+        records.append(record)
+    payload = (
+        records
+        if args.format == "json"
+        else {
+            "status": "ok",
+            "dataset_count": len(records),
+            "row_count": sum(int(record["row_count"]) for record in records),
+            "datasets": [record["dataset_id"] for record in records],
+        }
+    )
+    _emit(payload)
+    return 0
+
+
+def _run_data_refresh(args: Any) -> int:
+    root = args.root.resolve()
+    lake_root = args.lake_root if args.lake_root.is_absolute() else root / args.lake_root
+    output = refresh_candle_datasets(
+        root=root,
+        targets=[
+            RefreshTarget(secid, interval) for secid in args.secid for interval in args.interval
+        ],
+        till_date=args.till_date,
+        from_date=args.from_date,
+        output_dir=args.output_dir,
+        lake_root=lake_root,
+        board=args.board,
+        base_url=args.base_url,
+        overlap_sessions=args.overlap_sessions,
+        chunk_days=args.chunk_days,
+        workers=args.workers,
+        full_refresh=args.full_refresh,
+        raw_ttl_days=args.raw_ttl_days,
+        pin_raw=args.pin_raw,
+        timeout=args.timeout,
+        delay_seconds=args.delay_seconds,
+        retries=args.retries,
+        cache_dir=args.cache_dir,
+    )
+    summary = (
+        output
+        if args.format == "json"
+        else {
+            "status": output["status"],
+            "dataset_count": len(output["datasets"]),
+            "scheduled_chunk_count": output["scheduled_chunk_count"],
+            "datasets": output["datasets"],
+        }
+    )
+    _emit(summary)
+    return 0
+
+
+_LAKE_KEYS = (
+    "status",
+    "dataset_count",
+    "expired_entry_count",
+    "orphan_file_count",
+    "retained_entry_count",
+)
+
+
+def _run_lake_maintenance(args: Any) -> int:
+    root = args.root.resolve()
+    lake_root = args.lake_root if args.lake_root.is_absolute() else root / args.lake_root
+    store = ParquetBarStore(root, lake_root)
+    output = (
+        store.verify_all() if args.command == "data-verify" else store.compact(force=args.force)
+    )
+    _emit(output if args.format == "json" else {k: output[k] for k in _LAKE_KEYS if k in output})
+    return 0
+
+
+_DISPATCH: dict[str, Callable[[Any], int]] = {
+    "data-inventory": _run_data_inventory,
+    "storage-budget": _run_storage_policy,
+    "data-archive": _run_data_archive,
+    "data-h1-seal": _run_h1_seal,
+    "data-import-candles": _run_import_candles,
+    "data-refresh": _run_data_refresh,
+    "data-verify": _run_lake_maintenance,
+    "data-compact": _run_lake_maintenance,
     "iss-intake": _run_iss_intake,
-    "iss-timeframe-inventory": _run_iss_timeframe_inventory,
     "iss-candles": _run_iss_candles,
-    "iss-candle-pair-check": _run_iss_candle_pair_check,
     "benchmark-lineage": _run_benchmark_lineage,
 }
 
 
 def run(args: Any) -> int:
-    handler = STORAGE_DISPATCH.get(args.command) or _ISS_DISPATCH.get(args.command)
-    if handler is not None:
-        return handler(args)
-    return 2
+    handler = _DISPATCH.get(args.command)
+    return handler(args) if handler is not None else 2

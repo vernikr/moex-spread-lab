@@ -11,7 +11,11 @@ import ssl
 import time
 import urllib.request
 import zipfile
+from collections import Counter
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from functools import partial
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
@@ -398,6 +402,97 @@ def fetch_cbr_ruonia_rates(
     }
 
 
+def _load_or_fetch_benchmark_source(
+    cache_dir: Path,
+    ticker: str,
+    from_date: str,
+    till_date: str,
+    delay_seconds: float,
+    fetch: Callable[..., dict[str, Any]],
+    *,
+    valid: Callable[[dict[str, Any]], bool] = lambda _: True,
+) -> dict[str, Any]:
+    path = cache_dir / f"{ticker}.json"
+    try:
+        cached = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        cached = None
+    if (
+        isinstance(cached, dict)
+        and cached.get("from") == from_date
+        and cached.get("till") == till_date
+        and valid(cached)
+    ):
+        return cached
+    source = fetch(from_date, till_date, delay_seconds=delay_seconds)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    return source
+
+
+def _format_benchmark_source_report(source: dict[str, Any], **details: Any) -> dict[str, Any]:
+    rows = source["rows"]
+    boards = Counter(row.get("board") or "not_applicable" for row in rows)
+    return {
+        "source": source["source"],
+        "row_count": len(rows),
+        "raw_response_hashes": source["raw_response_hashes"],
+        "first_date": rows[0]["date"] if rows else None,
+        "last_date": rows[-1]["date"] if rows else None,
+        "board_row_counts": dict(boards),
+        **details,
+    }
+
+
+def collect_benchmark_sources(
+    cache_dir: Path,
+    from_date: str,
+    till_date: str,
+    delay_seconds: float,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """Load or fetch the observed and proxy LQDT benchmark sources and per-source reports."""
+    raw_sources: dict[str, list[dict[str, Any]]] = {}
+    source_reports: dict[str, dict[str, Any]] = {}
+    for ticker in ("FXMM", "VTBM", "LQDT"):
+        source = _load_or_fetch_benchmark_source(
+            cache_dir,
+            ticker,
+            from_date,
+            till_date,
+            delay_seconds,
+            partial(fetch_moex_history, ticker),
+        )
+        raw_sources[ticker] = source["rows"]
+        source_reports[ticker] = _format_benchmark_source_report(
+            source, board=source.get("board"), page_count=source["page_count"]
+        )
+    rusfar = _load_or_fetch_benchmark_source(
+        cache_dir, "RUSFAR", from_date, till_date, delay_seconds, fetch_rusfar_rates
+    )
+    raw_sources["RUSFAR"] = rate_rows_to_price(rusfar["rows"], "RUSFAR")
+    source_reports["RUSFAR"] = _format_benchmark_source_report(
+        rusfar, page_count=rusfar["page_count"]
+    )
+    ruonia = _load_or_fetch_benchmark_source(
+        cache_dir,
+        "CBR_RUONIA",
+        from_date,
+        till_date,
+        delay_seconds,
+        fetch_cbr_ruonia_rates,
+        valid=lambda value: value.get("status") == "available" and "methods" in value,
+    )
+    if ruonia["rows"]:
+        raw_sources["CBR_RUONIA"] = rate_rows_to_price(ruonia["rows"], "CBR_RUONIA")
+    source_reports["CBR_RUONIA"] = _format_benchmark_source_report(
+        ruonia,
+        request_count=ruonia["request_count"],
+        methods=ruonia.get("methods", []),
+        status=ruonia["status"],
+    )
+    return raw_sources, source_reports
+
+
 __all__ = [
     "BENCHMARK_SCHEMA",
     "CHAIN",
@@ -405,6 +500,7 @@ __all__ = [
     "BenchmarkError",
     "adjust_vtbm_split",
     "build_lineage",
+    "collect_benchmark_sources",
     "fetch_cbr_ruonia_rates",
     "fetch_moex_history",
     "fetch_rusfar_rates",

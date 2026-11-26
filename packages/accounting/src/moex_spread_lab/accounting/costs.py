@@ -1,4 +1,4 @@
-"""Published MOEX derivatives taker tariff with a zero VTB broker fee, plus a slippage parameter."""
+"""Published MOEX derivatives taker tariff, zero VTB broker fee, slippage, and LQDT overlay."""
 
 from __future__ import annotations
 
@@ -55,11 +55,7 @@ def side_cost(
     *,
     native_spread: bool = False,
 ) -> dict[str, float]:
-    """Cost of one entry or exit side across legs; each leg is (contract terms, fill price).
-
-    A native calendar-spread order pays the tariff on both legs (the published rule) but crosses
-    one spread book, so slippage is charged once, on the first leg's tick value.
-    """
+    """Native calendar-spread orders pay tariff on both legs but cross one spread book for slippage."""
     exchange = slippage = 0.0
     for position, (contract, price) in enumerate(legs):
         group = contract.get("tariff_group") or CONTRACT_GROUP.get(contract["secid"])
@@ -83,5 +79,25 @@ def cost_totals(trades: list[dict[str, Any]]) -> dict[str, float]:
     return {key: round(value, 2) for key, value in totals.items()}
 
 
-# Compatibility for existing private imports.
+def lqdt_overlay_values(
+    capital: float,
+    cumulative_pnl: list[float],
+    margins: list[float],
+    benchmark_prices: list[float],
+) -> tuple[list[float], int]:
+    """Free cash compounds with LQDT; reserved margin stays idle in cash (A-11)."""
+    free = capital
+    values: list[float] = []
+    shortfalls = 0
+    for index, pnl in enumerate(cumulative_pnl):
+        growth = benchmark_prices[index] / benchmark_prices[index - 1] if index else 1.0
+        previous_pnl = cumulative_pnl[index - 1] if index else 0.0
+        previous_margin = margins[index - 1] if index else 0.0
+        free = free * growth + (pnl - previous_pnl) - (margins[index] - previous_margin)
+        shortfalls += free < 0
+        values.append(free + margins[index])
+    return values, shortfalls
+
+
+# Compatibility for existing private imports until #168 migrates external callers.
 _cost_totals = cost_totals

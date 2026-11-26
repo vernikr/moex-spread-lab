@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -7,9 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from moex_spread_lab.accounting import load_run_artifact
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.accounting.ledger import build_ledger
-from moex_spread_lab.accounting.run_artifacts import load_run_artifact
 from moex_spread_lab.strategies.cli import _run_analytical_baseline_cmd
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     build_daily_series,
@@ -253,35 +254,33 @@ class AnalyticsTests(unittest.TestCase):
             report, _ = load_run_artifact(args.output_dir)
             self.assertEqual(report, json.loads(args.legacy_json.read_text(encoding="utf-8")))
             self.assertEqual(json.loads(output.getvalue())["artifact_dir"], str(args.output_dir))
-            self.assertEqual(
-                build_ledger(args.output_dir)["summary"]["final_X"], report["summary"]["final_X"]
-            )
-
-    def test_ledger_preserves_nonexecution_and_rebuilds_proxy_metrics(self):
-        rows = spread_rows(timestamps=True)
-        series = {
-            "near": "NEAR",
-            "far": "FAR",
-            "timeframe": "1d",
-            "contracts": contract_terms(),
-            "rows": rows,
-            "provenance": {},
-        }
-        baseline = run_mean_reversion_baseline(series, lookback=3, entry_z=1.0, exit_z=0.5)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            baseline_path = root / "baseline.json"
-            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-            ledger = build_ledger(baseline_path)
-
-        self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
-        self.assertEqual(
-            ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],
-            ledger["summary"]["execution_attempt_count"],
-        )
-        self.assertEqual(ledger["summary"]["final_X"], baseline["summary"]["final_X"])
-        self.assertTrue(ledger["gates"]["W5_event_replay"])
-        self.assertFalse(ledger["summary"]["executable_value_available"])
+            for source in (args.output_dir, args.legacy_json):
+                with self.subTest(source=source):
+                    ledger_path = root / "ledger.json"
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "moex_spread_lab.cli",
+                            "execution-ledger",
+                            "--baseline",
+                            str(source),
+                            "--output",
+                            str(ledger_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+                    self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
+                    self.assertEqual(
+                        ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],
+                        ledger["summary"]["execution_attempt_count"],
+                    )
+                    self.assertEqual(ledger["summary"]["final_X"], report["summary"]["final_X"])
+                    self.assertTrue(ledger["gates"]["W5_event_replay"])
+                    self.assertFalse(ledger["summary"]["executable_value_available"])
 
 
 if __name__ == "__main__":

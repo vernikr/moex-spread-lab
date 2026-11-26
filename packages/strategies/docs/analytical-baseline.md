@@ -63,7 +63,7 @@ New baseline and sensitivity replays publish an immutable local **run directory*
 - `daily.parquet` and `trades.parquet`: Zstandard-compressed detailed marks and trades;
 - `manifest.json`: `research-run-artifact.v1` run/artifact identity, SHA-256 of every component, explicit input/evidence hashes, row/column metadata and retention state.
 
-`execution-ledger` and `validate-analytics` accept either this directory or an older `analytical-baseline.v1` JSON path. They verify the compact artifact before rehydrating its details, so moving the physical detail storage does not change the analytical baseline contract.
+The strategies CLI publishes through the public `moex_spread_lab.accounting` artifact API. `execution-ledger` and `validate-analytics` accept either this directory or an older `analytical-baseline.v1` JSON path. They verify the compact artifact before rehydrating its details, so moving the physical detail storage does not change the analytical baseline contract.
 
 A full pretty JSON file is now a compatibility export only; request it explicitly when an external legacy consumer requires it:
 

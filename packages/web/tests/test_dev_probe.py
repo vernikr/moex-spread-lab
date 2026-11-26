@@ -105,7 +105,6 @@ def test_serving_writes_no_instance_record(server):
     assert not (root / "data/analytics/server-instance.json").exists()
 
 
-
 def test_optimization_matches_saved_route_without_new_history(server):
     port, root = server
     selection = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}

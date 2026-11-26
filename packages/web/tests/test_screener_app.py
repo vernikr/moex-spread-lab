@@ -389,7 +389,7 @@ class ScreenerAppTests(unittest.TestCase):
 
     def test_web_modules_import_canonical_pair_screener_symbols(self):
         from moex_spread_lab.strategies.pair_screener import pair_screener
-        from moex_spread_lab.web import dispatch, routes_proof, server, store
+        from moex_spread_lab.web import dispatch, routes_proof, server
 
         web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
         retired_refs = [
@@ -401,7 +401,6 @@ class ScreenerAppTests(unittest.TestCase):
         self.assertEqual(retired_refs, [])
         self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
         self.assertIs(routes_proof.ScreenerError, pair_screener.ScreenerError)
-        self.assertIs(store.ScreenerInputs, pair_screener.ScreenerInputs)
         self.assertIs(server._pair_screener, pair_screener)
         for name in ("catalog", "build_result", "ScreenerInputs", "ScreenerError"):
             self.assertFalse(hasattr(server, name), name)

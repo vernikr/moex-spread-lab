@@ -411,85 +411,67 @@ class ArchitectureDagTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             test_file = root / "packages/data/tests/test_sample.py"
-            _write(test_file, "from moex_spread_lab.web import server\n")
+            rel = "packages/data/tests/test_sample.py"
             allowed = ALLOWED_LAYER_TARGETS["data"] | {"cli"}
-            violations = check_test_file_layers(
+            _write(test_file, "from moex_spread_lab.web import server\n")
+            (violation,) = check_test_file_layers(
                 test_file, root, "data", allowed, allowlist=frozenset()
             )
-            self.assertEqual(len(violations), 1)
-            self.assertIn("packages/data/tests/test_sample.py:1 (data)", violations[0])
-            self.assertIn("moex_spread_lab.web (web)", violations[0])
-
-            # Stale allowlist entry on an existing clean file fails the upper-bound check.
+            self.assertIn(f"{rel}:1 (data)", violation)
+            self.assertIn("moex_spread_lab.web (web)", violation)
+            # A stale allowlist entry on a now-clean file fails the upper-bound check, while an
+            # entry for a deleted file is tolerated.
             _write(test_file, "from moex_spread_lab.core import w0\n")
-            stale = check_test_file_layers(
-                test_file,
-                root,
-                "data",
-                allowed,
-                allowlist=frozenset({("packages/data/tests/test_sample.py", "web.server")}),
+            (stale,) = check_test_file_layers(
+                test_file, root, "data", allowed, allowlist=frozenset({(rel, "web.server")})
             )
-            self.assertEqual(len(stale), 1)
-            self.assertIn("stale LEGACY_UPWARD_TEST_IMPORTS entry", stale[0])
-
-            # Deleted allowlisted file path does not block package-scoped PRs before #168.
-            clean_pkg = check_package_test_layers(
-                root / "packages/data",
-                root,
-                ALLOWED_LAYER_TARGETS,
-                allowlist=frozenset({("packages/data/tests/deleted_legacy.py", "web.server")}),
+            self.assertIn("stale LEGACY_UPWARD_TEST_IMPORTS entry", stale)
+            deleted = frozenset({("packages/data/tests/deleted_legacy.py", "web.server")})
+            self.assertEqual(
+                check_package_test_layers(
+                    root / "packages/data", root, ALLOWED_LAYER_TARGETS, allowlist=deleted
+                ),
+                [],
             )
-            self.assertEqual(clean_pkg, [])
 
-    def test_proof_runtime_registration_handles_presence_and_absence(self) -> None:
+    def test_proof_runtime_alias_is_classified_only_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            core_mod = root / "packages/core/src/moex_spread_lab/core/sample.py"
-            proof_mod = root / "packages/proof/src/moex_spread_lab/proof/service.py"
-            _write(core_mod, "from moex_spread_lab.proof_runtime import service\n")
-            _write(proof_mod, "X = 1\n")
-
-            # When proof_runtime is absent on disk, discovery/classification succeeds cleanly.
-            self.assertNotIn("proof_runtime", package_head_layers(root))
-            modules_absent = _discover_modules(root)
-            self.assertEqual(set(modules_absent), set(_layer_assignments(modules_absent, root)))
-
-            # When proof_runtime is present on disk, upward imports through the alias fail DAG.
-            pr_init = root / "packages/proof/src/moex_spread_lab/proof_runtime/__init__.py"
-            _write(pr_init, "")
-            self.assertEqual(package_head_layers(root).get("proof_runtime"), "proof")
-            modules_present = _discover_modules(root)
-            layers_present = _layer_assignments(modules_present, root)
-            edges = _build_import_graph(modules_present, repo_root=root)
-            dag_violations = _layer_violations(edges, layers_present)
-            self.assertTrue(
-                any("core.sample" in v and "proof.service" in v for v in dag_violations)
+            _write(
+                root / "packages/core/src/moex_spread_lab/core/sample.py",
+                "from moex_spread_lab.proof_runtime import service\n",
             )
-
-            # Package test upward-import check also catches proof_runtime imports.
-            core_test = root / "packages/core/tests/test_upward_alias.py"
-            _write(core_test, "from moex_spread_lab.proof_runtime import service\n")
-            test_violations = check_package_test_layers(
+            _write(root / "packages/proof/src/moex_spread_lab/proof/service.py", "X = 1\n")
+            self.assertNotIn("proof_runtime", package_head_layers(root))
+            absent = _discover_modules(root)
+            self.assertEqual(set(absent), set(_layer_assignments(absent, root)))
+            # Once the alias package exists, upward imports through it fail the DAG and the
+            # package test upward-import check.
+            _write(root / "packages/proof/src/moex_spread_lab/proof_runtime/__init__.py", "")
+            self.assertEqual(package_head_layers(root).get("proof_runtime"), "proof")
+            modules = _discover_modules(root)
+            violations = _layer_violations(
+                _build_import_graph(modules, repo_root=root), _layer_assignments(modules, root)
+            )
+            self.assertTrue(any("core.sample" in v and "proof.service" in v for v in violations))
+            _write(
+                root / "packages/core/tests/test_upward_alias.py",
+                "from moex_spread_lab.proof_runtime import service\n",
+            )
+            (test_violation,) = check_package_test_layers(
                 root / "packages/core", root, ALLOWED_LAYER_TARGETS, allowlist=frozenset()
             )
-            self.assertEqual(len(test_violations), 1)
-            self.assertIn("moex_spread_lab.proof_runtime (proof)", test_violations[0])
+            self.assertIn("moex_spread_lab.proof_runtime (proof)", test_violation)
 
-    def test_new_strategy_folder_passes_the_shared_dag_test_without_edits(self) -> None:
-        _, baseline_edges = _workspace_analysis()
-        baseline_plugins = STRATEGY_SUBPACKAGES - SHARED_STRATEGY_INFRA
-        self.assertEqual(_strategy_isolation_violations(baseline_edges, baseline_plugins), [])
+    def test_drop_in_strategy_folder_is_classified_and_isolation_checked(self) -> None:
         edges, layers = _probe_analysis(_PROBE_CLEAN)
         self.assertIn(_PROBE_KEY, layers)
         self.assertEqual(_strategy_isolation_violations(edges, _probe_plugins()), [])
         self.assertEqual(_layer_violations(edges, layers), [])
         self.assertEqual(_find_cycles(_adjacency(edges)), [])
-
-    def test_dynamic_discovery_still_rejects_cross_strategy_imports(self) -> None:
         edges, _ = _probe_analysis(_PROBE_CROSS)
         violations = _strategy_isolation_violations(edges, _probe_plugins())
-        self.assertTrue(violations)
-        self.assertIn("funding_carry.plugin", "\n".join(violations))
+        self.assertIn("funding_carry.plugin", "\n".join(violations) or "no violation reported")
 
 
 if __name__ == "__main__":

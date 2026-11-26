@@ -83,15 +83,10 @@ def derive_layer(key: str, *, repo_root: Path | None = None) -> str | None:
 # Package test suites map to their owning package's layer.
 PACKAGE_TEST_LAYERS: dict[str, str] = dict(_PACKAGE_HEAD_LAYERS)
 
-# Frozen upper-bound allowlist of remaining cross-layer package test imports
-# (pre-W2 #230 eliminated the rest; the two entries belong to legacy accounting
-# suites retiring under #190/#191, final cleanup in #168). Existing files must
-# exercise every entry listed for them — stale entries fail the gate; entries
-# for deleted files are tolerated until #168.
-LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
-    (f"packages/accounting/tests/{name}.py", "strategies.pair_mean_reversion.analytics")
-    for name in ("test_run_artifacts", "test_validation")
-)
+# Upper-bound allowlist of cross-layer package test imports, keyed by (test file, target).
+# Every listed file must still exercise its entry: stale entries fail the gate, while
+# entries for deleted files are tolerated. The workspace currently has none.
+LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset()
 
 
 def iter_import_nodes(tree: ast.Module) -> Iterator[ast.Import | ast.ImportFrom]:

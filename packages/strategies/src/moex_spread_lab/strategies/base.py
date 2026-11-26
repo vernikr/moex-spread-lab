@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import math
 from array import array
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, cast
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
-from moex_spread_lab.core.contracts import CompatibilityVerdict, ParameterSpec, WindowSnapshot
+from moex_spread_lab.core.contracts import (
+    CompatibilityVerdict,
+    ParameterSpec,
+    StrategyIntentRun,
+    StrategyPlugin,
+    WindowSnapshot,
+)
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
@@ -103,6 +111,26 @@ def row_ts_days(raw_date: Any) -> float:
     return float((date.fromisoformat(s[:10]) - _EPOCH_DATE).days)
 
 
+def _build_calendar_buffers(rows: list[dict[str, Any]]) -> tuple[Any, ...]:
+    n = len(rows)
+    spreads, dev_pp, ts_days = array("d"), array("d"), array("d")
+    dte, sig_el, ent_el, ext_el = array("i"), array("B"), array("B"), array("B")
+    elig_pref = array("i", [0] * (n + 1))
+    acc = 0
+    for idx, r in enumerate(rows):
+        spreads.append(float(r["spread"]))
+        dev_pp.append(float(r.get("dev_pp", math.nan)))
+        ts_days.append(row_ts_days(r["date"]))
+        dte.append(int(r["days_to_near_expiry"]))
+        s_flag = int(bool(r.get("signal_eligible", True)))
+        sig_el.append(s_flag)
+        ent_el.append(int(bool(r.get("entry_eligible", True))))
+        ext_el.append(int(bool(r.get("exit_eligible", True))))
+        acc += s_flag
+        elig_pref[idx + 1] = acc
+    return (spreads, dev_pp, ts_days, dte, sig_el, ent_el, ext_el, elig_pref)
+
+
 def calendar_row_buffers(
     rows: list[dict[str, Any]],
     *,
@@ -110,28 +138,14 @@ def calendar_row_buffers(
     z_cache_key: Any = None,
 ) -> tuple[Any, ...]:
     """Build typed C-contiguous column arrays for fast calendar strategy scans."""
-    cache_key = (
-        ("_cols", z_cache_key) if (z_cache is not None and z_cache_key is not None) else None
-    )
-    if cache_key is not None and z_cache is not None and cache_key in z_cache:
-        return z_cache[cache_key]
-    n = len(rows)
-    spreads = array("d", (float(r["spread"]) for r in rows))
-    dev_pp = array("d", (float(r.get("dev_pp", math.nan)) for r in rows))
-    ts_days = array("d", (row_ts_days(r["date"]) for r in rows))
-    dte = array("i", (int(r["days_to_near_expiry"]) for r in rows))
-    sig_el = array("B", (1 if r.get("signal_eligible", True) else 0 for r in rows))
-    ent_el = array("B", (1 if r.get("entry_eligible", True) else 0 for r in rows))
-    ext_el = array("B", (1 if r.get("exit_eligible", True) else 0 for r in rows))
-    elig_pref = array("i", [0] * (n + 1))
-    acc = 0
-    for idx in range(n):
-        acc += sig_el[idx]
-        elig_pref[idx + 1] = acc
-    cols = (spreads, dev_pp, ts_days, dte, sig_el, ent_el, ext_el, elig_pref)
-    if cache_key is not None and z_cache is not None:
+    if z_cache is not None and z_cache_key is not None:
+        cache_key = ("_cols", z_cache_key)
+        if cache_key in z_cache:
+            return z_cache[cache_key]
+        cols = _build_calendar_buffers(rows)
         z_cache[cache_key] = cols
-    return cols
+        return cols
+    return _build_calendar_buffers(rows)
 
 
 def check_calendar_liquidity(
@@ -202,6 +216,149 @@ def clean_nonfinite_json(value: Any) -> Any:
     return value
 
 
+def require_finite_number(
+    value: Any,
+    msg: str = "Требуется конечное числовое значение.",
+    *,
+    positive: bool = False,
+) -> float:
+    """Validate that ``value`` is a finite int/float (excluding bool)."""
+    try:
+        if type(value) not in (int, float):
+            raise ValueError
+        num = float(value)
+        if not math.isfinite(num) or (positive and num <= 0):
+            raise ValueError
+        return num
+    except (OverflowError, ValueError):
+        raise W0Error(msg) from None
+
+
+def build_date_index(
+    rows: Sequence[Mapping[str, Any]],
+    msg: str,
+    parse: Callable[[Any], str] | None = None,
+) -> tuple[list[str], dict[str, int]]:
+    """Verify strictly increasing unique row dates and return ``(days, index)``."""
+    if not rows:
+        raise W0Error(msg)
+    if parse is None:
+        raw = [r.get("date") for r in rows]
+        if any(not isinstance(d, str) or not d for d in raw):
+            raise W0Error(msg)
+        days = cast(list[str], raw)
+    else:
+        days = [parse(r.get("date")) for r in rows]
+    if days != sorted(set(days)):
+        raise W0Error(msg)
+    return days, {day: i for i, day in enumerate(days)}
+
+
+def evaluate_plugin_intents(
+    plugin: StrategyPlugin,
+    window: WindowSnapshot,
+    params: dict[str, Any],
+    fill: str,
+    *,
+    isolate: bool = True,
+    msg: str = "Плагин вернул несогласованный набор сигналов.",
+    tuple_msg: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Run ``plugin.evaluate_intents`` and verify its ``StrategyIntentRun`` envelope."""
+    result: Any = (
+        plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
+        if isolate
+        else plugin.evaluate_intents(window, dict(params), fill)
+    )
+    if (
+        not isinstance(result, StrategyIntentRun)
+        or result.strategy_id != plugin.strategy_id
+        or result.fill != fill
+        or result.parameters != params
+    ):
+        raise W0Error(msg)
+    intents: Any = result.intents
+    if not isinstance(intents, tuple):
+        raise W0Error(tuple_msg or msg)
+    items = cast(tuple[Any, ...], intents)
+    if any(not isinstance(item, Mapping) for item in items):
+        raise W0Error("Некорректный сигнал плагина.")
+    return cast(tuple[Mapping[str, Any], ...], items)
+
+
+def validate_signal_payload(
+    item: Mapping[str, Any],
+    *,
+    forbidden_reasons: frozenset[str],
+) -> tuple[str, str, Mapping[str, Any]]:
+    """Validate common ``side``, ``reason``, and ``signal`` fields of a spread intent."""
+    side, reason, signal = item.get("side"), item.get("reason"), item.get("signal")
+    if (
+        side not in ("long_spread", "short_spread")
+        or not isinstance(reason, str)
+        or not reason
+        or reason in forbidden_reasons
+    ):
+        raise W0Error("Некорректное направление или причина выхода.")
+    if not isinstance(signal, Mapping):
+        raise W0Error("Сигнал плагина должен содержать тип и дату.")
+    sig = cast(Mapping[str, Any], signal)
+    if not isinstance(sig.get("kind"), str) or not sig["kind"]:
+        raise W0Error("Сигнал плагина должен содержать тип и дату.")
+    require_finite_number(sig.get("value"), "Значение сигнала должно быть конечным числом.")
+    return side, reason, sig
+
+
+@dataclass
+class IntentSpanTracker:
+    """Track non-overlapping causal trade spans and bar eligibility."""
+
+    rows: list[dict[str, Any]]
+    delay: int
+    previous_exit: int = -1
+    entry_days: set[str] = field(default_factory=set)
+    exit_days: set[str] = field(default_factory=set)
+
+    def _check_order(
+        self, indices: tuple[int, int, int], days: tuple[str, str], terminal_open: bool
+    ) -> None:
+        si, ei, xi = indices
+        entry_day, exit_day = days
+        if (
+            si < 0
+            or si > ei - self.delay
+            or (xi <= ei and not terminal_open)
+            or ei < self.previous_exit
+            or entry_day in self.entry_days
+            or exit_day in self.exit_days
+        ):
+            raise W0Error("Нарушен порядок событий или причинность сигналов.")
+
+    def check_and_advance(
+        self,
+        indices: tuple[int, int, int],
+        days: tuple[str, str],
+        *,
+        forced: bool,
+        terminal_open: bool = False,
+    ) -> None:
+        self._check_order(indices, days, terminal_open)
+        si, ei, xi = indices
+        entry_day, exit_day = days
+        last = len(self.rows) - 1
+        if (terminal_open and (xi != last or ei != xi)) or (forced and xi != last):
+            raise W0Error("Некорректная конечная отметка позиции.")
+        if not self.rows[si].get("signal_eligible", True) or not self.rows[ei].get(
+            "entry_eligible", True
+        ):
+            raise W0Error("Сигнал или вход на недопустимом баре.")
+        if not forced and not terminal_open and not self.rows[xi].get("exit_eligible", True):
+            raise W0Error("Выход на недопустимом баре.")
+        self.entry_days.add(entry_day)
+        self.exit_days.add(exit_day)
+        self.previous_exit = xi
+
+
 __all__ = [
     "CALENDAR_EXIT_REASONS",
     "CALENDAR_FILLS",
@@ -210,7 +367,9 @@ __all__ = [
     "PRICE_FILLS",
     "REFERENCE_WARNING",
     "ZSCORE_CALENDAR_OPTIONS",
+    "IntentSpanTracker",
     "StrategyRegistry",
+    "build_date_index",
     "calendar_price",
     "calendar_proof_plugin_ids",
     "calendar_row_buffers",
@@ -220,8 +379,11 @@ __all__ = [
     "daily_pair_proof_plugin_ids",
     "discover_strategies",
     "elapsed_calendar_days",
+    "evaluate_plugin_intents",
     "make_calendar_trade",
     "population_rolling_stats",
+    "require_finite_number",
     "row_ts_days",
     "validate_parameter_map",
+    "validate_signal_payload",
 ]

@@ -8,49 +8,23 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
-from moex_spread_lab.core.contracts import StrategyIntentRun, StrategyPlugin, WindowSnapshot
+from moex_spread_lab.core.contracts import StrategyPlugin, WindowSnapshot
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from ..base import PRICE_FILLS, calendar_price
+from ..base import (
+    PRICE_FILLS,
+    IntentSpanTracker,
+    build_date_index,
+    calendar_price,
+    evaluate_plugin_intents,
+    require_finite_number,
+    validate_signal_payload,
+)
 
-
-def _require_finite_num(value: Any, msg: str) -> float:
-    try:
-        if type(value) not in (int, float) or not math.isfinite(float(value)):
-            raise ValueError
-        return float(value)
-    except (OverflowError, ValueError):
-        raise W0Error(msg) from None
-
-
-def _lookup_intent_indices(
-    item: Mapping[str, Any], lookup: dict[str, int]
-) -> tuple[str, str, int, int, int, Mapping[str, Any]]:
-    entry_day = item.get("entry_date")
-    exit_day = item.get("exit_date")
-    signal = item.get("signal")
-    if not isinstance(entry_day, str) or not isinstance(exit_day, str):
-        raise W0Error("Даты сигнала или сделки отсутствуют в окне.")
-    if not isinstance(signal, Mapping):
-        raise W0Error("Сигнал плагина должен содержать тип и дату.")
-    signal = cast(Mapping[str, Any], signal)
-    if (
-        not isinstance(signal.get("kind"), str)
-        or not signal["kind"]
-        or not isinstance(signal.get("date"), str)
-    ):
-        raise W0Error("Сигнал плагина должен содержать тип и дату.")
-    try:
-        ei, xi, si = lookup[entry_day], lookup[exit_day], lookup[signal["date"]]
-    except KeyError:
-        raise W0Error("Даты сигнала или сделки отсутствуют в окне.") from None
-    _require_finite_num(signal.get("value"), "Значение сигнала должно быть конечным числом.")
-    return entry_day, exit_day, ei, xi, si, signal
+_FORBIDDEN_REASONS = frozenset({"end_of_sample", "open_at_data_end_no_executable_exit"})
 
 
 def _verify_calendar_prices(
@@ -59,8 +33,8 @@ def _verify_calendar_prices(
     try:
         expected_entry = calendar_price(entry_row, quote)
         expected_exit = calendar_price(exit_row, quote)
-        p_ent = _require_finite_num(item.get("entry_price"), "")
-        p_ext = _require_finite_num(item.get("exit_price"), "")
+        p_ent = require_finite_number(item.get("entry_price"), "")
+        p_ext = require_finite_number(item.get("exit_price"), "")
         if not (math.isfinite(expected_entry) and math.isfinite(expected_exit)):
             raise ValueError
         if (p_ent, p_ext) != (expected_entry, expected_exit):
@@ -70,70 +44,32 @@ def _verify_calendar_prices(
     return expected_entry, expected_exit
 
 
-@dataclass
-class _IntentScanState:
-    rows: list[dict[str, Any]]
-    lookup: dict[str, int]
-    delay: int
-    quote: str
-    previous_exit: int = -1
-    entry_days: set[str] = field(default_factory=set)
-    exit_days: set[str] = field(default_factory=set)
-
-
-def _violates_intent_order(
-    st: _IntentScanState, indices: tuple[int, int, int], days: tuple[str, str], terminal_open: bool
-) -> bool:
-    si, ei, xi = indices
-    entry_day, exit_day = days
-    return (
-        si < 0
-        or si > ei - st.delay
-        or (xi <= ei and not terminal_open)
-        or ei < st.previous_exit
-        or entry_day in st.entry_days
-        or exit_day in st.exit_days
-    )
-
-
-def _bad_terminal_mark(
-    st: _IntentScanState, xi: int, ei: int, forced: bool, terminal_open: bool
-) -> bool:
-    if terminal_open:
-        # A position opened on the final bar is reported open, not closed on the same day.
-        return xi != len(st.rows) - 1 or ei != xi
-    return forced and xi != len(st.rows) - 1
-
-
-def _validate_calendar_intent(item: Mapping[str, Any], st: _IntentScanState) -> dict[str, Any]:
-    entry_day, exit_day, ei, xi, si, signal = _lookup_intent_indices(item, st.lookup)
-    side, reason = item.get("side"), item.get("reason")
+def _validate_calendar_intent(
+    item: Mapping[str, Any], lookup: dict[str, int], quote: str, tracker: IntentSpanTracker
+) -> dict[str, Any]:
+    side, reason, signal = validate_signal_payload(item, forbidden_reasons=_FORBIDDEN_REASONS)
+    entry_day, exit_day, sig_day = item.get("entry_date"), item.get("exit_date"), signal.get("date")
     if (
-        side not in ("long_spread", "short_spread")
-        or not isinstance(reason, str)
-        or not reason
-        or reason in {"end_of_sample", "open_at_data_end_no_executable_exit"}
+        not isinstance(entry_day, str)
+        or not isinstance(exit_day, str)
+        or not isinstance(sig_day, str)
     ):
-        raise W0Error("Некорректное направление или причина выхода.")
+        raise W0Error("Даты сигнала или сделки отсутствуют в окне.")
+    try:
+        ei, xi, si = lookup[entry_day], lookup[exit_day], lookup[sig_day]
+    except KeyError:
+        raise W0Error("Даты сигнала или сделки отсутствуют в окне.") from None
     terminal_open = bool(item.get("open_at_end"))
     forced = reason == "end_of_window" or terminal_open
-    if _violates_intent_order(st, (si, ei, xi), (entry_day, exit_day), terminal_open):
-        raise W0Error("Нарушен порядок событий или причинность сигналов.")
-    if _bad_terminal_mark(st, xi, ei, forced, terminal_open):
-        raise W0Error("Некорректная конечная отметка позиции.")
-    if not st.rows[si].get("signal_eligible", True) or not st.rows[ei].get("entry_eligible", True):
-        raise W0Error("Сигнал или вход на недопустимом баре.")
-    if not forced and not terminal_open and not st.rows[xi].get("exit_eligible", True):
-        raise W0Error("Выход на недопустимом баре.")
-    expected_entry, expected_exit = _verify_calendar_prices(
-        item, st.rows[ei], st.rows[xi], st.quote
+    tracker.check_and_advance(
+        (si, ei, xi), (entry_day, exit_day), forced=forced, terminal_open=terminal_open
     )
-    st.entry_days.add(entry_day)
-    st.exit_days.add(exit_day)
-    st.previous_exit = xi
+    expected_entry, expected_exit = _verify_calendar_prices(
+        item, tracker.rows[ei], tracker.rows[xi], quote
+    )
     return {
-        "entry": st.rows[ei],
-        "exit": st.rows[xi],
+        "entry": tracker.rows[ei],
+        "exit": tracker.rows[xi],
         "direction": 1 if side == "long_spread" else -1,
         "entry_price": expected_entry,
         "exit_price": expected_exit,
@@ -153,29 +89,16 @@ def calendar_intent_trades(
     ):
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
     rows = list(window.rows)
-    dates = [r.get("date") for r in rows]
-    if not rows or any(not isinstance(d, str) or not d for d in dates):
-        raise W0Error("Окно плагина должно содержать уникальные упорядоченные даты.")
-    dates = cast(list[str], dates)
-    if dates != sorted(set(dates)):
-        raise W0Error("Окно плагина должно содержать уникальные упорядоченные даты.")
-    lookup = {str(day): i for i, day in enumerate(dates)}
-    result: Any = plugin.evaluate_intents(deepcopy(window), deepcopy(params), fill)
-    if (
-        not isinstance(result, StrategyIntentRun)
-        or result.strategy_id != plugin.strategy_id
-        or result.fill != fill
-        or result.parameters != params
-    ):
-        raise W0Error("Плагин вернул несогласованный набор сигналов.")
-    intents: Any = result.intents
-    if not isinstance(intents, tuple):
-        raise W0Error("Плагин должен вернуть неизменяемый список сигналов.")
+    _, lookup = build_date_index(
+        rows, "Окно плагина должно содержать уникальные упорядоченные даты."
+    )
+    intents = evaluate_plugin_intents(
+        plugin,
+        window,
+        params,
+        fill,
+        tuple_msg="Плагин должен вернуть неизменяемый список сигналов.",
+    )
     delay, quote = PRICE_FILLS[fill]
-    st = _IntentScanState(rows=rows, lookup=lookup, delay=delay, quote=quote)
-    trades: list[dict[str, Any]] = []
-    for item in cast(tuple[Any, ...], intents):
-        if not isinstance(item, Mapping):
-            raise W0Error("Некорректный сигнал плагина.")
-        trades.append(_validate_calendar_intent(cast(Mapping[str, Any], item), st))
-    return trades
+    tracker = IntentSpanTracker(rows=rows, delay=delay)
+    return [_validate_calendar_intent(item, lookup, quote, tracker) for item in intents]

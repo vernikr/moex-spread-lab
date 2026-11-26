@@ -178,10 +178,6 @@ max-statements = 50
 "packages/proof/src/moex_spread_lab/proof/proof_kernel.py" = ["PLR0913"]
 "packages/web/src/moex_spread_lab/web/routes_proof.py" = ["PLR0913"]
 "packages/web/src/moex_spread_lab/web/server.py" = ["C901", "PLR0911", "SIM105"]
-"packages/web/tests/browser/automatic_size_smoke.py" = ["E741"]
-"packages/web/tests/browser/global_capital_smoke.py" = ["B905"]
-"packages/web/tests/browser/period_settings_smoke.py" = ["E402"]
-"packages/web/tests/browser/strategy_search_smoke.py" = ["E402"]
 "tests/funding_fixtures.py" = ["B905"]
 "tests/proof_fixtures.py" = ["B905"]
 
@@ -4440,3 +4436,19 @@ paths = ["packages/proof/src/moex_spread_lab/proof/carry_route.py"]
 [[tool.size-report.columns]]
 label = "carry_payload.py"
 paths = ["packages/proof/src/moex_spread_lab/proof/carry_payload.py"]
+
+[[tool.size-report.columns]]
+label = "pair_data.py"
+paths = ["packages/strategies/src/moex_spread_lab/strategies/pair_data.py"]
+
+[[tool.size-report.columns]]
+label = "test_data_cli.py"
+paths = ["packages/data/tests/test_data_cli.py"]
+
+[[tool.size-report.columns]]
+label = "conformance_fixtures.py"
+paths = ["packages/strategies/tests/conformance_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "test_intent_boundaries.py"
+paths = ["packages/strategies/tests/test_intent_boundaries.py"]

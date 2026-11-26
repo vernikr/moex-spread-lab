@@ -38,8 +38,7 @@
   },
   "complexity": {
     "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
-    "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
-    "packages/web/tests/browser/group_lamps_smoke.py::run": 18
+    "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22
   },
   "files": {
     "packages/core/src/moex_spread_lab/core/_fastcore.c": {

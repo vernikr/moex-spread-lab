@@ -6,16 +6,7 @@ from typing import Any
 
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
 
-from .contracts import (
-    ASSETS,
-    CROSS_EXPIRY_PAIRS,
-    FILL_LABELS,
-    STRATEGIES,
-    SYNTHETIC_TRIANGLE_PAIRS,
-)
-from .contracts import (
-    stress_ok as _stress_ok,
-)
+from .contracts import ASSETS, FILL_LABELS, STRATEGIES, stress_ok
 
 
 def build_h1_catalog(
@@ -58,7 +49,7 @@ def build_h1_catalog(
                         "tradable_every_session": window["tradable_every_session"],
                         "session_count": window["session_count"],
                         "max_pair_margin_rub": window["max_pair_margin_rub"],
-                        "passes_capital_screen": _stress_ok(
+                        "passes_capital_screen": stress_ok(
                             window["max_pair_margin_rub"], initial_capital=initial_capital
                         ),
                     }
@@ -81,54 +72,8 @@ def build_h1_catalog(
     }
 
 
-def _cross_and_triangle_assets(
-    histories: dict[str, dict[str, dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    extra: list[dict[str, Any]] = []
-    for spec in (*CROSS_EXPIRY_PAIRS, *SYNTHETIC_TRIANGLE_PAIRS):
-        legs = spec.get("legs") or (spec["near"], spec["far"])
-        windows: list[dict[str, Any]] = []
-        for code in ("H6", "M6", "U6", "Z6"):
-            secids = [f"{leg}{code}" for leg in legs]
-            if not all(histories.get(s) for s in secids):
-                continue
-            day_sets: list[set[str]] = [set(histories[s]) for s in secids]
-            common = sorted(day_sets[0].intersection(*day_sets[1:]))
-            if len(common) < 22:
-                continue
-            pair_label = (
-                f"{secids[0]}+{secids[1]}/{secids[2]}"
-                if len(secids) == 3
-                else f"{secids[0]}/{secids[1]}"
-            )
-            windows.append(
-                {
-                    "pair": pair_label,
-                    "from": common[0],
-                    "to": common[-1],
-                    "observations": len(common),
-                    "min_spread_volume": MIN_DAILY_VOLUME,
-                    "tradable_every_day": True,
-                    "max_pair_margin_rub": 0.0,
-                    "passes_capital_screen": True,
-                }
-            )
-        if windows:
-            extra.append(
-                {
-                    "asset": spec["pair_id"],
-                    "name": spec["name"],
-                    "group": spec["family"],
-                    "monthly": False,
-                    "convergence": False,
-                    "windows": windows,
-                }
-            )
-    return extra
-
-
 def build_1d_catalog(data: dict[str, Any], initial_capital: float) -> dict[str, Any]:
-    base_assets = [
+    assets = [
         {
             "asset": asset,
             "name": ASSETS[asset]["name"],
@@ -144,7 +89,7 @@ def build_1d_catalog(data: dict[str, Any], initial_capital: float) -> dict[str, 
                     "min_spread_volume": w["min_spread_volume"],
                     "tradable_every_day": w["min_spread_volume"] >= MIN_DAILY_VOLUME,
                     "max_pair_margin_rub": w["max_pair_margin_rub"],
-                    "passes_capital_screen": _stress_ok(
+                    "passes_capital_screen": stress_ok(
                         w["max_pair_margin_rub"], initial_capital=initial_capital
                     ),
                 }
@@ -154,14 +99,13 @@ def build_1d_catalog(data: dict[str, Any], initial_capital: float) -> dict[str, 
         for asset, windows in data["windows"].items()
         if windows
     ]
-    base_assets.extend(_cross_and_triangle_assets(data.get("histories", {})))
     return {
         "till": data["till"],
         "timeframe": "1d",
         "min_daily_volume": MIN_DAILY_VOLUME,
         "strategies": STRATEGIES,
         "fills": FILL_LABELS,
-        "assets": base_assets,
+        "assets": assets,
     }
 
 

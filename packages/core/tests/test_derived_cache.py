@@ -58,6 +58,28 @@ def test_same_size_same_mtime_tick_edit_invalidates(tmp_path):
     assert _mtime_ns(target) == stamp_ns
 
 
+def test_warm_fingerprint_reuses_memoized_digests(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    # The freshness guard keeps very fresh (coarse-clock) files unmemoized;
+    # zero it to exercise the warm path.
+    monkeypatch.setattr(derived_cache, "_DIGEST_MEMO_MIN_AGE_NS", 0)
+    real_sha256_file = derived_cache.sha256_file
+    calls = 0
+
+    def counting_sha256_file(path):
+        nonlocal calls
+        calls += 1
+        return real_sha256_file(path)
+
+    monkeypatch.setattr(derived_cache, "sha256_file", counting_sha256_file)
+    derived_cache.fingerprint(root, "ns")
+    assert calls >= 2  # cold pass hashes every small contributing file
+    calls = 0
+    warm = derived_cache.fingerprint(root, "ns")
+    assert derived_cache.fingerprint(root, "ns") == warm
+    assert calls == 0  # warm pass re-stats but never re-reads file bytes
+
+
 def test_store_load_roundtrip_is_byte_for_byte(tmp_path):
     root = _root(tmp_path)
     payload = b'{"assets":[{"asset":"SR"}],"timeframe":"1d"}'

@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,14 @@ DERIVED_CACHE_SCHEMA = "msl.derived-cache/2"
 _CONTENT_HASH_MAX_BYTES = 2 * 1024 * 1024
 
 _DISABLED = frozenset({"0", "off", "false", "no"})
+
+_DIGEST_MEMO_CAPACITY = 2048
+# Coarse clocks (1 s-class ticks, quantized sandboxes) can stamp a same-second
+# rewrite with an identical ctime_ns, so a fresh entry is never memo-trusted;
+# any real write bumps ctime to ~now, which always falls inside this window.
+_DIGEST_MEMO_MIN_AGE_NS = 2 * 1_000_000_000
+_digest_memo: dict[tuple[str, int, int, int], str] = {}
+_digest_memo_lock = threading.Lock()
 
 
 def derived_cache_enabled() -> bool:
@@ -52,11 +62,30 @@ def _excluded(base: Path, path: Path) -> bool:
     return relative.parts[:1] == ("analytics",)
 
 
-def _content_digest(path: Path) -> str | None:
+def _hash_or_none(path: Path) -> str | None:
     try:
         return sha256_file(path)
     except OSError:
         return None
+
+
+def _content_digest(path: Path, stat: os.stat_result) -> str | None:
+    # Keyed by (path, mtime_ns, ctime_ns, size). Failures are not memoized.
+    key = (str(path), stat.st_mtime_ns, getattr(stat, "st_ctime_ns", 0), stat.st_size)
+    if time.time_ns() - key[2] < _DIGEST_MEMO_MIN_AGE_NS:
+        return _hash_or_none(path)
+    with _digest_memo_lock:
+        cached = _digest_memo.get(key)
+        if cached is not None:
+            return cached
+    digest = _hash_or_none(path)
+    if digest is None:
+        return None
+    with _digest_memo_lock:
+        if len(_digest_memo) >= _DIGEST_MEMO_CAPACITY:
+            _digest_memo.clear()
+        _digest_memo[key] = digest
+    return digest
 
 
 def _entry(root: Path, path: Path) -> list[Any] | None:
@@ -67,7 +96,7 @@ def _entry(root: Path, path: Path) -> list[Any] | None:
     rel = path.relative_to(root).as_posix()
     entry: list[Any] = [rel, stat.st_mtime_ns, getattr(stat, "st_ctime_ns", 0), stat.st_size]
     if stat.st_size <= _CONTENT_HASH_MAX_BYTES:
-        entry.append(_content_digest(path))
+        entry.append(_content_digest(path, stat))
     return entry
 
 

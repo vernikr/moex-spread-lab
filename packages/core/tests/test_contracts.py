@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -39,11 +39,18 @@ class CoreContractsTests(unittest.TestCase):
             timeframe="1d",
             rows=rows,
             extra={"monthly": False},
+            carry_study={"rows": [{"date": "a"}, {"date": "b"}], "name": "carry"},
+            near="SRH6",
+            initial_capital_rub=12345,
         )
         prefix = snap.truncated(1)
         self.assertEqual(len(prefix.rows), 1)
         self.assertEqual(prefix.rows[0]["date"], "2026-01-01")
         self.assertEqual(prefix.extra, {"monthly": False})
+        self.assertEqual(prefix.carry_study, {"rows": [{"date": "a"}], "name": "carry"})
+        self.assertEqual(prefix.near, snap.near)
+        self.assertEqual(prefix.initial_capital_rub, snap.initial_capital_rub)
+        self.assertEqual(len(snap.rows), 2)
 
     def test_compatibility_verdict_fields(self) -> None:
         self.assertTrue(CompatibilityVerdict(True).compatible)
@@ -67,10 +74,10 @@ class CoreContractsTests(unittest.TestCase):
             def validate_parameters(self, raw, context: InstrumentContext | None = None):
                 return {"lookback": int(raw.get("lookback", 10))}
 
-            def check_compatibility(self, window: WindowSnapshot, settings=None):
+            def check_compatibility(self, _window: WindowSnapshot, settings=None):
                 return CompatibilityVerdict(True)
 
-            def evaluate_intents(self, window: WindowSnapshot, params, fill: str):
+            def evaluate_intents(self, _window: WindowSnapshot, params, fill: str):
                 return StrategyIntentRun(
                     strategy_id=self.strategy_id,
                     fill=fill,
@@ -99,7 +106,7 @@ class CoreContractsTests(unittest.TestCase):
             required_asset_capability = "convergence"
             trust_tier = "builtin"
 
-        plugin = MetaPlugin()
+        plugin = cast(StrategyPlugin, MetaPlugin())
         self.assertEqual(plugin_proof_adapter(plugin), "pair_price_intents.v1")
         self.assertEqual(dict(plugin_parameter_aliases(plugin)), {"window": "lookback"})
         self.assertEqual(
@@ -111,7 +118,7 @@ class CoreContractsTests(unittest.TestCase):
         class BarePlugin:
             pass
 
-        bare = BarePlugin()
+        bare = cast(StrategyPlugin, BarePlugin())
         self.assertIsNone(plugin_proof_adapter(bare))
         self.assertEqual(dict(plugin_parameter_aliases(bare)), {})
         self.assertEqual(plugin_ui_field_order(bare, ("fallback",)), ("fallback",))
@@ -128,9 +135,9 @@ class CoreContractsTests(unittest.TestCase):
         class DropIn:
             trust_tier = "builtin"
 
-        self.assertTrue(plugin_is_builtin(Shipped()))
+        self.assertTrue(plugin_is_builtin(cast(StrategyPlugin, Shipped())))
         # The declared tier alone cannot identify the engine: a drop-in may inherit it.
-        self.assertFalse(plugin_is_builtin(DropIn()))
+        self.assertFalse(plugin_is_builtin(cast(StrategyPlugin, DropIn())))
 
 
 if __name__ == "__main__":

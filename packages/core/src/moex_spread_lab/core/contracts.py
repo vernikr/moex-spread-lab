@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from .settings import ResearchSettings
@@ -108,25 +108,7 @@ class WindowSnapshot:
         carry_study = self.carry_study
         if carry_study is not None and isinstance(carry_study.get("rows"), list):
             carry_study = {**carry_study, "rows": list(carry_study["rows"][:count])}
-        return WindowSnapshot(
-            universe=self.universe,
-            pair=self.pair,
-            timeframe=self.timeframe,
-            asset=self.asset,
-            rows=prefix_rows,
-            contracts=self.contracts,
-            near=self.near,
-            far=self.far,
-            funding_swaprates=self.funding_swaprates,
-            carry_study=carry_study,
-            benchmark=self.benchmark,
-            cost_profile=self.cost_profile,
-            initial_capital_rub=self.initial_capital_rub,
-            slippage_ticks=self.slippage_ticks,
-            native_spread_order=self.native_spread_order,
-            far_point_value_rub=self.far_point_value_rub,
-            extra=self.extra,
-        )
+        return replace(self, rows=prefix_rows, carry_study=carry_study)
 
 
 @dataclass(frozen=True)
@@ -160,10 +142,14 @@ class StrategyPlugin(Protocol):
     ) -> dict[str, Any]: ...
     def check_compatibility(
         self, window: WindowSnapshot, settings: ResearchSettings | None = None
-    ) -> CompatibilityVerdict: ...
+    ) -> CompatibilityVerdict:
+        raise NotImplementedError(window)
+
     def evaluate_intents(
         self, window: WindowSnapshot, params: Mapping[str, Any], fill: str
-    ) -> StrategyIntentRun: ...
+    ) -> StrategyIntentRun:
+        raise NotImplementedError(window)
+
     def compute_entry_bands(
         self,
         series: list[dict[str, Any]],
@@ -172,16 +158,6 @@ class StrategyPlugin(Protocol):
         *,
         far_point_value_rub: float = 1.0,
     ) -> list[EntryBandPoint]: ...
-
-
-# Declarative capability attributes a plugin implementation may declare. They stay optional so
-# existing drop-in plugins keep loading unchanged; consumers read them through the helpers below
-# instead of ad-hoc ``getattr`` chains:
-#   proof_adapter: str | None            validated intent-adapter contract id (legacy path if None)
-#   family_parameter_aliases: Mapping[str, str]  incoming parameter renames applied for this plugin
-#   ui_field_order: tuple[str, ...] | None        web form field order (schema order when None)
-#   required_asset_capability: str | None         asset capability gate, e.g. "convergence"
-#   trust_tier: Literal["builtin", "plugin"]      provenance-note tier
 
 
 def plugin_proof_adapter(plugin: StrategyPlugin) -> str | None:
@@ -210,12 +186,7 @@ _BUILTIN_PLUGIN_MODULE_PREFIX = "moex_spread_lab.strategies"
 
 
 def plugin_is_builtin(plugin: StrategyPlugin) -> bool:
-    """True for engines shipped inside the strategies package.
-
-    A drop-in may subclass a built-in plugin and inherit its ``trust_tier``, so the
-    declared tier alone cannot identify the built-in engine; the implementation's own
-    module does.
-    """
+    """True for engines shipped inside the strategies package."""
     return type(plugin).__module__.startswith(_BUILTIN_PLUGIN_MODULE_PREFIX)
 
 

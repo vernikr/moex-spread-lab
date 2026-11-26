@@ -1,11 +1,11 @@
 /** Lightweight-charts orchestration: panes, chart creation, series wiring and crosshair binding. */
 
 import { $, cls, COLORS, chartTime, displayTime, fmt, humanCost, rub, signed } from './dom.js';
-import { NORM_HINTS, NORM_PANEL, applyNormHint, spreadDisplayValues } from './normalizations.js';
+import { NORM_PANEL, applyNormHint, spreadDisplayValues } from './normalizations.js';
 import { isIntraday, legPrice, state } from './state.js';
 import { buildMarkers, buildSeries, chartOpts, makePane, markValidationStart, paneOptions } from './chart-series.js';
 
-export { NORM_HINTS, NORM_PANEL, applyNormHint, spreadDisplayValues };
+export { applyNormHint };
 
 export function ledgerIndex() {
   const m = {};
@@ -169,44 +169,48 @@ export function buildCharts() {
   state.markersApis.push(LWC.createSeriesMarkers(rawSpreadSeries, markers), LWC.createSeriesMarkers(spreadSeries, markers));
 
   const seriesByTime = new Map(S.map((r, i) => [chartTime(r.date), { r, i }]));
-  subscribeTradeClick([cSpreadRaw, cSpread], seriesByTime, refreshSelection);
+  const eventsByDate = {};
+  for (const t of state.payload.trades) {
+    for (const [kind, leg] of [['ENTRY', t.entry], ['EXIT', t.exit]]) (eventsByDate[leg.date] ||= []).push({ kind, t });
+  }
+  subscribeTradeClick([cSpreadRaw, cSpread], seriesByTime, eventsByDate);
 
   const tipDiv = tip;
   const chartMeta = new Map([
-    [cNear, { pane: nearPane, series: nearSeries, value: d => seriesByTime.get(d)?.r.near }],
-    [cFar, { pane: farPane, series: farSeries, value: d => seriesByTime.get(d)?.r.far }],
-    [cSpreadRaw, { pane: rawSpreadPane, series: rawSpreadSeries, value: d => { const e = seriesByTime.get(d); return e ? sRaw[e.i] : null; } }],
-    [cSpread, { pane: spreadPane, series: spreadSeries, value: d => { const e = seriesByTime.get(d); return e ? sDisp[e.i] : null; } }],
-    [cVol, { pane: volPane, series: volSeries, value: d => { const r = seriesByTime.get(d)?.r; return r ? ((state.universe === 'pair_screen' ? Math.min(r.near_volume ?? 0, r.far_volume ?? 0) : r.spread_volume) ?? 0) : null; } }],
+    [cNear, { pane: nearPane, series: nearSeries, value: r => r.near }],
+    [cFar, { pane: farPane, series: farSeries, value: r => r.far }],
+    [cSpreadRaw, { pane: rawSpreadPane, series: rawSpreadSeries, value: (_, i) => sRaw[i] }],
+    [cSpread, { pane: spreadPane, series: spreadSeries, value: (_, i) => sDisp[i] }],
+    [cVol, { pane: volPane, series: volSeries, value: r => (state.universe === 'pair_screen' ? Math.min(r.near_volume ?? 0, r.far_volume ?? 0) : r.spread_volume) ?? 0 }],
   ]);
-  if (cFund && fundSeries) chartMeta.set(cFund, { pane: fundingPane, series: fundSeries, value: d => seriesByTime.get(d)?.r.funding_rub });
-  chartMeta.set(cCum, { pane: cumPane, series: cumSeries, value: d => L[seriesByTime.get(d)?.r.date]?.cumulative_net_rub });
+  if (cFund && fundSeries) chartMeta.set(cFund, { pane: fundingPane, series: fundSeries, value: r => r.funding_rub });
+  chartMeta.set(cCum, { pane: cumPane, series: cumSeries, value: r => L[r.date]?.cumulative_net_rub });
   chartMeta.forEach(({ pane }, chart) => {
     chart._pane = pane;
     markValidationStart(chart, pane, state.payload.evaluation.periods.validation?.[0]);
   });
 
   syncVisibleRanges(state.charts);
-  bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime });
+  bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime, eventsByDate });
   root.append(tipDiv);
   return fitChartsToVisibleArea();
 }
 
-export function subscribeTradeClick(charts, seriesByTime, onSelectionChange) {
+function subscribeTradeClick(charts, seriesByTime, eventsByDate) {
   const onSpreadClick = param => {
     const day = param.time == null ? null : seriesByTime.get(param.time)?.r.date;
     if (!day) return;
-    const hits = state.payload.trades.filter(t => t.entry.date === day || t.exit.date === day);
+    const hits = [...new Set(eventsByDate[day]?.map(e => e.t))];
     if (!hits.length) return;
     if (state.dayClick.day === day) state.dayClick.index = (state.dayClick.index + 1) % hits.length;
     else state.dayClick = { day, index: 0 };
     state.selectedTrade = hits[state.dayClick.index].number;
-    onSelectionChange();
+    refreshSelection();
   };
   for (const chart of charts) chart.subscribeClick(onSpreadClick);
 }
 
-export function syncVisibleRanges(charts) {
+function syncVisibleRanges(charts) {
   let syncing = false;
   charts.forEach(chart => {
     chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
@@ -224,7 +228,7 @@ export function syncVisibleRanges(charts) {
   });
 }
 
-export function bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime }) {
+function bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime, eventsByDate }) {
   let syncingCrosshair = false;
   let activeHoverChart = null;
   const clearCrosshairs = (except = null) => {
@@ -248,15 +252,7 @@ export function bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime
       if (syncingCrosshair) return;
       const day = param.time;
       const pt = param.point;
-      if (!day || !pt || pt.x < 0 || pt.y < 0) {
-        if (activeHoverChart === chart) {
-          activeHoverChart = null;
-          tipDiv.style.display = 'none';
-          clearCrosshairs(chart);
-        }
-        return;
-      }
-      const entry = seriesByTime.get(day);
+      const entry = !day || !pt || pt.x < 0 || pt.y < 0 ? null : seriesByTime.get(day);
       if (!entry) {
         if (activeHoverChart === chart) {
           activeHoverChart = null;
@@ -269,13 +265,13 @@ export function bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime
       syncingCrosshair = true;
       chartMeta.forEach((otherMeta, other) => {
         if (other === chart || otherMeta.pane.classList.contains('hidden')) return;
-        const v = otherMeta.value(day);
+        const v = otherMeta.value(entry.r, entry.i);
         try {
           other.setCrosshairPosition(v != null && isFinite(v) ? v : NaN, day, otherMeta.series);
         } catch (_) {}
       });
       syncingCrosshair = false;
-      tipDiv.innerHTML = tipHtml(entry.r, L[entry.r.date], entry.i);
+      tipDiv.innerHTML = tipHtml(entry.r, L[entry.r.date], entry.i, eventsByDate[entry.r.date] || []);
       tipDiv.style.display = 'block';
       const wb = root.getBoundingClientRect();
       const leftScaleW = (() => {
@@ -300,7 +296,7 @@ export function bindCrosshairTooltips({ root, tipDiv, chartMeta, L, seriesByTime
 
 /* Crosshair tooltip body: one series point plus every entry/exit event on that date. */
 
-function tipHtml(s, l, i) {
+function tipHtml(s, l, i, dayEvents) {
   let h = `<b>${displayTime(s.date)}</b>${s.days_to_near_expiry != null ? ` <span class=\"k\">· ${s.days_to_near_expiry}д до экспирации ближней</span>` : ''}<hr>`;
   h += `<span class=\"k\">ближняя</span> ${legPrice(s.near)} <span class=\"k\">(откр. ${legPrice(s.near_open)}, объём ${fmt(s.near_volume)})</span><br><span class=\"k\">дальняя</span> ${legPrice(s.far)} <span class=\"k\">(откр. ${legPrice(s.far_open)}, объём ${fmt(s.far_volume)})</span><br>`;
   h += `<span class=\"k\">спред</span> <b>${s.spread_rel != null ? fmt(s.spread_rel, 2) + '%' : '—'}</b> <span class=\"k\">(абс. ${legPrice(s.spread)}${s.spread_open_rel != null ? ` · откр. ${fmt(s.spread_open_rel, 2)}%` : ''}${s.spread_last_trade_rel != null ? ` · посл. ${fmt(s.spread_last_trade_rel, 2)}%` : ''})</span><br>`;
@@ -323,14 +319,6 @@ function tipHtml(s, l, i) {
   if (l) {
     h += `<hr><span class=\"k\">позиция</span> ${l.position > 0 ? 'лонг' : l.position < 0 ? 'шорт' : 'флэт'}${l.quantity ? ` · ${l.quantity} контр.` : ''} · <span class=\"k\">${isIntraday(s.timeframe) ? 'результат бара' : 'результат дня'}</span> ${rub(l.mark_pnl_rub, 2)} · <span class=\"k\">издержки</span> −${fmt(l.costs_rub, 2)} ₽${l.funding_rub != null ? ` · <span class=\"k\">фондирование</span> ${signed(l.funding_rub)} ₽` : ''} · <span class=\"k\">кумулятивно</span> <b class=\"${cls(l.cumulative_net_rub)}\">${rub(l.cumulative_net_rub, 2)}</b>${state.drawdownByDate[s.date] != null ? ` · <span class=\"k\">просадка</span> <b class=\"warn\">−${fmt(-state.drawdownByDate[s.date], 2)} ₽</b>` : ''}`;
   }
-  const dayEvents = state.payload.trades.flatMap(t =>
-    [
-      ['ENTRY', t.entry],
-      ['EXIT', t.exit],
-    ]
-      .filter(([, leg]) => leg.date === s.date)
-      .map(([kind]) => ({ kind, t })),
-  );
   for (const { kind, t } of dayEvents) {
     const leg = kind === 'ENTRY' ? t.entry : t.exit;
     const fees = Object.entries(leg.costs || {})

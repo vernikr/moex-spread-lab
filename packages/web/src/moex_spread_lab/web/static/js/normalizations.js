@@ -40,7 +40,7 @@ export function applyNormHint() {
   if (h) h.textContent = NORM_HINTS[mode] || '';
 }
 
-const _spreadCache = new Map();
+const _spreadCache = new WeakMap();
 
 export function spreadDisplayValues(S, modeOverride) {
   const mode = modeOverride || $('norm')?.value || 'raw';
@@ -53,9 +53,9 @@ export function spreadDisplayValues(S, modeOverride) {
 }
 
 function _computeSpreadValues(S, mode) {
-  const raw = S.map(r => r.spread_rel);
+  const raw = S.map(r => r.spread_rel ?? null);
+  if (mode === 'raw') return raw;
   const n = raw.length;
-  const out = new Array(n);
   const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   const std = a => {
     const m = mean(a);
@@ -105,53 +105,50 @@ function _computeSpreadValues(S, mode) {
     return { ms, sds };
   };
   const winStats = (W, i) => raw.slice(Math.max(0, i - W + 1), i + 1).filter(v => v != null);
-  let ema = null, garchZ = null, kalmanZ = null;
+  let ema = null;
   if (mode === 'ema10' || mode === 'ewma10') ema = emaState(raw, 10);
   if (mode === 'garch') {
-    garchZ = (() => {
-      let sig2 = null;
-      const z = new Array(n).fill(null);
-      const d0 = raw[0] != null && raw[1] != null ? raw[1] - raw[0] : null;
-      if (d0 != null && isFinite(d0)) sig2 = d0 * d0;
-      for (let t = 1; t < n; t++) {
-        const d = raw[t] != null && raw[t - 1] != null ? raw[t] - raw[t - 1] : null;
-        if (d == null || !isFinite(d)) { z[t] = null; continue; }
-        if (sig2 == null) sig2 = d * d;
-        const prev = sig2;
-        z[t] = prev > 0 ? d / Math.sqrt(prev) : 0;
-        sig2 = 1e-10 + 0.1 * d * d + 0.85 * prev;
-      }
-      return z;
-    })();
+    let sig2 = null;
+    const z = new Array(n).fill(null);
+    const d0 = raw[0] != null && raw[1] != null ? raw[1] - raw[0] : null;
+    if (d0 != null && isFinite(d0)) sig2 = d0 * d0;
+    for (let t = 1; t < n; t++) {
+      const d = raw[t] != null && raw[t - 1] != null ? raw[t] - raw[t - 1] : null;
+      if (d == null || !isFinite(d)) { z[t] = null; continue; }
+      if (sig2 == null) sig2 = d * d;
+      const prev = sig2;
+      z[t] = prev > 0 ? d / Math.sqrt(prev) : 0;
+      sig2 = 1e-10 + 0.1 * d * d + 0.85 * prev;
+    }
+    return z;
   }
   if (mode === 'kalman') {
-    kalmanZ = (() => {
-      let lvl = null, P = 1;
-      const Q = 1e-4, R = 1e-2;
-      const zs = new Array(n).fill(null);
-      for (let i = 0; i < n; i++) {
-        const v = raw[i];
-        if (v == null) continue;
-        if (lvl == null) { lvl = v; P = 1; zs[i] = 0; continue; }
-        const Pp = P + Q;
-        const innov = v - lvl;
-        const S2 = Pp + R;
-        const K = Pp / S2;
-        lvl = lvl + K * innov;
-        P = (1 - K) * Pp;
-        zs[i] = Math.sqrt(S2) > 0 ? innov / Math.sqrt(S2) : 0;
-      }
-      return zs;
-    })();
+    let lvl = null, P = 1;
+    const Q = 1e-4, R = 1e-2;
+    const zs = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const v = raw[i];
+      if (v == null) continue;
+      if (lvl == null) { lvl = v; P = 1; zs[i] = 0; continue; }
+      const Pp = P + Q;
+      const innov = v - lvl;
+      const S2 = Pp + R;
+      const K = Pp / S2;
+      lvl = lvl + K * innov;
+      P = (1 - K) * Pp;
+      zs[i] = Math.sqrt(S2) > 0 ? innov / Math.sqrt(S2) : 0;
+    }
+    return zs;
   }
+  const out = new Array(n);
+  let expandingSum = 0, expandingCount = 0;
   for (let t = 0; t < n; t++) {
     const cur = raw[t];
     if (cur == null) { out[t] = null; continue; }
-    if (mode === 'raw') { out[t] = cur; continue; }
     if (mode === 'expanding') {
-      let s = 0, c = 0;
-      for (let i = 0; i <= t; i++) if (raw[i] != null) { s += raw[i]; c++; }
-      out[t] = cur - s / c;
+      expandingSum += cur;
+      expandingCount++;
+      out[t] = cur - expandingSum / expandingCount;
       continue;
     }
     if (mode === 'rm20' || mode === 'rm60') {
@@ -211,8 +208,6 @@ function _computeSpreadValues(S, mode) {
       out[t] = sd > 0 ? (cur - med) / sd : 0;
       continue;
     }
-    if (mode === 'garch') { out[t] = garchZ[t]; continue; }
-    if (mode === 'kalman') { out[t] = kalmanZ[t]; continue; }
     if (mode === 'stoch20') {
       const a = winStats(20, t);
       if (a.length < 2) { out[t] = 50; continue; }

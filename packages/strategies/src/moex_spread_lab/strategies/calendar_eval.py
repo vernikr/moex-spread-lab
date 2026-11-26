@@ -4,14 +4,30 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_left, bisect_right
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.accounting.costs import side_cost
+from moex_spread_lab.core.contracts import (
+    CompatibilityVerdict,
+    EntryBandPoint,
+    InstrumentContext,
+    ParameterSpec,
+    StrategyIntentRun,
+    WindowSnapshot,
+)
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from .base import CALENDAR_FILLS
+from .base import (
+    CALENDAR_FILLS,
+    PRICE_FILLS,
+    ZSCORE_CALENDAR_OPTIONS,
+    check_calendar_liquidity,
+    validate_parameter_map,
+)
 from .calendar_ruonia.engine import convergence_trades
 from .calendar_zscore.engine import zscore_trades
 
@@ -37,6 +53,121 @@ _RUNNER_OPTS = frozenset(
         "z_cache_key",
     }
 )
+_BAD_FILL = "Выбранный режим исполнения не поддерживается этой стратегией."
+_BAD_UNIVERSE = "Выбранная стратегия неприменима к этому типу пары."
+
+
+def select_parameters(params: Mapping[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    return {key: params[key] for key in keys if key in params}
+
+
+def calendar_intent_run(
+    strategy_id: str,
+    fill: str,
+    parameters: dict[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+    trades: Sequence[Mapping[str, Any]],
+) -> StrategyIntentRun:
+    last_day = rows[-1]["date"] if rows else None
+    intents: tuple[dict[str, Any], ...] = tuple(
+        {
+            "side": "short_spread" if item["direction"] < 0 else "long_spread",
+            "entry_date": item["entry"]["date"],
+            "exit_date": item["exit"]["date"],
+            "entry_price": item["entry_price"],
+            "exit_price": item["exit_price"],
+            "signal": item["signal"],
+            "reason": item.get("reason") or "end_of_window",
+            **({"open_at_end": True} if item["entry"]["date"] == last_day else {}),
+        }
+        for item in trades
+    )
+    return StrategyIntentRun(
+        strategy_id=strategy_id, fill=fill, parameters=parameters, intents=intents
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarScan:
+    window: WindowSnapshot
+    rows: list[dict[str, Any]]
+    params: dict[str, Any]
+    delay: int
+    quote: str
+    monthly: bool
+
+
+def calendar_parameters(
+    plugin: Any, raw: Mapping[str, Any], context: InstrumentContext | None = None
+) -> dict[str, Any]:
+    return validate_parameter_map(raw, plugin.parameter_schema(context))
+
+
+def calendar_compatibility(
+    window: WindowSnapshot,
+    settings: Any = None,
+    *,
+    precheck: Callable[[Any], CompatibilityVerdict | None] | None = None,
+    series_usable: Callable[[list[dict[str, Any]]], bool] | None = None,
+    unavailable_reason: str = "",
+) -> CompatibilityVerdict:
+    if window.universe != CALENDAR_UNIVERSE:
+        return CompatibilityVerdict(False, _BAD_UNIVERSE)
+    if precheck is not None:
+        verdict = precheck(window)
+        if verdict is not None:
+            return verdict
+    verdict, eligible = check_calendar_liquidity(window, settings)
+    if verdict is not None:
+        return verdict
+    if series_usable is not None and not series_usable(eligible):
+        return CompatibilityVerdict(False, unavailable_reason)
+    return CompatibilityVerdict(True)
+
+
+def calendar_evaluate_intents(
+    plugin: Any, window: WindowSnapshot, params: Mapping[str, Any], fill: str
+) -> StrategyIntentRun:
+    if fill not in PRICE_FILLS:
+        raise W0Error(_BAD_FILL)
+    monthly = bool(plugin.monthly_defaults and window.extra.get("monthly", False))
+    ctx = InstrumentContext(
+        universe=window.universe,
+        pair=window.pair,
+        asset=window.asset,
+        timeframe=window.timeframe,
+        monthly=monthly,
+    )
+    validated = plugin.validate_parameters(params, ctx)
+    verdict = plugin.check_compatibility(window)
+    if not verdict.compatible:
+        reason = verdict.reason or getattr(
+            plugin, "incompatible_reason", "incompatible calendar window"
+        )
+        raise W0Error(reason)
+    delay, quote = PRICE_FILLS[fill]
+    rows = (
+        list(window.rows)
+        if window.timeframe == "1h"
+        else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
+    )
+    state = CalendarScan(window, rows, validated, delay, quote, monthly)
+    return calendar_intent_run(
+        plugin.strategy_id, fill, validated, window.rows, plugin.scan_trades(state)
+    )
+
+
+def calendar_entry_bands(
+    plugin: Any,
+    series: list[dict[str, Any]],
+    params: Mapping[str, Any],
+    fill: str,
+    far_point_value_rub: float = 1.0,
+) -> list[EntryBandPoint]:
+    if fill not in PRICE_FILLS:
+        raise W0Error(_BAD_FILL)
+    validated = plugin.validate_parameters(select_parameters(params, plugin.band_keys))
+    return plugin.band_engine(series, validated, fill, far_point_value_rub=far_point_value_rub)
 
 
 def trade_costs(
@@ -234,13 +365,24 @@ def read_benchmark(path: Path) -> dict[str, float]:
 
 
 __all__ = [
+    "CALENDAR_UNIVERSE",
     "FILLS",
     "REFERENCE_ROUND_TRIP_COST",
     "SPREAD_MULTIPLIER",
+    "ZSCORE_CALENDAR_OPTIONS",
+    "CalendarScan",
+    "CompatibilityVerdict",
+    "ParameterSpec",
     "account_trades",
+    "calendar_compatibility",
+    "calendar_entry_bands",
+    "calendar_evaluate_intents",
+    "calendar_intent_run",
+    "calendar_parameters",
     "convergence_trades",
     "evaluate_variants",
     "read_benchmark",
+    "select_parameters",
     "strategy_runner",
     "trade_costs",
     "zscore_trades",

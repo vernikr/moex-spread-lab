@@ -69,12 +69,15 @@ class CoreContractsTests(unittest.TestCase):
             requires_daily_bars = False
 
             def parameter_schema(self, context: InstrumentContext | None = None):
+                del context
                 return (ParameterSpec("lookback", "Окно", "int", 10, 5, 20, 1),)
 
             def validate_parameters(self, raw, context: InstrumentContext | None = None):
+                del context
                 return {"lookback": int(raw.get("lookback", 10))}
 
             def check_compatibility(self, _window: WindowSnapshot, settings=None):
+                del settings
                 return CompatibilityVerdict(True)
 
             def evaluate_intents(self, _window: WindowSnapshot, params, fill: str):
@@ -86,6 +89,7 @@ class CoreContractsTests(unittest.TestCase):
                 )
 
             def compute_entry_bands(self, series, params, fill: str, *, far_point_value_rub=1.0):
+                del far_point_value_rub
                 return [EntryBandPoint(date=str(r.get("date", ""))) for r in series]
 
         self.assertIsInstance(DummyPlugin(), StrategyPlugin)

@@ -136,14 +136,18 @@ class StrategyPlugin(Protocol):
 
     def parameter_schema(
         self, context: InstrumentContext | None = None
-    ) -> tuple[ParameterSpec, ...]: ...
+    ) -> tuple[ParameterSpec, ...]:
+        raise NotImplementedError(context)
+
     def validate_parameters(
         self, raw: Mapping[str, Any], context: InstrumentContext | None = None
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        raise NotImplementedError(context)
+
     def check_compatibility(
         self, window: WindowSnapshot, settings: ResearchSettings | None = None
     ) -> CompatibilityVerdict:
-        raise NotImplementedError(window)
+        raise NotImplementedError(window, settings)
 
     def evaluate_intents(
         self, window: WindowSnapshot, params: Mapping[str, Any], fill: str
@@ -157,7 +161,8 @@ class StrategyPlugin(Protocol):
         fill: str,
         *,
         far_point_value_rub: float = 1.0,
-    ) -> list[EntryBandPoint]: ...
+    ) -> list[EntryBandPoint]:
+        raise NotImplementedError(far_point_value_rub)
 
 
 def plugin_proof_adapter(plugin: StrategyPlugin) -> str | None:

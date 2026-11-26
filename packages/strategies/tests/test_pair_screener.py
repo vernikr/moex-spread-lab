@@ -13,9 +13,12 @@ from typing import Any, cast
 
 import pytest
 
+from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.universe import MAX_QUANTITY
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from moex_spread_lab.strategies.pair_screener import inputs as inputs_module
+from moex_spread_lab.strategies.pair_screener import normalization as normalization_module
 from moex_spread_lab.strategies.pair_screener.inputs import (
     HISTORY_WINDOWS,
     ScreenerError,
@@ -227,3 +230,12 @@ def test_build_result_branches_preserve_deterministic_run_ids(tmp_path: Path) ->
     )
     assert carry_gld["run_id"] == "d700cf9ae38b977f"
     assert any("Non-CNY funding-rule caps" in note for note in carry_gld["notes"])
+
+
+def test_pair_screener_uses_bounded_caches_and_curated_exports():
+    assert isinstance(inputs_module._CANDLE_SUMMARY_CACHE, HashedJSONCache)
+    assert isinstance(normalization_module._NORMALIZED_BY_TS_CACHE, HashedJSONCache)
+    assert not {"annotations", "Any", "dataclass", "math"} & set(inputs_module.__all__)
+    assert not {"annotations", "Any", "bisect_left", "partial"} & set(normalization_module.__all__)
+    assert not hasattr(ScreenerInputs, "screen_history")
+    assert not hasattr(ScreenerInputs, "search_history")

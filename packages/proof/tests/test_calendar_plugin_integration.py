@@ -33,6 +33,7 @@ PLUGIN = Demo()
             str(root / "tests"),
             str(root / "packages/accounting/tests"),
             str(root / "packages/proof/tests"),
+            str(root / "packages/strategies/tests"),
             str(root / "packages/strategies/tests/contract"),
             env.get("PYTHONPATH", ""),
         ]
@@ -50,10 +51,10 @@ root = Path(sys.argv[1])
 two_calendar_windows(root)
 save_settings(root, {"random_seed": 41})
 assert "demo_calendar" in STRATEGY_AXES
-from test_strategy_conformance import _calendar_fixture
+from conformance_fixtures import calendar_fixture
 from moex_spread_lab.strategies import discover_strategies
 from moex_spread_lab.strategies.conformance import assert_causal_conformance
-fixture, chart = _calendar_fixture()
+fixture, chart = calendar_fixture()
 assert_causal_conformance(discover_strategies().get("demo_calendar"), fixture, chart,
                           {"window": 6, "entry_z": 1.5, "exit_z": 0.5}, cutoffs=(14, 20, 26))
 request = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3",

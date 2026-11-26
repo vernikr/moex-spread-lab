@@ -4,429 +4,50 @@ Every built-in and dynamically discovered strategy plugin in ``msl-strategies``
 must pass these behavioral invariants automatically:
 1. Auto-discovery & synthetic external folder drop-in registration (no central switchboard edits).
 2. Protocol structural conformance & parameter grid bounds validation.
-3. Determinism: identical inputs produce byte-identical ``StrategyIntentRun`` and entry-band payloads.
-4. Causality / zero lookahead: ``evaluate_intents(window.truncated(t))`` and
-   ``compute_entry_bands(series[:t])`` produce identical causal entry bands and
-   identical closed trade intents strictly before ``t`` as the full window run.
-5. Fail-closed validation on invalid parameters, unsupported fills, incompatible universes,
+3. Determinism and causality / zero lookahead, delegated to
+   ``conformance.assert_causal_conformance`` (single source of truth for both).
+4. Fail-closed validation on invalid parameters, unsupported fills, incompatible universes,
    or missing/corrupt input series.
 """
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
-from datetime import date, timedelta
 from pathlib import Path
+from typing import Any, ClassVar
 
+from conformance_fixtures import (
+    BUILTIN_PARAMS,
+    CONFORMANCE_CUTOFFS,
+    PAIR_PARAMS,
+    RUONIA_PARAMS,
+    ZSCORE_PARAMS,
+    builtin_fixture,
+    calendar_fixture,
+    pair_mean_reversion_fixture,
+)
 from moex_spread_lab.core.contracts import (
+    EntryBandPoint,
+    StrategyIntentRun,
     StrategyPlugin,
     WindowSnapshot,
 )
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import discover_strategies
-from moex_spread_lab.strategies.funding_carry.carry import build_carry_study
+from moex_spread_lab.strategies.conformance import assert_causal_conformance
 
-EXPECTED_BUILTINS = {
-    "mean_reversion",
-    "funding_only",
-    "zscore_mean_reversion",
-    "convergence_to_ruonia",
-}
+EXPECTED_BUILTINS = frozenset(BUILTIN_PARAMS)
 
-
-def _pair_mean_reversion_fixture() -> tuple[WindowSnapshot, list[dict]]:
-    start = date(2026, 1, 5)
-    rows = []
-    series_rows = []
-    offsets = [
-        0.0,
-        2.0,
-        -2.0,
-        3.0,
-        -1.0,
-        1.5,
-        -2.5,
-        0.5,
-        18.0,
-        16.0,
-        2.0,
-        0.0,
-        -1.0,
-        -19.0,
-        -15.0,
-        -1.0,
-        0.5,
-        1.0,
-        -0.5,
-        0.0,
-        2.0,
-        -1.5,
-        17.5,
-        3.0,
-        0.2,
-        -0.4,
-        0.8,
-        -0.2,
-        0.1,
-        0.0,
-    ]
-    for i, off in enumerate(offsets):
-        d = (start + timedelta(days=i)).isoformat()
-        near_px = 1000.0 + off
-        far_px = 1000.0
-        rows.append(
-            {
-                "date": d,
-                "timestamp": f"{d} 00:00:00",
-                "trade_date": d,
-                "near_open": near_px,
-                "near_high": near_px + 2.0,
-                "near_low": near_px - 2.0,
-                "near_close": near_px,
-                "near_volume": 2500.0,
-                "far_open": far_px,
-                "far_high": far_px + 2.0,
-                "far_low": far_px - 2.0,
-                "far_close": far_px,
-                "far_volume": 2500.0,
-                "near_value_rub": near_px,
-                "far_value_rub": far_px,
-                "spread_value": off,
-                "spread_ticks": off,
-                "spread_mid": off,
-                "benchmark_date": d,
-                "benchmark_price": 1.5 + i * 0.0005,
-                "benchmark_source_ticker": "LQDT",
-                "benchmark_source_kind": "observed",
-                "benchmark_mark_kind": "close",
-                "near_price_proxy_kind": "close",
-                "far_price_proxy_kind": "close",
-                "benchmark_daily_return": 0.0005 if i else 0.0,
-            }
-        )
-        series_rows.append(
-            {
-                "date": d,
-                "spread": off,
-                "far": far_px,
-                "volume_eligible": True,
-            }
-        )
-    contracts = {
-        "NEAR": {
-            "secid": "NEAR",
-            "lot_size": 1,
-            "lot_volume": 1,
-            "step_price": 1.0,
-            "min_step": 1.0,
-            "tick_size": 1.0,
-            "tick_value": 1.0,
-            "initial_margin": 5000.0,
-            "tariff_group": "currency",
-        },
-        "FAR": {
-            "secid": "FAR",
-            "lot_size": 1,
-            "lot_volume": 1,
-            "step_price": 1.0,
-            "min_step": 1.0,
-            "tick_size": 1.0,
-            "tick_value": 1.0,
-            "initial_margin": 5000.0,
-            "tariff_group": "currency",
-        },
-    }
-    snap = WindowSnapshot(
-        universe="pair_screen",
-        pair="NEAR_FAR",
-        timeframe="1d",
-        rows=tuple(rows),
-        contracts=contracts,
-        near="NEAR",
-        far="FAR",
-    )
-    return snap, series_rows
-
-
-def _funding_carry_fixture(tmp_dir: Path) -> tuple[WindowSnapshot, list[dict]]:
-    start = date(2026, 2, 1)
-    rates = [2.5] * 10 + [-3.0] * 10 + [3.0] * 10
-    near_rows = []
-    far_rows = []
-    bench_rows = []
-    series_rows = []
-    for i, rate in enumerate(rates):
-        d = (start + timedelta(days=i)).isoformat()
-        near_rows.append(
-            {
-                "TRADEDATE": d,
-                "SECID": "CNYRUBF",
-                "SETTLEPRICE": 13.50 + i * 0.01,
-                "OPEN": 13.50 + i * 0.01,
-                "HIGH": 13.55 + i * 0.01,
-                "LOW": 13.45 + i * 0.01,
-                "CLOSE": 13.50 + i * 0.01,
-                "VOLUME": 5000,
-                "OPENPOSITION": 10000,
-                "SWAPRATE": rate,
-            }
-        )
-        far_rows.append(
-            {
-                "TRADEDATE": d,
-                "SECID": "CRH6",
-                "SETTLEPRICE": 13.80 + i * 0.01,
-                "OPEN": 13.80 + i * 0.01,
-                "HIGH": 13.85 + i * 0.01,
-                "LOW": 13.75 + i * 0.01,
-                "CLOSE": 13.80 + i * 0.01,
-                "VOLUME": 5000,
-                "OPENPOSITION": 10000,
-                "SWAPRATE": None,
-            }
-        )
-        bench_rows.append(
-            {
-                "date": d,
-                "price": round(1.50 + i * 0.0005, 6),
-                "source_kind": "observed",
-                "source_ticker": "LQDT",
-            }
-        )
-        series_rows.append({"date": d, "spread": -300.0, "far": 13.80, "volume_eligible": True})
-
-    contracts_payload = {
-        "instruments": [
-            {
-                "secid": "CNYRUBF",
-                "stable_id": "cny-perp",
-                "board": "RFUD",
-                "expiry": "2100-01-01",
-                "lot_size": 1000,
-                "tick_size": 0.001,
-                "tick_value": 1.0,
-                "initial_margin": 2000.0,
-                "tariff_group": "currency",
-                "source_vintage": "current_snapshot",
-            },
-            {
-                "secid": "CRH6",
-                "stable_id": "cny-far",
-                "board": "RFUD",
-                "expiry": "2026-06-18",
-                "lot_size": 1000,
-                "tick_size": 0.001,
-                "tick_value": 1.0,
-                "initial_margin": 2000.0,
-                "tariff_group": "currency",
-                "source_vintage": "current_snapshot",
-            },
-        ]
-    }
-    contracts_path = tmp_dir / "contracts.json"
-    contracts_path.write_text(json.dumps(contracts_payload), encoding="utf-8")
-    benchmark_path = tmp_dir / "benchmark.json"
-    benchmark_path.write_text(
-        json.dumps({"schema_version": "lqdt-lineage.v1", "rows": bench_rows}),
-        encoding="utf-8",
-    )
-    near_src = {
-        "schema_version": "iss-history.v1",
-        "secid": "CNYRUBF",
-        "rows": near_rows,
-        "source": {"raw_response_sha256": ["near-hash"]},
-    }
-    far_src = {
-        "schema_version": "iss-history.v1",
-        "secid": "CRH6",
-        "rows": far_rows,
-        "source": {"raw_response_sha256": ["far-hash"]},
-    }
-    study = build_carry_study(
-        near_src,
-        far_src,
-        contracts_path,
-        near="CNYRUBF",
-        far="CRH6",
-        funding_regimes=(),
-    )
-    snap = WindowSnapshot(
-        universe="pair_screen",
-        pair="CNYRUBF_CRH6",
-        timeframe="1d",
-        rows=tuple(study["rows"]),
-        carry_study=study,
-        benchmark=benchmark_path,
-        near="CNYRUBF",
-        far="CRH6",
-        extra={"contracts_path": contracts_path},
-    )
-    return snap, series_rows
-
-
-def _calendar_fixture() -> tuple[WindowSnapshot, list[dict]]:
-    start = date(2026, 1, 10)
-    spreads = [
-        1200.0,
-        1210.0,
-        1195.0,
-        1205.0,
-        1198.0,
-        1202.0,
-        1207.0,
-        1193.0,
-        1201.0,
-        1199.0,
-        1550.0,
-        1540.0,
-        1202.0,
-        1200.0,
-        860.0,
-        865.0,
-        1200.0,
-        1201.0,
-        1199.0,
-        1200.0,
-        1204.0,
-        1196.0,
-        1520.0,
-        1203.0,
-        1200.0,
-        1198.0,
-        1202.0,
-        1197.0,
-        1200.0,
-        1200.0,
-    ]
-    # Include near-expiry buffer exit around bar 18 for RUONIA convergence
-    dtes = [
-        45,
-        44,
-        43,
-        42,
-        41,
-        40,
-        39,
-        38,
-        37,
-        36,
-        25,
-        24,
-        23,
-        22,
-        10,
-        2,
-        20,
-        19,
-        18,
-        17,
-        16,
-        15,
-        14,
-        13,
-        12,
-        2,
-        10,
-        9,
-        8,
-        7,
-    ]
-    rows = []
-    series_rows = []
-    for i, (sp, dte) in enumerate(zip(spreads, dtes, strict=True)):
-        d = (start + timedelta(days=i)).isoformat()
-        near_val = 30_000.0
-        far_val = near_val + sp
-        rate = 0.16
-        implied = sp / near_val * 365.0 / 91.0
-        dev_pp = (implied - rate) * 100.0
-        scale = near_val * 91.0 / 36500.0
-        rows.append(
-            {
-                "date": d,
-                "spread": sp,
-                "open_spread": sp,
-                "near_close": near_val,
-                "far_close": far_val,
-                "dev_pp": dev_pp,
-                "days_to_near_expiry": dte,
-                "dividend_in_window": False,
-                "margin": 6000.0,
-                "min_volume": 2500.0,
-                "signal_eligible": True,
-                "entry_eligible": True,
-                "exit_eligible": True,
-            }
-        )
-        series_rows.append(
-            {
-                "date": d,
-                "spread": sp,
-                "far": far_val,
-                "point_value_rub": 1.0,
-                "dev_pp": dev_pp,
-                "rate_price_per_pp": scale,
-                "volume_eligible": True,
-            }
-        )
-    snap = WindowSnapshot(
-        universe="calendar_native",
-        pair="SRH6/SRM6",
-        asset="SR",
-        timeframe="1d",
-        rows=tuple(rows),
-        extra={"monthly": False, "convergence": True},
-    )
-    return snap, series_rows
-
-
-class StrategyPluginConformanceTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp_path = Path(self._tmp.name)
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def _fixture_for(self, strategy_id: str) -> tuple[WindowSnapshot, list[dict], dict]:
-        if strategy_id == "mean_reversion":
-            snap, series = _pair_mean_reversion_fixture()
-            return snap, series, {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5}
-        if strategy_id == "funding_only":
-            snap, series = _funding_carry_fixture(self.tmp_path)
-            return snap, series, {"lookback": 5}
-        if strategy_id == "zscore_mean_reversion":
-            snap, series = _calendar_fixture()
-            return snap, series, {"window": 6, "entry_z": 1.5, "exit_z": 0.5}
-        if strategy_id == "convergence_to_ruonia":
-            snap, series = _calendar_fixture()
-            return snap, series, {"threshold_pp": 1.0}
-        raise AssertionError(f"Unhandled strategy fixture: {strategy_id}")
-
-    def test_auto_discovers_all_builtin_strategy_plugins(self) -> None:
-        registry = discover_strategies()
-        self.assertTrue(set(registry.ids()) >= EXPECTED_BUILTINS)
-        for plugin in registry.values():
-            self.assertIsInstance(plugin, StrategyPlugin)
-            self.assertTrue(plugin.label_ru)
-            self.assertTrue(plugin.supported_universes)
-            self.assertTrue(plugin.supported_fills)
-
-    def test_synthetic_drop_in_strategy_folder_registers_without_core_edits(self) -> None:
-        pkg_dir = self.tmp_path / "synthetic_spread"
-        pkg_dir.mkdir(parents=True)
-        (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
-        (pkg_dir / "plugin.py").write_text(
-            """from moex_spread_lab.core.contracts import (
+SYNTHETIC_PLUGIN_SOURCE = '''"""Plugin written by a foreign package into a discovered folder."""
+from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
     EntryBandPoint,
-    InstrumentContext,
     ParameterSpec,
     StrategyIntentRun,
     WindowSnapshot,
 )
+
 
 class SyntheticPlugin:
     strategy_id = "synthetic_drop_in"
@@ -457,15 +78,38 @@ class SyntheticPlugin:
     def compute_entry_bands(self, series, params, fill: str, *, far_point_value_rub=1.0):
         return [EntryBandPoint(date=str(r.get("date", ""))) for r in series]
 
+
 PLUGIN = SyntheticPlugin()
-""",
-            encoding="utf-8",
-        )
+'''
+
+
+class StrategyPluginConformanceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_auto_discovers_all_builtin_strategy_plugins(self) -> None:
+        registry = discover_strategies()
+        self.assertTrue(set(registry.ids()) >= EXPECTED_BUILTINS)
+        for plugin in registry.values():
+            self.assertIsInstance(plugin, StrategyPlugin)
+            self.assertTrue(plugin.label_ru)
+            self.assertTrue(plugin.supported_universes)
+            self.assertTrue(plugin.supported_fills)
+
+    def test_synthetic_drop_in_strategy_folder_registers_without_core_edits(self) -> None:
+        pkg_dir = self.tmp_path / "synthetic_spread"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+        (pkg_dir / "plugin.py").write_text(SYNTHETIC_PLUGIN_SOURCE, encoding="utf-8")
         registry = discover_strategies(extra_paths=(self.tmp_path,))
         self.assertIn("synthetic_drop_in", registry)
         plugin = registry.get("synthetic_drop_in")
         self.assertIsInstance(plugin, StrategyPlugin)
-        snap, series = _calendar_fixture()
+        snap, series = calendar_fixture()
         run = plugin.evaluate_intents(snap, {"threshold": 2.0}, "next_open")
         self.assertEqual(run.strategy_id, "synthetic_drop_in")
         self.assertEqual(
@@ -488,69 +132,18 @@ PLUGIN = SyntheticPlugin()
                 with self.assertRaises(W0Error):
                     plugin.validate_parameters({first_spec.name: first_spec.max_value + 100})
 
-    def test_determinism_across_repeated_evaluations(self) -> None:
+    def test_builtin_fixtures_are_deterministic_and_causal(self) -> None:
         registry = discover_strategies()
-        for strategy_id in sorted(EXPECTED_BUILTINS):
-            plugin = registry.get(strategy_id)
-            snap, series, params = self._fixture_for(strategy_id)
-            for fill in plugin.supported_fills:
-                with self.subTest(strategy=strategy_id, fill=fill):
-                    first = plugin.evaluate_intents(snap, params, fill)
-                    second = plugin.evaluate_intents(snap, params, fill)
-                    self.assertEqual(
-                        json.dumps(first.intents, sort_keys=True, default=str),
-                        json.dumps(second.intents, sort_keys=True, default=str),
-                    )
-                    bands_1 = plugin.compute_entry_bands(series, params, fill)
-                    bands_2 = plugin.compute_entry_bands(series, params, fill)
-                    self.assertEqual(bands_1, bands_2)
-
-    def test_truncation_causality_no_lookahead(self) -> None:
-        """Truncating future bars must never alter causal entry bands or already-closed intents."""
-        registry = discover_strategies()
-        for strategy_id in sorted(EXPECTED_BUILTINS):
-            plugin = registry.get(strategy_id)
-            snap, series, params = self._fixture_for(strategy_id)
-            fill = plugin.supported_fills[0]
-            full_run = plugin.evaluate_intents(snap, params, fill)
-            full_bands = plugin.compute_entry_bands(series, params, fill)
-            self.assertGreaterEqual(
-                len(full_run.intents),
-                1,
-                f"Fixture for {strategy_id} must exercise at least 1 trade intent",
-            )
-            for cutoff in (14, 20, 26):
-                with self.subTest(strategy=strategy_id, fill=fill, cutoff=cutoff):
-                    prefix_snap = snap.truncated(cutoff)
-                    prefix_run = plugin.evaluate_intents(prefix_snap, params, fill)
-                    prefix_bands = plugin.compute_entry_bands(series[:cutoff], params, fill)
-                    self.assertEqual(prefix_bands, full_bands[:cutoff])
-
-                    cutoff_date = str(series[cutoff - 1]["date"])[:10]
-                    forced = {
-                        "end_of_sample",
-                        "end_of_window",
-                        "open_at_data_end_no_executable_exit",
-                    }
-
-                    def _closed_strictly_before(intents_seq, limit_day: str):
-                        return [
-                            (
-                                item["side"],
-                                str(item["entry_date"])[:10],
-                                str(item["exit_date"])[:10],
-                                item["reason"],
-                            )
-                            for item in intents_seq
-                            if str(item["exit_date"])[:10] < limit_day
-                            and item["reason"] not in forced
-                            and not item.get("open_at_end")
-                        ]
-
-                    self.assertEqual(
-                        _closed_strictly_before(prefix_run.intents, cutoff_date),
-                        _closed_strictly_before(full_run.intents, cutoff_date),
-                    )
+        for strategy_id, params in sorted(BUILTIN_PARAMS.items()):
+            with self.subTest(strategy=strategy_id):
+                snap, series = builtin_fixture(strategy_id, self.tmp_path)
+                assert_causal_conformance(
+                    registry.get(strategy_id),
+                    snap,
+                    series,
+                    params,
+                    cutoffs=CONFORMANCE_CUTOFFS,
+                )
 
     def test_compatibility_checks_fail_closed(self) -> None:
         registry = discover_strategies()
@@ -583,21 +176,17 @@ PLUGIN = SyntheticPlugin()
                 )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def test_calendar_intent_adapter_matches_existing_engines():
     from moex_spread_lab.strategies.base import PRICE_FILLS, ZSCORE_CALENDAR_OPTIONS
     from moex_spread_lab.strategies.calendar.intents import calendar_intent_trades
     from moex_spread_lab.strategies.calendar_ruonia.engine import convergence_trades
     from moex_spread_lab.strategies.calendar_zscore.engine import zscore_trades
 
-    window, _ = _calendar_fixture()
+    window, _ = calendar_fixture()
     registry = discover_strategies()
     for sid, params in (
-        ("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
-        ("convergence_to_ruonia", {"threshold_pp": 1.0}),
+        ("zscore_mean_reversion", ZSCORE_PARAMS),
+        ("convergence_to_ruonia", RUONIA_PARAMS),
     ):
         plugin = registry.get(sid)
         normalized = plugin.validate_parameters(params)
@@ -624,37 +213,6 @@ def test_calendar_intent_adapter_matches_existing_engines():
             assert actual == expected
 
 
-def test_reusable_conformance_helper_on_calendar_builtins():
-    from moex_spread_lab.strategies.conformance import assert_causal_conformance
-
-    window, series = _calendar_fixture()
-    for sid, params in (
-        ("zscore_mean_reversion", {"window": 6, "entry_z": 1.5, "exit_z": 0.5}),
-        ("convergence_to_ruonia", {"threshold_pp": 1.0}),
-    ):
-        assert_causal_conformance(
-            discover_strategies().get(sid), window, series, params, cutoffs=(14, 20, 26)
-        )
-
-
-def test_reusable_conformance_helper_on_pair_builtins(tmp_path):
-    from moex_spread_lab.strategies.conformance import assert_causal_conformance
-
-    registry = discover_strategies()
-    pair, pair_series = _pair_mean_reversion_fixture()
-    assert_causal_conformance(
-        registry.get("mean_reversion"),
-        pair,
-        pair_series,
-        {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5},
-        cutoffs=(14, 20, 26),
-    )
-    funding, funding_series = _funding_carry_fixture(tmp_path)
-    assert_causal_conformance(
-        registry.get("funding_only"), funding, funding_series, {"lookback": 5}, cutoffs=(14, 20, 26)
-    )
-
-
 def test_pair_intent_boundary_reproduces_legacy_price_intents():
     """The legacy plugin's timing is made explicit without changing its output."""
     from dataclasses import replace
@@ -662,9 +220,8 @@ def test_pair_intent_boundary_reproduces_legacy_price_intents():
     from moex_spread_lab.strategies.base import PRICE_FILLS
     from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 
-    window, _ = _pair_mean_reversion_fixture()
+    window, _ = pair_mean_reversion_fixture()
     original = discover_strategies().get("mean_reversion")
-    params = {"lookback": 6, "entry_z": 1.5, "exit_z": 0.5}
 
     class WithExplicitSignal:
         strategy_id = original.strategy_id
@@ -690,8 +247,8 @@ def test_pair_intent_boundary_reproduces_legacy_price_intents():
             return replace(result, intents=tuple(enriched))
 
     for fill in original.supported_fills:
-        expected = original.evaluate_intents(window, params, fill).intents
-        actual = pair_price_intent_trades(WithExplicitSignal(), window, params, fill)
+        expected = original.evaluate_intents(window, PAIR_PARAMS, fill).intents
+        actual = pair_price_intent_trades(WithExplicitSignal(), window, PAIR_PARAMS, fill)
         assert len(actual) == len(expected) > 0
         for got, old in zip(actual, expected, strict=True):
             assert got["entry"]["date"] == old["entry_date"][:10]
@@ -702,3 +259,61 @@ def test_pair_intent_boundary_reproduces_legacy_price_intents():
             assert got["exit"]["far_price"] == old["exit_far_fill"]
             assert got["exit_reason"] == old["reason"]
             assert got["open_at_end"] == (old["reason"] == "end_of_sample")
+
+
+class _FixturePlugin:
+    """Minimal plugin whose two failure modes the conformance helper must catch."""
+
+    strategy_id = "fixture"
+    supported_fills: ClassVar[tuple[str, ...]] = ("next_open",)
+
+    def __init__(self, *, lookahead: bool = False, nondeterministic: bool = False) -> None:
+        self.lookahead = lookahead
+        self.nondeterministic = nondeterministic
+        self.calls = 0
+
+    def evaluate_intents(self, window, params, fill) -> StrategyIntentRun:
+        self.calls += 1
+        value = self.calls if self.nondeterministic else 1
+        return StrategyIntentRun(
+            self.strategy_id,
+            fill,
+            {},
+            (
+                {
+                    "side": "long_spread",
+                    "entry_date": "2026-01-01",
+                    "exit_date": "2026-01-02",
+                    "reason": "exit",
+                    "value": value,
+                },
+            ),
+        )
+
+    def compute_entry_bands(self, series, params, fill, **_options: Any):
+        value = len(series) if self.lookahead else 1
+        return [EntryBandPoint(date=r["date"], buy_level=value) for r in series]
+
+
+def _helper_fixture() -> tuple[WindowSnapshot, list[dict[str, Any]]]:
+    rows = [{"date": f"2026-01-{i:02}"} for i in range(1, 9)]
+    return WindowSnapshot(universe="calendar_native", pair="A/B", rows=rows), rows
+
+
+def test_conformance_helper_accepts_a_causal_plugin():
+    window, rows = _helper_fixture()
+    assert_causal_conformance(_FixturePlugin(), window, rows, {}, cutoffs=(4, 6))
+
+
+def test_conformance_helper_rejects_future_dependent_bands():
+    window, rows = _helper_fixture()
+    with unittest.TestCase().assertRaisesRegex(AssertionError, "future-dependent bands"):
+        assert_causal_conformance(_FixturePlugin(lookahead=True), window, rows, {}, cutoffs=(4,))
+
+
+def test_conformance_helper_rejects_nondeterministic_intents():
+    window, rows = _helper_fixture()
+    with unittest.TestCase().assertRaisesRegex(AssertionError, "nondeterministic intents"):
+        assert_causal_conformance(
+            _FixturePlugin(nondeterministic=True), window, rows, {}, cutoffs=(4,)
+        )

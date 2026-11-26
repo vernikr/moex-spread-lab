@@ -1,6 +1,9 @@
+"""Carry-study accounting, carry-strategy timing, and retired CLI surface."""
+
+from __future__ import annotations
+
 import argparse
 import importlib
-import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -17,6 +20,12 @@ from moex_spread_lab.strategies.funding_carry.carry import (
 )
 from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
+STRATEGY_KWARGS = {
+    "transaction_cost_scenario": "low",
+    "initial_capital": 30000,
+    "warmup_observations": 2,
+}
+
 
 def source(secid, rows):
     return {
@@ -27,17 +36,47 @@ def source(secid, rows):
     }
 
 
-class CarryTests(unittest.TestCase):
-    def test_vtb_account_risk_screen_uses_no_offset_and_stress_buffers(self):
-        with tempfile.TemporaryDirectory() as directory:
-            contracts = Path(directory) / "contracts.json"
-            write_near_far_contracts(contracts)
-            result = assess_vtb_pair(
-                contracts,
-                "NEAR",
-                "FAR",
-                observed_daily_pnl=[-450.0, 20.0],
+def _carry_study(dates, *, basis, funding, gross):
+    return {
+        "schema_version": "carry-study.v1",
+        "near": "NEAR",
+        "far": "FAR",
+        "rows": [
+            {
+                "date": day,
+                "basis_far_minus_near": basis_value,
+                "daily_funding_received_short_near": funding_value,
+                "daily_gross_carry_pnl": gross_value,
+            }
+            for day, basis_value, funding_value, gross_value in zip(
+                dates, basis, funding, gross, strict=True
             )
+        ],
+    }
+
+
+class CarryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.contracts = write_near_far_contracts(self.root / "contracts.json")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _strategy(self, carry, dates, **kwargs):
+        benchmark = write_lqdt_lineage(self.root / "benchmark.json", dict.fromkeys(dates, 1.0))
+        return build_carry_strategy(
+            carry, benchmark, self.contracts, **{**STRATEGY_KWARGS, **kwargs}
+        )
+
+    def test_vtb_account_risk_screen_uses_no_offset_and_stress_buffers(self):
+        result = assess_vtb_pair(
+            self.contracts,
+            "NEAR",
+            "FAR",
+            observed_daily_pnl=[-450.0, 20.0],
+        )
 
         self.assertEqual(result["pair"]["pair_margin_no_offset_rub"], 1900.0)
         self.assertEqual(result["stress_inputs"]["effective_vm_buffer_rub"], 5000.0)
@@ -69,28 +108,25 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(vtb["vtb_tariff_effective_to"], "2026-12-31")
 
     def test_funding_and_basis_are_separate(self):
-        with tempfile.TemporaryDirectory() as directory:
-            contracts = Path(directory) / "contracts.json"
-            write_near_far_contracts(contracts)
-            result = build_carry_study(
-                source(
-                    "NEAR",
-                    [
-                        {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.0, "SWAPRATE": 0.004},
-                        {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.1, "SWAPRATE": 0.005},
-                    ],
-                ),
-                source(
-                    "FAR",
-                    [
-                        {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.2, "SWAPRATE": 0.0},
-                        {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.25, "SWAPRATE": 0.0},
-                    ],
-                ),
-                contracts,
-                near="NEAR",
-                far="FAR",
-            )
+        result = build_carry_study(
+            source(
+                "NEAR",
+                [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.0, "SWAPRATE": 0.004},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.1, "SWAPRATE": 0.005},
+                ],
+            ),
+            source(
+                "FAR",
+                [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.2, "SWAPRATE": 0.0},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.25, "SWAPRATE": 0.0},
+                ],
+            ),
+            self.contracts,
+            near="NEAR",
+            far="FAR",
+        )
 
         self.assertEqual(result["summary"]["total_basis_pnl"], -50.0)
         self.assertEqual(result["summary"]["total_funding_received"], 5.0)
@@ -98,32 +134,30 @@ class CarryTests(unittest.TestCase):
         self.assertFalse(result["summary"]["transaction_costs_included"])
 
     def test_carry_study_normalizes_different_leg_price_units(self):
-        with tempfile.TemporaryDirectory() as directory:
-            contracts = Path(directory) / "contracts.json"
-            write_near_far_contracts(
-                contracts,
-                near={"lot_size": 100, "tick_size": 0.5, "tick_value": 5},
-                far={"lot_size": 1, "tick_size": 0.05, "tick_value": 0.5},
-            )
-            result = build_carry_study(
-                source(
-                    "NEAR",
-                    [
-                        {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.0, "SWAPRATE": 0.1},
-                        {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.1, "SWAPRATE": 0.1},
-                    ],
-                ),
-                source(
-                    "FAR",
-                    [
-                        {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 20.0, "SWAPRATE": 0.0},
-                        {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 20.2, "SWAPRATE": 0.0},
-                    ],
-                ),
-                contracts,
-                near="NEAR",
-                far="FAR",
-            )
+        contracts = write_near_far_contracts(
+            self.root / "scaled_contracts.json",
+            near={"lot_size": 100, "tick_size": 0.5, "tick_value": 5},
+            far={"lot_size": 1, "tick_size": 0.05, "tick_value": 0.5},
+        )
+        result = build_carry_study(
+            source(
+                "NEAR",
+                [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 10.0, "SWAPRATE": 0.1},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 10.1, "SWAPRATE": 0.1},
+                ],
+            ),
+            source(
+                "FAR",
+                [
+                    {"TRADEDATE": "2026-01-01", "SETTLEPRICE": 20.0, "SWAPRATE": 0.0},
+                    {"TRADEDATE": "2026-01-02", "SETTLEPRICE": 20.2, "SWAPRATE": 0.0},
+                ],
+            ),
+            contracts,
+            near="NEAR",
+            far="FAR",
+        )
 
         self.assertEqual(result["summary"]["total_basis_pnl"], 1.0)
         self.assertEqual(result["summary"]["total_funding_received"], 10.0)
@@ -131,66 +165,14 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["rows"][1]["funding_cap_status"], "not_modelled")
 
     def test_strategy_uses_one_observation_execution_delay_and_lqdt_mark(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            contracts = root / "contracts.json"
-            write_near_far_contracts(contracts)
-            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
-            carry = {
-                "schema_version": "carry-study.v1",
-                "near": "NEAR",
-                "far": "FAR",
-                "rows": [
-                    {
-                        "date": dates[0],
-                        "basis_far_minus_near": 1.0,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 0.0,
-                    },
-                    {
-                        "date": dates[1],
-                        "basis_far_minus_near": 1.0,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 0.0,
-                    },
-                    {
-                        "date": dates[2],
-                        "basis_far_minus_near": 0.5,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 0.0,
-                    },
-                    {
-                        "date": dates[3],
-                        "basis_far_minus_near": 0.4,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 7.0,
-                    },
-                    {
-                        "date": dates[4],
-                        "basis_far_minus_near": 1.2,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 8.0,
-                    },
-                    {
-                        "date": dates[5],
-                        "basis_far_minus_near": 1.2,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 9.0,
-                    },
-                ],
-            }
-            carry_path = root / "carry.json"
-            carry_path.write_text(json.dumps(carry), encoding="utf-8")
-            benchmark = root / "benchmark.json"
-            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
-            result = build_carry_strategy(
-                carry,
-                benchmark,
-                contracts,
-                transaction_cost_scenario="low",
-                initial_capital=30000,
-                warmup_observations=2,
-            )
+        dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+        carry = _carry_study(
+            dates,
+            basis=(1.0, 1.0, 0.5, 0.4, 1.2, 1.2),
+            funding=(1.0,) * 6,
+            gross=(0.0, 0.0, 0.0, 7.0, 8.0, 9.0),
+        )
+        result = self._strategy(carry, dates)
 
         self.assertEqual(result["summary"]["closed_trade_count"], 1)
         self.assertEqual(result["summary"]["open_trade_count"], 0)
@@ -213,42 +195,22 @@ class CarryTests(unittest.TestCase):
         self.assertTrue(result["summary"]["account_risk_gate_current_snapshot"])
 
     def test_funding_only_same_row_fill_forgoes_exit_day_funding_and_scales_quantity(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            contracts = root / "contracts.json"
-            write_near_far_contracts(contracts)
-            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
-            funding = (1.0, 1.0, 1.0, 1.0, -5.0, 3.0)
-            carry = {
-                "schema_version": "carry-study.v1",
-                "near": "NEAR",
-                "far": "FAR",
-                "rows": [
-                    {
-                        "date": d,
-                        "basis_far_minus_near": 1.0,
-                        "daily_funding_received_short_near": f,
-                        "daily_gross_carry_pnl": g,
-                    }
-                    for d, f, g in zip(dates, funding, (0.0, 0.0, 0.0, 7.0, 8.0, 9.0))
-                ],
-            }
-            benchmark = root / "benchmark.json"
-            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
-            kwargs = dict(
-                transaction_cost_scenario="low",
-                initial_capital=30000,
-                warmup_observations=2,
-                strategy_variant="funding_only",
-                execution_delay_rows=0,
-                cash_in_lqdt=True,
-            )
-            one = build_carry_strategy(carry, benchmark, contracts, **kwargs)
-            two = build_carry_strategy(carry, benchmark, contracts, quantity=2, **kwargs)
-            with self.assertRaises(CarryStrategyError):
-                build_carry_strategy(
-                    carry, benchmark, contracts, **{**kwargs, "strategy_variant": "basis_median"}
-                )
+        dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+        carry = _carry_study(
+            dates,
+            basis=(1.0,) * 6,
+            funding=(1.0, 1.0, 1.0, 1.0, -5.0, 3.0),
+            gross=(0.0, 0.0, 0.0, 7.0, 8.0, 9.0),
+        )
+        kwargs = {
+            "strategy_variant": "funding_only",
+            "execution_delay_rows": 0,
+            "cash_in_lqdt": True,
+        }
+        one = self._strategy(carry, dates, **kwargs)
+        two = self._strategy(carry, dates, quantity=2, **kwargs)
+        with self.assertRaises(CarryStrategyError):
+            self._strategy(carry, dates, **{**kwargs, "strategy_variant": "basis_median"})
 
         trade = one["trades"][0]
         self.assertEqual(
@@ -259,37 +221,16 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(one["summary"]["cash_shortfall_rows"], 0)
 
     def test_strategy_exits_when_assignment_window_is_observed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            contracts = root / "contracts.json"
-            write_near_far_contracts(contracts)
-            dates = [f"2026-12-{day:02d}" for day in range(10, 17)]
-            carry = {
-                "schema_version": "carry-study.v1",
-                "near": "NEAR",
-                "far": "FAR",
-                "rows": [
-                    {
-                        "date": date,
-                        "basis_far_minus_near": basis,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 1.0,
-                    }
-                    for date, basis in zip(dates, (1.0, 1.0, 0.5, 0.4, 0.4, 0.4, 0.4))
-                ],
-            }
-            benchmark = root / "benchmark.json"
-            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
-            result = build_carry_strategy(
-                carry,
-                benchmark,
-                contracts,
-                transaction_cost_scenario="low",
-                initial_capital=30000,
-                warmup_observations=2,
-                expiry_buffer_days=0,
-                assignment_window_trading_days=2,
-            )
+        dates = [f"2026-12-{day:02d}" for day in range(10, 17)]
+        carry = _carry_study(
+            dates,
+            basis=(1.0, 1.0, 0.5, 0.4, 0.4, 0.4, 0.4),
+            funding=(1.0,) * 7,
+            gross=(1.0,) * 7,
+        )
+        result = self._strategy(
+            carry, dates, expiry_buffer_days=0, assignment_window_trading_days=2
+        )
 
         self.assertTrue(result["summary"]["perpetual_assignment_event_observed"])
         self.assertEqual(result["parameters"]["assignment_window_start_date"], dates[5])
@@ -299,38 +240,9 @@ class CarryTests(unittest.TestCase):
         )
 
     def test_funding_only_hypothesis_has_separate_rule_id_and_entry_condition(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            contracts = root / "contracts.json"
-            write_near_far_contracts(contracts)
-            dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
-            carry = {
-                "schema_version": "carry-study.v1",
-                "near": "NEAR",
-                "far": "FAR",
-                "rows": [
-                    {
-                        "date": date,
-                        "basis_far_minus_near": basis,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 1.0,
-                    }
-                    for date, basis in zip(dates, (1.0, 1.0, 1.0, 1.0, 1.0, 1.0))
-                ],
-            }
-            carry_path = root / "carry.json"
-            carry_path.write_text(json.dumps(carry), encoding="utf-8")
-            benchmark = root / "benchmark.json"
-            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
-            result = build_carry_strategy(
-                carry,
-                benchmark,
-                contracts,
-                transaction_cost_scenario="low",
-                initial_capital=30000,
-                warmup_observations=2,
-                strategy_variant="funding_only",
-            )
+        dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+        carry = _carry_study(dates, basis=(1.0,) * 6, funding=(1.0,) * 6, gross=(1.0,) * 6)
+        result = self._strategy(carry, dates, strategy_variant="funding_only")
 
         self.assertEqual(result["rule_id"], "H3-F1")
         self.assertEqual(
@@ -346,65 +258,38 @@ class CarryTests(unittest.TestCase):
         self.assertEqual(result["hypothesis"], "funding_only_carry")
 
     def test_exit_conditions_reflect_warmup_observations_for_both_variants(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            contracts = root / "contracts.json"
-            write_near_far_contracts(contracts)
-            dates = [f"2026-01-{day:02d}" for day in range(1, 15)]
-            carry = {
-                "schema_version": "carry-study.v1",
-                "near": "NEAR",
-                "far": "FAR",
-                "rows": [
-                    {
-                        "date": d,
-                        "basis_far_minus_near": 1.0,
-                        "daily_funding_received_short_near": 1.0,
-                        "daily_gross_carry_pnl": 1.0,
-                    }
-                    for d in dates
+        dates = [f"2026-01-{day:02d}" for day in range(1, 15)]
+        carry = _carry_study(dates, basis=(1.0,) * 14, funding=(1.0,) * 14, gross=(1.0,) * 14)
+        for warmup in (7, 12):
+            basis = self._strategy(
+                carry, dates, warmup_observations=warmup, strategy_variant="basis_median"
+            )
+            funding_only = self._strategy(
+                carry, dates, warmup_observations=warmup, strategy_variant="funding_only"
+            )
+            self.assertEqual(
+                basis["parameters"]["exit_conditions"],
+                [
+                    f"current_basis >= median_previous_{warmup}_basis",
+                    f"mean_previous_{warmup}_daily_funding_received <= 0",
+                    "date >= far_expiry - 5 calendar days",
                 ],
-            }
-            benchmark = root / "benchmark.json"
-            write_lqdt_lineage(benchmark, dict.fromkeys(dates, 1.0))
-            for warmup in (7, 12):
-                basis = build_carry_strategy(
-                    carry,
-                    benchmark,
-                    contracts,
-                    transaction_cost_scenario="low",
-                    warmup_observations=warmup,
-                    strategy_variant="basis_median",
-                )
-                funding_only = build_carry_strategy(
-                    carry,
-                    benchmark,
-                    contracts,
-                    transaction_cost_scenario="low",
-                    warmup_observations=warmup,
-                    strategy_variant="funding_only",
-                )
-                self.assertEqual(
-                    basis["parameters"]["exit_conditions"],
-                    [
-                        f"current_basis >= median_previous_{warmup}_basis",
-                        f"mean_previous_{warmup}_daily_funding_received <= 0",
-                        "date >= far_expiry - 5 calendar days",
-                    ],
-                )
-                self.assertEqual(
-                    funding_only["parameters"]["exit_conditions"],
-                    [
-                        f"mean_previous_{warmup}_daily_funding_received <= 0",
-                        "date >= far_expiry - 5 calendar days",
-                    ],
-                )
+            )
+            self.assertEqual(
+                funding_only["parameters"]["exit_conditions"],
+                [
+                    f"mean_previous_{warmup}_daily_funding_received <= 0",
+                    "date >= far_expiry - 5 calendar days",
+                ],
+            )
 
     def test_retired_study_commands_stay_deleted(self):
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("moex_spread_lab.strategies.funding_carry.funding_screen")
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("moex_spread_lab.strategies.cli_parsers")
+        for retired_module in (
+            "moex_spread_lab.strategies.funding_carry.funding_screen",
+            "moex_spread_lab.strategies.cli_parsers",
+        ):
+            with self.assertRaises(ModuleNotFoundError):
+                importlib.import_module(retired_module)
         parser = argparse.ArgumentParser(prog="moex-spread-lab")
         register_strategy_cli(parser.add_subparsers(dest="command", required=True))
         for retired in ("funding-screen", "carry-study", "carry-strategy", "analytical-baseline"):

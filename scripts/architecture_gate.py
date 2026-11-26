@@ -32,6 +32,9 @@ for source in sorted((ROOT / "packages").glob("*/src"), reverse=True):
     sys.path.insert(0, str(source))
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "core" / "tests"))
+# The conformance module lives in ``tests/contract`` and imports its shared fixture
+# builders from ``tests/``, so both directories must be importable here.
+sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests"))
 sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests" / "contract"))
 
 # NOTE: the DAG/conformance test modules are imported inside ``main()`` so that

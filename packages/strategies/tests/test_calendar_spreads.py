@@ -4,6 +4,8 @@ from datetime import date
 from typing import ClassVar
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.data import universe as data_universe
+from moex_spread_lab.strategies.calendar import contracts
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
     build_windows,
     contract_chain,
@@ -252,6 +254,21 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertEqual(sizing["ledger"], [])
         self.assertEqual(sizing["summary"], {})
         self.assertIn("far_price", sizing["trades"][0]["entry"])
+
+
+def test_asset_catalog_is_reexported_from_contracts_not_redefined() -> None:
+    for name in (
+        "ASSETS",
+        "CROSS_EXPIRY_PAIRS",
+        "FX_SOURCE",
+        "MONTH_CODES",
+        "QUARTER_CODES",
+        "SYNTHETIC_TRIANGLE_PAIRS",
+        "contract_chain",
+    ):
+        assert getattr(contracts, name) is getattr(data_universe, name), name
+    assert contracts.contract_chain("SR") == data_universe.contract_chain("SR")
+    assert contracts.contract_chain("BR", 4, 5) == data_universe.contract_chain("BR", 4, 5)
 
 
 if __name__ == "__main__":

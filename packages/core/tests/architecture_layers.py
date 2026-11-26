@@ -9,6 +9,7 @@ editing test_architecture_dag.py (plan S1.4).
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 
 _CLI_LAYER_KEYS = frozenset({"cli", "core.cli", "data.cli", "accounting.cli"})
@@ -93,6 +94,20 @@ LEGACY_UPWARD_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+def iter_import_nodes(tree: ast.Module) -> Iterator[ast.Import | ast.ImportFrom]:
+    """Yield import nodes without walking expression subtrees (imports are statements)."""
+    stack: list[ast.AST] = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            yield node
+        stack.extend(
+            child
+            for child in ast.iter_child_nodes(node)
+            if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case))
+        )
+
+
 def extract_msl_import_targets(node: ast.AST) -> list[str]:
     if isinstance(node, ast.ImportFrom):
         mod = node.module or ""
@@ -149,8 +164,7 @@ def check_test_file_layers(
     violations: list[str] = []
     used_allowlist: set[tuple[str, str]] = set()
     parts_allowlist = frozenset(entry for entry in allowlist if entry[0] == rel)
-    for node in ast.walk(tree):
-        lineno = getattr(node, "lineno", 1)
+    for node in iter_import_nodes(tree):
         for target in extract_msl_import_targets(node):
             layer = resolve_target_layer(target)
             if layer is None or layer in allowed:
@@ -160,7 +174,7 @@ def check_test_file_layers(
                 used_allowlist.add(matched)
             else:
                 violations.append(
-                    f"{rel}:{lineno} ({pkg_layer}) -> moex_spread_lab.{target} ({layer})"
+                    f"{rel}:{node.lineno} ({pkg_layer}) -> moex_spread_lab.{target} ({layer})"
                 )
     for stale_rel, stale_target in sorted(parts_allowlist - used_allowlist):
         violations.append(

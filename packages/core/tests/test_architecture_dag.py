@@ -16,6 +16,7 @@ from architecture_layers import (
     check_test_file_layers,
     derive_layer,
     expand_compat_candidates,
+    iter_import_nodes,
     package_head_layers,
 )
 
@@ -161,9 +162,7 @@ def _edges_for_tree(
     name: str, is_init: bool, tree: ast.Module, known: set[str], aliases: dict[str, str]
 ) -> set[tuple[str, int]]:
     edges: set[tuple[str, int]] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Import, ast.ImportFrom)):
-            continue
+    for node in iter_import_nodes(tree):
         level = node.level if isinstance(node, ast.ImportFrom) else 0
         module = node.module if isinstance(node, ast.ImportFrom) else None
         for alias in node.names:
@@ -285,7 +284,7 @@ def _shim_violations_for_file(path: Path, shim_names: set[str]) -> list[str]:
         if match.group(1) in shim_names:
             line = source[: match.start()].count("\n") + 1
             violations.append(f"{rel}:{line} -> {match.group(0)}")
-    for node in ast.walk(tree):
+    for node in iter_import_nodes(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "moex_spread_lab":
             for alias in node.names:
                 if alias.name in shim_names:

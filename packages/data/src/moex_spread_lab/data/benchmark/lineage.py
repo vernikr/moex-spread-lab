@@ -9,8 +9,8 @@ import json
 import re
 import ssl
 import time
-import urllib.error
 import urllib.request
+import zipfile
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -21,28 +21,36 @@ from moex_spread_lab.core.w0 import W0Error
 
 BENCHMARK_SCHEMA = "lqdt-lineage.v1"
 MOEX_BASE = "https://iss.moex.com"
+CBR_BASE = "https://www.cbr.ru"
 CHAIN = ("CBR_RUONIA", "FXMM", "RUSFAR", "VTBM", "LQDT")
 OBSERVED = {"VTBM", "LQDT"}
+RANK = {ticker: index for index, ticker in enumerate(CHAIN)}
 HISTORY_PAGE_SIZE = 100
 RUSFAR_PAGE_SIZE = 500
 RUONIA_HTML_PATTERN = re.compile(
-    r"<td>\s*(\d{2}\.\d{2}\.\d{4})\s*</td>\s*<td[^>]*>\s*([\d,\.]+)\s*</td>",
-    re.IGNORECASE,
+    r"<td>\s*(\d{2}\.\d{2}\.\d{4})\s*</td>\s*<td[^>]*>\s*([\d,\.]+)\s*</td>", re.IGNORECASE
 )
 TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+USER_AGENT = "moex-spread-lab/0.1 benchmark-intake"
 
 
 class BenchmarkError(W0Error):
     """Raised when a benchmark source or lineage cannot be normalized."""
 
 
+def _price_row(day: Any, price: float, ticker: str) -> dict[str, Any]:
+    kind = "observed" if ticker in OBSERVED else "synthetic_proxy" if ticker in CHAIN else "unknown"
+    return {"date": day, "price": price, "source_ticker": ticker, "source_kind": kind}
+
+
 def rate_rows_to_price(rows: list[dict[str, Any]], ticker: str) -> list[dict[str, Any]]:
+    """Compound percent rates over the calendar days elapsed since the previous row (ACT/365)."""
     result: list[dict[str, Any]] = []
     price = 1000.0
     previous: date | None = None
     for row in sorted(rows, key=lambda item: item["date"]):
         current = date.fromisoformat(row["date"])
-        days = max((current - previous).days if previous else 1, 1)
+        days = max((current - previous).days, 1) if previous else 1
         price *= 1 + float(row["rate"]) / 100 * days / 365
         result.append(
             {
@@ -59,6 +67,7 @@ def rate_rows_to_price(rows: list[dict[str, Any]], ticker: str) -> list[dict[str
 
 
 def adjust_vtbm_split(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rescale every price before a >5x or <0.2x break (the 1000:1 split) onto the latest scale."""
     ordered = sorted(rows, key=lambda item: item["date"])
     adjusted = [dict(row) for row in ordered]
     factor = 1.0
@@ -67,88 +76,27 @@ def adjust_vtbm_split(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if index:
             previous = float(ordered[index - 1]["price"])
             current = float(ordered[index]["price"])
-            if previous > 0 and current > 0:
-                ratio = current / previous
-                if ratio < 0.2 or ratio > 5:
-                    factor *= ratio
+            if previous > 0 and current > 0 and not 0.2 <= current / previous <= 5:
+                factor *= current / previous
         adjusted[index]["split_adjustment"] = factor
     return adjusted
 
 
-def _collect_daily_returns(
-    sources: dict[str, list[dict[str, Any]]],
-) -> dict[str, dict[str, Any]]:
-    returns_by_date: dict[str, dict[str, Any]] = {}
+def _daily_returns(sources: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    """Daily return per date from the highest-ranked source; |r| >= 20% breaks are skipped."""
+    returns: dict[str, dict[str, Any]] = {}
     for ticker in CHAIN:
-        rows = sources.get(ticker, [])
-        for previous, current in itertools.pairwise(rows):
+        for previous, current in itertools.pairwise(sources.get(ticker, [])):
             if float(previous["price"]) <= 0:
                 continue
             ret = float(current["price"]) / float(previous["price"]) - 1
-            if abs(ret) >= 0.2:
-                continue
-            existing = returns_by_date.get(current["date"])
-            if existing is None or CHAIN.index(ticker) > CHAIN.index(existing["source_ticker"]):
-                returns_by_date[current["date"]] = {"return": ret, "source_ticker": ticker}
-    return returns_by_date
-
-
-def _best_available_by_date(sources: dict[str, list[dict[str, Any]]]) -> dict[str, str]:
-    available_by_date: dict[str, str] = {}
-    for ticker, rows in sources.items():
-        for row in rows:
-            previous = available_by_date.get(row["date"])
-            if previous is None or CHAIN.index(ticker) > CHAIN.index(previous):
-                available_by_date[row["date"]] = ticker
-    return available_by_date
-
-
-def _source_kind_for_ticker(source_ticker: str) -> str:
-    if source_ticker in OBSERVED:
-        return "observed"
-    if source_ticker in CHAIN:
-        return "synthetic_proxy"
-    return "unknown"
-
-
-def _stitch_backward_prices(
-    *,
-    all_dates: list[str],
-    latest_row: dict[str, Any],
-    returns_by_date: dict[str, dict[str, Any]],
-    available_by_date: dict[str, str],
-) -> list[dict[str, Any]]:
-    current_price = float(latest_row["price"])
-    latest_ticker = str(latest_row["source_ticker"])
-    prices: list[dict[str, Any]] = [
-        {
-            "date": latest_row["date"],
-            "price": current_price,
-            "source_ticker": latest_ticker,
-            "source_kind": "observed" if latest_ticker in OBSERVED else "synthetic_proxy",
-        }
-    ]
-    for current_date in reversed(all_dates[:-1]):
-        newer_date = str(prices[-1]["date"])
-        ret_info = returns_by_date.get(newer_date)
-        if ret_info is not None:
-            current_price /= 1 + float(ret_info["return"])
-            source_ticker = str(ret_info["source_ticker"])
-        else:
-            source_ticker = available_by_date.get(current_date, "holiday_or_missing_return")
-        prices.append(
-            {
-                "date": current_date,
-                "price": current_price,
-                "source_ticker": source_ticker,
-                "source_kind": _source_kind_for_ticker(source_ticker),
-            }
-        )
-    prices.sort(key=lambda row: str(row["date"]))
-    return prices
+            if abs(ret) < 0.2:
+                returns[current["date"]] = {"return": ret, "source_ticker": ticker}
+    return returns
 
 
 def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Stitch the chain backwards from the latest price using the best daily return per date."""
     sources = {
         ticker: sorted(rows, key=lambda row: row["date"])
         for ticker, rows in raw_sources.items()
@@ -159,23 +107,25 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
     all_dates = sorted({str(row["date"]) for rows in sources.values() for row in rows})
     if not all_dates:
         raise BenchmarkError("benchmark lineage has no rows")
-    available_rows = [row for rows in sources.values() for row in rows]
-    latest_row = max(
-        available_rows,
-        key=lambda row: (
-            row["date"],
-            CHAIN.index(row["source_ticker"]) if row["source_ticker"] in CHAIN else -1,
-        ),
+    available = {row["date"]: ticker for ticker in CHAIN for row in sources.get(ticker, [])}
+    returns = _daily_returns(sources)
+    latest = max(
+        (row for rows in sources.values() for row in rows),
+        key=lambda row: (row["date"], RANK.get(row["source_ticker"], -1)),
     )
-    prices = _stitch_backward_prices(
-        all_dates=all_dates,
-        latest_row=latest_row,
-        returns_by_date=_collect_daily_returns(sources),
-        available_by_date=_best_available_by_date(sources),
-    )
+    price, ticker = float(latest["price"]), str(latest["source_ticker"])
+    prices = [_price_row(latest["date"], price, ticker)]
+    for current_date in reversed(all_dates[:-1]):
+        ret_info = returns.get(str(prices[-1]["date"]))
+        if ret_info is None:
+            ticker = available.get(current_date, "holiday_or_missing_return")
+        else:
+            price /= 1 + float(ret_info["return"])
+            ticker = str(ret_info["source_ticker"])
+        prices.append(_price_row(current_date, price, ticker))
+    prices.reverse()
     observed_start = min(
-        (str(row["date"]) for ticker in OBSERVED for row in sources.get(ticker, [])),
-        default=None,
+        (str(row["date"]) for ticker in OBSERVED for row in sources.get(ticker, [])), default=None
     )
     return {
         "schema_version": BENCHMARK_SCHEMA,
@@ -194,137 +144,34 @@ def build_lineage(raw_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any
     }
 
 
-def _extract_xlsx_pairs(rows_iter: Any, date_index: int, rate_index: int) -> list[tuple[Any, Any]]:
-    result: list[tuple[Any, Any]] = []
-    min_len = max(date_index, rate_index) + 1
-    for row in rows_iter:
-        if len(row) < min_len:
-            continue
-        row_date, rate = row[date_index], row[rate_index]
-        if row_date is None or rate is None:
-            continue
-        parsed_date: Any = row_date if isinstance(row_date, (datetime, date)) else str(row_date)
-        result.append((parsed_date, rate))
-    return result
-
-
-def _read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
-    if not raw:
-        return []
+def _fetch(url: str, accept: str) -> tuple[bytes, str, str]:
+    request = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": USER_AGENT})
     try:
-        from openpyxl import load_workbook
-
-        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    except (ImportError, OSError, ValueError, KeyError):
-        return []
-    try:
-        sheet = workbook.active
-        if sheet is None:
-            return []
-        rows_iter = sheet.iter_rows(values_only=True)
-        header = next(rows_iter, None)
-        if not header:
-            return []
-        names = [str(value).strip() if value is not None else "" for value in header]
-        if "DT" not in names or "ruo" not in names:
-            return []
-        return _extract_xlsx_pairs(rows_iter, names.index("DT"), names.index("ruo"))
-    finally:
-        workbook.close()
-
-
-def _parse_ruonia_pair(
-    date_text: Any, rate_text: Any, start: date, finish: date
-) -> tuple[str, dict[str, Any]] | None:
-    try:
-        if isinstance(date_text, datetime):
-            row_date = date_text.date()
-        elif isinstance(date_text, date):
-            row_date = date_text
-        else:
-            row_date = date.fromisoformat("-".join(reversed(str(date_text).split("."))))
-        rate = float(str(rate_text).replace(",", "."))
-    except ValueError:
-        return None
-    if not (start <= row_date <= finish):
-        return None
-    iso = row_date.isoformat()
-    return iso, {
-        "date": iso,
-        "rate": rate,
-        "source_ticker": "CBR_RUONIA",
-        "source_kind": "synthetic_proxy",
-    }
-
-
-def _request_json(url: str, timeout: float = 30.0) -> tuple[dict[str, Any], str]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "moex-spread-lab/0.1 benchmark-intake",
-        },
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
-            raw: bytes = response.read()
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        raise BenchmarkError(f"benchmark request failed: {exc}") from exc
-    try:
-        value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise BenchmarkError(f"benchmark response is not JSON: {url}") from exc
-    if not isinstance(value, dict):
-        raise BenchmarkError(f"benchmark JSON root is not an object: {url}")
-    return cast(dict[str, Any], value), hashlib.sha256(raw).hexdigest()
-
-
-def _request_text(
-    url: str,
-    *,
-    form: dict[str, str] | None = None,
-    timeout: float = 30.0,
-) -> tuple[str, str]:
-    body = urlencode(form).encode("utf-8") if form else None
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Accept": "text/html,application/xhtml+xml",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "moex-spread-lab/0.1 benchmark-intake",
-        },
-        method="POST" if body is not None else "GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
-            raw: bytes = response.read()
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        return "", f"request_error:{type(exc).__name__}"
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        text = raw.decode("cp1251", errors="replace")
-    return text, hashlib.sha256(raw).hexdigest()
-
-
-def _request_bytes(url: str, *, timeout: float = 30.0) -> tuple[bytes, str, str]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
-            "User-Agent": "moex-spread-lab/0.1 benchmark-intake",
-        },
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout, context=TLS_CONTEXT) as response:
+        with urllib.request.urlopen(request, timeout=30.0, context=TLS_CONTEXT) as response:
             raw: bytes = response.read()
             content_type = str(response.headers.get("Content-Type", ""))
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        return b"", "", f"request_error:{type(exc).__name__}"
+    except OSError as exc:
+        raise BenchmarkError(f"benchmark request failed: {exc}") from exc
     return raw, hashlib.sha256(raw).hexdigest(), content_type
+
+
+def _fetch_or_empty(url: str, accept: str) -> tuple[bytes, str, str]:
+    """CBR intake stays truthful: a failed request is recorded, never retried or invented."""
+    try:
+        return _fetch(url, accept)
+    except BenchmarkError as exc:
+        return b"", f"request_error:{type(exc.__cause__).__name__}", ""
+
+
+def _request_json(url: str) -> tuple[dict[str, Any], str]:
+    raw, digest, _ = _fetch(url, "application/json")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BenchmarkError(f"benchmark response is not JSON: {url}") from exc
+    if not isinstance(payload, dict):
+        raise BenchmarkError(f"benchmark JSON root is not an object: {url}")
+    return cast(dict[str, Any], payload), digest
 
 
 def _table_rows(block: dict[str, Any], name: str) -> list[dict[str, Any]]:
@@ -333,36 +180,46 @@ def _table_rows(block: dict[str, Any], name: str) -> list[dict[str, Any]]:
     if not isinstance(columns, list) or not isinstance(data, list):
         raise BenchmarkError(f"invalid benchmark table: {name}")
     typed_columns = cast(list[str], columns)
-    typed_data = cast(list[Any], data)
     return [
         dict(zip(typed_columns, cast(list[Any], row), strict=False))
-        for row in typed_data
+        for row in cast(list[Any], data)
         if isinstance(row, list) and len(cast(list[Any], row)) == len(typed_columns)
     ]
 
 
+def _fetch_iss_table(
+    path: str, params: dict[str, Any], table: str, page_size: int, delay_seconds: float
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    hashes: list[str] = []
+    page = 0
+    while True:
+        query = urlencode({"iss.meta": "off", **params, "start": page * page_size})
+        payload, digest = _request_json(f"{MOEX_BASE}{path}.json?{query}")
+        hashes.append(digest)
+        batch = _table_rows(payload.get(table, {}), table)
+        rows.extend(batch)
+        page += 1
+        if len(batch) < page_size:
+            return rows, {"page_count": page, "raw_response_hashes": hashes}
+        if delay_seconds:
+            time.sleep(delay_seconds)
+
+
 def _normalize_moex_history_row(row: dict[str, Any], secid: str) -> dict[str, Any] | None:
     trade_date = row.get("TRADEDATE")
-    close = next(
-        (
-            value
-            for field in ("LEGALCLOSEPRICE", "CLOSE", "WAPRICE")
-            if isinstance((value := row.get(field)), (int, float)) and value > 0
-        ),
-        None,
-    )
-    if not isinstance(trade_date, str) or not isinstance(close, (int, float)) or close <= 0:
-        return None
-    legal_close = row.get("LEGALCLOSEPRICE")
-    is_legal = isinstance(legal_close, (int, float)) and legal_close > 0
-    return {
-        "date": trade_date,
-        "price": float(close),
-        "source_ticker": secid,
-        "source_kind": "observed",
-        "board": row.get("BOARDID"),
-        "price_role": "legal_close" if is_legal else "last_trade_close",
-    }
+    for field in ("LEGALCLOSEPRICE", "CLOSE", "WAPRICE"):
+        value = row.get(field)
+        if isinstance(trade_date, str) and isinstance(value, (int, float)) and value > 0:
+            return {
+                "date": trade_date,
+                "price": float(value),
+                "source_ticker": secid,
+                "source_kind": "observed",
+                "board": row.get("BOARDID"),
+                "price_role": "legal_close" if field == "LEGALCLOSEPRICE" else "last_trade_close",
+            }
+    return None
 
 
 def fetch_moex_history(
@@ -373,75 +230,40 @@ def fetch_moex_history(
     delay_seconds: float = 0.1,
     board: str | None = None,
 ) -> dict[str, Any]:
-    raw_rows: list[dict[str, Any]] = []
-    page = 0
-    hashes: list[str] = []
     board_path = f"/boards/{board}" if board else ""
-    while True:
-        query = urlencode(
-            {
-                "iss.meta": "off",
-                "from": from_date,
-                "till": till_date,
-                "start": page * HISTORY_PAGE_SIZE,
-            }
-        )
-        url = (
-            f"{MOEX_BASE}/iss/history/engines/stock/markets/shares{board_path}"
-            f"/securities/{secid}.json?{query}"
-        )
-        payload, raw_hash = _request_json(url)
-        hashes.append(raw_hash)
-        batch = _table_rows(payload.get("history", {}), "history")
-        raw_rows.extend(batch)
-        page += 1
-        if len(batch) < HISTORY_PAGE_SIZE:
-            break
-        if delay_seconds:
-            time.sleep(delay_seconds)
-    deduplicated: dict[str, dict[str, Any]] = {}
-    for row in raw_rows:
-        item = _normalize_moex_history_row(row, secid)
-        if item is not None:
-            deduplicated[str(item["date"])] = item
+    rows, meta = _fetch_iss_table(
+        f"/iss/history/engines/stock/markets/shares{board_path}/securities/{secid}",
+        {"from": from_date, "till": till_date},
+        "history",
+        HISTORY_PAGE_SIZE,
+        delay_seconds,
+    )
+    by_date = {
+        str(item["date"]): item
+        for row in rows
+        if (item := _normalize_moex_history_row(row, secid)) is not None
+    }
     return {
         "ticker": secid,
         "board": board,
         "from": from_date,
         "till": till_date,
         "source": "moex_iss_history",
-        "page_count": page,
-        "raw_response_hashes": hashes,
-        "rows": [deduplicated[key] for key in sorted(deduplicated)],
+        **meta,
+        "rows": [by_date[key] for key in sorted(by_date)],
     }
 
 
 def fetch_rusfar_rates(
     from_date: str, till_date: str, *, delay_seconds: float = 0.1
 ) -> dict[str, Any]:
-    raw_rows: list[dict[str, Any]] = []
-    page = 0
-    hashes: list[str] = []
-    while True:
-        query = urlencode(
-            {
-                "iss.meta": "off",
-                "interval": 24,
-                "from": from_date,
-                "till": till_date,
-                "start": page * RUSFAR_PAGE_SIZE,
-            }
-        )
-        url = f"{MOEX_BASE}/iss/engines/stock/markets/index/boards/MMIX/securities/RUSFAR/candles.json?{query}"
-        payload, raw_hash = _request_json(url)
-        hashes.append(raw_hash)
-        batch = _table_rows(payload.get("candles", {}), "RUSFAR candles")
-        raw_rows.extend(batch)
-        page += 1
-        if len(batch) < RUSFAR_PAGE_SIZE:
-            break
-        if delay_seconds:
-            time.sleep(delay_seconds)
+    rows, meta = _fetch_iss_table(
+        "/iss/engines/stock/markets/index/boards/MMIX/securities/RUSFAR/candles",
+        {"interval": 24, "from": from_date, "till": till_date},
+        "candles",
+        RUSFAR_PAGE_SIZE,
+        delay_seconds,
+    )
     normalized = [
         {
             "date": begin[:10],
@@ -449,7 +271,7 @@ def fetch_rusfar_rates(
             "source_ticker": "RUSFAR",
             "source_kind": "synthetic_proxy",
         }
-        for row in raw_rows
+        for row in rows
         if isinstance((begin := row.get("begin")), str)
         and isinstance((rate := row.get("close")), (int, float))
     ]
@@ -459,67 +281,106 @@ def fetch_rusfar_rates(
         "from": from_date,
         "till": till_date,
         "source": "moex_iss_candles_rate",
-        "page_count": page,
-        "raw_response_hashes": hashes,
+        **meta,
         "rows": normalized,
     }
 
 
-def _fetch_ruonia_chunk(
-    cursor: date, chunk_end: date
-) -> tuple[list[tuple[Any, Any]], list[str], str, int]:
+def _read_ruonia_xlsx(raw: bytes) -> list[tuple[Any, Any]]:
+    from openpyxl import load_workbook
+
+    try:
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+        return []
+    try:
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True) if sheet is not None else iter(())
+        header = [str(value).strip() if value is not None else "" for value in next(rows, ())]
+        if "DT" not in header or "ruo" not in header:
+            return []
+        date_index, rate_index = header.index("DT"), header.index("ruo")
+        width = max(date_index, rate_index) + 1
+        return [
+            (row[date_index], row[rate_index])
+            for row in rows
+            if len(row) >= width and row[date_index] is not None and row[rate_index] is not None
+        ]
+    finally:
+        workbook.close()
+
+
+def _parse_ruonia_pair(
+    date_text: Any, rate_text: Any, start: date, finish: date
+) -> dict[str, Any] | None:
+    try:
+        if isinstance(date_text, datetime):
+            row_date = date_text.date()
+        elif isinstance(date_text, date):
+            row_date = date_text
+        else:
+            row_date = date.fromisoformat("-".join(reversed(str(date_text).split("."))))
+        rate = float(str(rate_text).replace(",", "."))
+    except ValueError:
+        return None
+    if not start <= row_date <= finish:
+        return None
+    return {
+        "date": row_date.isoformat(),
+        "rate": rate,
+        "source_ticker": "CBR_RUONIA",
+        "source_kind": "synthetic_proxy",
+    }
+
+
+def _fetch_ruonia_chunk(start: date, end: date) -> tuple[list[tuple[Any, Any]], list[str], str]:
+    """The HTML dynamics table first, then the XLSX export the current CBR site serves."""
     query = urlencode(
         {
             "UniDbQuery.Posted": "True",
-            "UniDbQuery.From": cursor.strftime("%d.%m.%Y"),
-            "UniDbQuery.To": chunk_end.strftime("%d.%m.%Y"),
+            "UniDbQuery.From": f"{start:%d.%m.%Y}",
+            "UniDbQuery.To": f"{end:%d.%m.%Y}",
         }
     )
-    text, response_hash = _request_text(
-        f"https://www.cbr.ru/hd_base/ruonia/dynamics/?{query}", form={}
+    raw, html_hash, _ = _fetch_or_empty(
+        f"{CBR_BASE}/hd_base/ruonia/dynamics/?{query}", "text/html,application/xhtml+xml"
     )
-    pairs: list[tuple[Any, Any]] = list(RUONIA_HTML_PATTERN.findall(text))
+    pairs = RUONIA_HTML_PATTERN.findall(raw.decode("utf-8", errors="replace"))
     if pairs:
-        return pairs, [response_hash], "html", 1
-    excel_query = urlencode(
+        return pairs, [html_hash], "html"
+    query = urlencode(
         {
-            "FromDate": cursor.strftime("%m/%d/%Y"),
-            "ToDate": chunk_end.strftime("%m/%d/%Y"),
+            "FromDate": f"{start:%m/%d/%Y}",
+            "ToDate": f"{end:%m/%d/%Y}",
             "posted": "False",
             "backUrl": "/hd_base/ruonia/dynamics/",
         }
     )
-    raw, excel_hash, content_type = _request_bytes(
-        f"https://www.cbr.ru/Queries/UniDbQuery/DownloadExcel/14315?{excel_query}"
+    raw, xlsx_hash, content_type = _fetch_or_empty(
+        f"{CBR_BASE}/Queries/UniDbQuery/DownloadExcel/14315?{query}",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
     )
-    xlsx_pairs = _read_ruonia_xlsx(raw) if raw and "spreadsheet" in content_type.lower() else []
-    return xlsx_pairs, [response_hash, excel_hash], ("xlsx" if xlsx_pairs else "unavailable"), 2
+    pairs = _read_ruonia_xlsx(raw) if "spreadsheet" in content_type.lower() else []
+    return pairs, [html_hash, xlsx_hash], "xlsx" if pairs else "unavailable"
 
 
 def fetch_cbr_ruonia_rates(
-    from_date: str,
-    till_date: str,
-    *,
-    delay_seconds: float = 0.2,
+    from_date: str, till_date: str, *, delay_seconds: float = 0.2
 ) -> dict[str, Any]:
-    """Fetch RUONIA in bounded yearly HTML requests with a truthful empty result."""
-    start = date.fromisoformat(from_date)
-    finish = date.fromisoformat(till_date)
+    """Fetch RUONIA in bounded yearly CBR requests; an unavailable source stays empty."""
+    start, finish = date.fromisoformat(from_date), date.fromisoformat(till_date)
     rows: dict[str, dict[str, Any]] = {}
-    response_hashes: list[str] = []
+    hashes: list[str] = []
     methods: list[str] = []
-    request_count = 0
     cursor = start
     while cursor <= finish:
         chunk_end = min(cursor + timedelta(days=364), finish)
-        pairs, chunk_hashes, method, reqs = _fetch_ruonia_chunk(cursor, chunk_end)
-        request_count += reqs
-        response_hashes.extend(chunk_hashes)
+        pairs, chunk_hashes, method = _fetch_ruonia_chunk(cursor, chunk_end)
+        hashes.extend(chunk_hashes)
         methods.append(method)
         for date_text, rate_text in pairs:
-            parsed = _parse_ruonia_pair(date_text, rate_text, start, finish)
-            if parsed is not None:
-                rows[parsed[0]] = parsed[1]
+            if row := _parse_ruonia_pair(date_text, rate_text, start, finish):
+                rows[row["date"]] = row
         cursor = chunk_end + timedelta(days=1)
         if cursor <= finish and delay_seconds:
             time.sleep(delay_seconds)
@@ -529,9 +390,9 @@ def fetch_cbr_ruonia_rates(
         "from": from_date,
         "till": till_date,
         "source": "cbr_ruonia_html_or_xlsx",
-        "request_count": request_count,
+        "request_count": len(hashes),
         "methods": methods,
-        "raw_response_hashes": response_hashes,
+        "raw_response_hashes": hashes,
         "status": "available" if normalized else "unavailable_or_unparsed",
         "rows": normalized,
     }
@@ -540,16 +401,8 @@ def fetch_cbr_ruonia_rates(
 __all__ = [
     "BENCHMARK_SCHEMA",
     "CHAIN",
-    "HISTORY_PAGE_SIZE",
-    "MOEX_BASE",
     "OBSERVED",
-    "RUSFAR_PAGE_SIZE",
-    "TLS_CONTEXT",
     "BenchmarkError",
-    "_read_ruonia_xlsx",
-    "_request_bytes",
-    "_request_json",
-    "_request_text",
     "adjust_vtbm_split",
     "build_lineage",
     "fetch_cbr_ruonia_rates",

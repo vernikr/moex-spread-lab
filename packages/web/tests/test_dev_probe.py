@@ -98,17 +98,12 @@ def test_validation_rejects_invalid_types_and_override(server):
         assert status == 400
 
 
-def test_discovery_record_is_atomic_and_removed_only_by_owner(tmp_path):
-    from moex_spread_lab.web.server import remove_instance, write_instance
+def test_serving_writes_no_instance_record(server):
+    port, root = server
+    status, _ = request(port, "GET", "/api/timeframes")
+    assert status == 200
+    assert not (root / "data/analytics/server-instance.json").exists()
 
-    first = write_instance(tmp_path, 1234)
-    path = tmp_path / "data/analytics/server-instance.json"
-    assert json.loads(path.read_text())["port"] == 1234
-    second = write_instance(tmp_path, 5678)
-    remove_instance(tmp_path, first)
-    assert json.loads(path.read_text())["port"] == 5678
-    remove_instance(tmp_path, second)
-    assert not path.exists()
 
 
 def test_optimization_matches_saved_route_without_new_history(server):

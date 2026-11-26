@@ -53,13 +53,3 @@ def run(args: Any) -> int:
             signal.signal(signal.SIGTERM, previous)
         return 0
     return 2
-
-
-def add_screener_subcommand(subparsers: Any) -> None:
-    """Compatibility alias for the package's current CLI registration hook."""
-    register(subparsers)
-
-
-def run_screener(args: Any) -> int:
-    """Compatibility alias retained for the former top-level CLI adapter."""
-    return run(args)

@@ -74,8 +74,7 @@ def intent_snapshot(
             "monthly": bool(market["assets"][asset].get("monthly")),
             "convergence": bool(market["assets"][asset].get("convergence")),
             "tradable_every_session": window.get("tradable_every_session", True),
-            # Shared with the plugin intents so cache telemetry and repeated-trial behaviour
-            # match the historical runner exactly.
+            # Shared with plugin intents to keep cache telemetry and repeated-trial behaviour consistent.
             "z_cache": z_cache,
             "z_cache_key": z_cache_key,
         },

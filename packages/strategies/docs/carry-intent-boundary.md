@@ -1,7 +1,22 @@
-# Funding-carry proof plugins
+# Carry settlement-intent boundary (`carry_settlement_intents.v1`)
 
-A trusted plugin opts in with `proof_adapter = "carry_settlement_intents.v1"`, a unique family, exactly the pair universe and `same_day_settlement` fill, daily bars, and a non-empty numeric schema whose parameters are all tunable (the current proof-search contract does not yet carry fixed plugin fields through trials). Discovery alone does not opt in other plugins. It receives a copied, evidence-resolved carry-study prefix and returns a `StrategyIntentRun`: short-spread direction, entry and exit dates, entry signal date, exit reason and `open_at_end` boolean; optional `entry_reason` is descriptive. The intent boundary drops all plugin-supplied prices, rates, costs and P&L. Input mutations in both compatibility and intent callbacks do not alter the trusted study.
+Shared plugin discovery, trust-tier, and `assert_causal_conformance` rules are defined in [calendar-proof-plugins.md](calendar-proof-plugins.md).
 
-The proof adapter independently enforces chronological events, non-overlap, executable volumes, the native expiry/assignment limits, funding coverage and cutoff. A terminal mark may lack executable volume but must precede the applicable cutoff. Existing pair screens, fixed sizing or the funded account, tariff, LQDT benchmark, provenance and reconciliation remain authoritative. Ordinary settlement exits receive the price move but not exit-day funding; a terminal open mark receives its final clearing and pays no exit fee. The hourly interval rejects carry plugins. Full and metrics-only replays, fixed and automatic sizes, holdout prefixes, and serial/two-worker search are tested against the native funding strategy.
+## Opt-in & adapter scope
 
-**Trust and causality:** installed plugins execute trusted Python and can see the supplied prefix. Event validation cannot prove that a plugin derived each signal using only information available at that decision time; the author must run determinism and truncation/conformance tests and ensure funding rates are used only when known. An inferred midpoint is never decision-available before its right-hand clearing. Proof validates and recomputes accounting, not the economic or causal validity of arbitrary plugin code. The result remains an offline settlement-price proxy, not an executable fill or trading authorization.
+A `StrategyPlugin` opts into the funding-carry proof path by declaring:
+
+- `proof_adapter = "carry_settlement_intents.v1"` and a unique `family_id`
+- `supported_universes = {"pair_screen"}`
+- `same_day_settlement` fill and daily bars (`requires_daily_bars = True`; hourly intervals reject carry plugins)
+- a non-empty numeric parameter schema whose fields are all tunable
+
+## `ProofFunding` & intent validation
+
+The plugin receives a copied, evidence-resolved carry-study prefix (`ProofFunding`) and returns a `StrategyIntentRun` with short-spread direction, entry/exit dates, entry signal date, exit reason, `open_at_end` flag, and optional descriptive `entry_reason`. Input mutations in compatibility or intent callbacks do not alter the trusted study. All plugin-supplied prices, rates, costs, and P&L are discarded.
+
+The boundary independently enforces event chronology, non-overlap, executable volumes, native expiry/assignment limits, funding coverage, and evidence cutoff. A terminal mark may lack executable volume but must precede the applicable cutoff. Authors must ensure funding rates are consumed only when decision-available—an inferred midpoint is never decision-available before its right-hand clearing.
+
+## Accounting & settlement semantics
+
+Existing pair screens, fixed or funded-account sizing, tariffs, matched LQDT benchmark, provenance, and reconciliation remain authoritative. Ordinary settlement exits receive the price move but not exit-day funding; a terminal open mark receives its final clearing and pays no exit fee. Output remains an offline settlement-price proxy, not an executable fill or trading authorization.

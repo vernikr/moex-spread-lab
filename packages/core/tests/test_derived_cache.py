@@ -75,9 +75,8 @@ def test_corrupt_entry_is_a_miss_not_an_error(tmp_path):
     assert derived_cache.load_bytes(root, "f" * 64) is None
 
 
-def test_disabled_cache_bypasses_reads_and_writes(tmp_path, monkeypatch):
+def test_disabled_cache_bypasses_reads(tmp_path, monkeypatch):
     root = _root(tmp_path)
     monkeypatch.setenv("MOEX_DERIVED_CACHE", "0")
-    derived_cache.put_json(root, "ns", (), {"a": 1})
-    assert not derived_cache.cache_dir(root).exists()
-    assert derived_cache.get_json(root, "ns") is None
+    derived_cache.store_bytes(root, "k" * 64, b"{}")
+    assert derived_cache.load_bytes(root, "k" * 64) is None

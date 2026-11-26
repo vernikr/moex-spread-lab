@@ -1,43 +1,21 @@
-import { $, FAMILY_RU, GROUP_RU, el } from './dom.js';
-import { configureWindowTableCallbacks, recentWindows, renderWindowTable } from './window-table.js';
+import { $, GROUP_RU, el, emit } from './dom.js';
+import { refreshGroupProfile } from './plateau-lamps.js';
 import { currentPair, pairHasLocalData, state, targetKey } from './state.js';
 import {
-  activeStrategyName,
-  cancelSearch,
-  clearGroup,
   fillCalendarStrategies,
   fillStrategy,
-  mappedStrategy,
-  refreshGroupProfile,
   restoreForm,
   syncChartScope,
   syncEditorScope,
   syncGroupStrategyOptions,
-  tuneButton,
-  tuneState,
 } from './strategy-form.js';
+import { activeStrategyName, cancelSearch, clearGroup, mappedStrategy, tuneButton, tuneState } from './strategy-plans.js';
+import { recentWindows, renderWindowTable, windowHeading } from './window-table.js';
 
-export {
-  cacheWindowProof,
-  paintWindowReadings,
-  refreshWindowReadings,
-  stopWindowReadings,
-  windowGates,
-} from './window-table.js';
-
-let pickerCallbacks = {
-  scheduleShow: () => {},
-  refreshGlobalSettings: async () => {},
+const FAMILY_RU = {
+  perpetual_quarterly_same_asset: 'вечный/квартальный',
+  dated_calendar_same_asset: 'датированный календарь',
 };
-
-export function configurePickerCallbacks(next) {
-  pickerCallbacks = { ...pickerCallbacks, ...next };
-  configureWindowTableCallbacks({
-    openLeaf,
-    refreshGlobalSettings: pickerCallbacks.refreshGlobalSettings,
-    setChecks,
-  });
-}
 
 function addLeaf(b, target, meta, enabled = true) {
   const key = targetKey(target);
@@ -47,7 +25,11 @@ function addLeaf(b, target, meta, enabled = true) {
   b.children.push(leaf);
 }
 
-function checkboxChanged() {
+function setChecks(entries, on) {
+  for (const l of entries) {
+    if (on) state.checked.add(l.key);
+    else state.checked.delete(l.key);
+  }
   cancelSearch();
   clearGroup();
   tuneState('');
@@ -57,14 +39,6 @@ function checkboxChanged() {
   syncChartScope();
 }
 
-export function setChecks(entries, on) {
-  for (const l of entries) {
-    if (on) state.checked.add(l.key);
-    else state.checked.delete(l.key);
-  }
-  checkboxChanged();
-}
-
 function initAll(id, entries) {
   const cb = $(id);
   cb._leaves = entries;
@@ -72,17 +46,11 @@ function initAll(id, entries) {
 }
 
 function pickerRow(text, entries, kind, open) {
-  const row = el('div', 'picker-row ' + kind);
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.className = 'pick-check';
-  cb._leaves = () => entries;
+  const row = el('div', 'picker-row ' + kind + (kind === 'leaf' && !entries[0].enabled ? ' unavailable' : ''));
+  const cb = Object.assign(document.createElement('input'), { type: 'checkbox', className: 'pick-check', _leaves: () => entries });
   cb.setAttribute('aria-label', 'Включить в подбор: ' + text);
   cb.addEventListener('change', () => setChecks(entries, cb.checked));
-  const button = el('button', 'pick-name', text);
-  button.type = 'button';
-  button.title = text;
-  if (kind === 'leaf' && !entries[0].enabled) row.classList.add('unavailable');
+  const button = Object.assign(el('button', 'pick-name', text), { type: 'button', title: text });
   button.addEventListener('click', open);
   row.addEventListener('click', e => {
     if (e.target === row) open();
@@ -103,15 +71,7 @@ export function refreshChecks() {
   tuneButton(state.tuning);
 }
 
-export function markOpened() {
-  for (const row of document.querySelectorAll('.picker-row[data-branch],.picker-row[data-leaf]')) {
-    const on = row.dataset.branch === state.branchId || row.dataset.leaf === state.leafId;
-    row.classList.toggle('current', on);
-    row.querySelector('button').setAttribute('aria-current', String(on));
-  }
-}
-
-export function openLeaf(key, preferred = '', run = true) {
+function openLeaf(key, preferred = '', run = true) {
   state.leafId = key;
   const want = mappedStrategy(preferred || activeStrategyName());
   if (state.universe === 'pair_screen') fillStrategy(want);
@@ -119,26 +79,29 @@ export function openLeaf(key, preferred = '', run = true) {
   const branch = state.branches.get(state.branchId);
   if (branch) branch.lastPair = currentPair();
   restoreForm();
-  markOpened();
+  for (const row of document.querySelectorAll('.picker-row[data-branch],.picker-row[data-leaf]')) {
+    const on = row.dataset.branch === state.branchId || row.dataset.leaf === state.leafId;
+    row.classList.toggle('current', on);
+    row.querySelector('button').setAttribute('aria-current', String(on));
+  }
   refreshChecks();
-  if (run) pickerCallbacks.scheduleShow(0);
+  if (run) emit('moex:schedule', 0);
 }
 
 export function openBranch(key, wanted = '', strategy = '', run = true) {
   const b = state.branches.get(key);
   if (!b) return;
-  const prior = state.universe === 'pair_screen' ? $('strategy').value : $('cstrategy').value;
+  const prior = activeStrategyName();
   state.branchId = key;
   state.universe = b.kind;
   $('pair-controls').classList.toggle('hidden', state.universe !== 'pair_screen');
   $('calendar-controls').classList.toggle('hidden', state.universe !== 'calendar_native');
-  $('window-label').textContent = state.universe === 'pair_screen' ? 'Исторические окна' : 'Календарные окна';
-  const list = $('window-list');
-  renderWindowTable(b);
+  $('window-label').textContent = windowHeading();
+  renderWindowTable(b, openLeaf, setChecks);
   const sorted = recentWindows(b);
   const selected = sorted.find(l => l.target.pair === (wanted || b.lastPair)) || sorted.find(l => l.enabled) || sorted[0];
   openLeaf(selected?.key || '', strategy || prior, run);
-  list.scrollTop = 0;
+  $('window-list').scrollTop = 0;
 }
 
 export function buildPicker() {
@@ -151,8 +114,7 @@ export function buildPicker() {
     return b;
   };
   for (const p of state.catalog.pair_screen?.pairs || []) {
-    const key = 'pair_screen|' + p.near;
-    const b = state.branches.get(key) || create('pair_screen', p.near, FAMILY_RU[p.family] || p.family, p.near);
+    const b = state.branches.get('pair_screen|' + p.near) || create('pair_screen', p.near, FAMILY_RU[p.family] || p.family, p.near);
     addLeaf(b, { universe: 'pair_screen', pair: p.id }, p, pairHasLocalData(p));
   }
   for (const a of state.catalog.assets || []) {
@@ -188,8 +150,6 @@ export function buildPicker() {
   initAll('all-windows', () => state.branches.get(state.branchId)?.children || []);
 }
 
-/* Persisted, resizable picker column widths. */
-
 const COLUMN_LAYOUT_KEY = 'moex-proof-layout-v1';
 const RESIZABLE_COLUMNS = [
   { key: 'selection', cssVar: '--selection-width', handleId: 'resize-selection', min: 220, max: 560, initial: 296 },
@@ -197,27 +157,21 @@ const RESIZABLE_COLUMNS = [
 ];
 const desiredColumnWidths = { selection: 296, norm: 262 };
 const columnWidths = { selection: 296, norm: 262 };
-const MAIN_MIN_WIDTH = 320;
-const RESIZER_GUTTERS = 16;
-
-function maxColumnWidth(column) {
-  if (window.innerWidth <= 940) return column.max;
-  const otherName = column.key === 'selection' ? 'norm' : 'selection';
-  return Math.max(column.min, Math.min(column.max, $('layout').clientWidth - RESIZER_GUTTERS - MAIN_MIN_WIDTH - columnWidths[otherName]));
-}
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 function applyColumnWidth(name, value, remember = true) {
-  const column = RESIZABLE_COLUMNS.find(x => x.key === name);
-  if (!column) return;
-  const requested = Math.max(column.min, Math.min(column.max, Math.round(value)));
+  const col = RESIZABLE_COLUMNS.find(x => x.key === name);
+  if (!col) return;
+  const requested = clamp(Math.round(value), col.min, col.max);
   if (remember) desiredColumnWidths[name] = requested;
-  const maximum = maxColumnWidth(column);
-  const width = Math.max(column.min, Math.min(maximum, requested));
+  const other = columnWidths[col.key === 'selection' ? 'norm' : 'selection'];
+  const maximum = window.innerWidth <= 940 ? col.max : clamp($('layout').clientWidth - 336 - other, col.min, col.max);
+  const width = clamp(requested, col.min, maximum);
   columnWidths[name] = width;
-  $('layout').style.setProperty(column.cssVar, `${width}px`);
-  const handle = $(column.handleId);
+  $('layout').style.setProperty(col.cssVar, `${width}px`);
+  const handle = $(col.handleId);
   if (handle) {
-    handle.setAttribute('aria-valuemin', String(column.min));
+    handle.setAttribute('aria-valuemin', String(col.min));
     handle.setAttribute('aria-valuemax', String(maximum));
     handle.setAttribute('aria-valuenow', String(width));
     handle.setAttribute('aria-valuetext', `${width} пикселей`);
@@ -240,36 +194,35 @@ export function initColumnResizers() {
   try {
     saved = JSON.parse(localStorage.getItem(COLUMN_LAYOUT_KEY) || '{}') || {};
   } catch (_) {}
-  for (const column of RESIZABLE_COLUMNS) {
-    const savedWidth = Number(saved[column.key]);
-    const requested = Number.isFinite(savedWidth) && saved[column.key] != null ? savedWidth : column.initial;
-    desiredColumnWidths[column.key] = Math.max(column.min, Math.min(column.max, Math.round(requested)));
-    columnWidths[column.key] = desiredColumnWidths[column.key];
+  for (const col of RESIZABLE_COLUMNS) {
+    const w = Number(saved[col.key]);
+    columnWidths[col.key] = desiredColumnWidths[col.key] = clamp(
+      Math.round(Number.isFinite(w) && saved[col.key] != null ? w : col.initial),
+      col.min,
+      col.max,
+    );
   }
   applyResponsiveWidths();
-  for (const column of RESIZABLE_COLUMNS) {
-    const handle = $(column.handleId);
+  for (const col of RESIZABLE_COLUMNS) {
+    const handle = $(col.handleId);
     if (!handle) continue;
     handle.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
-      const pointerId = event.pointerId;
-      const startX = event.clientX;
-      const startWidth = columnWidths[column.key];
+      const { pointerId, clientX: startX } = event;
+      const startWidth = columnWidths[col.key];
       handle.classList.add('active');
       document.body.classList.add('is-resizing');
       try {
         handle.setPointerCapture(pointerId);
       } catch (_) {}
-      const move = moveEvent => {
-        if (moveEvent.pointerId === pointerId) applyColumnWidth(column.key, startWidth + moveEvent.clientX - startX);
+      const move = e => {
+        if (e.pointerId === pointerId) applyColumnWidth(col.key, startWidth + e.clientX - startX);
       };
-      const finish = endEvent => {
-        if (endEvent.pointerId !== pointerId) return;
-        if (endEvent.type === 'pointerup') move(endEvent);
-        handle.removeEventListener('pointermove', move);
-        handle.removeEventListener('pointerup', finish);
-        handle.removeEventListener('pointercancel', finish);
+      const finish = e => {
+        if (e.pointerId !== pointerId) return;
+        if (e.type === 'pointerup') move(e);
+        for (const t of ['pointermove', 'pointerup', 'pointercancel']) handle.removeEventListener(t, t === 'pointermove' ? move : finish);
         handle.classList.remove('active');
         document.body.classList.remove('is-resizing');
         persistColumnWidths();
@@ -282,18 +235,17 @@ export function initColumnResizers() {
       handle.addEventListener('pointercancel', finish);
     });
     handle.addEventListener('keydown', event => {
-      let next;
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        next = columnWidths[column.key] + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10);
-      } else if (event.key === 'Home') {
-        event.preventDefault();
-        next = column.min;
-      } else if (event.key === 'End') {
-        event.preventDefault();
-        next = column.max;
-      } else return;
-      applyColumnWidth(column.key, next);
+      const next =
+        event.key === 'ArrowLeft' || event.key === 'ArrowRight'
+          ? columnWidths[col.key] + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 10)
+          : event.key === 'Home'
+            ? col.min
+            : event.key === 'End'
+              ? col.max
+              : null;
+      if (next == null) return;
+      event.preventDefault();
+      applyColumnWidth(col.key, next);
       persistColumnWidths();
     });
   }

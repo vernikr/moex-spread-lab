@@ -1,6 +1,4 @@
-/** Form input accessors, request builders and cohort plans for the strategy form. */
-
-import { $ } from './dom.js';
+import { $, finishProgress } from './dom.js';
 import {
   calendarStrategySupported,
   currentPair,
@@ -10,37 +8,26 @@ import {
   orderedStrategySpecs,
   pairAvailability,
   pairStrategyAvailable,
-  selectedRoot,
   settingsKey,
   state,
-  strategyFill,
   strategyFamily,
+  strategyFill,
   targetKey,
 } from './state.js';
 
 export const activeInputs = () => state.numericInputs.filter(n => n.isConnected && !n.closest('.hidden'));
 export const sharedInputs = () => [...$('cohort-editor').querySelectorAll('.number-shell input')];
-
-export function activeStrategyName() {
-  return state.universe === 'pair_screen' ? $('strategy').value : $('cstrategy').value;
-}
-
+export const activeStrategyName = () => (state.universe === 'pair_screen' ? $('strategy').value : $('cstrategy').value);
 export const formKey = (key, name) => key + '|' + name;
+export const mappedStrategy = name => familyVariant(strategyFamily(name), state.universe)?.id || name;
 
-export function pairRequest() {
-  const strategy = $('strategy').value;
+export function currentRequest() {
+  const strategy = activeStrategyName();
   const parameters = Object.fromEntries(activeInputs().map(n => [n.dataset.axis, n.value === '' ? NaN : Number(n.value)]));
-  return { universe: 'pair_screen', pair: currentPair(), strategy, fill: strategyFill(strategy), sizing: 'max_affordable', parameters };
-}
-
-export function calendarRequest() {
-  const strategy = $('cstrategy').value;
-  const root = selectedRoot();
-  const parameters = Object.fromEntries(activeInputs().map(n => [n.dataset.axis, n.value === '' ? NaN : Number(n.value)]));
+  const cal = state.universe === 'calendar_native';
   return {
-    universe: 'calendar_native',
-    timeframe: state.preferences.timeframe,
-    asset: root.id,
+    universe: state.universe,
+    ...(cal ? { timeframe: state.preferences.timeframe, asset: state.branches.get(state.branchId)?.id } : {}),
     pair: currentPair(),
     strategy,
     fill: strategyFill(strategy),
@@ -49,7 +36,6 @@ export function calendarRequest() {
   };
 }
 
-export const currentRequest = () => (state.universe === 'pair_screen' ? pairRequest() : calendarRequest());
 export const hasSelection = () =>
   !!state.leafId && (state.universe === 'calendar_native' || pairStrategyAvailable(pairAvailability(currentPair()), activeStrategyName()));
 
@@ -58,16 +44,25 @@ export function proofPlanKey(req) {
   return JSON.stringify([targetKey(req), req.strategy, fill, req.sizing, Object.entries(req.parameters || {}).sort(), settingsKey()]);
 }
 
-export function defaultLeafRequest(l) {
+function defaultLeafRequest(l) {
   const cal = l.target.universe === 'calendar_native';
-  const tf = cal ? { timeframe: state.preferences.timeframe } : {};
   const name = activeStrategyName();
   const saved = state.formStates.get(formKey(l.key, name));
-  const fill = strategyFill(name);
-  if (saved) return { ...l.target, ...tf, strategy: saved.strategy, parameters: saved.parameters, sizing: 'max_affordable', fill };
-  const monthly = cal ? !!state.branches.get(l.branch)?.asset?.monthly : false;
-  const parameters = defaultParametersFor(name, { universe: l.target.universe, timeframe: state.preferences.timeframe, monthly });
-  return { ...l.target, ...tf, strategy: name, parameters, sizing: 'max_affordable', fill };
+  const parameters =
+    saved?.parameters ||
+    defaultParametersFor(name, {
+      universe: l.target.universe,
+      timeframe: state.preferences.timeframe,
+      monthly: cal && !!state.branches.get(l.branch)?.asset?.monthly,
+    });
+  return {
+    ...l.target,
+    ...(cal ? { timeframe: state.preferences.timeframe } : {}),
+    strategy: saved ? saved.strategy : name,
+    parameters,
+    sizing: 'max_affordable',
+    fill: strategyFill(name),
+  };
 }
 
 export function sharedRequest() {
@@ -75,38 +70,42 @@ export function sharedRequest() {
   return { strategy: state.sharedStrategy, parameters, sizing: 'max_affordable', fill: strategyFill(state.sharedStrategy) };
 }
 
-export function pointError(inputs) {
+export function groupSpec() {
+  const body = { ...sharedRequest(), targets: [...state.checked].sort().map(k => state.leaves.get(k).target) };
+  return { body, key: JSON.stringify([settingsKey(), body]) };
+}
+
+function fieldRangeError(inputs) {
   const n = inputs.find(x => x.value === '' || !x.validity.valid);
-  if (n) return `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.`;
+  return n ? `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.` : '';
+}
+
+export const invalidForm = () => fieldRangeError(activeInputs());
+
+export function pointError(inputs) {
+  const err = fieldRangeError(inputs);
+  if (err) return err;
   const entry = inputs.find(x => x.dataset.axis === 'entry_z');
   const exit = inputs.find(x => x.dataset.axis === 'exit_z');
   return entry && exit && exit.valueAsNumber >= entry.valueAsNumber ? 'Порог выхода должен быть ниже порога входа.' : '';
 }
 
-export function invalidForm() {
-  const n = activeInputs().find(x => x.value === '' || !x.validity.valid);
-  return n ? `Проверьте поле «${n.labels[0].textContent}»: диапазон ${n.min}–${n.max}, шаг ${n.step}.` : '';
-}
-
 function specsAcceptPoint(strategyId, params, options) {
   const specs = orderedStrategySpecs(strategyId, options);
   if (!specs.length) return false;
-  for (const s of specs) {
-    const v = params[s.name];
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < s.min_value || v > s.max_value) return false;
+  if (!specs.every(s => typeof params[s.name] === 'number' && Number.isFinite(params[s.name]) && params[s.name] >= s.min_value && params[s.name] <= s.max_value)) {
+    return false;
   }
-  if ('entry_z' in params && 'exit_z' in params && params.exit_z >= params.entry_z) return false;
-  return true;
+  return !('entry_z' in params && 'exit_z' in params && params.exit_z >= params.entry_z);
 }
 
-export function commonPlan(own, target, key) {
+function commonPlan(own, target, key) {
   let req = own;
   let common = false;
   if (target && state.sharedStrategy && state.checked.has(key) && !pointError(sharedInputs())) {
     const g = sharedRequest();
     const cal = target.universe === 'calendar_native';
-    const variant = familyVariant(strategyFamily(g.strategy), target.universe);
-    const name = variant?.id || g.strategy;
+    const name = familyVariant(strategyFamily(g.strategy), target.universe)?.id || g.strategy;
     const p = familyParameters(g.parameters, g.strategy, name);
     const assetObj = cal ? state.branches.get('calendar_native|' + target.asset)?.asset : null;
     const supported = cal ? calendarStrategySupported(assetObj, name) : pairStrategyAvailable(pairAvailability(target.pair), name);
@@ -135,4 +134,40 @@ export function finishReview(yes) {
   const resolve = state.resolveCompatibility;
   state.resolveCompatibility = null;
   resolve?.(yes);
+}
+
+export function tuneState(message, ok = false) {
+  const n = $('tune-state');
+  n.textContent = message;
+  n.classList.toggle('ok', ok);
+}
+
+export function tuneButton(busy = state.tuning, pctVal = null) {
+  const btn = $('auto-tune');
+  btn.disabled = busy || (!state.leafId && !state.checked.size);
+  btn.setAttribute('aria-busy', String(busy));
+  if (!busy) {
+    btn.style.removeProperty('--tune-pct');
+    $('tune-label').textContent = 'Подобрать стратегию и параметры';
+    return;
+  }
+  const p = pctVal == null ? null : Math.max(0, Math.min(100, Math.round(pctVal)));
+  btn.style.setProperty('--tune-pct', (p ?? 0) + '%');
+  $('tune-label').textContent = p == null ? 'Идёт подбор…' : `Подбор · ${p}%`;
+}
+
+export function cancelSearch() {
+  if (!state.tuning) return;
+  state.searchVersion++;
+  state.searchController?.abort();
+  state.searchController = null;
+  state.tuning = false;
+  finishReview(false);
+  finishProgress('search');
+  tuneButton();
+}
+
+export function clearGroup() {
+  $('batch-result').hidden = true;
+  $('batch-result').replaceChildren();
 }

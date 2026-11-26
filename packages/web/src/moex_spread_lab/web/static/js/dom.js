@@ -2,9 +2,9 @@ export const $ = id => document.getElementById(id);
 
 export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 
-export const el = (tag, cls, text) => {
+export const el = (tag, clsName, text) => {
   const n = document.createElement(tag);
-  if (cls) n.className = cls;
+  if (clsName) n.className = clsName;
   if (text != null) n.textContent = text;
   return n;
 };
@@ -14,7 +14,6 @@ export const fmt = (v, d = 0) =>
 
 export const rub = (v, d = 0) => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt(v, d)} ₽`);
 export const px = v => (v == null ? '—' : fmt(v, Math.abs(v) < 100 ? 4 : Math.abs(v) < 10000 ? 2 : 0));
-export const rubPx = v => (v == null ? '—' : `${px(v)} ₽`);
 export const cls = v => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 export const signed = v => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt(v, 2)}`);
 export const pct = v => Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 10 }) + '%';
@@ -26,18 +25,6 @@ export const FILL_RU = {
   same_day_settlement: 'расчёт в тот же день',
   next_close: 'следующее закрытие',
   reference_same_bar: 'справочное закрытие',
-};
-
-export const FAMILY_RU = {
-  perpetual_quarterly_same_asset: 'вечный/квартальный',
-  dated_calendar_same_asset: 'датированный календарь',
-};
-
-export const CATSTATUS_RU = {
-  local_inputs_available: 'локальные входы доступны',
-  intake_required: 'нужна загрузка данных',
-  excluded_thin_leg: 'объём ниже порога',
-  proof_ready_thin_leg: 'данные есть, но нога тонкая',
 };
 
 export const GROUP_RU = {
@@ -69,14 +56,6 @@ const COST_RU = {
 
 export const humanReason = r => (r ? REASON_RU[r] || String(r).replaceAll('_', ' ') : '');
 export const humanCost = k => COST_RU[k] || String(k).replaceAll('_', ' ');
-
-export const PARAM_RU = {
-  lookback: 'Окно',
-  window: 'Окно',
-  entry_z: 'Вход z',
-  exit_z: 'Выход z',
-  threshold_pp: 'Порог RUONIA',
-};
 
 export const COLORS = {
   near: '#6fb7ff',
@@ -141,21 +120,17 @@ function renderProgressUi() {
   pill.textContent = text;
 }
 
-function writeProgress(channel, label, floor, ceiling, tauMs) {
+export function startProgress(channel, label, floor = 2, ceiling = floor, tauMs = 0) {
   const ceil = Math.max(floor, ceiling);
   progressChannels.set(channel, { label, floor, ceiling: ceil, tauMs, startedAt: performance.now(), visual: floor });
   if (ceil > floor && tauMs > 0 && !progressTicker) progressTicker = setInterval(renderProgressUi, 80);
   renderProgressUi();
 }
 
-export function startProgress(channel, label, floor = 2, ceiling = floor, tauMs = 0) {
-  writeProgress(channel, label, floor, ceiling, tauMs);
-}
-
 export function updateProgressChannel(channel, pctVal, label = '', ceiling = null, tauMs = 0) {
   const prev = progressChannels.get(channel);
   const floor = prev ? Math.max(prev.floor, prev.visual, pctVal) : pctVal;
-  writeProgress(channel, label || prev?.label || '', floor, ceiling ?? floor, tauMs);
+  startProgress(channel, label || prev?.label || '', floor, ceiling ?? floor, tauMs);
 }
 
 export function finishProgress(channel) {
@@ -199,14 +174,9 @@ export function axisDateParts(time) {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(time);
     return m ? { year: m[1], month: m[2], day: m[3] } : null;
   }
-  if (time && typeof time === 'object' && time.year && time.month && time.day) {
-    return {
-      year: String(time.year),
-      month: String(time.month).padStart(2, '0'),
-      day: String(time.day).padStart(2, '0'),
-    };
-  }
-  return null;
+  return time?.year
+    ? { year: String(time.year), month: String(time.month).padStart(2, '0'), day: String(time.day).padStart(2, '0') }
+    : null;
 }
 
 export function axisDateText(time) {
@@ -220,18 +190,6 @@ export function bindBackdropClose(dlg, onClose, guard = () => false) {
     const r = dlg.getBoundingClientRect();
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose();
   });
-}
-
-export function priceFillOptions(sel) {
-  const prev = sel.value;
-  sel.replaceChildren(
-    ...[
-      ['reference_same_bar', 'Справочное закрытие (тот же бар)'],
-      ['next_open', 'Следующее открытие (прокси исполнения)'],
-      ['next_close', 'Следующее закрытие'],
-    ].map(([value, label]) => Object.assign(el('option', '', label), { value })),
-  );
-  sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'reference_same_bar';
 }
 
 async function readJson(r) {

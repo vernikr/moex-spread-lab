@@ -1,4 +1,12 @@
-import { PARAM_RU, px, rubPx } from './dom.js';
+import { px } from './dom.js';
+
+const PARAM_RU = {
+  lookback: 'Окно',
+  window: 'Окно',
+  entry_z: 'Вход z',
+  exit_z: 'Выход z',
+  threshold_pp: 'Порог RUONIA',
+};
 
 export const state = {
   catalog: null,
@@ -141,14 +149,7 @@ export const settingsKey = (x = state.preferences) =>
     x.random_seed,
   ]);
 
-export const settingsEventKey = 'moex-proof-settings-updated';
 export const targetKey = t => [t.universe, t.asset || '', t.pair].join('|');
-
-export function selectedRoot() {
-  const b = state.branches.get(state.branchId);
-  return { kind: b?.kind, id: b?.id };
-}
-
 export const currentAsset = () => state.branches.get(state.branchId)?.asset || null;
 export const currentPair = () => state.leaves.get(state.leafId)?.target.pair || '';
 export const pairAvailability = id => (state.catalog?.pair_screen?.pairs || []).find(p => p.id === id) || null;
@@ -198,7 +199,7 @@ export function legQuoteIsRuble() {
   return a?.group === 'stock' || (a?.group === 'currency' && String(a.name || '').endsWith('/RUB'));
 }
 
-export const legPrice = v => (legQuoteIsRuble() ? rubPx(v) : px(v));
+export const legPrice = v => (v == null ? '—' : px(v) + (legQuoteIsRuble() ? ' ₽' : ''));
 export const proofLabel = () =>
   state.payload ? state.payload.selection.spread_instrument || state.payload.selection.pair || state.universe : '';
 

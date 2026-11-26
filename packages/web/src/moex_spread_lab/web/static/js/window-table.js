@@ -1,23 +1,13 @@
-/** Historical window table, volume/capital gate indicators, and streamed /api/proof/windows readings. */
-
-import {
-  $,
-  FILL_RU,
-  apiStream,
-  cls,
-  el,
-  finishProgress,
-  fmt,
-  signed,
-  startProgress,
-  updateProgressChannel,
-} from './dom.js';
+import { $, FILL_RU, apiStream, cls, el, emit, finishProgress, fmt, signed, startProgress, updateProgressChannel } from './dom.js';
 import { settingsKey, state, strategyLabel, targetKey } from './state.js';
-import { leafPlan, proofPlanKey } from './strategy-form.js';
+import { leafPlan, proofPlanKey } from './strategy-plans.js';
+
+export const windowHeading = () => (state.universe === 'pair_screen' ? 'Исторические окна' : 'Календарные окна');
 
 function gateIndicator(ok, text) {
-  const n = el('span', 'window-gate ' + (ok == null ? 'unknown' : ok ? 'pass' : 'fail'), ok == null ? '—' : ok ? '✓' : '×');
-  n.dataset.state = ok == null ? 'unknown' : ok ? 'pass' : 'fail';
+  const st = ok == null ? 'unknown' : ok ? 'pass' : 'fail';
+  const n = el('span', 'window-gate ' + st, ok == null ? '—' : ok ? '✓' : '×');
+  n.dataset.state = st;
   n.title = text;
   n.setAttribute('role', 'img');
   n.setAttribute('aria-label', text);
@@ -29,76 +19,52 @@ export function windowGates(row, l) {
   const c = l.meta || {};
   const cal = l.target.universe === 'calendar_native';
   const volume = cal ? (c.min_liquidity_volume ?? c.min_spread_volume) : c.min_leg_daily_volume;
-  const rule = cal
-    ? (c.liquidity_gate ?? c.min_daily_volume_rule ?? state.catalog.min_daily_volume ?? 100)
-    : (c.min_daily_volume_rule ?? state.catalog.min_daily_volume ?? 100);
+  const rule = (cal ? c.liquidity_gate : null) ?? c.min_daily_volume_rule ?? state.catalog.min_daily_volume ?? 100;
   const unit = cal ? c.liquidity_gate_unit || 'контр./день' : 'контр./день';
   const label = cal ? c.liquidity_volume_label || 'объём календарного спреда' : 'минимальный дневной объём ног';
   const volumeOk = cal
     ? (c.tradable_every_session ?? c.tradable_every_day)
     : (c.tradable_every_day ?? (volume != null ? volume >= rule : null));
   const margin = c.max_pair_margin_rub;
-  const capitalOk = margin != null ? 3 * margin + 5000 + 5000 <= state.preferences.initial_capital_rub : null;
-  row
-    .querySelector('[data-gate=volume]')
-    .replaceChildren(
-      gateIndicator(
-        volumeOk,
-        volume == null ? 'V: нет данных для проверки объёма.' : `V: ${volumeOk ? 'пройдена' : 'не пройдена'}. ${label}: ${fmt(volume)}; порог ${fmt(rule)} ${unit}.`,
-      ),
-    );
-  row
-    .querySelector('[data-gate=capital]')
-    .replaceChildren(
-      gateIndicator(
-        capitalOk,
-        capitalOk == null
-          ? 'C: нет параметров для стресс-проверки капитала.'
-          : `C: ${capitalOk ? 'пройдена' : 'не пройдена'}. ГО одного спреда ${margin == null ? 'неизвестно' : fmt(margin, 2) + ' ₽'}; стресс 3×ГО и рабочие буферы против ${fmt(state.preferences.initial_capital_rub, 2)} ₽. Это проверка одного спреда; допуск в настройках её не меняет.`,
-      ),
-    );
-}
-
-let windowCallbacks = {
-  openLeaf: () => {},
-  refreshGlobalSettings: async () => {},
-  setChecks: () => {},
-};
-
-export function configureWindowTableCallbacks(next) {
-  windowCallbacks = { ...windowCallbacks, ...next };
-}
-
-export function recentWindows(b) {
-  return [...b.children].sort(
-    (a, x) => String(x.to || '').localeCompare(String(a.to || '')) || String(x.from || '').localeCompare(String(a.from || '')) || a.key.localeCompare(x.key),
+  const capitalOk = margin != null ? 3 * margin + 10000 <= state.preferences.initial_capital_rub : null;
+  row.querySelector('[data-gate=volume]').replaceChildren(
+    gateIndicator(
+      volumeOk,
+      volume == null ? 'V: нет данных для проверки объёма.' : `V: ${volumeOk ? 'пройдена' : 'не пройдена'}. ${label}: ${fmt(volume)}; порог ${fmt(rule)} ${unit}.`,
+    ),
+  );
+  row.querySelector('[data-gate=capital]').replaceChildren(
+    gateIndicator(
+      capitalOk,
+      capitalOk == null
+        ? 'C: нет параметров для стресс-проверки капитала.'
+        : `C: ${capitalOk ? 'пройдена' : 'не пройдена'}. ГО одного спреда ${fmt(margin, 2)} ₽; стресс 3×ГО и рабочие буферы против ${fmt(state.preferences.initial_capital_rub, 2)} ₽. Это проверка одного спреда; допуск в настройках её не меняет.`,
+    ),
   );
 }
 
-function periodMonth(d) {
-  return d ? d.slice(0, 7).replace('-', '.') : '';
-}
+export const recentWindows = b =>
+  [...b.children].sort(
+    (a, x) => String(x.to || '').localeCompare(String(a.to || '')) || String(x.from || '').localeCompare(String(a.from || '')) || a.key.localeCompare(x.key),
+  );
 
-function windowRow(l) {
+const periodMonth = d => (d ? d.slice(0, 7).replace('-', '.') : '');
+
+function windowRow(l, onOpen, onCheck) {
   const row = el('tr', 'picker-row window-row' + (!l.enabled ? ' unavailable' : ''));
   row.dataset.leaf = l.key;
   row.dataset.from = l.from || '';
   row.dataset.to = l.to || '';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.className = 'pick-check';
-  cb._leaves = () => [l];
+  const cb = Object.assign(document.createElement('input'), { type: 'checkbox', className: 'pick-check', _leaves: () => [l] });
   cb.setAttribute('aria-label', 'Включить в подбор: ' + l.period);
-  cb.addEventListener('change', () => windowCallbacks.setChecks([l], cb.checked));
+  cb.addEventListener('change', () => onCheck([l], cb.checked));
   const check = el('td');
   check.append(cb);
   const cell = el('td', 'window-period');
-  const button = el('button', 'pick-name');
+  const button = el('button', 'pick-name', l.from && l.to ? `${periodMonth(l.from)}-${periodMonth(l.to)}` : 'Нет истории');
   button.type = 'button';
-  button.textContent = l.from && l.to ? `${periodMonth(l.from)}-${periodMonth(l.to)}` : 'Нет истории';
-  const sourceHint = l.meta?.price_source_label ? ` · ${l.meta.price_source_label}` : '';
-  button.title = (l.observations ? `${l.period} · ${l.observations} наблюдений` : l.period) + sourceHint;
-  button.addEventListener('click', () => windowCallbacks.openLeaf(l.key));
+  button.title = (l.observations ? `${l.period} · ${l.observations} наблюдений` : l.period) + (l.meta?.price_source_label ? ` · ${l.meta.price_source_label}` : '');
+  button.addEventListener('click', () => onOpen(l.key));
   cell.append(button);
   if (!l.enabled) {
     const missing = el('span', 'window-download', '⇩');
@@ -110,24 +76,23 @@ function windowRow(l) {
   }
   row.append(check, cell);
   for (const name of ['volume', 'capital']) {
-    const gateTd = el('td', 'window-check');
-    gateTd.dataset.gate = name;
-    row.append(gateTd);
+    const td = el('td', 'window-check');
+    td.dataset.gate = name;
+    row.append(td);
   }
   for (const name of ['trades', 'rate']) {
-    const metricTd = el('td', 'window-number', '—');
-    metricTd.dataset.metric = name;
-    row.append(metricTd);
+    const td = el('td', 'window-number', '—');
+    td.dataset.metric = name;
+    row.append(td);
   }
   row.addEventListener('click', e => {
-    if (e.target.closest('button,input') || e.target.closest('[data-gate]')) return;
-    windowCallbacks.openLeaf(l.key);
+    if (!e.target.closest('button,input,[data-gate]')) onOpen(l.key);
   });
   windowGates(row, l);
   return row;
 }
 
-export function renderWindowTable(b) {
+export function renderWindowTable(b, onOpen, onCheck) {
   const table = el('table', 'window-table');
   table.setAttribute('aria-label', 'Исторические окна и текущая симуляция');
   const head = el('thead');
@@ -140,20 +105,17 @@ export function renderWindowTable(b) {
     ['Сд.', 'Число принятых входов во всей текущей симуляции; открытые позиции учитываются'],
     ['п.п./г', 'Годовая доходность сверх LQDT в процентных пунктах: проверка, если включена, иначе обучение'],
   ]) {
-    const n = el('th', '', label);
-    n.scope = 'col';
-    n.title = title;
-    tr.append(n);
+    tr.append(Object.assign(el('th', '', label), { scope: 'col', title }));
   }
   head.append(tr);
   const body = el('tbody');
-  for (const l of recentWindows(b)) body.append(windowRow(l));
+  for (const l of recentWindows(b)) body.append(windowRow(l, onOpen, onCheck));
   table.append(head, body);
   $('window-list').replaceChildren(table);
 }
 
-function windowReadingFromProof(p) {
-  return {
+export function cacheWindowProof(req, p) {
+  state.windowReadings.set(proofPlanKey(req), {
     status: 'measured',
     selection: p.selection,
     run_id: p.run_id,
@@ -164,11 +126,7 @@ function windowReadingFromProof(p) {
     evaluation: p.evaluation,
     window: p.window,
     execution_reference: p.execution_reference,
-  };
-}
-
-export function cacheWindowProof(req, p) {
-  state.windowReadings.set(proofPlanKey(req), windowReadingFromProof(p));
+  });
   paintWindowReadings();
 }
 
@@ -224,7 +182,7 @@ export function stopWindowReadings() {
   state.windowReadController = null;
   finishProgress('windows');
   const wl = $('window-label');
-  if (wl) wl.textContent = state.universe === 'pair_screen' ? 'Исторические окна' : 'Календарные окна';
+  if (wl) wl.textContent = windowHeading();
 }
 
 export function refreshWindowReadings(delay = 220) {
@@ -241,7 +199,7 @@ export function refreshWindowReadings(delay = 220) {
     const controller = new AbortController();
     state.windowReadController = controller;
     const wanted = new Map(pending.map(p => [p.leaf.key, p]));
-    const baseLabel = state.universe === 'pair_screen' ? 'Исторические окна' : 'Календарные окна';
+    const baseLabel = windowHeading();
     startProgress('windows', `Окна: 0/${pending.length}`, 4, 12, 600);
     $('window-label').textContent = `${baseLabel} · 0/${pending.length}`;
     try {
@@ -253,7 +211,7 @@ export function refreshWindowReadings(delay = 220) {
       });
       if (version !== state.windowReadVersion || branch !== state.branchId) return;
       if (settingsKey(r) !== settingsKey()) {
-        void windowCallbacks.refreshGlobalSettings(true);
+        emit('moex:stale-settings');
         return;
       }
       for (const reading of r.rows) {
@@ -270,9 +228,8 @@ export function refreshWindowReadings(delay = 220) {
       if (version === state.windowReadVersion) {
         state.windowReadController = null;
         finishProgress('windows');
-        $('window-label').textContent = state.universe === 'pair_screen' ? 'Исторические окна' : 'Календарные окна';
+        $('window-label').textContent = windowHeading();
       }
     }
   }, delay);
 }
-

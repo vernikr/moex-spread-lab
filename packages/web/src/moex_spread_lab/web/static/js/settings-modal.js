@@ -1,38 +1,14 @@
-import { $, FILL_RU, api, bindBackdropClose, fmt, pct, priceFillOptions, status } from './dom.js';
-import { buildPicker, openBranch, stopWindowReadings, windowGates } from './picker.js';
-import {
-  installStrategyRegistry,
-  settingsEventKey,
-  settingsKey,
-  state,
-  supportsCalendar,
-  targetKey,
-  timeframeLabel,
-} from './state.js';
-import {
-  activeStrategyName,
-  applyToForm,
-  cancelSearch,
-  clearGroup,
-  currentRequest,
-  fillStrategy,
-  refreshGroupProfile,
-  restoreForm,
-  stopProfile,
-  syncCalendarParams,
-} from './strategy-form.js';
+import { $, FILL_RU, api, bindBackdropClose, el, emit, fmt, pct, status } from './dom.js';
+import { buildPicker, openBranch } from './picker.js';
+import { refreshGroupProfile, stopProfile } from './plateau-lamps.js';
+import { installStrategyRegistry, settingsKey, state, supportsCalendar, targetKey, timeframeLabel } from './state.js';
+import { applyToForm, fillStrategy, restoreForm, syncCalendarParams } from './strategy-form.js';
+import { activeStrategyName, cancelSearch, clearGroup, currentRequest } from './strategy-plans.js';
+import { stopWindowReadings, windowGates } from './window-table.js';
 
-let modalCallbacks = {
-  scheduleShow: () => {},
-  show: async () => {},
-  invalidateProof: () => {},
-};
+const SETTINGS_EVENT_KEY = 'moex-proof-settings-updated';
 
-export function configureSettingsCallbacks(next) {
-  modalCallbacks = { ...modalCallbacks, ...next };
-}
-
-export function setSegmentedTimeframe(id) {
+function setSegmentedTimeframe(id) {
   const valid = state.timeframeOptions.some(item => item.id === id) ? id : state.timeframeOptions[0]?.id || '1d';
   state.selectedTimeframe = valid;
   const group = $('global-timeframe');
@@ -51,30 +27,28 @@ export function installTimeframeOptions(items) {
   const group = $('global-timeframe');
   group.replaceChildren(
     ...items.map((item, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'seg-option';
+      const btn = Object.assign(el('button', 'seg-option', item.label), { type: 'button' });
       btn.setAttribute('role', 'radio');
       btn.dataset.value = item.id;
-      btn.textContent = item.label;
       btn.addEventListener('click', () => setSegmentedTimeframe(item.id));
       btn.addEventListener('keydown', e => {
         const btns = [...group.querySelectorAll('[role=radio]')];
-        if (!btns.length) return;
-        let nextIdx = null;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIdx = (idx + 1) % btns.length;
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIdx = (idx - 1 + btns.length) % btns.length;
-        if (nextIdx != null) {
-          e.preventDefault();
-          const nextBtn = btns[nextIdx];
-          setSegmentedTimeframe(nextBtn.dataset.value);
-          nextBtn.focus();
-        }
+        const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+        if (!delta || !btns.length) return;
+        e.preventDefault();
+        const nextBtn = btns[(idx + delta + btns.length) % btns.length];
+        setSegmentedTimeframe(nextBtn.dataset.value);
+        nextBtn.focus();
       });
       return btn;
     }),
   );
   setSegmentedTimeframe(state.preferences.timeframe);
+}
+
+function fallbackPair() {
+  const pairs = state.catalog?.pair_screen?.pairs || [];
+  return pairs.find(r => Object.values(r.proof_strategies || {}).some(Boolean)) || pairs[0] || null;
 }
 
 export function setPreferences(x) {
@@ -94,17 +68,16 @@ export function setPreferences(x) {
   if (fillSel && [...fillSel.options].some(o => o.value === state.preferences.price_fill)) {
     fillSel.value = state.preferences.price_fill;
   }
-  $('settings-badge').textContent = `${timeframeLabel(state.preferences.timeframe)} · ${FILL_RU[state.preferences.price_fill] || state.preferences.price_fill} · Капитал: ${fmt(x.initial_capital_rub, 2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks, 1)} т. · Сид: ${state.preferences.random_seed === 0 ? 'случайный' : state.preferences.random_seed}`;
+  const p = state.preferences;
+  $('settings-badge').textContent = `${timeframeLabel(p.timeframe)} · ${FILL_RU[p.price_fill] || p.price_fill} · Капитал: ${fmt(x.initial_capital_rub, 2)} ₽ · Проверка: ${pct(x.validation_percent)} · Проскальзывание: ${fmt(x.slippage_ticks, 1)} т. · Сид: ${p.random_seed === 0 ? 'случайный' : p.random_seed}`;
   if (changed) {
     state.windowReadings.clear();
     stopWindowReadings();
     cancelSearch();
     clearGroup();
     if (state.catalog && state.sharedStrategy) refreshGroupProfile(0);
-    if (!supportsCalendar(state.preferences.timeframe) && state.universe === 'calendar_native' && state.catalog) {
-      const candidate =
-        (state.catalog.pair_screen?.pairs || []).find(row => Object.values(row.proof_strategies || {}).some(Boolean)) ||
-        state.catalog.pair_screen?.pairs?.[0];
+    if (!supportsCalendar(p.timeframe) && state.universe === 'calendar_native' && state.catalog) {
+      const candidate = fallbackPair();
       const branch = candidate && state.branches.get('pair_screen|' + candidate.near);
       if (branch) openBranch(branch.key, candidate.id, '', false);
     }
@@ -113,22 +86,17 @@ export function setPreferences(x) {
       if (l) windowGates(row, l);
     }
     if (state.catalog && state.leafId) {
-      if (state.universe === 'pair_screen') {
-        const values = currentRequest();
-        fillStrategy();
-        if (activeStrategyName() === values.strategy) applyToForm(values);
-        else restoreForm();
-      } else {
-        const values = currentRequest();
-        syncCalendarParams();
-        if (activeStrategyName() === values.strategy) applyToForm(values);
-      }
+      const values = currentRequest();
+      if (state.universe === 'pair_screen') fillStrategy();
+      else syncCalendarParams();
+      if (activeStrategyName() === values.strategy) applyToForm(values);
+      else if (state.universe === 'pair_screen') restoreForm();
     }
   }
   return changed;
 }
 
-export function previewSplit() {
+function previewSplit() {
   const n = $('validation-percent');
   const v = n.valueAsNumber;
   $('split-preview').textContent = !n.validity.valid
@@ -139,8 +107,8 @@ export function previewSplit() {
   if (n.validity.valid) $('validation-range').value = v;
 }
 
-export async function refreshCatalog() {
-  const oldTarget = state.leaves.get(state.leafId)?.target;
+async function refreshCatalog() {
+  let target = state.leaves.get(state.leafId)?.target;
   const oldBranch = state.branchId;
   const oldStrategy = activeStrategyName();
   const [nextCatalog, nextStrategies] = await Promise.all([
@@ -150,15 +118,11 @@ export async function refreshCatalog() {
   if (nextStrategies) installStrategyRegistry(nextStrategies);
   state.catalog = nextCatalog;
   buildPicker();
-  let target = oldTarget;
   if (!supportsCalendar(state.preferences.timeframe) && target?.universe === 'calendar_native') {
-    const candidate =
-      (state.catalog.pair_screen?.pairs || []).find(row => Object.values(row.proof_strategies || {}).some(Boolean)) ||
-      state.catalog.pair_screen?.pairs?.[0];
+    const candidate = fallbackPair();
     target = candidate ? { universe: 'pair_screen', pair: candidate.id } : null;
   }
-  const leaf = target && state.leaves.get(targetKey(target));
-  let key = leaf?.branch || oldBranch;
+  let key = (target && state.leaves.get(targetKey(target))?.branch) || oldBranch;
   if (!state.branches.has(key)) {
     key = [...state.branches.values()].find(b => b.children.some(item => item.enabled))?.key || [...state.branches.keys()][0];
   }
@@ -179,14 +143,14 @@ export async function refreshGlobalSettings(force = false) {
     }
     if (state.catalog && (changed || force)) {
       await refreshCatalog();
-      modalCallbacks.scheduleShow(0);
+      emit('moex:schedule', 0);
     }
   } catch (e) {
     status(e.message);
   }
 }
 
-export function bindSettings() {
+export function bindSettings(runShow) {
   const dlg = $('global-settings');
   const n = $('validation-percent');
   const slip = $('global-slippage');
@@ -194,17 +158,24 @@ export function bindSettings() {
   const fill = $('global-fill');
   const seed = $('global-seed');
   const submit = $('apply-settings');
-  priceFillOptions(fill);
+  fill.replaceChildren(
+    ...[
+      ['reference_same_bar', 'Справочное закрытие (тот же бар)'],
+      ['next_open', 'Следующее открытие (прокси исполнения)'],
+      ['next_close', 'Следующее закрытие'],
+    ].map(([value, label]) => Object.assign(el('option', '', label), { value })),
+  );
   fill.value = state.preferences.price_fill;
   $('open-settings').addEventListener('click', () => {
-    n.value = state.preferences.validation_percent;
-    slip.value = state.preferences.slippage_ticks;
-    capital.value = state.preferences.initial_capital_rub;
-    seed.value = state.preferences.random_seed;
-    setSegmentedTimeframe(state.preferences.timeframe);
-    fill.value = state.preferences.price_fill;
-    $('allow-failed-volume').checked = state.preferences.allow_failed_volume;
-    $('allow-failed-capital').checked = state.preferences.allow_failed_capital;
+    const p = state.preferences;
+    n.value = p.validation_percent;
+    slip.value = p.slippage_ticks;
+    capital.value = p.initial_capital_rub;
+    seed.value = p.random_seed;
+    setSegmentedTimeframe(p.timeframe);
+    fill.value = p.price_fill;
+    $('allow-failed-volume').checked = p.allow_failed_volume;
+    $('allow-failed-capital').checked = p.allow_failed_capital;
     $('settings-error').textContent = '';
     previewSplit();
     dlg.showModal();
@@ -221,22 +192,13 @@ export function bindSettings() {
   n.addEventListener('input', previewSplit);
   $('settings-form').addEventListener('submit', async e => {
     e.preventDefault();
-    if (
-      state.savingSettings ||
-      !n.reportValidity() ||
-      !slip.reportValidity() ||
-      !capital.reportValidity() ||
-      !fill.reportValidity() ||
-      !seed.reportValidity()
-    ) {
-      return;
-    }
+    if (state.savingSettings || ![n, slip, capital, fill, seed].every(x => x.reportValidity())) return;
     ++state.settingRevision;
     state.savingSettings = true;
     submit.disabled = $('cancel-settings').disabled = true;
     $('settings-error').textContent = '';
     cancelSearch();
-    modalCallbacks.invalidateProof();
+    emit('moex:invalidate');
     let saved = false;
     try {
       const x = await api('/api/settings', {
@@ -253,7 +215,7 @@ export function bindSettings() {
       dlg.close();
       saved = true;
       try {
-        localStorage.setItem(settingsEventKey, JSON.stringify([Date.now(), settingsKey()]));
+        localStorage.setItem(SETTINGS_EVENT_KEY, JSON.stringify([Date.now(), settingsKey()]));
       } catch (_) {}
     } catch (err) {
       $('settings-error').textContent = err.message;
@@ -264,14 +226,14 @@ export function bindSettings() {
     if (saved && state.catalog) {
       try {
         await refreshCatalog();
-        void modalCallbacks.show();
+        void runShow();
       } catch (err) {
         console.error(err);
       }
     }
   });
   window.addEventListener('storage', e => {
-    if (e.key === settingsEventKey) void refreshGlobalSettings();
+    if (e.key === SETTINGS_EVENT_KEY) void refreshGlobalSettings();
   });
   document.addEventListener('visibilitychange', () => {
     if (state.catalog && !document.hidden) void refreshGlobalSettings();

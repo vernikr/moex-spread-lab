@@ -1,54 +1,26 @@
-import {
-  $,
-  apiStream,
-  el,
-  finishProgress,
-  fmt,
-  pp,
-  signed,
-  startProgress,
-  status,
-  updateProgressChannel,
-} from './dom.js';
-import { th } from './ledger-cells.js';
+import { $, apiStream, el, emit, finishProgress, fmt, pp, signed, startProgress, status, updateProgressChannel } from './dom.js';
+import { refreshChecks } from './picker.js';
+import { paintPlateaus, refreshGroupProfile, showGroupReading, stopProfile } from './plateau-lamps.js';
+import { refreshGlobalSettings } from './settings-modal.js';
 import { paramLabel, settingsKey, state, strategyLabel, targetKey } from './state.js';
+import { applyToForm, fillCalendarStrategies, fillStrategy, renderSharedEditor, syncEditorScope } from './strategy-form.js';
 import {
   activeStrategyName,
-  applyToForm,
   cancelSearch,
   clearGroup,
   currentRequest,
-  fillCalendarStrategies,
-  fillStrategy,
   formKey,
   groupSpec,
   invalidForm,
-  paintPlateaus,
   pointError,
-  refreshGroupProfile,
-  renderSharedEditor,
   sharedInputs,
   sharedRequest,
-  showGroupReading,
-  stopProfile,
-  syncEditorScope,
   tuneButton,
   tuneState,
-} from './strategy-form.js';
+} from './strategy-plans.js';
+import { stopWindowReadings } from './window-table.js';
 
-let searchCallbacks = {
-  show: async () => {},
-  invalidateProof: () => {},
-  refreshGlobalSettings: async () => {},
-  stopWindowReadings: () => {},
-  refreshChecks: () => {},
-};
-
-export function configureSearchCallbacks(next) {
-  searchCallbacks = { ...searchCallbacks, ...next };
-}
-
-export function adoptSearchProfile(result) {
+function adoptSearchProfile(result) {
   if (!state.sharedStrategy || !result.selected_parameters) return;
   if (result.selected_strategy && result.selected_strategy !== state.sharedStrategy) {
     state.sharedDrafts.set(state.sharedStrategy, sharedRequest());
@@ -66,22 +38,23 @@ export function adoptSearchProfile(result) {
   if (result.plateau && settingsKey(result.group) === settingsKey()) {
     state.profileKey = groupSpec().key;
     showGroupReading(result.plateau);
-  } else refreshGroupProfile(0);
+  } else {
+    refreshGroupProfile(0);
+  }
 }
 
-export function displayGroup(result) {
+function displayGroup(result) {
   const g = result.group;
   if (!g) return;
   const root = $('batch-result');
   root.hidden = false;
-  root.replaceChildren();
-  const label = g.result_basis === 'validation' ? 'проверка' : 'обучение';
-  const heading = el(
-    'summary',
-    '',
-    `Последний подбор${result.selected_strategy ? ' · ' + strategyLabel(result.selected_strategy) : ''}${g.execution_reference ? ' · справочно' : ''} · окон: ${g.member_count} · ${label}: ${pp(g.result_mean_pp)}`,
+  root.replaceChildren(
+    el(
+      'summary',
+      '',
+      `Последний подбор${result.selected_strategy ? ' · ' + strategyLabel(result.selected_strategy) : ''}${g.execution_reference ? ' · справочно' : ''} · окон: ${g.member_count} · ${g.result_basis === 'validation' ? 'проверка' : 'обучение'}: ${pp(g.result_mean_pp)}`,
+    ),
   );
-  root.append(heading);
   if (g.execution_reference) {
     root.append(
       el(
@@ -104,10 +77,7 @@ export function displayGroup(result) {
         'div',
         'group-note',
         result.strategy_search.alternatives
-          .map(
-            a =>
-              `${strategyLabel(a.strategy)}: ${a.trial_count} испытаний · ${a.training_best_pp == null ? 'нет допустимого результата' : pp(a.training_best_pp)}`,
-          )
+          .map(a => `${strategyLabel(a.strategy)}: ${a.trial_count} испытаний · ${a.training_best_pp == null ? 'нет допустимого результата' : pp(a.training_best_pp)}`)
           .join(' · '),
       ),
     );
@@ -125,7 +95,11 @@ export function displayGroup(result) {
     );
   }
   const table = el('table');
-  table.append(th(['Окно', 'Обучение, п.п./год', 'Результат, п.п./год', 'Расчётный период']));
+  const thead = el('thead');
+  const headRow = el('tr');
+  for (const label of ['Окно', 'Обучение, п.п./год', 'Результат, п.п./год', 'Расчётный период']) headRow.append(el('th', '', label));
+  thead.append(headRow);
+  table.append(thead);
   for (const r of g.members) {
     const tr = el('tr');
     const e = r.evaluation;
@@ -157,35 +131,30 @@ export function displayGroup(result) {
 }
 
 function reviewExclusions(result) {
-  const d = $('compatibility');
-  const rows = $('compatibility-list');
-  rows.replaceChildren();
-  for (const x of result.excluded) rows.append(el('li', '', `${x.target.pair} — ${x.reason}`));
+  $('compatibility-list').replaceChildren(...result.excluded.map(x => el('li', '', `${x.target.pair} — ${x.reason}`)));
   $('compatibility-message').textContent =
     (result.strategy_search
       ? `Ни одна из сравниваемых стратегий не может учесть ${result.excluded.length} из ${state.checked.size} отмеченных окон. `
       : `Для стратегии «${strategyLabel(state.sharedStrategy || activeStrategyName())}» при этих условиях исполнения не подходят ${result.excluded.length} из ${state.checked.size} отмеченных окон. `) +
     (result.remaining_count ? `После снятия отметок в подборе останется ${result.remaining_count}.` : 'Совместимых окон не останется. Подбор не запустится.');
   $('compatibility-yes').textContent = result.remaining_count ? 'Снять отметки и продолжить' : 'Снять отметки';
-  d.showModal();
+  $('compatibility').showModal();
   return new Promise(resolve => {
     state.resolveCompatibility = resolve;
   });
 }
 
-export async function startTuning() {
-  const own = state.checked.size ? sharedRequest() : currentRequest();
-  const request = { ...own, optimize_strategy: true, price_fill: state.preferences.price_fill };
-  const validation = state.checked.size ? pointError(sharedInputs()) : invalidForm();
+async function startTuning(runShow) {
+  const explicit = state.checked.size > 0;
+  const validation = explicit ? pointError(sharedInputs()) : invalidForm();
   if (validation) {
     status(validation);
     return;
   }
-  if (!state.checked.size && !state.leafId) return;
-  const explicit = state.checked.size > 0;
-  if (state.tuning) return;
-  searchCallbacks.stopWindowReadings();
-  if (!explicit) searchCallbacks.invalidateProof();
+  if ((!explicit && !state.leafId) || state.tuning) return;
+  const request = { ...(explicit ? sharedRequest() : currentRequest()), optimize_strategy: true, price_fill: state.preferences.price_fill };
+  stopWindowReadings();
+  if (!explicit) emit('moex:invalidate');
   const id = ++state.searchVersion;
   const fresh = () => id === state.searchVersion;
   const controller = new AbortController();
@@ -212,7 +181,7 @@ export async function startTuning() {
       if (!fresh()) return;
       if (settingsKey(result.group || result.evaluation || result) !== settingsKey()) {
         cancelSearch();
-        void searchCallbacks.refreshGlobalSettings(true);
+        void refreshGlobalSettings(true);
         tuneState('Настройки расчёта изменились. Запустите подбор заново.');
         return;
       }
@@ -226,10 +195,10 @@ export async function startTuning() {
       }
       for (const x of result.excluded) state.checked.delete(targetKey(x.target));
       syncEditorScope();
-      searchCallbacks.refreshChecks();
+      refreshChecks();
       refreshGroupProfile();
       if (!state.checked.size) {
-        await searchCallbacks.show(true);
+        await runShow(true);
         if (fresh()) tuneState('Совместимых отмеченных окон нет. Подбор не запускался.');
         return;
       }
@@ -250,7 +219,7 @@ export async function startTuning() {
     }
     adoptSearchProfile(result);
     updateProgressChannel('search', 99, 'Обновление графика и сводки…');
-    await searchCallbacks.show(true);
+    await runShow(true);
     if (!fresh()) return;
     displayGroup(result);
     tuneState(result.selected_parameters ? '' : result.reason || 'Нет допустимого результата. Параметры сохранены.', false);
@@ -267,6 +236,6 @@ export async function startTuning() {
   }
 }
 
-export function bindSearchButton() {
-  $('auto-tune').addEventListener('click', () => void startTuning());
+export function bindSearchButton(runShow) {
+  $('auto-tune').addEventListener('click', () => void startTuning(runShow));
 }

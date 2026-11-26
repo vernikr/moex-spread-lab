@@ -1,43 +1,10 @@
 import { applyNormHint, buildCharts, destroyCharts, fitChartsToVisibleArea } from './charts.js';
-import {
-  $,
-  api,
-  apiStream,
-  el,
-  finishProgress,
-  fmt,
-  signed,
-  startProgress,
-  status,
-  updateProgressChannel,
-} from './dom.js';
-import {
-  copyRunId,
-  downloadCsv,
-  renderEvidence,
-  renderPeriodResult,
-  renderSummary,
-  renderTable,
-  toggleSummaryBlock,
-} from './ledger.js';
-import {
-  buildPicker,
-  cacheWindowProof,
-  configurePickerCallbacks,
-  initColumnResizers,
-  openBranch,
-  paintWindowReadings,
-  refreshChecks,
-  refreshWindowReadings,
-  stopWindowReadings,
-} from './picker.js';
-import {
-  bindSettings,
-  configureSettingsCallbacks,
-  installTimeframeOptions,
-  refreshGlobalSettings,
-  setPreferences,
-} from './settings-modal.js';
+import { $, api, apiStream, el, finishProgress, fmt, signed, startProgress, status, updateProgressChannel } from './dom.js';
+import { copyRunId, downloadCsv, renderPeriodResult, renderEvidence, renderSummary, renderTable, toggleSummaryBlock } from './ledger.js';
+import { buildPicker, initColumnResizers, openBranch } from './picker.js';
+import { paintPlateaus } from './plateau-lamps.js';
+import { bindSearchButton } from './search-tuning.js';
+import { bindSettings, installTimeframeOptions, refreshGlobalSettings, setPreferences } from './settings-modal.js';
 import {
   currentPair,
   installStrategyRegistry,
@@ -48,34 +15,28 @@ import {
   supportsCalendar,
   targetKey,
 } from './state.js';
+import { bindStrategyGlobalListeners } from './strategy-form.js';
 import {
   activeStrategyName,
-  bindStrategyGlobalListeners,
   cancelSearch,
   chartPlan,
-  configureStrategyFormCallbacks,
   hasSelection,
   invalidForm,
-  paintPlateaus,
   sharedRequest,
   tuneButton,
   tuneState,
-} from './strategy-form.js';
-import { bindSearchButton, configureSearchCallbacks } from './search-tuning.js';
+} from './strategy-plans.js';
+import { cacheWindowProof, paintWindowReadings, refreshWindowReadings, stopWindowReadings } from './window-table.js';
 
-export function switchTab(which) {
-  for (const [id, w] of [
-    ['tab-charts', 'charts'],
-    ['tab-table', 'table'],
-  ]) {
-    $(id).classList.toggle('active', w === which);
-  }
+function switchTab(which) {
+  $('tab-charts').classList.toggle('active', which === 'charts');
+  $('tab-table').classList.toggle('active', which === 'table');
   $('tabpage-charts').classList.toggle('hidden', which !== 'charts');
   $('tabpage-table').classList.toggle('hidden', which !== 'table');
   if (which === 'charts') void fitChartsToVisibleArea();
 }
 
-export function invalidateProof(fromSearch = false) {
+function invalidateProof(fromSearch = false) {
   if (!fromSearch && !state.searchUsesChecks) cancelSearch();
   stopWindowReadings();
   if (state.catalog && state.leafId) paintWindowReadings();
@@ -90,7 +51,7 @@ export function invalidateProof(fromSearch = false) {
   paintPlateaus();
 }
 
-export function scheduleShow(delay = 90) {
+function scheduleShow(delay = 90) {
   invalidateProof();
   state.autoRunTimer = setTimeout(() => {
     state.autoRunTimer = null;
@@ -98,14 +59,13 @@ export function scheduleShow(delay = 90) {
   }, delay);
 }
 
-export function emptyProof(message) {
+function emptyProof(message) {
   $('period-result').hidden = true;
   $('chart-scope').textContent = 'Вся история';
   state.payload = null;
   state.selectedTrade = null;
   destroyCharts();
-  const empty = el('div', 'empty', message);
-  empty.id = 'charts-empty';
+  const empty = Object.assign(el('div', 'empty', message), { id: 'charts-empty' });
   const chartTip = $('tip');
   chartTip.style.display = 'none';
   $('charts').replaceChildren(empty, chartTip);
@@ -118,7 +78,7 @@ export function emptyProof(message) {
   applyNormHint();
 }
 
-export function render() {
+function render() {
   renderPeriodResult();
   renderEvidence();
   renderSummary();
@@ -130,7 +90,7 @@ export function render() {
   return fit;
 }
 
-export async function show(fromSearch = false) {
+async function show(fromSearch = false) {
   invalidateProof(fromSearch);
   const id = state.analysisRequestId;
   const plan = chartPlan();
@@ -193,52 +153,29 @@ export async function show(fromSearch = false) {
   }
 }
 
-function exposeWindowBindings() {
-  Object.defineProperties(window, {
-    payload: { get: () => state.payload, set: v => { state.payload = v; }, configurable: true },
-    catalog: { get: () => state.catalog, set: v => { state.catalog = v; }, configurable: true },
-    branches: { get: () => state.branches, configurable: true },
-    leaves: { get: () => state.leaves, configurable: true },
-    checked: { get: () => state.checked, configurable: true },
-    leafId: { get: () => state.leafId, set: v => { state.leafId = v; }, configurable: true },
-    branchId: { get: () => state.branchId, set: v => { state.branchId = v; }, configurable: true },
-    universe: { get: () => state.universe, set: v => { state.universe = v; }, configurable: true },
-    windowReadings: { get: () => state.windowReadings, configurable: true },
-    refreshWindowReadings: { value: refreshWindowReadings, configurable: true },
-    renderPeriodResult: { value: renderPeriodResult, configurable: true },
-    sharedRequest: { value: sharedRequest, configurable: true },
-    targetKey: { value: targetKey, configurable: true },
-    signed: { value: signed, configurable: true },
-    fmt: { value: fmt, configurable: true },
-  });
-}
+document.addEventListener('moex:schedule', e => scheduleShow(e.detail));
+document.addEventListener('moex:invalidate', () => invalidateProof());
+document.addEventListener('moex:stale-settings', () => void refreshGlobalSettings(true));
 
-configureStrategyFormCallbacks({
-  scheduleShow,
-  invalidateProof,
-  refreshGlobalSettings,
+Object.assign(window, {
+  branches: state.branches,
+  leaves: state.leaves,
+  checked: state.checked,
+  windowReadings: state.windowReadings,
   refreshWindowReadings,
+  renderPeriodResult,
+  sharedRequest,
+  targetKey,
+  signed,
+  fmt,
 });
-configureSearchCallbacks({
-  show,
-  invalidateProof,
-  refreshGlobalSettings,
-  stopWindowReadings,
-  refreshChecks,
-});
-configurePickerCallbacks({
-  scheduleShow,
-  refreshGlobalSettings,
-});
-configureSettingsCallbacks({
-  scheduleShow,
-  show,
-  invalidateProof,
+Object.defineProperties(window, {
+  payload: { get: () => state.payload, configurable: true },
+  leafId: { get: () => state.leafId, configurable: true },
 });
 
-exposeWindowBindings();
 initColumnResizers();
-bindSettings();
+bindSettings(show);
 
 (async () => {
   startProgress('boot', 'Загрузка каталога и настроек…', 8, 68, 3500);
@@ -255,17 +192,14 @@ bindSettings();
     if (settings) setPreferences(settings);
     $('open-settings').disabled = false;
     state.catalog = c;
-    if (state.catalog.error) {
-      status(`Кэш календарей недоступен: ${state.catalog.error}. Пары работают как обычно.`);
+    if (c.error) {
+      status(`Кэш календарей недоступен: ${c.error}. Пары работают как обычно.`);
     } else {
-      status(
-        `${(state.catalog.assets || []).length} календарных активов · ${(state.catalog.pair_screen?.pairs || []).length} пар в реестре · кэш до ${state.catalog.till || '—'}`,
-        true,
-      );
+      status(`${(c.assets || []).length} календарных активов · ${(c.pair_screen?.pairs || []).length} пар в реестре · кэш до ${c.till || '—'}`, true);
     }
     buildPicker();
     bindStrategyGlobalListeners();
-    bindSearchButton();
+    bindSearchButton(show);
     $('toggle-summary').addEventListener('click', toggleSummaryBlock);
     $('copy-runid').addEventListener('click', copyRunId);
     $('download-csv').addEventListener('click', downloadCsv);

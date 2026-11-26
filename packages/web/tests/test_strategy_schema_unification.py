@@ -105,10 +105,10 @@ class StrategySchemaTests(unittest.TestCase):
     def test_form_modules_have_no_per_strategy_branches(self) -> None:
         """No built-in id lists or per-strategy switches survive in the form modules."""
         forbidden = {
-            "strategy-form.js": ("mean_reversion", "zscore_mean_reversion", "funding_only"),
-            "strategy-controls.js": (
+            "strategy-form.js": (
                 "mean_reversion",
                 "zscore_mean_reversion",
+                "funding_only",
                 "convergence_to_ruonia",
                 "SOLO_BUILTIN_IDS",
                 "GROUP_SHORT_LABELS",

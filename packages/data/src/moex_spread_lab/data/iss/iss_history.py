@@ -15,6 +15,8 @@ from urllib.parse import urlencode
 from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error
 
+from .iss_http import decode_json, decode_rows, read_response
+
 HISTORY_SCHEMA = "iss-history.v1"
 HISTORY_PAGE_SIZE = 100
 HISTORY_FIELDS = (
@@ -30,10 +32,6 @@ HISTORY_FIELDS = (
     "WAPRICE",
     "NUMTRADES",
     "ASSETCODE",
-)
-
-_HISTORY_OPTIONS = frozenset(
-    {"cache_dir", "delay_seconds", "timeout", "opener", "fields", "allow_empty", "error"}
 )
 
 
@@ -68,35 +66,22 @@ def _fetch_history_json(
     error: type[W0Error] = IssHistoryError,
 ) -> tuple[dict[str, Any], str]:
     try:
-        with opener(url, timeout=timeout) as response:
-            raw: bytes = response.read()
+        raw, _, _ = read_response(url, timeout=timeout, opener=opener)
     except OSError as exc:
         raise error(f"history request failed: {url}: {exc}") from exc
-    try:
-        value: object = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise error(f"history response is not JSON: {url}") from exc
-    if not isinstance(value, dict):
-        raise error(f"history response is not an object: {url}")
-    return cast(dict[str, Any], value), hashlib.sha256(raw).hexdigest()
+    value = decode_json(
+        raw,
+        error=error,
+        invalid=f"history response is not JSON: {url}",
+        not_object=f"history response is not an object: {url}",
+    )
+    return value, hashlib.sha256(raw).hexdigest()
 
 
 def _history_rows(
     block: Any, name: str, *, error: type[W0Error] = IssHistoryError
 ) -> list[dict[str, Any]]:
-    if not isinstance(block, dict):
-        raise error(f"malformed ISS block: {name}")
-    block_obj = cast(dict[str, Any], block)
-    raw_columns: object = block_obj.get("columns")
-    raw_data: object = block_obj.get("data")
-    if not isinstance(raw_columns, list) or not isinstance(raw_data, list):
-        raise error(f"malformed ISS block: {name}")
-    columns = cast(list[str], raw_columns)
-    return [
-        dict(zip(columns, cast(list[Any], values), strict=False))
-        for values in cast(list[object], raw_data)
-        if isinstance(values, list)
-    ]
+    return decode_rows(block, name, error=error, strict=False)
 
 
 def _history_url(
@@ -119,7 +104,6 @@ def _history_url(
     return f"https://iss.moex.com/iss/history/engines/futures/markets/forts/securities/{secid}.json?{query}"
 
 
-# Public aliases preserve the historical private entry points.
 HISTORY_JSON_CACHE = _HISTORY_JSON_CACHE
 fetch_history_json = _fetch_history_json
 history_rows = _history_rows
@@ -219,31 +203,32 @@ def _paginate_history_pages(
     return all_rows, hashes, page
 
 
-def fetch_history(
+def fetch_history(  # noqa: PLR0913 - explicit keyword arguments preserve the public API
     secid: str,
     from_date: str,
     till_date: str,
-    **options: Any,
+    *,
+    cache_dir: Path | None = None,
+    delay_seconds: float = 0.1,
+    timeout: float = 30.0,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+    fields: tuple[str, ...] = HISTORY_FIELDS,
+    allow_empty: bool = False,
+    error: type[W0Error] = IssHistoryError,
 ) -> dict[str, Any]:
-    unknown = set(options) - _HISTORY_OPTIONS
-    if unknown:
-        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
-    error: type[W0Error] = options.get("error", IssHistoryError)
-    delay_seconds = float(options.get("delay_seconds", 0.1))
     if not secid or delay_seconds < 0:
         raise error("invalid history arguments")
-    allow_empty = bool(options.get("allow_empty", False))
     cfg = _HistoryFetchConfig(
-        secid=secid,
-        from_date=from_date,
-        till_date=till_date,
-        cache_dir=options.get("cache_dir"),
-        delay_seconds=delay_seconds,
-        timeout=float(options.get("timeout", 30.0)),
-        opener=options.get("opener", urllib.request.urlopen),
-        fields=options.get("fields", HISTORY_FIELDS),
-        allow_empty=allow_empty,
-        error=error,
+        secid,
+        from_date,
+        till_date,
+        cache_dir,
+        delay_seconds,
+        timeout,
+        opener,
+        fields,
+        allow_empty,
+        error,
     )
     all_rows, hashes, page = _paginate_history_pages(cfg)
     deduped = {str(row["TRADEDATE"]): row for row in all_rows if row.get("TRADEDATE")}

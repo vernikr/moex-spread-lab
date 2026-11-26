@@ -29,20 +29,6 @@ from .iss_http import (
 
 RawSinkCallback = Callable[[str, bytes, str, str], None]
 
-_SERIES_OPTIONS = frozenset(
-    {
-        "base_url",
-        "board",
-        "timeout",
-        "delay_seconds",
-        "cache_dir",
-        "max_pages",
-        "retries",
-        "opener",
-        "raw_sink",
-    }
-)
-
 
 @dataclass(frozen=True)
 class _CandleSeriesRequest:
@@ -196,36 +182,38 @@ def _paginate_candle_rows(req: _CandleSeriesRequest) -> tuple[list[dict[str, Any
     return all_rows, page
 
 
-def fetch_candle_series(
+def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve the public API
     *,
     secid: str,
     interval: int,
     from_date: str,
     till_date: str,
-    **options: Any,
+    base_url: str = DEFAULT_ISS_BASE_URL,
+    board: str = DEFAULT_BOARD,
+    timeout: float = 20.0,
+    delay_seconds: float = 0.1,
+    cache_dir: Path | None = None,
+    max_pages: int | None = None,
+    retries: int = 3,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+    raw_sink: RawSinkCallback | None = None,
 ) -> dict[str, Any]:
-    unknown = set(options) - _SERIES_OPTIONS
-    if unknown:
-        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
-    delay_seconds = float(options.get("delay_seconds", 0.1))
-    retries = int(options.get("retries", 3))
     if interval <= 0 or delay_seconds < 0 or retries < 0:
         raise IssIntakeError("invalid candle interval, delay or retries")
-    board = str(options.get("board", DEFAULT_BOARD))
     req = _CandleSeriesRequest(
-        secid=secid,
-        interval=interval,
-        from_date=from_date,
-        till_date=till_date,
-        base_url=str(options.get("base_url", DEFAULT_ISS_BASE_URL)),
-        board=board,
-        timeout=float(options.get("timeout", 20.0)),
-        delay_seconds=delay_seconds,
-        cache_dir=options.get("cache_dir"),
-        max_pages=options.get("max_pages"),
-        retries=retries,
-        opener=options.get("opener", urllib.request.urlopen),
-        raw_sink=options.get("raw_sink"),
+        secid,
+        interval,
+        from_date,
+        till_date,
+        base_url,
+        board,
+        timeout,
+        delay_seconds,
+        cache_dir,
+        max_pages,
+        retries,
+        opener,
+        raw_sink,
     )
     all_rows, page = _paginate_candle_rows(req)
     deduped = {str(row["begin"]): row for row in all_rows}

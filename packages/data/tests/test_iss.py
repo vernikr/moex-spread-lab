@@ -172,22 +172,6 @@ class IssIntakeTests(unittest.TestCase):
     def test_candle_pagination_fetches_pages_and_deduplicates(self):
         calls = []
 
-        class Response:
-            status = 200
-            headers = {"Content-Type": "application/json"}
-
-            def __init__(self, body):
-                self.body = body
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_):
-                return False
-
-            def read(self):
-                return self.body
-
         def opener(request, timeout):
             query = parse_qs(urlparse(request.full_url).query)
             start = int(query["start"][0])
@@ -209,7 +193,7 @@ class IssIntakeTests(unittest.TestCase):
                     for index in range(500)
                 ]
             )
-            return Response(
+            return _Response(
                 json.dumps(
                     {
                         "candles": {
@@ -337,7 +321,7 @@ class _Response:
 
 
 class IssHttpContractTests(unittest.TestCase):
-    """Row and fetcher contract of ``data.iss.iss_http`` (folded from the P7.2 shard)."""
+    """Row and fetcher contracts for ISS HTTP."""
 
     def test_rows_maps_columns_to_dicts(self):
         block = {"columns": ["SECID", "BID"], "data": [["CNYRUBF", 12.5], ["CRZ6", None]]}
@@ -435,6 +419,76 @@ class IssHttpContractTests(unittest.TestCase):
             "/securities/CNYRUBF/candles.json?iss.meta=off&interval=60&from=2026-01-01"
             "&till=2026-01-31&start=500",
         )
+
+
+class IssHistoryContractTests(unittest.TestCase):
+    def test_history_decoder_preserves_tolerant_rows(self):
+        from moex_spread_lab.data.iss.catalog import IssHistoryError, _history_rows
+
+        block = {
+            "columns": ["TRADEDATE", "CLOSE"],
+            "data": [["2026-01-01"], "bad", ["2026-01-02", 2, 3]],
+        }
+        self.assertEqual(
+            _history_rows(block, "history"),
+            [{"TRADEDATE": "2026-01-01"}, {"TRADEDATE": "2026-01-02", "CLOSE": 2}],
+        )
+        with self.assertRaisesRegex(IssHistoryError, "malformed ISS block"):
+            _history_rows({}, "history")
+
+    def test_history_pagination_cache_deduplication_and_empty(self):
+        from moex_spread_lab.data.iss.catalog import fetch_history
+
+        calls = []
+
+        def opener(url, timeout):
+            start = int(parse_qs(urlparse(url).query)["start"][0])
+            calls.append(start)
+            data = (
+                [[f"2026-01-{i:03}", i] for i in range(100)]
+                if start == 0
+                else [["2026-01-099", 999], ["2026-02-01", 1]]
+            )
+            return _Response(
+                json.dumps(
+                    {
+                        "history": {"columns": ["TRADEDATE", "CLOSE"], "data": data},
+                        "history.cursor": {"columns": ["TOTAL"], "data": [[102]]},
+                    }
+                ).encode()
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            kwargs = {"cache_dir": Path(directory), "opener": opener, "delay_seconds": 0}
+            first = fetch_history("TEST", "2026-01-01", "2026-02-01", **kwargs)
+            second = fetch_history("TEST", "2026-01-01", "2026-02-01", **kwargs)
+        self.assertEqual(calls, [0, 100])
+        self.assertEqual(first, second)
+        self.assertEqual(first["page_count"], 2)
+        self.assertEqual(first["row_count"], 101)
+        self.assertEqual(first["rows"][99]["CLOSE"], 999)
+        empty = lambda url, timeout: _Response(b'{"history":{"columns":["TRADEDATE"],"data":[]}}')
+        self.assertEqual(
+            fetch_history("TEST", "a", "b", opener=empty, delay_seconds=0, allow_empty=True)[
+                "rows"
+            ],
+            [],
+        )
+
+    def test_history_errors_use_caller_error_type(self):
+        from moex_spread_lab.core.w0 import W0Error
+        from moex_spread_lab.data.iss.catalog import _fetch_history_json, fetch_history
+
+        class CustomError(W0Error):
+            pass
+
+        def opener(url, timeout):
+            return _Response(b"[]")
+
+        with self.assertRaisesRegex(CustomError, "history response is not an object"):
+            _fetch_history_json("test", opener=opener, error=CustomError)
+        with self.assertRaisesRegex(CustomError, "invalid history arguments"):
+            fetch_history("", "a", "b", error=CustomError)
 
 
 if __name__ == "__main__":

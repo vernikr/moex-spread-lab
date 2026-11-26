@@ -167,28 +167,17 @@ def _summarize_coverage_counts(
     return status_counts, timeframe_counts
 
 
-def fetch_candle_coverage(
+def fetch_candle_coverage(  # noqa: PLR0913 - explicit keyword arguments preserve the public API
     instruments: list[dict[str, Any]],
-    **options: Any,
+    *,
+    base_url: str = DEFAULT_ISS_BASE_URL,
+    board: str = DEFAULT_BOARD,
+    timeout: float = 20.0,
+    workers: int = 2,
+    delay_seconds: float = 0.1,
+    cache_dir: Path | None = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> dict[str, Any]:
-    base_url: str = options.get("base_url", DEFAULT_ISS_BASE_URL)
-    board: str = options.get("board", DEFAULT_BOARD)
-    timeout: float = options.get("timeout", 20.0)
-    workers: int = options.get("workers", 2)
-    delay_seconds: float = options.get("delay_seconds", 0.1)
-    cache_dir: Path | None = options.get("cache_dir")
-    opener: Callable[..., Any] = options.get("opener", urllib.request.urlopen)
-    unknown = set(options) - {
-        "base_url",
-        "board",
-        "timeout",
-        "workers",
-        "delay_seconds",
-        "cache_dir",
-        "opener",
-    }
-    if unknown:
-        raise TypeError(f"unexpected keyword argument(s): {sorted(unknown)}")
     if workers < 1:
         raise IssIntakeError("coverage workers must be positive")
     if delay_seconds < 0:

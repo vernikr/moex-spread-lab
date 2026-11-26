@@ -38,11 +38,6 @@
   },
   "complexity": {
     "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
-    "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_data_and_accounting_siblings_are_strictly_isolated": 16,
-    "packages/core/tests/test_architecture_dag.py::ArchitectureDagTests::test_workspace_code_and_tests_do_not_import_compatibility_shims": 21,
-    "packages/core/tests/test_architecture_dag.py::_build_import_graph": 25,
-    "packages/core/tests/test_architecture_dag.py::_resolve_internal_target": 42,
-    "packages/core/tests/test_architecture_dag.py::_tarjan_sccs": 18,
     "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22,
     "packages/web/tests/browser/group_lamps_smoke.py::run": 18
   },

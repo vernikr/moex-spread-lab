@@ -218,6 +218,26 @@ class ProofPayloadTests(unittest.TestCase):
         self.assertEqual(payload["trades"][0]["legs"], "sell far, buy near")
         self.assertEqual(payload["window"]["excluded_volume_observations"], 1)
 
+    def test_full_ledger_reports_actual_held_quantity(self):
+        rows = [_proof_row(f"2023-01-{day:02}", 30000 + day, 31000 + day) for day in range(10, 15)]
+        rows[2]["volume_eligible"] = False
+        rows[2]["min_volume"] = 0
+        for direction in (-1, 1):
+            for quantity in (1, 3):
+                with self.subTest(direction=direction, quantity=quantity):
+                    payload = build_proof_payload(
+                        _proof_window(rows),
+                        _proof_account([rows[1], rows[3]], direction=direction),
+                        _proof_meta(quantity=quantity),
+                    )
+                    ledger = payload["ledger"]
+                    self.assertEqual(
+                        [r["position"] for r in ledger], [0, direction, direction, 0, 0]
+                    )
+                    self.assertEqual([r["quantity"] for r in ledger], [0, quantity, quantity, 0, 0])
+                    self.assertTrue(all(type(r["quantity"]) is int for r in ledger))
+                    self.assertEqual(payload["trades"][0]["quantity"], quantity)
+
     def test_metrics_only_variants(self):
         window, meta = _proof_window(self.ROWS), _proof_meta()
         metrics = build_proof_payload(window, _proof_account(self.ROWS), meta, metrics_only=True)

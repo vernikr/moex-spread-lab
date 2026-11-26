@@ -130,6 +130,7 @@ def simulate_marked_ledger(
             else {
                 "date": day,
                 "position": sim.position["sign"] if sim.position else 0,
+                "quantity": sim.quantity if sim.position else 0,
                 "mark_pnl_rub": round(daily, 2),
                 "costs_rub": round(cost, 2),
                 "cumulative_net_rub": round(sim.cumulative, 2),

@@ -9,157 +9,90 @@ from urllib.parse import parse_qs, urlparse
 
 from moex_spread_lab.data.iss.catalog import (
     analyze_candle_pair,
+    fetch_candle_coverage,
     fetch_candle_series,
-    normalize_candle_borders,
     normalize_candles,
     normalize_iss_intake,
+    write_timeframe_inventory,
 )
 from moex_spread_lab.data.iss.iss_http import IssIntakeError, fetch_json_with_raw, rows
 
 
+def block(columns, data):
+    return {"columns": columns.split(), "data": data}
+
+
 def payload():
     return {
-        "securities": {
-            "columns": [
-                "SECID",
-                "SHORTNAME",
-                "ASSETCODE",
-                "FRSTTRADE",
-                "LOTVOLUME",
-                "MINSTEP",
-                "STEPPRICE",
-                "INITIALMARGIN",
-                "LASTTRADEDATE",
-                "LASTDELDATE",
+        "securities": block(
+            "SECID ASSETCODE LASTDELDATE",
+            [["CNYRUBF", "CNYRUBTOM", "2100-01-01"], ["CRZ6", "CNY", "2026-12-17"]],
+        ),
+        "marketdata": block(
+            "SECID BOARDID BID OFFER LAST SETTLEPRICE",
+            [
+                ["CNYRUBF", "RFUD", 12.12, 12.121, 12.121, 12.125],
+                ["CRZ6", "RFUD", 12.30, 12.302, 12.301, 12.306],
             ],
-            "data": [
-                [
-                    "CNYRUBF",
-                    "CNYRUBF",
-                    "CNYRUBTOM",
-                    "2022-04-26",
-                    1000,
-                    0.001,
-                    1,
-                    1000,
-                    "2100-01-01",
-                    "2100-01-01",
-                ],
-                [
-                    "CRZ6",
-                    "CNY-12.26",
-                    "CNY",
-                    "2026-06-01",
-                    1000,
-                    0.001,
-                    1,
-                    1200,
-                    "2026-12-17",
-                    "2026-12-17",
-                ],
-            ],
-        },
-        "marketdata": {
-            "columns": [
-                "SECID",
-                "BOARDID",
-                "BID",
-                "OFFER",
-                "LAST",
-                "SETTLEPRICE",
-                "UPDATETIME",
-                "TIME",
-                "SYSTIME",
-                "TRADEDATE",
-            ],
-            "data": [
-                [
-                    "CNYRUBF",
-                    "RFUD",
-                    12.12,
-                    12.121,
-                    12.121,
-                    12.125,
-                    "09:00:00",
-                    "08:59:00",
-                    "2026-10-27 09:15:00",
-                    "2026-10-27",
-                ],
-                [
-                    "CRZ6",
-                    "RFUD",
-                    12.30,
-                    12.302,
-                    12.301,
-                    12.306,
-                    "09:00:00",
-                    "08:59:00",
-                    "2026-10-27 09:15:00",
-                    "2026-10-27",
-                ],
-            ],
-        },
+        ),
     }
 
 
+def snapshot(data):
+    return normalize_iss_intake(
+        data,
+        url="https://iss.moex.com/test",
+        received_at="2026-10-27T06:00:00+00:00",
+        raw_sha256="raw-hash",
+    )
+
+
+def candles(data):
+    return {"candles": block("open close high low value volume begin end", data)}
+
+
 class IssIntakeTests(unittest.TestCase):
-    def test_pair_check_reports_common_timestamps_and_ohlc_quality(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+    def test_retired_research_commands_fail_clearly(self):
+        for function in (
+            analyze_candle_pair,
+            fetch_candle_coverage,
+            write_timeframe_inventory,
+        ):
+            with (
+                self.subTest(function=function.__name__),
+                self.assertRaisesRegex(IssIntakeError, "has been retired"),
+            ):
+                function()
 
-            def series(secid, begins):
-                return {
-                    "schema_version": "iss-candles.v1",
-                    "secid": secid,
-                    "interval": 24,
-                    "timeframe": "1d",
-                    "rows": [
-                        {
-                            "begin": begin,
-                            "open": 1,
-                            "close": 1.1,
-                            "high": 1.2,
-                            "low": 0.9,
-                            "price_proxy_kind": "candle_close",
-                        }
-                        for begin in begins
-                    ],
-                }
+    def test_retired_cli_handlers_raise_after_catalog_lookup(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
 
-            near = root / "near.json"
-            far = root / "far.json"
-            near.write_text(
-                json.dumps(series("CNYRUBF", ["2026-01-01", "2026-01-02"])), encoding="utf-8"
-            )
-            far.write_text(
-                json.dumps(series("CRZ6", ["2026-01-02", "2026-01-03"])), encoding="utf-8"
-            )
-            result = analyze_candle_pair(near, far)
-        self.assertEqual(result["synchronization"]["common_timestamp_count"], 1)
-        self.assertEqual(result["near"]["invalid_ohlc_count"], 0)
-        self.assertEqual(
-            result["synchronization"]["pair_analytical_status"], "usable_common_proxy_rows"
+        from moex_spread_lab.data import cli
+
+        args = SimpleNamespace(
+            base_url="test",
+            board="RFUD",
+            timeout=1,
+            workers=1,
+            delay_seconds=0,
+            cache_dir=None,
+            near=Path("near"),
+            far=Path("far"),
         )
+        with (
+            patch.object(cli, "fetch_iss_catalog", return_value={"instruments": []}),
+            self.assertRaisesRegex(IssIntakeError, "timeframe inventory has been retired"),
+        ):
+            cli._run_iss_timeframe_inventory(args)
+        with self.assertRaisesRegex(IssIntakeError, "candle pair check has been retired"):
+            cli._run_iss_candle_pair_check(args)
 
     def test_candle_rows_use_close_as_explicit_price_proxy(self):
         result = normalize_candles(
-            {
-                "candles": {
-                    "columns": ["open", "close", "high", "low", "value", "volume", "begin", "end"],
-                    "data": [
-                        [
-                            12.0,
-                            12.1,
-                            12.2,
-                            11.9,
-                            0,
-                            10,
-                            "2026-10-01 10:00:00",
-                            "2026-10-01 10:09:59",
-                        ]
-                    ],
-                },
-            },
+            candles(
+                [[12.0, 12.1, 12.2, 11.9, 0, 10, "2026-10-01 10:00:00", "2026-10-01 10:09:59"]]
+            ),
             secid="CRZ6",
             interval=10,
             url="https://iss.moex.com/test/candles",
@@ -168,6 +101,24 @@ class IssIntakeTests(unittest.TestCase):
         )
         self.assertEqual(result[0]["price_proxy"], 12.1)
         self.assertEqual(result[0]["price_proxy_kind"], "candle_close")
+
+    def test_candle_invalid_numeric_values_are_rejected(self):
+        for index in range(6):
+            for value in ("bad", True, float("nan"), float("inf")):
+                row = [1, 1, 1, 1, 1, 1, "begin", "end"]
+                row[index] = value
+                with (
+                    self.subTest(index=index, value=value),
+                    self.assertRaisesRegex(IssIntakeError, "invalid candle"),
+                ):
+                    normalize_candles(
+                        candles([row]),
+                        secid="TEST",
+                        interval=1,
+                        url="u",
+                        received_at="t",
+                        raw_sha256="h",
+                    )
 
     def test_candle_pagination_fetches_pages_and_deduplicates(self):
         calls = []
@@ -193,25 +144,7 @@ class IssIntakeTests(unittest.TestCase):
                     for index in range(500)
                 ]
             )
-            return _Response(
-                json.dumps(
-                    {
-                        "candles": {
-                            "columns": [
-                                "open",
-                                "close",
-                                "high",
-                                "low",
-                                "value",
-                                "volume",
-                                "begin",
-                                "end",
-                            ],
-                            "data": rows,
-                        },
-                    }
-                ).encode()
-            )
+            return _Response(json.dumps(candles(rows)).encode())
 
         with tempfile.TemporaryDirectory() as directory:
             result = fetch_candle_series(
@@ -227,36 +160,8 @@ class IssIntakeTests(unittest.TestCase):
         self.assertEqual(result["row_count"], 500)
         self.assertEqual(result["page_count"], 2)
 
-    def test_candle_borders_select_smallest_available_interval(self):
-        result = normalize_candle_borders(
-            {
-                "borders": {
-                    "columns": ["begin", "end", "interval", "board_group_id"],
-                    "data": [
-                        ["2022-01-01", "2026-10-27", 24, 45],
-                        ["2022-01-01", "2026-10-27", 10, 45],
-                        ["2022-01-01", "2026-10-27", 1, 45],
-                    ],
-                },
-            },
-            secid="CNYRUBF",
-            url="https://iss.moex.com/test/candleborders",
-            received_at="2026-10-27T06:00:00+00:00",
-            raw_sha256="borders-hash",
-        )
-        self.assertEqual(result["minimum_interval"], 1)
-        self.assertEqual(result["minimum_timeframe"], "1m")
-        self.assertEqual(
-            [item["timeframe"] for item in result["available_intervals"]], ["1m", "10m", "1d"]
-        )
-
     def test_current_snapshot_keeps_price_roles_separate(self):
-        result = normalize_iss_intake(
-            payload(),
-            url="https://iss.moex.com/test",
-            received_at="2026-10-27T06:00:00+00:00",
-            raw_sha256="raw-hash",
-        )
+        result = snapshot(payload())
         near = next(item for item in result["instruments"] if item["secid"] == "CNYRUBF")
         self.assertEqual(near["settlement"], 12.125)
         self.assertEqual(near["last_trade"], 12.121)
@@ -266,12 +171,7 @@ class IssIntakeTests(unittest.TestCase):
         self.assertEqual(result["admission_status"], "conditionally_admitted_analytical_only")
 
     def test_candidate_blockers_are_explicit(self):
-        result = normalize_iss_intake(
-            payload(),
-            url="https://iss.moex.com/test",
-            received_at="2026-10-27T06:00:00+00:00",
-            raw_sha256="raw-hash",
-        )
+        result = snapshot(payload())
         reasons = result["candidate"]["reasons"]
         self.assertTrue(any("executable bid/ask" in reason for reason in reasons))
         self.assertEqual(
@@ -280,23 +180,13 @@ class IssIntakeTests(unittest.TestCase):
         self.assertTrue(result["candidate"]["assumptions"])
 
     def test_normalized_output_is_json_serializable(self):
-        result = normalize_iss_intake(
-            payload(),
-            url="https://iss.moex.com/test",
-            received_at="2026-10-27T06:00:00+00:00",
-            raw_sha256="raw-hash",
-        )
+        result = snapshot(payload())
         json.dumps(result)
 
     def test_crossed_quote_is_flagged_without_dropping_catalog(self):
         broken = payload()
         broken["marketdata"]["data"][0][2:4] = [12.13, 12.12]
-        result = normalize_iss_intake(
-            broken,
-            url="https://iss.moex.com/test",
-            received_at="2026-10-27T06:00:00+00:00",
-            raw_sha256="raw-hash",
-        )
+        result = snapshot(broken)
         near = next(item for item in result["instruments"] if item["secid"] == "CNYRUBF")
         self.assertEqual(near["quote_quality"], "crossed_quote")
         self.assertEqual(result["instrument_count"], 2)

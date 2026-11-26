@@ -8,34 +8,8 @@ from typing import Any
 
 from .iss_candles import (
     RawSinkCallback,
-    analyze_candle_pair,
     fetch_candle_series,
     normalize_candles,
-)
-from .iss_coverage import (
-    CSV_COLUMNS,
-    fetch_candle_coverage,
-    normalize_candle_borders,
-    write_timeframe_inventory,
-)
-from .iss_history import (
-    HISTORY_FIELDS,
-    HISTORY_PAGE_SIZE,
-    HISTORY_SCHEMA,
-    IssHistoryError,
-    fetch_history,
-)
-from .iss_history import (
-    HISTORY_JSON_CACHE as _HISTORY_JSON_CACHE,
-)
-from .iss_history import (
-    fetch_history_json as _fetch_history_json,
-)
-from .iss_history import (
-    history_rows as _history_rows,
-)
-from .iss_history import (
-    history_url as _history_url,
 )
 from .iss_http import (
     CANDLE_FIELDS,
@@ -46,22 +20,28 @@ from .iss_http import (
     DEFAULT_ISS_BASE_URL,
     DEFAULT_NEAR,
     HISTORICAL_SPECIFICATION_STATUS,
+    HISTORY_FIELDS,
+    HISTORY_PAGE_SIZE,
+    HISTORY_SCHEMA,
     ISS_MODULE_SCHEMA,
     MARKETDATA_FIELDS,
     PROJECT_RIGHTS_STATUS,
     SECURITY_FIELDS,
+    IssHistoryError,
     IssIntakeError,
+    fetch_history,
     fetch_json_with_raw,
 )
-from .iss_http import (
-    candleborders_url as _candleborders_url,
-)
+from .iss_http import HISTORY_JSON_CACHE as _HISTORY_JSON_CACHE
 from .iss_http import (
     candles_url as _candles_url,
 )
+from .iss_http import fetch_history_json as _fetch_history_json
 from .iss_http import (
     fetch_json as _fetch_json,
 )
+from .iss_http import history_rows as _history_rows
+from .iss_http import history_url as _history_url
 from .iss_http import (
     rows as _rows,
 )
@@ -73,7 +53,6 @@ __all__ = [
     "CANDLE_FIELDS",
     "CANDLE_INTERVAL_LABELS",
     "CANDLE_PAGE_SIZE",
-    "CSV_COLUMNS",
     "DEFAULT_BOARD",
     "DEFAULT_FAR",
     "DEFAULT_ISS_BASE_URL",
@@ -91,7 +70,6 @@ __all__ = [
     "IssIntakeError",
     "RawSinkCallback",
     "_candidate_status",
-    "_candleborders_url",
     "_candles_url",
     "_fetch_history_json",
     "_fetch_json",
@@ -106,12 +84,23 @@ __all__ = [
     "fetch_history",
     "fetch_iss_catalog",
     "fetch_json_with_raw",
-    "normalize_candle_borders",
     "normalize_candles",
     "normalize_iss_intake",
     "normalize_iss_payload",
     "write_timeframe_inventory",
 ]
+
+
+def fetch_candle_coverage(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    raise IssIntakeError("ISS timeframe inventory has been retired")
+
+
+def write_timeframe_inventory(*args: Any, **kwargs: Any) -> None:
+    raise IssIntakeError("ISS timeframe inventory has been retired")
+
+
+def analyze_candle_pair(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    raise IssIntakeError("ISS candle pair check has been retired")
 
 
 def _quote_quality(bid: Any, ask: Any) -> str:

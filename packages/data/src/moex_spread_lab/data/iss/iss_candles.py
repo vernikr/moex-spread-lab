@@ -1,9 +1,9 @@
-"""MOEX ISS paginated candle series download, OHLC quality, and pair checks."""
+"""MOEX ISS paginated candle series download."""
 
 from __future__ import annotations
 
-import itertools
 import json
+import math
 import time
 import urllib.request
 from collections.abc import Callable
@@ -47,6 +47,12 @@ class _CandleSeriesRequest:
     raw_sink: RawSinkCallback | None
 
 
+def _valid_numeric(value: Any) -> bool:
+    return value is None or (
+        type(value) is int or (isinstance(value, float) and math.isfinite(value))
+    )
+
+
 def normalize_candles(
     payload: dict[str, Any],
     *,
@@ -70,6 +76,10 @@ def normalize_candles(
         close = row.get("close")
         if close is None:
             raise IssIntakeError(f"candle close missing for {secid}")
+        for field in ("open", "close", "high", "low", "value", "volume"):
+            value = row.get(field)
+            if not _valid_numeric(value):
+                raise IssIntakeError(f"invalid candle {field} for {secid}")
         normalized.append(
             {
                 "secid": secid,
@@ -233,77 +243,4 @@ def fetch_candle_series(  # noqa: PLR0913 - explicit keyword arguments preserve 
         "coverage_status": "available" if rows else "empty",
         "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
         "rows": rows,
-    }
-
-
-def _is_valid_ohlc_row(row: dict[str, Any]) -> bool:
-    open_p = row.get("open")
-    close_p = row.get("close")
-    high_p = row.get("high")
-    low_p = row.get("low")
-    if not (
-        isinstance(open_p, (int, float))
-        and isinstance(close_p, (int, float))
-        and isinstance(high_p, (int, float))
-        and isinstance(low_p, (int, float))
-    ):
-        return False
-    return low_p <= min(open_p, close_p, high_p) and high_p >= max(open_p, close_p, low_p)
-
-
-def _series_quality(series: dict[str, Any]) -> dict[str, Any]:
-    rows = series.get("rows", [])
-    begins = [row.get("begin") for row in rows]
-    valid_ohlc = sum(1 for row in rows if _is_valid_ohlc_row(row))
-    proxy_markers = sum(1 for row in rows if row.get("price_proxy_kind") == "candle_close")
-    out_of_order = sum(
-        1
-        for left, right in itertools.pairwise(begins)
-        if isinstance(left, str) and isinstance(right, str) and left >= right
-    )
-    return {
-        "secid": series.get("secid"),
-        "row_count": len(rows),
-        "first_begin": begins[0] if begins else None,
-        "last_begin": begins[-1] if begins else None,
-        "duplicate_begin_count": len(begins) - len(set(begins)),
-        "out_of_order_count": out_of_order,
-        "valid_ohlc_count": valid_ohlc,
-        "invalid_ohlc_count": len(rows) - valid_ohlc,
-        "price_proxy_marker_count": proxy_markers,
-    }
-
-
-def analyze_candle_pair(near_path: Path, far_path: Path) -> dict[str, Any]:
-    try:
-        near_series = json.loads(near_path.read_text(encoding="utf-8"))
-        far_series = json.loads(far_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise IssIntakeError(f"cannot read candle series: {exc}") from exc
-    if (
-        near_series.get("schema_version") != "iss-candles.v1"
-        or far_series.get("schema_version") != "iss-candles.v1"
-    ):
-        raise IssIntakeError("pair check requires iss-candles.v1 series")
-    if near_series.get("interval") != far_series.get("interval"):
-        raise IssIntakeError("pair check requires equal intervals")
-    near_by_begin = {row["begin"]: row for row in near_series.get("rows", [])}
-    far_by_begin = {row["begin"]: row for row in far_series.get("rows", [])}
-    common = sorted(set(near_by_begin) & set(far_by_begin))
-    return {
-        "schema_version": "iss-candle-pair-quality.v1",
-        "interval": near_series.get("interval"),
-        "timeframe": near_series.get("timeframe"),
-        "near": _series_quality(near_series),
-        "far": _series_quality(far_series),
-        "synchronization": {
-            "common_timestamp_count": len(common),
-            "near_only_count": len(set(near_by_begin) - set(far_by_begin)),
-            "far_only_count": len(set(far_by_begin) - set(near_by_begin)),
-            "first_common_begin": common[0] if common else None,
-            "last_common_begin": common[-1] if common else None,
-            "pair_analytical_status": "usable_common_proxy_rows" if common else "no_common_rows",
-        },
-        "price_interpretation": "candle_close_is_A-06_medium_term_price_proxy",
-        "execution_evidence_status": "historical_bid_ask_unavailable",
     }

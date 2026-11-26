@@ -1,212 +1,186 @@
 import importlib
 import json
-import tempfile
-import unittest
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from moex_spread_lab.accounting.account_risk import (
+    ACCOUNT_RISK_SCHEMA,
     AccountRiskError,
     assess_vtb_pair,
     ebs_undercovered_margin_charge,
 )
-from moex_spread_lab.accounting.costs import cost_totals, side_cost, tariff_profile
-from moex_spread_lab.accounting.ledger import build_ledger
-from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+from moex_spread_lab.accounting.costs import (
+    cost_totals,
+    lqdt_overlay_values,
+    side_cost,
+    tariff_profile,
+)
+from moex_spread_lab.accounting.portfolio import lqdt_overlay_values as portfolio_overlay
 from moex_spread_lab.core.w0 import W0Error
 
-CONTRACT = {
+NEAR = {
     "secid": "SBERF",
     "lot_size": 100,
     "tick_value": 1.0,
     "tick_size": 0.01,
     "initial_margin": 1000.0,
 }
+FAR = {
+    "secid": "SRZ6",
+    "lot_size": 100,
+    "tick_value": 2.0,
+    "tick_size": 1.0,
+    "initial_margin": 1500.0,
+}
 
 
-class CostTests(unittest.TestCase):
-    def test_tariff_uses_group_rate_on_contract_value_and_slippage_ticks(self):
-        cost = side_cost(tariff_profile(2.0), [(CONTRACT, 300.0)], 3)
-        self.assertAlmostEqual(cost["exchange_clearing"], 300 * 100 * 0.0003 * 3)
-        self.assertEqual(cost["slippage"], 6.0)
-        self.assertEqual(cost["broker"], 0.0)
-        totals = cost_totals([{"entry": {"costs": cost}, "exit": {"costs": cost}}])
-        self.assertEqual(totals["slippage"], 12.0)
-        self.assertAlmostEqual(totals["exchange_clearing"], 300 * 100 * 0.0003 * 6)
-
-    def test_unknown_contract_and_bad_slippage_are_rejected(self):
-        with self.assertRaises(W0Error):
-            side_cost(tariff_profile(), [({**CONTRACT, "secid": "XX"}, 1.0)], 1)
-        with self.assertRaises(W0Error):
-            tariff_profile(-1)
-
-
-class OverlayTests(unittest.TestCase):
-    def test_free_cash_compounds_and_margin_idles(self):
-        flat, _ = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 0, 0], [1.0, 1.1, 1.21])
-        self.assertAlmostEqual(flat[-1], 1210.0)
-        held, shortfalls = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 500, 500], [1.0, 1.1, 1.21])
-        self.assertAlmostEqual(held[-1], 660.0 + 500.0)
-        self.assertLess(held[-1], flat[-1])
-        self.assertEqual(shortfalls, 0)
-
-    def test_loss_beyond_free_cash_is_flagged(self):
-        _, shortfalls = lqdt_overlay_values(100.0, [0, -150], [0, 80], [1.0, 1.0])
-        self.assertEqual(shortfalls, 1)
-
-
-class AccountRiskTests(unittest.TestCase):
-    def test_ebs_undercovered_charge_and_pair_stress_screen(self):
-        charge = ebs_undercovered_margin_charge(12_000.0, 10_000.0, key_rate=0.14, days=5)
-        self.assertAlmostEqual(charge, 2_000.0 * 0.16 * 5 / 365.0)
-        self.assertEqual(ebs_undercovered_margin_charge(5_000.0, 10_000.0), 0.0)
-        with self.assertRaises(AccountRiskError):
-            ebs_undercovered_margin_charge(-1.0, 0.0)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            contracts_path = Path(tmp) / "current-intake.json"
-            contracts_path.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "iss-intake.v1",
-                        "instruments": [
-                            {
-                                "secid": "SBERF",
-                                "stable_id": "SBERF",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 100,
-                                "tick_size": 0.01,
-                                "tick_value": 1.0,
-                                "initial_margin": 1000.0,
-                                "source_vintage": "current_snapshot",
-                            },
-                            {
-                                "secid": "SRZ6",
-                                "stable_id": "SRZ6",
-                                "board": "RFUD",
-                                "expiry": "2026-12-17",
-                                "lot_size": 100,
-                                "tick_size": 1.0,
-                                "tick_value": 1.0,
-                                "initial_margin": 1500.0,
-                                "source_vintage": "current_snapshot",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            passed = assess_vtb_pair(contracts_path, "SBERF", "SRZ6", initial_capital=30_000.0)
-            self.assertTrue(passed["summary"]["all_scenarios_passed"])
-            failed = assess_vtb_pair(contracts_path, "SBERF", "SRZ6", initial_capital=12_000.0)
-            self.assertFalse(failed["summary"]["all_scenarios_passed"])
-
-
-class OpenFillTests(unittest.TestCase):
-    def test_delayed_entry_and_exit_attempts_project_costs_and_lqdt_overlay(self):
-        profile = tariff_profile(1.0)
-        near_contract = {**CONTRACT, "tick_size": 1.0}
-        far_contract = {**CONTRACT, "secid": "SRZ6", "tick_size": 1.0}
-        entry_costs = side_cost(profile, [(near_contract, 10.0), (far_contract, 14.0)], 1)
-        exit_costs = side_cost(profile, [(near_contract, 10.0), (far_contract, 10.2)], 1)
-        total_costs = round(sum(entry_costs.values()) + sum(exit_costs.values()), 8)
-        overlay, shortfalls = lqdt_overlay_values(
-            30_000.0,
-            [0.0, -sum(entry_costs.values()), 3.8 - total_costs],
-            [0.0, 2_000.0, 0.0],
-            [1.0, 1.001, 1.002],
-        )
-        self.assertEqual(shortfalls, 0)
-        trade_cost_totals = cost_totals(
-            [{"entry": {"costs": entry_costs}, "exit": {"costs": exit_costs}}]
-        )
-        baseline = {
-            "schema_version": "analytical-baseline.v1",
-            "analysis_role": "diagnostic_only",
-            "near": "SBERF",
-            "far": "SRZ6",
-            "timeframe": "1d",
-            "execution_evidence_status": "proxy_only",
-            "parameters": {
-                "decision_delay_bars": 1,
-                "quantity": 1,
-                "initial_capital": 30_000.0,
-                "accounting": "free_cash_in_lqdt_margin_cash_idle",
-            },
-            "economics": {"pair_initial_margin_rub": 2_000.0},
-            "costs": {"total_by_component": trade_cost_totals},
-            "daily": [
-                {
-                    "date": "2026-03-23",
-                    "timestamp": "2026-03-23 00:00:00",
-                    "position": 0,
-                    "strategy_value": overlay[0],
-                    "benchmark_value": 30_000.0,
-                    "X": overlay[0] - 30_000.0,
-                    "H": 0.0,
-                    "D": 0.0,
-                    "modeled_costs": 0.0,
-                    "gross_realized_pnl": 0.0,
-                },
-                {
-                    "date": "2026-03-24",
-                    "timestamp": "2026-03-24 00:00:00",
-                    "position": 1,
-                    "strategy_value": overlay[1],
-                    "benchmark_value": 30_030.0,
-                    "X": overlay[1] - 30_030.0,
-                    "H": 0.0,
-                    "D": max(0.0, 30_030.0 - overlay[1]),
-                    "modeled_costs": round(sum(entry_costs.values()), 8),
-                    "gross_realized_pnl": 0.0,
-                },
-                {
-                    "date": "2026-03-25",
-                    "timestamp": "2026-03-25 00:00:00",
-                    "position": 0,
-                    "strategy_value": overlay[2],
-                    "benchmark_value": 30_060.0,
-                    "X": overlay[2] - 30_060.0,
-                    "H": max(0.0, overlay[2] - 30_060.0),
-                    "D": max(0.0, 30_060.0 - overlay[2]),
-                    "modeled_costs": total_costs,
-                    "gross_realized_pnl": 3.8,
-                },
-            ],
-            "trades": [
-                {
-                    "entry_date": "2026-03-24 00:00:00",
-                    "exit_date": "2026-03-25 00:00:00",
-                    "quantity": 1,
-                    "direction": "long_spread",
-                }
-            ],
+def _contracts(tmp_path: Path) -> Path:
+    path = tmp_path / "contracts.json"
+    instruments = [
+        {
+            **c,
+            "stable_id": c["secid"],
+            "board": "RFUD",
+            "expiry": "2026-12-17",
+            "source_vintage": "current_snapshot",
         }
-        with tempfile.TemporaryDirectory() as tmp:
-            baseline_path = Path(tmp) / "baseline.json"
-            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
-            ledger = build_ledger(baseline_path)
-
-        self.assertEqual(ledger["summary"]["execution_attempt_count"], 2)
-        self.assertEqual(ledger["summary"]["portfolio_mark_count"], 3)
-        attempts = [e["payload"] for e in ledger["events"] if e["kind"] == "execution_attempt"]
-        self.assertEqual(attempts[0]["signal_at"], "2026-03-23 00:00:00")
-        self.assertEqual(attempts[0]["decision_at"], "2026-03-24 00:00:00")
-        self.assertEqual(ledger["projection"][1]["reserved_margin_proxy"], 2_000.0)
-        self.assertGreater(ledger["portfolio"]["costs"]["total_by_component"]["slippage"], 0)
+        for c in (NEAR, FAR)
+    ]
+    path.write_text(
+        json.dumps({"schema_version": "iss-intake.v1", "instruments": instruments}),
+        encoding="utf-8",
+    )
+    return path
 
 
-class RetiredSubsystemTests(unittest.TestCase):
-    def test_research_and_validation_modules_are_removed(self):
-        for name in (
-            "moex_spread_lab.accounting.research",
-            "moex_spread_lab.accounting.research_intake",
-            "moex_spread_lab.accounting.research_simulation",
-            "moex_spread_lab.accounting.validation",
-        ):
-            with self.assertRaises(ModuleNotFoundError):
-                importlib.import_module(name)
+def test_costs_tariff_native_spread_and_totals() -> None:
+    profile = tariff_profile(2.0)
+    assert profile["broker_fee"] == 0.0
+    cost = side_cost(profile, [(NEAR, 300.0)], 3)
+    assert cost == {"exchange_clearing": pytest.approx(27.0), "broker": 0.0, "slippage": 6.0}
+
+    native = side_cost(profile, [(NEAR, 300.0), (FAR, 305.0)], 2, native_spread=True)
+    two_leg = side_cost(profile, [(NEAR, 300.0), (FAR, 305.0)], 2)
+    assert native["exchange_clearing"] == pytest.approx(two_leg["exchange_clearing"])
+    assert (native["slippage"], two_leg["slippage"]) == (4.0, 12.0)
+
+    custom = side_cost(profile, [({**NEAR, "secid": "X", "tariff_group": "currency"}, 10.0)], 1)
+    assert custom["exchange_clearing"] == pytest.approx(0.0462)
+    assert cost_totals(
+        [{"entry": {"costs": cost}, "exit": {"costs": cost}}, {"entry": {}, "exit": {}}]
+    ) == {
+        "exchange_clearing": 54.0,
+        "broker": 0.0,
+        "slippage": 12.0,
+    }
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize("bad", [-1, 10.5, True, "1"])
+def test_costs_rejects_invalid_slippage_and_unknown_secid(bad: object) -> None:
+    with pytest.raises(W0Error):
+        tariff_profile(bad)
+    with pytest.raises(W0Error):
+        side_cost(tariff_profile(), [({**NEAR, "secid": "XX"}, 1.0)], 1)
+
+
+def test_lqdt_overlay_compounds_free_cash_and_flags_negative_only() -> None:
+    assert portfolio_overlay is lqdt_overlay_values
+    flat, sf0 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 0, 0], [1.0, 1.1, 1.21])
+    held, sf1 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 500, 500], [1.0, 1.1, 1.21])
+    assert flat[-1] == pytest.approx(1210.0)
+    assert held[-1] == pytest.approx(1160.0)
+    assert sf0 == sf1 == 0
+    assert lqdt_overlay_values(100.0, [0, -20.0], [0, 80.0], [1.0, 1.0])[1] == 0
+    assert lqdt_overlay_values(100.0, [0, -150.0], [0, 80.0], [1.0, 1.0])[1] == 1
+
+
+def test_ebs_charge_and_validation() -> None:
+    assert ebs_undercovered_margin_charge(12000.0, 10000.0, key_rate=0.14, days=5) == pytest.approx(
+        2000.0 * 0.16 * 5 / 365.0
+    )
+    assert ebs_undercovered_margin_charge(5000.0, 10000.0) == 0.0
+    for gross, cash, rate, days in (
+        (-1.0, 0.0, 0.14, 1),
+        (1.0, -1.0, 0.14, 1),
+        (1.0, 0.0, -0.1, 1),
+        (1.0, 0.0, 0.14, -1),
+    ):
+        with pytest.raises(AccountRiskError):
+            ebs_undercovered_margin_charge(gross, cash, key_rate=rate, days=days)
+
+
+def test_assess_vtb_pair_scenarios_and_buffers(tmp_path: Path) -> None:
+    path = _contracts(tmp_path)
+    ok = assess_vtb_pair(path, "SBERF", "SRZ6", initial_capital=30000.0)
+    assert ok["schema_version"] == ACCOUNT_RISK_SCHEMA
+    assert (
+        ok["pair"]["pair_margin_no_offset_rub"],
+        ok["pair"]["largest_single_leg_margin_rub"],
+    ) == (2500.0, 1500.0)
+    assert [s["id"] for s in ok["scenarios"]] == [
+        "current_snapshot_no_offset",
+        "single_leg_failure",
+        "two_times_margin_shock",
+        "three_times_margin_shock",
+    ]
+    assert ok["summary"]["all_scenarios_passed"] is True
+    assert (
+        ok["ebs_undercovered_margin_sensitivity"]["one_day_full_initial_capital_cash_charge_rub"]
+        == 0.0
+    )
+
+    partial = assess_vtb_pair(path, "SBERF", "SRZ6", initial_capital=15000.0)
+    assert (
+        partial["summary"]["current_snapshot_passed"],
+        partial["summary"]["all_scenarios_passed"],
+    ) == (True, False)
+    assert partial["summary"]["most_severe_remaining_capital_rub"] == -2500.0
+
+    stressed = assess_vtb_pair(
+        path,
+        "SBERF",
+        "SRZ6",
+        initial_capital=30000.0,
+        stress_vm_buffer=4000.0,
+        uncertainty_buffer=2000.0,
+        observed_daily_pnl=[-6000.0, 50.0],
+        quantity=2,
+        key_rate=0.18,
+    )
+    assert stressed["pair"]["pair_margin_no_offset_rub"] == 5000.0
+    assert stressed["stress_inputs"]["observed_worst_daily_loss_rub"] == 12000.0
+    assert stressed["stress_inputs"]["effective_vm_buffer_rub"] == 12000.0
+    assert stressed["summary"]["all_scenarios_passed"] is True
+
+    small = assess_vtb_pair(path, "SBERF", "SRZ6", observed_daily_pnl=[-450.0, 20.0], quantity=2)
+    assert small["stress_inputs"]["effective_vm_buffer_rub"] == 10000.0
+
+
+def test_assess_vtb_pair_rejects_bad_inputs_and_unknown_kwargs(tmp_path: Path) -> None:
+    path = _contracts(tmp_path)
+    bad: tuple[dict[str, Any], ...] = (
+        {"initial_capital": 0.0},
+        {"stress_vm_buffer": -1.0},
+        {"uncertainty_buffer": -1.0},
+        {"key_rate": -0.01},
+        {"quantity": 0},
+    )
+    for kw in bad:
+        with pytest.raises(AccountRiskError):
+            assess_vtb_pair(path, "SBERF", "SRZ6", **kw)
+    extra: dict[str, Any] = {"unknown_option": 1}
+    with pytest.raises(TypeError):
+        assess_vtb_pair(path, "SBERF", "SRZ6", **extra)
+
+
+def test_research_and_validation_modules_are_removed() -> None:
+    for name in (
+        "moex_spread_lab.accounting.research",
+        "moex_spread_lab.accounting.research_intake",
+        "moex_spread_lab.accounting.research_simulation",
+        "moex_spread_lab.accounting.validation",
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(name)

@@ -1,9 +1,7 @@
-"""Canonical MOEX instrument, pair, and strategy universe registry (Layer 1).
+"""Canonical MOEX instrument and pair catalogs (Layer 1).
 
-Concrete catalogs live in the sibling modules; the generic universe identifiers
-are re-exported from ``moex_spread_lab.core.universe`` so callers can use one
-import site. ``moex_spread_lab.core.universe`` keeps a deprecation accessor for
-the Layer-1 names during the migration window.
+The generic universe identifiers are re-exported from ``moex_spread_lab.core.universe``
+so callers can use one import site.
 """
 
 from __future__ import annotations

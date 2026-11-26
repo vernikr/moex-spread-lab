@@ -35,33 +35,23 @@ ASSETS: dict[str, dict[str, Any]] = {
     "WT": {"group": "commodity", "fx": "usd", "monthly": True, "name": "WTI"},
 }
 FX_SOURCE: dict[str, str] = {"usd": "Si", "cny": "CR"}
+_CROSS = "cross_contract_same_expiry"
+_TRIANGLE = "synthetic_triangle_same_expiry"
 CROSS_EXPIRY_PAIRS: tuple[dict[str, str], ...] = (
-    {
-        "pair_id": "MX/MM",
-        "near": "MX",
-        "far": "MM",
-        "family": "cross_contract_same_expiry",
-        "name": "MIX vs MXI",
-    },
-    {
-        "pair_id": "GD/GN",
-        "near": "GD",
-        "far": "GN",
-        "family": "cross_contract_same_expiry",
-        "name": "GOLD vs GOLDM",
-    },
+    {"pair_id": "MX/MM", "near": "MX", "far": "MM", "family": _CROSS, "name": "MIX vs MXI"},
+    {"pair_id": "GD/GN", "near": "GD", "far": "GN", "family": _CROSS, "name": "GOLD vs GOLDM"},
 )
 SYNTHETIC_TRIANGLE_PAIRS: tuple[dict[str, Any], ...] = (
     {
         "pair_id": "Si+Eu/ED",
         "legs": ("Si", "Eu", "ED"),
-        "family": "synthetic_triangle_same_expiry",
+        "family": _TRIANGLE,
         "name": "USD/RUB + EUR/RUB vs EUR/USD",
     },
     {
         "pair_id": "Si+CR/UC",
         "legs": ("Si", "CR", "UC"),
-        "family": "synthetic_triangle_same_expiry",
+        "family": _TRIANGLE,
         "name": "USD/RUB + CNY/RUB vs USD/CNY",
     },
 )

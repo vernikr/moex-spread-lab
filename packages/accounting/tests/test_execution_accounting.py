@@ -1,3 +1,4 @@
+import argparse
 import importlib
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ from moex_spread_lab.accounting.account_risk import (
     assess_vtb_pair,
     ebs_undercovered_margin_charge,
 )
+from moex_spread_lab.accounting.cli import register as register_accounting_cli
 from moex_spread_lab.accounting.costs import (
     cost_totals,
     lqdt_overlay_values,
@@ -184,3 +186,9 @@ def test_research_and_validation_modules_are_removed() -> None:
     ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(name)
+
+
+def test_accounting_cli_exposes_only_live_commands() -> None:
+    commands = argparse.ArgumentParser().add_subparsers(dest="command")
+    register_accounting_cli(commands)
+    assert set(commands.choices) == {"account-risk-check", "execution-ledger"}

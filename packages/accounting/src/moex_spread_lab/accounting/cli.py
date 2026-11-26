@@ -15,7 +15,7 @@ def register(subparsers: Any) -> None:
     )
     ledger_parser.add_argument("--baseline", type=Path, required=True)
     ledger_parser.add_argument("--output", type=Path, required=True)
-    ledger_parser.set_defaults(_msl_cli_handler=run)
+    ledger_parser.set_defaults(_msl_cli_handler=_run_execution_ledger_cmd)
 
     account_risk_parser = subparsers.add_parser(
         "account-risk-check", help="run the working VTB EBS/KPUR margin stress screen"
@@ -29,7 +29,7 @@ def register(subparsers: Any) -> None:
     account_risk_parser.add_argument("--stress-vm-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
-    account_risk_parser.set_defaults(_msl_cli_handler=run)
+    account_risk_parser.set_defaults(_msl_cli_handler=_run_account_risk_cmd)
 
 
 def _run_execution_ledger_cmd(args: Any) -> int:
@@ -94,16 +94,3 @@ def _run_account_risk_cmd(args: Any) -> int:
         )
     )
     return 0
-
-
-_DISPATCH = {
-    "execution-ledger": _run_execution_ledger_cmd,
-    "account-risk-check": _run_account_risk_cmd,
-}
-
-
-def run(args: Any) -> int:
-    handler = _DISPATCH.get(args.command)
-    if handler is not None:
-        return handler(args)
-    return 2

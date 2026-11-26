@@ -6,11 +6,13 @@ import json
 import threading
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.web import routes_dev
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import two_calendar_windows
 
@@ -48,16 +50,17 @@ def test_health_is_loopback_only_even_with_preview_optin(server, monkeypatch):
     monkeypatch.setenv("MSL_ALLOWED_HOSTS", "*")
     status, raw = request(port, "GET", "/api/dev/health")
     assert status == 200 and json.loads(raw)["port"] == port and len(raw) < 2048
-    status, _ = request(port, "GET", "/api/dev/health", headers={"Host": "evil.test"})
-    assert status == 403
-    status, _ = request(
-        port,
-        "POST",
-        "/api/dev/probe",
-        {"action": "catalog"},
-        headers={"Origin": "https://evil.test"},
+    assert request(port, "GET", "/api/dev/health", headers={"Host": "evil.test"})[0] == 403
+    assert (
+        request(
+            port,
+            "POST",
+            "/api/dev/probe",
+            {"action": "catalog"},
+            headers={"Origin": "https://evil.test"},
+        )[0]
+        == 403
     )
-    assert status == 403
 
 
 def test_run_matches_existing_route_and_does_not_persist(server):
@@ -81,8 +84,7 @@ def test_run_matches_existing_route_and_does_not_persist(server):
         {"action": "catalog", "settings_override": {"random_seed": 42}},
     )
     assert status == 200
-    after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
-    assert after == before
+    assert {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()} == before
 
 
 def test_validation_rejects_invalid_types_and_override(server):
@@ -94,14 +96,12 @@ def test_validation_rejects_invalid_types_and_override(server):
         {"action": "catalog", "sample_worker_rss": 1},
         {"action": "catalog", "settings_override": {"random_seed": -1}},
     ):
-        status, _ = request(port, "POST", "/api/dev/probe", body)
-        assert status == 400
+        assert request(port, "POST", "/api/dev/probe", body)[0] == 400
 
 
 def test_serving_writes_no_instance_record(server):
     port, root = server
-    status, _ = request(port, "GET", "/api/timeframes")
-    assert status == 200
+    assert request(port, "GET", "/api/timeframes")[0] == 200
     assert not (root / "data/analytics/server-instance.json").exists()
 
 
@@ -128,22 +128,17 @@ def test_optimization_matches_saved_route_without_new_history(server):
     )
     assert diagnostic["run_id"] == normal["run_id"]
     assert diagnostic["selected_parameters"] == normal["selected_parameters"]
-    after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
-    assert after == before
+    assert {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()} == before
 
 
 def test_pool_census_counts_live_workers_only():
-    from types import SimpleNamespace
-
-    from moex_spread_lab.web.routes_dev import pool_snapshot
-
-    assert pool_snapshot(SimpleNamespace(_proof=None))["active_pool_workers"] == 0
+    assert routes_dev.pool_snapshot(SimpleNamespace(_proof=None))["active_pool_workers"] == 0
     live = SimpleNamespace(pid=17, is_alive=lambda: True)
     dead = SimpleNamespace(pid=18, is_alive=lambda: False)
     executor = SimpleNamespace(_processes={17: live, 18: dead})
     pool = SimpleNamespace(_worker_slots=[executor], _executor=None)
     store = SimpleNamespace(_proof=SimpleNamespace(_pool=pool))
-    assert pool_snapshot(store) == {
+    assert routes_dev.pool_snapshot(store) == {
         "pool_initialized": True,
         "worker_slots": 1,
         "active_pool_workers": 1,
@@ -170,24 +165,19 @@ def test_probe_reports_real_request_thread_cache_lookups(server):
 
 
 def test_worker_resource_sampling_is_labeled_and_handles_process_exit(monkeypatch):
-    from types import SimpleNamespace
-
-    from moex_spread_lab.web import routes_dev as resources
-
-    assert resources._cpu_seconds("1-02:03:04.5") == 93784.5
+    assert routes_dev._cpu_seconds("1-02:03:04.5") == 93784.5
     monkeypatch.setattr(
-        resources.subprocess,
+        routes_dev.subprocess,
         "run",
         lambda *args, **kwargs: SimpleNamespace(stdout=" 10 1234 01:02.50\n"),
     )
-    result = resources.worker_resources({10, 11})
-    assert result == {
+    assert routes_dev.worker_resources({10, 11}) == {
         "sampled_workers": 1,
         "rss_kb": 1234,
         "cpu_lifetime_ms": 62500,
         "complete": False,
     }
-    assert resources.worker_resources(set())["complete"] is True
+    assert routes_dev.worker_resources(set())["complete"] is True
 
 
 def test_pool_probe_worker_metrics_and_exact_windows_parity(server, monkeypatch):
@@ -195,12 +185,13 @@ def test_pool_probe_worker_metrics_and_exact_windows_parity(server, monkeypatch)
     monkeypatch.setenv("MOEX_PROOF_WORKERS", "2")
     port, root = server
     common = {"universe": "calendar_native", "asset": "SR", "strategy": "zscore_mean_reversion"}
-    requests = [
-        {**common, "pair": "SRH3/SRM3"},
-        {**common, "pair": "SRM3/SRU3"},
-        {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"},
-    ]
-    payload = {"requests": requests}
+    payload = {
+        "requests": [
+            {**common, "pair": "SRH3/SRM3"},
+            {**common, "pair": "SRM3/SRU3"},
+            {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"},
+        ]
+    }
     analytics = root / "data/analytics"
     before = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
     status, raw = request(port, "POST", "/api/proof/windows", payload)
@@ -228,8 +219,7 @@ def test_pool_probe_worker_metrics_and_exact_windows_parity(server, monkeypatch)
     assert workers["tasks"] >= 4 and workers["workers"] == 2
     assert sum(workers["cache"].values()) > 0
     assert workers["cpu_user_ms"] >= 0 and workers["cpu_sys_ms"] >= 0
-    after = {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()}
-    assert after == before
+    assert {p.name: p.read_bytes() for p in analytics.glob("*") if p.is_file()} == before
 
 
 def test_optional_rss_sampling_keeps_simple_probe_compact(server):
@@ -267,21 +257,16 @@ def test_profile_has_twenty_rows_without_global_truncation(server):
     assert status == 200
     profile = json.loads(raw)["telemetry"]["profile"]
     assert "List reduced from" in profile and "due to restriction <20>" in profile
-    rows = [line for line in profile.splitlines() if "(" in line and ")" in line]
-    assert len(rows) >= 20
+    assert sum("(" in line and ")" in line for line in profile.splitlines()) >= 20
 
 
 def test_diagnostic_missing_cache_and_missing_binary(tmp_path, monkeypatch):
-    from moex_spread_lab.web import routes_dev as dev_diagnostics
-
-    assert dev_diagnostics.calendar_cache_count(tmp_path) == 0
-    monkeypatch.setattr(dev_diagnostics._fastcore_loader, "__file__", str(tmp_path / "loader.py"))
-    assert dev_diagnostics.fastcore_binary(tmp_path) == (False, None)
+    assert routes_dev.calendar_cache_count(tmp_path) == 0
+    monkeypatch.setattr(routes_dev._fastcore_loader, "__file__", str(tmp_path / "loader.py"))
+    assert routes_dev.fastcore_binary(tmp_path) == (False, None)
 
 
 def test_peak_and_incomplete_samples(monkeypatch):
-    from moex_spread_lab.web import routes_dev as sampling
-
     values = iter(
         [
             {"worker_resources": {"complete": True, "rss_kb": 100, "sampled_workers": 2}},
@@ -289,8 +274,8 @@ def test_peak_and_incomplete_samples(monkeypatch):
             {"worker_resources": {"complete": True, "rss_kb": 125, "sampled_workers": 1}},
         ]
     )
-    monkeypatch.setattr(sampling, "pool_snapshot", lambda *args, **kwargs: next(values))
-    sampler = sampling.WorkerRSSSampler(object())
+    monkeypatch.setattr(routes_dev, "pool_snapshot", lambda *args, **kwargs: next(values))
+    sampler = routes_dev.WorkerRSSSampler(object())
     for _ in range(3):
         sampler._sample()
     assert sampler.snapshot() == {
@@ -304,16 +289,14 @@ def test_peak_and_incomplete_samples(monkeypatch):
 
 
 def test_disabled_and_exception_cleanup(monkeypatch):
-    from moex_spread_lab.web import routes_dev as sampling
-
     monkeypatch.setattr(
-        sampling,
+        routes_dev,
         "pool_snapshot",
         lambda *a, **k: {"worker_resources": {"complete": True, "rss_kb": 0, "sampled_workers": 0}},
     )
-    with sampling.sample_worker_rss(object(), False) as disabled:
+    with routes_dev.sample_worker_rss(object(), False) as disabled:
         assert disabled is None
-    with pytest.raises(ValueError), sampling.sample_worker_rss(object(), True) as sampler:
+    with pytest.raises(ValueError), routes_dev.sample_worker_rss(object(), True) as sampler:
         raise ValueError("failure")
     assert sampler is not None and not sampler.thread.is_alive()
     assert sampler.snapshot()["samples"] >= 1

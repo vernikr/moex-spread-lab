@@ -11,34 +11,69 @@ import unittest
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import cast
+from typing import ClassVar, cast
 from unittest import mock
 
-import moex_spread_lab.web.routes_proof as strategy_registry
-import moex_spread_lab.web.server as web_server
-from moex_spread_lab.core.contracts import InstrumentContext, ParameterSpec, StrategyPlugin
-from moex_spread_lab.strategies.base import StrategyRegistry
-from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
-from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+for _extra in (_REPO_ROOT / "packages/proof/tests", _REPO_ROOT / "tests"):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
+
+import moex_spread_lab.web.routes_proof as strategy_registry  # noqa: E402
+import moex_spread_lab.web.server as web_server  # noqa: E402
+from moex_spread_lab.core.contracts import (  # noqa: E402
+    InstrumentContext,
+    ParameterSpec,
+    StrategyPlugin,
+)
+from moex_spread_lab.core.settings import save_settings  # noqa: E402
+from moex_spread_lab.strategies.base import StrategyRegistry  # noqa: E402
+from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin  # noqa: E402
+from moex_spread_lab.strategies.pair_mean_reversion.plugin import (  # noqa: E402
+    PairMeanReversionPlugin,
+)
+from moex_spread_lab.strategies.pair_screener import pair_screener  # noqa: E402
+from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs  # noqa: E402
+from moex_spread_lab.web import dispatch  # noqa: E402
+from proof_fixtures import two_calendar_windows  # noqa: E402
 
 PREVIEW = "8765-x.e2b.app"
 
 
 class WebPackageArchitectureTests(unittest.TestCase):
-    def test_server_does_not_export_legacy_fetch_history(self) -> None:
+    def test_web_modules_import_canonical_symbols_and_retire_s2_surface(self) -> None:
         for name in ("fetch_history", "catalog", "build_result", "ScreenerInputs", "ScreenerError"):
             self.assertFalse(hasattr(web_server, name), name)
+        web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
+        retired_refs = [
+            path.name
+            for path in sorted(web_src.rglob("*.py"))
+            if "web_legacy" in path.read_text(encoding="utf-8")
+            or "proof.screener_search" in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(retired_refs, [])
+        self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(strategy_registry.ScreenerError, pair_screener.ScreenerError)
+        self.assertIs(web_server._pair_screener, pair_screener)
+        self.assertEqual(
+            dispatch.ALL_POST_ROUTES & {"/api/run", "/api/screen", "/api/optimize"}, set()
+        )
+        for module in ("moex_spread_lab.screener_search", "moex_spread_lab.proof.screener_search"):
+            with self.assertRaises(ModuleNotFoundError):
+                __import__(module)
+        retired_methods = {"save", "list_runs", "list_searches", "save_screen", "save_search"}
+        self.assertEqual(set(dir(web_server.ScreenerStore)) & retired_methods, set())
 
     def test_vendored_lightweight_charts_and_apache_license_are_intact(self) -> None:
         vendor_dir = Path(web_server.__file__).resolve().parent / "vendor"
         bundle = vendor_dir / "lightweight-charts.standalone.production.js"
-        license_file = vendor_dir / "LICENSE.lightweight-charts"
-        readme_file = vendor_dir / "README.md"
         self.assertTrue(bundle.is_file())
         self.assertGreater(bundle.stat().st_size, 100_000)
-        self.assertIn("Apache License", license_file.read_text(encoding="utf-8"))
-        self.assertTrue(readme_file.is_file())
+        self.assertIn(
+            "Apache License",
+            (vendor_dir / "LICENSE.lightweight-charts").read_text(encoding="utf-8"),
+        )
+        self.assertTrue((vendor_dir / "README.md").is_file())
 
     def test_cli_screener_subcommand_discovered_via_msl_web_entry_point(self) -> None:
         proc = subprocess.run(
@@ -54,20 +89,35 @@ class WebPackageArchitectureTests(unittest.TestCase):
 
 
 class WebHttpRoutesTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self._tmp.name)
-        self.store = web_server.ScreenerStore(ScreenerInputs(self.root))
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), web_server.make_handler(self.store))
-        self.port = self.server.server_port
-        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self._thread.start()
+    _tmp: ClassVar[tempfile.TemporaryDirectory[str]]
+    root: ClassVar[Path]
+    store: ClassVar[web_server.ScreenerStore]
+    server: ClassVar[ThreadingHTTPServer]
+    port: ClassVar[int]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name)
+        two_calendar_windows(cls.root)
+        cls.store = web_server.ScreenerStore(ScreenerInputs(cls.root))
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), web_server.make_handler(cls.store))
+        cls.port = cls.server.server_port
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.store.close()
+        cls._tmp.cleanup()
 
     def tearDown(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.store.close()
-        self._tmp.cleanup()
+        analytics = self.root / "data/analytics"
+        if analytics.is_dir():
+            for item in analytics.glob("*"):
+                if item.is_file():
+                    item.unlink()
 
     def _request(
         self,
@@ -86,10 +136,13 @@ class WebHttpRoutesTests(unittest.TestCase):
             conn.request(method, path, body=payload, headers=req_headers)
             resp = conn.getresponse()
             raw = resp.read()
-            hdrs = {k.lower(): v for k, v in resp.getheaders()}
-            return resp.status, hdrs, raw
+            return resp.status, {k.lower(): v for k, v in resp.getheaders()}, raw
         finally:
             conn.close()
+
+    def _host_status(self, host: str, origin: str | None = None) -> int:
+        hdrs = {"Host": host, **({"Origin": origin} if origin is not None else {})}
+        return self._request("GET", "/", headers=hdrs)[0]
 
     def test_static_html_css_js_and_csp_headers(self) -> None:
         for html_route in ("/", "/proof", "/static/index.html"):
@@ -105,11 +158,10 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertIn('<script type="module" src="/static/js/app.js"></script>', text)
             self.assertNotIn("<style>", text)
 
-        for css_name in ("layout.css",):
-            status, headers, raw = self._request("GET", f"/static/css/{css_name}")
-            self.assertEqual(status, 200, css_name)
-            self.assertEqual(headers["content-type"], "text/css; charset=utf-8")
-            self.assertGreater(len(raw), 100)
+        status, headers, raw = self._request("GET", "/static/css/layout.css")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["content-type"], "text/css; charset=utf-8")
+        self.assertGreater(len(raw), 100)
 
         for js_name in (
             "app.js",
@@ -140,15 +192,18 @@ class WebHttpRoutesTests(unittest.TestCase):
         ui_bundle = "\n".join(
             p.read_text(encoding="utf-8") for p in sorted(static_dir.rglob("*")) if p.is_file()
         )
-        self.assertNotIn("render-progress-run", ui_bundle)
-        self.assertIn('aria-valuemin="0"', ui_bundle)
-        self.assertIn('aria-valuemax="100"', ui_bundle)
-        self.assertIn("apiStream", ui_bundle)
-        self.assertIn("progress-pill", ui_bundle)
-        self.assertIn('id="auto-tune"', ui_bundle)
-        self.assertNotIn("К скринеру пар", ui_bundle)
+        for absent in ("render-progress-run", "К скринеру пар"):
+            self.assertNotIn(absent, ui_bundle)
+        for present in (
+            'aria-valuemin="0"',
+            'aria-valuemax="100"',
+            "apiStream",
+            "progress-pill",
+            'id="auto-tune"',
+        ):
+            self.assertIn(present, ui_bundle)
 
-    def test_static_path_traversal_and_missing_assets_rejected(self) -> None:
+    def test_static_path_traversal_missing_assets_and_retired_routes(self) -> None:
         for bad_path in (
             "/static/../server.py",
             "/static/%2e%2e/server.py",
@@ -156,21 +211,45 @@ class WebHttpRoutesTests(unittest.TestCase):
             "/static/js/%2e%2e/%2e%2e/routes_proof.py",
             "/static/",
             "/static/js/nonexistent.js",
+            "/api/catalog",
+            "/api/runs",
+            "/api/searches",
         ):
-            status, _, _ = self._request("GET", bad_path)
-            self.assertEqual(status, 404, bad_path)
+            self.assertEqual(self._request("GET", bad_path)[0], 404, bad_path)
+        for path in ("/api/run", "/api/screen", "/api/optimize"):
+            self.assertEqual(self._request("POST", path, body={})[0], 404, path)
+        for ok_path in ("/api/timeframes", "/api/settings"):
+            self.assertEqual(self._request("GET", ok_path)[0], 200, ok_path)
 
-    def test_loopback_host_and_origin_guards_enforced_across_routes(self) -> None:
+    def test_loopback_host_origin_and_preview_allowlist_guards(self) -> None:
         for path in (
             "/",
             "/api/strategies",
             "/static/js/app.js",
             "/vendor/lightweight-charts.standalone.production.js",
         ):
-            status, _, _ = self._request("GET", path, headers={"Host": "evil.example:8899"})
-            self.assertEqual(status, 403, f"Host check failed on {path}")
-            status, _, _ = self._request("GET", path, headers={"Origin": "http://evil.example"})
-            self.assertEqual(status, 403, f"Origin check failed on {path}")
+            self.assertEqual(
+                self._request("GET", path, headers={"Host": "evil.example:8899"})[0], 403, path
+            )
+            self.assertEqual(
+                self._request("GET", path, headers={"Origin": "http://evil.example"})[0], 403, path
+            )
+        self.assertEqual(
+            self._request(
+                "POST", "/api/proof/run", body={}, headers={"Origin": "https://untrusted.example"}
+            )[0],
+            403,
+        )
+        self.assertEqual(self._host_status(f"127.0.0.1:{self.port}"), 200)
+        self.assertEqual(self._host_status(PREVIEW), 403)
+        self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 403)
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):
+            self.assertEqual(self._host_status(PREVIEW), 200)
+            self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 200)
+            self.assertEqual(self._host_status("evil.example:8899"), 403)
+            self.assertEqual(self._host_status(PREVIEW, "https://evil.example"), 403)
+        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "*"}):
+            self.assertEqual(self._host_status(PREVIEW, f"https://{PREVIEW}"), 200)
 
     def test_api_strategies_returns_canonical_registry_and_respects_timeframe(self) -> None:
         status, headers, raw = self._request("GET", "/api/strategies")
@@ -189,28 +268,18 @@ class WebHttpRoutesTests(unittest.TestCase):
                 "convergence_to_ruonia",
             }.issubset(by_id)
         )
-
-        mr = by_id["mean_reversion"]
-        self.assertEqual(mr["ui_order"], ["entry_z", "exit_z", "lookback"])
-        self.assertIn("pair_screen", mr["supported_universes"])
-        self.assertTrue(mr["timeframe_supported"])
+        self.assertEqual(by_id["mean_reversion"]["ui_order"], ["entry_z", "exit_z", "lookback"])
+        self.assertIn("pair_screen", by_id["mean_reversion"]["supported_universes"])
+        self.assertTrue(by_id["mean_reversion"]["timeframe_supported"])
 
         cal_mr = by_id["zscore_mean_reversion"]
         self.assertEqual(cal_mr["ui_order"], ["entry_z", "exit_z", "window"])
-        q_window = next(
-            p
-            for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["quarterly"]
-            if p["name"] == "window"
+        cal_1d = cal_mr["context_parameters"]["calendar_native"]["1d"]
+        self.assertEqual(
+            next(p for p in cal_1d["quarterly"] if p["name"] == "window")["default"], 20
         )
-        m_window = next(
-            p
-            for p in cal_mr["context_parameters"]["calendar_native"]["1d"]["monthly"]
-            if p["name"] == "window"
-        )
-        self.assertEqual(q_window["default"], 20)
-        self.assertEqual(m_window["default"], 7)
+        self.assertEqual(next(p for p in cal_1d["monthly"] if p["name"] == "window")["default"], 7)
 
-        # 1h timeframe: daily-only strategies report timeframe_supported == False
         status, _, _ = self._request(
             "POST",
             "/api/settings",
@@ -283,19 +352,14 @@ class WebHttpRoutesTests(unittest.TestCase):
         merged = strategy_registry.get_strategy_registry().as_dict()
         merged["custom_pair_alpha"] = cast(StrategyPlugin, CustomPairPlugin())
         merged["custom_cal_spread"] = cast(StrategyPlugin, CustomCalendarPlugin())
-        custom_registry = StrategyRegistry(merged)
-
         with mock.patch.object(
-            strategy_registry, "get_strategy_registry", return_value=custom_registry
+            strategy_registry, "get_strategy_registry", return_value=StrategyRegistry(merged)
         ):
             status, _, raw = self._request("GET", "/api/strategies")
             self.assertEqual(status, 200)
             by_id = {entry["id"]: entry for entry in json.loads(raw.decode("utf-8"))["strategies"]}
-            self.assertIn("custom_pair_alpha", by_id)
             self.assertTrue(by_id["custom_pair_alpha"]["proof_enabled"])
             self.assertEqual(by_id["custom_pair_alpha"]["parameters"][0]["name"], "alpha_z")
-
-            self.assertIn("custom_cal_spread", by_id)
             self.assertFalse(by_id["custom_cal_spread"]["is_builtin"])
             self.assertTrue(by_id["custom_cal_spread"]["proof_enabled"])
             cal_ctx = by_id["custom_cal_spread"]["context_parameters"]["calendar_native"]["1d"]
@@ -303,18 +367,6 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(cal_ctx["monthly"][0]["default"], 1.6)
 
     def test_proof_ndjson_streaming_search_lock_409_and_large_body_cap(self) -> None:
-        import sys as _sys
-
-        for extra in (
-            Path(__file__).resolve().parents[3] / "packages/proof/tests",
-            Path(__file__).resolve().parents[3] / "tests",
-        ):
-            if str(extra) not in _sys.path:
-                _sys.path.insert(0, str(extra))
-        from proof_fixtures import two_calendar_windows
-
-        two_calendar_windows(self.root)
-        # 1. Busy search lock returns 409; confirmation-only preview is not persisted.
         large_confirm = {
             "universe": "pair_screen",
             "pair": "CNYRUBF/CRZ6",
@@ -328,17 +380,15 @@ class WebHttpRoutesTests(unittest.TestCase):
             ],
         }
         with self.store.proof_search_lock:
-            status, _, _ = self._request("POST", "/api/proof/optimize", body=large_confirm)
-            self.assertEqual(status, 409)
+            self.assertEqual(
+                self._request("POST", "/api/proof/optimize", body=large_confirm)[0], 409
+            )
         status, _, raw = self._request("POST", "/api/proof/optimize", body=large_confirm)
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(raw)["remaining_count"], 1)
         self.assertFalse((self.root / "data/analytics/proof-searches.jsonl").exists())
 
-        # 2. Successful optimize persists to proof-searches.jsonl; NDJSON stream matches JSON.
         opt_req = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_reversion"}
-        from moex_spread_lab.core.settings import save_settings
-
         save_settings(self.root, {"random_seed": 41})
         status, _, plain_raw = self._request("POST", "/api/proof/optimize", body=opt_req)
         self.assertEqual(status, 200)
@@ -348,26 +398,20 @@ class WebHttpRoutesTests(unittest.TestCase):
         self.assertEqual(json.loads(logs[0])["run_id"], plain["run_id"])
 
         status, hdrs, stream_raw = self._request(
-            "POST",
-            "/api/proof/optimize",
-            body=opt_req,
-            headers={"X-Progress-Stream": "1"},
+            "POST", "/api/proof/optimize", body=opt_req, headers={"X-Progress-Stream": "1"}
         )
         self.assertEqual(status, 200)
         self.assertIn("application/x-ndjson", hdrs["content-type"])
         frames = [json.loads(line) for line in stream_raw.decode("utf-8").splitlines() if line]
         self.assertTrue(any(f["type"] == "progress" for f in frames))
-        self.assertEqual(frames[-1]["type"], "result")
-        self.assertEqual(frames[-1]["data"], plain)
+        self.assertEqual(frames[-1], {"type": "result", "data": plain})
 
-        # 3. Large body cap (>192 KiB) returns 400; cross-origin POST returns 403.
         conn = HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
-            oversized = b'{"targets":[]}' + b" " * (193 * 1024)
             conn.request(
                 "POST",
                 "/api/proof/plateau",
-                body=oversized,
+                body=b'{"targets":[]}' + b" " * (193 * 1024),
                 headers={"Content-Type": "application/json"},
             )
             resp = conn.getresponse()
@@ -375,89 +419,15 @@ class WebHttpRoutesTests(unittest.TestCase):
             self.assertEqual(resp.status, 400)
         finally:
             conn.close()
-        status, _, _ = self._request(
-            "POST",
-            "/api/proof/windows",
-            body={"requests": [opt_req]},
-            headers={"Origin": "https://evil.example"},
+        self.assertEqual(
+            self._request(
+                "POST",
+                "/api/proof/windows",
+                body={"requests": [opt_req]},
+                headers={"Origin": "https://evil.example"},
+            )[0],
+            403,
         )
-        self.assertEqual(status, 403)
-
-    def _status(self, host: str, origin: str | None = None) -> int:
-        headers = {"Host": host}
-        if origin is not None:
-            headers["Origin"] = origin
-        status, _, _ = self._request("GET", "/", headers=headers)
-        return status
-
-    def test_default_stays_loopback_only(self) -> None:
-        self.assertEqual(self._status(f"127.0.0.1:{self.port}"), 200)
-        self.assertEqual(self._status(PREVIEW), 403)
-        self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 403)
-
-    def test_exact_preview_host_is_admitted_with_its_origin(self) -> None:
-        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": PREVIEW}):
-            self.assertEqual(self._status(PREVIEW), 200)
-            self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 200)
-            self.assertEqual(self._status("evil.example:8899"), 403)
-            self.assertEqual(self._status(PREVIEW, "https://evil.example"), 403)
-
-    def test_wildcard_is_an_explicit_opt_in(self) -> None:
-        with mock.patch.dict("os.environ", {"MSL_ALLOWED_HOSTS": "*"}):
-            self.assertEqual(self._status(PREVIEW, f"https://{PREVIEW}"), 200)
-
-    def test_retired_s2_routes_answer_not_found(self) -> None:
-        for path in ("/api/catalog", "/api/runs", "/api/searches"):
-            status, _, _ = self._request("GET", path)
-            self.assertEqual(status, 404)
-        for path in ("/api/run", "/api/screen", "/api/optimize"):
-            status, _, _ = self._request("POST", path, body={})
-            self.assertEqual(status, 404)
-        status, _, _ = self._request("GET", "/api/timeframes")
-        self.assertEqual(status, 200)
-        status, _, _ = self._request("GET", "/api/settings")
-        self.assertEqual(status, 200)
-
-    def test_http_rejects_cross_origin_proof_run(self) -> None:
-        status, _, _ = self._request(
-            "POST",
-            "/api/proof/run",
-            body={},
-            headers={"Content-Type": "application/json", "Origin": "https://untrusted.example"},
-        )
-        self.assertEqual(status, 403)
-
-    def test_web_modules_import_canonical_pair_screener_symbols(self) -> None:
-        from moex_spread_lab.strategies.pair_screener import pair_screener
-        from moex_spread_lab.web import dispatch, routes_proof, server
-
-        web_src = Path(__file__).resolve().parents[1] / "src/moex_spread_lab/web"
-        retired_refs = [
-            path.name
-            for path in sorted(web_src.rglob("*.py"))
-            if "web_legacy" in path.read_text(encoding="utf-8")
-            or "proof.screener_search" in path.read_text(encoding="utf-8")
-        ]
-        self.assertEqual(retired_refs, [])
-        self.assertIs(dispatch.ScreenerError, pair_screener.ScreenerError)
-        self.assertIs(routes_proof.ScreenerError, pair_screener.ScreenerError)
-        self.assertIs(server._pair_screener, pair_screener)
-        for name in ("catalog", "build_result", "ScreenerInputs", "ScreenerError"):
-            self.assertFalse(hasattr(server, name), name)
-
-    def test_s2_compatibility_surface_is_retired(self) -> None:
-        from moex_spread_lab.web.dispatch import ALL_POST_ROUTES
-
-        self.assertEqual(ALL_POST_ROUTES & {"/api/run", "/api/screen", "/api/optimize"}, set())
-        for module in ("moex_spread_lab.screener_search", "moex_spread_lab.proof.screener_search"):
-            with self.assertRaises(ModuleNotFoundError):
-                __import__(module)
-        store_methods = {
-            name
-            for name in dir(web_server.ScreenerStore)
-            if name in {"save", "list_runs", "list_searches", "save_screen", "save_search"}
-        }
-        self.assertEqual(store_methods, set())
 
 
 if __name__ == "__main__":

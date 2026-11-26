@@ -1,4 +1,4 @@
-"""Bridge transport and workstation sync safety regressions."""
+"""Bridge transport, candidate patch guard and workstation sync safety regressions."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def test_request_sends_bearer_only_in_header(monkeypatch):
             return b'{"ok": true}'
 
     class Opener:
-        def open(self, req, timeout):
+        def open(self, req, **_kwargs):
             captured["request"] = req
             return Response()
 
@@ -43,7 +43,7 @@ def test_status_and_redaction(monkeypatch, capsys):
     monkeypatch.setenv("ARENA_BRIDGE_TOKEN", "token-xyz")
     calls = []
 
-    def request(url, token, *, body=None):
+    def request(url, _token, *, body=None):
         calls.append((url, body))
         if url.endswith("/health"):
             return {"ok": True}
@@ -151,7 +151,7 @@ def test_sync_noop_when_head_unchanged(monkeypatch, tmp_path):
     monkeypatch.setattr(
         workstation_remote,
         "await_readiness",
-        lambda *a, **k: pytest.fail("no readiness poll on a no-op sync"),
+        lambda *_args, **_kwargs: pytest.fail("no readiness poll on a no-op sync"),
     )
     result = workstation_remote.sync(tmp_path)
     assert result["outcomes"]["published"] == "up-to-date"
@@ -275,7 +275,7 @@ def test_await_readiness_requires_matching_head_and_is_bounded(monkeypatch, tmp_
         def read(self, *args):
             return b'{"git_head": "' + self._head.encode() + b'"}'
 
-    def urlopen(url, timeout):
+    def urlopen(url, **_kwargs):
         attempts.append(url)
         if len(attempts) < 3:
             return Response("wrong-head")
@@ -285,7 +285,7 @@ def test_await_readiness_requires_matching_head_and_is_bounded(monkeypatch, tmp_
     health = workstation_remote.await_readiness(tmp_path, "b" * 40, timeout_s=10, interval_s=0.01)
     assert health["git_head"] == "b" * 40 and len(attempts) == 3
 
-    def always_wrong(url, timeout):
+    def always_wrong(url, **_kwargs):
         return Response("wrong-head")
 
     monkeypatch.setattr(workstation_remote.urllib.request, "urlopen", always_wrong)
@@ -319,3 +319,41 @@ def test_probe_command_validates_json_and_keeps_credentials_out(monkeypatch):
     args.json = "[]"
     with pytest.raises(ValueError, match="JSON objects"):
         remote_cli._workstation_command(args, "pass")
+
+
+def _patch_options(monkeypatch, diff_output):
+    class Result:
+        stdout = diff_output
+
+    monkeypatch.setattr(remote_cli.subprocess, "run", lambda *args, **kwargs: Result())
+    return remote_cli._candidate_options(True)
+
+
+def test_patch_guard_rejects_market_data(monkeypatch):
+    diff = (
+        "diff --git a/data/w1/candles/X_1d.json b/data/w1/candles/X_1d.json\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/data/w1/candles/X_1d.json\n"
+        "+++ b/data/w1/candles/X_1d.json\n"
+        '@@ -1 +1 @@\n-"a"\n+"b"\n'
+    )
+    with pytest.raises(ValueError, match="market data"):
+        _patch_options(monkeypatch, diff)
+
+
+def test_patch_guard_rejects_data_lake(monkeypatch):
+    diff = "diff --git a/data-lake/h1/seal.json b/data-lake/h1/seal.json\n"
+    with pytest.raises(ValueError, match="market data"):
+        _patch_options(monkeypatch, diff)
+
+
+def test_patch_guard_accepts_source_only(monkeypatch):
+    diff = (
+        "diff --git a/packages/core/src/moex_spread_lab/core/w0.py b/packages/core/src/moex_spread_lab/core/w0.py\n"
+        "index 1111111..2222222 100644\n"
+        "--- a/packages/core/src/moex_spread_lab/core/w0.py\n"
+        "+++ b/packages/core/src/moex_spread_lab/core/w0.py\n"
+        "@@ -1 +1 @@\n-old\n+new\n"
+    )
+    options = _patch_options(monkeypatch, diff)
+    assert options["patch"] == diff

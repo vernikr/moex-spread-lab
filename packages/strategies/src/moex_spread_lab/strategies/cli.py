@@ -229,25 +229,6 @@ def _run_calendar_study_cmd(args: Any) -> int:
     return 0
 
 
-def _run_s3_reference_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.s3_reference.engine import run_s3
-
-    result = run_s3(args.reference_dir, args.benchmark)
-    write_json(args.output, result)
-    keys = (
-        "strategy",
-        "variant",
-        "cost_model",
-        "trades",
-        "gross_rub",
-        "net_rub",
-        "excess_over_lqdt_on_margin_rub",
-    )
-    for variant in result["variants"]:
-        print(json.dumps({key: variant[key] for key in keys}, sort_keys=True))
-    return 0
-
-
 def _run_funding_screen_cmd(args: Any) -> int:
     from moex_spread_lab.strategies.funding_carry.funding_screen import screen_funding_pairs
 
@@ -285,7 +266,6 @@ _DISPATCH: dict[str, Callable[[Any], int]] = {
     "carry-strategy": _run_carry_strategy_cmd,
     "screener-run": _run_screener_run_cmd,
     "calendar-study": _run_calendar_study_cmd,
-    "s3-reference": _run_s3_reference_cmd,
     "funding-screen": _run_funding_screen_cmd,
 }
 

@@ -9,7 +9,6 @@
     "funding_carry",
     "calendar_zscore",
     "calendar_ruonia",
-    "s3_reference_reproduction",
     "calendar_spreads_dataset",
     "offline_pair_screener"
   ],
@@ -24,8 +23,7 @@
     "carry-study.v1",
     "carry-strategy.v1",
     "calendar-study.v1",
-    "calendar-proof.v1",
-    "s3-sbrf-reference.v2"
+    "calendar-proof.v1"
   ],
   "dependencies": [
     "moex-spread-lab.core",

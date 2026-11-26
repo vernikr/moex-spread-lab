@@ -103,22 +103,6 @@ def _register_screens_and_studies(subparsers: Any, handler: Handler) -> None:
     funding_screen_parser.add_argument("--timeout", type=float, default=60.0)
     funding_screen_parser.set_defaults(_msl_cli_handler=handler)
 
-    s3_parser = subparsers.add_parser(
-        "s3-reference",
-        help="reproduce the reference SBRF calendar backtest and stress its fills and liquidity",
-    )
-    s3_parser.add_argument(
-        "--reference-dir",
-        type=Path,
-        required=True,
-        help="checkout of the reference calendar-spread project",
-    )
-    s3_parser.add_argument(
-        "--benchmark", type=Path, default=Path("data/benchmark/lqdt-lineage.json")
-    )
-    s3_parser.add_argument("--output", type=Path, required=True)
-    s3_parser.set_defaults(_msl_cli_handler=handler)
-
     calendar_parser = subparsers.add_parser(
         "calendar-study",
         help="study native MOEX calendar spreads over front windows (fetches and caches ISS history)",

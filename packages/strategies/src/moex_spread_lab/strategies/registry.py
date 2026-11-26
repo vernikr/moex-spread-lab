@@ -22,7 +22,7 @@ _STRATEGIES_DIR = Path(__file__).resolve().parent
 # (tests) or a new plugin folder is never served from a stale cache.
 _DISCOVERY_CACHE: dict[str, object] = {}
 _PRICE_FILL_KEYS = frozenset({"next_open", "next_close", "reference_same_bar"})
-_NON_PLUGIN_SUBPACKAGES = frozenset({"calendar", "pair_screener", "s3_reference"})
+_NON_PLUGIN_SUBPACKAGES = frozenset({"calendar", "pair_screener"})
 _CANONICAL_ORDER = (
     "mean_reversion",
     "funding_only",

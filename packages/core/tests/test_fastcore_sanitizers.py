@@ -129,3 +129,35 @@ def test_build_sanitized_env_configures_platform_preload(
     assert mac_env["MOEX_FASTCORE_ASAN_RUNTIME"] == str(rt)
     assert mac_env["DYLD_INSERT_LIBRARIES"] == str(rt)
     assert "detect_leaks=0" in mac_env["ASAN_OPTIONS"]
+
+
+@pytest.mark.parametrize("field", ["funding_rub", "funding_contracts"])
+def test_sizing_propagates_funding_key_comparison_errors(field: str) -> None:
+    class Collision:
+        def __hash__(self) -> int:
+            return hash(field)
+
+        def __eq__(self, other: object) -> bool:
+            raise MemoryError("funding lookup failed")
+
+    fastcore = loader.load_fastcore()
+    assert fastcore is not None
+    row = {Collision(): 1}
+    with pytest.raises(MemoryError, match="funding lookup failed"):
+        fastcore.size_proof_metrics(
+            [0],
+            [1.0],
+            [0.0],
+            [1.0],
+            [0.0],
+            [True],
+            [True],
+            [True],
+            [row],
+            [],
+            100.0,
+            False,
+            False,
+            False,
+            True,
+        )

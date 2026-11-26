@@ -132,6 +132,32 @@ static inline dd_t dd_div_d(dd_t a, double b) {
     return dd_quick_two_sum(q1, q2);
 }
 
+typedef struct {
+    dd_t *suf;
+    dd_t pref;
+    Py_ssize_t block, pref_end;
+} SlidingSum;
+
+/* Preserve accumulation order, including windows skipped by the calendar scan. */
+static inline dd_t sliding_sum(SlidingSum *state, const double *x, Py_ssize_t window,
+                               Py_ssize_t start, Py_ssize_t end) {
+    Py_ssize_t block = end / window, anchor = block * window;
+    if (block != state->block) {
+        state->block = block;
+        state->suf[0] = (dd_t){0.0, 0.0};
+        Py_ssize_t lim = (anchor < window) ? anchor : window;
+        for (Py_ssize_t k = 1; k <= lim; k++)
+            state->suf[k] = dd_add_d(state->suf[k - 1], x[anchor - k]);
+        state->pref = (dd_t){0.0, 0.0};
+        state->pref_end = anchor;
+    }
+    while (state->pref_end < end) {
+        state->pref = dd_add_d(state->pref, x[state->pref_end]);
+        state->pref_end++;
+    }
+    return state->suf[anchor - start];
+}
+
 /* ---------------- Buffer / sequence extraction helpers ---------------- */
 
 static int get_double_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view, int *has_view, double **owned_ptr, const double **out_ptr) {
@@ -246,7 +272,7 @@ static int get_int32_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view,
     return 0;
 }
 
-/* ---------------- 1. Population rolling z-score (analytics.py) ----------------
+/* ---------------- 1. Population rolling z-score  ----------------
  * Uses Van Herk / Gil-Werman O(1) sliding window double-double sum for the mean
  * (zero subtraction, O(1) per bar regardless of lookback) + branchless positive
  * Neumaier variance pass + zero-copy Py_buffer support.
@@ -295,33 +321,14 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
             Py_DECREF(result);
             return PyErr_NoMemory();
         }
-        Py_ssize_t cur_block = -1;
-        dd_t pref = {0.0, 0.0};
+        SlidingSum sums = {suf, {0.0, 0.0}, -1, 0};
 
         for (Py_ssize_t index = start; index < n; index++) {
             Py_ssize_t signal_index = index - delay;
             Py_ssize_t w0 = signal_index - lookback;
-            Py_ssize_t blk = signal_index / lookback;
-            Py_ssize_t anchor = blk * lookback;
-            if (blk != cur_block) {
-                cur_block = blk;
-                suf[0].hi = 0.0;
-                suf[0].lo = 0.0;
-                Py_ssize_t lim = (anchor < lookback) ? anchor : lookback;
-                for (Py_ssize_t k = 1; k <= lim; k++) {
-                    suf[k] = dd_add_d(suf[k - 1], x[anchor - k]);
-                }
-                pref.hi = 0.0;
-                pref.lo = 0.0;
-                for (Py_ssize_t j = anchor; j < signal_index; j++) {
-                    pref = dd_add_d(pref, x[j]);
-                }
-            } else {
-                pref = dd_add_d(pref, x[signal_index - 1]);
-            }
-            dd_t s1 = suf[anchor - w0];
-            dd_t tot = dd_two_sum(s1.hi, pref.hi);
-            tot.lo += s1.lo + pref.lo;
+            dd_t s1 = sliding_sum(&sums, x, lookback, w0, signal_index);
+            dd_t tot = dd_two_sum(s1.hi, sums.pref.hi);
+            tot.lo += s1.lo + sums.pref.lo;
             double mean = (tot.hi + tot.lo) / lb;
 
             /* sq >= 0 and v_hi >= 0 so fabs() is redundant */
@@ -355,7 +362,7 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
     return result;
 }
 
-/* ---------------- 2. Calendar sample rolling z-score (s3_reference.py) ----------------
+/* ---------------- 2. Calendar sample rolling z-score  ----------------
  * Matches Python `statistics.mean` and `statistics.stdev` to 0 ULP via 106-bit
  * double-double mean + 106-bit sum of squared deviations + Newton-refined sqrt.
  * Returns Python `array('d')` directly for zero-copy reuse in `calendar_zscore_scan`.
@@ -445,9 +452,7 @@ static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *arg
         Py_DECREF(out_arr);
         return PyErr_NoMemory();
     }
-    Py_ssize_t cur_block = -1;
-    dd_t pref = {0.0, 0.0};
-    Py_ssize_t pref_end = 0;
+    SlidingSum sums = {suf, {0.0, 0.0}, -1, 0};
 
     for (Py_ssize_t index = first_idx; index < n; index++) {
         Py_ssize_t start = include_current ? (index - window + 1) : (index - window);
@@ -455,30 +460,8 @@ static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *arg
         if (!elig[index] || (Py_ssize_t)(elig_pref[end] - elig_pref[start]) != window) {
             continue;
         }
-        Py_ssize_t blk = end / window;
-        Py_ssize_t anchor = blk * window;
-        if (blk != cur_block) {
-            cur_block = blk;
-            suf[0].hi = 0.0;
-            suf[0].lo = 0.0;
-            Py_ssize_t lim = (anchor < window) ? anchor : window;
-            for (Py_ssize_t k = 1; k <= lim; k++) {
-                suf[k] = dd_add_d(suf[k - 1], spreads[anchor - k]);
-            }
-            pref.hi = 0.0;
-            pref.lo = 0.0;
-            for (Py_ssize_t j = anchor; j < end; j++) {
-                pref = dd_add_d(pref, spreads[j]);
-            }
-            pref_end = end;
-        } else {
-            while (pref_end < end) {
-                pref = dd_add_d(pref, spreads[pref_end]);
-                pref_end++;
-            }
-        }
-        dd_t s1 = suf[anchor - start];
-        dd_t sum = dd_add(s1, pref);
+        dd_t s1 = sliding_sum(&sums, spreads, window, start, end);
+        dd_t sum = dd_add(s1, sums.pref);
         dd_t mean = dd_div_d(sum, win_d);
         double mean_rounded = mean.hi + mean.lo;
 
@@ -738,36 +721,19 @@ static PyObject *clean_dict_items(PyObject *value, int exact) {
     return out;
 }
 
-static PyObject *clean_list_items(PyObject *value, int exact) {
-    Py_ssize_t n = exact ? PyList_GET_SIZE(value) : PyList_Size(value);
-    if (n < 0) return NULL;
-    PyObject *out = PyList_New(n);
+static PyObject *clean_sequence_items(PyObject *value, int is_tuple) {
+    Py_ssize_t n = is_tuple ? PyTuple_GET_SIZE(value) : PyList_GET_SIZE(value);
+    PyObject *out = is_tuple ? PyTuple_New(n) : PyList_New(n);
     if (!out) return NULL;
     for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *item = exact ? PyList_GET_ITEM(value, i) : PyList_GetItem(value, i);
-        PyObject *cleaned = item ? clean_recursive(item) : NULL;
+        PyObject *item = is_tuple ? PyTuple_GET_ITEM(value, i) : PyList_GET_ITEM(value, i);
+        PyObject *cleaned = clean_recursive(item);
         if (!cleaned) {
             Py_DECREF(out);
             return NULL;
         }
-        PyList_SET_ITEM(out, i, cleaned);
-    }
-    return out;
-}
-
-static PyObject *clean_tuple_items(PyObject *value, int exact) {
-    Py_ssize_t n = exact ? PyTuple_GET_SIZE(value) : PyTuple_Size(value);
-    if (n < 0) return NULL;
-    PyObject *out = PyTuple_New(n);
-    if (!out) return NULL;
-    for (Py_ssize_t i = 0; i < n; i++) {
-        PyObject *item = exact ? PyTuple_GET_ITEM(value, i) : PyTuple_GetItem(value, i);
-        PyObject *cleaned = item ? clean_recursive(item) : NULL;
-        if (!cleaned) {
-            Py_DECREF(out);
-            return NULL;
-        }
-        PyTuple_SET_ITEM(out, i, cleaned);
+        if (is_tuple) PyTuple_SET_ITEM(out, i, cleaned);
+        else PyList_SET_ITEM(out, i, cleaned);
     }
     return out;
 }
@@ -785,8 +751,8 @@ static PyObject *clean_recursive(PyObject *value) {
         return value;
     }
     if (PyDict_Check(value)) return clean_dict_items(value, PyDict_CheckExact(value));
-    if (PyList_Check(value)) return clean_list_items(value, PyList_CheckExact(value));
-    if (PyTuple_Check(value)) return clean_tuple_items(value, PyTuple_CheckExact(value));
+    if (PyList_Check(value)) return clean_sequence_items(value, 0);
+    if (PyTuple_Check(value)) return clean_sequence_items(value, 1);
     Py_INCREF(value);
     return value;
 }
@@ -795,7 +761,7 @@ static PyObject *fast_clean_obj(PyObject *Py_UNUSED(self), PyObject *arg) {
     return clean_recursive(arg);
 }
 
-/* ---------------- 5. Pair mean_reversion scan (analytics.py) ---------------- */
+/* ---------------- 5. Pair mean_reversion scan  ---------------- */
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 hot loop
 static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *args) {
@@ -904,7 +870,7 @@ static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *a
     return ret;
 }
 
-/* ---------------- 6. Max-affordable sizing (position_sizing.py) ----------------
+/* ---------------- 6. Max-affordable sizing  ----------------
  * Accepts zero-copy array('d') / array('B') buffers or Python lists for all
  * window columns, and supports `scalar_only=1` (when rows_lst == Py_None and
  * summary_only flag is set, or via optional `scalar_only` arg) to skip allocating
@@ -1033,11 +999,13 @@ static int parse_trade_specs(PyObject *specs_lst, Py_ssize_t n_trades, TradeSpec
 static int extract_row_funding(PyObject *row, double *out_unit_funding, int *out_contracts) {
     *out_unit_funding = 0.0;
     *out_contracts = 0;
-    PyObject *uf_obj = PyDict_GetItem(row, k_funding_rub);
+    PyObject *uf_obj = PyDict_GetItemWithError(row, k_funding_rub);
+    if (!uf_obj && PyErr_Occurred()) return -1;
     if (uf_obj && uf_obj != Py_None && parse_double_item(uf_obj, out_unit_funding) < 0) {
         return -1;
     }
-    PyObject *uc_obj = PyDict_GetItem(row, k_funding_contracts);
+    PyObject *uc_obj = PyDict_GetItemWithError(row, k_funding_contracts);
+    if (!uc_obj && PyErr_Occurred()) return -1;
     if (uc_obj && uc_obj != Py_None) {
         *out_contracts = (int)PyLong_AsLong(uc_obj);
         if (*out_contracts == -1 && PyErr_Occurred()) return -1;
@@ -1273,7 +1241,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     if (!accepted_out) goto cleanup;
 
     double cumulative = 0.0, free_cash = initial, posted = 0.0;
-    double wealth = initial, peak = 0.0;
+    double wealth = initial;
     SizingRules rules = {stress, native_spread, funding_only, 0, initial};
     double p0 = (n > 0) ? prices[0] : 1.0;
 
@@ -1343,8 +1311,6 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
         }
         free_cash = wealth - posted;
         int shortfall = (free_cash < -1e-7);
-        double excess = wealth - initial * prices[i] / p0;
-        if (excess > peak) peak = excess;
         rules.paused |= shortfall;
 
         if (scalar_only) {

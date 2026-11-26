@@ -1,8 +1,4 @@
-"""Loopback-only, non-persisting diagnostics for the workstation screener.
-
-`health` and `probe` back `/api/dev/*`; their read-only helpers (fastcore/cache census,
-profile summary, pool/worker census, RSS sampling) never start a pool or write to disk.
-"""
+"""Read-only loopback diagnostics; never persist results or initialize worker pools."""
 
 from __future__ import annotations
 
@@ -20,8 +16,9 @@ import sysconfig
 import threading
 import time
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
+from itertools import chain, islice
 from pathlib import Path
 from typing import Any
 
@@ -88,56 +85,51 @@ def _cpu_seconds(value: str) -> float:
 
 
 def worker_resources(pids: set[int]) -> dict[str, int | float | bool | None]:
-    if not pids:
-        return {"sampled_workers": 0, "rss_kb": 0, "cpu_lifetime_ms": 0, "complete": True}
-    try:
-        proc = subprocess.run(
-            ["ps", "-o", "pid=,rss=,time=", "-p", ",".join(map(str, sorted(pids)))],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=2,
-        )
-        rows = [line.split() for line in proc.stdout.splitlines() if line.strip()]
-        found = {int(row[0]) for row in rows}
-        rss = sum(int(row[1]) for row in rows)
-        cpu_ms = round(sum(_cpu_seconds(row[2]) for row in rows) * 1000, 1)
-        return {
-            "sampled_workers": len(found),
-            "rss_kb": rss,
-            "cpu_lifetime_ms": cpu_ms,
-            "complete": found == pids,
-        }
-    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
-        return {"sampled_workers": 0, "rss_kb": None, "cpu_lifetime_ms": None, "complete": False}
+    result: dict[str, int | float | bool | None] = {
+        "sampled_workers": 0,
+        "rss_kb": 0,
+        "cpu_lifetime_ms": 0,
+        "complete": True,
+    }
+    if pids:
+        result.update(rss_kb=None, cpu_lifetime_ms=None, complete=False)
+        try:
+            proc = subprocess.run(
+                ["ps", "-o", "pid=,rss=,time=", "-p", ",".join(map(str, sorted(pids)))],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+            rows = [line.split() for line in proc.stdout.splitlines() if line.strip()]
+            found = {int(row[0]) for row in rows}
+            result.update(
+                sampled_workers=len(found),
+                rss_kb=sum(int(row[1]) for row in rows),
+                cpu_lifetime_ms=round(sum(_cpu_seconds(row[2]) for row in rows) * 1000, 1),
+                complete=found == pids,
+            )
+        except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+            pass  # Preserve the explicitly incomplete snapshot when a worker exits.
+    return result
 
 
 def pool_snapshot(store: Any, *, resources: bool = False) -> dict[str, Any]:
     proof = getattr(store, "_proof", None)
     pool = getattr(proof, "_pool", None)
-    if pool is None:
-        result: dict[str, Any] = {
-            "pool_initialized": False,
-            "worker_slots": 0,
-            "active_pool_workers": 0,
-        }
-        if resources:
-            result["worker_resources"] = worker_resources(set())
-        return result
     executors = list(getattr(pool, "_worker_slots", ()))
     default = getattr(pool, "_executor", None)
     if default is not None:
         executors.append(default)
-    live: set[int] = set()
-    for executor in executors:
-        # ProcessPoolExecutor exposes no public process census; this is a
-        # best-effort snapshot of its currently registered child processes.
-        processes = getattr(executor, "_processes", None) or {}
-        for child in processes.copy().values():
-            if child.pid is not None and child.is_alive():
-                live.add(child.pid)
+    # Private executor census is best-effort; copy to tolerate process exits.
+    live = {
+        child.pid
+        for executor in executors
+        for child in (getattr(executor, "_processes", None) or {}).copy().values()
+        if child.pid is not None and child.is_alive()
+    }
     result = {
-        "pool_initialized": True,
+        "pool_initialized": pool is not None,
         "worker_slots": len(executors),
         "active_pool_workers": len(live),
     }
@@ -161,14 +153,13 @@ class WorkerRSSSampler:
 
     def _sample(self) -> None:
         try:
-            pool = pool_snapshot(self.store, resources=True)
-            census = pool["worker_resources"]
+            census = pool_snapshot(self.store, resources=True)["worker_resources"]
             if not census["complete"] or census["rss_kb"] is None:
                 self.incomplete += 1
                 return
             self.samples += 1
             rss = int(census["rss_kb"])
-            self.peak_kb = max(self.peak_kb if self.peak_kb is not None else 0, rss)
+            self.peak_kb = max(self.peak_kb or 0, rss)
             self.max_workers = max(self.max_workers, census["sampled_workers"])
         except (OSError, RuntimeError, KeyError, TypeError, ValueError):
             self.incomplete += 1
@@ -233,9 +224,8 @@ def health(store: Any, port: int) -> dict[str, Any]:
         "git_dirty": None if dirty is None else bool(dirty),
         "python_version": sys.version.split()[0],
         "locks": {
-            "search": store.proof_search_lock.locked(),
-            "profile": store.proof_profile_lock.locked(),
-            "windows": store.proof_windows_lock.locked(),
+            name: getattr(store, f"proof_{name}_lock").locked()
+            for name in ("search", "profile", "windows")
         },
         "data": {
             "intake": (root / "data/w1/current-intake.json").exists(),
@@ -267,6 +257,16 @@ class PhaseClock:
         self.last = now
 
 
+# Function, optional lock name, action-specific keyword arguments.
+_ACTIONS: dict[str, Any] = {
+    "run": (research_run, None, {"optimize": False}),
+    "optimize": (research_run, "search", {"optimize": True}),
+    "plateau": (checked_plateau, "profile", {}),
+    "windows": (window_summaries, "windows", {}),
+    "catalog": (None, None, {}),
+}
+
+
 def _execute(
     store: Any,
     action: str,
@@ -277,107 +277,92 @@ def _execute(
 ) -> Any:
     if action == "catalog":
         return store.proof.catalog(override=settings)
+    func, lock_name, extra = _ACTIONS[action]
+    selection = payload.copy()
+    kwargs = dict(extra, settings_override=settings, check_cancelled=check, on_progress=progress)
     if action == "run":
-        selection = dict(payload)
-        selection.pop("include_plateau", None)
-        return research_run(
-            store.proof,
-            selection,
-            optimize=False,
-            include_plateau=payload.get("include_plateau") is True,
-            settings_override=settings,
-            check_cancelled=check,
-            on_progress=progress,
-        )
-    funcs = {
-        "optimize": (store.proof_search_lock, research_run),
-        "plateau": (store.proof_profile_lock, checked_plateau),
-        "windows": (store.proof_windows_lock, window_summaries),
-    }
-    lock, func = funcs[action]
-    if not lock.acquire(blocking=False):
+        kwargs["include_plateau"] = selection.pop("include_plateau", None) is True
+    lock = getattr(store, f"proof_{lock_name}_lock") if lock_name else None
+    if lock is not None and not lock.acquire(blocking=False):
         raise W0Error(f"{action} is busy")
     try:
-        kwargs: dict[str, Any] = {
-            "settings_override": settings,
-            "check_cancelled": check,
-            "on_progress": progress,
-        }
-        if action == "optimize":
-            kwargs["optimize"] = True
-        return func(store.proof, dict(payload), **kwargs)
+        return func(store.proof, selection, **kwargs)
     finally:
-        lock.release()
+        if lock is not None:
+            lock.release()
 
 
-def _prioritize_rounding(key: str, value: dict[str, Any]) -> dict[str, Any]:
-    field = "displayed_trade_net_rounding_delta_rub"
-    return {field: value[field], **value} if key == "summary" and field in value else value
+def _summary_fields(key: str, value: dict[str, Any]) -> dict[str, Any]:
+    rounding = "displayed_trade_net_rounding_delta_rub"
+    first = [rounding] if key == "summary" and rounding in value else []
+    keys = chain(first, (k for k in value if k not in first))
+    fields = (k for k in keys if isinstance(value[k], (str, int, float, bool, type(None))))
+    return {
+        str(k)[:40]: value[k][:100] if isinstance(value[k], str) else value[k]
+        for k in islice(fields, 12)
+    }
 
 
 def _summary(result: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         return {"result_type": type(result).__name__}
-    keys = ("run_id", "status", "rank_score", "seed_used", "trial_count", "pruned_count")
+    scalars = (str, int, float, bool)
     compact = {
-        key: result[key] for key in keys if isinstance(result.get(key), (str, int, float, bool))
+        k: result[k]
+        for k in ["run_id", "status", "rank_score", "seed_used", "trial_count", "pruned_count"]
+        if isinstance(result.get(k), scalars)
     }
-    for key in ("selection", "summary", "evaluation", "account_checks", "plateau"):
+    for key in ["selection", "summary", "evaluation", "account_checks", "plateau"]:
         value = result.get(key)
         if isinstance(value, dict):
-            value = _prioritize_rounding(key, value)
-            compact[key] = {
-                k: v
-                for k, v in value.items()
-                if isinstance(v, (str, int, float, bool)) or v is None
-            }
-    for key in ("rows", "assets", "trades", "ledger", "series"):
-        if isinstance(result.get(key), list):
-            compact[f"{key}_count"] = len(result[key])
-    # Protect the bridge/context budget even for plugin-supplied strings or fields.
+            compact[key] = _summary_fields(key, value)
+    compact.update(
+        {
+            f"{k}_count": len(result[k])
+            for k in ["rows", "assets", "trades", "ledger", "series"]
+            if isinstance(result.get(k), list)
+        }
+    )
     bounded: dict[str, Any] = {}
+    used = 2  # Braces; preserve default JSON separators and the UTF-8 wire budget.
     for key, value in compact.items():
-        if isinstance(value, str):
-            value = value[:100]
-        elif isinstance(value, dict):
-            value = {
-                str(k)[:40]: v[:100] if isinstance(v, str) else v
-                for k, v in list(value.items())[:12]
-            }
-        candidate = {**bounded, key: value}
-        if len(json.dumps(candidate, ensure_ascii=False).encode("utf-8")) <= 1100:
+        value = value[:100] if isinstance(value, str) else value
+        cost = len(json.dumps({key: value}, ensure_ascii=False).encode("utf-8")) - 2
+        cost += 2 if bounded else 0
+        if used + cost <= 1100:
             bounded[key] = value
+            used += cost
     return bounded
 
 
-def _options(request: Any) -> tuple[str, dict[str, Any], Any, int, int, bool, str, bool]:
+def _options(request: Any) -> tuple[Any, ...]:
     if not isinstance(request, dict):
         raise W0Error("probe body must be an object")
-    action = request.get("action")
-    payload = request.get("payload", {})
-    settings = request.get("settings_override", {})
-    repeat, warmup = request.get("repeat", 1), request.get("warmup", 0)
-    profile, mode = request.get("profile", False), request.get("response_mode", "summary")
-    sample_rss = request.get("sample_worker_rss", False)
-    if (
-        not isinstance(action, str)
-        or action not in {"run", "optimize", "plateau", "windows", "catalog"}
-        or not isinstance(payload, dict)
-        or not isinstance(settings, dict)
-    ):
-        raise W0Error("invalid probe action, payload or settings_override")
-    if (
-        type(repeat) is not int
-        or not 1 <= repeat <= 10
-        or type(warmup) is not int
-        or not 0 <= warmup <= 3
-    ):
-        raise W0Error("repeat must be 1–10 and warmup 0–3")
-    if type(profile) is not bool or not isinstance(mode, str) or mode not in {"summary", "full"}:
-        raise W0Error("invalid probe response_mode or profile")
-    if type(sample_rss) is not bool:
-        raise W0Error("sample_worker_rss must be boolean")
-    return action, payload, settings, repeat, warmup, profile, mode, sample_rss
+    errors = (
+        "invalid probe action, payload or settings_override",
+        "repeat must be 1–10 and warmup 0–3",
+        "invalid probe response_mode or profile",
+        "sample_worker_rss must be boolean",
+    )
+    # Defaults define types; bool/int must match exactly (True is not a repeat count).
+    rules: tuple[tuple[str, Any, Any, int], ...] = (
+        ("action", "", _ACTIONS, 0),
+        ("payload", {}, None, 0),
+        ("settings_override", {}, None, 0),
+        ("repeat", 1, range(1, 11), 1),
+        ("warmup", 0, range(4), 1),
+        ("profile", False, None, 2),
+        ("response_mode", "summary", ("summary", "full"), 2),
+        ("sample_worker_rss", False, None, 3),
+    )
+    values = []
+    for name, default, allowed, error in rules:
+        value, kind = request.get(name, default), type(default)
+        valid = type(value) is kind if kind in (int, bool) else isinstance(value, kind)
+        if not valid or (allowed is not None and value not in allowed):
+            raise W0Error(errors[error])
+        values.append(value)
+    return tuple(values)
 
 
 def _merge_phases(total: dict[str, float], elapsed: dict[str, float]) -> None:
@@ -396,26 +381,21 @@ def probe(store: Any, request: Any, check: Any) -> dict[str, Any]:
     phases: dict[str, float] = {}
     cpu_start = time.process_time()
     usage_start = resource.getrusage(resource.RUSAGE_SELF)
-    if profiler:
-        profiler.enable()
     result: Any = None
-    try:
-        with (
-            collect_cache_metrics() as cache_metrics,
-            collect_phase_metrics() as phase_metrics,
-            collect_worker_metrics() as worker_metrics,
-            sample_worker_rss(store, sample_rss) as rss_sampler,
-        ):
-            for _ in range(repeat):
-                started = time.perf_counter()
-                clock = PhaseClock()
-                result = _execute(store, action, payload, settings, check, clock.advance)
-                clock.finish()
-                _merge_phases(phases, clock.elapsed)
-                durations.append(round((time.perf_counter() - started) * 1000, 2))
-    finally:
-        if profiler:
-            profiler.disable()
+    with (
+        profiler or nullcontext(),
+        collect_cache_metrics() as cache_metrics,
+        collect_phase_metrics() as phase_metrics,
+        collect_worker_metrics() as worker_metrics,
+        sample_worker_rss(store, sample_rss) as rss_sampler,
+    ):
+        for _ in range(repeat):
+            started = time.perf_counter()
+            clock = PhaseClock()
+            result = _execute(store, action, payload, settings, check, clock.advance)
+            clock.finish()
+            _merge_phases(phases, clock.elapsed)
+            durations.append(round((time.perf_counter() - started) * 1000, 2))
     usage = resource.getrusage(resource.RUSAGE_SELF)
     telemetry: dict[str, Any] = {
         "wall_ms": durations,

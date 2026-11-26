@@ -184,14 +184,14 @@ def _validate_archive_path(root: Path, archive_path: Path) -> Path:
 
 def plan_rebuildable_cache_archive(
     root: Path, manifest_path: Path, archive_path: Path
-) -> _ArchivePlan:
+) -> dict[str, Any]:
     resolved_root = root.resolve()
     manifest = _load_inventory_manifest(manifest_path, resolved_root)
     archive = _validate_archive_path(resolved_root, archive_path)
     if archive.exists():
         raise DataRetentionError(f"archive destination already exists: {archive}")
     entries = _selected_entries(manifest, resolved_root)
-    return {
+    plan: _ArchivePlan = {
         "schema_version": DATA_ARCHIVE_SCHEMA,
         "status": "planned",
         "root": str(resolved_root),
@@ -204,6 +204,7 @@ def plan_rebuildable_cache_archive(
         "requires_apply": True,
         "files": entries,
     }
+    return cast(dict[str, Any], plan)
 
 
 def _archive_manifest(plan: _ArchivePlan) -> dict[str, Any]:
@@ -293,7 +294,7 @@ def archive_rebuildable_caches(
     root: Path, manifest_path: Path, archive_path: Path
 ) -> dict[str, Any]:
     """Archive verified page caches, then remove only the verified originals."""
-    plan = plan_rebuildable_cache_archive(root, manifest_path, archive_path)
+    plan = cast(_ArchivePlan, plan_rebuildable_cache_archive(root, manifest_path, archive_path))
     files = plan["files"]
     if not files:
         return {**plan, "status": "nothing_to_archive", "requires_apply": False}

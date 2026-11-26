@@ -40,9 +40,20 @@ export function applyNormHint() {
   if (h) h.textContent = NORM_HINTS[mode] || '';
 }
 
+const _spreadCache = new Map();
+
 export function spreadDisplayValues(S, modeOverride) {
-  const raw = S.map(r => r.spread_rel);
   const mode = modeOverride || $('norm')?.value || 'raw';
+  const byMode = _spreadCache.get(S) ?? _spreadCache.set(S, new Map()).get(S);
+  const cached = byMode.get(mode);
+  if (cached) return cached;
+  const out = _computeSpreadValues(S, mode);
+  byMode.set(mode, out);
+  return out;
+}
+
+function _computeSpreadValues(S, mode) {
+  const raw = S.map(r => r.spread_rel);
   const n = raw.length;
   const out = new Array(n);
   const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
@@ -94,40 +105,45 @@ export function spreadDisplayValues(S, modeOverride) {
     return { ms, sds };
   };
   const winStats = (W, i) => raw.slice(Math.max(0, i - W + 1), i + 1).filter(v => v != null);
-  const ema = emaState(raw, 10);
-  const garchZ = (() => {
-    let sig2 = null;
-    const z = new Array(n).fill(null);
-    const d0 = raw[0] != null && raw[1] != null ? raw[1] - raw[0] : null;
-    if (d0 != null && isFinite(d0)) sig2 = d0 * d0;
-    for (let t = 1; t < n; t++) {
-      const d = raw[t] != null && raw[t - 1] != null ? raw[t] - raw[t - 1] : null;
-      if (d == null || !isFinite(d)) { z[t] = null; continue; }
-      if (sig2 == null) sig2 = d * d;
-      const prev = sig2;
-      z[t] = prev > 0 ? d / Math.sqrt(prev) : 0;
-      sig2 = 1e-10 + 0.1 * d * d + 0.85 * prev;
-    }
-    return z;
-  })();
-  const kalmanZ = (() => {
-    let lvl = null, P = 1;
-    const Q = 1e-4, R = 1e-2;
-    const zs = new Array(n).fill(null);
-    for (let i = 0; i < n; i++) {
-      const v = raw[i];
-      if (v == null) continue;
-      if (lvl == null) { lvl = v; P = 1; zs[i] = 0; continue; }
-      const Pp = P + Q;
-      const innov = v - lvl;
-      const S2 = Pp + R;
-      const K = Pp / S2;
-      lvl = lvl + K * innov;
-      P = (1 - K) * Pp;
-      zs[i] = Math.sqrt(S2) > 0 ? innov / Math.sqrt(S2) : 0;
-    }
-    return zs;
-  })();
+  let ema = null, garchZ = null, kalmanZ = null;
+  if (mode === 'ema10' || mode === 'ewma10') ema = emaState(raw, 10);
+  if (mode === 'garch') {
+    garchZ = (() => {
+      let sig2 = null;
+      const z = new Array(n).fill(null);
+      const d0 = raw[0] != null && raw[1] != null ? raw[1] - raw[0] : null;
+      if (d0 != null && isFinite(d0)) sig2 = d0 * d0;
+      for (let t = 1; t < n; t++) {
+        const d = raw[t] != null && raw[t - 1] != null ? raw[t] - raw[t - 1] : null;
+        if (d == null || !isFinite(d)) { z[t] = null; continue; }
+        if (sig2 == null) sig2 = d * d;
+        const prev = sig2;
+        z[t] = prev > 0 ? d / Math.sqrt(prev) : 0;
+        sig2 = 1e-10 + 0.1 * d * d + 0.85 * prev;
+      }
+      return z;
+    })();
+  }
+  if (mode === 'kalman') {
+    kalmanZ = (() => {
+      let lvl = null, P = 1;
+      const Q = 1e-4, R = 1e-2;
+      const zs = new Array(n).fill(null);
+      for (let i = 0; i < n; i++) {
+        const v = raw[i];
+        if (v == null) continue;
+        if (lvl == null) { lvl = v; P = 1; zs[i] = 0; continue; }
+        const Pp = P + Q;
+        const innov = v - lvl;
+        const S2 = Pp + R;
+        const K = Pp / S2;
+        lvl = lvl + K * innov;
+        P = (1 - K) * Pp;
+        zs[i] = Math.sqrt(S2) > 0 ? innov / Math.sqrt(S2) : 0;
+      }
+      return zs;
+    })();
+  }
   for (let t = 0; t < n; t++) {
     const cur = raw[t];
     if (cur == null) { out[t] = null; continue; }

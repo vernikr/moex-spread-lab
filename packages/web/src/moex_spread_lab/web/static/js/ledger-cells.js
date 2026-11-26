@@ -22,11 +22,8 @@ export function th(labels) {
   return thead;
 }
 
-export function cellRow(tr, html, { num = false, klass = '' } = {}) {
-  const c = el('td', (num ? 'num ' : '') + klass);
-  c.innerHTML = html;
-  tr.append(c);
-  return c;
+export function cellRow(tr, html, opts) {
+  return td(tr, html, opts);
 }
 
 export function dayVolumeCell(r) {

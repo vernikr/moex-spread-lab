@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import math
+import os
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
 from .json_types import load_object
@@ -32,7 +34,7 @@ def validation_percent(value: object) -> float:
     if type(value) not in (int, float):
         raise W0Error("Доля проверки должна быть числом от 0 до 50%.")
     numeric = cast(int | float, value)
-    if not 0 <= numeric <= 50:
+    if not 0 <= numeric <= 50 or not math.isfinite(numeric):
         raise W0Error("Доля проверки должна быть числом от 0 до 50%.")
     return int(numeric) if int(numeric) == numeric else numeric
 
@@ -77,7 +79,11 @@ def _validated_initial_capital(value: object) -> float:
             "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
         )
     numeric = cast(int | float, value)
-    if not 0.01 <= numeric <= MAX_RESEARCH_CAPITAL_RUB or round(numeric, 2) != numeric:
+    if (
+        not 0.01 <= numeric <= MAX_RESEARCH_CAPITAL_RUB
+        or not math.isfinite(numeric)
+        or round(numeric, 2) != numeric
+    ):
         raise W0Error(
             "Капитал должен быть числом от 0,01 до 1 000 000 000 ₽, не более двух знаков после запятой."
         )
@@ -88,41 +94,51 @@ def _validated_slippage(value: object) -> float:
     if type(value) not in (int, float):
         raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
     numeric = cast(int | float, value)
-    if not 0 <= numeric <= 10:
+    if not 0 <= numeric <= 10 or not math.isfinite(numeric):
         raise W0Error("Проскальзывание должно быть числом от 0 до 10 тиков.")
     return float(numeric)
+
+
+def _validated_timeframe(value: object) -> str:
+    try:
+        return get_timeframe(value).id
+    except ValueError as exc:
+        raise W0Error(str(exc)) from exc
+
+
+def _validated_price_fill(value: object) -> str:
+    if not isinstance(value, str) or value not in VALID_PRICE_FILLS:
+        raise W0Error(
+            "Режим исполнения должен быть одним из: next_open, next_close, reference_same_bar."
+        )
+    return value
+
+
+def _validated_bool(key: str, value: object) -> bool:
+    if type(value) is not bool:
+        raise W0Error(f"{key}: укажите true или false.")
+    return value
+
+
+_VALIDATORS: dict[str, Callable[[object], object]] = {
+    "validation_percent": validation_percent,
+    "initial_capital_rub": _validated_initial_capital,
+    "timeframe": _validated_timeframe,
+    "price_fill": _validated_price_fill,
+    "slippage_ticks": _validated_slippage,
+    "allow_failed_volume": lambda value: _validated_bool("allow_failed_volume", value),
+    "allow_failed_capital": lambda value: _validated_bool("allow_failed_capital", value),
+    "random_seed": random_seed,
+}
 
 
 def _validated_patch(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise W0Error("Неизвестные или пустые настройки расчёта.")
     mapping = cast(dict[str, object], value)
-    if not mapping or mapping.keys() - ResearchSettings().metadata().keys():
+    if not mapping or mapping.keys() - _VALIDATORS.keys():
         raise W0Error("Неизвестные или пустые настройки расчёта.")
-    patch = dict(mapping)
-    if "validation_percent" in patch:
-        patch["validation_percent"] = validation_percent(patch["validation_percent"])
-    if "initial_capital_rub" in patch:
-        patch["initial_capital_rub"] = _validated_initial_capital(patch["initial_capital_rub"])
-    if "timeframe" in patch:
-        try:
-            get_timeframe(cast(str, patch["timeframe"]))
-        except ValueError as exc:
-            raise W0Error(str(exc)) from exc
-    if "price_fill" in patch:
-        value = patch["price_fill"]
-        if not isinstance(value, str) or value not in VALID_PRICE_FILLS:
-            raise W0Error(
-                "Режим исполнения должен быть одним из: next_open, next_close, reference_same_bar."
-            )
-    if "slippage_ticks" in patch:
-        patch["slippage_ticks"] = _validated_slippage(patch["slippage_ticks"])
-    for k in ("allow_failed_volume", "allow_failed_capital"):
-        if k in patch and type(patch[k]) is not bool:
-            raise W0Error(f"{k}: укажите true или false.")
-    if "random_seed" in patch:
-        patch["random_seed"] = random_seed(patch["random_seed"])
-    return patch
+    return {key: _VALIDATORS[key](item) for key, item in mapping.items()}
 
 
 def settings_with_override(
@@ -166,11 +182,15 @@ def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
     )
     path = settings_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Readers (including a second local process) see either complete version.
-    with TemporaryDirectory(dir=path.parent) as staging:
-        temporary = Path(staging) / path.name
-        temporary.write_text(json.dumps(settings) + "\n", encoding="utf-8")
-        temporary.replace(path)
+    # A sibling temporary file keeps replacement atomic for concurrent readers.
+    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+        try:
+            handle.write(json.dumps(settings) + "\n")
+            handle.close()
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
     return cast(dict[str, float | bool | str], settings)
 
 

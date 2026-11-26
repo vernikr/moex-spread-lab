@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from moex_spread_lab.core.settings import (
     EvaluationSplit,
     ResearchSettings,
@@ -21,8 +23,10 @@ class GlobalPeriodTests(unittest.TestCase):
                 self.assertEqual(p.training + p.validation, dates)
                 self.assertEqual(len(p.validation), n)
                 self.assertEqual(p.basis, "validation" if n else "training")
+                periods = p.metadata()["periods"]
+                assert isinstance(periods, dict)
                 self.assertEqual(
-                    p.metadata()["periods"]["validation"],
+                    periods["validation"],
                     [dates[-n], dates[-1]] if n else None,
                 )
         for dates, percent in (([], 0), (["d"], 1), (["d"], 50)):
@@ -108,3 +112,12 @@ class GlobalPeriodTests(unittest.TestCase):
                 read_settings(root)
             save_settings(root, ResearchSettings().metadata())
             self.assertEqual(read_settings(root)["validation_percent"], 0)
+
+
+def test_nonfinite_preferences_are_rejected_without_changing_saved_settings(tmp_path):
+    saved = save_settings(tmp_path, {"validation_percent": 5})
+    for key in ("validation_percent", "initial_capital_rub", "slippage_ticks", "random_seed"):
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with pytest.raises(W0Error):
+                save_settings(tmp_path, {key: value})
+            assert read_settings(tmp_path) == saved

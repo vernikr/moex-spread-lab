@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,25 +86,6 @@ class BarStore(Protocol):
     def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
         """Return a series for ``legacy_path`` without exposing storage details."""
         ...
-
-
-def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            temporary.write_text(
-                json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def _signature(path: Path) -> tuple[int, int, int, int]:
@@ -300,8 +280,6 @@ def _check_archived_mirror_tables(
 
 def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
     """Verify retained pilot/candidate mirrors against sealed semantics after archival."""
-    import duckdb
-
     reader = SealedH1Reader(store.root)
     value = reader.payload()
     relative = legacy_path.absolute().relative_to(store.root).as_posix()
@@ -329,19 +307,6 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
         if record.get(key) != sealed.get(key):
             raise DataLakeError(f"archived dataset metadata mismatch: {key}")
     _check_archived_mirror_tables(store, record, sealed)
-    with duckdb.connect(str(store.catalog_path), read_only=True) as connection:
-        row = connection.execute(
-            "SELECT row_count, legacy_sha256, parquet_sha256, sources_sha256 FROM bar_datasets WHERE dataset_id = ?",
-            [record["dataset_id"]],
-        ).fetchone()
-    expected_row = (
-        record["row_count"],
-        record["legacy_sha256"],
-        record["parquet_sha256"],
-        record["sources_sha256"],
-    )
-    if row != expected_row:
-        raise DataLakeError("archived mirror catalog mismatch")
     return {
         "status": "verified",
         "verification_basis": "sealed_h1",
@@ -354,26 +319,11 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
 __all__ = [
     "H1_SEAL_SCHEMA",
     "LEGACY_CANDLE_SCHEMA",
-    "Any",
     "BarSeries",
     "BarStore",
     "DataLakeError",
-    "Iterable",
-    "Path",
-    "Protocol",
     "SealedH1Reader",
-    "W0Error",
     "_signature",
-    "annotations",
-    "canonical_bytes",
-    "dataclass",
-    "json",
-    "os",
-    "pq",
     "reject_sealed_table_write",
-    "sha256_bytes",
-    "sha256_file",
-    "tempfile",
     "verify_archived_record",
 ]
-atomic_write_json = _atomic_write_json

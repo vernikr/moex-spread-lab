@@ -40,23 +40,12 @@ def _validate_proxy(
         raise error_type(f"legacy candle price_proxy differs from close: {path}[{index}]")
 
 
-# Freeze the original star-import surface; named aliases below support the facade.
 __all__ = [
     "LEGACY_CANDLE_SCHEMA",
-    "Any",
     "BarSeries",
     "DataLakeError",
-    "Iterable",
     "LegacyCandleSeries",
     "LegacyJsonBarStore",
-    "Path",
-    "annotations",
-    "canonical_bytes",
-    "dataclass",
-    "hashlib",
-    "itertools",
-    "json",
-    "re",
 ]
 
 

@@ -106,7 +106,7 @@ class DataLakeTests(unittest.TestCase):
             )
             self.assertTrue((root / record["bars_path"]).is_file())
             self.assertTrue((root / record["sources_path"]).is_file())
-            self.assertTrue((root / "data-lake" / "catalog.duckdb").is_file())
+            self.assertFalse((root / "data-lake" / "catalog.duckdb").exists())
             self.assertEqual(verified["status"], "verified")
             self.assertEqual(
                 selected.to_pylist(),
@@ -115,6 +115,28 @@ class DataLakeTests(unittest.TestCase):
                     {"begin": "2026-01-01 12:00:00", "close": 11.5},
                 ],
             )
+
+    def test_obsolete_catalog_is_ignored_but_manifest_integrity_is_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = self._legacy(root)
+            store = ParquetBarStore(root)
+            store.lake_root.mkdir()
+            old_catalog = store.catalog_path
+            old_catalog.write_bytes(b"obsolete catalog")
+            record = store.import_legacy(legacy)
+            self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
+            self.assertEqual(old_catalog.read_bytes(), b"obsolete catalog")
+            manifest = json.loads(store.manifest_path.read_text())
+            manifest["datasets"][0]["row_count"] += 1
+            store.manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(DataLakeError, "row count"):
+                ParquetBarStore(root).verify_legacy(legacy)
+            manifest["datasets"][0]["row_count"] = record["row_count"]
+            store.manifest_path.write_text(json.dumps(manifest))
+            (root / record["sources_path"]).write_bytes(b"corrupt")
+            with self.assertRaisesRegex(DataLakeError, "sources Parquet SHA-256"):
+                ParquetBarStore(root).verify_legacy(legacy)
 
     def test_import_rejects_non_constant_price_semantics_and_fractional_volume(self):
         with tempfile.TemporaryDirectory() as directory:

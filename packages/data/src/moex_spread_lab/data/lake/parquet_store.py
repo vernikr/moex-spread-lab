@@ -1,9 +1,9 @@
-"""Local Parquet/Zstandard bar store backed by DuckDB catalog and legacy verification."""
+"""Local Parquet/Zstandard bar store with manifest and legacy verification."""
 
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -13,8 +13,6 @@ import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import sha256_file
 
-from . import legacy_series as _legacy_module
-from . import parquet_catalog as _catalog_module
 from .bar_types import (
     LEGACY_CANDLE_SCHEMA,
     BarSeries,
@@ -23,6 +21,8 @@ from .bar_types import (
     verify_archived_record,
 )
 from .legacy_series import LegacyCandleSeries
+from .legacy_series import component as _component
+from .legacy_series import read_legacy_series as _read_legacy_series
 from .parquet_catalog import (
     BAR_DATASET_SCHEMA,
     BAR_SCHEMA,
@@ -30,10 +30,10 @@ from .parquet_catalog import (
     SOURCE_SCHEMA,
     build_import_record,
     parse_lake_manifest,
-    upsert_catalog,
     upsert_manifest,
     verify_dataset_against_legacy,
 )
+from .parquet_catalog import atomic_write_parquet as _atomic_write_parquet
 from .raw_archive import RawResponseArchive
 
 
@@ -49,16 +49,6 @@ class TableCalls(Protocol):
 
 
 _TABLE = cast("type[TableCalls]", pa.Table)
-
-
-def facade_hook(module: object, name: str) -> Any:
-    """Resolve a private facade hook from a module owned by another P7.2 leaf.
-
-    Those modules do not list the helpers in `__all__`, so this leaf may not import
-    them directly and may not edit their owners; the caller re-types the result and
-    keeps the binding at import time, exactly like the historical direct import.
-    """
-    return getattr(module, name)
 
 
 def table_from_rows(rows: Sequence[Mapping[str, Any]], schema: pa.Schema) -> pa.Table:
@@ -95,22 +85,8 @@ def manifest_records(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-# Typed import-time bindings for private hooks of other-owned modules.
-_component: Callable[[Any, str], str] = cast(
-    "Callable[[Any, str], str]", facade_hook(_legacy_module, "_component")
-)
-_read_legacy_series: Callable[[Path], LegacyCandleSeries] = cast(
-    "Callable[[Path], LegacyCandleSeries]",
-    facade_hook(_legacy_module, "_read_legacy_series"),
-)
-_atomic_write_parquet: Callable[[Path, pa.Table], None] = cast(
-    "Callable[[Path, pa.Table], None]",
-    facade_hook(_catalog_module, "_atomic_write_parquet"),
-)
-
-
 class ParquetBarStore:
-    """Local Parquet/Zstandard store; no runtime reader is switched to it in Phase 2."""
+    """Manifest-backed local Parquet/Zstandard store."""
 
     def __init__(self, root: Path, lake_root: Path | None = None) -> None:
         self.root = root.resolve()
@@ -168,9 +144,6 @@ class ParquetBarStore:
         """Public manifest accessor."""
         return self._read_manifest()
 
-    def _upsert_catalog(self, record: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-        upsert_catalog(self.lake_root, self.catalog_path, record, sources)
-
     def _upsert_manifest(self, record: dict[str, Any]) -> None:
         upsert_manifest(self.manifest_path, self._read_manifest(), record)
 
@@ -185,7 +158,6 @@ class ParquetBarStore:
         _atomic_write_parquet(bars_path, table_from_rows(series.bars, BAR_SCHEMA))
         _atomic_write_parquet(sources_path, table_from_rows(series.sources, SOURCE_SCHEMA))
         record = build_import_record(self.root, series, bars_path, sources_path)
-        self._upsert_catalog(record, series.sources)
         self._upsert_manifest(record)
         return record
 
@@ -290,7 +262,7 @@ class ParquetBarStore:
             return verify_archived_record(self, legacy_path)
         series = _read_legacy_series(legacy_path)
         record = self._record(series.secid, series.timeframe)
-        return verify_dataset_against_legacy(self.root, self.catalog_path, series, record)
+        return verify_dataset_against_legacy(self.root, series, record)
 
     @property
     def raw_archive(self) -> RawResponseArchive:
@@ -339,7 +311,6 @@ class ParquetBarStore:
             updated["parquet_sha256"] = sha256_file(bars_path)
             updated["sources_sha256"] = sha256_file(sources_path)
             updated["compacted_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-            self._upsert_catalog(updated, table_rows(sources))
             self._upsert_manifest(updated)
             self.verify_legacy(self._record_path(str(updated["legacy_path"])))
             results.append(

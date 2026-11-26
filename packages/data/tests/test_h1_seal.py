@@ -1,3 +1,6 @@
+import json
+import shutil
+from functools import cache
 from unittest.mock import patch
 
 import pytest
@@ -19,17 +22,37 @@ def _read_projected_h1(store: MarketDataStore, secid: str):
     )
 
 
-@pytest.fixture
-def prepared(tmp_path):
+@cache
+def _baseline(base):
+    root = base / "h1-baseline"
+    root.mkdir()
     helper = fixtures.StoreCutoverTests()
-    intake = helper._write_series(tmp_path, "NEAR", "1h", 60, [10.0, 11.0, 12.0])
-    screen = helper._write_series(
-        tmp_path, "NEAR", "1h", 60, [20.0, 21.0, 22.0], folder="data/w1/candles-screen"
+    helper._write_series(root, "NEAR", "1h", 60, [10.0, 11.0, 12.0])
+    helper._write_series(
+        root, "NEAR", "1h", 60, [20.0, 21.0, 22.0], folder="data/w1/candles-screen"
     )
+    plan = root / "plan.json"
+    candidate = root / "data-lake/candidates/h1"
+    write_h1_plan(root, plan)
+    stage_h1(root, plan, candidate)
+    return root
+
+
+@pytest.fixture
+def prepared(tmp_path, tmp_path_factory):
+    shutil.copytree(_baseline(tmp_path_factory.getbasetemp()), tmp_path, dirs_exist_ok=True)
     plan = tmp_path / "plan.json"
     candidate = tmp_path / "data-lake/candidates/h1"
-    write_h1_plan(tmp_path, plan)
-    stage_h1(tmp_path, plan, candidate)
+    # Plans and stage evidence bind the absolute root; Parquet records are relative.
+    value = json.loads(plan.read_text())
+    value["root"] = str(tmp_path)
+    plan.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    report_path = candidate / "h1-stage.json"
+    report = json.loads(report_path.read_text())
+    report["plan"] = value
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    intake = tmp_path / "data/w1/candles/NEAR_1h.json"
+    screen = tmp_path / "data/w1/candles-screen/NEAR_1h.json"
     return tmp_path, intake, screen, plan, candidate
 
 
@@ -139,10 +162,10 @@ def test_cli_unknown_input_and_source_symlink(prepared):
     root, intake, screen, plan, candidate = prepared
     args = ["moex-spread-lab", "data-h1-seal", "--root", str(root)]
     with patch(
-        "sys.argv", args + ["--activate", "--plan", str(plan), "--candidate", str(candidate)]
+        "sys.argv", [*args, "--activate", "--plan", str(plan), "--candidate", str(candidate)]
     ):
         assert main() == 0
-    with patch("sys.argv", args + ["--verify"]):
+    with patch("sys.argv", [*args, "--verify"]):
         assert main() == 0
     store = MarketDataStore(root)
     with pytest.raises(DataLakeError):

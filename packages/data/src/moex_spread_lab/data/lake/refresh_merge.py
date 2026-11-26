@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import fcntl
-import hashlib
 import json
-import os
-import tempfile
-from collections.abc import Callable, Generator
-from collections.abc import Iterator as Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -71,14 +65,14 @@ class DataRefreshError(DataLakeError):
     """Raised when an incremental candle refresh cannot preserve the lake contract."""
 
 
-def _date(value: str, label: str) -> date:
+def parse_date(value: str, label: str) -> date:
     try:
         return date.fromisoformat(value)
     except (TypeError, ValueError) as exc:
         raise DataRefreshError(f"{label} must be an ISO date: {value!r}") from exc
 
 
-def _timestamp_date(value: Any) -> date | None:
+def timestamp_date(value: Any) -> date | None:
     if not isinstance(value, str) or len(value) < 10:
         return None
     try:
@@ -117,7 +111,7 @@ def _payload_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def _payload_watermark(payload: dict[str, Any] | None) -> date | None:
     if not payload:
         return None
-    dates = [_timestamp_date(row.get("begin")) for row in _payload_rows(payload)]
+    dates = [timestamp_date(row.get("begin")) for row in _payload_rows(payload)]
     return max((item for item in dates if item is not None), default=None)
 
 
@@ -128,7 +122,7 @@ def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sess
             {
                 item
                 for row in _payload_rows(payload)
-                for item in [_timestamp_date(row.get("begin"))]
+                for item in [timestamp_date(row.get("begin"))]
                 if item is not None and item <= watermark
             }
         )
@@ -137,39 +131,7 @@ def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sess
     return watermark - timedelta(days=overlap_sessions * 2)
 
 
-@contextmanager
-def _dataset_writer_lock(lake_root: Path, target: RefreshTarget) -> Generator[None, None, None]:
-    lock_name = hashlib.sha256(target.id.encode("utf-8")).hexdigest() + ".lock"
-    lock_path = lake_root / "locks" / lock_name
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            temporary.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def _chunks(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
+def chunks(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
     if chunk_days < 1:
         raise DataRefreshError("chunk_days must be positive")
     result: list[tuple[date, date]] = []
@@ -194,7 +156,7 @@ def _resolve_target_watermark(
     except DataLakeError:
         record = None
     if record and legacy_path.is_file() and sha256_file(legacy_path) == record.get("legacy_sha256"):
-        record_date = _timestamp_date(record.get("last_begin"))
+        record_date = timestamp_date(record.get("last_begin"))
         if record_date is not None:
             return record_date
     return watermark
@@ -208,7 +170,7 @@ def _resolve_requested_from(
 ) -> date:
     if cfg.full_refresh:
         existing_from = (
-            _date(str(payload["from"]), "existing payload from")
+            parse_date(str(payload["from"]), "existing payload from")
             if payload and payload.get("from") is not None
             else None
         )
@@ -254,7 +216,7 @@ def build_merged_payload(
     raw_entry_count: int,
 ) -> dict[str, Any]:
     existing_from = (
-        _date(state.payload["from"], "existing payload from")
+        parse_date(state.payload["from"], "existing payload from")
         if state.payload and isinstance(state.payload.get("from"), str)
         else None
     )
@@ -293,55 +255,3 @@ def build_merged_payload(
         }
     )
     return payload
-
-
-# Supported named aliases preserve the original callable identities without
-# expanding the historical wildcard surface beyond the published private hooks.
-dataset_writer_lock = _dataset_writer_lock
-atomic_write_json = _atomic_write_json
-chunks = _chunks
-
-# Frozen pre-P7.2 wildcard surface, measured at ``5e97a62^`` (the immediate
-# pre-leaf revision of #66), not at the older ``545cf0c`` snapshot. Before the
-# strict pass this module declared no ``__all__``, so ``import *`` exposed the
-# public callables *and* the imported names above, including the module's own
-# ``DataRefreshError``. #66 declared only the owned callables and silently
-# removed the rest. The list below restores the measured public set plus the six previously
-# declared private hooks: ``cast``
-# (added by #66) stays reachable by name but is deliberately not part of the
-# frozen surface, and ``Iterator`` is re-bound as a declaration-only import
-# because #66 replaced it with ``Generator`` in the annotations.
-__all__ = [
-    "CANDLE_INTERVAL_LABELS",
-    "REFRESH_SCHEMA",
-    "UTC",
-    "Any",
-    "Callable",
-    "DataLakeError",
-    "DataRefreshError",
-    "Iterator",
-    "ParquetBarStore",
-    "Path",
-    "RefreshConfig",
-    "RefreshTarget",
-    "_TargetState",
-    "_atomic_write_json",
-    "_chunks",
-    "_dataset_writer_lock",
-    "_date",
-    "_timestamp_date",
-    "annotations",
-    "build_merged_payload",
-    "contextmanager",
-    "dataclass",
-    "date",
-    "datetime",
-    "fcntl",
-    "hashlib",
-    "json",
-    "os",
-    "plan_single_target",
-    "sha256_file",
-    "tempfile",
-    "timedelta",
-]

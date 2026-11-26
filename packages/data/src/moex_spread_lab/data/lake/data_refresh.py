@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
-import json
-import os
-import tempfile
-from collections.abc import Generator, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import ExitStack, contextmanager
-from datetime import date, timedelta
+from contextlib import ExitStack
+from datetime import date
 from functools import partial
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -21,13 +17,17 @@ from ..iss.catalog import (
     fetch_candle_series,
 )
 from .data_lake import ParquetBarStore
+from .io import atomic_write_json, writer_lock
 from .refresh_merge import (
     REFRESH_SCHEMA,
     DataRefreshError,
     RefreshConfig,
     RefreshTarget,
     build_merged_payload,
+    chunks,
+    parse_date,
     plan_single_target,
+    timestamp_date,
 )
 
 
@@ -57,66 +57,6 @@ class PayloadBuilder(Protocol):
         chunk_count: int,
         raw_entry_count: int,
     ) -> dict[str, Any]: ...
-
-
-def _date(value: str, label: str) -> date:
-    try:
-        return date.fromisoformat(value)
-    except (TypeError, ValueError) as exc:
-        raise DataRefreshError(f"{label} must be an ISO date: {value!r}") from exc
-
-
-def _timestamp_date(value: object) -> date | None:
-    if not isinstance(value, str) or len(value) < 10:
-        return None
-    try:
-        return date.fromisoformat(value[:10])
-    except ValueError:
-        return None
-
-
-@contextmanager
-def _dataset_writer_lock(lake_root: Path, target: RefreshTarget) -> Generator[None]:
-    lock_name = hashlib.sha256(target.id.encode("utf-8")).hexdigest() + ".lock"
-    lock_path = lake_root / "locks" / lock_name
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            temporary.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def _chunks(start: date, end: date, chunk_days: int) -> list[tuple[date, date]]:
-    if chunk_days < 1:
-        raise DataRefreshError("chunk_days must be positive")
-    result: list[tuple[date, date]] = []
-    current = start
-    while current <= end:
-        chunk_end = min(current + timedelta(days=chunk_days - 1), end)
-        result.append((current, chunk_end))
-        current = chunk_end + timedelta(days=1)
-    return result
 
 
 def parse_candle_row(row: object) -> tuple[str, dict[str, Any]] | None:
@@ -167,9 +107,9 @@ def _parse_refresh_config(
     raw_ttl_days = int(options.get("raw_ttl_days", 30))
     if overlap_sessions < 0 or raw_ttl_days < 0:
         raise DataRefreshError("overlap_sessions and raw_ttl_days must not be negative")
-    until = _date(till_date, "till_date")
+    until = parse_date(till_date, "till_date")
     from_date = options.get("from_date")
-    initial_from = _date(from_date, "from_date") if from_date else None
+    initial_from = parse_date(from_date, "from_date") if from_date else None
     if initial_from is not None and initial_from > until:
         raise DataRefreshError("from_date must not be after till_date")
     raw_output: Path = options.get("output_dir", Path("data/w1/candles"))
@@ -232,7 +172,7 @@ def _fetch_target_chunks(
     with ThreadPoolExecutor(max_workers=cfg.workers) as executor:
         futures: list[Future[ChunkFutureResult]] = []
         for state in states:
-            for chunk_from, chunk_till in _chunks(state.requested_from, cfg.until, cfg.chunk_days):
+            for chunk_from, chunk_till in chunks(state.requested_from, cfg.until, cfg.chunk_days):
                 task_count += 1
                 futures.append(
                     executor.submit(_run_single_chunk, state, chunk_from, chunk_till, cfg)
@@ -316,10 +256,10 @@ def _publish_refreshed_target(
         chunk_count=len(ordered_chunks),
         raw_entry_count=len(raw_entries),
     )
-    _atomic_write_json(state.legacy_path, payload)
+    atomic_write_json(state.legacy_path, payload)
     record = store.upsert_legacy(state.legacy_path)
     store.verify_legacy(state.legacy_path)
-    last_date = _timestamp_date(rows[-1]["begin"])
+    last_date = timestamp_date(rows[-1]["begin"])
     if last_date is None:
         raise DataRefreshError(f"invalid final timestamp for {state.target.id}")
     return {
@@ -363,7 +303,8 @@ def refresh_candle_datasets(
     )
     with ExitStack() as locks:
         for target in ordered_targets:
-            locks.enter_context(_dataset_writer_lock(store.lake_root, target))
+            lock_name = hashlib.sha256(target.id.encode("utf-8")).hexdigest() + ".lock"
+            locks.enter_context(writer_lock(store.lake_root / "locks" / lock_name))
         planned = [plan_single_target(target, store, cfg) for target in ordered_targets]
         skipped = [skip_entry for _, skip_entry in planned if skip_entry is not None]
         states = [

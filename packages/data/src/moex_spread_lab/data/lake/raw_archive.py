@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -13,24 +11,9 @@ from typing import Any, cast
 import pyarrow as pa
 
 from .bar_types import DataLakeError
+from .io import atomic_write_bytes, atomic_write_json
 
 RAW_ARCHIVE_SCHEMA = "market-data-raw.v1"
-
-
-def _atomic_write_bytes(path: Path, value: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(value)
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def _as_object_map(value: object) -> dict[str, Any]:
@@ -108,10 +91,7 @@ class RawResponseArchive:
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
         manifest["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-        payload = (
-            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
-        _atomic_write_bytes(self.manifest_path, payload)
+        atomic_write_json(self.manifest_path, manifest)
 
     @staticmethod
     def _entry_path(entry: dict[str, Any]) -> str:
@@ -146,7 +126,7 @@ class RawResponseArchive:
         entry_id = f"{request_sha256}-{raw_sha256}-{received_sha256}"
         filename = f"{entry_id}.json.zst"
         compressed = self._codec.compress(raw_value).to_pybytes()
-        _atomic_write_bytes(self.root / filename, compressed)
+        atomic_write_bytes(self.root / filename, compressed)
         manifest = self._read_manifest()
         manifest_entries_obj = _as_object_list(manifest["entries"])
         old: dict[str, Any] | None = None
@@ -264,19 +244,5 @@ class RawResponseArchive:
 
 __all__ = [
     "RAW_ARCHIVE_SCHEMA",
-    "UTC",
-    "Any",
-    "DataLakeError",
-    "Path",
     "RawResponseArchive",
-    "annotations",
-    "cast",
-    "datetime",
-    "hashlib",
-    "json",
-    "os",
-    "pa",
-    "tempfile",
-    "timedelta",
 ]
-atomic_write_bytes = _atomic_write_bytes

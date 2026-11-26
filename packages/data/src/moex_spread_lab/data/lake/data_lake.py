@@ -18,7 +18,7 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
-from .bar_types import atomic_write_json as _atomic_write_json
+from .io import atomic_write_json as _atomic_write_json
 from .legacy_series import LegacyCandleSeries, LegacyJsonBarStore
 from .legacy_series import component as _component
 from .legacy_series import integer as _integer

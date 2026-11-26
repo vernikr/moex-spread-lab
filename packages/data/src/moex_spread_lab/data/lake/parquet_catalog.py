@@ -1,4 +1,8 @@
-"""DuckDB catalog, Parquet schemas, and manifest helpers for `ParquetBarStore`."""
+"""Parquet schemas and manifest helpers for `ParquetBarStore`.
+
+The manifest is authoritative; obsolete DuckDB catalogs are left untouched and ignored.
+Verification still compares file hashes, rows, and provenance against the source.
+"""
 
 from __future__ import annotations
 
@@ -10,14 +14,13 @@ from pathlib import Path
 from typing import Any
 from typing import cast as _cast  # Narrow partially unknown pyarrow-stub callables.
 
-import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from moex_spread_lab.core.w0 import sha256_file
 
 from .bar_types import DataLakeError
-from .bar_types import atomic_write_json as _atomic_write_json
+from .io import atomic_write_json as _atomic_write_json
 from .legacy_series import LegacyCandleSeries
 
 DATA_LAKE_SCHEMA = "market-data-lake.v1"
@@ -78,96 +81,6 @@ def parse_lake_manifest(manifest_path: Path) -> dict[str, Any]:
     if not isinstance(value.get("datasets"), list):
         raise DataLakeError("data-lake manifest datasets must be a list")
     return value
-
-
-def upsert_catalog(
-    lake_root: Path, catalog_path: Path, record: dict[str, Any], sources: list[dict[str, Any]]
-) -> None:
-    lake_root.mkdir(parents=True, exist_ok=True)
-    with duckdb.connect(str(catalog_path)) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS bar_datasets (
-                dataset_id VARCHAR PRIMARY KEY,
-                secid VARCHAR NOT NULL,
-                board VARCHAR,
-                interval INTEGER NOT NULL,
-                timeframe VARCHAR NOT NULL,
-                bars_path VARCHAR NOT NULL,
-                sources_path VARCHAR NOT NULL,
-                row_count BIGINT NOT NULL,
-                first_begin VARCHAR NOT NULL,
-                last_begin VARCHAR NOT NULL,
-                legacy_path VARCHAR NOT NULL,
-                legacy_sha256 VARCHAR NOT NULL,
-                parquet_sha256 VARCHAR NOT NULL,
-                sources_sha256 VARCHAR NOT NULL,
-                created_at VARCHAR NOT NULL
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS source_pages (
-                dataset_id VARCHAR NOT NULL,
-                source_page_id INTEGER NOT NULL,
-                url VARCHAR,
-                received_at VARCHAR,
-                raw_response_sha256 VARCHAR,
-                first_begin VARCHAR NOT NULL,
-                last_begin VARCHAR NOT NULL,
-                row_count BIGINT NOT NULL,
-                PRIMARY KEY(dataset_id, source_page_id)
-            )
-            """
-        )
-        connection.execute("DELETE FROM source_pages WHERE dataset_id = ?", [record["dataset_id"]])
-        connection.execute("DELETE FROM bar_datasets WHERE dataset_id = ?", [record["dataset_id"]])
-        connection.execute(
-            "INSERT INTO bar_datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                record[key]
-                for key in (
-                    "dataset_id",
-                    "secid",
-                    "board",
-                    "interval",
-                    "timeframe",
-                    "bars_path",
-                    "sources_path",
-                    "row_count",
-                    "first_begin",
-                    "last_begin",
-                    "legacy_path",
-                    "legacy_sha256",
-                    "parquet_sha256",
-                    "sources_sha256",
-                    "created_at",
-                )
-            ],
-        )
-        if sources:
-            connection.executemany(
-                "INSERT INTO source_pages VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    [
-                        record["dataset_id"],
-                        *[
-                            source[key]
-                            for key in (
-                                "source_page_id",
-                                "url",
-                                "received_at",
-                                "raw_response_sha256",
-                                "first_begin",
-                                "last_begin",
-                                "row_count",
-                            )
-                        ],
-                    ]
-                    for source in sources
-                ],
-            )
 
 
 def upsert_manifest(
@@ -237,8 +150,14 @@ def build_import_record(
 
 
 def verify_dataset_against_legacy(
-    root: Path, catalog_path: Path, series: LegacyCandleSeries, record: dict[str, Any]
+    root: Path, series: LegacyCandleSeries, record: dict[str, Any]
 ) -> dict[str, Any]:
+    if record.get("row_count") != len(series.bars):
+        raise DataLakeError(f"manifest row count differs from legacy rows: {series.dataset_id}")
+    if record.get("source_page_count") != len(series.sources):
+        raise DataLakeError(
+            f"manifest source count differs from legacy provenance: {series.dataset_id}"
+        )
     if record.get("legacy_sha256") != series.sha256:
         raise DataLakeError(f"legacy SHA-256 differs from imported dataset: {series.dataset_id}")
     if record.get("legacy_metadata") != series.legacy_metadata:
@@ -259,19 +178,6 @@ def verify_dataset_against_legacy(
         raise DataLakeError(
             f"Parquet source manifest differs from legacy provenance: {series.dataset_id}"
         )
-    with duckdb.connect(str(catalog_path), read_only=True) as connection:
-        catalog = connection.execute(
-            "SELECT row_count, legacy_sha256, parquet_sha256, sources_sha256 "
-            "FROM bar_datasets WHERE dataset_id = ?",
-            [series.dataset_id],
-        ).fetchone()
-    if catalog != (
-        len(series.bars),
-        series.sha256,
-        record["parquet_sha256"],
-        record["sources_sha256"],
-    ):
-        raise DataLakeError(f"DuckDB catalog differs from manifest: {series.dataset_id}")
     return {
         "schema_version": BAR_DATASET_SCHEMA,
         "status": "verified",
@@ -288,23 +194,8 @@ __all__ = [
     "BAR_SCHEMA",
     "DATA_LAKE_SCHEMA",
     "SOURCE_SCHEMA",
-    "UTC",
-    "Any",
-    "DataLakeError",
-    "LegacyCandleSeries",
-    "Path",
-    "annotations",
     "build_import_record",
-    "datetime",
-    "duckdb",
-    "json",
-    "os",
-    "pa",
     "parse_lake_manifest",
-    "pq",
-    "sha256_file",
-    "tempfile",
-    "upsert_catalog",
     "upsert_manifest",
     "verify_dataset_against_legacy",
 ]

@@ -129,6 +129,7 @@ def storage_budget(
 
 def archive_catalog(archives: list[Path], review_date: str) -> dict[str, Any]:
     """Fail closed while the retired command remains in the CLI."""
+    del archives, review_date
     raise W0Error("archive catalog has been retired; verify archives with their original tool")
 
 

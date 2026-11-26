@@ -35,6 +35,8 @@
 
 ## GitHub Project & Issue workflow
 
+- Before starting work, set Project Status to In Progress.
+
 Full specification: [`docs/development/github-project.md`](docs/development/github-project.md). Board: [`https://github.com/orgs/vernikr/projects/2`](https://github.com/orgs/vernikr/projects/2) (`moex-spread-lab`, linked to `vernikr/moex-spread-lab`; idempotent setup/sync: `./scripts/github_project_bootstrap.sh`).
 
 - **Source of truth:** GitHub Issues and their comments are the sole canonical home for project plans, actionable work definitions, sub-slice checklists, execution reports, dated verification/benchmark evidence, historical delivery records, checkpoints, deviations, and deferrals (open or closed). Do not retain a tracked Markdown/JSON copy of a migrated project plan or execution report. The repository owns durable engineering contracts, approved decisions (`docs/decisions.md`), cross-issue blockers (`docs/blockers/bNN-*.md`), formal stage artifacts, reusable runbooks, stable architecture references, and research evidence explicitly intended as a lasting domain record; link these durable documents to their Issues instead of duplicating live project state. Project #2 owns live operational status (`Inbox`, `Ready`, `In Progress`, `Blocked`, `Deferred`, `Done`), `Work Kind` (`feat`, `fix`, `docs`, `refactor`, `chore`, `perf`, `test`, `research`, `plan`, `revert`; `perf` is code/runtime performance, disk-space, or memory optimization, not agent/tooling latency), `Module` (`core`, `data`, `accounting`, `strategies`, `proof`, `web`, `Cross-module`), `Effort`, `Business Value` (`0–5`), and `Verification Gate`. Never create `TODO.md` or parallel master backlogs. Write all Issues and comments in English.

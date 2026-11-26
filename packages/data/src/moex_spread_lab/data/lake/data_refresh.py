@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from datetime import date
 from functools import partial
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from ..iss.catalog import (
     DEFAULT_BOARD,
@@ -17,57 +17,20 @@ from ..iss.catalog import (
     fetch_candle_series,
 )
 from .data_lake import ParquetBarStore
+from .h1_seal import SealedH1Reader
 from .io import atomic_write_json, writer_lock
 from .refresh_merge import (
     REFRESH_SCHEMA,
     DataRefreshError,
     RefreshConfig,
     RefreshTarget,
+    TargetState,
     build_merged_payload,
     chunks,
     parse_date,
     plan_single_target,
     timestamp_date,
 )
-
-
-class TargetStateProtocol(Protocol):
-    @property
-    def target(self) -> RefreshTarget: ...
-
-    @property
-    def legacy_path(self) -> Path: ...
-
-    @property
-    def payload(self) -> dict[str, Any] | None: ...
-
-    @property
-    def watermark(self) -> date | None: ...
-
-    @property
-    def requested_from(self) -> date: ...
-
-
-class PayloadBuilder(Protocol):
-    def __call__(
-        self,
-        *,
-        rows: list[dict[str, Any]],
-        page_count: int,
-        chunk_count: int,
-        raw_entry_count: int,
-    ) -> dict[str, Any]: ...
-
-
-def parse_candle_row(row: object) -> tuple[str, dict[str, Any]] | None:
-    if not isinstance(row, dict):
-        return None
-    typed_row = cast(dict[str, Any], row)
-    begin = typed_row.get("begin")
-    if not isinstance(begin, str):
-        return None
-    return begin, dict(typed_row)
-
 
 _REFRESH_OPTIONS = frozenset(
     {
@@ -92,6 +55,16 @@ _REFRESH_OPTIONS = frozenset(
 CapturedRaw = tuple[str, bytes, str, str]
 ChunkFetchResult = tuple[date, dict[str, Any], list[CapturedRaw]]
 ChunkFutureResult = tuple[str, date, dict[str, Any], list[CapturedRaw]]
+
+
+def parse_candle_row(row: object) -> tuple[str, dict[str, Any]] | None:
+    if not isinstance(row, dict):
+        return None
+    typed_row = cast(dict[str, Any], row)
+    begin = typed_row.get("begin")
+    if not isinstance(begin, str):
+        return None
+    return begin, dict(typed_row)
 
 
 def _parse_refresh_config(
@@ -141,7 +114,7 @@ def _parse_refresh_config(
 
 
 def _run_single_chunk(
-    state: TargetStateProtocol, chunk_from: date, chunk_till: date, cfg: RefreshConfig
+    state: TargetState, chunk_from: date, chunk_till: date, cfg: RefreshConfig
 ) -> ChunkFutureResult:
     captured: list[CapturedRaw] = []
 
@@ -165,7 +138,7 @@ def _run_single_chunk(
 
 
 def _fetch_target_chunks(
-    states: Sequence[TargetStateProtocol], cfg: RefreshConfig
+    states: Sequence[TargetState], cfg: RefreshConfig
 ) -> tuple[dict[str, list[ChunkFetchResult]], int]:
     fetched: dict[str, list[ChunkFetchResult]] = {state.target.id: [] for state in states}
     task_count = 0
@@ -217,14 +190,13 @@ def _merge_chunk_rows(
 
 
 def _ingest_chunk_rows_and_raw(
-    state: TargetStateProtocol,
+    state: TargetState,
     chunks: list[ChunkFetchResult],
     store: ParquetBarStore,
     cfg: RefreshConfig,
 ) -> tuple[list[dict[str, Any]], list[str], int]:
-    old_rows: Iterable[object] = state.payload.get("rows", ()) if state.payload else ()
     rows_by_begin: dict[str, dict[str, Any]] = {}
-    for row in old_rows:
+    for row in state.payload.get("rows", ()) if state.payload else ():
         parsed = parse_candle_row(row)
         if parsed is not None:
             begin, copied_row = parsed
@@ -241,12 +213,12 @@ def _ingest_chunk_rows_and_raw(
 
 
 def _publish_refreshed_target(
-    state: TargetStateProtocol,
+    state: TargetState,
     chunks: list[ChunkFetchResult],
     store: ParquetBarStore,
     cfg: RefreshConfig,
     *,
-    build_payload: PayloadBuilder,
+    build_payload: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
     ordered_chunks = sorted(chunks, key=lambda item: item[0])
     rows, raw_entries, page_count = _ingest_chunk_rows_and_raw(state, ordered_chunks, store, cfg)
@@ -286,8 +258,6 @@ def refresh_candle_datasets(
 ) -> dict[str, Any]:
     """Fetch only ``watermark - overlap`` through ``till_date`` and upsert safely."""
     resolved_root = root.resolve()
-    from .h1_seal import SealedH1Reader
-
     if (
         any(target.interval == 60 for target in targets)
         and SealedH1Reader(resolved_root).payload() is not None

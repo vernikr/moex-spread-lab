@@ -29,10 +29,6 @@ def _source_files(root: Path) -> Iterator[tuple[str, Path]]:
             yield group, path
 
 
-def _entry_legacy_path(entry: dict[str, Any]) -> str:
-    return str(entry["legacy_path"])
-
-
 def build_h1_plan(root: Path) -> dict[str, Any]:
     root = root.resolve()
     files: list[dict[str, Any]] = []
@@ -62,7 +58,7 @@ def build_h1_plan(root: Path) -> dict[str, Any]:
         )
     if not files:
         raise DataLakeError("no runtime-named H1 source files found")
-    files.sort(key=_entry_legacy_path)
+    files.sort(key=lambda entry: str(entry["legacy_path"]))
     by_secid: dict[str, dict[str, str]] = {}
     for entry in files:
         by_secid.setdefault(entry["secid"], {})[entry["source_group"]] = entry["legacy_path"]

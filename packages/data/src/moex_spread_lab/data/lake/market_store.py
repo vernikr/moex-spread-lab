@@ -46,13 +46,13 @@ class MarketDataStore:
         return self.sealed_h1.select(secid)
 
     def source_available(self, path: Path) -> bool:
-        if path.name.endswith("_1h.json") and self.sealed_h1.payload() is not None:
-            value = self.sealed_h1.payload()
+        value = self.sealed_h1.payload()
+        if path.name.endswith("_1h.json") and value is not None:
             try:
                 relative = path.absolute().relative_to(self.root).as_posix()
             except ValueError:
                 return False
-            if value is None or relative not in value["records"]:
+            if relative not in value["records"]:
                 return False
             self.sealed_h1.read(path, columns=("begin",))
             return True

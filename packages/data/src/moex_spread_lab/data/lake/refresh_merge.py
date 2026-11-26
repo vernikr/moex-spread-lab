@@ -32,7 +32,7 @@ class RefreshTarget:
 
 
 @dataclass(frozen=True)
-class _TargetState:
+class TargetState:
     target: RefreshTarget
     legacy_path: Path
     payload: dict[str, Any] | None
@@ -120,10 +120,9 @@ def _overlap_start(payload: dict[str, Any] | None, watermark: date, overlap_sess
     if payload:
         sessions = sorted(
             {
-                item
+                day
                 for row in _payload_rows(payload)
-                for item in [timestamp_date(row.get("begin"))]
-                if item is not None and item <= watermark
+                if (day := timestamp_date(row.get("begin"))) is not None and day <= watermark
             }
         )
         if sessions:
@@ -168,12 +167,10 @@ def _resolve_requested_from(
     payload: dict[str, Any] | None,
     watermark: date | None,
 ) -> date:
+    existing_from = None
+    if payload and (raw_from := payload.get("from")) is not None:
+        existing_from = parse_date(str(raw_from), "existing payload from")
     if cfg.full_refresh:
-        existing_from = (
-            parse_date(str(payload["from"]), "existing payload from")
-            if payload and payload.get("from") is not None
-            else None
-        )
         requested_from = cfg.initial_from or existing_from
     elif watermark is not None:
         requested_from = _overlap_start(payload, watermark, cfg.overlap_sessions)
@@ -188,7 +185,7 @@ def _resolve_requested_from(
 
 def plan_single_target(
     target: RefreshTarget, store: ParquetBarStore, cfg: RefreshConfig
-) -> tuple[_TargetState | None, dict[str, Any] | None]:
+) -> tuple[TargetState | None, dict[str, Any] | None]:
     if not target.secid or target.interval <= 0:
         raise DataRefreshError(f"invalid refresh target: {target}")
     legacy_path = _target_path(cfg.output_dir, target)
@@ -203,11 +200,11 @@ def plan_single_target(
             "network_requests": 0,
         }
     requested_from = _resolve_requested_from(cfg, target, payload, watermark)
-    return _TargetState(target, legacy_path, payload, watermark, requested_from), None
+    return TargetState(target, legacy_path, payload, watermark, requested_from), None
 
 
 def build_merged_payload(
-    state: _TargetState,
+    state: TargetState,
     cfg: RefreshConfig,
     *,
     rows: list[dict[str, Any]],

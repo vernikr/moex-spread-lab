@@ -161,3 +161,46 @@ def test_sizing_propagates_funding_key_comparison_errors(field: str) -> None:
             False,
             True,
         )
+
+
+def test_buffer_cleanup_after_later_conversion_error() -> None:
+    from array import array
+
+    fastcore = loader.load_fastcore()
+    assert fastcore is not None
+    values = array("d", [1.0, 2.0])
+    times = array("d", [1.0, 2.0])
+
+    class BadInt:
+        def __index__(self) -> int:
+            raise ValueError("bad integer")
+
+    with pytest.raises(ValueError, match="bad integer"):
+        fastcore.calendar_zscore_scan(
+            values, times, [0, BadInt()], [1, 1], [1, 1], [1, 1], 0, 1.0, 0.0, 1.0, 0, True
+        )
+    # Resizing raises BufferError if an acquired Py_buffer was not released.
+    values.append(3.0)
+    times.append(3.0)
+
+
+@pytest.mark.parametrize("kind", ["double", "byte", "int32"])
+def test_buffer_list_conversion_failure_propagates(kind: str) -> None:
+    fastcore = loader.load_fastcore()
+    assert fastcore is not None
+
+    class BadValue:
+        def __float__(self) -> float:
+            raise ValueError("bad double")
+
+        def __bool__(self) -> bool:
+            raise ValueError("bad byte")
+
+        def __index__(self) -> int:
+            raise ValueError("bad int32")
+
+    values: list[list[object]] = [[0.0, 1.0], [1, 1], [0, 1, 2]]
+    index = {"double": 0, "byte": 1, "int32": 2}[kind]
+    values[index][1] = BadValue()
+    with pytest.raises(ValueError, match=f"bad {kind}"):
+        fastcore.calendar_sample_z(*values, 2, False)

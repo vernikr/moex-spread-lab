@@ -160,116 +160,66 @@ static inline dd_t sliding_sum(SlidingSum *state, const double *x, Py_ssize_t wi
 
 /* ---------------- Buffer / sequence extraction helpers ---------------- */
 
-static int get_double_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view, int *has_view, double **owned_ptr, const double **out_ptr) {
-    *has_view = 0;
-    *owned_ptr = NULL;
-    if (PyObject_CheckBuffer(obj)) {
-        if (PyObject_GetBuffer(obj, view, PyBUF_SIMPLE) == 0) {
-            if (view->len == expected_n * (Py_ssize_t)sizeof(double)) {
-                *has_view = 1;
-                *out_ptr = (const double *)view->buf;
-                return 0;
-            }
-            PyBuffer_Release(view);
-        } else {
-            PyErr_Clear();
-        }
+typedef struct {
+    Py_buffer view;
+    void *owned;
+    int has_view;
+} BufArg;
+
+typedef enum { BUF_DOUBLE, BUF_BYTE, BUF_INT32 } BufKind;
+
+static void buf_release_all(BufArg *buffers, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        if (buffers[i].has_view) PyBuffer_Release(&buffers[i].view);
+        FASTCORE_FREE(buffers[i].owned);
     }
-    if (!PyList_Check(obj) || PyList_GET_SIZE(obj) != expected_n) {
-        PyErr_SetString(PyExc_TypeError, "expected double buffer or list of matching length");
-        return -1;
-    }
-    double *arr = (double *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(double));
-    if (!arr) {
-        PyErr_NoMemory();
-        return -1;
-    }
-    for (Py_ssize_t i = 0; i < expected_n; i++) {
-        PyObject *item = PyList_GET_ITEM(obj, i);
+}
+
+static int buf_set(PyObject *item, BufArg *arg, BufKind kind, Py_ssize_t i) {
+    if (kind == BUF_DOUBLE) {
         double v = PyFloat_CheckExact(item) ? PyFloat_AS_DOUBLE(item) : PyFloat_AsDouble(item);
-        if (v == -1.0 && PyErr_Occurred()) {
-            FASTCORE_FREE(arr);
-            return -1;
-        }
-        arr[i] = v;
+        if (v == -1.0 && PyErr_Occurred()) return -1;
+        ((double *)arg->owned)[i] = v;
+    } else if (kind == BUF_BYTE) {
+        int v = PyObject_IsTrue(item);
+        if (v < 0) return -1;
+        ((unsigned char *)arg->owned)[i] = (unsigned char)v;
+    } else {
+        long v = PyLong_AsLong(item);
+        if (v == -1 && PyErr_Occurred()) return -1;
+        ((int32_t *)arg->owned)[i] = (int32_t)v;
     }
-    *owned_ptr = arr;
-    *out_ptr = arr;
     return 0;
 }
 
-static int get_uchar_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view, int *has_view, unsigned char **owned_ptr, const unsigned char **out_ptr) {
-    *has_view = 0;
-    *owned_ptr = NULL;
+static int buf_get(PyObject *obj, Py_ssize_t n, BufArg *arg, BufKind kind) {
+    const size_t sizes[] = {sizeof(double), sizeof(unsigned char), sizeof(int32_t)};
+    const char *names[] = {"double", "byte", "int32"};
+    size_t size = sizes[kind];
     if (PyObject_CheckBuffer(obj)) {
-        if (PyObject_GetBuffer(obj, view, PyBUF_SIMPLE) == 0) {
-            if (view->len == expected_n * (Py_ssize_t)sizeof(unsigned char)) {
-                *has_view = 1;
-                *out_ptr = (const unsigned char *)view->buf;
+        if (PyObject_GetBuffer(obj, &arg->view, PyBUF_SIMPLE) == 0) {
+            if (arg->view.len == n * (Py_ssize_t)size) {
+                arg->has_view = 1;
                 return 0;
             }
-            PyBuffer_Release(view);
+            PyBuffer_Release(&arg->view);
         } else {
             PyErr_Clear();
         }
     }
-    if (!PyList_Check(obj) || PyList_GET_SIZE(obj) != expected_n) {
-        PyErr_SetString(PyExc_TypeError, "expected byte buffer or list of matching length");
+    if (!PyList_Check(obj) || PyList_GET_SIZE(obj) != n) {
+        PyErr_Format(PyExc_TypeError, "expected %s buffer or list of matching length", names[kind]);
         return -1;
     }
-    unsigned char *arr = (unsigned char *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1));
-    if (!arr) {
-        PyErr_NoMemory();
-        return -1;
-    }
-    for (Py_ssize_t i = 0; i < expected_n; i++) {
-        int truth = PyObject_IsTrue(PyList_GET_ITEM(obj, i));
-        if (truth < 0) {
-            FASTCORE_FREE(arr);
-            return -1;
-        }
-        arr[i] = (unsigned char)truth;
-    }
-    *owned_ptr = arr;
-    *out_ptr = arr;
+    arg->owned = FASTCORE_MALLOC((size_t)(n > 0 ? n : 1) * size);
+    if (!arg->owned) { PyErr_NoMemory(); return -1; }
+    for (Py_ssize_t i = 0; i < n; i++)
+        if (buf_set(PyList_GET_ITEM(obj, i), arg, kind, i) < 0) return -1;
     return 0;
 }
 
-static int get_int32_view(PyObject *obj, Py_ssize_t expected_n, Py_buffer *view, int *has_view, int32_t **owned_ptr, const int32_t **out_ptr) {
-    *has_view = 0;
-    *owned_ptr = NULL;
-    if (PyObject_CheckBuffer(obj)) {
-        if (PyObject_GetBuffer(obj, view, PyBUF_SIMPLE) == 0) {
-            if (view->len == expected_n * (Py_ssize_t)sizeof(int32_t)) {
-                *has_view = 1;
-                *out_ptr = (const int32_t *)view->buf;
-                return 0;
-            }
-            PyBuffer_Release(view);
-        } else {
-            PyErr_Clear();
-        }
-    }
-    if (!PyList_Check(obj) || PyList_GET_SIZE(obj) != expected_n) {
-        PyErr_SetString(PyExc_TypeError, "expected int32 buffer or list of matching length");
-        return -1;
-    }
-    int32_t *arr = (int32_t *)FASTCORE_MALLOC((size_t)(expected_n > 0 ? expected_n : 1) * sizeof(int32_t));
-    if (!arr) {
-        PyErr_NoMemory();
-        return -1;
-    }
-    for (Py_ssize_t i = 0; i < expected_n; i++) {
-        long v = PyLong_AsLong(PyList_GET_ITEM(obj, i));
-        if (v == -1 && PyErr_Occurred()) {
-            FASTCORE_FREE(arr);
-            return -1;
-        }
-        arr[i] = (int32_t)v;
-    }
-    *owned_ptr = arr;
-    *out_ptr = arr;
-    return 0;
+static void *buf_data(BufArg *arg) {
+    return arg->has_view ? arg->view.buf : arg->owned;
 }
 
 /* ---------------- 1. Population rolling z-score  ----------------
@@ -294,14 +244,14 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
     if (!result) return NULL;
     if (n == 0) return result;
 
-    Py_buffer x_view;
-    int has_x_view = 0;
-    double *x_owned = NULL;
+    BufArg buffers[1] = {0};
     const double *x = NULL;
-    if (get_double_view(spread_obj, n, &x_view, &has_x_view, &x_owned, &x) < 0) {
+    if (buf_get(spread_obj, n, &buffers[0], BUF_DOUBLE) < 0) {
+        buf_release_all(buffers, 1);
         Py_DECREF(result);
         return NULL;
     }
+    x = buf_data(&buffers[0]);
 
     Py_ssize_t start = lookback + delay;
     Py_ssize_t pre = start < n ? start : n;
@@ -316,8 +266,7 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
                         ? suf_stack
                         : (dd_t *)FASTCORE_MALLOC((size_t)(lookback + 1) * sizeof(dd_t));
         if (!suf) {
-            if (has_x_view) PyBuffer_Release(&x_view);
-            FASTCORE_FREE(x_owned);
+            buf_release_all(buffers, 1);
             Py_DECREF(result);
             return PyErr_NoMemory();
         }
@@ -347,8 +296,7 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
             PyObject *zf = PyFloat_FromDouble(z);
             if (!zf) {
                 if (suf != suf_stack) FASTCORE_FREE(suf);
-                if (has_x_view) PyBuffer_Release(&x_view);
-                FASTCORE_FREE(x_owned);
+                buf_release_all(buffers, 1);
                 Py_DECREF(result);
                 return NULL;
             }
@@ -357,8 +305,7 @@ static PyObject *fast_compute_rolling_z(PyObject *Py_UNUSED(self), PyObject *arg
         if (suf != suf_stack) FASTCORE_FREE(suf);
     }
 
-    if (has_x_view) PyBuffer_Release(&x_view);
-    FASTCORE_FREE(x_owned);
+    buf_release_all(buffers, 1);
     return result;
 }
 
@@ -409,28 +356,22 @@ static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *arg
     }
     double *z_out = (double *)out_view.buf;
 
-    Py_buffer sp_view, el_view, pr_view;
-    int has_sp = 0, has_el = 0, has_pr = 0;
-    double *sp_owned = NULL;
-    unsigned char *el_owned = NULL;
-    int32_t *pr_owned = NULL;
+    BufArg buffers[3] = {0};
     const double *spreads = NULL;
     const unsigned char *elig = NULL;
     const int32_t *elig_pref = NULL;
 
-    if (get_double_view(spread_obj, n, &sp_view, &has_sp, &sp_owned, &spreads) < 0 ||
-        get_uchar_view(elig_obj, n, &el_view, &has_el, &el_owned, &elig) < 0 ||
-        get_int32_view(elig_pref_obj, n + 1, &pr_view, &has_pr, &pr_owned, &elig_pref) < 0) {
-        if (has_sp) PyBuffer_Release(&sp_view);
-        if (has_el) PyBuffer_Release(&el_view);
-        if (has_pr) PyBuffer_Release(&pr_view);
-        FASTCORE_FREE(sp_owned);
-        FASTCORE_FREE(el_owned);
-        FASTCORE_FREE(pr_owned);
+    if (buf_get(spread_obj, n, &buffers[0], BUF_DOUBLE) < 0 ||
+        buf_get(elig_obj, n, &buffers[1], BUF_BYTE) < 0 ||
+        buf_get(elig_pref_obj, n + 1, &buffers[2], BUF_INT32) < 0) {
+        buf_release_all(buffers, 3);
         PyBuffer_Release(&out_view);
         Py_DECREF(out_arr);
         return NULL;
     }
+    spreads = buf_data(&buffers[0]);
+    elig = buf_data(&buffers[1]);
+    elig_pref = buf_data(&buffers[2]);
 
     Py_ssize_t inc = include_current ? 1 : 0;
     Py_ssize_t first_idx = window - inc;
@@ -444,10 +385,7 @@ static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *arg
                     ? suf_stack
                     : (dd_t *)FASTCORE_MALLOC((size_t)(window + 1) * sizeof(dd_t));
     if (!suf) {
-        if (has_sp) PyBuffer_Release(&sp_view);
-        if (has_el) PyBuffer_Release(&el_view);
-        if (has_pr) PyBuffer_Release(&pr_view);
-        FASTCORE_FREE(sp_owned); FASTCORE_FREE(el_owned); FASTCORE_FREE(pr_owned);
+        buf_release_all(buffers, 3);
         PyBuffer_Release(&out_view);
         Py_DECREF(out_arr);
         return PyErr_NoMemory();
@@ -484,14 +422,16 @@ static PyObject *fast_calendar_sample_z(PyObject *Py_UNUSED(self), PyObject *arg
     }
 
     if (suf != suf_stack) FASTCORE_FREE(suf);
-    if (has_sp) PyBuffer_Release(&sp_view);
-    if (has_el) PyBuffer_Release(&el_view);
-    if (has_pr) PyBuffer_Release(&pr_view);
-    FASTCORE_FREE(sp_owned);
-    FASTCORE_FREE(el_owned);
-    FASTCORE_FREE(pr_owned);
+    buf_release_all(buffers, 3);
     PyBuffer_Release(&out_view);
     return out_arr;
+}
+
+static int append_trade(PyObject *trades, PyObject *tuple) {
+    if (!tuple) return -1;
+    int result = PyList_Append(trades, tuple);
+    Py_DECREF(tuple);
+    return result;
 }
 
 /* ---------------- 3. Calendar z-score & convergence trade scans ----------------
@@ -520,23 +460,25 @@ static PyObject *fast_calendar_zscore_scan(PyObject *Py_UNUSED(self), PyObject *
     PyObject *trades = PyList_New(0);
     if (!trades || n == 0) return trades;
 
-    Py_buffer z_v, ts_v, dte_v, se_v, en_v, ex_v;
-    int hz = 0, hts = 0, hdte = 0, hse = 0, hen = 0, hex = 0;
-    double *z_ow = NULL, *ts_ow = NULL;
-    int32_t *dte_ow = NULL;
-    unsigned char *se_ow = NULL, *en_ow = NULL, *ex_ow = NULL;
+    BufArg buffers[6] = {0};
     const double *z = NULL, *ts_days = NULL;
     const int32_t *dte = NULL;
     const unsigned char *sig_el = NULL, *ent_el = NULL, *ext_el = NULL;
 
-    if (get_double_view(z_obj, n, &z_v, &hz, &z_ow, &z) < 0 ||
-        get_double_view(ts_obj, n, &ts_v, &hts, &ts_ow, &ts_days) < 0 ||
-        get_int32_view(dte_obj, n, &dte_v, &hdte, &dte_ow, &dte) < 0 ||
-        get_uchar_view(sig_el_obj, n, &se_v, &hse, &se_ow, &sig_el) < 0 ||
-        get_uchar_view(ent_el_obj, n, &en_v, &hen, &en_ow, &ent_el) < 0 ||
-        get_uchar_view(ext_el_obj, n, &ex_v, &hex, &ex_ow, &ext_el) < 0) {
+    if (buf_get(z_obj, n, &buffers[0], BUF_DOUBLE) < 0 ||
+        buf_get(ts_obj, n, &buffers[1], BUF_DOUBLE) < 0 ||
+        buf_get(dte_obj, n, &buffers[2], BUF_INT32) < 0 ||
+        buf_get(sig_el_obj, n, &buffers[3], BUF_BYTE) < 0 ||
+        buf_get(ent_el_obj, n, &buffers[4], BUF_BYTE) < 0 ||
+        buf_get(ext_el_obj, n, &buffers[5], BUF_BYTE) < 0) {
         goto fail;
     }
+    z = buf_data(&buffers[0]);
+    ts_days = buf_data(&buffers[1]);
+    dte = buf_data(&buffers[2]);
+    sig_el = buf_data(&buffers[3]);
+    ent_el = buf_data(&buffers[4]);
+    ext_el = buf_data(&buffers[5]);
 
     int position = 0;
     Py_ssize_t entry_idx = 0, signal_idx = 0;
@@ -557,12 +499,7 @@ static PyObject *fast_calendar_zscore_scan(PyObject *Py_UNUSED(self), PyObject *
                 }
             }
             if (reason >= 0) {
-                PyObject *tup = Py_BuildValue("(nniind)", entry_idx, index, position, reason, signal_idx, z[signal_idx]);
-                if (!tup || PyList_Append(trades, tup) < 0) {
-                    Py_XDECREF(tup);
-                    goto fail;
-                }
-                Py_DECREF(tup);
+                if (append_trade(trades, Py_BuildValue("(nniind)", entry_idx, index, position, reason, signal_idx, z[signal_idx])) < 0) goto fail;
                 position = 0;
             }
         }
@@ -578,33 +515,14 @@ static PyObject *fast_calendar_zscore_scan(PyObject *Py_UNUSED(self), PyObject *
         }
     }
     if (position != 0 && close_at_end) {
-        PyObject *tup = Py_BuildValue("(nniind)", entry_idx, n - 1, position, 3, signal_idx, z[signal_idx]);
-        if (!tup || PyList_Append(trades, tup) < 0) {
-            Py_XDECREF(tup);
-            goto fail;
-        }
-        Py_DECREF(tup);
+        if (append_trade(trades, Py_BuildValue("(nniind)", entry_idx, n - 1, position, 3, signal_idx, z[signal_idx])) < 0) goto fail;
     }
 
-    if (hz) PyBuffer_Release(&z_v);
-    if (hts) PyBuffer_Release(&ts_v);
-    if (hdte) PyBuffer_Release(&dte_v);
-    if (hse) PyBuffer_Release(&se_v);
-    if (hen) PyBuffer_Release(&en_v);
-    if (hex) PyBuffer_Release(&ex_v);
-    FASTCORE_FREE(z_ow); FASTCORE_FREE(ts_ow); FASTCORE_FREE(dte_ow);
-    FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
+    buf_release_all(buffers, 6);
     return trades;
 
 fail:
-    if (hz) PyBuffer_Release(&z_v);
-    if (hts) PyBuffer_Release(&ts_v);
-    if (hdte) PyBuffer_Release(&dte_v);
-    if (hse) PyBuffer_Release(&se_v);
-    if (hen) PyBuffer_Release(&en_v);
-    if (hex) PyBuffer_Release(&ex_v);
-    FASTCORE_FREE(z_ow); FASTCORE_FREE(ts_ow); FASTCORE_FREE(dte_ow);
-    FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
+    buf_release_all(buffers, 6);
     Py_DECREF(trades);
     return NULL;
 }
@@ -628,34 +546,30 @@ static PyObject *fast_calendar_convergence_scan(PyObject *Py_UNUSED(self), PyObj
     PyObject *trades = PyList_New(0);
     if (!trades || n == 0) return trades;
 
-    Py_buffer dv_v, dte_v, se_v, en_v, ex_v;
-    int hdv = 0, hdte = 0, hse = 0, hen = 0, hex = 0;
-    double *dv_ow = NULL;
-    int32_t *dte_ow = NULL;
-    unsigned char *se_ow = NULL, *en_ow = NULL, *ex_ow = NULL;
+    BufArg buffers[5] = {0};
     const double *dev = NULL;
     const int32_t *dte = NULL;
     const unsigned char *sig_el = NULL, *ent_el = NULL, *ext_el = NULL;
 
-    if (get_double_view(dev_obj, n, &dv_v, &hdv, &dv_ow, &dev) < 0 ||
-        get_int32_view(dte_obj, n, &dte_v, &hdte, &dte_ow, &dte) < 0 ||
-        get_uchar_view(sig_el_obj, n, &se_v, &hse, &se_ow, &sig_el) < 0 ||
-        get_uchar_view(ent_el_obj, n, &en_v, &hen, &en_ow, &ent_el) < 0 ||
-        get_uchar_view(ext_el_obj, n, &ex_v, &hex, &ex_ow, &ext_el) < 0) {
+    if (buf_get(dev_obj, n, &buffers[0], BUF_DOUBLE) < 0 ||
+        buf_get(dte_obj, n, &buffers[1], BUF_INT32) < 0 ||
+        buf_get(sig_el_obj, n, &buffers[2], BUF_BYTE) < 0 ||
+        buf_get(ent_el_obj, n, &buffers[3], BUF_BYTE) < 0 ||
+        buf_get(ext_el_obj, n, &buffers[4], BUF_BYTE) < 0) {
         goto fail;
     }
+    dev = buf_data(&buffers[0]);
+    dte = buf_data(&buffers[1]);
+    sig_el = buf_data(&buffers[2]);
+    ent_el = buf_data(&buffers[3]);
+    ext_el = buf_data(&buffers[4]);
 
     int position = 0;
     Py_ssize_t entry_idx = 0, signal_idx = 0;
 
     for (Py_ssize_t index = 0; index < n; index++) {
         if (position != 0 && ext_el[index] && dte[index] <= exit_days) {
-            PyObject *tup = Py_BuildValue("(nniind)", entry_idx, index, position, 2, signal_idx, dev[signal_idx]);
-            if (!tup || PyList_Append(trades, tup) < 0) {
-                Py_XDECREF(tup);
-                goto fail;
-            }
-            Py_DECREF(tup);
+            if (append_trade(trades, Py_BuildValue("(nniind)", entry_idx, index, position, 2, signal_idx, dev[signal_idx])) < 0) goto fail;
             position = 0;
         }
         Py_ssize_t sig = index - delay;
@@ -669,29 +583,14 @@ static PyObject *fast_calendar_convergence_scan(PyObject *Py_UNUSED(self), PyObj
         }
     }
     if (position != 0 && close_at_end) {
-        PyObject *tup = Py_BuildValue("(nniind)", entry_idx, n - 1, position, 3, signal_idx, dev[signal_idx]);
-        if (!tup || PyList_Append(trades, tup) < 0) {
-            Py_XDECREF(tup);
-            goto fail;
-        }
-        Py_DECREF(tup);
+        if (append_trade(trades, Py_BuildValue("(nniind)", entry_idx, n - 1, position, 3, signal_idx, dev[signal_idx])) < 0) goto fail;
     }
 
-    if (hdv) PyBuffer_Release(&dv_v);
-    if (hdte) PyBuffer_Release(&dte_v);
-    if (hse) PyBuffer_Release(&se_v);
-    if (hen) PyBuffer_Release(&en_v);
-    if (hex) PyBuffer_Release(&ex_v);
-    FASTCORE_FREE(dv_ow); FASTCORE_FREE(dte_ow); FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
+    buf_release_all(buffers, 5);
     return trades;
 
 fail:
-    if (hdv) PyBuffer_Release(&dv_v);
-    if (hdte) PyBuffer_Release(&dte_v);
-    if (hse) PyBuffer_Release(&se_v);
-    if (hen) PyBuffer_Release(&en_v);
-    if (hex) PyBuffer_Release(&ex_v);
-    FASTCORE_FREE(dv_ow); FASTCORE_FREE(dte_ow); FASTCORE_FREE(se_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow);
+    buf_release_all(buffers, 5);
     Py_DECREF(trades);
     return NULL;
 }
@@ -799,20 +698,13 @@ static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *a
             if (z_obj != Py_None) {
                 double signal_z = PyFloat_CheckExact(z_obj) ? PyFloat_AS_DOUBLE(z_obj) : PyFloat_AsDouble(z_obj);
                 if (signal_z == -1.0 && PyErr_Occurred()) {
-                    Py_DECREF(trades);
-                    Py_XDECREF(actions);
-                    return NULL;
+                    goto fail;
                 }
                 double az = fabs(signal_z);
                 if (position != 0 && az <= exit_z) {
-                    PyObject *tup = Py_BuildValue("(nnidi)", entry_idx, index, position, entry_signal_z, 0);
-                    if (!tup || PyList_Append(trades, tup) < 0) {
-                        Py_XDECREF(tup);
-                        Py_DECREF(trades);
-                        Py_XDECREF(actions);
-                        return NULL;
+                    if (append_trade(trades, Py_BuildValue("(nnidi)", entry_idx, index, position, entry_signal_z, 0)) < 0) {
+                        goto fail;
                     }
-                    Py_DECREF(tup);
                     position = 0;
                     entry_idx = -1;
                     action = 2;
@@ -827,29 +719,20 @@ static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *a
         if (want_positions) {
             PyObject *pair = Py_BuildValue("(ii)", action, position);
             if (!pair) {
-                Py_DECREF(trades);
-                Py_DECREF(actions);
-                return NULL;
+                goto fail;
             }
             PyList_SET_ITEM(actions, index, pair);
         }
     }
 
     if (position != 0 && row_count > 0) {
-        PyObject *tup = Py_BuildValue("(nnidi)", entry_idx, row_count - 1, position, entry_signal_z, 1);
-        if (!tup || PyList_Append(trades, tup) < 0) {
-            Py_XDECREF(tup);
-            Py_DECREF(trades);
-            Py_XDECREF(actions);
-            return NULL;
+        if (append_trade(trades, Py_BuildValue("(nnidi)", entry_idx, row_count - 1, position, entry_signal_z, 1)) < 0) {
+            goto fail;
         }
-        Py_DECREF(tup);
         if (want_positions) {
             PyObject *pair = Py_BuildValue("(ii)", 5, position);
             if (!pair) {
-                Py_DECREF(trades);
-                Py_DECREF(actions);
-                return NULL;
+                goto fail;
             }
             PyObject *old = PyList_GET_ITEM(actions, row_count - 1);
             PyList_SET_ITEM(actions, row_count - 1, pair);
@@ -857,17 +740,15 @@ static PyObject *fast_mean_reversion_scan(PyObject *Py_UNUSED(self), PyObject *a
         }
     }
 
-    if (want_positions) {
-        PyObject *ret = PyTuple_Pack(2, trades, actions);
-        Py_DECREF(trades);
-        Py_DECREF(actions);
-        return ret;
-    }
-    Py_INCREF(Py_None);
-    PyObject *ret = PyTuple_Pack(2, trades, Py_None);
+    PyObject *ret = PyTuple_Pack(2, trades, want_positions ? actions : Py_None);
     Py_DECREF(trades);
-    Py_DECREF(Py_None);
+    Py_XDECREF(actions);
     return ret;
+
+fail:
+    Py_DECREF(trades);
+    Py_XDECREF(actions);
+    return NULL;
 }
 
 /* ---------------- 6. Max-affordable sizing  ----------------
@@ -897,6 +778,16 @@ typedef struct {
     int has_exit_costs;
 } TradeSpec;
 
+static int quantity_requirement(Py_ssize_t q, const double uc[3], double margin,
+                                double reserve, double *out) {
+    double f0, f1, f2;
+    if (exact_round2(uc[0] * (double)q, &f0) < 0 ||
+        exact_round2(uc[1] * (double)q, &f1) < 0 ||
+        exact_round2(uc[2] * (double)q, &f2) < 0) return -1;
+    *out = margin * (double)q + reserve + 2.0 * (f0 + f1 + f2);
+    return 0;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity): baselined legacy C99 helper
 static int calc_max_quantity(
     double budget, double margin, const double uc[3], int stress, int native_spread, Py_ssize_t *out_q
@@ -913,21 +804,15 @@ static int calc_max_quantity(
     Py_ssize_t q = (raw > 0.0) ? (Py_ssize_t)raw : 0;
 
     while (q > 0) {
-        double f0, f1, f2;
-        if (exact_round2(uc[0] * (double)q, &f0) < 0 || exact_round2(uc[1] * (double)q, &f1) < 0 || exact_round2(uc[2] * (double)q, &f2) < 0) {
-            return -1;
-        }
-        double req = required_margin * (double)q + fixed_reserve + 2.0 * (f0 + f1 + f2);
+        double req;
+        if (quantity_requirement(q, uc, required_margin, fixed_reserve, &req) < 0) return -1;
         if (req <= budget + 1e-9) break;
         q--;
     }
     while (1) {
         Py_ssize_t q1 = q + 1;
-        double f0, f1, f2;
-        if (exact_round2(uc[0] * (double)q1, &f0) < 0 || exact_round2(uc[1] * (double)q1, &f1) < 0 || exact_round2(uc[2] * (double)q1, &f2) < 0) {
-            return -1;
-        }
-        double req = required_margin * (double)q1 + fixed_reserve + 2.0 * (f0 + f1 + f2);
+        double req;
+        if (quantity_requirement(q1, uc, required_margin, fixed_reserve, &req) < 0) return -1;
         if (req > budget + 1e-9) break;
         q = q1;
     }
@@ -1210,10 +1095,7 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     if (start_idx < 0) start_idx = 0;
 
     Py_ssize_t n_trades = PyList_GET_SIZE(specs_lst);
-    Py_buffer pr_v, sp_v, pt_v, po_v, el_v, en_v, ex_v;
-    int h_pr = 0, h_sp = 0, h_pt = 0, h_po = 0, h_el = 0, h_en = 0, h_ex = 0;
-    double *pr_ow = NULL, *sp_ow = NULL, *pt_ow = NULL, *po_ow = NULL;
-    unsigned char *el_ow = NULL, *en_ow = NULL, *ex_ow = NULL;
+    BufArg buffers[7] = {0};
     const double *prices = NULL, *spreads = NULL, *points = NULL, *posted_units = NULL;
     const unsigned char *elig = NULL, *entry_elig = NULL, *exit_elig = NULL;
 
@@ -1222,16 +1104,24 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
     PyObject *accepted_out = NULL;
     PyObject *ret_obj = NULL;
 
-    if (get_double_view(prices_obj, n, &pr_v, &h_pr, &pr_ow, &prices) < 0 ||
-        get_double_view(spreads_obj, n, &sp_v, &h_sp, &sp_ow, &spreads) < 0 ||
-        get_double_view(points_obj, n, &pt_v, &h_pt, &pt_ow, &points) < 0 ||
-        get_double_view(posted_obj, n, &po_v, &h_po, &po_ow, &posted_units) < 0 ||
-        get_uchar_view(elig_obj, n, &el_v, &h_el, &el_ow, &elig) < 0 ||
-        get_uchar_view(entry_elig_obj, n, &en_v, &h_en, &en_ow, &entry_elig) < 0 ||
-        get_uchar_view(exit_elig_obj, n, &ex_v, &h_ex, &ex_ow, &exit_elig) < 0 ||
+    if (buf_get(prices_obj, n, &buffers[0], BUF_DOUBLE) < 0 ||
+        buf_get(spreads_obj, n, &buffers[1], BUF_DOUBLE) < 0 ||
+        buf_get(points_obj, n, &buffers[2], BUF_DOUBLE) < 0 ||
+        buf_get(posted_obj, n, &buffers[3], BUF_DOUBLE) < 0 ||
+        buf_get(elig_obj, n, &buffers[4], BUF_BYTE) < 0 ||
+        buf_get(entry_elig_obj, n, &buffers[5], BUF_BYTE) < 0 ||
+        buf_get(exit_elig_obj, n, &buffers[6], BUF_BYTE) < 0 ||
         parse_trade_specs(specs_lst, n_trades, &specs) < 0) {
         goto cleanup;
     }
+    prices = buf_data(&buffers[0]);
+    spreads = buf_data(&buffers[1]);
+    points = buf_data(&buffers[2]);
+    posted_units = buf_data(&buffers[3]);
+    elig = buf_data(&buffers[4]);
+    entry_elig = buf_data(&buffers[5]);
+    exit_elig = buf_data(&buffers[6]);
+
 
     if (!scalar_only) {
         ledger = PyList_New(n);
@@ -1344,15 +1234,8 @@ static PyObject *fast_size_proof_metrics(PyObject *Py_UNUSED(self), PyObject *ar
 cleanup:
     Py_XDECREF(ledger);
     Py_XDECREF(accepted_out);
-    if (h_pr) PyBuffer_Release(&pr_v);
-    if (h_sp) PyBuffer_Release(&sp_v);
-    if (h_pt) PyBuffer_Release(&pt_v);
-    if (h_po) PyBuffer_Release(&po_v);
-    if (h_el) PyBuffer_Release(&el_v);
-    if (h_en) PyBuffer_Release(&en_v);
-    if (h_ex) PyBuffer_Release(&ex_v);
-    FASTCORE_FREE(pr_ow); FASTCORE_FREE(sp_ow); FASTCORE_FREE(pt_ow); FASTCORE_FREE(po_ow);
-    FASTCORE_FREE(el_ow); FASTCORE_FREE(en_ow); FASTCORE_FREE(ex_ow); FASTCORE_FREE(specs);
+    buf_release_all(buffers, 7);
+    FASTCORE_FREE(specs);
     return ret_obj;
 }
 

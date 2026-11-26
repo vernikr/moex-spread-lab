@@ -72,16 +72,14 @@ def _build_compile_command(
 
 
 def _compiler_env() -> dict[str, str]:
-    env = dict(os.environ)
-    for var in (
+    excluded = {
         "LD_PRELOAD",
         "DYLD_INSERT_LIBRARIES",
         "ASAN_OPTIONS",
         "LSAN_OPTIONS",
         "UBSAN_OPTIONS",
-    ):
-        env.pop(var, None)
-    return env
+    }
+    return {key: value for key, value in os.environ.items() if key not in excluded}
 
 
 def _ensure_compiled(pkg_dir: Path, ext: str, *, sanitize: bool) -> Path:

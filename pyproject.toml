@@ -3159,8 +3159,8 @@ label = "test_storage_policy.py"
 paths = ["packages/data/tests/test_storage_policy.py"]
 
 [[tool.size-report.columns]]
-label = "test_evaluation_periods.py"
-paths = ["packages/core/tests/test_evaluation_periods.py"]
+label = "core settings tests"
+paths = ["packages/core/tests/test_evaluation_periods.py", "packages/core/tests/test_settings.py"]
 
 [[tool.size-report.columns]]
 label = "test_registry_search.py"

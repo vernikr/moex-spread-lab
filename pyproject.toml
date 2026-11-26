@@ -1335,6 +1335,10 @@ label = "test_change_scope.py"
 paths = ["packages/core/tests/test_change_scope.py"]
 
 [[tool.size-report.columns]]
+label = "packages/core/tests/test_architecture_gate.py"
+paths = ["packages/core/tests/test_architecture_gate.py"]
+
+[[tool.size-report.columns]]
 label = "R14-text.md"
 paths = ["docs/research/prompts/R14-text.md"]
 

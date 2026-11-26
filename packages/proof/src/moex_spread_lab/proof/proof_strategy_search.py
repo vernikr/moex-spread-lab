@@ -16,7 +16,7 @@ import optuna
 
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.w0 import run_id
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
@@ -323,7 +323,7 @@ def _no_winner(run: _Run) -> _Obj:
         "candidates": run.records,
         "reason": "Нет допустимого результата ни у одной общей стратегии. Стратегия и параметры сохранены.",
     }
-    return {**result, "run_id": _run_id(result)}
+    return {**result, "run_id": run_id(result)}
 
 
 def _final_result(run: _Run, winner: _Winner, policy: _Obj, settings: _SettingsLike) -> _Obj:
@@ -350,7 +350,7 @@ def _final_result(run: _Run, winner: _Winner, policy: _Obj, settings: _SettingsL
         strategy_search=policy,
     )
     result.pop("run_id", None)
-    return {**result, "run_id": _run_id(result)}
+    return {**result, "run_id": run_id(result)}
 
 
 def _base_payload(run: _Run, targets: list[_Target], policy: _Obj) -> _Obj:
@@ -434,7 +434,7 @@ def strategy_search(
     }
     run.base = _base_payload(run, targets, policy)
     if not prepared:
-        return _no_prepared_result(run.base, failures, request, targets, _run_id)
+        return _no_prepared_result(run.base, failures, request, targets, run_id)
 
     total_budget = len(prepared) * budget()
     try:

@@ -26,7 +26,7 @@ from moex_spread_lab.core.universe import (
 from moex_spread_lab.core.universe import (
     PAIR_UNIVERSE,
 )
-from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import pair_fill as pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import (
     FundingWindow,
@@ -69,7 +69,6 @@ from .payload_tools import (
 )
 
 _HashedJSONCache: Any = vars(_w0)["_HashedJSONCache"]
-_run_id: Any = vars(_w0)["_run_id"]
 STRATEGIES: dict[str, dict[str, Any]] = cast(
     dict[str, dict[str, Any]], vars(_universe)["STRATEGIES"]
 )
@@ -138,7 +137,7 @@ def _calendar_sizing_unit(
             if not metrics_only:
                 unit.setdefault(
                     "run_id",
-                    _run_id(
+                    run_id(
                         {
                             "selection": unit.get("selection", {}),
                             "daily": unit.get("series", []),

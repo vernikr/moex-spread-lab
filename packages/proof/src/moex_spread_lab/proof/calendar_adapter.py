@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.costs import cost_totals as _cost_totals
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.w0 import run_id
 from moex_spread_lab.strategies import REFERENCE_WARNING, attach_entry_levels
 
 from .payload_tools import (
@@ -94,7 +94,7 @@ def calendar_proof(
     selection_out.setdefault("timeframe", timeframe)
     fill = (selection.get("fill") or "next_open").replace("_", " ")
     payload["price_role"] = _price_role(payload, selection_out, timeframe, fill)
-    payload["run_id"] = _run_id(
+    payload["run_id"] = run_id(
         {
             "selection": payload["selection"],
             "daily": payload.get("series"),

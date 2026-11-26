@@ -13,8 +13,8 @@ from moex_spread_lab.accounting.account_risk import (
     DEFAULT_UNCERTAINTY_BUFFER,
 )
 from moex_spread_lab.core import universe as _universe
+from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, TimeframeSpec, get_timeframe
-from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as _catalog
 
@@ -25,7 +25,6 @@ from .inputs import ScreenerInputs, _candle_summary, _make_proof_funding
 HISTORY_WINDOWS: dict[str, tuple[str, str]] = _catalog.HISTORY_WINDOWS
 PAIRS: tuple[dict[str, str], ...] = _catalog.PAIRS
 STRATEGIES: dict[str, dict[str, Any]] = cast(dict[str, dict[str, Any]], _universe.STRATEGIES)
-INITIAL_CAPITAL = _universe.INITIAL_CAPITAL
 
 InstrumentRow = dict[str, Any]
 Instruments = dict[str, InstrumentRow]

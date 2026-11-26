@@ -11,9 +11,8 @@ from typing import Any, cast
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.costs import tariff_profile
 from moex_spread_lab.core import universe as _universe
-from moex_spread_lab.core.settings import read_settings
+from moex_spread_lab.core.settings import MAX_QUANTITY, read_settings
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
-from moex_spread_lab.core.universe import MAX_QUANTITY
 
 from ..funding_carry.carry import build_carry_strategy, build_carry_study, fetch_history
 from ..funding_carry.proof_funding import FundingWindow

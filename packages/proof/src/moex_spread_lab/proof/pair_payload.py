@@ -20,9 +20,10 @@ from moex_spread_lab.accounting.costs import (
 from moex_spread_lab.accounting.costs import (
     cost_totals as _cost_totals,
 )
+from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
 from moex_spread_lab.core.timeframes import get_timeframe
-from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIR_UNIVERSE
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.universe import PAIR_UNIVERSE
+from moex_spread_lab.core.w0 import run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .payload_tools import PROOF_SCHEMA, clean, observed_min_leg_volume, point_value
@@ -189,7 +190,7 @@ def _run_identity(spec: PairPayloadSpec, payload: dict[str, Any]) -> str:
         if "funding_policy" in spec.provenance
         else {}
     )
-    return _run_id(
+    return run_id(
         {
             "selection": payload["selection"],
             "daily": payload["series"],

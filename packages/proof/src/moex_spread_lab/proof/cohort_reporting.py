@@ -9,7 +9,7 @@ from typing import Any, Protocol, cast
 
 import optuna
 
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.w0 import run_id
 
 from .axis import Axis
 from .landscape import Landscape
@@ -195,7 +195,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
             result_run_id=single["run_id"],
             evaluation=single["evaluation"],
         )
-    return {**result, "run_id": _run_id(result)}
+    return {**result, "run_id": run_id(result)}
 
 
 def unavailable(case: _LampCaseLike, reason: str) -> _Obj:
@@ -214,7 +214,7 @@ def unavailable(case: _LampCaseLike, reason: str) -> _Obj:
         "evaluation": case.report(case.seed)["evaluation"],
         "plateau": _lamps(case.fit, case.seed, reason),
     }
-    return {**result, "run_id": _run_id(result)}
+    return {**result, "run_id": run_id(result)}
 
 
 # Compatibility facade: `proof_batch` re-exports the private report hook by name.

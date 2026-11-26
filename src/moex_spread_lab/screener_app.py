@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from moex_spread_lab.core.settings import read_settings, save_settings
-from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe, timeframe_options
-from moex_spread_lab.core.universe import (
+from moex_spread_lab.core.settings import (
     INITIAL_CAPITAL,
     MAX_QUANTITY,
     MIN_DAILY_VOLUME,
-    STRATEGIES,
+    read_settings,
+    save_settings,
 )
+from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe, timeframe_options
+from moex_spread_lab.core.universe import STRATEGIES
 from moex_spread_lab.data.universe import (
     EXTRA_PAIRS,
     GLD_HISTORICAL_FAR,
@@ -49,9 +50,9 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     catalog as _pair_catalog,
 )
+from moex_spread_lab.web import STATIC_DIR, VENDOR_DIR
 from moex_spread_lab.web.routes_proof import strategy_registry_payload
 from moex_spread_lab.web.server import ScreenerStore, make_handler, serve
-from moex_spread_lab.web.static_assets import STATIC_DIR, VENDOR_DIR
 
 __all__ = [
     "EXTRA_PAIRS",

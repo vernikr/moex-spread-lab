@@ -25,8 +25,7 @@ from moex_spread_lab.core.settings import (
     ResearchSettings,
 )
 from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
-from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.w0 import W0Error, run_id
 
 from .axis import Axis
 from .axis import ordered as _ordered
@@ -550,7 +549,7 @@ class StudyWindow:
             **p,
             "proof_run_id": p["run_id"],
             "evaluation": evaluation,
-            "run_id": _run_id({"policy": "annual-excess.v1", "proof": p["run_id"], **evaluation}),
+            "run_id": run_id({"policy": "annual-excess.v1", "proof": p["run_id"], **evaluation}),
         }
 
 
@@ -564,7 +563,6 @@ lamps = _lamps
 measure = _measure
 shared_measure_scalar_train = _measure_scalar_train
 ordered = _ordered
-run_id = _run_id
 set_measure_provider = _set_measure_provider
 tune = _tune
 validate = _validate

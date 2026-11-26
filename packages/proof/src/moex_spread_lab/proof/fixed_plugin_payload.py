@@ -11,8 +11,7 @@ from typing import Any
 from moex_spread_lab.accounting.costs import cost_totals as _cost_totals
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
-from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.core.w0 import run_id as _run_id
+from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies import attach_entry_levels
 
 from .ledger_blocks import price_ledger
@@ -334,7 +333,7 @@ def fixed_daily_pair_plugin_payload(
     template["provenance"].update({**context[2], **unit["provenance"]})
     apply_pair_notes(template, trades)
     attach_entry_levels(template)
-    template["run_id"] = _run_id(
+    template["run_id"] = run_id(
         {
             "selection": template["selection"],
             "series": rows,

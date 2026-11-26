@@ -12,8 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
+from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
 from moex_spread_lab.core.timeframes import get_timeframe
-from moex_spread_lab.core.universe import MIN_DAILY_VOLUME
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import compute_rolling_z
 from moex_spread_lab.strategies.pair_screener.pair_screener import _session_volumes
 

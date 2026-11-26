@@ -13,7 +13,7 @@ import optuna as optuna
 
 from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContext
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.core.w0 import W0Error, run_id
+from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.carry import (
     CarryStrategyError as CarryStrategyError,
@@ -99,7 +99,6 @@ _RemoteCohort = RemoteCohort
 _lamps = lamps
 _ordered = ordered
 _identity = identity
-_run_id = run_id
 
 _DEFAULT_STUDY_WINDOW = StudyWindow
 

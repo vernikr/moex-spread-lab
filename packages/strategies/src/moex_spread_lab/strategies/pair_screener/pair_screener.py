@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from moex_spread_lab.core.universe import INITIAL_CAPITAL, MAX_QUANTITY, MIN_DAILY_VOLUME
+from moex_spread_lab.core.settings import INITIAL_CAPITAL, MAX_QUANTITY, MIN_DAILY_VOLUME
 from moex_spread_lab.data.universe import HISTORY_WINDOWS, PAIRS
 
 from ..funding_carry.carry import fetch_history

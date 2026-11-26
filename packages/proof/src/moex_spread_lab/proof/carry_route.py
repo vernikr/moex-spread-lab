@@ -13,7 +13,8 @@ from typing import Any
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.core.contracts import WindowSnapshot, plugin_is_builtin
-from moex_spread_lab.core.universe import MIN_DAILY_VOLUME, PAIR_UNIVERSE
+from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
+from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, build_carry_study
 from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents

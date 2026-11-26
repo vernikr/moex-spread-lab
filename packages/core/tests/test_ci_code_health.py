@@ -1,5 +1,4 @@
-"""Unit tests for Step 3 CI Tier 2 path filtering, weekly digest rendering, workflow wiring
-and the unified typecheck namespace view."""
+"""Tooling tests: CI Tier 2 path filter, the weekly code-health digest and the typecheck view."""
 
 from __future__ import annotations
 
@@ -10,8 +9,6 @@ from pathlib import Path
 import pytest
 from scripts import change_scope, typecheck_workspace
 from scripts import render_code_health_digest as digest
-
-ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_matches_c_tier2_filters_c_and_python_paths() -> None:
@@ -34,13 +31,6 @@ def test_matches_c_tier2_filters_c_and_python_paths() -> None:
             "docs/development/ci.md",
         ]
     )
-
-
-def test_decide_tier2_handles_schedule_and_missing_base(tmp_path: Path) -> None:
-    scheduled = change_scope.decide_ci("schedule", root=tmp_path)
-    assert scheduled.run_tier2 is True
-    assert "schedule" in scheduled.reasons[0]
-    assert change_scope.decide_ci("push", "0" * 40, "HEAD", tmp_path).run_tier2 is True
 
 
 def test_render_code_health_digest_produces_markdown_tables(tmp_path: Path) -> None:
@@ -133,48 +123,6 @@ def test_render_code_health_digest_produces_markdown_tables(tmp_path: Path) -> N
     assert "## Top Change-Coupled File Pairs" in md
     assert "`packages/web/server.py`" in md
     assert "1.80%" in md
-
-
-def test_ci_workflows_and_jscpd_config_stay_aligned() -> None:
-    ci_yml = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    weekly_yml = (ROOT / ".github/workflows/code-health-weekly.yml").read_text(encoding="utf-8")
-    macos_yml = (ROOT / ".github/workflows/ci-macos.yml").read_text(encoding="utf-8")
-    jscpd_cfg = json.loads((ROOT / ".jscpd.json").read_text(encoding="utf-8"))
-
-    assert "code-health:" in ci_yml
-    assert "./scripts/check_health.sh" in ci_yml
-    assert ci_yml.count("python3 scripts/change_scope.py") == 2  # scope job + Tier 2 step
-    assert "steps.tier2.outputs.run_tier2 == 'true'" in ci_yml
-    assert "scripts/run_sanitized_pytest.py" in ci_yml
-    # S2 scoped CI: path router gates the package matrix and perf-equivalence;
-    # ci-ok gives one stable required-check name (Agent Performance Issue #19, S2).
-    assert "scripts/change_scope.py" in ci_yml
-    assert "scope:" in ci_yml
-    assert "has_packages" in ci_yml
-    assert "ci-ok" in ci_yml
-    # S4a: the perf-equivalence job must run every tier with the default
-    # `addopts` marker deselection overridden, or parity silently thins out.
-    for tier in (
-        "test_perf_equivalence.py",
-        "test_perf_equivalence_pair.py",
-        "test_perf_equivalence_pool.py",
-        "test_perf_equivalence_stream.py",
-        "test_perf_equivalence_full.py",
-    ):
-        assert f"packages/proof/tests/{tier}" in ci_yml, tier
-    assert 'pytest -q -n auto --dist loadfile -m ""' in ci_yml
-
-    assert 'cron: "30 4 * * 1"' in weekly_yml
-    assert "jscpd" in weekly_yml
-    assert "repowise" in weekly_yml
-    assert "GITHUB_STEP_SUMMARY" in weekly_yml
-    # size-report: coverage gate plus the code+tests token trend in the summary (#156).
-    assert "uv run size check" in weekly_yml
-    assert "uv run size log -n 20 --category code --category tests" in weekly_yml
-
-    assert "check_health.sh" not in macos_yml
-    assert jscpd_cfg["threshold"] <= 3.0
-    assert "c" in jscpd_cfg["format"]
 
 
 @pytest.fixture

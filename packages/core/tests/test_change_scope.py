@@ -1,4 +1,4 @@
-"""Unit tests for the S2 change-scope router (scripts/change_scope.py)."""
+"""Unit tests for the change-scope router (scripts/change_scope.py) and its docs-scan leg."""
 
 from __future__ import annotations
 
@@ -59,32 +59,27 @@ def test_reverse_dependency_table_matches_architecture_dag() -> None:
     assert derived == change_scope.REVERSE_DEPENDENTS
 
 
-def test_decide_ci_resolves_schedule_and_missing_base_to_full() -> None:
+def test_decide_ci_resolves_degenerate_inputs_to_full(tmp_path: Path) -> None:
     for event, base in (("schedule", "abc123"), ("workflow_dispatch", ""), ("push", "")):
         decision = change_scope.decide_ci(event, base_sha=base, head_sha="HEAD", root=ROOT)
-        assert decision.profile == "full", (event, base)
-        assert decision.run_tier2 is True
-    null_decision = change_scope.decide_ci("push", base_sha="0" * 40, head_sha="HEAD", root=ROOT)
-    assert null_decision.profile == "full"
+        assert (decision.profile, decision.run_tier2) == ("full", True), (event, base)
+        assert decision.reasons[0].startswith(("event=", "missing base SHA")), decision.reasons
+    # the null SHA, an unavailable diff (no repository) and an empty HEAD..HEAD diff
+    for base, root in (("0" * 40, ROOT), ("deadbeef" * 5, tmp_path), ("HEAD", ROOT)):
+        decision = change_scope.decide_ci("push", base_sha=base, head_sha="HEAD", root=root)
+        assert decision.profile == "full", base
+        assert decision.run_tier2 is (base != "HEAD"), base  # an empty diff needs no Tier 2
 
 
-def test_decide_ci_resolves_unavailable_diff_to_full(tmp_path: Path) -> None:
-    decision = change_scope.decide_ci(
-        "push", base_sha="deadbeef" * 5, head_sha="HEAD", root=tmp_path
-    )
-    assert decision.profile == "full"
-    assert decision.run_tier2 is True
-
-
-def test_decide_ci_head_vs_head_empty_diff_is_full() -> None:
-    decision = change_scope.decide_ci("push", base_sha="HEAD", head_sha="HEAD", root=ROOT)
-    assert decision.profile == "full"
-
-
-def _repo_with_web_server(tmp_path: Path):
+def test_decide_ci_against_real_repo_commits(tmp_path: Path) -> None:
     def git(*args: str) -> str:
-        cmd = ["git", *args]
-        return subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True, text=True).stdout
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
+        ).stdout
+
+    def commit(message: str) -> None:
+        git("add", "-A")
+        git("commit", "-q", "-m", message)
 
     git("init", "-q")
     git("config", "user.email", "test@example.com")
@@ -92,43 +87,27 @@ def _repo_with_web_server(tmp_path: Path):
     target = tmp_path / "packages/web/src/moex_spread_lab/web/server.py"
     target.parent.mkdir(parents=True)
     target.write_text("x = 1\n", encoding="utf-8")
-    git("add", ".")
-    git("commit", "-q", "-m", "base")
-    return git, git("rev-parse", "HEAD").strip(), target
+    commit("base")
+    base_sha = git("rev-parse", "HEAD").strip()
 
+    def decide() -> change_scope.ScopeDecision:
+        return change_scope.decide_ci("push", base_sha=base_sha, head_sha="HEAD", root=tmp_path)
 
-def _commit(git, message: str) -> None:
-    git("add", "-A")
-    git("commit", "-q", "-m", message)
-
-
-def test_decide_ci_against_real_repo_commits(tmp_path: Path) -> None:
-    git, base_sha, target = _repo_with_web_server(tmp_path)
     target.write_text("x = 2\n", encoding="utf-8")
-    _commit(git, "edit")
-    decision = change_scope.decide_ci("push", base_sha=base_sha, head_sha="HEAD", root=tmp_path)
-    assert (decision.profile, decision.packages, decision.perf_equivalence) == (
-        "packages",
-        ("web",),
-        False,
-    )
+    commit("edit")
+    edited = decide()
+    assert (edited.profile, edited.packages, edited.testmon) == ("packages", ("web",), True)
+    assert edited.perf_equivalence is False
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/guide.md").write_text("hello\n", encoding="utf-8")
-    _commit(git, "docs")
+    commit("docs")
     # docs paths never widen a package change into a docs-only or full scope
-    docs_decision = change_scope.decide_ci(
-        "push", base_sha=base_sha, head_sha="HEAD", root=tmp_path
-    )
-    assert (docs_decision.profile, docs_decision.packages) == ("packages", ("web",))
-
-
-def test_decide_ci_detects_deleted_files(tmp_path: Path) -> None:
-    git, base_sha, target = _repo_with_web_server(tmp_path)
+    with_docs = decide()
+    assert (with_docs.profile, with_docs.packages) == ("packages", ("web",))
     target.unlink()
-    _commit(git, "delete")
-    decision = change_scope.decide_ci("push", base_sha=base_sha, head_sha="HEAD", root=tmp_path)
-    assert decision.packages == ("web",)
-    assert decision.testmon is False  # deleted file: no deselection
+    commit("delete")
+    deleted = decide()
+    assert (deleted.packages, deleted.testmon) == (("web",), False)  # deleted file: no deselection
 
 
 def test_github_output_writer(tmp_path: Path) -> None:
@@ -145,17 +124,14 @@ def test_github_output_writer(tmp_path: Path) -> None:
     assert values["perf_equivalence"] == "false"
 
 
-def test_outputs_for_docs_only(tmp_path: Path) -> None:
+def test_docs_only_outputs_and_report_state_the_skipped_legs() -> None:
     decision = _decide(["docs/development/ci.md"])
     values = decision.to_outputs()
     assert values["docs_only"] == "true"
     assert json.loads(values["packages"]) == []
     assert values["has_packages"] == "false"
     assert values["perf_equivalence"] == "false"
-
-
-def test_render_report_states_skipped(tmp_path: Path) -> None:
-    report = change_scope.render_report(_decide(["docs/development/ci.md"]))
+    report = change_scope.render_report(decision)
     assert "scope: docs" in report
     assert "skipped:" in report
 
@@ -187,6 +163,43 @@ def test_credential_scanner_does_not_match_sk_substrings_in_normal_prose(tmp_pat
     assert findings == []
     assert verify.sanitize("task-to-verified-main") == "task-to-verified-main"
     assert verify.sanitize("sk-1234567890abcdef") == "sk-<redacted>"
+
+
+def test_scan_links_reports_broken_targets_and_skips_preserved_evidence(tmp_path: Path) -> None:
+    (tmp_path / "guide.md").write_text("# Setup notes\n\n## Second part\n", encoding="utf-8")
+    page = tmp_path / "docs/page.md"
+    page.parent.mkdir()
+    page.write_text(
+        "[ok](../guide.md#second-part)\n"
+        "[missing file](../absent.md)\n"
+        "[missing anchor](../guide.md#absent)\n"
+        "[external](https://example.com/x.md)\n",
+        encoding="utf-8",
+    )
+
+    findings, notes = docs_scan.scan_links([str(page), "docs/inputs/server-spec.redacted.md"])
+
+    text = "\n".join(findings)
+    assert "unresolved link target ../absent.md" in text
+    assert "unresolved link anchor ../guide.md#absent" in text
+    assert "guide.md#second-part" not in text and "example.com" not in text
+    assert len(notes) == 1 and "preserved as received" in notes[0]
+
+
+def test_repo_docs_surface_is_authored_only_and_link_clean() -> None:
+    paths = docs_scan.repo_doc_paths()
+
+    assert {
+        "README.md",
+        "AGENTS.md",
+        "docs/development/github-project.md",
+        "packages/proof/docs/execution-proof.md",
+        "packages/core/docs/README.md",
+        "packages/web/docs/README.md",
+    } <= set(paths)
+    assert not [path for path in paths if path.startswith(docs_scan._EXCLUDED_PREFIXES)]
+    findings, _ = docs_scan.scan_links(paths)
+    assert findings == []
 
 
 # Router regression table (formerly the shadow scenario catalogue): each row is a

@@ -120,12 +120,17 @@ class PairMeanReversionPlugin:
             sizing_intents=True,
             metrics_only=True,
         )
-        days = [row["date"] for row in window.rows]
         delay = 0 if fill == "reference_same_bar" else 1
+        signal_days_by_entry: dict[str, str] = {}
+        for index, row in enumerate(positive_rows):
+            entry = str(row.get("timestamp", row["date"]))
+            key = entry[:10] if window.timeframe == "1d" else entry[:19].replace(" ", "T")
+            signal_row = positive_rows[max(0, index - delay)]
+            signal_days_by_entry[key] = str(signal_row["date"])
 
         def signal_day(entry: str) -> str:
             key = entry[:10] if window.timeframe == "1d" else entry[:19].replace(" ", "T")
-            return days[max(0, days.index(key) - delay)]
+            return signal_days_by_entry[key]
 
         intents = tuple(
             {

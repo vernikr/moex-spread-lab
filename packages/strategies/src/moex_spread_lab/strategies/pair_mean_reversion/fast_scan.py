@@ -8,8 +8,8 @@ from importlib import import_module
 from typing import Any, cast
 
 from ..base import population_rolling_stats as _rolling_stats
-from .costs_helper import AnalyticsError
-from .costs_helper import round_value as _round
+from .series_builder import AnalyticsError
+from .series_builder import round_value as _round
 
 _fastcore_loader = import_module("moex_spread_lab.core._fastcore_loader")
 load_fastcore = cast(Callable[[], Any], _fastcore_loader.load_fastcore)

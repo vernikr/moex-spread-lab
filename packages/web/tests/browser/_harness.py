@@ -118,7 +118,7 @@ def _timed_handler(base: type[BaseHTTPRequestHandler]) -> type[BaseHTTPRequestHa
 
 
 @contextmanager
-def serve(root: Path, *, store_factory: Callable[[Any], Any] | None = None) -> Iterator[str]:
+def serve(root: Path) -> Iterator[str]:
     import optuna.logging
 
     from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
@@ -126,7 +126,7 @@ def serve(root: Path, *, store_factory: Callable[[Any], Any] | None = None) -> I
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     with phase("server_startup"):
-        store = (store_factory or ScreenerStore)(ScreenerInputs(root))
+        store = ScreenerStore(ScreenerInputs(root))
         server = ThreadingHTTPServer(("127.0.0.1", 0), _timed_handler(make_handler(store)))
         thread = threading.Thread(
             target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
@@ -141,13 +141,9 @@ def serve(root: Path, *, store_factory: Callable[[Any], Any] | None = None) -> I
         thread.join(timeout=5)
 
 
-def hydrate(root: Path, builder: Callable[[Path], Any], *, template_key: str | None = None) -> None:
-    PHASES.extend(materialize(root, builder, template_key))
-
-
 @contextmanager
 def serve_fixture(root: Path, builder: Callable[[Path], Any]) -> Iterator[str]:
-    hydrate(root, builder)
+    PHASES.extend(materialize(root, builder))
     with serve(root) as url:
         yield url
 
@@ -193,7 +189,9 @@ def page_session(
         page = context.new_page()
         page.goto(url + route)
         ready(page)
+        idle(page)
         yield page
+        idle(page)
         if mobile:
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_function("() => document.documentElement.scrollWidth <= innerWidth")
@@ -208,10 +206,22 @@ def page_session(
 @contextmanager
 def expect_api_json(page: Any, suffix: str, timeout: int = 120_000) -> Iterator[dict[str, Any]]:
     box: dict[str, Any] = {}
-    with page.expect_event(
-        "requestfinished", predicate=lambda r: r.url.endswith(suffix), timeout=timeout
-    ) as pending:
-        yield box
+    # A preceding preflight can finish after the next action has already started.
+    started: set[Any] = set()
+
+    def capture(request: Any) -> None:
+        started.add(request)
+
+    page.on("request", capture)
+    try:
+        with page.expect_event(
+            "requestfinished",
+            predicate=lambda r: r in started and r.url.endswith(suffix),
+            timeout=timeout,
+        ) as pending:
+            yield box
+    finally:
+        page.remove_listener("request", capture)
     response = pending.value.response()
     assert response is not None and response.ok, f"API request failed: {suffix}"
     text = response.text()
@@ -234,12 +244,23 @@ def expect(value: Any) -> Any:
     return import_module("playwright.sync_api").expect(value)
 
 
-def ready(page: Any, basis: str | None = None) -> None:
-    expect(page.locator("#period-result")).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
-    # RAF polling does not oversleep the UI's 160 ms progress-bar completion timer.
+def idle(page: Any) -> None:
+    # Check the cosmetic completion timer at session/search boundaries, not every form edit.
     page.wait_for_function(
         "() => document.getElementById('render-progress').getAttribute('aria-hidden')==='true'"
     )
+
+
+def ready(page: Any, basis: str | None = None) -> None:
+    expect(page.locator("#period-result")).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
+    page.wait_for_function("""async () => {
+      const {state} = await import('/static/js/state.js');
+      return state.payload && !state.proofController && !state.autoRunTimer &&
+        !state.profileController && !state.windowReadController &&
+        (!state.sharedStrategy || document.getElementById('group-profile-state').dataset.state!=='loading') &&
+        !document.querySelector('#window-list [data-reading=pending]') &&
+        document.getElementById('ev-runid').textContent === state.payload.run_id;
+    }""")
     expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
     expect(page.locator("#period-result")).to_have_attribute(
         "data-basis", basis or page.evaluate("payload.evaluation.result_basis")
@@ -282,6 +303,7 @@ def tune(page: Any, button: str = "#auto-tune") -> dict[str, Any]:
         "() => document.getElementById('tune-state').textContent === ''", timeout=120_000
     )
     ready(page)
+    idle(page)
     return result["data"]
 
 
@@ -340,7 +362,7 @@ def launch(pw: Any) -> Any:
         return pw.chromium.launch()
 
 
-def standalone(scenario: Callable[[Any], None], message: str = "") -> None:
+def standalone(scenario: Callable[[Any], None]) -> None:
     from playwright.sync_api import sync_playwright
 
     reset()
@@ -351,6 +373,4 @@ def standalone(scenario: Callable[[Any], None], message: str = "") -> None:
             scenario(browser)
         finally:
             browser.close()
-    if message:
-        print(message)
     emit_phases(PHASES.report(time.perf_counter() - started))

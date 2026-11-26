@@ -81,7 +81,9 @@ def focus_steps(page, profiles, runs, searches):
 
 def stale_profile_steps(page):
     with expect_api_json(page, "/api/proof/plateau") as split:
-        apply_settings(page, validation_percent=25)
+        apply_settings(
+            page, validation_percent=25, global_capital=60000, global_slippage=2.5, global_seed=41
+        )
     validate_ui(page, split["data"])
     open_row(page, page.locator('[data-branch="calendar_native|SR"]'))
     open_row(page, leaf(page, "SRH3/SRM3"))
@@ -111,10 +113,20 @@ def tuning_steps(page, profiles):
             release_response(page)
         ready(page, "validation")
     expect(page.locator("#tune-state")).to_be_empty()
-    validate_ui(page, optimized["data"])
+    result = optimized["data"]
+    validate_ui(page, result)
+    assert result["seed"] == 41 and result["seed_used"] > 0
+    assert result["group"]["initial_capital_rub"] == 60000
+    for member in result["group"]["members"]:
+        assert member["selection"]["fill"] == "next_open"
+        assert member["selection"]["slippage_ticks"] == 2.5
+        assert member["selection"]["initial_capital_rub"] == 60000
+        assert member["evaluation"]["initial_capital_rub"] == 60000
     adopted, count = snapshot(page), len(profiles)
     open_row(page, leaf(page, "SRH3/SRM3"))
     assert snapshot(page) == adopted and len(profiles) == count
+    apply_settings(page, validation_percent=0)
+    expect(page.locator("#batch-result")).to_be_hidden()
     with expect_api_json(page, "/api/proof/plateau"):
         page.locator("#group-strategy").select_option("funding_only")
     expect(page.locator("#group-profile-state")).to_contain_text("2 из 2")
@@ -123,7 +135,7 @@ def tuning_steps(page, profiles):
     expect(page.locator("#cohort-editor .plateau-dot[data-level=unknown]")).to_have_count(1)
     with post(page):
         page.locator("#all-windows").uncheck()
-    ready(page, "validation")
+    ready(page, "training")
     expect(page.locator("#cohort-editor")).to_be_hidden()
     expect(page.locator("#centry + .plateau-dot")).to_be_visible()
     assert page.evaluate("payload.selection.pair") == "SRH3/SRM3"
@@ -147,7 +159,7 @@ def run(page):
 
 def scenario(browser):
     with (
-        ui_only_trials(),
+        ui_only_trials(4),
         temporary_root() as root,
         serve_fixture(root, two_calendar_windows) as url,
         page_session(browser, url, CAL_URL) as page,
@@ -155,9 +167,7 @@ def scenario(browser):
         run(page)
 
 
-MESSAGE = "Plateau lamps, hover scope, unchecked/unavailable focus, profile races, in-flight adoption and solo fallback: OK"
-
 if __name__ == "__main__":
     from _harness import standalone
 
-    standalone(scenario, MESSAGE)
+    standalone(scenario)

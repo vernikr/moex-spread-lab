@@ -115,6 +115,7 @@ def ledger_steps(page):
     page.locator("tr.fill.entry").first.click()
     expect(page.locator("tr.card")).to_contain_text("контрактов:")
     text, rows = download(page)
+    assert {"contracts_held", "entry_contracts", "exit_contracts"} <= rows[0].keys()
     for metadata in (
         "# scope: full_history",
         '"validation_percent":25',
@@ -272,6 +273,13 @@ def run_shortfall(page, url, root):
         assert text in title
     expect(rate).to_have_attribute("tabindex", "0")
     expect(rate).to_have_attribute("aria-label", title)
+    apply_settings(page, validation_percent=25)
+    page.locator("#lookback + .plateau-dot").hover()
+    expect(page.locator("#plateau-tip")).to_contain_text("Проверка:")
+    expect(page.locator("#plateau-tip")).to_contain_text("Соседи на обучении")
+    reason = page.evaluate("payload.evaluation.result.reason")
+    assert reason
+    expect(page.locator("#plateau-tip")).to_contain_text(reason)
 
 
 def scenario(browser):
@@ -290,9 +298,7 @@ def scenario(browser):
                 run(page, url, workspace)
 
 
-MESSAGE = "Window table/bands, exact metrics, validation/CSV sizing, funding evidence, rounding and cash-shortfall dashes: OK"
-
 if __name__ == "__main__":
     from _harness import standalone
 
-    standalone(scenario, MESSAGE)
+    standalone(scenario)

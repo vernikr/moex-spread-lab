@@ -3,7 +3,6 @@
 import json
 
 from _harness import (
-    CAL_URL,
     PAIR_URL,
     apply_settings,
     edit_parameters,
@@ -17,13 +16,12 @@ from _harness import (
     serve_fixture,
     temporary_root,
     tune,
-    ui_only_trials,
 )
 
 from proof_fixtures import fixture as base_fixture
 from proof_fixtures import funding_winner, rising_calendar, two_calendar_windows
 
-PAIR, CAL = "pair_screen||CNYRUBF/CRZ6", "calendar_native|SR|SRH3/SRM3"
+PAIR, RISING = "pair_screen||CNYRUBF/CRZ6", "calendar_native|SR|SRM3/SRU3"
 PAIR_B, CAL_B = "pair_screen|CNYRUBF", "calendar_native|SR"
 
 
@@ -60,6 +58,7 @@ def review(page):
 def run_pair(page, url):
     result = tune(page)
     assert result["selected_strategy"] == "funding_only"
+    assert result["group"]["member_count"] == 1
     assert {
         (r["strategy"], r["fill"], r["trial_count"])
         for r in result["strategy_search"]["alternatives"]
@@ -80,11 +79,47 @@ def run_pair(page, url):
     expect(page.locator("#group-params input")).to_have_count(3)
 
 
+def stale_search_steps(page):
+    checkbox = leaf(page, RISING).locator("input")
+    original = page.locator("#group-threshold_pp").input_value()
+    hold_response(page, "/optimize")
+    with post(page, "optimize"):
+        page.locator("#auto-tune").click()
+    page.wait_for_function("() => typeof window.releaseSmokeResponse==='function'")
+    with post(page):
+        checkbox.uncheck()
+    release_response(page)
+    ready(page, "validation")
+    expect(page.locator("#batch-result")).to_be_hidden()
+    expect(page.locator("#cthreshold")).to_be_visible()
+    expect(page.locator("#cthreshold")).to_have_value(original)
+    expect(page.locator("#centry")).to_be_hidden()
+    checkbox.check()
+    assert page.evaluate("checked.size") == 1
+
+
 def run_calendar(page, url):
-    apply_settings(page, global_fill="next_close")
-    leaf(page, "calendar_native|SR|SRM3/SRU3").locator("input").check()
+    apply_settings(page, global_fill="next_close", validation_percent=25, global_seed=41)
+    edit_parameters(page, lookback=33)
+    open_branch(page, CAL_B)
+    leaf(page, RISING).locator("input").check()
+    open_branch(page, PAIR_B)
     result = tune(page)
     assert result["selected_strategy"] == "convergence_to_ruonia"
+    assert result["group"]["result_basis"] == "validation"
+    assert result["group"]["members"][0]["target"]["pair"] == "SRM3/SRU3"
+    expect(page.locator("#lookback")).to_have_value("33")
+    assert page.evaluate("payload.selection.pair") == "CNYRUBF/CRZ6"
+    assert page.evaluate("payload.selection.parameters.lookback") == 33
+    open_branch(page, CAL_B)
+    # Reuse the real fit to exercise focused adoption without another Optuna run.
+    page.route(
+        "**/api/proof/optimize",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(result)
+        ),
+    )
+    tune(page)
     expect(page.locator("#cstrategy")).to_have_value("convergence_to_ruonia")
     expect(page.locator("#group-strategy")).to_have_value("convergence_to_ruonia")
     expect(page.locator("#group-params input")).to_have_count(1)
@@ -95,11 +130,7 @@ def run_calendar(page, url):
     assert page.evaluate("payload.summary.ledger_reconciliation_rub") == 0
     assert page.evaluate("payload.trades.length") > 0
     expect(page.locator("#group-profile-state")).not_to_have_attribute("data-state", "loading")
-    with post(page):
-        leaf(page, "calendar_native|SR|SRM3/SRU3").locator("input").uncheck()
-    ready(page)
-    expect(page.locator("#cthreshold")).to_be_visible()
-    expect(page.locator("#centry")).to_be_hidden()
+    stale_search_steps(page)
 
 
 def hierarchy_steps(page, runs):
@@ -147,10 +178,7 @@ def compatibility_steps(page, searches):
     assert len(searches) == attempts and page.evaluate("checked.size") == 3
     review(page)
     result = tune(page, "#compatibility-yes")
-    assert result["selected_strategy"] == "mean_reversion", (
-        result["selected_strategy"],
-        [m["target"] for m in result["group"]["members"]],
-    )
+    assert result["selected_strategy"] == "mean_reversion", result["selected_strategy"]
     assert len(searches[-1]["targets"]) == result["group"]["member_count"] == 2
     expect(leaf(page, missing).locator("input")).not_to_be_checked()
     expect(leaf(page, PAIR).locator("input")).to_be_checked()
@@ -181,40 +209,6 @@ def compatibility_steps(page, searches):
     assert page.evaluate("checked.size") == 0 and len(searches) == attempts
 
 
-def unchecked_focus_steps(page, runs):
-    strategy(page, "#strategy", "mean_reversion")
-    edit_parameters(page, lookback=33)
-    branch(page, CAL_B).locator("input").check()
-    apply_settings(page, validation_percent=25)
-    with ui_only_trials():
-        result = tune(page)
-    expect(page.locator("#lookback")).to_have_value("33")
-    assert result["group"]["result_basis"] == "validation"
-    assert result["group"]["members"][0]["target"]["universe"] == "calendar_native"
-    assert runs[-1]["pair"] == "CNYRUBF/CRZ6" and runs[-1]["parameters"]["lookback"] == 33
-    open_branch(page, CAL_B)
-    expect(page.locator("#clookback")).to_have_value(str(result["selected_parameters"]["window"]))
-    original = page.locator("#clookback").input_value()
-    page.route(
-        "**/api/proof/optimize",
-        lambda route: route.fulfill(
-            status=200, content_type="application/json", body=json.dumps(result)
-        ),
-    )
-    hold_response(page, "/optimize")
-    with post(page, "optimize"):
-        page.locator("#auto-tune").click()
-    page.wait_for_function("() => typeof window.releaseSmokeResponse==='function'")
-    with post(page):
-        page.locator("#all-windows").uncheck()
-    release_response(page)
-    ready(page, "validation")
-    expect(page.locator("#batch-result")).to_be_hidden()
-    expect(page.locator("#clookback")).to_have_value(original)
-    page.locator("#all-windows").check()
-    assert page.evaluate("checked.size") == 1
-
-
 def run_checks(page, url):
     apply_settings(page, global_seed=41)
     searches, runs = [], []
@@ -232,7 +226,6 @@ def run_checks(page, url):
     original = other.locator("#lookback").input_value()
     hierarchy_steps(page, runs)
     compatibility_steps(page, searches)
-    unchecked_focus_steps(page, runs)
     assert other.evaluate("checked.size") == 0
     expect(other.locator("#lookback")).to_have_value(original)
 
@@ -244,28 +237,18 @@ def calendar_fixture(root):
 
 def scenario(browser):
     with exact_trials(), temporary_root() as root:
-        for name, builder, run, route in (
-            ("funding", funding_winner, run_pair, PAIR_URL),
-            (
-                "convergence",
-                calendar_fixture,
-                run_calendar,
-                CAL_URL.replace("SRH3%2FSRM3", "SRM3%2FSRU3"),
-            ),
-            ("checks", base_fixture, run_checks, PAIR_URL),
+        for name, builder, run in (
+            ("funding", funding_winner, run_pair),
+            ("convergence", calendar_fixture, run_calendar),
+            ("checks", base_fixture, run_checks),
         ):
             workspace = root / name
             workspace.mkdir()
-            with (
-                serve_fixture(workspace, builder) as url,
-                page_session(browser, url, route) as page,
-            ):
+            with serve_fixture(workspace, builder) as url, page_session(browser, url) as page:
                 run(page, url)
 
-
-MESSAGE = "Real family switching, common MR, tri-state cohorts, modal cancel/confirm, adoption, clearing, races and two-tab isolation: OK"
 
 if __name__ == "__main__":
     from _harness import standalone
 
-    standalone(scenario, MESSAGE)
+    standalone(scenario)

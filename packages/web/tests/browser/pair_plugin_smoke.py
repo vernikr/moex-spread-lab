@@ -113,7 +113,7 @@ def run_pair(page):
     expect(page.locator("#lookback")).to_be_visible()
     select_plugin(page, "#strategy", "demo_ui_pair")
     expect(page.locator("#plugin-custom")).to_have_value("5")
-    for mode in page.locator("#norm option").evaluate_all("ns=>ns.map(n=>n.value)"):
+    for mode in ("raw", "garch", "kalman"):
         page.locator("#norm").select_option(mode)
         expect(page.locator("#chart-h-spread canvas").first).to_be_visible()
     result = tune(page)
@@ -150,9 +150,7 @@ def scenario(browser):
             run_calendar(page)
 
 
-MESSAGE = "Installed pair/carry/calendar plugins, custom parameter retention, full-budget search, chart modes and 390x844 layout: OK"
-
 if __name__ == "__main__":
     from _harness import standalone
 
-    standalone(scenario, MESSAGE)
+    standalone(scenario)

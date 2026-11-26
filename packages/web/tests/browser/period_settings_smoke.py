@@ -4,7 +4,6 @@ import re
 
 from _harness import (
     CAL_URL,
-    PAIR_URL,
     apply_settings,
     edit_parameters,
     expect,
@@ -12,14 +11,11 @@ from _harness import (
     hold_response,
     open_settings_modal,
     page_session,
-    post,
     ready,
     release_response,
     serve_fixture,
     table_matches_chart,
     temporary_root,
-    tune,
-    ui_only_trials,
 )
 
 from proof_fixtures import screen_failures, two_calendar_windows
@@ -37,6 +33,7 @@ def validate_dialog(page):
     for name, value in defaults.items():
         expect(page.locator("#" + name)).to_have_value(value)
     expect(page.locator("#global-fill")).to_have_value("reference_same_bar")
+    expect(page.locator('#global-timeframe[role="radiogroup"]')).to_be_visible()
     expect(page.locator('#global-timeframe [role=radio][data-value="1d"]')).to_have_attribute(
         "aria-checked", "true"
     )
@@ -86,30 +83,14 @@ def run_preferences(page, url):
         ),
     )
     validate_dialog(page)
-    apply_settings(page, validation_percent=25)
-    expect(page.locator("#chart-h-spread .validation-line")).to_be_visible()
-    expect(page.locator("#chart-scope")).to_contain_text("пунктир")
-    page.locator("#tab-table").click()
-    expect(page.locator("tr.validation-start")).to_contain_text(
-        page.evaluate("payload.evaluation.periods.validation[0]")
-    )
-    expect(page.locator("tr[data-period=validation]")).to_have_count(13)
-    expect(page.locator("tr[data-period=training]")).to_have_count(42)
-    page.locator("#lookback + .plateau-dot").hover()
-    expect(page.locator("#plateau-tip")).to_contain_text("Проверка:")
-    expect(page.locator("#plateau-tip")).to_contain_text("Соседи на обучении")
-    reason = page.evaluate("payload.evaluation.result.reason")
-    assert reason == "Свободные средства недостаточны для маржи."
-    expect(page.locator("#plateau-tip")).to_contain_text(reason)
-    with post(page):
-        page.locator("#strategy").select_option("mean_reversion")
-    ready(page)
     edit_parameters(page, entry=0.8, exit=0.1, lookback=6)
     edit_parameters(other, clookback=10)
     sizes = [p.evaluate("payload.trades[0].quantity") for p in (page, other)]
     original = page.evaluate("payload.run_id")
+    hold_response(page, "/api/proof/catalog")
     saved = apply_settings(
         page,
+        rerun=False,
         global_capital=15000,
         global_slippage=2.5,
         global_seed=41,
@@ -125,7 +106,13 @@ def run_preferences(page, url):
         "random_seed": 41,
         "validation_percent": 25,
     }
-    assert page.evaluate("payload.run_id") != original
+    open_settings_modal(page)
+    expect(page.locator("#apply-settings")).to_be_enabled()
+    page.keyboard.press("Escape")
+    expect(page.locator("#global-settings")).not_to_be_visible()
+    assert page.evaluate("payload.run_id") == original
+    page.wait_for_function("() => typeof window.releaseSmokeResponse==='function'")
+    release_response(page)
     for tab, before in zip((page, other), sizes, strict=True):
         capital_ready(tab, 15000)
         ready(tab, "validation")
@@ -137,15 +124,31 @@ def run_preferences(page, url):
         )
         expect(tab.locator("#settings-badge")).to_contain_text("41")
         assert tab.evaluate("payload.selection.sizing") == "max_affordable"
+        expect(
+            tab.locator(
+                "#quantity,#cquantity,#slippage,#cslippage,#group-quantity,#group-slippage_ticks"
+            )
+        ).to_have_count(0)
+        expect(
+            tab.locator(
+                "#col-norm input[data-axis=quantity],#col-norm input[data-axis=slippage_ticks]"
+            )
+        ).to_have_count(0)
+    assert page.evaluate("payload.run_id") != original
     expect(page.locator("#lookback")).to_have_value("6")
     expect(other.locator("#clookback")).to_have_value("10")
     for trade in other.evaluate("payload.trades"):
         assert trade["entry"]["costs"]["slippage"] == 2.5 * trade["quantity"]
+    expect(page.locator("#chart-h-spread .validation-line")).to_be_visible()
+    expect(page.locator("#chart-scope")).to_contain_text("пунктир")
+    page.locator("#tab-table").click()
+    expect(page.locator("tr.validation-start")).to_contain_text(
+        page.evaluate("payload.evaluation.periods.validation[0]")
+    )
+    expect(page.locator("tr[data-period=validation]")).to_have_count(13)
+    expect(page.locator("tr[data-period=training]")).to_have_count(42)
     page.locator('[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
-    with post(page):
-        page.locator('[data-branch="calendar_native|SR"] button').click()
-    ready(page)
-    page.locator('[data-leaf="calendar_native|SR|SRH3/SRM3"] input').check()
+    page.locator('[data-branch="calendar_native|SR"] input').check()
     hold_response(page, "/windows")
     page.evaluate("windowReadings.clear();refreshWindowReadings(0)")
     page.wait_for_function("() => typeof window.releaseSmokeResponse==='function'")
@@ -157,17 +160,10 @@ def run_preferences(page, url):
     assert page.evaluate(
         "[...windowReadings.values()].every(r=>!r.evaluation||r.evaluation.initial_capital_rub===60000)"
     )
-    assert page.evaluate("checked.size") == 2
+    assert page.evaluate("checked.size") == 3
     expect(page.locator("#window-list tr.current [data-gate=capital] span")).to_have_attribute(
         "data-state", "pass"
     )
-    result = tune(page)
-    assert result["seed"] == 41 and result["seed_used"] > 0
-    assert result["group"]["initial_capital_rub"] == 60000
-    for member in result["group"]["members"]:
-        assert member["selection"]["fill"] == "next_close"
-        assert member["selection"]["slippage_ticks"] == 2.5
-        assert member["evaluation"]["initial_capital_rub"] == 60000
     other.reload()
     capital_ready(other, 60000)
     open_settings_modal(other)
@@ -184,6 +180,8 @@ def run_preferences(page, url):
         )
         page.wait_for_function("v=>payload.evaluation.validation_percent===v", arg=share)
         ready(page, "validation" if share else "training")
+        if share == 50:
+            expect(page.locator("#period-result")).to_contain_text("Проверка 50%")
     expect(page.locator(".validation-line,tr.validation-start")).to_have_count(0)
     assert saved["random_seed"] == 0
     expect(other.locator("#settings-badge")).to_contain_text("случайный")
@@ -230,9 +228,7 @@ def run_screens(page, url):
     with expect_api_json(page, "/api/proof/plateau") as combined:
         page.locator('[data-branch="calendar_native|SR"] input').check()
     assert combined["data"]["status"] == "measured"
-    tune(page)
     assert len(edit_screens(page, True, False)["excluded"]) == 1
-    expect(page.locator("#batch-result")).to_be_hidden()
     expect(page.locator("#group-profile-state")).to_contain_text("1 из 2")
     expect(other.locator("#window-list tr.current [data-metric=rate]")).to_have_attribute(
         "title", re.compile("Не пройден стресс-тест капитала")
@@ -256,23 +252,18 @@ def run_screens(page, url):
 
 
 def scenario(browser):
-    with ui_only_trials(), temporary_root() as root:
-        for name, builder, run, route in (
-            ("settings", two_calendar_windows, run_preferences, PAIR_URL.split("&strategy=")[0]),
-            ("screens", screen_failures, run_screens, PAIR_URL),
+    with temporary_root() as root:
+        for name, builder, run in (
+            ("settings", two_calendar_windows, run_preferences),
+            ("screens", screen_failures, run_screens),
         ):
             workspace = root / name
             workspace.mkdir()
-            with (
-                serve_fixture(workspace, builder) as url,
-                page_session(browser, url, route) as page,
-            ):
+            with serve_fixture(workspace, builder) as url, page_session(browser, url) as page:
                 run(page, url)
 
-
-MESSAGE = "Settings, seed, capital, automatic sizing/slippage, split, two tabs, stale tables and four screen combinations: OK"
 
 if __name__ == "__main__":
     from _harness import standalone
 
-    standalone(scenario, MESSAGE)
+    standalone(scenario)

@@ -1,79 +1,37 @@
-# `msl-core` (Layer 0) — durable module guide
+# `msl-core` (Layer 0) — contract reference
 
-`packages/core` owns the contracts and primitives every other workspace package
-depends on, and it depends on no workspace package itself. Everything here is
-offline: no socket, no market-data read, no broker call.
+`packages/core` owns the primitives every other workspace package imports and imports no
+`msl-*` package itself. Everything is offline: no socket, no market-data read, no broker call.
+Live status lives in GitHub Issues and Project #2, not here.
 
-Source: `packages/core/src/moex_spread_lab/core/`. Manifest:
-`packages/core/manifest.json`. This guide is a durable contract reference, not a
-work plan; live status is in GitHub Issues and Project #2.
+| Module | Contract |
+|---|---|
+| `w0.py`, `cli.py` | `canonical_bytes` (sorted keys, UTF-8, compact separators, NaN rejected) feeds every artifact hash; `run_id` is the first 16 hex digits of its SHA-256, so changing the serialization is a contract change with a conformance test. `validate_manifest` (`run-manifest.v1`) fails closed on an unknown schema, a missing or drifted SHA-256 pin, an empty artifact `rights_status` or any network-enabled flag; `scan_secrets` fails on one finding. Both ship as `moex-spread-lab validate-manifest --manifest <path>` and `secret-scan [--root] [--tracked-only]`. `load_contracts` reads ISS-intake instrument facts. |
+| `settings.py` | `ResearchSettings` is an immutable snapshot with a validator per field: percent 0-50, capital 0.01-1e9 RUB with two decimals, slippage 0-10 ticks, registered timeframe, known price fill, seed 0-2^31-1 (0 draws a fresh seed per run); booleans are never coerced. `read_settings` fills defaults an older file lacks without rewriting it; `save_settings` merges a partial patch and replaces the file atomically. `EvaluationSplit.from_dates` reserves the last `max(1, floor(n * percent / 100))` sessions for validation when `percent > 0`; a requested check is never silently disabled. Values are research preferences, never broker authority or a claim of executable returns. |
+| `timeframes.py` | `TIMEFRAMES`: `1h` (ISS interval 60, intraday, no funding strategy) and `1d` (ISS interval 24, default). Adding one is a registry entry plus data for that exact interval. |
+| `universe.py` | Universe IDs `pair_screen` / `calendar_native`, built-in `STRATEGIES` defaults and the capital, volume and quantity limits; catalog names (`PAIRS`, ...) resolve lazily to `moex_spread_lab.data.universe`. IDs are protocol, tickers are data, neither grants trading authority. |
+| `contracts.py` | `ParameterSpec`, `InstrumentContext`, `WindowSnapshot`, `StrategyIntentRun`, `EntryBandPoint`, `CompatibilityVerdict`, the `StrategyPlugin` protocol and the `plugin_*` accessors. The protocol is the only strategy contract: plugins are discovered from their folder in `msl-strategies`. |
+| `derived_cache.py` | JSON cache under `data/analytics/derived-cache/` keyed by a fingerprint (`msl.derived-cache/2`) of `data/` (minus `data/analytics`), `data-lake/`, `packages/*/src/` and `src/`. The key is the freshness proof; a corrupt entry is a miss. |
+| `hashed_json_cache.py`, `cache_metrics.py`, `json_types.py` | Thread-safe LRU, opt-in per-request cache counters, typed JSON-boundary helpers. |
+| `_fastcore.c`, `_fastcore_loader.py` | Optional C99 accelerator built on first import; the pure-Python path stays authoritative and `packages/proof/tests/test_perf_equivalence*.py` pins bit-for-bit parity. |
 
-## 1. What this package owns
+`test_architecture_dag.py` enforces that Layer 0 imports no other `msl-*` package at import
+time and that `packages/core/tests` imports no upward layer.
 
-| Area | Module | Durable rule |
-|---|---|---|
-| Run/evidence manifests | `w0.py` | `run-manifest.v1`; canonical JSON bytes, hashing, manifest/artifact validation, secret scanning. |
-| File-snapshot cache | `hashed_json_cache.py` | Bounded, thread-safe LRU keyed by immutable file snapshots; every lookup is counted through `cache_metrics.py`. |
-| Research settings | `settings.py` | One immutable `ResearchSettings` snapshot per request plus `EvaluationSplit` for training/validation dates (root `moex_spread_lab.evaluation_periods` is its external compatibility shim). |
-| Bar intervals | `timeframes.py` | `TIMEFRAMES` registry (`1h`, `1d`); adding an interval is a registry entry plus data for that exact ISS interval. |
-| Universe | `universe.py` | Generic universe IDs (`pair_screen`, `calendar_native`), pair windows, strategy defaults, and contract tickers. |
-| Shared contracts | `contracts.py` | `ParameterSpec`, `InstrumentContext`, `WindowSnapshot`, `StrategyIntentRun`, and the `StrategyPlugin` protocol. |
-| C99 accelerator | `_fastcore.c`, `_fastcore_loader.py` | Optional bit-for-bit accelerator; the pure-Python path stays authoritative. |
-| Diagnostics/support | `cache_metrics.py`, `derived_cache.py`, `json_types.py`, `cli.py` | Supporting runtime; no contract authority. The workstation bridge harness (`moex-spread-lab remote ...`) lives in the root application package `src/moex_spread_lab/remote/`, not in msl-core. |
-
-## 2. Contracts other packages must not silently change
-
-- **Hashing is canonical.** `w0.canonical_bytes` (sorted keys, UTF-8, fixed
-  separators) defines every artifact hash, `run_id` input and provenance digest.
-  Changing serialization invalidates stored `run_id` values; treat it as a
-  contract change with a conformance test, not a refactor.
-- **Manifests fail closed.** `validate_manifest` rejects unknown versions,
-  missing artifacts, hash drift and network-enabled configurations rather than
-  degrading. `secret-scan` is a gate, not a warning.
-- **Settings are snapshots, never ambient state.** `read_settings` fills defaults
-  for newer fields without rewriting an older file; `save_settings` writes
-  atomically through a staging directory, so a concurrent reader sees one complete
-  version. Booleans are never coerced from numbers or strings.
-- **`EvaluationSplit` reserves a suffix.** The validation share is
-  `max(1, floor(n × percent / 100))` sessions when `percent > 0`; requested
-  validation is never silently disabled, and unavailable validation is reported
-  as unavailable instead of being replaced by training.
-- **Universe IDs are protocol, tickers are data.** Universe constants name the
-  request shape (`pair_screen`, `calendar_native`); the concrete MOEX catalogs are
-  inert data. Neither grants trading authority.
-- **The `StrategyPlugin` protocol is the only strategy contract.** Drop-in
-  strategies are discovered from their folder and declare their proof adapter
-  through the protocol; no registry list, entry-point table or architecture-test
-  edit is a contract.
-
-## 3. Boundaries
-
-- Layer 0 imports no other `msl-*` package. `packages/core/tests` must stay
-  runnable with `uv run --package msl-core pytest packages/core/tests`, so core
-  tests may not import upward layers.
-- Market data, cost/risk models, strategies, proof orchestration and HTTP/UI
-  belong to `msl-data`, `msl-accounting`, `msl-strategies`, `msl-proof` and
-  `msl-web`. If a change needs one of them, it does not belong in this package.
-- `ResearchSettings` values are research preferences. They never become
-  broker authority, real funding, or a claim of executable returns.
-
-## 4. Environment switches that change behaviour
+## Environment switches read here
 
 | Variable | Effect |
 |---|---|
-| `MOEX_OFFLINE_ONLY=1` | Set in every standalone/browser harness so a cache miss fails closed instead of probing MOEX ISS. |
-| `MOEX_PROOF_REFERENCE_EVAL=1` | Disables the accelerated metric fast path for reference comparison. |
-| `MOEX_PROOF_DISABLE_C=1` | Forces the `_fastcore` pure-Python path. |
-| `MOEX_PROOF_WORKERS=1` | Single-threaded reference evaluation. |
+| `MOEX_PROOF_DISABLE_C=1` | `load_fastcore()` returns `None`: pure-Python path only. |
+| `MOEX_FASTCORE_SANITIZE=1` | Builds `_fastcore_asan` under clang ASan/UBSan; needs the runtime preloaded by `scripts/run_sanitized_pytest.py`. |
+| `MOEX_DERIVED_CACHE=0` | Bypasses the derived cache. |
+| `MOEX_HASHED_JSON_CACHE_CAPACITY` | Hashed-JSON LRU capacity (default 256). |
 
-## 5. Verification
+## Verification
 
 ```sh
 uv run pytest packages/core/tests -q
-uv run python scripts/architecture_gate.py            # DAG, discovery, manifests, secret scan
-uv run pytest -q -n auto --dist loadfile              # full package-scoped suite
+uv run python scripts/architecture_gate.py      # DAG, plugin discovery, package manifests, secret scan
+./scripts/verify.py --profile full
+uv run python scripts/run_sanitized_pytest.py   # when _fastcore.c or its Python mirrors change
 ```
-
-Touching `_fastcore.c` or its pure-Python mirror also requires
-`packages/proof/tests/test_perf_equivalence.py` (and
-`scripts/run_sanitized_pytest.py` when clang is available).

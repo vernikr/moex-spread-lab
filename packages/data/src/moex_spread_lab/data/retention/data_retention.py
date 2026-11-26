@@ -55,8 +55,6 @@ __all__ = [
 
 
 class _CacheEntry(TypedDict):
-    """One verified rebuildable-cache file selected for archival."""
-
     path: str
     sha256: str
     logical_bytes: int
@@ -65,8 +63,6 @@ class _CacheEntry(TypedDict):
 
 
 class _ArchivePlan(TypedDict):
-    """Side-effect-free description of the archive that would be written."""
-
     schema_version: str
     status: str
     root: str
@@ -85,7 +81,6 @@ class DataRetentionError(W0Error):
 
 
 def _manifest_files(manifest: JsonObject) -> list[JsonValue]:
-    """Return the validated ``files`` array of an inventory manifest."""
     files = manifest.get("files")
     if not isinstance(files, list):
         raise DataRetentionError("data inventory manifest files must be a list")
@@ -93,13 +88,7 @@ def _manifest_files(manifest: JsonObject) -> list[JsonValue]:
 
 
 def _manifest_int(entry: JsonObject, key: str, default: int) -> int:
-    """Read an inventory counter with the exact semantics of ``int(entry.get(key, default))``.
-
-    Manifest counters are JSON scalars; the cast only restates that boundary so the
-    conversion stays identical for every value the decoder can produce.
-    """
-    value: JsonValue = entry.get(key, default)
-    return int(cast(bool | int | float | str, value))
+    return int(cast(bool | int | float | str, entry.get(key, default)))
 
 
 def _load_inventory_manifest(path: Path, root: Path) -> JsonObject:
@@ -109,12 +98,7 @@ def _load_inventory_manifest(path: Path, root: Path) -> JsonObject:
         raise DataRetentionError(f"cannot read data inventory manifest: {path}: {exc}") from exc
     if not isinstance(decoded, dict):
         raise DataRetentionError("unsupported data inventory manifest schema")
-    # ``as_str_dict`` rejects non-string keys; decoded JSON objects always pass it.
-    manifest = as_str_dict(
-        cast(dict[object, object], decoded),
-        label="data inventory manifest",
-        error=DataRetentionError,
-    )
+    manifest = cast(JsonObject, decoded)
     if manifest.get("schema_version") != DATA_INVENTORY_SCHEMA:
         raise DataRetentionError("unsupported data inventory manifest schema")
     if manifest.get("hashes_included") is not True:
@@ -198,7 +182,7 @@ def _validate_archive_path(root: Path, archive_path: Path) -> Path:
     raise DataRetentionError("archive path must be outside the repository data directory")
 
 
-def _plan_rebuildable_cache_archive(
+def plan_rebuildable_cache_archive(
     root: Path, manifest_path: Path, archive_path: Path
 ) -> _ArchivePlan:
     resolved_root = root.resolve()
@@ -220,14 +204,6 @@ def _plan_rebuildable_cache_archive(
         "requires_apply": True,
         "files": entries,
     }
-
-
-def plan_rebuildable_cache_archive(
-    root: Path, manifest_path: Path, archive_path: Path
-) -> dict[str, Any]:
-    """Validate a pinned manifest and return a no-side-effect cache archive plan."""
-    # The public facade keeps its ``dict[str, Any]`` contract, unchanged for callers.
-    return cast(dict[str, Any], _plan_rebuildable_cache_archive(root, manifest_path, archive_path))
 
 
 def _archive_manifest(plan: _ArchivePlan) -> dict[str, Any]:
@@ -317,7 +293,7 @@ def archive_rebuildable_caches(
     root: Path, manifest_path: Path, archive_path: Path
 ) -> dict[str, Any]:
     """Archive verified page caches, then remove only the verified originals."""
-    plan: _ArchivePlan = _plan_rebuildable_cache_archive(root, manifest_path, archive_path)
+    plan = plan_rebuildable_cache_archive(root, manifest_path, archive_path)
     files = plan["files"]
     if not files:
         return {**plan, "status": "nothing_to_archive", "requires_apply": False}

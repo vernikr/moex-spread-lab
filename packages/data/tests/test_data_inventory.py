@@ -26,6 +26,7 @@ def test_inventory_classifies_inputs_caches_and_candidates(tmp_path):
         },
         "w1/candles/CNYRUBF_10m.json": {"timeframe": "10m", "rows": []},
         "w1/candles-cache/CNYRUBF/60/page-000000.json": {"rows": []},
+        "w1/candles-screen/X.json": {},
         "w1/candles-common/CNYRUBF_1m.json": {"timeframe": "1m", "rows": []},
         "w1/current-intake.json": {"schema_version": "iss-intake.v1"},
         "analytics/cny-diagnostic.json": {"schema_version": "analytical-baseline.v1", "daily": []},
@@ -39,6 +40,7 @@ def test_inventory_classifies_inputs_caches_and_candidates(tmp_path):
         "w1/candles/CNYRUBF_1h.json": "active_input",
         "w1/candles/CNYRUBF_10m.json": "archive_candidate",
         "w1/candles-cache/CNYRUBF/60/page-000000.json": "rebuildable_cache",
+        "w1/candles-screen/X.json": "active_input",
         "w1/candles-common/CNYRUBF_1m.json": "archive_candidate",
         "w1/current-intake.json": "active_input",
         "analytics/cny-diagnostic.json": "derived_archive_candidate",
@@ -48,12 +50,21 @@ def test_inventory_classifies_inputs_caches_and_candidates(tmp_path):
     assert entry["metadata"]["row_count"] == 2
     assert entry["metadata"]["time_range"] == {"from": "2026-01-01", "till": "2026-01-02"}
     assert entry["sha256"] == hashlib.sha256(paths[entry["path"]].read_bytes()).hexdigest()
-    assert result["summary"]["candidate_reclaimable_bytes"] > 0
+    summary = result["summary"]
+    assert summary["file_count"] == len(entries)
+    assert summary["logical_bytes"] == sum(entry["logical_bytes"] for entry in entries.values())
+    assert summary["by_classification"]["active_input"]["file_count"] == 3
+    assert summary["candidate_reclaimable_bytes"] > 0
     assert result["summary"]["candidate_reclaimable_requires_review"]
 
 
 def test_fast_inventory_and_missing_data(tmp_path):
-    assert not build_data_inventory(tmp_path)["summary"]["data_root_exists"]
+    missing = build_data_inventory(tmp_path)["summary"]
+    assert not missing["data_root_exists"]
+    assert missing["file_count"] == missing["logical_bytes"] == missing["allocated_bytes"] == 0
+    assert missing["by_classification"] == {}
+    (tmp_path / "data").mkdir()
+    assert build_data_inventory(tmp_path)["summary"] == {**missing, "data_root_exists": True}
     write_json(tmp_path, "w1/candles/CNYRUBF_1h.json", {"timeframe": "1h", "rows": []})
     fast = build_data_inventory(tmp_path, inspect_json=False)
     assert fast["files"][0]["classification"] == "active_input"

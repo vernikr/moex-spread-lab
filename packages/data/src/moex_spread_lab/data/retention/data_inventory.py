@@ -53,96 +53,69 @@ _EXACT_POLICIES: dict[str, _Policy] = {
     ),
 }
 
-_PREFIX_POLICIES: tuple[tuple[str, _Policy], ...] = (
-    (
-        "w1/candles-screen/",
-        _Policy(
-            "w1/candles-screen",
-            "active_input",
-            "keep",
-            ("pair screen", "hourly calendar proof"),
-            "The screener gives screened candle inputs priority over intake candles.",
-        ),
+_PREFIX_POLICIES: tuple[_Policy, ...] = (
+    _Policy(
+        "w1/candles-screen",
+        "active_input",
+        "keep",
+        ("pair screen", "hourly calendar proof"),
+        "The screener gives screened candle inputs priority over intake candles.",
     ),
-    (
-        "w1/candles-cache/",
-        _Policy(
-            "w1/candles-cache",
-            "rebuildable_cache",
-            "ttl_or_rebuild",
-            ("iss-candles intake",),
-            "Paginated normalized ISS pages avoid refetching but are not read by the offline screener.",
-        ),
+    _Policy(
+        "w1/candles-cache",
+        "rebuildable_cache",
+        "ttl_or_rebuild",
+        ("iss-candles intake",),
+        "Paginated normalized ISS pages avoid refetching but are not read by the offline screener.",
     ),
-    (
-        "w1/candles-screen-cache/",
-        _Policy(
-            "w1/candles-screen-cache",
-            "rebuildable_cache",
-            "ttl_or_rebuild",
-            ("screen candle intake",),
-            "Paginated intake cache; final screened candles remain separate.",
-        ),
+    _Policy(
+        "w1/candles-screen-cache",
+        "rebuildable_cache",
+        "ttl_or_rebuild",
+        ("screen candle intake",),
+        "Paginated intake cache; final screened candles remain separate.",
     ),
-    (
-        "w1/candles-cache-common/",
-        _Policy(
-            "w1/candles-cache-common",
-            "rebuildable_cache",
-            "ttl_or_rebuild",
-            ("legacy common-candle intake",),
-            "Rebuildable page cache for an unregistered experimental timeframe.",
-        ),
+    _Policy(
+        "w1/candles-cache-common",
+        "rebuildable_cache",
+        "ttl_or_rebuild",
+        ("legacy common-candle intake",),
+        "Rebuildable page cache for an unregistered experimental timeframe.",
     ),
-    (
-        "w1/candles-common/",
-        _Policy(
-            "w1/candles-common",
-            "archive_candidate",
-            "pin_or_archive",
-            ("legacy minute diagnostics",),
-            "No direct runtime reader consumes this experimental common-candle directory.",
-        ),
+    _Policy(
+        "w1/candles-common",
+        "archive_candidate",
+        "pin_or_archive",
+        ("legacy minute diagnostics",),
+        "No direct runtime reader consumes this experimental common-candle directory.",
     ),
-    (
-        "w1/candleborders-cache/",
-        _Policy(
-            "w1/candleborders-cache",
-            "rebuildable_cache",
-            "ttl_or_rebuild",
-            ("timeframe inventory intake",),
-            "Rebuildable ISS availability probes.",
-        ),
+    _Policy(
+        "w1/candleborders-cache",
+        "rebuildable_cache",
+        "ttl_or_rebuild",
+        ("timeframe inventory intake",),
+        "Rebuildable ISS availability probes.",
     ),
-    (
-        "w1/perpetual-history-discovery/",
-        _Policy(
-            "w1/perpetual-history-discovery",
-            "archive_candidate",
-            "pin_or_archive",
-            ("historical-pair discovery reproduction",),
-            "Discovery artifact; active selectors read copied candle inputs instead.",
-        ),
+    _Policy(
+        "w1/perpetual-history-discovery",
+        "archive_candidate",
+        "pin_or_archive",
+        ("historical-pair discovery reproduction",),
+        "Discovery artifact; active selectors read copied candle inputs instead.",
     ),
-    (
-        "spread-history-cache/",
-        _Policy(
-            "spread-history-cache",
-            "active_input",
-            "keep_while_calendar_research_active",
-            ("calendar proof", "calendar study"),
-            "CalendarData reads this local history in offline mode.",
-        ),
+    _Policy(
+        "spread-history-cache",
+        "active_input",
+        "keep_while_calendar_research_active",
+        ("calendar proof", "calendar study"),
+        "CalendarData reads this local history in offline mode.",
     ),
-    (
-        "proof-funding-verified/",
-        _Policy(
-            "proof-funding-verified",
-            "active_input",
-            "keep",
-            ("funding proof",),
-            "Supplementary published funding evidence can be used by the proof overlay.",
-        ),
+    _Policy(
+        "proof-funding-verified",
+        "active_input",
+        "keep",
+        ("funding proof",),
+        "Supplementary published funding evidence can be used by the proof overlay.",
     ),
 )
 
@@ -224,8 +197,8 @@ def _policy(path: str, metadata: dict[str, Any]) -> _Policy:
         return _candles_policy(path, metadata)
     if path.startswith("analytics/"):
         return _analytics_policy(path)
-    for prefix, policy_item in _PREFIX_POLICIES:
-        if path.startswith(prefix):
+    for policy_item in _PREFIX_POLICIES:
+        if path.startswith(policy_item.dataset + "/"):
             return policy_item
     dynamic = _dynamic_prefix_policy(path)
     if dynamic is not None:
@@ -289,11 +262,9 @@ def _inspect_json_file(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {"json_root": type(payload).__name__}
     data = cast(dict[str, Any], payload)
-    metadata: dict[str, Any] = {}
-    if isinstance(data.get("schema_version"), str):
-        metadata["schema_version"] = data["schema_version"]
-    if isinstance(data.get("timeframe"), str):
-        metadata["timeframe"] = data["timeframe"]
+    metadata = {
+        key: data[key] for key in ("schema_version", "timeframe") if isinstance(data.get(key), str)
+    }
     row_count = _resolve_payload_row_count(data)
     if row_count is not None:
         metadata["row_count"] = row_count
@@ -340,18 +311,6 @@ def _allocated_bytes(stat_result: os.stat_result) -> int:
     blocks = getattr(stat_result, "st_blocks", 0)
     allocated = int(blocks) * 512
     return allocated if allocated > 0 else int(stat_result.st_size)
-
-
-def _empty_summary(data_root_exists: bool) -> dict[str, Any]:
-    return {
-        "data_root_exists": data_root_exists,
-        "file_count": 0,
-        "logical_bytes": 0,
-        "allocated_bytes": 0,
-        "by_classification": {},
-        "candidate_reclaimable_bytes": 0,
-        "candidate_reclaimable_requires_review": True,
-    }
 
 
 def _scan_inventory_files(
@@ -421,6 +380,14 @@ def _aggregate_dataset_metadata(
     return sorted(schemas), (row_count if row_count_known else None), merged_range
 
 
+def _file_totals(entries: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "file_count": len(entries),
+        "logical_bytes": sum(int(entry["logical_bytes"]) for entry in entries),
+        "allocated_bytes": sum(int(entry["allocated_bytes"]) for entry in entries),
+    }
+
+
 def _summarize_dataset_group(
     dataset: str, entries: list[dict[str, Any]], *, include_hashes: bool
 ) -> dict[str, Any]:
@@ -432,9 +399,7 @@ def _summarize_dataset_group(
         "retention": first["retention"],
         "consumers": first["consumers"],
         "rationale": first["rationale"],
-        "file_count": len(entries),
-        "logical_bytes": sum(int(entry["logical_bytes"]) for entry in entries),
-        "allocated_bytes": sum(int(entry["allocated_bytes"]) for entry in entries),
+        **_file_totals(entries),
     }
     if schemas:
         item["schema_versions"] = schemas
@@ -451,24 +416,17 @@ def _summarize_dataset_group(
     return item
 
 
-def _build_inventory_summary(files: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_inventory_summary(files: list[dict[str, Any]], exists: bool) -> dict[str, Any]:
     classification_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in files:
         classification_groups[str(entry["classification"])].append(entry)
-    by_classification = {
-        classification: {
-            "file_count": len(entries),
-            "logical_bytes": sum(int(entry["logical_bytes"]) for entry in entries),
-            "allocated_bytes": sum(int(entry["allocated_bytes"]) for entry in entries),
-        }
-        for classification, entries in sorted(classification_groups.items())
-    }
     return {
-        "data_root_exists": True,
-        "file_count": len(files),
-        "logical_bytes": sum(int(entry["logical_bytes"]) for entry in files),
-        "allocated_bytes": sum(int(entry["allocated_bytes"]) for entry in files),
-        "by_classification": by_classification,
+        "data_root_exists": exists,
+        **_file_totals(files),
+        "by_classification": {
+            classification: _file_totals(entries)
+            for classification, entries in sorted(classification_groups.items())
+        },
         "candidate_reclaimable_bytes": sum(
             int(entry["allocated_bytes"])
             for entry in files
@@ -488,20 +446,11 @@ def build_data_inventory(
     resolved_root = root.resolve()
     data_root = resolved_root / "data"
     created_at = datetime.now(UTC).isoformat(timespec="seconds")
-    if not data_root.is_dir():
-        return {
-            "schema_version": DATA_INVENTORY_SCHEMA,
-            "created_at": created_at,
-            "root": str(resolved_root),
-            "data_root": str(data_root),
-            "hashes_included": include_hashes,
-            "json_inspection": inspect_json,
-            "datasets": [],
-            "files": [],
-            "summary": _empty_summary(False),
-        }
-    files = _scan_inventory_files(
-        data_root, include_hashes=include_hashes, inspect_json=inspect_json
+    exists = data_root.is_dir()
+    files = (
+        _scan_inventory_files(data_root, include_hashes=include_hashes, inspect_json=inspect_json)
+        if exists
+        else []
     )
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for entry in files:
@@ -519,7 +468,7 @@ def build_data_inventory(
         "json_inspection": inspect_json,
         "datasets": datasets,
         "files": files,
-        "summary": _build_inventory_summary(files),
+        "summary": _build_inventory_summary(files, exists),
     }
 
 

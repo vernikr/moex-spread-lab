@@ -62,33 +62,24 @@ def test_refuses_unsafe_sources_without_deletion(cache_case, fault):
     assert all(path.exists() for path in sources) and active.exists()
 
 
-def test_publication_never_overwrites_concurrent_archive(cache_case, monkeypatch):
+@pytest.mark.parametrize("fault", ["publication", "source"])
+def test_publication_races_fail_closed(cache_case, monkeypatch, fault):
     root, sources, active, manifest, archive = cache_case
     verify = retention.verify_tar
 
     def race(*args):
         verify(*args)
-        archive.write_bytes(b"other writer")
+        if fault == "publication":
+            archive.write_bytes(b"other writer")
+        else:
+            sources[-1].write_text("changed")
 
     monkeypatch.setattr(retention, "verify_tar", race)
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError if fault == "publication" else DataRetentionError):
         retention.archive_rebuildable_caches(root, manifest, archive)
-    assert archive.read_bytes() == b"other writer"
-    assert all(path.exists() for path in sources) and active.exists()
-    assert not list(root.glob(".archive.tar.gz.*"))
-
-
-def test_source_changed_during_verification_is_not_published(cache_case, monkeypatch):
-    root, sources, active, manifest, archive = cache_case
-    verify = retention.verify_tar
-
-    def change_source(*args):
-        verify(*args)
-        sources[-1].write_text("changed")
-
-    monkeypatch.setattr(retention, "verify_tar", change_source)
-    with pytest.raises(DataRetentionError, match="before publication"):
-        retention.archive_rebuildable_caches(root, manifest, archive)
-    assert not archive.exists()
+    if fault == "publication":
+        assert archive.read_bytes() == b"other writer"
+    else:
+        assert not archive.exists()
     assert all(path.exists() for path in sources) and active.exists()
     assert not list(root.glob(".archive.tar.gz.*"))

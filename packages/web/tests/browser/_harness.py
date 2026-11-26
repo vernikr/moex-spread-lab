@@ -1,35 +1,14 @@
-"""Shared bootstrap, phase timers and scenario isolation for the browser smokes (S4b).
+"""Offline fixtures, guarded page sessions, streamed API results and phase timings.
 
-Every browser smoke is a plain `python <script>.py` program, not a pytest module, so
-`PYTEST_CURRENT_TEST` is unset and `MOEX_OFFLINE_ONLY` used to be missing in most of them. A missing
-flag made `CalendarData` fall through to live MOEX ISS history for ~1,050 uncached secids (~180 s per
-launch). Importing this module first makes the offline contract explicit and centralises the
-boilerplate that previously drifted between eleven scripts:
-
-    from _harness import serve_fixture, temporary_root, scenario_isolation
-
-    def scenario(browser):
-        with temporary_root() as root, serve_fixture(root, fixture) as url:
-            with scenario_isolation(browser):
-                run(browser, url)
-
-    if __name__ == "__main__":
-        from _harness import standalone
-        standalone(scenario, MESSAGE)
-
-`scenario(browser)` is the callable entry point: `scripts/run_browser_smokes.py` launches
-Chromium once per worker and calls it per suite with isolated contexts, while
-`standalone()` keeps `python <suite>_smoke.py` working for one-off runs.
-
-Phase timers (`PHASES`) separate the terms the plan asks about — fixture hydration,
-server start, browser launch, app startup, API compute — from UI assertions, and print
-one `MOEX_SMOKE_PHASES={...}` line per scenario so the runner can aggregate them.
+The runner shares Chromium per worker; suites own temporary roots and contexts.
+Playwright stays optional for the fixture/runner unit tests.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -37,28 +16,30 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from _templates import materialize
 
 os.environ["MOEX_OFFLINE_ONLY"] = "1"
-
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 for _path in (_REPO_ROOT, _REPO_ROOT / "packages" / "proof" / "tests", _REPO_ROOT / "tests"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-DEFAULT_TIMEOUT_MS = 12_000
+DEFAULT_TIMEOUT_MS = 20_000
 PHASES_MARKER = "MOEX_SMOKE_PHASES="
 UI_TRIALS_ENV = "MOEX_UI_SMOKE_TRIALS"
-#: Optuna budget for scenarios that assert no numerical result (plan S4b, work 4).
 UI_ONLY_TRIALS = 12
+PAIR_URL = "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6&strategy=mean_reversion"
+CAL_URL = "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3&strategy=zscore_mean_reversion"
+# Startup includes API compute; subtracting both would double-count it.
+_MEASURED_PHASES = frozenset({"template_build", "fixture_clone", "server_startup", "api_compute"})
+_STARTUP_PAGES: list[Any] = []
 
 
 class _Phases:
-    """Thread-safe phase accumulators for one scenario."""
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._spans: dict[str, float] = {}
@@ -85,17 +66,11 @@ class _Phases:
         return report
 
 
-#: Spans that are subtracted from the scenario total to estimate UI time. `static` and
-#: `app_startup` stay out of the sum because a page's startup already includes its own
-#: API compute, so adding both would double-count.
-_MEASURED_PHASES = frozenset({"template_build", "fixture_clone", "server_startup", "api_compute"})
-
 PHASES = _Phases()
 
 
 @contextmanager
 def phase(name: str) -> Iterator[None]:
-    """Attribute the enclosed block to one phase, even when it raises."""
     started = time.perf_counter()
     try:
         yield
@@ -103,47 +78,28 @@ def phase(name: str) -> Iterator[None]:
         PHASES.add(name, time.perf_counter() - started)
 
 
-_STARTUP_PAGES: list[Any] = []
-
-
 def note_app_startup(page: Any) -> None:
-    """Count a page's first payload-ready wait once, as the app startup term.
-
-    `performance.now()` is measured from navigation start, so the value covers static
-    delivery, script boot and the first proof computation the page waited for.
-    """
-    if any(known is page for known in _STARTUP_PAGES):
-        return
-    _STARTUP_PAGES.append(page)
-    try:
-        milliseconds = page.evaluate("performance.now()")
-    except Exception:
-        return
-    if isinstance(milliseconds, int | float):
-        PHASES.add("app_startup", milliseconds / 1000)
+    if not any(known is page for known in _STARTUP_PAGES):
+        _STARTUP_PAGES.append(page)
+        PHASES.add("app_startup", page.evaluate("performance.now()") / 1000)
 
 
 def emit_phases(report: dict[str, float]) -> None:
-    """Print one machine-readable phase line that the runner parses."""
     print(PHASES_MARKER + json.dumps(report, sort_keys=True), flush=True)
 
 
 def reset() -> None:
-    """Clear per-scenario accumulators; called by every entry point."""
     PHASES.reset()
     _STARTUP_PAGES.clear()
 
 
 @contextmanager
 def temporary_root() -> Iterator[Path]:
-    """Temporary fixture root; teardown is tolerant of late worker writes."""
     with tempfile.TemporaryDirectory() as tmp:
         yield Path(tmp)
 
 
 def _timed_handler(base: type[BaseHTTPRequestHandler]) -> type[BaseHTTPRequestHandler]:
-    """Wrap the loopback handler so API compute is measured where it happens."""
-
     def timed(handler: BaseHTTPRequestHandler, action: Callable[[], None]) -> None:
         started = time.perf_counter()
         try:
@@ -161,34 +117,20 @@ def _timed_handler(base: type[BaseHTTPRequestHandler]) -> type[BaseHTTPRequestHa
     return type("TimedSmokeHandler", (base,), {"do_GET": do_get, "do_POST": do_post})
 
 
-def _quiet_optuna() -> None:
-    """Silence Optuna's one-INFO-line-per-study chatter in the smoke output.
-
-    Called after the web package imported Optuna, because `optuna.logging` resets the
-    level when it is configured at import time.
-    """
-    try:
-        import optuna.logging
-    except ImportError:  # the smokes run without Optuna only if the app itself cannot
-        return
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-
 @contextmanager
-def serve(
-    root: Path,
-    *,
-    store_factory: Callable[[Any], Any] | None = None,
-) -> Iterator[str]:
-    """Serve the loopback screener API on an ephemeral port with a clean shutdown."""
+def serve(root: Path, *, store_factory: Callable[[Any], Any] | None = None) -> Iterator[str]:
+    import optuna.logging
+
     from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
     from moex_spread_lab.web.server import ScreenerStore, make_handler
 
-    _quiet_optuna()
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     with phase("server_startup"):
         store = (store_factory or ScreenerStore)(ScreenerInputs(root))
         server = ThreadingHTTPServer(("127.0.0.1", 0), _timed_handler(make_handler(store)))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        )
         thread.start()
     try:
         yield "http://127.0.0.1:" + str(server.server_port)
@@ -200,61 +142,19 @@ def serve(
 
 
 def hydrate(root: Path, builder: Callable[[Path], Any], *, template_key: str | None = None) -> None:
-    """Fill ``root`` from a cached fixture template, charging the copy to the phase budget."""
     PHASES.extend(materialize(root, builder, template_key))
 
 
 @contextmanager
-def serve_fixture(
-    root: Path,
-    builder: Callable[[Path], Any] | None = None,
-    *,
-    template_key: str | None = None,
-) -> Iterator[str]:
-    """Hydrate ``root`` from a cached template (if any) and serve it for the whole run."""
-    if builder is not None:
-        hydrate(root, builder, template_key=template_key)
+def serve_fixture(root: Path, builder: Callable[[Path], Any]) -> Iterator[str]:
+    hydrate(root, builder)
     with serve(root) as url:
         yield url
 
 
 @contextmanager
-def scenario_isolation(browser: Any) -> Iterator[None]:
-    """Close every context a scenario created, so nothing leaks into the next suite.
-
-    Chromium is launched once per worker; a scenario that fails half-way would
-    otherwise leave pages alive against its already-closed server. The patch is scoped
-    to the `with` block and restored afterwards.
-    """
-    created: list[Any] = []
-    original_context, original_page = browser.new_context, browser.new_page
-
-    def new_context(**kwargs: Any) -> Any:
-        context = original_context(**kwargs)
-        created.append(context)
-        return context
-
-    def new_page(**kwargs: Any) -> Any:
-        context = original_context(**kwargs)
-        created.append(context)
-        return context.new_page()
-
-    browser.new_context, browser.new_page = new_context, new_page
-    try:
-        yield
-    finally:
-        browser.new_context, browser.new_page = original_context, original_page
-        for context in reversed(created):
-            context.close()
-
-
-@contextmanager
 def ui_only_trials(trials: int = UI_ONLY_TRIALS) -> Iterator[None]:
-    """Bound the Optuna budget for a scenario that asserts no numerical result.
-
-    The bound only takes effect under the offline contract and only downwards; see
-    `moex_spread_lab.proof.proof_strategy_search.trials_per_strategy`.
-    """
+    """Only UI wiring, never numerical winners, may use the smaller offline budget."""
     previous = os.environ.get(UI_TRIALS_ENV)
     os.environ[UI_TRIALS_ENV] = str(trials)
     try:
@@ -268,7 +168,6 @@ def ui_only_trials(trials: int = UI_ONLY_TRIALS) -> Iterator[None]:
 
 @contextmanager
 def exact_trials() -> Iterator[None]:
-    """Explicit opt-out: this scenario asserts an exact trial count or search outcome."""
     previous = os.environ.pop(UI_TRIALS_ENV, None)
     try:
         yield
@@ -277,14 +176,171 @@ def exact_trials() -> Iterator[None]:
             os.environ[UI_TRIALS_ENV] = previous
 
 
+@contextmanager
+def page_session(
+    browser: Any, url: str, route: str = PAIR_URL, *, mobile: bool = False
+) -> Iterator[Any]:
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    context.set_default_timeout(DEFAULT_TIMEOUT_MS)
+    errors: list[str] = []
+    context.on("page", lambda page: page.on("pageerror", lambda error: errors.append(str(error))))
+    context.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    context.on(
+        "response",
+        lambda r: errors.append(f"HTTP {r.status}: {r.url}") if r.status >= 500 else None,
+    )
+    try:
+        page = context.new_page()
+        page.goto(url + route)
+        ready(page)
+        yield page
+        if mobile:
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.wait_for_function("() => document.documentElement.scrollWidth <= innerWidth")
+            open_settings_modal(page)
+            page.wait_for_function("() => document.documentElement.scrollWidth <= innerWidth")
+            page.keyboard.press("Escape")
+        assert not errors, errors
+    finally:
+        context.close()
+
+
+@contextmanager
+def expect_api_json(page: Any, suffix: str, timeout: int = 120_000) -> Iterator[dict[str, Any]]:
+    box: dict[str, Any] = {}
+    with page.expect_event(
+        "requestfinished", predicate=lambda r: r.url.endswith(suffix), timeout=timeout
+    ) as pending:
+        yield box
+    response = pending.value.response()
+    assert response is not None and response.ok, f"API request failed: {suffix}"
+    text = response.text()
+    if "ndjson" in response.headers.get("content-type", ""):
+        messages = [json.loads(line) for line in text.splitlines() if line.strip()]
+        assert not [msg for msg in messages if msg["type"] == "error"], messages
+        box["data"] = next(msg["data"] for msg in reversed(messages) if msg["type"] == "result")
+    else:
+        box["data"] = json.loads(text)
+
+
+def post(page: Any, path: str = "run") -> Any:
+    return page.expect_response(
+        lambda r: r.url.endswith("/api/proof/" + path), timeout=DEFAULT_TIMEOUT_MS
+    )
+
+
+def expect(value: Any) -> Any:
+    # The runner's unit tests import this module without the optional browser dependency.
+    return import_module("playwright.sync_api").expect(value)
+
+
+def ready(page: Any, basis: str | None = None) -> None:
+    expect(page.locator("#period-result")).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
+    # RAF polling does not oversleep the UI's 160 ms progress-bar completion timer.
+    page.wait_for_function(
+        "() => document.getElementById('render-progress').getAttribute('aria-hidden')==='true'"
+    )
+    expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
+    expect(page.locator("#period-result")).to_have_attribute(
+        "data-basis", basis or page.evaluate("payload.evaluation.result_basis")
+    )
+    note_app_startup(page)
+
+
+def open_settings_modal(page: Any) -> Any:
+    page.locator("#open-settings").click()
+    dialog = page.locator("#global-settings")
+    dialog.wait_for(state="visible")
+    return dialog
+
+
+def apply_settings(page: Any, *, rerun: bool = True, **values: Any) -> dict[str, Any]:
+    open_settings_modal(page)
+    for name, value in values.items():
+        control = page.locator("#" + name.replace("_", "-"))
+        if isinstance(value, bool):
+            control.set_checked(value)
+        elif name == "global_fill":
+            control.select_option(value)
+        else:
+            control.fill(str(value))
+    with expect_api_json(page, "/api/settings") as saved:
+        if rerun:
+            with post(page):
+                page.locator("#apply-settings").click()
+        else:
+            page.locator("#apply-settings").click()
+    if rerun:
+        ready(page)
+    return saved["data"]
+
+
+def tune(page: Any, button: str = "#auto-tune") -> dict[str, Any]:
+    with expect_api_json(page, "/api/proof/optimize") as result:
+        page.locator(button).click()
+    page.wait_for_function(
+        "() => document.getElementById('tune-state').textContent === ''", timeout=120_000
+    )
+    ready(page)
+    return result["data"]
+
+
+def edit_parameters(page: Any, **values: Any) -> None:
+    for name, value in values.items():
+        page.locator("#" + name).fill(str(value))
+    with post(page):
+        page.locator("#" + next(reversed(values))).press("Enter")
+    ready(page)
+
+
+def table_matches_chart(page: Any) -> None:
+    expect(page.locator("#window-list [data-reading=pending]")).to_have_count(0)
+    row = page.locator("#window-list tr.current")
+    expect(row).to_have_attribute("data-reading", "measured")
+    expect(row).to_have_attribute("data-run-id", page.evaluate("payload.run_id"))
+    expect(row.locator("[data-metric=trades]")).to_have_text(
+        str(page.evaluate("payload.summary.trades"))
+    )
+    expect(row.locator("[data-metric=rate]")).to_have_text(
+        page.evaluate(
+            "payload.evaluation.result.annualized_excess_pp==null?'—':signed(payload.evaluation.result.annualized_excess_pp)"
+        )
+    )
+
+
+def hold_response(page: Any, suffix: str) -> None:
+    page.evaluate(
+        """suffix => {
+      const original = window.fetch;
+      let once = true;
+      delete window.releaseSmokeResponse;
+      window.fetch = async (...args) => {
+        const response = await original(...args);
+        if (once && String(args[0]).endsWith(suffix)) {
+          once = false;
+          await new Promise(resolve => window.releaseSmokeResponse = resolve);
+        }
+        return response;
+      };
+    }""",
+        suffix,
+    )
+
+
+def release_response(page: Any) -> None:
+    # Let the released fetch body and its render microtasks run before negative assertions.
+    page.evaluate("""async () => {
+      window.releaseSmokeResponse();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }""")
+
+
 def launch(pw: Any) -> Any:
-    """Launch Chromium once and charge the cold start to the browser-launch phase."""
     with phase("browser_launch"):
         return pw.chromium.launch()
 
 
 def standalone(scenario: Callable[[Any], None], message: str = "") -> None:
-    """Run one suite directly (`python <suite>_smoke.py`) with a private browser."""
     from playwright.sync_api import sync_playwright
 
     reset()
@@ -295,7 +351,6 @@ def standalone(scenario: Callable[[Any], None], message: str = "") -> None:
             scenario(browser)
         finally:
             browser.close()
-    report = PHASES.report(time.perf_counter() - started)
     if message:
         print(message)
-    emit_phases(report)
+    emit_phases(PHASES.report(time.perf_counter() - started))

@@ -1,16 +1,4 @@
-"""Session-scoped fixture templates cloned per browser scenario (plan S4b, work 3).
-
-Every smoke suite builds its synthetic workspace with a builder such as
-`proof_fixtures.fixture` or `proof_fixtures.two_calendar_windows`. Before S4b each
-script paid that build again in its own process; now the first caller in a worker
-process builds a template once and every later caller receives a byte-for-byte copy
-inside its own temporary root. Suites that mutate their workspace (the funding smoke
-rewrites funding rates, the strategy smoke shocks candle prices) therefore keep
-touching only their clone, never the template or another scenario.
-
-Identity is the builder's module-qualified name plus an optional explicit `key`, so
-two builders with different module paths can never share a template.
-"""
+"""Cache fixture builders per worker; each scenario receives a private writable clone."""
 
 from __future__ import annotations
 
@@ -24,9 +12,6 @@ from pathlib import Path
 from typing import Any
 
 _CACHE: dict[str, Path] = {}
-#: Values whose repr is stable enough to identify a closure; anything else (a list a
-#: builder appends to, for instance) is identified by object identity, which is stable
-#: for the life of the process and whose cache this is.
 _IMMUTABLE_VALUES = (str, bytes, int, float, complex, bool, type(None), frozenset)
 
 
@@ -37,17 +22,12 @@ def _fingerprint(value: Any) -> str:
         return "tuple:" + ",".join(_fingerprint(item) for item in value)
     if isinstance(value, frozenset | set):
         return f"{type(value).__name__}:" + ",".join(sorted(_fingerprint(item) for item in value))
+    # A mutable capture may change during a build; its process-local identity does not.
     return f"{type(value).__name__}@{id(value)}"
 
 
 def identity(builder: Callable[[Path], Any], key: str | None = None) -> str:
-    """Stable cache key for a fixture builder.
-
-    Module and qualified name alone are not enough for closures and lambdas: two
-    closures from one factory share both while writing different fixtures. Their code,
-    defaults and captured values therefore join the key. A builder called with
-    non-default keyword arguments must pass an explicit ``key``.
-    """
+    """Closures sharing a qualified name can still build different fixtures."""
     if key:
         return key
     module = getattr(builder, "__module__", "") or ""
@@ -67,7 +47,6 @@ def identity(builder: Callable[[Path], Any], key: str | None = None) -> str:
 
 
 def template_for(builder: Callable[[Path], Any], key: str | None = None) -> tuple[Path, float]:
-    """Build (once per process) and return the template directory plus build seconds."""
     name = identity(builder, key)
     cached = _CACHE.get(name)
     if cached is not None:
@@ -84,12 +63,6 @@ def template_for(builder: Callable[[Path], Any], key: str | None = None) -> tupl
 def materialize(
     root: Path, builder: Callable[[Path], Any], key: str | None = None
 ) -> dict[str, float]:
-    """Fill ``root`` with a private copy of the builder's template.
-
-    Returns the measured ``template_build`` (``0.0`` on a cache hit) and
-    ``fixture_clone`` seconds, so the harness attributes them to the phase budget
-    instead of guessing.
-    """
     template, built = template_for(builder, key)
     clone_started = time.perf_counter()
     shutil.copytree(template, root, dirs_exist_ok=True)
@@ -97,5 +70,4 @@ def materialize(
 
 
 def cached() -> tuple[str, ...]:
-    """Builders with a warm template in this process (used by diagnostics and tests)."""
     return tuple(sorted(_CACHE))

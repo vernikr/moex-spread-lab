@@ -1,185 +1,276 @@
-"""Optional real-browser regression; uses synthetic data, never workstation inputs.
-
-After installing Chromium for Playwright: uv run --with playwright python packages/web/tests/browser/period_settings_smoke.py
-"""
+"""Global preferences, validation split, automatic sizing and independent research screens."""
 
 import re
-from contextlib import contextmanager
-from pathlib import Path
 
-from _harness import note_app_startup, scenario_isolation, serve_fixture, temporary_root
-from playwright.sync_api import expect
+from _harness import (
+    CAL_URL,
+    PAIR_URL,
+    apply_settings,
+    edit_parameters,
+    expect,
+    expect_api_json,
+    hold_response,
+    open_settings_modal,
+    page_session,
+    post,
+    ready,
+    release_response,
+    serve_fixture,
+    table_matches_chart,
+    temporary_root,
+    tune,
+    ui_only_trials,
+)
 
-from proof_fixtures import fixture
+from proof_fixtures import screen_failures, two_calendar_windows
 
-_STREAM_SPY = """
-(() => {
-  window.__proofResults = [];
-  const orig = window.fetch.bind(window);
-  window.fetch = async (...args) => {
-    const res = await orig(...args);
-    const url = String(args[0] && args[0].url ? args[0].url : args[0]);
-    if (url.includes('/api/')) {
-      const clone = res.clone();
-      clone.text().then(txt => {
-        const ctype = (res.headers.get('content-type') || '').toLowerCase();
-        let data = null;
-        if (ctype.includes('ndjson')) {
-          for (const line of txt.split(String.fromCharCode(10))) {
-            const s = line.trim();
-            if (!s) continue;
-            const msg = JSON.parse(s);
-            if (msg.type === 'result') data = msg.data;
-            else if (msg.type === 'error') data = { error: msg.error };
-          }
-        } else if (txt.trim()) {
-          data = JSON.parse(txt);
-        }
-        window.__proofResults.push({ url, status: res.status, data });
-      }).catch(() => {});
+
+def validate_dialog(page):
+    original = page.evaluate("payload.run_id")
+    dialog = open_settings_modal(page)
+    defaults = {
+        "validation-percent": "0",
+        "global-capital": "30000",
+        "global-slippage": "1",
+        "global-seed": "0",
     }
-    return res;
-  };
-})();
-"""
-
-
-def install_stream_spy(target):
-    target.add_init_script(_STREAM_SPY)
-
-
-@contextmanager
-def expect_api_json(page, suffix, timeout=120000):
-    box = {}
-    start = page.evaluate("window.__proofResults ? window.__proofResults.length : 0")
-    yield box
-    page.wait_for_function(
-        "([s, n]) => (window.__proofResults || []).slice(n).some(r => r.url.endsWith(s))",
-        arg=[suffix, start],
-        timeout=timeout,
-    )
-    box["data"] = page.evaluate(
-        "([s, n]) => { const m = (window.__proofResults || []).slice(n).filter(r => r.url.endsWith(s)); return m.length ? m[m.length - 1].data : null; }",
-        arg=[suffix, start],
-    )
-
-
-def ready(page, basis):
-    expect(page.locator("#period-result")).to_be_visible(timeout=20000)
-    note_app_startup(page)  # first payload per page = the app-startup phase term
-    expect(page.locator("#period-result")).to_have_attribute("data-basis", basis, timeout=20000)
-    expect(page.locator("#ev-runid")).to_have_text(re.compile(r"^[0-9a-f]{16}$"))
-    expect(page.locator("#render-progress")).to_have_attribute("aria-hidden", "true", timeout=20000)
-
-
-def apply(page, share):
-    page.locator("#open-settings").click()
-    page.locator("#validation-percent").fill(str(share))
-    with page.expect_response(lambda r: r.url.endswith("/api/proof/run")):
-        page.locator("#apply-settings").click()
-    ready(page, "validation" if share else "training")
-    assert page.evaluate("payload.evaluation.validation_percent") == share
-
-
-def run(browser, url):
-    context = browser.new_context(viewport={"width": 1440, "height": 900})
-    pair, cal = context.new_page(), context.new_page()
-    errors = []
-    for page in (pair, cal):
-        page.on("pageerror", lambda e: errors.append(str(e)))
-    pair.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6")
-    cal.goto(url + "/proof?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
-    ready(pair, "training")
-    ready(cal, "training")
-    run = pair.locator("#ev-runid").text_content()
-    assert not pair.locator(".validation-line").count()
-    pair.locator("#open-settings").click()
-    expect(pair.get_by_role("dialog")).to_be_visible()
-    expect(pair.locator("#validation-percent")).to_have_value("0")
-    expect(pair.locator("#global-fill")).to_have_value("reference_same_bar")
-    expect(pair.locator('#global-timeframe[role="radiogroup"]')).to_be_visible()
-    expect(pair.locator('#global-timeframe [role="radio"][data-value="1d"]')).to_have_attribute(
+    for name, value in defaults.items():
+        expect(page.locator("#" + name)).to_have_value(value)
+    expect(page.locator("#global-fill")).to_have_value("reference_same_bar")
+    expect(page.locator('#global-timeframe [role=radio][data-value="1d"]')).to_have_attribute(
         "aria-checked", "true"
     )
-    settings_text = pair.locator("#global-settings").inner_text()
-    assert "Снимите галочку, чтобы сделать проверку обязательной" not in settings_text
-    assert "Настройки общие для всех пар и стратегий" not in settings_text
     assert (
-        pair.locator("#global-settings .settings-footer").evaluate(
-            "n=>getComputedStyle(n).position"
-        )
-        == "sticky"
+        dialog.locator(".settings-footer").evaluate("n=>getComputedStyle(n).position") == "sticky"
     )
-    # Clicking outside on the backdrop closes the dialog.
-    pair.mouse.click(5, 5)
-    expect(pair.get_by_role("dialog")).not_to_be_visible()
-    pair.locator("#open-settings").click()
-    pair.locator("#validation-percent").fill("51")
-    pair.locator("#apply-settings").click()
-    expect(pair.get_by_role("dialog")).to_be_visible()
-    assert not pair.locator("#validation-percent").evaluate("n=>n.validity.valid")
-    pair.keyboard.press("Escape")
-    expect(pair.get_by_role("dialog")).not_to_be_visible()
-    assert pair.locator("#ev-runid").text_content() == run
-    apply(pair, 25)
-    ready(cal, "validation")  # open tab, same server preference
-    assert pair.locator("#ev-runid").text_content() != run
-    # Split sizes, the 1-observation floor and the persisted split are payload contracts
-    # (packages/proof/tests/test_proof_search.py::test_0_and_50_share_change_result_not_history_or_signals,
-    # packages/proof/tests/test_global_capital.py::test_default_migration_and_partial_saves_preserve_all_other_preferences);
-    # the browser keeps the rendered journal split and the dashed chart line.
-    expect(pair.locator("#chart-h-spread .validation-line")).to_be_visible()
-    expect(pair.locator("#chart-scope")).to_contain_text("пунктир")
-    pair.locator("#tab-table").click()
-    expect(pair.locator("tr.validation-start")).to_contain_text(
-        pair.evaluate("payload.evaluation.periods.validation[0]")
+    page.mouse.click(5, 5)
+    expect(dialog).not_to_be_visible()
+    open_settings_modal(page)
+    for name, invalid in {
+        "validation-percent": ("51", "-1"),
+        "global-capital": ("0", "-1", "0.001", "1000000001"),
+        "global-slippage": ("-1",),
+        "global-seed": ("-1", "2147483648", "1.5"),
+    }.items():
+        control = page.locator("#" + name)
+        for value in invalid:
+            control.fill(value)
+            assert not control.evaluate("n=>n.validity.valid")
+        page.locator("#apply-settings").click()
+        expect(dialog).to_be_visible()
+        control.fill(defaults[name])
+    page.locator("#global-capital").fill("45000")
+    page.locator("#cancel-settings").click()
+    open_settings_modal(page)
+    expect(page.locator("#global-capital")).to_have_value("30000")
+    page.keyboard.press("Escape")
+    expect(dialog).not_to_be_visible()
+    assert page.evaluate("payload.run_id") == original
+
+
+def capital_ready(page, amount):
+    page.wait_for_function("n=>payload?.evaluation.initial_capital_rub===n", arg=amount)
+    ready(page)
+    table_matches_chart(page)
+
+
+def run_preferences(page, url):
+    other = page.context.new_page()
+    other.goto(url + CAL_URL)
+    ready(other, "training")
+    requests = []
+    page.context.on(
+        "request",
+        lambda r: (
+            requests.append(r.post_data_json) if "/api/proof/" in r.url and r.post_data else None
+        ),
     )
-    assert pair.locator("tr[data-period=validation]").count() == 13
-    assert pair.locator("tr[data-period=training]").count() == 42
-    pair.locator("#lookback + .plateau-dot").hover()
-    expect(pair.locator("#plateau-tip")).to_contain_text("Проверка:")
-    reason = pair.evaluate("payload.evaluation.result.reason")
+    validate_dialog(page)
+    apply_settings(page, validation_percent=25)
+    expect(page.locator("#chart-h-spread .validation-line")).to_be_visible()
+    expect(page.locator("#chart-scope")).to_contain_text("пунктир")
+    page.locator("#tab-table").click()
+    expect(page.locator("tr.validation-start")).to_contain_text(
+        page.evaluate("payload.evaluation.periods.validation[0]")
+    )
+    expect(page.locator("tr[data-period=validation]")).to_have_count(13)
+    expect(page.locator("tr[data-period=training]")).to_have_count(42)
+    page.locator("#lookback + .plateau-dot").hover()
+    expect(page.locator("#plateau-tip")).to_contain_text("Проверка:")
+    expect(page.locator("#plateau-tip")).to_contain_text("Соседи на обучении")
+    reason = page.evaluate("payload.evaluation.result.reason")
     assert reason == "Свободные средства недостаточны для маржи."
-    expect(pair.locator("#plateau-tip")).to_contain_text(reason)
-    expect(pair.locator("#plateau-tip")).to_contain_text("Соседи на обучении")
-    with pair.expect_response(lambda r: r.url.endswith("/api/proof/run")):
-        pair.locator("#auto-tune").click()
-    ready(pair, "validation")
-    expect(pair.locator("#tune-state")).to_be_empty()
-    expect(pair.locator("#batch-result")).to_be_visible()
-    pair.locator("#toggle-summary").click()
-    with pair.expect_download() as download:
-        pair.locator("#download-csv").click()
-    csv = Path(download.value.path()).read_text()
-    assert (
-        "# scope: full_history" in csv
-        and '"validation_percent":25' in csv
-        and ",validation," in csv
+    expect(page.locator("#plateau-tip")).to_contain_text(reason)
+    with post(page):
+        page.locator("#strategy").select_option("mean_reversion")
+    ready(page)
+    edit_parameters(page, entry=0.8, exit=0.1, lookback=6)
+    edit_parameters(other, clookback=10)
+    sizes = [p.evaluate("payload.trades[0].quantity") for p in (page, other)]
+    original = page.evaluate("payload.run_id")
+    saved = apply_settings(
+        page,
+        global_capital=15000,
+        global_slippage=2.5,
+        global_seed=41,
+        validation_percent=25,
+        global_fill="next_close",
     )
-    cal.reload()
-    ready(cal, "validation")  # the reloaded tab renders the saved split
-    cal.set_viewport_size({"width": 400, "height": 850})
-    apply(cal, 50)
-    assert cal.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    expect(pair.locator("#period-result")).to_contain_text("Проверка 50%")
-    apply(cal, 0.5)
-    apply(cal, 0)
-    ready(pair, "training")
-    assert (
-        not cal.locator(".validation-line").count()
-        and not pair.locator("tr.validation-start").count()
+    assert {
+        k: saved[k]
+        for k in ("initial_capital_rub", "slippage_ticks", "random_seed", "validation_percent")
+    } == {
+        "initial_capital_rub": 15000,
+        "slippage_ticks": 2.5,
+        "random_seed": 41,
+        "validation_percent": 25,
+    }
+    assert page.evaluate("payload.run_id") != original
+    for tab, before in zip((page, other), sizes, strict=True):
+        capital_ready(tab, 15000)
+        ready(tab, "validation")
+        assert tab.evaluate("payload.trades[0].quantity") < before
+        assert tab.evaluate("payload.sizing.initial_capital_rub") == 15000
+        assert tab.evaluate("payload.selection.slippage_ticks") == 2.5
+        expect(tab.locator("#window-list tr.current [data-gate=capital] span")).to_have_attribute(
+            "data-state", "fail"
+        )
+        expect(tab.locator("#settings-badge")).to_contain_text("41")
+        assert tab.evaluate("payload.selection.sizing") == "max_affordable"
+    expect(page.locator("#lookback")).to_have_value("6")
+    expect(other.locator("#clookback")).to_have_value("10")
+    for trade in other.evaluate("payload.trades"):
+        assert trade["entry"]["costs"]["slippage"] == 2.5 * trade["quantity"]
+    page.locator('[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
+    with post(page):
+        page.locator('[data-branch="calendar_native|SR"] button').click()
+    ready(page)
+    page.locator('[data-leaf="calendar_native|SR|SRH3/SRM3"] input').check()
+    hold_response(page, "/windows")
+    page.evaluate("windowReadings.clear();refreshWindowReadings(0)")
+    page.wait_for_function("() => typeof window.releaseSmokeResponse==='function'")
+    apply_settings(other, global_capital=60000)
+    capital_ready(page, 60000)
+    capital_ready(other, 60000)
+    release_response(page)
+    table_matches_chart(page)
+    assert page.evaluate(
+        "[...windowReadings.values()].every(r=>!r.evaluation||r.evaluation.initial_capital_rub===60000)"
     )
-    assert not errors, errors
-    context.close()
+    assert page.evaluate("checked.size") == 2
+    expect(page.locator("#window-list tr.current [data-gate=capital] span")).to_have_attribute(
+        "data-state", "pass"
+    )
+    result = tune(page)
+    assert result["seed"] == 41 and result["seed_used"] > 0
+    assert result["group"]["initial_capital_rub"] == 60000
+    for member in result["group"]["members"]:
+        assert member["selection"]["fill"] == "next_close"
+        assert member["selection"]["slippage_ticks"] == 2.5
+        assert member["evaluation"]["initial_capital_rub"] == 60000
+    other.reload()
+    capital_ready(other, 60000)
+    open_settings_modal(other)
+    expect(other.locator("#global-slippage")).to_have_value("2.5")
+    expect(other.locator("#global-seed")).to_have_value("41")
+    expect(other.locator("#apply-settings")).to_be_enabled()
+    other.keyboard.press("Escape")
+    for share in (50, 0.5, 0):
+        saved = apply_settings(
+            other,
+            validation_percent=share,
+            global_fill="reference_same_bar",
+            global_seed=41 if share else 0,
+        )
+        page.wait_for_function("v=>payload.evaluation.validation_percent===v", arg=share)
+        ready(page, "validation" if share else "training")
+    expect(page.locator(".validation-line,tr.validation-start")).to_have_count(0)
+    assert saved["random_seed"] == 0
+    expect(other.locator("#settings-badge")).to_contain_text("случайный")
+    bodies = [body for request in requests for body in request.get("requests", [request])]
+    assert bodies and all(
+        r["sizing"] == "max_affordable" and not ({"quantity", "slippage_ticks"} & r.keys())
+        for r in bodies
+    )
 
 
-MESSAGE = "Global settings, both routes/universes, holdout, chart, journal and CSV: OK"
+def edit_screens(page, volume, capital, share=0):
+    with expect_api_json(page, "/api/proof/plateau") as profile:
+        saved = apply_settings(
+            page,
+            rerun=False,
+            allow_failed_volume=volume,
+            allow_failed_capital=capital,
+            validation_percent=share,
+        )
+    assert (
+        saved["allow_failed_volume"],
+        saved["allow_failed_capital"],
+        saved["validation_percent"],
+    ) == (volume, capital, share)
+    assert page.evaluate("checked.size") == 2
+    return profile["data"]
+
+
+def run_screens(page, url):
+    other = page.context.new_page()
+    other.goto(url + CAL_URL)
+    ready(other)
+    assert "volume" in page.evaluate("payload.evaluation.failed_screens")
+    assert "capital" in other.evaluate("payload.evaluation.failed_screens")
+    open_settings_modal(page)
+    for name in ("volume", "capital"):
+        expect(page.locator("#allow-failed-" + name)).to_be_checked()
+    page.locator("#allow-failed-capital").uncheck()
+    page.locator("#cancel-settings").click()
+    open_settings_modal(page)
+    expect(page.locator("#allow-failed-capital")).to_be_checked()
+    page.keyboard.press("Escape")
+    page.locator('[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
+    with expect_api_json(page, "/api/proof/plateau") as combined:
+        page.locator('[data-branch="calendar_native|SR"] input').check()
+    assert combined["data"]["status"] == "measured"
+    tune(page)
+    assert len(edit_screens(page, True, False)["excluded"]) == 1
+    expect(page.locator("#batch-result")).to_be_hidden()
+    expect(page.locator("#group-profile-state")).to_contain_text("1 из 2")
+    expect(other.locator("#window-list tr.current [data-metric=rate]")).to_have_attribute(
+        "title", re.compile("Не пройден стресс-тест капитала")
+    )
+    page.locator("#auto-tune").click()
+    expect(page.locator("#compatibility-list")).to_contain_text("SRH3/SRM3")
+    page.keyboard.press("Escape")
+    assert len(edit_screens(page, False, True)["excluded"]) == 1
+    expect(page.locator("#charts-empty")).to_be_visible()
+    expect(page.locator("#status")).to_contain_text("на объём")
+    other.reload()
+    ready(other)
+    open_settings_modal(other)
+    expect(other.locator("#allow-failed-volume")).not_to_be_checked()
+    expect(other.locator("#allow-failed-capital")).to_be_checked()
+    other.keyboard.press("Escape")
+    assert len(edit_screens(page, False, False, 25)["excluded"]) == 2
+    expect(page.locator("#group-profile-state")).to_contain_text("2 из 2")
+    assert edit_screens(page, True, True, 25)["validation_percent"] == 25
+    ready(page, "validation")
 
 
 def scenario(browser):
-    with temporary_root() as root, serve_fixture(root, fixture) as url, scenario_isolation(browser):
-        run(browser, url)
+    with ui_only_trials(), temporary_root() as root:
+        for name, builder, run, route in (
+            ("settings", two_calendar_windows, run_preferences, PAIR_URL.split("&strategy=")[0]),
+            ("screens", screen_failures, run_screens, PAIR_URL),
+        ):
+            workspace = root / name
+            workspace.mkdir()
+            with (
+                serve_fixture(workspace, builder) as url,
+                page_session(browser, url, route) as page,
+            ):
+                run(page, url)
 
+
+MESSAGE = "Settings, seed, capital, automatic sizing/slippage, split, two tabs, stale tables and four screen combinations: OK"
 
 if __name__ == "__main__":
     from _harness import standalone

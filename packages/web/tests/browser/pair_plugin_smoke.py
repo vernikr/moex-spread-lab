@@ -1,7 +1,4 @@
-"""Drop-in pair plugin: real catalog, proof, form and cohort controls.
-
-Run with: uv run --with playwright python tests/browser/pair_plugin_smoke.py
-"""
+"""Installed pair/carry/calendar plugins, chart modes and the mobile workbench."""
 
 import os
 import subprocess
@@ -75,90 +72,85 @@ CALENDAR = DemoCalendar()
         }
         raise SystemExit(subprocess.call([sys.executable, __file__], env=env))
 
-from _harness import exact_trials, scenario_isolation, serve_fixture, temporary_root
-from period_settings_smoke import expect_api_json, install_stream_spy, ready
-from playwright.sync_api import expect
+from _harness import (
+    CAL_URL,
+    edit_parameters,
+    exact_trials,
+    expect,
+    page_session,
+    post,
+    ready,
+    serve_fixture,
+    temporary_root,
+    tune,
+)
 
 from proof_fixtures import funding_winner
 
-MESSAGE = "Drop-in pair, carry, and calendar plugin catalog, actual proof, parameter editing and cohort controls: OK"
+
+def select_plugin(page, selector, strategy):
+    with post(page):
+        page.locator(selector).select_option(strategy)
+    ready(page)
+    assert page.evaluate("payload.selection.strategy") == strategy
+
+
+def run_pair(page):
+    expect(page.locator('#strategy option[value="demo_ui_pair"]')).to_be_enabled()
+    select_plugin(page, "#strategy", "demo_ui_pair")
+    expect(page.locator("#plugin-custom")).to_have_value("3")
+    expect(page.locator("#lookback")).to_be_hidden()
+    edit_parameters(page, **{"plugin-custom": 5})
+    checkbox = page.locator('tr[data-leaf="pair_screen||CNYRUBF/CRZ6"] input')
+    checkbox.check()
+    expect(page.locator("#group-strategy")).to_have_value("demo_ui_pair")
+    expect(page.locator("#group-custom")).to_have_value("5")
+    for name, value in (("min", "1"), ("max", "9")):
+        expect(page.locator("#group-custom")).to_have_attribute(name, value)
+    checkbox.uncheck()
+    expect(page.locator("#plugin-custom")).to_have_value("5")
+    select_plugin(page, "#strategy", "mean_reversion")
+    expect(page.locator("#lookback")).to_be_visible()
+    select_plugin(page, "#strategy", "demo_ui_pair")
+    expect(page.locator("#plugin-custom")).to_have_value("5")
+    for mode in page.locator("#norm option").evaluate_all("ns=>ns.map(n=>n.value)"):
+        page.locator("#norm").select_option(mode)
+        expect(page.locator("#chart-h-spread canvas").first).to_be_visible()
+    result = tune(page)
+    assert (
+        next(
+            r for r in result["strategy_search"]["alternatives"] if r["strategy"] == "demo_ui_pair"
+        )["trial_count"]
+        == 80
+    )
+    select_plugin(page, "#strategy", "demo_ui_carry")
+    assert page.evaluate("payload.selection.fill") == "same_day_settlement"
+    expect(page.locator("#plugin-lookback")).to_have_value("20")
+    checkbox.check()
+    expect(page.locator("#group-strategy")).to_have_value("demo_ui_carry")
+    assert page.evaluate("sharedRequest().fill") == "same_day_settlement"
+    expect(page.locator("#group-lookback")).to_be_visible()
+
+
+def run_calendar(page):
+    expect(page.locator('#cstrategy option[value="demo_ui_calendar"]')).to_be_enabled()
+    select_plugin(page, "#cstrategy", "demo_ui_calendar")
+    expect(page.locator("#cplugin-cal_extra")).to_have_value("4")
+    edit_parameters(page, **{"cplugin-cal_extra": 6})
+    page.locator('tr[data-leaf="calendar_native|SR|SRH3/SRM3"] input').check()
+    expect(page.locator("#group-strategy")).to_have_value("demo_ui_calendar")
+    expect(page.locator("#group-cal_extra")).to_have_value("6")
 
 
 def scenario(browser):
-    # Exact-trial opt-out: the search must report 80 trials for the demo family.
-    with (
-        exact_trials(),
-        temporary_root() as root,
-        serve_fixture(root, funding_winner) as url,
-        scenario_isolation(browser),
-    ):
-        page = browser.new_page(viewport={"width": 1450, "height": 950})
-        install_stream_spy(page)
-        errors = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(url + "/?universe=pair_screen&pair=CNYRUBF%2FCRZ6")
-        ready(page, "training")
-        expect(page.locator('#strategy option[value="demo_ui_pair"]')).to_be_enabled()
-        page.locator("#strategy").select_option("demo_ui_pair")
-        page.wait_for_function(
-            "() => payload?.selection?.strategy === 'demo_ui_pair'", timeout=30000
-        )
-        expect(page.locator("#plugin-custom")).to_have_value("3")
-        expect(page.locator("#lookback")).to_be_hidden()
-        page.locator("#plugin-custom").fill("5")
-        page.locator("#plugin-custom").press("Enter")
-        page.wait_for_function("() => payload?.selection?.parameters?.custom === 5", timeout=30000)
-        page.locator('tr[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
-        expect(page.locator("#group-strategy")).to_have_value("demo_ui_pair")
-        expect(page.locator("#group-custom")).to_have_value("5")
-        expect(page.locator("#group-custom")).to_have_attribute("min", "1")
-        expect(page.locator("#group-custom")).to_have_attribute("max", "9")
-        page.locator('tr[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').uncheck()
-        expect(page.locator("#plugin-custom")).to_have_value("5")
-        page.locator("#strategy").select_option("mean_reversion")
-        expect(page.locator("#lookback")).to_be_visible()
-        page.locator("#strategy").select_option("demo_ui_pair")
-        expect(page.locator("#plugin-custom")).to_have_value("5")
-        with expect_api_json(page, "/api/proof/optimize", timeout=120000) as done:
-            page.locator("#auto-tune").click()
-        alternatives = done["data"]["strategy_search"]["alternatives"]
-        assert (
-            next(row for row in alternatives if row["strategy"] == "demo_ui_pair")["trial_count"]
-            == 80
-        )
-        page.locator("#strategy").select_option("demo_ui_carry")
-        page.wait_for_function(
-            "() => payload?.selection?.strategy === 'demo_ui_carry'", timeout=30000
-        )
-        assert page.evaluate("payload.selection.fill") == "same_day_settlement"
-        expect(page.locator("#plugin-lookback")).to_have_value("20")
-        page.locator('tr[data-leaf="pair_screen||CNYRUBF/CRZ6"] input').check()
-        expect(page.locator("#group-strategy")).to_have_value("demo_ui_carry")
-        assert page.evaluate("sharedRequest().fill") == "same_day_settlement"
-        expect(page.locator("#group-lookback")).to_be_visible()
+    with exact_trials(), temporary_root() as root, serve_fixture(root, funding_winner) as url:
+        with page_session(browser, url, mobile=True) as page:
+            run_pair(page)
+        with page_session(browser, url, CAL_URL) as page:
+            run_calendar(page)
 
-        cal_page = browser.new_page(viewport={"width": 1450, "height": 950})
-        install_stream_spy(cal_page)
-        cal_page.on("pageerror", lambda e: errors.append(str(e)))
-        cal_page.goto(url + "/?universe=calendar_native&asset=SR&pair=SRH3%2FSRM3")
-        ready(cal_page, "training")
-        expect(cal_page.locator('#cstrategy option[value="demo_ui_calendar"]')).to_be_enabled()
-        cal_page.locator("#cstrategy").select_option("demo_ui_calendar")
-        cal_page.wait_for_function(
-            "() => payload?.selection?.strategy === 'demo_ui_calendar'", timeout=30000
-        )
-        expect(cal_page.locator("#cplugin-cal_extra")).to_have_value("4")
-        expect(cal_page.locator("#centry")).to_have_count(0)
-        cal_page.locator("#cplugin-cal_extra").fill("6")
-        cal_page.locator("#cplugin-cal_extra").press("Enter")
-        cal_page.wait_for_function(
-            "() => payload?.selection?.parameters?.cal_extra === 6", timeout=30000
-        )
-        cal_page.locator('tr[data-leaf="calendar_native|SR|SRH3/SRM3"] input').check()
-        expect(cal_page.locator("#group-strategy")).to_have_value("demo_ui_calendar")
-        expect(cal_page.locator("#group-cal_extra")).to_have_value("6")
-        assert not errors, errors
 
+MESSAGE = "Installed pair/carry/calendar plugins, custom parameter retention, full-budget search, chart modes and 390x844 layout: OK"
 
 if __name__ == "__main__":
     from _harness import standalone

@@ -43,7 +43,7 @@ def fake_playwright(monkeypatch: pytest.MonkeyPatch) -> _FakePlaywright:
     fake = _FakePlaywright()
     monkeypatch.setattr(runner, "_playwright", lambda: fake)
 
-    def launch(pw: Any) -> Any:
+    def launch(_playwright: Any) -> _FakeBrowser:
         fake.launches += 1
         fake.browser = _FakeBrowser()  # one shared browser object per worker
         return fake.browser
@@ -83,7 +83,7 @@ def test_failure_reports_traceback_and_other_suites_still_run(tmp_path, monkeypa
 def test_one_browser_per_worker_and_one_scenario_call_per_suite(
     tmp_path, monkeypatch, capsys, fake_playwright
 ):
-    """S4b: Chromium is launched once per worker, each suite exposes a callable entry."""
+    """Chromium is launched once per worker, each suite exposes a callable entry."""
     monkeypatch.setattr(runner, "SMOKE_DIR", tmp_path)
     marker = tmp_path / "calls.txt"
     scenario = f"""

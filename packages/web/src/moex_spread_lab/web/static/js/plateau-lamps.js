@@ -1,6 +1,6 @@
-import { apiStream } from './api.js';
 import {
   $,
+  apiStream,
   el,
   finishProgress,
   fmt,

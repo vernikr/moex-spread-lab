@@ -1,9 +1,7 @@
 import { PARAM_RU, px, rubPx } from './dom.js';
 
-
 export const state = {
   catalog: null,
-  /** Strategy schemas from `/api/strategies`; the only source for form fields. */
   strategies: new Map(),
   payload: null,
   selectedTrade: null,
@@ -45,7 +43,6 @@ export const state = {
   windowReadTimer: null,
   windowReadController: null,
   sharedStrategy: null,
-  /** Last variant chosen per multi-universe family (family id -> strategy id). */
   sharedVariants: new Map(),
   sharedDrafts: new Map(),
   profileKey: '',
@@ -67,66 +64,40 @@ export function installStrategyRegistry(registryPayload) {
   const list = registryPayload?.strategies;
   if (!Array.isArray(list) || !list.length) return;
   state.strategies.clear();
-  for (const item of list) {
-    state.strategies.set(item.id, item);
-  }
+  for (const item of list) state.strategies.set(item.id, item);
 }
 
-/** Strategy metadata comes from the `/api/strategies` registry only. */
-export function getStrategyMeta(id) {
-  return state.strategies.get(id) || null;
-}
+export const getStrategyMeta = id => state.strategies.get(id) || null;
+export const strategyFamily = id => getStrategyMeta(id)?.family_id || id;
+export const familyMembers = familyId => (familyId ? [...state.strategies.values()].filter(m => m.family_id === familyId) : []);
+export const familyVariant = (familyId, universe) => familyMembers(familyId).find(m => m.supported_universes?.includes(universe)) || null;
 
-export function strategyFamily(id) {
-  return getStrategyMeta(id)?.family_id || id;
-}
-
-/** Every universe variant declared by one family (e.g. pair vs calendar MR). */
-export function familyMembers(familyId) {
-  if (!familyId) return [];
-  return [...state.strategies.values()].filter(meta => meta.family_id === familyId);
-}
-
-export function familyVariant(familyId, universe) {
-  return familyMembers(familyId).find(meta => meta.supported_universes?.includes(universe)) || null;
-}
-
-/**
- * Solo strategy options: built-in engines first in their historical alphabetical
- * order (this keeps the default selection unchanged), then drop-in plugins in
- * registry order.
- */
 export function strategyOptions(universe) {
   const builtins = [];
   const plugins = [];
   for (const meta of state.strategies.values()) {
-    if (!meta.proof_enabled || !meta.supported_universes?.includes(universe)) continue;
-    (meta.is_builtin ? builtins : plugins).push(meta);
+    if (meta.proof_enabled && meta.supported_universes?.includes(universe)) {
+      (meta.is_builtin ? builtins : plugins).push(meta);
+    }
   }
+  // Alphabetical built-in order preserves default option selection before drop-in plugins.
   builtins.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return [...builtins, ...plugins];
 }
 
 export const hasFamilyVariants = id => familyMembers(strategyFamily(id)).length > 1;
 
-/**
- * Translate parameters between two variants of one family by schema position.
- * Both variants publish the same axes in `ui_order` order under different names
- * (`lookback` vs `window`), so a positional map is the family alias.
- */
+// Positional axis mapping across family variants (`lookback` <-> `window` in `ui_order`).
 export function familyParameters(params, fromId, toId) {
   const from = getStrategyMeta(fromId);
   const to = getStrategyMeta(toId);
   if (!from || !to || from.family_id !== to.family_id || fromId === toId) return { ...params };
-  const fromOrder = orderedStrategySpecs(fromId).map(spec => spec.name);
-  const toOrder = orderedStrategySpecs(toId).map(spec => spec.name);
+  const fromOrder = orderedStrategySpecs(fromId).map(s => s.name);
+  const toOrder = orderedStrategySpecs(toId).map(s => s.name);
   if (fromOrder.length !== toOrder.length) return { ...params };
-  const out = {};
-  toOrder.forEach((name, index) => {
-    const source = fromOrder[index];
-    if (Object.hasOwn(params, source)) out[name] = params[source];
-  });
-  return out;
+  return Object.fromEntries(
+    toOrder.flatMap((name, i) => (Object.hasOwn(params, fromOrder[i]) ? [[name, params[fromOrder[i]]]] : [])),
+  );
 }
 
 export function orderedStrategySpecs(strategyId, options = {}) {
@@ -134,46 +105,29 @@ export function orderedStrategySpecs(strategyId, options = {}) {
   if (!meta) return [];
   const tf = options.timeframe || state.preferences.timeframe || '1d';
   const universe = options.universe || meta.supported_universes?.[0] || state.universe;
-  const context = meta.context_parameters?.[universe]?.[tf];
+  const ctx = meta.context_parameters?.[universe]?.[tf];
   const specs =
-    (universe === 'calendar_native' ? context?.[options.monthly ? 'monthly' : 'quarterly'] : context?.default) ||
+    (universe === 'calendar_native' ? ctx?.[options.monthly ? 'monthly' : 'quarterly'] : ctx?.default) ||
     meta.parameters ||
     [];
-  const byName = new Map(specs.map(spec => [spec.name, spec]));
-  const order = meta.ui_order?.length ? meta.ui_order : specs.map(spec => spec.name);
-  const result = [];
-  for (const name of order) {
-    const spec = byName.get(name);
-    if (spec) {
-      result.push(spec);
+  const byName = new Map(specs.map(s => [s.name, s]));
+  const ordered = (meta.ui_order || [])
+    .map(name => {
+      const s = byName.get(name);
       byName.delete(name);
-    }
-  }
-  for (const spec of byName.values()) result.push(spec);
-  return result;
+      return s;
+    })
+    .filter(Boolean);
+  return [...ordered, ...byName.values()];
 }
 
-export function defaultParametersFor(strategyId, options = {}) {
-  const specs = orderedStrategySpecs(strategyId, options);
-  return Object.fromEntries(specs.map(spec => [spec.name, spec.default]));
-}
+export const defaultParametersFor = (strategyId, options = {}) =>
+  Object.fromEntries(orderedStrategySpecs(strategyId, options).map(s => [s.name, s.default]));
 
-export function timeframeOption(id) {
-  return state.timeframeOptions.find(item => item.id === id);
-}
-
-export function isIntraday(id) {
-  return !!timeframeOption(id)?.intraday;
-}
-
-export function supportsCalendar(id) {
-  const item = timeframeOption(id);
-  return item ? item.supports_calendar === true : id === '1d';
-}
-
-export function timeframeLabel(id) {
-  return timeframeOption(id)?.label || id || '1 день';
-}
+const timeframeOption = id => state.timeframeOptions.find(item => item.id === id);
+export const isIntraday = id => !!timeframeOption(id)?.intraday;
+export const supportsCalendar = id => (timeframeOption(id) ? timeframeOption(id).supports_calendar === true : id === '1d');
+export const timeframeLabel = id => timeframeOption(id)?.label || id || '1 день';
 
 export const settingsKey = (x = state.preferences) =>
   JSON.stringify([
@@ -188,7 +142,6 @@ export const settingsKey = (x = state.preferences) =>
   ]);
 
 export const settingsEventKey = 'moex-proof-settings-updated';
-
 export const targetKey = t => [t.universe, t.asset || '', t.pair].join('|');
 
 export function selectedRoot() {
@@ -196,31 +149,11 @@ export function selectedRoot() {
   return { kind: b?.kind, id: b?.id };
 }
 
-export function currentAsset() {
-  return state.branches.get(state.branchId)?.asset || null;
-}
-
-export function currentPair() {
-  return state.leaves.get(state.leafId)?.target.pair || '';
-}
-
-export function pairAvailability(id) {
-  return (state.catalog?.pair_screen?.pairs || []).find(p => p.id === id) || null;
-}
-
-export function researchStrategies(p) {
-  return state.preferences.validation_percent || state.preferences.allow_failed_volume
-    ? p?.proof_strategies
-    : p?.strategies;
-}
-
-/** A strategy runs on the selected timeframe unless it needs daily bars. */
+export const currentAsset = () => state.branches.get(state.branchId)?.asset || null;
+export const currentPair = () => state.leaves.get(state.leafId)?.target.pair || '';
+export const pairAvailability = id => (state.catalog?.pair_screen?.pairs || []).find(p => p.id === id) || null;
 export const timeframeSupported = meta => state.preferences.timeframe === '1d' || !meta.requires_daily_bars;
 
-/**
- * Legacy `/api/proof/catalog` slot that records availability for a strategy.
- * Built-ins use their own id; a drop-in uses the slot of its proof adapter.
- */
 export function pairCatalogSlot(name) {
   const meta = getStrategyMeta(name);
   if (!meta) return name;
@@ -229,50 +162,35 @@ export function pairCatalogSlot(name) {
 
 export function calendarStrategySupported(assetObj, name) {
   const meta = getStrategyMeta(name);
-  if (!meta?.proof_enabled || !meta.supported_universes?.includes('calendar_native')) return false;
-  if (!timeframeSupported(meta)) return false;
-  // Calendar assets publish boolean capability flags; a family requires every flag
-  // its id starts with (e.g. `convergence` for `convergence_to_ruonia`).
+  if (!meta?.proof_enabled || !meta.supported_universes?.includes('calendar_native') || !timeframeSupported(meta)) return false;
   return Object.entries(assetObj || {})
-    .filter(([, value]) => typeof value === 'boolean')
-    .every(([flag, value]) => !String(meta.family_id).startsWith(flag) || value);
+    .filter(([, v]) => typeof v === 'boolean')
+    .every(([flag, v]) => !String(meta.family_id).startsWith(flag) || v);
 }
 
 export function pairStrategyAvailable(p, name, proof = false) {
   const meta = getStrategyMeta(name);
   if (!meta || !timeframeSupported(meta)) return false;
-  const entries = proof ? p?.proof_strategies : researchStrategies(p);
-  return !!entries?.[pairCatalogSlot(name)];
+  const useProof = proof || state.preferences.validation_percent || state.preferences.allow_failed_volume;
+  return !!(useProof ? p?.proof_strategies : p?.strategies)?.[pairCatalogSlot(name)];
 }
 
 export function strategyFill(name) {
   const fills = getStrategyMeta(name)?.supported_fills || [];
-  return fills.length === 1 && fills[0] === 'same_day_settlement'
-    ? 'same_day_settlement'
-    : state.preferences.price_fill;
+  return fills.length === 1 && fills[0] === 'same_day_settlement' ? 'same_day_settlement' : state.preferences.price_fill;
 }
 
-export function strategyLabel(name) {
-  return getStrategyMeta(name)?.label || name;
-}
-
-export function paramLabel(strategyId, axisName) {
-  const meta = getStrategyMeta(strategyId);
-  return meta?.parameters?.find(p => p.name === axisName)?.label_ru || PARAM_RU[axisName] || axisName;
-}
+export const strategyLabel = name => getStrategyMeta(name)?.label || name;
+export const paramLabel = (strategyId, axisName) =>
+  getStrategyMeta(strategyId)?.parameters?.find(p => p.name === axisName)?.label_ru || PARAM_RU[axisName] || axisName;
 
 export function pairUnavailable(p, name) {
   const slot = pairCatalogSlot(name);
   return p?.proof_strategies?.[slot] ? 'не пройдена проверка на объём' : p?.data_reasons?.[slot] || 'нет локальных данных';
 }
 
-export function pairIsAvailable(p) {
-  return Object.values(p?.strategies || {}).some(Boolean);
-}
-
-export function pairHasLocalData(p) {
-  return Object.values(p?.proof_strategies || {}).some(Boolean) || pairIsAvailable(p);
-}
+export const pairHasLocalData = p =>
+  Object.values(p?.proof_strategies || {}).some(Boolean) || Object.values(p?.strategies || {}).some(Boolean);
 
 export function legQuoteIsRuble() {
   if (state.universe === 'pair_screen') return true;
@@ -281,7 +199,6 @@ export function legQuoteIsRuble() {
 }
 
 export const legPrice = v => (legQuoteIsRuble() ? rubPx(v) : px(v));
-
 export const proofLabel = () =>
   state.payload ? state.payload.selection.spread_instrument || state.payload.selection.pair || state.universe : '';
 

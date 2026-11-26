@@ -1,5 +1,7 @@
 export const $ = id => document.getElementById(id);
 
+export const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
+
 export const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -16,9 +18,7 @@ export const rubPx = v => (v == null ? '—' : `${px(v)} ₽`);
 export const cls = v => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 export const signed = v => (v == null ? '—' : `${v > 0 ? '+' : ''}${fmt(v, 2)}`);
 export const pct = v => Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 10 }) + '%';
-export function pp(v) {
-  return v == null ? 'нет оценки' : `${signed(v)} п.п./год`;
-}
+export const pp = v => (v == null ? 'нет оценки' : `${signed(v)} п.п./год`);
 
 export const FILL_RU = {
   next_open: 'следующее открытие',
@@ -48,7 +48,7 @@ export const GROUP_RU = {
   commodity: 'сырьё',
 };
 
-export const REASON_RU = {
+const REASON_RU = {
   mean_reversion_exit: 'возврат к среднему',
   end_of_sample: 'конец выборки',
   end_of_window: 'конец окна',
@@ -61,14 +61,13 @@ export const REASON_RU = {
   positive_trailing_funding_and_low_basis: 'фондирование положительно и базис низкий',
 };
 
-export const humanReason = r => (r ? REASON_RU[r] || String(r).replaceAll('_', ' ') : '');
-
-export const COST_RU = {
+const COST_RU = {
   exchange_clearing: 'биржа и клиринг',
   broker: 'брокер',
   slippage: 'проскальзывание',
 };
 
+export const humanReason = r => (r ? REASON_RU[r] || String(r).replaceAll('_', ' ') : '');
 export const humanCost = k => COST_RU[k] || String(k).replaceAll('_', ' ');
 
 export const PARAM_RU = {
@@ -94,8 +93,9 @@ export const COLORS = {
 };
 
 export function status(text, ok = false) {
-  $('status').textContent = text;
-  $('status').className = 'status' + (ok ? ' ok' : '');
+  const n = $('status');
+  n.textContent = text;
+  n.className = 'status' + (ok ? ' ok' : '');
 }
 
 const PROGRESS_PRIORITY = ['search', 'chart', 'plateau', 'windows', 'boot'];
@@ -103,29 +103,14 @@ const progressChannels = new Map();
 let progressTicker = null;
 let progressHideTimer = null;
 
-function currentProgressChannel() {
-  for (const key of PROGRESS_PRIORITY) if (progressChannels.has(key)) return progressChannels.get(key);
-  return null;
-}
-
-function computeChannelPct(ch) {
-  if (!ch) return 0;
-  if (ch.ceiling <= ch.floor || !ch.tauMs) return ch.floor;
-  const elapsed = Math.max(0, performance.now() - ch.startedAt);
-  const ease = 1 - Math.exp(-elapsed / ch.tauMs);
-  return Math.min(ch.ceiling, Math.max(ch.visual, ch.floor + (ch.ceiling - ch.floor) * ease));
-}
-
-export function renderProgressUi() {
-  const ch = currentProgressChannel();
+function renderProgressUi() {
+  const ch = PROGRESS_PRIORITY.map(k => progressChannels.get(k)).find(Boolean);
   const barWrap = $('render-progress');
   const bar = $('render-progress-bar');
   const pill = $('progress-pill');
   if (!ch) {
-    if (progressTicker) {
-      clearInterval(progressTicker);
-      progressTicker = null;
-    }
+    clearInterval(progressTicker);
+    progressTicker = null;
     if (!progressHideTimer) {
       barWrap.classList.remove('active');
       barWrap.setAttribute('aria-hidden', 'true');
@@ -139,98 +124,66 @@ export function renderProgressUi() {
   }
   clearTimeout(progressHideTimer);
   progressHideTimer = null;
-  ch.visual = computeChannelPct(ch);
+  if (ch.ceiling > ch.floor && ch.tauMs) {
+    const ease = 1 - Math.exp(-Math.max(0, performance.now() - ch.startedAt) / ch.tauMs);
+    ch.visual = Math.min(ch.ceiling, Math.max(ch.visual, ch.floor + (ch.ceiling - ch.floor) * ease));
+  } else {
+    ch.visual = ch.floor;
+  }
   const pctVal = Math.max(0, Math.min(100, Math.round(ch.visual)));
+  const text = ch.label ? `${ch.label} · ${pctVal}%` : `${pctVal}%`;
   barWrap.classList.add('active');
   barWrap.setAttribute('aria-hidden', 'false');
-  bar.style.width = pctVal + '%';
   barWrap.setAttribute('aria-valuenow', String(pctVal));
-  const text = ch.label ? `${ch.label} · ${pctVal}%` : `${pctVal}%`;
   barWrap.setAttribute('aria-valuetext', text);
+  bar.style.width = pctVal + '%';
   pill.hidden = false;
   pill.textContent = text;
 }
 
-function ensureProgressTicker() {
-  if (!progressTicker) progressTicker = setInterval(renderProgressUi, 80);
-}
-
-export function startProgress(channel, label, floorPct = 2, ceilingPct = floorPct, tauMs = 0) {
-  progressChannels.set(channel, {
-    label,
-    floor: floorPct,
-    ceiling: Math.max(floorPct, ceilingPct),
-    tauMs,
-    startedAt: performance.now(),
-    visual: floorPct,
-  });
-  if (ceilingPct > floorPct && tauMs > 0) ensureProgressTicker();
+function writeProgress(channel, label, floor, ceiling, tauMs) {
+  const ceil = Math.max(floor, ceiling);
+  progressChannels.set(channel, { label, floor, ceiling: ceil, tauMs, startedAt: performance.now(), visual: floor });
+  if (ceil > floor && tauMs > 0 && !progressTicker) progressTicker = setInterval(renderProgressUi, 80);
   renderProgressUi();
 }
 
-export function updateProgressChannel(channel, pctVal, label = '', ceilingPct = null, tauMs = 0) {
+export function startProgress(channel, label, floor = 2, ceiling = floor, tauMs = 0) {
+  writeProgress(channel, label, floor, ceiling, tauMs);
+}
+
+export function updateProgressChannel(channel, pctVal, label = '', ceiling = null, tauMs = 0) {
   const prev = progressChannels.get(channel);
-  const now = performance.now();
   const floor = prev ? Math.max(prev.floor, prev.visual, pctVal) : pctVal;
-  const ceil = ceilingPct != null ? Math.max(floor, ceilingPct) : floor;
-  progressChannels.set(channel, {
-    label: label || prev?.label || '',
-    floor,
-    ceiling: ceil,
-    tauMs,
-    startedAt: now,
-    visual: floor,
-  });
-  if (ceil > floor && tauMs > 0) ensureProgressTicker();
-  renderProgressUi();
+  writeProgress(channel, label || prev?.label || '', floor, ceiling ?? floor, tauMs);
 }
 
 export function finishProgress(channel) {
-  const had = progressChannels.delete(channel);
-  if (!had) return;
-  if (!progressChannels.size) {
-    const barWrap = $('render-progress');
-    const bar = $('render-progress-bar');
-    barWrap.classList.add('active');
-    bar.style.width = '100%';
-    barWrap.setAttribute('aria-valuenow', '100');
-    clearTimeout(progressHideTimer);
-    progressHideTimer = setTimeout(() => {
-      progressHideTimer = null;
-      renderProgressUi();
-    }, 160);
-  } else renderProgressUi();
-}
-
-export function setRenderProgress(value) {
-  if (!value) finishProgress('chart');
-}
-
-export function setSearchProgress(value) {
-  if (!value) finishProgress('search');
+  if (!progressChannels.delete(channel)) return;
+  if (progressChannels.size) {
+    renderProgressUi();
+    return;
+  }
+  const barWrap = $('render-progress');
+  barWrap.classList.add('active');
+  barWrap.setAttribute('aria-valuenow', '100');
+  $('render-progress-bar').style.width = '100%';
+  clearTimeout(progressHideTimer);
+  progressHideTimer = setTimeout(() => {
+    progressHideTimer = null;
+    renderProgressUi();
+  }, 160);
 }
 
 export function chartTime(value) {
   if (typeof value !== 'string' || !value.includes('T')) return value;
-  const zoned = /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(value) ? value : value + '+03:00';
-  const ms = Date.parse(zoned);
+  const ms = Date.parse(/(?:Z|[+-]\d\d:\d\d)$/i.test(value) ? value : value + '+03:00');
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : value;
 }
 
-const moscowDateFormatter = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: 'Europe/Moscow',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-const moscowDateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: 'Europe/Moscow',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-});
+const MOSCOW_DATE = { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' };
+const moscowDateFormatter = new Intl.DateTimeFormat('ru-RU', MOSCOW_DATE);
+const moscowDateTimeFormatter = new Intl.DateTimeFormat('ru-RU', { ...MOSCOW_DATE, hour: '2-digit', minute: '2-digit' });
 
 export function displayTime(value) {
   const stamp = chartTime(value);
@@ -244,7 +197,7 @@ export function axisDateParts(time) {
   }
   if (typeof time === 'string') {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(time);
-    if (m) return { year: m[1], month: m[2], day: m[3] };
+    return m ? { year: m[1], month: m[2], day: m[3] } : null;
   }
   if (time && typeof time === 'object' && time.year && time.month && time.day) {
     return {
@@ -258,7 +211,7 @@ export function axisDateParts(time) {
 
 export function axisDateText(time) {
   const p = axisDateParts(time);
-  return p ? p.day + '.' + p.month + '.' + p.year : null;
+  return p ? `${p.day}.${p.month}.${p.year}` : null;
 }
 
 export function bindBackdropClose(dlg, onClose, guard = () => false) {
@@ -271,15 +224,59 @@ export function bindBackdropClose(dlg, onClose, guard = () => false) {
 
 export function priceFillOptions(sel) {
   const prev = sel.value;
-  sel.replaceChildren();
-  for (const [value, label] of [
-    ['reference_same_bar', 'Справочное закрытие (тот же бар)'],
-    ['next_open', 'Следующее открытие (прокси исполнения)'],
-    ['next_close', 'Следующее закрытие'],
-  ]) {
-    const o = el('option', '', label);
-    o.value = value;
-    sel.append(o);
-  }
+  sel.replaceChildren(
+    ...[
+      ['reference_same_bar', 'Справочное закрытие (тот же бар)'],
+      ['next_open', 'Следующее открытие (прокси исполнения)'],
+      ['next_close', 'Следующее закрытие'],
+    ].map(([value, label]) => Object.assign(el('option', '', label), { value })),
+  );
   sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'reference_same_bar';
+}
+
+async function readJson(r) {
+  const d = await r.json();
+  if (!r.ok) throw Error(d.error || `Request failed (${r.status})`);
+  return d;
+}
+
+export async function api(path, body, signal) {
+  const r = await window.fetch(
+    path,
+    body ? { signal, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined,
+  );
+  return readJson(r);
+}
+
+export async function apiStream(path, body, signal, onProgress) {
+  const r = await window.fetch(path, {
+    signal,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Progress-Stream': '1' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok || !(r.headers.get('Content-Type') || '').toLowerCase().includes('ndjson') || !r.body) {
+    return readJson(r);
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  let result = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value || done) buf += dec.decode(value, { stream: !done });
+    const lines = (done ? buf + '\n' : buf).split('\n');
+    buf = lines.pop();
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      const msg = JSON.parse(line);
+      if (msg.type === 'progress') onProgress?.(msg);
+      else if (msg.type === 'error') throw Error(msg.error || 'Request failed');
+      else if (msg.type === 'result') result = msg.data;
+    }
+    if (done) break;
+  }
+  if (result == null) throw Error('Пустой ответ сервера');
+  return result;
 }

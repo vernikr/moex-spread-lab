@@ -112,7 +112,6 @@ class WebHttpRoutesTests(unittest.TestCase):
         for js_name in (
             "app.js",
             "dom.js",
-            "api.js",
             "state.js",
             "normalizations.js",
             "charts.js",

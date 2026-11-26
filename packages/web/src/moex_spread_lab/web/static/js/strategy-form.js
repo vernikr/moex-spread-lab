@@ -1,4 +1,4 @@
-import { $, bindBackdropClose, setSearchProgress } from './dom.js';
+import { $, bindBackdropClose, finishProgress } from './dom.js';
 import { configureStrategyControlsCallbacks, changeSharedStrategy, fillStrategy, refreshGroupProfile, syncCalendarParams } from './strategy-controls.js';
 import { bindLamp, drawLamps, hidePlateauTip } from './plateau-lamps.js';
 import { familyVariant, state, strategyFamily } from './state.js';
@@ -124,7 +124,7 @@ export function cancelSearch() {
   state.searchController = null;
   state.tuning = false;
   finishReview(false);
-  setSearchProgress(false);
+  finishProgress('search');
   tuneButton();
 }
 

@@ -1,10 +1,10 @@
-import { apiStream } from './api.js';
 import {
   $,
+  apiStream,
   el,
+  finishProgress,
   fmt,
   pp,
-  setSearchProgress,
   signed,
   startProgress,
   status,
@@ -193,7 +193,6 @@ export async function startTuning() {
   state.searchUsesChecks = explicit;
   state.tuning = true;
   tuneButton(true, 2);
-  setSearchProgress(true);
   startProgress('search', 'Подготовка к подбору Optuna…', 2, 10, 1500);
   status('');
   clearGroup();
@@ -218,7 +217,7 @@ export async function startTuning() {
         return;
       }
       if (result.status !== 'selection_requires_confirmation') break;
-      setSearchProgress(false);
+      finishProgress('search');
       const ok = await reviewExclusions(result);
       if (!fresh()) return;
       if (!ok) {
@@ -234,7 +233,6 @@ export async function startTuning() {
         if (fresh()) tuneState('Совместимых отмеченных окон нет. Подбор не запускался.');
         return;
       }
-      setSearchProgress(true);
       startProgress('search', 'Повторная подготовка окон…', 2, 12, 1200);
     }
     if (!fresh()) return;
@@ -262,7 +260,7 @@ export async function startTuning() {
     if (fresh()) {
       state.tuning = false;
       state.searchController = null;
-      setSearchProgress(false);
+      finishProgress('search');
       tuneButton();
       if (state.payload) paintPlateaus(state.payload.plateau);
     }

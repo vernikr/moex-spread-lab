@@ -1,11 +1,11 @@
-import { api, apiStream } from './api.js';
 import { applyNormHint, buildCharts, destroyCharts, fitChartsToVisibleArea } from './charts.js';
 import {
   $,
+  api,
+  apiStream,
   el,
   finishProgress,
   fmt,
-  setRenderProgress,
   signed,
   startProgress,
   status,
@@ -84,7 +84,7 @@ export function invalidateProof(fromSearch = false) {
   state.analysisRequestId++;
   state.proofController?.abort();
   state.proofController = null;
-  setRenderProgress(false);
+  finishProgress('chart');
   tuneButton();
   if (!state.tuning) tuneState('');
   paintPlateaus();
@@ -153,7 +153,6 @@ export async function show(fromSearch = false) {
   const controller = new AbortController();
   state.proofController = controller;
   $('period-result').hidden = true;
-  setRenderProgress(true);
   startProgress('chart', 'Запуск расчёта окна…', 8, 32, 900);
   status('');
   paintPlateaus(null, 'Выполняется расчёт…');
@@ -187,7 +186,7 @@ export async function show(fromSearch = false) {
   } finally {
     if (fresh()) {
       state.proofController = null;
-      setRenderProgress(false);
+      finishProgress('chart');
       tuneButton();
       refreshWindowReadings();
     }

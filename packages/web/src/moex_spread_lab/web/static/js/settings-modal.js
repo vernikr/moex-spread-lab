@@ -1,5 +1,4 @@
-import { api } from './api.js';
-import { $, FILL_RU, bindBackdropClose, fmt, pct, priceFillOptions, status } from './dom.js';
+import { $, FILL_RU, api, bindBackdropClose, fmt, pct, priceFillOptions, status } from './dom.js';
 import { buildPicker, openBranch, stopWindowReadings, windowGates } from './picker.js';
 import {
   installStrategyRegistry,

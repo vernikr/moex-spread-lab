@@ -1,9 +1,9 @@
 /** Historical window table, volume/capital gate indicators, and streamed /api/proof/windows readings. */
 
-import { apiStream } from './api.js';
 import {
   $,
   FILL_RU,
+  apiStream,
   cls,
   el,
   finishProgress,

@@ -7,7 +7,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 from typing import cast as _cast  # Narrow partially unknown pyarrow-stub callables.
 
 import pyarrow.parquet as pq
@@ -74,14 +74,6 @@ class BarSeries:
     backend: str
     cache_key: tuple[Any, ...]
     metadata: dict[str, Any]
-
-
-class BarStore(Protocol):
-    """Read the selected legacy input as a stable business-facing bar series."""
-
-    def read(self, legacy_path: Path, *, columns: Iterable[str] | None = None) -> BarSeries:
-        """Return a series for ``legacy_path`` without exposing storage details."""
-        ...
 
 
 def _signature(path: Path) -> tuple[int, int, int, int]:
@@ -268,7 +260,7 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
     record = store.record_for_legacy_path(legacy_path)
     if record is None:
         raise DataLakeError("missing exact-path lake record")
-    metadata_keys = (
+    for key in (
         "dataset_id",
         "secid",
         "timeframe",
@@ -280,8 +272,7 @@ def verify_archived_record(store: Any, legacy_path: Path) -> dict[str, Any]:
         "legacy_metadata",
         "row_semantics",
         "source_page_count",
-    )
-    for key in metadata_keys:
+    ):
         if record.get(key) != sealed.get(key):
             raise DataLakeError(f"archived dataset metadata mismatch: {key}")
     _check_archived_mirror_tables(store, record, sealed)
@@ -298,7 +289,6 @@ __all__ = [
     "H1_SEAL_SCHEMA",
     "LEGACY_CANDLE_SCHEMA",
     "BarSeries",
-    "BarStore",
     "DataLakeError",
     "SealedH1Reader",
     "reject_sealed_table_write",

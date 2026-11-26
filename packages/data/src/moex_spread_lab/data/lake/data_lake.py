@@ -12,7 +12,6 @@ from moex_spread_lab.core.w0 import sha256_file
 from .bar_types import (
     LEGACY_CANDLE_SCHEMA,
     BarSeries,
-    BarStore,
     DataLakeError,
     SealedH1Reader,
     reject_sealed_table_write,
@@ -39,7 +38,6 @@ __all__ = [
     "RAW_ARCHIVE_SCHEMA",
     "SOURCE_SCHEMA",
     "BarSeries",
-    "BarStore",
     "DataLakeError",
     "LegacyCandleSeries",
     "LegacyJsonBarStore",

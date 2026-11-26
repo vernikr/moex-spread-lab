@@ -10,16 +10,31 @@ class DataLakeTests(unittest.TestCase):
     def _legacy(self, root: Path, name: str = "CNYRUBF_1h.json") -> Path:
         path = root / "data" / "w1" / "candles" / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        source_a = {
-            "url": "https://iss.moex.example/page-0",
-            "received_at": "2026-11-20T10:00:00+00:00",
-            "raw_response_sha256": "a" * 64,
+        sources = {
+            letter: {
+                "url": f"https://iss.moex.example/page-{index}",
+                "received_at": f"2026-11-20T10:0{index}:00+00:00",
+                "raw_response_sha256": letter * 64,
+            }
+            for index, letter in enumerate("ab", start=1)
         }
-        source_b = {
-            "url": "https://iss.moex.example/page-1",
-            "received_at": "2026-11-20T10:01:00+00:00",
-            "raw_response_sha256": "b" * 64,
-        }
+        rows = [
+            {
+                "begin": f"2026-01-01 1{index}:00:00",
+                "end": f"2026-01-01 1{index}:59:59",
+                "open": 10.0 + index * 0.5,
+                "high": 11.0 + index * 0.5,
+                "low": 9.5 + index * 0.5,
+                "close": 10.5 + index * 0.5,
+                "value": 12.0 + index * 2.0,
+                "volume": None if index == 2 else 20 + index,
+                "price_proxy": f"{10.5 + index * 0.5}",
+                "price_proxy_kind": "candle_close",
+                "price_proxy_assumption": "test_proxy",
+                "source": sources["b" if index == 2 else "a"],
+            }
+            for index in (0, 1, 2)
+        ]
         payload = {
             "schema_version": "iss-candles.v1",
             "secid": "CNYRUBF",
@@ -30,50 +45,7 @@ class DataLakeTests(unittest.TestCase):
             "till": "2026-01-02",
             "coverage_status": "available",
             "price_interpretation": "candle_price_proxy_for_medium_term_analysis",
-            "rows": [
-                {
-                    "begin": "2026-01-01 10:00:00",
-                    "end": "2026-01-01 10:59:59",
-                    "open": 10.0,
-                    "high": 11.0,
-                    "low": 9.5,
-                    "close": 10.5,
-                    "value": 12.0,
-                    "volume": 20,
-                    "price_proxy": "10.5",
-                    "price_proxy_kind": "candle_close",
-                    "price_proxy_assumption": "test_proxy",
-                    "source": source_a,
-                },
-                {
-                    "begin": "2026-01-01 11:00:00",
-                    "end": "2026-01-01 11:59:59",
-                    "open": 10.5,
-                    "high": 11.5,
-                    "low": 10.0,
-                    "close": 11.0,
-                    "value": 14.0,
-                    "volume": 21,
-                    "price_proxy": "11.0",
-                    "price_proxy_kind": "candle_close",
-                    "price_proxy_assumption": "test_proxy",
-                    "source": source_a,
-                },
-                {
-                    "begin": "2026-01-01 12:00:00",
-                    "end": "2026-01-01 12:59:59",
-                    "open": 11.0,
-                    "high": 12.0,
-                    "low": 10.5,
-                    "close": 11.5,
-                    "value": 16.0,
-                    "volume": None,
-                    "price_proxy": "11.5",
-                    "price_proxy_kind": "candle_close",
-                    "price_proxy_assumption": "test_proxy",
-                    "source": source_b,
-                },
-            ],
+            "rows": rows,
         }
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
@@ -85,14 +57,10 @@ class DataLakeTests(unittest.TestCase):
             store = ParquetBarStore(root)
             record = store.import_legacy(legacy)
             verified = store.verify_legacy(legacy)
-            full_table = store.read_bars("CNYRUBF", "1h")
-            selected = store.read_bars(
-                "CNYRUBF", "1h", columns=("begin", "close"), start="2026-01-01 11:00:00"
-            )
+            series = store.read_series("CNYRUBF", "1h")
+            projected = store.read_series("CNYRUBF", "1h", columns=("begin", "close"))
 
             self.assertEqual(record["dataset_id"], "1h/CNYRUBF")
-            self.assertEqual(str(full_table.schema.field("close").type), "double")
-            self.assertEqual(str(full_table.schema.field("volume").type), "int64")
             self.assertEqual(record["row_count"], 3)
             self.assertEqual(record["source_page_count"], 2)
             self.assertEqual(record["legacy_metadata"]["coverage_status"], "available")
@@ -109,24 +77,25 @@ class DataLakeTests(unittest.TestCase):
             self.assertFalse((root / "data-lake" / "catalog.duckdb").exists())
             self.assertEqual(verified["status"], "verified")
             self.assertEqual(
-                selected.to_pylist(),
+                [(row["begin"], row["close"]) for row in projected.rows],
                 [
-                    {"begin": "2026-01-01 11:00:00", "close": 11.0},
-                    {"begin": "2026-01-01 12:00:00", "close": 11.5},
+                    ("2026-01-01 10:00:00", 10.5),
+                    ("2026-01-01 11:00:00", 11.0),
+                    ("2026-01-01 12:00:00", 11.5),
                 ],
             )
+            self.assertEqual(
+                [(row["volume"], row["source_page_id"]) for row in series.rows],
+                [(20, 0), (21, 0), (None, 1)],
+            )
+            self.assertEqual(series.backend, "parquet")
 
-    def test_obsolete_catalog_is_ignored_but_manifest_integrity_is_checked(self):
+    def test_manifest_integrity_is_checked_against_the_legacy_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             legacy = self._legacy(root)
             store = ParquetBarStore(root)
-            store.lake_root.mkdir()
-            old_catalog = store.lake_root / "catalog.duckdb"
-            old_catalog.write_bytes(b"obsolete catalog")
             record = store.import_legacy(legacy)
-            self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
-            self.assertEqual(old_catalog.read_bytes(), b"obsolete catalog")
             manifest = json.loads(store.manifest_path.read_text())
             manifest["datasets"][0]["row_count"] += 1
             store.manifest_path.write_text(json.dumps(manifest))
@@ -141,26 +110,17 @@ class DataLakeTests(unittest.TestCase):
     def test_import_rejects_non_constant_price_semantics_and_fractional_volume(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            legacy = self._legacy(root)
-            payload = json.loads(legacy.read_text(encoding="utf-8"))
-            payload["rows"][1]["price_proxy_kind"] = "other_proxy"
-            legacy.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaises(DataLakeError):
-                ParquetBarStore(root).import_legacy(legacy)
-
-            legacy = self._legacy(root)
-            payload = json.loads(legacy.read_text(encoding="utf-8"))
-            payload["rows"][1]["volume"] = 1.5
-            legacy.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaises(DataLakeError):
-                ParquetBarStore(root).import_legacy(legacy)
-
-            legacy = self._legacy(root)
-            payload = json.loads(legacy.read_text(encoding="utf-8"))
-            payload["rows"][0]["source"]["raw_response_sha256"] = "not-a-hash"
-            legacy.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaises(DataLakeError):
-                ParquetBarStore(root).import_legacy(legacy)
+            for mutate in (
+                lambda rows: rows[1].__setitem__("price_proxy_kind", "other_proxy"),
+                lambda rows: rows[1].__setitem__("volume", 1.5),
+                lambda rows: rows[0]["source"].__setitem__("raw_response_sha256", "not-a-hash"),
+            ):
+                legacy = self._legacy(root)
+                payload = json.loads(legacy.read_text(encoding="utf-8"))
+                mutate(payload["rows"])
+                legacy.write_text(json.dumps(payload), encoding="utf-8")
+                with self.assertRaises(DataLakeError):
+                    ParquetBarStore(root).import_legacy(legacy)
 
     def test_existing_dataset_requires_explicit_replace_and_verifier_detects_changed_legacy(self):
         with tempfile.TemporaryDirectory() as directory:

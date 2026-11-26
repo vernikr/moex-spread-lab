@@ -56,13 +56,10 @@ def table_rows(table: pa.Table) -> list[dict[str, Any]]:
     return _cast(Any, table).to_pylist()
 
 
-def read_table(path: Path, columns: Iterable[str] | None, filters: Any = None) -> pa.Table:
-    """Read one Parquet file, optionally projecting columns or pushing row filters."""
+def read_table(path: Path, columns: Iterable[str] | None) -> pa.Table:
+    """Read one Parquet file, optionally projecting columns."""
     projected = list(columns) if columns is not None else None
-    if filters is None:
-        return _cast("pa.Table", _cast(Any, pq.ParquetFile(path)).read(columns=projected))
-    # Stub 19.4 rejects valid string comparison filters.
-    return _cast("pa.Table", _cast(Any, pq.read_table)(path, columns=projected, filters=filters))
+    return _cast("pa.Table", _cast(Any, pq.ParquetFile(path)).read(columns=projected))
 
 
 def as_dict(value: object) -> dict[str, Any] | None:
@@ -191,11 +188,10 @@ class ParquetBarStore:
         bars_path = self.record_path(record["bars_path"])
         semantics = as_dict(record.get("row_semantics"))
         price_proxy_kind = semantics.get("price_proxy_kind") if semantics is not None else None
-        rows: list[dict[str, Any]] = []
-        for row in table_rows(read_table(bars_path, columns)):
-            if price_proxy_kind is not None:
+        rows = table_rows(read_table(bars_path, columns))
+        if price_proxy_kind is not None:
+            for row in rows:
                 row["price_proxy_kind"] = price_proxy_kind
-            rows.append(row)
         selected_path = source_path or self.record_path(record["legacy_path"])
         try:
             selected_stat = selected_path.stat()
@@ -224,29 +220,6 @@ class ParquetBarStore:
             ),
             metadata=record,
         )
-
-    def read_bars(
-        self,
-        secid: str,
-        timeframe: str,
-        *,
-        columns: Iterable[str] | None = None,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> pa.Table:
-        record = self._record(secid, timeframe)
-        bars_path = self.record_path(record["bars_path"])
-        table = read_table(bars_path, columns)
-        if start is None and end is None:
-            return table
-        if "begin" not in table.column_names:
-            raise DataLakeError("date filtering requires the begin column")
-        filters: list[tuple[str, str, str]] = []
-        if start is not None:
-            filters.append(("begin", ">=", start))
-        if end is not None:
-            filters.append(("begin", "<=", end))
-        return read_table(bars_path, columns, filters)
 
     def verify_legacy(self, legacy_path: Path) -> dict[str, Any]:
         if not legacy_path.exists():

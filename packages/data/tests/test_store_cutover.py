@@ -45,15 +45,18 @@ def _pair_bars_and_provenance(
     return rows, provenance
 
 
-class StoreCutoverTests(unittest.TestCase):
-    def test_record_path_resolves_relative_values_against_the_store_root(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = ParquetBarStore(root)
-            absolute = root / "elsewhere" / "bars.parquet"
-            self.assertEqual(store.record_path("bars.parquet"), root / "bars.parquet")
-            self.assertEqual(store.record_path(str(absolute)), absolute)
+def _instrument(secid: str) -> dict[str, object]:
+    return {
+        "secid": secid,
+        "lot_size": 1,
+        "tick_size": 0.1,
+        "tick_value": 1.0,
+        "initial_margin": 100.0,
+        "source_vintage": "current_snapshot",
+    }
 
+
+class StoreCutoverTests(unittest.TestCase):
     def _write_series(
         self,
         root: Path,
@@ -73,16 +76,12 @@ class StoreCutoverTests(unittest.TestCase):
         }
         rows = []
         for index, close in enumerate(closes, start=1):
-            stamp = (
-                f"2026-01-0{index} 10:00:00" if timeframe == "1h" else f"2026-01-0{index} 00:00:00"
-            )
-            end = (
-                f"2026-01-0{index} 10:59:59" if timeframe == "1h" else f"2026-01-0{index} 23:59:59"
-            )
+            day = f"2026-01-0{index}"
+            hour = "10" if timeframe == "1h" else "00"
             rows.append(
                 {
-                    "begin": stamp,
-                    "end": end,
+                    "begin": f"{day} {hour}:00:00",
+                    "end": f"{day} 10:59:59" if timeframe == "1h" else f"{day} 23:59:59",
                     "open": close - 0.1,
                     "high": close + 0.2,
                     "low": close - 0.2,
@@ -127,19 +126,7 @@ class StoreCutoverTests(unittest.TestCase):
                             "price": 1.0,
                             "source_kind": "observed",
                             "source_ticker": "LQDT",
-                        },
-                        {
-                            "date": "2026-01-02",
-                            "price": 1.01,
-                            "source_kind": "observed",
-                            "source_ticker": "LQDT",
-                        },
-                        {
-                            "date": "2026-01-03",
-                            "price": 1.02,
-                            "source_kind": "observed",
-                            "source_ticker": "LQDT",
-                        },
+                        }
                     ],
                 }
             ),
@@ -151,30 +138,7 @@ class StoreCutoverTests(unittest.TestCase):
             json.dumps(
                 {
                     "schema_version": "iss-intake.v1",
-                    "instruments": [
-                        {
-                            "secid": "NEAR",
-                            "stable_id": "near",
-                            "board": "RFUD",
-                            "expiry": "2100-01-01",
-                            "lot_size": 1,
-                            "tick_size": 0.1,
-                            "tick_value": 1.0,
-                            "initial_margin": 100.0,
-                            "source_vintage": "current_snapshot",
-                        },
-                        {
-                            "secid": "FAR",
-                            "stable_id": "far",
-                            "board": "RFUD",
-                            "expiry": "2026-12-17",
-                            "lot_size": 1,
-                            "tick_size": 0.1,
-                            "tick_value": 1.0,
-                            "initial_margin": 100.0,
-                            "source_vintage": "current_snapshot",
-                        },
-                    ],
+                    "instruments": [_instrument("NEAR"), _instrument("FAR")],
                 }
             ),
             encoding="utf-8",

@@ -162,23 +162,6 @@ class RawResponseArchive:
         self._write_manifest(manifest)
         return entry
 
-    def pin(self, entry_id: str, *, pinned: bool = True) -> dict[str, Any]:
-        manifest = self._read_manifest()
-        for item in _as_object_list(manifest["entries"]):
-            if isinstance(item, dict):
-                entry = _cast("dict[str, Any]", item)
-                if entry.get("id") == entry_id:
-                    entry["pinned"] = pinned
-                    entry["expires_at"] = (
-                        None
-                        if pinned
-                        else entry.get("expires_at")
-                        or datetime.now(UTC).isoformat(timespec="seconds")
-                    )
-                    self._write_manifest(manifest)
-                    return entry
-        raise DataLakeError(f"raw response entry is not registered: {entry_id}")
-
     def verify(self) -> dict[str, Any]:
         manifest = self._read_manifest()
         entries = [

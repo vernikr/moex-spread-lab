@@ -36,12 +36,15 @@ def test_namespace_separation_priority_and_no_activation(inputs):
     assert result["status"] == "verified_candidate"
     assert not result["runtime_activated"] and not result["source_deletion_allowed"]
     assert verify_h1_stage(root, path, output)["source_count"] == 2
-    assert ParquetBarStore(root, output / "candles").read_bars("NEAR", "1h")[
-        "close"
-    ].to_pylist() == [10.0, 11.0, 12.0]
-    assert ParquetBarStore(root, output / "candles-screen").read_bars("NEAR", "1h")[
-        "close"
-    ].to_pylist() == [20.0, 21.0, 22.0]
+
+    def closes(lake_root: str) -> list[float]:
+        return [
+            row["close"]
+            for row in ParquetBarStore(root, output / lake_root).read_series("NEAR", "1h").rows
+        ]
+
+    assert closes("candles") == [10.0, 11.0, 12.0]
+    assert closes("candles-screen") == [20.0, 21.0, 22.0]
     assert [p.read_bytes() for p in (intake, screen)] == before
     assert MarketDataStore(root).read(screen).backend == "legacy_json"
     assert not (root / "data-lake/manifest.json").exists()

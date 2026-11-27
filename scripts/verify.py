@@ -117,7 +117,6 @@ def _record(step: Step, started: datetime, wall: float, rc: int, detail: dict | 
     return {
         "schema": "msl.verification-record/1",
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "base_sha": _git("merge-base", "HEAD", "origin/main").strip() or None,
         "head_sha": _git("rev-parse", "HEAD").strip() or "unknown",
         "selected_checks": [{"name": step.key, "reason": sanitize(step.reason)}],
         "workers": worker_count() if "pytest" in step.command else os.cpu_count() or 1,
@@ -258,7 +257,7 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         command = pytest_cmd(["--testmon", *leg_dirs, *ignores])
     else:
         print(
-            "verify: pytest-testmon not importable; legs run WITHOUT deselection"
+            "verify: testmon unavailable; legs run WITHOUT deselection"
             if decision.testmon
             else f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full"
         )
@@ -268,7 +267,7 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
     skipped = [
         BROWSER_SKIPPED,
         "vulture (full gate only)",
-        "full suite (use --profile full)",
+        "full suite (--profile full)",
         *decision.skipped,
     ]
     return steps, skipped, "affected"

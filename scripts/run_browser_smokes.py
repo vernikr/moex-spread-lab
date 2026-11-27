@@ -5,11 +5,8 @@ Each worker launches Chromium once; every suite's ``scenario(browser)`` keeps it
 own ``BrowserContext`` and loopback server (no shared writable state); fixture
 templates are built once per worker and cloned per suite (``_templates``); a
 scenario asserting no numerical result may bound its Optuna budget
-(``_harness.ui_only_trials``).
-
-Each suite reports its phase split as one ``MOEX_SMOKE_PHASES`` line; the runner
-aggregates them into the printed table.
-"""
+(``_harness.ui_only_trials``). Each suite reports its phase split as one
+``MOEX_SMOKE_PHASES`` line; the runner aggregates them into the printed table."""
 
 import argparse
 import io

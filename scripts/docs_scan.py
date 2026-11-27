@@ -163,10 +163,8 @@ def scan_links(paths: list[str]) -> tuple[list[str], list[str]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", help="docs files to scan")
-    parser.add_argument("--repo", action="store_true", help="scan the repository-wide docs surface")
-    parser.add_argument(
-        "--links", action="store_true", help="also verify relative links and anchors"
-    )
+    parser.add_argument("--repo", action="store_true", help="scan repo-wide docs surface")
+    parser.add_argument("--links", action="store_true", help="also verify links and anchors")
     args = parser.parse_args(argv)
     if args.repo:
         args.links = True  # authored surface: link integrity only, never restyled

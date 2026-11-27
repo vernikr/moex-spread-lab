@@ -2,13 +2,12 @@
 """Change-scope router and touched-file helpers (stdlib only; used by ci.yml, verify, gates).
 
 Per changed path, any unmatched path resolves to ``full``: ``docs/**`` and root-level
-``*.md`` are docs (Markdown inside ``packages/**`` is not); ``packages/<p>/{src,tests}/**/*.py``
-selects ``p`` plus its reverse dependents (any other package file selects the same legs
-with testmon disabled); everything else is ``full``, and C99/sanitizer/CI paths also set
-``run_tier2``. Without ``--event`` it routes the working tree; with ``--event`` it routes
-``git diff base..head``, and any error, ``schedule``/``workflow_dispatch`` or a missing
-base resolves to full (CI contract).
-"""
+``*.md`` are docs; ``packages/<p>/{src,tests}/**/*.py`` selects ``p`` plus its reverse
+dependents (any other package file selects the same legs with testmon disabled);
+everything else is ``full``, and C99/sanitizer/CI paths also set ``run_tier2``.
+Without ``--event`` it routes the working tree; with ``--event`` it routes
+``git diff base..head``, and any error, ``schedule``/``workflow_dispatch`` or a
+missing base resolves to full (CI contract)."""
 
 import argparse
 import fnmatch
@@ -193,7 +192,7 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
     normed = sorted({norm_path(p) for p in paths if norm_path(p)})
     nod = {norm_path(p) for p in new_or_deleted if norm_path(p)}
     if not normed:
-        return _full(["empty change set; resolving to full conservatively"], run_tier2=False)
+        return _full(["empty change set -> full"], run_tier2=False)
     docs, groups, unmatched = _classify(normed, nod)
     run_tier2 = matches_c_tier2(normed)
     check_js = any(p.startswith("packages/") and "/static/" in f"/{p}" for p in normed)
@@ -203,16 +202,16 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
         for pkg in group
     ]
     if unmatched or run_tier2:
-        head = f"unmatched path(s): {_limited(unmatched)} -> full" if unmatched else ""
-        head = head or "C99/sanitizer/CI tier2 path(s) changed -> full"
+        head = f"unmatched: {_limited(unmatched)} -> full" if unmatched else ""
+        head = head or "C99/sanitizer/CI tier2 -> full"
         return _full([head, *summary], run_tier2=run_tier2, check_js_modules=check_js)
     py, other = groups[".py"], groups["non-.py/new/deleted"]
     touched = sorted({*py, *other}, key=PACKAGES.index)
     if not touched:
         skipped = (
-            "package test legs (docs-only)",
+            "package legs (docs-only)",
             "perf-equivalence (docs-only)",
-            "ruff/basedpyright/pytest (docs-only)",
+            "ruff/pytest (docs-only)",
         )
         reasons = (f"docs-only change: {_limited(docs)}",)
         return ScopeDecision("docs", (), True, False, check_js, False, False, reasons, skipped)
@@ -241,7 +240,7 @@ def decide_local(base: str = "HEAD", root: Path = ROOT) -> ScopeDecision:
 
 def decide_ci(event_name: str, base_sha: str = "", head_sha: str = "HEAD", root: Path = ROOT):
     if event_name in _FULL_EVENTS:
-        return _full([f"event={event_name} resolves to full unconditionally"], run_tier2=True)
+        return _full([f"event={event_name} -> full"], run_tier2=True)
     if not base_sha or base_sha == NULL_SHA:
         return _full(["missing base SHA -> full"], run_tier2=True)
     changed = git_diff_names(base_sha, head_sha, root)

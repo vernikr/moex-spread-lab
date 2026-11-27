@@ -1,11 +1,8 @@
 """Calendar proof characterization tests.
 
-The synthetic fixture builders live in
-``calendar_proof_fixtures_p72_packages_proof_tests_test_calendar_proof`` and
-the named assertion helpers live in
-``calendar_proof_expectations_p72_packages_proof_tests_test_calendar_proof``;
-both were extracted under P7.2 test-health work (Issue #121) so this module
-meets the code-health limits without its size baseline entry.
+The synthetic fixture builders and named assertion helpers live alongside the
+tests below; ``perf_equivalence_fixtures`` supplies the shared workspace and
+history-cache primitives they reuse.
 """
 
 import json

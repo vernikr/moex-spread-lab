@@ -44,6 +44,14 @@ ACTIVE = {
 }
 
 
+def _cagr_proof(days, net=(0, 600, 600), margin=3000):
+    """Stub ledger+trade proof shared by the annualization unit tests."""
+    return {
+        "ledger": [{"date": d, "cumulative_net_rub": v} for d, v in zip(days, net, strict=True)],
+        "trades": [{"entry": {"date": days[0]}, "exit": {"date": days[1]}, "margin_rub": margin}],
+    }
+
+
 @pytest.fixture
 def batch_root(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     root = tmp_path_factory.mktemp("batch-root")
@@ -113,18 +121,7 @@ def test_independent_cagr_minus_benchmark_and_continuous_validation_opening():
     # +10% interval then released; reserve earns no LQDT. Book earns 600 net.
     days = ["2021-01-01", "2022-01-01", "2023-01-01"]
     marks: dict[str, float] = dict(zip(days, [100.0, 110.0, 121.0], strict=True))
-    proof = {
-        "ledger": [
-            {"date": d, "cumulative_net_rub": v} for d, v in zip(days, [0, 600, 600], strict=True)
-        ],
-        "trades": [
-            {
-                "entry": {"date": days[0]},
-                "exit": {"date": days[1]},
-                "margin_rub": 3000,
-            }
-        ],
-    }
+    proof = _cagr_proof(days)
     training = _annualized_returns(proof, marks, EvaluationSplit.from_dates(days[:2], 0))
     assert training["calendar_days"] == 365
     assert training["strategy_annualized_pct"] == pytest.approx(11.0)
@@ -152,18 +149,7 @@ ANNUALIZATION_DAYS = ["2021-01-01", "2022-01-01", "2023-01-01"]
 )
 def test_annualization_rejects_a_single_day_or_a_zero_benchmark(bad_days, bad_marks):
     days = ANNUALIZATION_DAYS
-    proof = {
-        "ledger": [
-            {"date": d, "cumulative_net_rub": v} for d, v in zip(days, [0, 600, 600], strict=True)
-        ],
-        "trades": [
-            {
-                "entry": {"date": days[0]},
-                "exit": {"date": days[1]},
-                "margin_rub": 3000,
-            }
-        ],
-    }
+    proof = _cagr_proof(days)
     with pytest.raises(W0Error):
         _annualized_returns(proof, bad_marks, EvaluationSplit.from_dates(bad_days, 0))
 

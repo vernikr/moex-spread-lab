@@ -34,6 +34,43 @@ PAIR = {"universe": "pair_screen", "pair": "CNYRUBF/CRZ6", "strategy": "mean_rev
 CALENDAR = {"universe": "calendar_native", "asset": "SR", "pair": "SRH3/SRM3"}
 
 
+def _funding_proof(days, ledger, *, trades=True, sizing=None):
+    """Stub ``funding_only`` proof dict shared by the ``_measure`` unit tests."""
+    if trades is True:
+        trades = [
+            {
+                "entry": {"date": days[0]},
+                "exit": {"date": days[-1]},
+                "margin_rub": 100,
+                "lqdt_on_margin_rub": 4,
+            }
+        ]
+    elif trades is False:
+        trades = []
+    proof = {
+        "selection": {"strategy": "funding_only"},
+        "window": {"passes_capital_screen": True, "tradable_every_day": True},
+        "ledger": [
+            {"date": d, "cumulative_net_rub": x} for d, x in zip(days, ledger, strict=False)
+        ],
+        "trades": trades,
+    }
+    if sizing is not None:
+        proof["sizing"] = sizing
+    return proof
+
+
+def _measure_funding(days, ledger, percent, *, trades=True, sizing=None, marks=None):
+    if marks is None:
+        marks = dict.fromkeys(days, 1.0)
+    return _measure(
+        _funding_proof(days, ledger, trades=trades, sizing=sizing),
+        marks,
+        EvaluationSplit.from_dates(days, percent),
+        ResearchSettings(),
+    )
+
+
 @pytest.fixture
 def pair_service(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ProofService]:
     root = tmp_path_factory.mktemp("pair-search")
@@ -305,8 +342,6 @@ def test_tpe_selects_the_highest_score_even_at_an_unstable_peak():
 )
 def test_missing_exposure_names_each_period_and_counts_a_carried_spread(span, missing):
     dates = [f"2026-11-{day:02}" for day in range(1, 9)]
-    split = EvaluationSplit.from_dates(dates, 50)
-    marks = dict.fromkeys(dates, 1.0)
     trades = (
         []
         if span is None
@@ -319,16 +354,10 @@ def test_missing_exposure_names_each_period_and_counts_a_carried_spread(span, mi
             }
         ]
     )
-    proof = {
-        "selection": {"strategy": "funding_only"},
-        "window": {
-            "passes_capital_screen": True,
-            "tradable_every_day": True,
-        },
-        "ledger": [{"date": day, "cumulative_net_rub": 0} for day in marks],
-        "trades": trades,
-    }
-    measured = _measure(proof, marks, split, ResearchSettings())
+    proof = _funding_proof(dates, [0] * len(dates), trades=trades)
+    measured = _measure(
+        proof, dict.fromkeys(dates, 1.0), EvaluationSplit.from_dates(dates, 50), ResearchSettings()
+    )
     if missing is None:
         assert measured["utility"] == 0  # Measured flat result, not missing evidence.
         assert "reason" not in measured
@@ -342,25 +371,9 @@ def test_benchmark_relative_drawdown_and_shortfall_no_longer_veto_a_candidate():
     # excess is the score, and the risk path stays visible in the proof.
     # The account stays solvent, so the annualization guard still applies.
     days = [f"2026-01-0{i}" for i in range(1, 5)]
-    proof = {
-        "selection": {"strategy": "funding_only"},
-        "window": {"passes_capital_screen": True, "tradable_every_day": True},
-        "sizing": {"initial_capital_rub": 100_000.0},
-        "ledger": [
-            {"date": d, "cumulative_net_rub": x}
-            for d, x in zip(days, [0, -12_000, -16_000, -18_000], strict=False)
-        ],
-        "trades": [
-            {
-                "entry": {"date": days[0]},
-                "exit": {"date": days[-1]},
-                "margin_rub": 100,
-                "lqdt_on_margin_rub": 4,
-            }
-        ],
-    }
-    marks = dict.fromkeys(days, 1.0)
-    measured = _measure(proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings())
+    measured = _measure_funding(
+        days, [0, -12_000, -16_000, -18_000], 0, sizing={"initial_capital_rub": 100_000.0}
+    )
     assert measured["rank_score"] is not None
     assert measured["utility"] is not None
     assert "просадки" not in str(measured.get("reason", ""))
@@ -374,45 +387,24 @@ def test_benchmark_relative_drawdown_and_shortfall_no_longer_veto_a_candidate():
 )
 def test_mark_change_including_first_validation_session_not_exit_trade_sum(percent, expected):
     days = [f"2026-01-0{i}" for i in range(1, 5)]
-    proof = {
-        "selection": {"strategy": "funding_only"},
-        "window": {"passes_capital_screen": True, "tradable_every_day": True},
-        "ledger": [
-            {"date": d, "cumulative_net_rub": x}
-            for d, x in zip(days, [0, 10, 70, 72], strict=False)
-        ],
-        "trades": [
-            {
-                "entry": {"date": days[0]},
-                "exit": {"date": days[-1]},
-                "margin_rub": 100,
-                "lqdt_on_margin_rub": 4,
-            }
-        ],
-    }
-    marks = dict(zip(days, (1, 1.01, 1.02, 1.04), strict=False))
-    m = _measure(
-        proof,
-        marks,
-        EvaluationSplit.from_dates(days, percent),
-        ResearchSettings(),
+    m = _measure_funding(
+        days,
+        [0, 10, 70, 72],
+        percent,
+        marks=dict(zip(days, (1, 1.01, 1.02, 1.04), strict=False)),
     )
     assert (m["net_rub"], m["excess_rub"], m["rub_per_session"]) == expected
 
 
 def test_mark_change_without_trades_vetoes_the_split():
     days = [f"2026-01-0{i}" for i in range(1, 5)]
-    proof = {
-        "selection": {"strategy": "funding_only"},
-        "window": {"passes_capital_screen": True, "tradable_every_day": True},
-        "ledger": [
-            {"date": d, "cumulative_net_rub": x}
-            for d, x in zip(days, [0, 10, 70, 72], strict=False)
-        ],
-        "trades": [],
-    }
-    marks = dict(zip(days, (1, 1.01, 1.02, 1.04), strict=False))
-    no_check = _measure(proof, marks, EvaluationSplit.from_dates(days, 0), ResearchSettings())
+    no_check = _measure_funding(
+        days,
+        [0, 10, 70, 72],
+        0,
+        trades=False,
+        marks=dict(zip(days, (1, 1.01, 1.02, 1.04), strict=False)),
+    )
     assert no_check["reason"] == "Открытого спреда не было на обучении."
     assert no_check["validation"] is None
 

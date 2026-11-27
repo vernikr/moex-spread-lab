@@ -23,27 +23,7 @@ def trade(side="long_spread", terminal=False):
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("fill", ["open", "close"])
 def test_funding_matches_existing_baseline(side, z, terminal, fill):
-    rows = [
-        {
-            "date": d,
-            "near_open": 100 + i,
-            "far_open": 100,
-            "near_close": 100.5 + i,
-            "far_close": 100.5,
-            "spread_ticks": i,
-            "benchmark_price": 1,
-            "benchmark_source_kind": "observed",
-        }
-        for i, d in enumerate(DATES)
-    ]
-    contract = {"initial_margin": 100, "tick_value": 1, "tick_size": 1, "lot_size": 10}
-    series = {
-        "rows": rows,
-        "contracts": {"N": contract, "F": contract},
-        "near": "N",
-        "far": "F",
-        "provenance": {},
-    }
+    series = funding_series(DATES)
     report = run_mean_reversion_baseline(
         series,
         lookback=2,
@@ -58,10 +38,9 @@ def test_funding_matches_existing_baseline(side, z, terminal, fill):
         DATES, [trade(side, terminal)], RATES, near_lot_size=10, quantity=3
     )
     assert len(report["trades"]) == 1
-    assert [round(row["funding_rub"], 8) for row in replay] == [
-        row["funding_rub"] for row in report["daily"]
-    ]
-    assert round(sum(row["funding_rub"] for row in replay), 8) == report["trades"][0]["funding_rub"]
+    funding = known_funding(replay)
+    assert [round(value, 8) for value in funding] == [row["funding_rub"] for row in report["daily"]]
+    assert round(sum(funding), 8) == report["trades"][0]["funding_rub"]
     assert replay[-1]["position_at_clearing"] == (
         (1 if side == "long_spread" else -1) if terminal else 0
     )
@@ -220,27 +199,7 @@ def test_resolved_evidence_reconciles_with_baseline_including_nonclearing():
     ]
     published = {days[0]: 0.01, days[1]: 0.02, days[2]: 0.03, days[5]: None, days[6]: 0.05}
     window = FundingWindow(FundingTimeline("GAZPF", published, days), days)
-    contract = {"initial_margin": 100, "tick_value": 1, "tick_size": 1, "lot_size": 10}
-    rows = [
-        {
-            "date": d,
-            "near_open": 100 + i,
-            "far_open": 100,
-            "near_close": 100.5 + i,
-            "far_close": 100.5,
-            "spread_ticks": i,
-            "benchmark_price": 1,
-            "benchmark_source_kind": "observed",
-        }
-        for i, d in enumerate(days)
-    ]
-    series = {
-        "rows": rows,
-        "contracts": {"N": contract, "F": contract},
-        "near": "N",
-        "far": "F",
-        "provenance": {},
-    }
+    series = funding_series(days)
     baseline = run_mean_reversion_baseline(
         series,
         lookback=2,
@@ -258,11 +217,41 @@ def test_resolved_evidence_reconciles_with_baseline_including_nonclearing():
         "open_at_end": True,
     }
     replay = replay_daily_pair_funding(days, [intent], window, near_lot_size=10, quantity=2)
-    assert [round(r["funding_rub"], 8) for r in replay["daily"]] == [
-        r["funding_rub"] for r in baseline["daily"]
-    ]
-    assert (
-        round(sum(r["funding_rub"] for r in replay["daily"]), 8)
-        == baseline["summary"]["funding_rub"]
-    )
+    funding = known_funding(replay["daily"])
+    assert [round(value, 8) for value in funding] == [r["funding_rub"] for r in baseline["daily"]]
+    assert round(sum(funding), 8) == baseline["summary"]["funding_rub"]
     assert baseline["trades"][0]["funding_rub"] == baseline["summary"]["funding_rub"]
+
+
+def funding_series(days):
+    rows = [
+        {
+            "date": d,
+            "near_open": 100 + i,
+            "far_open": 100,
+            "near_close": 100.5 + i,
+            "far_close": 100.5,
+            "spread_ticks": i,
+            "benchmark_price": 1,
+            "benchmark_source_kind": "observed",
+        }
+        for i, d in enumerate(days)
+    ]
+    contract = {"initial_margin": 100, "tick_value": 1, "tick_size": 1, "lot_size": 10}
+    series = {
+        "rows": rows,
+        "contracts": {"N": contract, "F": contract},
+        "near": "N",
+        "far": "F",
+        "provenance": {},
+    }
+    return series
+
+
+def known_funding(rows):
+    values = []
+    for row in rows:
+        value = row["funding_rub"]
+        assert value is not None
+        values.append(value)
+    return values

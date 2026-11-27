@@ -17,7 +17,7 @@ from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
-from perf_equivalence_fixtures import assert_pool_parity, installed_plugin
+from perf_equivalence_fixtures import assert_pool_parity, assert_same_fields, installed_plugin
 
 PLUGIN_SOURCE = """
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
@@ -54,28 +54,12 @@ def _carry_case(service, days, validation, auto, slip):
     for through in (None, days[38]):
         a, b = (p(plugin, through=through), n(native, through=through))
         assert a["selection"]["strategy"] == "demo_carry"
-        assert a["trades"] == b["trades"], (auto, slip, through, a["trades"], b["trades"])
-        assert a["ledger"] == b["ledger"], (auto, slip, through)
-        assert a["summary"] == b["summary"], (auto, slip, through, a["summary"], b["summary"])
-        assert a["series"] == b["series"], (auto, slip, through)
+        assert_same_fields(a, b, "trades", "ledger", "summary", "series")
         fast_a, fast_b = (
             p(plugin, through=through, metrics_only=True),
             n(native, through=through, metrics_only=True),
         )
-        assert fast_a["trades"] == fast_b["trades"], (
-            auto,
-            slip,
-            through,
-            fast_a["trades"],
-            fast_b["trades"],
-        )
-        assert fast_a["ledger"] == fast_b["ledger"], (
-            auto,
-            slip,
-            through,
-            fast_a["ledger"],
-            fast_b["ledger"],
-        )
+        assert_same_fields(fast_a, fast_b, "trades", "ledger")
         if auto:
             from unittest.mock import patch
 

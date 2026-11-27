@@ -10,7 +10,7 @@ from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
-from perf_equivalence_fixtures import assert_pool_parity, installed_plugin
+from perf_equivalence_fixtures import assert_pool_parity, assert_same_fields, installed_plugin
 from test_execution_proof import _far_close, _near_close
 
 PLUGIN_SOURCE = """
@@ -26,7 +26,7 @@ class Demo(PairMeanReversionPlugin):
         days = [row["date"] for row in window.rows]
         delay = 0 if fill == "reference_same_bar" else 1
         return replace(run, intents=tuple({**item, "signal": {"kind": "z",
-            "date": days[days.index(item["entry_date"][:10]) - delay],
+            "date": days[days.index(item["entry_date"][:10] if window.timeframe == "1d" else item["entry_date"][:19].replace(" ", "T")) - delay],
             "value": item["entry_signal_z"]}} for item in run.intents))
 PLUGIN = Demo()
 class HourlyDemo(Demo):
@@ -34,13 +34,6 @@ class HourlyDemo(Demo):
     family_id = "demo_pair_hourly"
     proof_adapter = "pair_price_intents.v1"
     requires_daily_bars = False
-    def evaluate_intents(self, window, params, fill):
-        run = PairMeanReversionPlugin.evaluate_intents(self, window, params, fill)
-        days = [row["date"] for row in window.rows]
-        delay = 0 if fill == "reference_same_bar" else 1
-        return replace(run, intents=tuple({**item, "signal": {"kind": "z",
-            "date": days[days.index(item["entry_date"][:10] if window.timeframe == "1d" else item["entry_date"][:19].replace(" ", "T")) - delay],
-            "value": item["entry_signal_z"]}} for item in run.intents))
 HOURLY = HourlyDemo()
 """
 
@@ -117,30 +110,7 @@ def _hourly_pair_parity(h1):
             custom = {**base, "strategy": "demo_pair_hourly"}
             actual = research_run(h1, custom, optimize=False, include_plateau=False)
             expected = research_run(h1, base, optimize=False, include_plateau=False)
-            assert actual["trades"] == expected["trades"], (
-                fill,
-                auto,
-                actual["trades"],
-                expected["trades"],
-            )
-            assert actual["ledger"] == expected["ledger"], (
-                fill,
-                auto,
-                next(
-                    (
-                        (a, e)
-                        for a, e in zip(actual["ledger"], expected["ledger"], strict=True)
-                        if a != e
-                    ),
-                    None,
-                ),
-            )
-            assert actual["summary"] == expected["summary"], (
-                fill,
-                auto,
-                actual["summary"],
-                expected["summary"],
-            )
+            assert_same_fields(actual, expected, "trades", "ledger", "summary")
             assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
             assert actual["provenance"]["funding_applicability"] == "intraday_not_included"
             cutoff = actual["evaluation"]["periods"]["training"][-1]
@@ -172,18 +142,7 @@ def _automatic_pair_fills(service):
         actual = research_run(service, candidate, optimize=False, include_plateau=False)
         expected = research_run(service, base, optimize=False, include_plateau=False)
         assert actual["selection"]["strategy"] == "demo_pair"
-        assert actual["trades"] == expected["trades"], (fill, actual["trades"], expected["trades"])
-        assert actual["ledger"] == expected["ledger"], (
-            fill,
-            next(
-                (
-                    (a, e)
-                    for a, e in zip(actual["ledger"], expected["ledger"], strict=True)
-                    if a != e
-                ),
-                None,
-            ),
-        )
+        assert_same_fields(actual, expected, "trades", "ledger")
         assert actual["summary"]["ledger_reconciliation_rub"] == 0
         assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
 
@@ -194,13 +153,7 @@ def _fixed_pair_fills(service):
         fixed = {**base, "strategy": "demo_pair"}
         actual = research_run(service, fixed, optimize=False, include_plateau=False)
         expected = research_run(service, base, optimize=False, include_plateau=False)
-        assert actual["trades"] == expected["trades"], (fill, actual["trades"], expected["trades"])
-        assert actual["ledger"] == expected["ledger"], (fill, actual["ledger"], expected["ledger"])
-        assert actual["summary"] == expected["summary"], (
-            fill,
-            actual["summary"],
-            expected["summary"],
-        )
+        assert_same_fields(actual, expected, "trades", "ledger", "summary")
         assert actual["evaluation"]["result"] == expected["evaluation"]["result"]
         cutoff = actual["evaluation"]["periods"]["training"][-1]
         actual_prefix = service.prepare(fixed, settings=ResearchSettings(validation_percent=20))(
@@ -209,9 +162,7 @@ def _fixed_pair_fills(service):
         expected_prefix = service.prepare(base, settings=ResearchSettings(validation_percent=20))(
             base, through=cutoff
         )
-        assert actual_prefix["trades"] == expected_prefix["trades"]
-        assert actual_prefix["ledger"] == expected_prefix["ledger"]
-        assert actual_prefix["summary"] == expected_prefix["summary"]
+        assert_same_fields(actual_prefix, expected_prefix, "trades", "ledger", "summary")
 
 
 def _weekend_and_dated_pair_fills(service):
@@ -226,17 +177,13 @@ def _weekend_and_dated_pair_fills(service):
         expected_weekend = research_run(
             service, weekend_request, optimize=False, include_plateau=False
         )
-        assert actual_weekend["trades"] == expected_weekend["trades"]
-        assert actual_weekend["ledger"] == expected_weekend["ledger"]
-        assert actual_weekend["summary"] == expected_weekend["summary"]
+        assert_same_fields(actual_weekend, expected_weekend, "trades", "ledger", "summary")
         dated = {**request(pair="GLZ6/GLH7"), "fill": fill}
         actual = research_run(
             service, {**dated, "strategy": "demo_pair"}, optimize=False, include_plateau=False
         )
         expected = research_run(service, dated, optimize=False, include_plateau=False)
-        assert actual["trades"] == expected["trades"]
-        assert actual["ledger"] == expected["ledger"]
-        assert actual["summary"] == expected["summary"]
+        assert_same_fields(actual, expected, "trades", "ledger", "summary")
 
 
 def _pair_quantity_and_slippage(service):
@@ -247,9 +194,7 @@ def _pair_quantity_and_slippage(service):
                 service, {**base, "strategy": "demo_pair"}, optimize=False, include_plateau=False
             )
             expected = research_run(service, base, optimize=False, include_plateau=False)
-            assert actual["trades"] == expected["trades"]
-            assert actual["ledger"] == expected["ledger"]
-            assert actual["summary"] == expected["summary"]
+            assert_same_fields(actual, expected, "trades", "ledger", "summary")
 
 
 def _exercise_plugin(root, monkeypatch, service_factory):

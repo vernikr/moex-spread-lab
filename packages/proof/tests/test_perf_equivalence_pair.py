@@ -11,13 +11,15 @@ import unittest
 
 import pytest
 
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import H1WorkspaceCase
+from perf_equivalence_fixtures import (
+    H1WorkspaceCase,
+    pair_screen_request,
+)
 
 pytestmark = pytest.mark.slow_equiv
 
@@ -44,68 +46,38 @@ class ProofPerfEquivalencePairTests(H1WorkspaceCase):
             cat = service.catalog()
             opt = research_run(
                 service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                    "optimize_strategy": True,
-                    "targets": targets,
-                },
+                pair_screen_request(optimize_strategy=True, targets=targets),
                 optimize=True,
             )
             batch_only = research_run(
                 service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "fill": "reference_same_bar",
-                    "sizing": AUTO_SIZING,
-                    "optimize_strategy": False,
-                    "targets": targets,
-                },
+                pair_screen_request(
+                    fill="reference_same_bar", optimize_strategy=False, targets=targets
+                ),
                 optimize=True,
             )
             plat = checked_plateau(
                 service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "parameters": {"lookback": 12, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                    "targets": targets,
-                },
+                pair_screen_request(
+                    parameters={"lookback": 12, "entry_z": 1.2, "exit_z": 0.3}, targets=targets
+                ),
             )
             wins = window_summaries(
                 service,
                 {
                     "requests": [
-                        {
-                            "universe": PAIR_UNIVERSE,
-                            "pair": t["pair"],
-                            "strategy": "mean_reversion",
-                            "parameters": {"lookback": 12, "entry_z": 1.2, "exit_z": 0.3},
-                            "fill": "next_close",
-                            "sizing": AUTO_SIZING,
-                        }
+                        pair_screen_request(
+                            pair=t["pair"],
+                            parameters={"lookback": 12, "entry_z": 1.2, "exit_z": 0.3},
+                            fill="next_close",
+                        )
                         for t in targets
                     ]
                 },
             )
             single = research_run(
                 service,
-                {
-                    "universe": PAIR_UNIVERSE,
-                    "pair": "CNYRUBF/CRZ6",
-                    "strategy": "mean_reversion",
-                    "parameters": {"lookback": 12, "entry_z": 1.2, "exit_z": 0.3},
-                    "fill": "next_open",
-                    "sizing": AUTO_SIZING,
-                },
+                pair_screen_request(parameters={"lookback": 12, "entry_z": 1.2, "exit_z": 0.3}),
                 optimize=False,
                 include_plateau=True,
             )

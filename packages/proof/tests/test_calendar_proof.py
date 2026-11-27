@@ -10,7 +10,6 @@ meets the code-health limits without its size baseline entry.
 
 import json
 import math
-import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -21,11 +20,9 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.calendar.calendar_spreads import (
-    HISTORY_FIELDS,
-    HISTORY_FROM,
     CalendarData,
 )
-from moex_spread_lab.strategies.funding_carry.carry import _history_url
+from perf_equivalence_fixtures import temporary_workspace, write_calendar_history
 from synthetic_history import iso_weekdays_until as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
 
@@ -33,19 +30,7 @@ TILL = "2023-06-15"
 
 
 def _write_history(root: Path, secid: str, rows: list[list]) -> None:
-    url = _history_url(secid, HISTORY_FROM, TILL, 0, HISTORY_FIELDS)
-    payload = {
-        "history": {"columns": list(HISTORY_FIELDS), "data": rows},
-        "history.cursor": {
-            "columns": ["INDEX", "TOTAL", "PAGESIZE"],
-            "data": [[0, len(rows), 100]],
-        },
-    }
-    path = root / "data/spread-history-cache" / f"{secid}-{HISTORY_FROM}-{TILL}-0.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"url": url, "payload": payload, "raw_response_sha256": "x"}), encoding="utf-8"
-    )
+    write_calendar_history(root, secid, rows, response_hash="x")
 
 
 def _h1_rows(role: str, volume: int, first_session_volume: int | None = None) -> list[dict]:
@@ -278,10 +263,7 @@ def assert_instrument_provenance(testcase: unittest.TestCase, proof: dict[str, A
 
 class CalendarProofTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        _build_root(self.root)
+        self.root = temporary_workspace(self, _build_root)
         self.data = CalendarData(self.root)
 
     def test_catalog_lists_window_with_volume_and_capital_flags(self):

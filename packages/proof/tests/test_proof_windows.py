@@ -9,10 +9,7 @@ detailed band, fill and compact-row expectations live in
 import json
 import math
 import statistics
-import tempfile
-import unittest
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -20,13 +17,13 @@ from moex_spread_lab.core.settings import save_settings, settings_path
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_search import StudyWindow, research_run
 from moex_spread_lab.proof.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
-from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
     AnalyticsError,
     run_mean_reversion_baseline,
 )
 from moex_spread_lab.strategies.signals import attach_entry_levels, pair_fill
-from proof_fixtures import CAL, FLAT, PAIR, two_calendar_windows
+from perf_equivalence_fixtures import ProofWorkspaceCase
+from proof_fixtures import CAL, FLAT, PAIR
 
 # ---- folded from the retired P7.2 shard proof_windows_fixtures_p72_packages_proof_tests_test_proof_windows (PAIR/CAL/FLAT now in proof_fixtures) ----
 
@@ -44,18 +41,8 @@ def group_request(fill: str) -> dict[str, Any]:
     }
 
 
-class FixtureCase(unittest.TestCase):
+class FixtureCase(ProofWorkspaceCase):
     """Temporary proof service seeded with the two-calendar-window fixture."""
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
-        two_calendar_windows(self.root)
-        self.service = ProofService(self.root)
-
-    def run_proof(self, req):
-        return research_run(self.service, req, optimize=False, include_plateau=False)
 
 
 # ---- folded from the retired P7.2 shard proof_windows_expectations_p72_packages_proof_tests_test_proof_windows ----

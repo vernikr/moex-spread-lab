@@ -9,7 +9,7 @@ from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
 from moex_spread_lab.strategies import discover_strategies
 from moex_spread_lab.strategies.conformance import assert_causal_conformance
-from perf_equivalence_fixtures import installed_plugin
+from perf_equivalence_fixtures import assert_same_fields, installed_plugin
 from proof_fixtures import two_calendar_windows
 from test_perf_equivalence import _build_h1_workspace, _write_h1_candles
 
@@ -72,9 +72,7 @@ def _calendar_hourly_parity(root, request, service_factory):
                 include_plateau=False,
             )
             assert actual["window"]["price_source"] == mode
-            assert actual["trades"] == reference["trades"], (mode, fill)
-            assert actual["ledger"] == reference["ledger"], (mode, fill)
-            assert actual["summary"] == reference["summary"], (mode, fill)
+            assert_same_fields(actual, reference, "trades", "ledger", "summary")
 
 
 def _exercise_plugin(root, monkeypatch, service_factory):
@@ -109,9 +107,7 @@ def _exercise_plugin(root, monkeypatch, service_factory):
         optimize=False,
         include_plateau=False,
     )
-    assert proof["trades"] == reference["trades"]
-    assert proof["ledger"] == reference["ledger"]
-    assert proof["summary"] == reference["summary"]
+    assert_same_fields(proof, reference, "trades", "ledger", "summary")
     result = research_run(service, {**request, "optimize_strategy": True}, optimize=True)
     alternatives = result["strategy_search"]["alternatives"]
     assert [a["strategy"] for a in alternatives] == [

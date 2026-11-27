@@ -19,10 +19,16 @@ from unittest.mock import patch
 
 import pytest
 
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
-from moex_spread_lab.proof.proof_search import research_run
-from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import H1WorkspaceCase, _build_pool_test_workspace, _canon
+from moex_spread_lab.proof.service import CALENDAR_UNIVERSE
+from perf_equivalence_fixtures import (
+    H1WorkspaceCase,
+    _build_pool_test_workspace,
+    _canon,
+    calendar_spread_request,
+    pair_screen_request,
+    pool_targets,
+    search_with_c,
+)
 
 pytestmark = pytest.mark.slow_equiv
 
@@ -132,71 +138,27 @@ class ProofPerfEquivalenceFastcoreTests(H1WorkspaceCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _build_pool_test_workspace(root)
-            targets = [
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
-            ]
-            req = {
-                "universe": PAIR_UNIVERSE,
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-                "optimize_strategy": True,
-                "targets": targets,
-            }
-
-            def run_with_c(disable_c: str):
-                env = {"MOEX_PROOF_WORKERS": "2", "MOEX_PROOF_FORCE_POOL": "1"}
-                if disable_c:
-                    env["MOEX_PROOF_DISABLE_C"] = disable_c
-                with patch.dict(os.environ, env, clear=False):
-                    if not disable_c:
-                        os.environ.pop("MOEX_PROOF_DISABLE_C", None)
-                    svc = ProofService(root)
-                    try:
-                        return research_run(svc, req, optimize=True)
-                    finally:
-                        svc.close()
+            targets = pool_targets(calendar=False)
+            req = pair_screen_request(optimize_strategy=True, targets=targets)
 
             self.assertEqual(
-                _canon(run_with_c("")),
-                _canon(run_with_c("1")),
+                _canon(search_with_c(root, req, "", workers="2", force="1")),
+                _canon(search_with_c(root, req, "1", workers="2", force="1")),
             )
 
             # 5) Calendar 1h strategy_search (zscore_mean_reversion + convergence_to_ruonia)
             #    C double-double sample stdev/mean + scalar_only sizing vs pure Python fallback
-            cal_req = {
-                "universe": CALENDAR_UNIVERSE,
-                "asset": "SR",
-                "pair": "SRH3/SRM3",
-                "strategy": "zscore_mean_reversion",
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-                "optimize_strategy": True,
-                "targets": [
+            cal_req = calendar_spread_request(
+                optimize_strategy=True,
+                targets=[
                     {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
                     {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRM3/SRU3"},
                 ],
-            }
+            )
 
-            def run_cal(disable_c: str, ref_eval: str = "0"):
-                env = {"MOEX_PROOF_WORKERS": "1", "MOEX_PROOF_REFERENCE_EVAL": ref_eval}
-                if disable_c:
-                    env["MOEX_PROOF_DISABLE_C"] = disable_c
-                with patch.dict(os.environ, env, clear=False):
-                    if not disable_c:
-                        os.environ.pop("MOEX_PROOF_DISABLE_C", None)
-                    svc = ProofService(root)
-                    try:
-                        return research_run(svc, cal_req, optimize=True)
-                    finally:
-                        svc.close()
-
-            cal_c_fast = _canon(run_cal("", "0"))
-            cal_py_fast = _canon(run_cal("1", "0"))
-            cal_py_ref = _canon(run_cal("1", "1"))
+            cal_c_fast = _canon(search_with_c(root, cal_req, "", workers="1", reference="0"))
+            cal_py_fast = _canon(search_with_c(root, cal_req, "1", workers="1", reference="0"))
+            cal_py_ref = _canon(search_with_c(root, cal_req, "1", workers="1", reference="1"))
             self.assertEqual(cal_c_fast, cal_py_fast)
             self.assertEqual(cal_c_fast, cal_py_ref)
 

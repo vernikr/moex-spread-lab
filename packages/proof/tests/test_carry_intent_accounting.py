@@ -108,19 +108,18 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
     study, _, _, _ = service._funding_inputs(inputs, pair, ProofFunding(inputs), 0)
     if prefix is not None:
         study = {**study, "rows": study["rows"][:prefix]}
+    options = {
+        "transaction_cost_scenario": "tariff",
+        "warmup_observations": 5,
+        "strategy_variant": "funding_only",
+        "initial_capital": 30000,
+        "quantity": quantity,
+        "execution_delay_rows": 0,
+        "cash_in_lqdt": True,
+        "slippage_ticks": 1,
+    }
     native = build_carry_strategy(
-        study,
-        inputs.benchmark,
-        inputs.contracts,
-        transaction_cost_scenario="tariff",
-        warmup_observations=5,
-        strategy_variant="funding_only",
-        initial_capital=30000,
-        quantity=quantity,
-        execution_delay_rows=0,
-        cash_in_lqdt=True,
-        slippage_ticks=1,
-        metrics_only=True,
+        study, inputs.benchmark, inputs.contracts, **options, metrics_only=True
     )
     reasons = {(s["date"], s["action"]): s["reason"] for s in native["signals"]}
     trades = [
@@ -168,19 +167,7 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
         + contracts[pair["far"]]["initial_margin"],
         benchmark=prices,
     )
-    full_native = build_carry_strategy(
-        study,
-        inputs.benchmark,
-        inputs.contracts,
-        transaction_cost_scenario="tariff",
-        warmup_observations=5,
-        strategy_variant="funding_only",
-        initial_capital=30000,
-        quantity=quantity,
-        execution_delay_rows=0,
-        cash_in_lqdt=True,
-        slippage_ticks=1,
-    )
+    full_native = build_carry_strategy(study, inputs.benchmark, inputs.contracts, **options)
     for got, expected in zip(full["daily"], full_native["daily"], strict=True):
         for key in (
             "cumulative_gross_pnl",

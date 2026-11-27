@@ -1,8 +1,6 @@
 """One persisted capital snapshot drives every proof account, screen and search."""
 
 import json
-import tempfile
-import unittest
 from copy import deepcopy
 from datetime import date
 from pathlib import Path
@@ -11,11 +9,11 @@ from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_batch import checked_plateau
-from moex_spread_lab.proof.proof_search import _annualized_returns, research_run
+from moex_spread_lab.proof.proof_search import _annualized_returns
 from moex_spread_lab.proof.proof_windows import window_summaries
-from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, catalog
-from proof_fixtures import CAL, FLAT, PAIR, two_calendar_windows
+from perf_equivalence_fixtures import ProofWorkspaceCase
+from proof_fixtures import CAL, FLAT, PAIR
 from test_position_sizing import unit_proof
 
 
@@ -61,17 +59,7 @@ def runtime_excess_pp(proof, marks, days, share):
 TARGETS = [{k: v for k, v in r.items() if k in ("universe", "asset", "pair")} for r in (PAIR, CAL)]
 
 
-class CapitalReplayTests(unittest.TestCase):
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
-        two_calendar_windows(self.root)
-        self.service = ProofService(self.root)
-
-    def run_proof(self, request):
-        return research_run(self.service, request, optimize=False, include_plateau=False)
-
+class CapitalReplayTests(ProofWorkspaceCase):
     def run_sized(self, request, initial, share, automatic):
         """Persist the capital and holdout choice, then drop explicit sizing if asked."""
         save_settings(self.root, {"initial_capital_rub": initial, "validation_percent": share})

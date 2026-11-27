@@ -16,12 +16,18 @@ from unittest.mock import patch
 
 import pytest
 
-from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
-from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import H1WorkspaceCase, _build_pool_test_workspace, _canon_sha
+from moex_spread_lab.proof.service import ProofService
+from perf_equivalence_fixtures import (
+    H1WorkspaceCase,
+    _build_pool_test_workspace,
+    _canon_sha,
+    calendar_spread_request,
+    pair_screen_request,
+    pool_targets,
+)
 
 pytestmark = pytest.mark.slow_equiv
 
@@ -33,57 +39,25 @@ class ProofPerfEquivalencePoolTests(H1WorkspaceCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _build_pool_test_workspace(root)
-            targets = [
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
-                {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
-                {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
-            ]
-            batch_req = {
-                "universe": PAIR_UNIVERSE,
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-                "targets": targets,
-            }
+            targets = pool_targets()
+            batch_req = pair_screen_request(
+                parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3}, targets=targets
+            )
             strat_req = {**batch_req, "optimize_strategy": True}
             win_req = {
                 "requests": [
-                    {
-                        "universe": PAIR_UNIVERSE,
-                        "pair": "CNYRUBF/CRZ6",
-                        "strategy": "mean_reversion",
-                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                        "fill": "next_open",
-                        "sizing": AUTO_SIZING,
-                    },
-                    {
-                        "universe": PAIR_UNIVERSE,
-                        "pair": "CNYRUBF/CRM6",
-                        "strategy": "mean_reversion",
-                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                        "fill": "next_open",
-                        "sizing": AUTO_SIZING,
-                    },
-                    {
-                        "universe": PAIR_UNIVERSE,
-                        "pair": "CNYRUBF/CRU6",
-                        "strategy": "mean_reversion",
-                        "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                        "fill": "next_open",
-                        "sizing": AUTO_SIZING,
-                    },
-                    {
-                        "universe": CALENDAR_UNIVERSE,
-                        "asset": "SR",
-                        "pair": "SRH3/SRM3",
-                        "strategy": "zscore_mean_reversion",
-                        "parameters": {"window": 10, "entry_z": 1.2, "exit_z": 0.3},
-                        "fill": "next_open",
-                        "sizing": AUTO_SIZING,
-                    },
+                    pair_screen_request(parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3}),
+                    pair_screen_request(
+                        pair="CNYRUBF/CRM6",
+                        parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                    ),
+                    pair_screen_request(
+                        pair="CNYRUBF/CRU6",
+                        parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
+                    ),
+                    calendar_spread_request(
+                        parameters={"window": 10, "entry_z": 1.2, "exit_z": 0.3}
+                    ),
                 ]
             }
 
@@ -114,20 +88,9 @@ class ProofPerfEquivalencePoolTests(H1WorkspaceCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _build_pool_test_workspace(root)
-            req = {
-                "universe": PAIR_UNIVERSE,
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "parameters": {"lookback": 10, "entry_z": 1.2, "exit_z": 0.3},
-                "fill": "next_open",
-                "sizing": AUTO_SIZING,
-                "targets": [
-                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRZ6"},
-                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRM6"},
-                    {"universe": PAIR_UNIVERSE, "pair": "CNYRUBF/CRU6"},
-                    {"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"},
-                ],
-            }
+            req = pair_screen_request(
+                parameters={"lookback": 10, "entry_z": 1.2, "exit_z": 0.3}, targets=pool_targets()
+            )
             with patch.dict(
                 os.environ,
                 {"MOEX_PROOF_WORKERS": "3", "MOEX_PROOF_FORCE_POOL": "1"},

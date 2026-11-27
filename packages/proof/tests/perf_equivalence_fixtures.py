@@ -1,12 +1,7 @@
-"""Synthetic workspaces shared by the proof equivalence tiers (plan S4a).
+"""Synthetic proof workspaces, request builders and isolated service lifecycles.
 
-Builders moved out of ``test_perf_equivalence.py`` so the canary and every
-full-resolution tier clone identical bytes. This module only writes files: it
-constructs no proof service and holds no numeric expectation.
-
-The helper names (``_write_h1_candles``, ``_build_h1_workspace``, ``_canon``,
-``_canon_sha``) are re-exported by the canary ``test_perf_equivalence``, because the
-drop-in plugin integration test imports them from there. Workspace construction, lifecycle and mode comparison share this module.
+All equivalence tiers use identical fixture bytes and retain their own tests,
+trial budgets and independent reference/fast evaluations.
 """
 
 from __future__ import annotations
@@ -18,12 +13,15 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
+from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.proof.strategy_catalog import (
@@ -32,7 +30,6 @@ from moex_spread_lab.proof.strategy_catalog import (
 )
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
-from proof_fixtures import fixture
 from synthetic_history import iso_weekdays as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
 
@@ -183,9 +180,8 @@ def _build_pair_h1_candles(root: Path, h1_days: list[str]) -> None:
     _write_h1_candles(root, "candles-screen", "CRM6", crm6_rows)
 
 
-def _write_cal_eod(root: Path, secid: str, days: list[str], row_fn) -> None:
+def write_calendar_history(root, secid, rows, *, response_hash):
     url = _history_url(secid, HISTORY_FROM, TILL, 0, HISTORY_FIELDS)
-    rows = [row_fn(i, d) for i, d in enumerate(days)]
     payload = {
         "history": {"columns": list(HISTORY_FIELDS), "data": rows},
         "history.cursor": {
@@ -196,8 +192,14 @@ def _write_cal_eod(root: Path, secid: str, days: list[str], row_fn) -> None:
     path = root / "data/spread-history-cache" / f"{secid}-{HISTORY_FROM}-{TILL}-0.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"url": url, "payload": payload, "raw_response_sha256": f"sha-{secid}"}),
+        json.dumps({"url": url, "payload": payload, "raw_response_sha256": response_hash}),
         encoding="utf-8",
+    )
+
+
+def _write_cal_eod(root, secid, days, row_fn):
+    write_calendar_history(
+        root, secid, [row_fn(i, d) for i, d in enumerate(days)], response_hash=f"sha-{secid}"
     )
 
 
@@ -207,6 +209,8 @@ def _build_h1_workspace(root: Path) -> None:
     The same bytes as the single builder this replaces in ``test_perf_equivalence.py``;
     the steps are named so no single function carries the whole fixture.
     """
+    from proof_fixtures import fixture
+
     fixture(root)
     h1_days = _weekdays(date(2026, 1, 5), 18)
     cal_days = _weekdays(date(2022, 12, 12), 70)
@@ -331,11 +335,15 @@ class H1WorkspaceCase(unittest.TestCase):
         cls._tmp.cleanup()
 
     def _compare_modes(self, settings: ResearchSettings, fn):
+        results = []
         with patch.object(ResearchSettings, "load", return_value=settings):
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "1"}):
-                expected = fn(ProofService(self.root))
-            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "0"}):
-                actual = fn(ProofService(self.root))
+            for mode in ("1", "0"):
+                with (
+                    patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": mode}),
+                    closing(ProofService(self.root)) as service,
+                ):
+                    results.append(fn(service))
+        expected, actual = results
         self.assertEqual(_canon_sha(actual), _canon_sha(expected))
         self.assertEqual(actual, expected)
         return actual
@@ -435,3 +443,111 @@ def assert_pool_parity(root, request, pairs, service_factory, monkeypatch):
         assert serial["selected_parameters"] == parallel["selected_parameters"]
         assert serial["run_id"] == parallel["run_id"]
         parallel_service.close()
+
+
+def temporary_workspace(case, build):
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    root = Path(tmp.name)
+    build(root)
+    return root
+
+
+class ProofWorkspaceCase(unittest.TestCase):
+    def setUp(self):
+        from proof_fixtures import two_calendar_windows
+
+        self.root = temporary_workspace(self, two_calendar_windows)
+        self.service = ProofService(self.root)
+        self.addCleanup(self.service.close)
+
+    def run_proof(self, request):
+        return research_run(self.service, request, optimize=False, include_plateau=False)
+
+
+def pair_screen_request(**overrides: Any) -> dict[str, Any]:
+    """Pair-screen ``mean_reversion`` request with automatic sizing."""
+    request: dict[str, Any] = {
+        "universe": PAIR_UNIVERSE,
+        "pair": "CNYRUBF/CRZ6",
+        "strategy": "mean_reversion",
+        "fill": "next_open",
+        "sizing": AUTO_SIZING,
+    }
+    request.update(overrides)
+    return request
+
+
+def calendar_spread_request(**overrides: Any) -> dict[str, Any]:
+    """Calendar ``zscore_mean_reversion`` request with per-case overrides."""
+    request: dict[str, Any] = {
+        "universe": CALENDAR_UNIVERSE,
+        "asset": "SR",
+        "pair": "SRH3/SRM3",
+        "strategy": "zscore_mean_reversion",
+        "fill": "next_open",
+        "sizing": AUTO_SIZING,
+    }
+    request.update(overrides)
+    return request
+
+
+def pool_targets(*, calendar=True):
+    targets = [
+        {"universe": PAIR_UNIVERSE, "pair": f"CNYRUBF/{far}"} for far in ("CRZ6", "CRM6", "CRU6")
+    ]
+    if calendar:
+        targets.append({"universe": CALENDAR_UNIVERSE, "asset": "SR", "pair": "SRH3/SRM3"})
+    return targets
+
+
+def search_with_c(root, request, disable_c, *, workers, reference="0", force="0"):
+    with patch.dict(
+        os.environ,
+        {
+            "MOEX_PROOF_WORKERS": workers,
+            "MOEX_PROOF_FORCE_POOL": force,
+            "MOEX_PROOF_REFERENCE_EVAL": reference,
+            "MOEX_PROOF_DISABLE_C": disable_c,
+        },
+    ):
+        service = ProofService(root)
+        try:
+            return research_run(service, request, optimize=True)
+        finally:
+            service.close()
+
+
+def pair_screen_fixed_quantity_request(**overrides: Any) -> dict[str, Any]:
+    """Pair-screen request with a manual quantity and no automatic ``sizing`` key."""
+    request: dict[str, Any] = {
+        "universe": PAIR_UNIVERSE,
+        "pair": "CNYRUBF/CRZ6",
+        "strategy": "mean_reversion",
+        "fill": "next_open",
+        "quantity": 1,
+        "slippage_ticks": 1.0,
+    }
+    request.update(overrides)
+    return request
+
+
+def convergence_window_requests(targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One ``convergence_to_ruonia`` window request per calendar target."""
+    return [
+        {
+            "universe": CALENDAR_UNIVERSE,
+            "asset": "SR",
+            "pair": target["pair"],
+            "strategy": "convergence_to_ruonia",
+            "parameters": {"threshold_pp": 0.5},
+            "fill": "next_open",
+            "sizing": AUTO_SIZING,
+        }
+        for target in targets
+    ]
+
+
+def assert_same_fields(actual, expected, *fields):
+    for field in fields:
+        assert actual[field] == expected[field], (field, actual[field], expected[field])

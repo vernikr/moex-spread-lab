@@ -1,13 +1,22 @@
 import json
 import math
-import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
 
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from perf_equivalence_fixtures import temporary_workspace
 from synthetic_history import weekdays
+
+MEAN_REVERSION_REQUEST = {
+    "universe": "pair_screen",
+    "pair": "CNYRUBF/CRZ6",
+    "strategy": "mean_reversion",
+    "quantity": 2,
+    "slippage_ticks": 1.0,
+    "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
+}
 
 START, END = "2025-06-17", "2026-10-27"
 
@@ -128,10 +137,7 @@ def _build_root(root: Path) -> list[date]:
 
 class ExecutionProofTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        _build_root(self.root)
+        self.root = temporary_workspace(self, _build_root)
         self.proof = ProofService(self.root)
 
     def test_catalog_lists_both_universes_and_pair_availability(self):
@@ -146,16 +152,7 @@ class ExecutionProofTests(unittest.TestCase):
         self.assertIn("assets", catalog)
 
     def test_mean_reversion_proof_reconciles(self):
-        result = self.proof.proof(
-            {
-                "universe": "pair_screen",
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "quantity": 2,
-                "slippage_ticks": 1.0,
-                "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
-            }
-        )
+        result = self.proof.proof(MEAN_REVERSION_REQUEST)
         json.dumps(result, allow_nan=False)
         self.assertEqual(result["schema_version"], "execution-proof.v1")
         self.assertEqual(result["universe"], "pair_screen")
@@ -170,6 +167,19 @@ class ExecutionProofTests(unittest.TestCase):
             result["ledger"][-1]["cumulative_net_rub"], summary["net_rub"], delta=0.02
         )
         self.assertEqual(summary["closed_trades"] + summary["open_positions"], summary["trades"])
+        self.assert_funding_reconciles(result)
+        components = sum(
+            sum((trade["entry"]["costs"] or {}).values())
+            + sum((trade["exit"]["costs"] or {}).values())
+            for trade in result["trades"]
+        )
+        self.assertAlmostEqual(components, summary["costs_rub"], delta=0.02)
+        first = result["trades"][0]
+        self.assertEqual(first["entry"]["near_volume"], 5000)
+        self.assertGreater(first["entry"]["costs"]["exchange_clearing"], 0)
+        self.assertEqual(first["signal"]["kind"], "z")
+
+    def assert_funding_reconciles(self, result):
         funding_rows = [row for row in result["series"] if row["funding_rub"] is not None]
         self.assertTrue(funding_rows)
         self.assertTrue(any(row["funding_rub"] != 0 for row in funding_rows))
@@ -191,16 +201,6 @@ class ExecutionProofTests(unittest.TestCase):
             sum(trade["funding_rub"] or 0 for trade in result["trades"]),
             delta=0.02,
         )
-        components = sum(
-            sum((trade["entry"]["costs"] or {}).values())
-            + sum((trade["exit"]["costs"] or {}).values())
-            for trade in result["trades"]
-        )
-        self.assertAlmostEqual(components, summary["costs_rub"], delta=0.02)
-        first = result["trades"][0]
-        self.assertEqual(first["entry"]["near_volume"], 5000)
-        self.assertGreater(first["entry"]["costs"]["exchange_clearing"], 0)
-        self.assertEqual(first["signal"]["kind"], "z")
 
     def test_zero_volume_leg_is_journal_only_and_cannot_be_an_execution_date(self):
         far_path = self.root / "data/w1/candles/CRZ6_1d.json"
@@ -208,16 +208,7 @@ class ExecutionProofTests(unittest.TestCase):
         zero_day = payload["rows"][30]["begin"][:10]
         payload["rows"][30]["volume"] = 0
         far_path.write_text(json.dumps(payload))
-        result = self.proof.proof(
-            {
-                "universe": "pair_screen",
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "quantity": 1,
-                "slippage_ticks": 1.0,
-                "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
-            }
-        )
+        result = self.proof.proof({**MEAN_REVERSION_REQUEST, "quantity": 1})
         journal_row = next(row for row in result["series"] if row["date"] == zero_day)
         journal_ledger = next(row for row in result["ledger"] if row["date"] == zero_day)
         self.assertEqual(journal_row["far_volume"], 0)
@@ -233,16 +224,7 @@ class ExecutionProofTests(unittest.TestCase):
         )
 
     def test_series_and_fills_spread_is_relative_to_far_contract_value(self):
-        result = self.proof.proof(
-            {
-                "universe": "pair_screen",
-                "pair": "CNYRUBF/CRZ6",
-                "strategy": "mean_reversion",
-                "quantity": 2,
-                "slippage_ticks": 1.0,
-                "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
-            }
-        )
+        result = self.proof.proof(MEAN_REVERSION_REQUEST)
         far_mult = 1 / 0.001  # tick_value / tick_size from the fixture's current-intake.json
         for row in result["series"]:
             self.assertAlmostEqual(
@@ -265,14 +247,7 @@ class ExecutionProofTests(unittest.TestCase):
                 )
 
     def test_deterministic_run_id_and_parameter_sensitivity(self):
-        base = {
-            "universe": "pair_screen",
-            "pair": "CNYRUBF/CRZ6",
-            "strategy": "mean_reversion",
-            "quantity": 1,
-            "slippage_ticks": 1.0,
-            "parameters": {"entry_z": 1.5, "exit_z": 0.3, "lookback": 20},
-        }
+        base = {**MEAN_REVERSION_REQUEST, "quantity": 1}
         first = self.proof.proof(base)
         self.assertEqual(first["run_id"], self.proof.proof(base)["run_id"])
         other = self.proof.proof({**base, "slippage_ticks": 2.0})

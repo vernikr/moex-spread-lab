@@ -159,13 +159,6 @@ def _limited(paths: list[str]) -> str:
     return ", ".join(paths[:5]) + more
 
 
-def _summary(docs: list[str], groups: dict[str, dict[str, list[str]]]) -> list[str]:
-    reasons = [f"docs-only path(s): {_limited(docs)}"] if docs else []
-    for label, group in groups.items():
-        reasons += [f"package {pkg} {label}: {_limited(group[pkg])}" for pkg in group]
-    return reasons
-
-
 def _classify(normed: list[str], nod: set[str]):
     docs, unmatched = [], []
     package_py: dict[str, list[str]] = {}
@@ -204,7 +197,11 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
     docs, groups, unmatched = _classify(normed, nod)
     run_tier2 = matches_c_tier2(normed)
     check_js = any(p.startswith("packages/") and "/static/" in f"/{p}" for p in normed)
-    summary = _summary(docs, groups)
+    summary = ([f"docs-only path(s): {_limited(docs)}"] if docs else []) + [
+        f"package {pkg} {label}: {_limited(group[pkg])}"
+        for label, group in groups.items()
+        for pkg in group
+    ]
     if unmatched or run_tier2:
         head = f"unmatched path(s): {_limited(unmatched)} -> full" if unmatched else ""
         head = head or "C99/sanitizer/CI tier2 path(s) changed -> full"

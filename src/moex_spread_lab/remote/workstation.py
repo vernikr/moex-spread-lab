@@ -160,17 +160,13 @@ def service(root: Path) -> dict[str, Any]:
     return {"launchd_loaded": result.returncode == 0, "http_status": http_status}
 
 
-def _get_json(url: str, timeout: float) -> Any:
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            return json.load(response)
-    except (OSError, urllib.error.URLError, ValueError):
-        return None
-
-
 def status(root: Path) -> dict[str, Any]:
     tracked = command(root, "git", "status", "--porcelain", "--untracked-files=no")
-    dev_health = _get_json("http://127.0.0.1:8765/api/dev/health", 5)
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8765/api/dev/health", timeout=5) as response:
+            dev_health = json.load(response)
+    except (OSError, urllib.error.URLError, ValueError):
+        dev_health = None
     return {
         "head": command(root, "git", "rev-parse", "HEAD"),
         "branch": command(root, "git", "branch", "--show-current"),

@@ -129,20 +129,18 @@ def _run(label: str, command: list[str]) -> bool:
     return result.returncode == 0
 
 
-def _complexities(path: Path) -> dict[str, int]:
-    if path.suffix != ".py":
-        return {}
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return {f"{node.name}@{node.lineno}": _complexity(node) for node in _function_nodes(tree)}
-
-
 def _check_file(path: Path, *, strict_limits: bool) -> tuple[bool, bool]:
     if not path.is_file():
         print(f"missing file: {path}")
         return False, False
     try:
         band, summary = _budget_text(path)
-        complexities = _complexities(path)
+        complexities: dict[str, int] = {}
+        if path.suffix == ".py":
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            complexities = {
+                f"{node.name}@{node.lineno}": _complexity(node) for node in _function_nodes(tree)
+            }
     except (GateError, OSError, UnicodeError, SyntaxError) as exc:
         print(f"parse: {path}: {exc}")
         return False, False

@@ -5,8 +5,7 @@
   "kind": "proof",
   "capabilities": [
     "execution_proof",
-    "cohort_optimization",
-    "offline_pair_audit"
+    "cohort_optimization"
   ],
   "inputs": [
     "iss-candles.v1",

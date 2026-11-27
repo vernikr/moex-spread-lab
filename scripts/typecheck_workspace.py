@@ -5,8 +5,6 @@ The generated view is ignored by git and only contains symlinks. Source remains 
 its owning package; this gives the type checker one deterministic namespace root.
 """
 
-from __future__ import annotations
-
 import argparse
 import shutil
 import subprocess

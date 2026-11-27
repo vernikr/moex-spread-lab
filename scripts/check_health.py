@@ -12,8 +12,6 @@ run; a skipped check is never reported as passed. ``MSL_HEALTH_STATUS_FILE``
 receives the per-check status JSON.
 """
 
-from __future__ import annotations
-
 import argparse
 import fnmatch
 import json
@@ -71,15 +69,14 @@ class Scope:
 def check_command(name: str, scope: Scope) -> list[str] | None:
     py, changed = scope.py, scope.changed
     lint = py if changed else LINT_ROOTS
-    skipped = {
-        "ruff-check": changed and not py,
-        "ruff-format": changed and not py,
-        "basedpyright": changed and not py,
-        "vulture": changed,
-        "architecture": changed and not scope.imports,
-        "js-modules": changed and not scope.static_js,
-    }
-    commands = {
+    if changed and (
+        (name in ("ruff-check", "ruff-format", "basedpyright") and not py)
+        or name == "vulture"
+        or (name == "architecture" and not scope.imports)
+        or (name == "js-modules" and not scope.static_js)
+    ):
+        return None
+    return {
         "ruff-check": [*tool("ruff"), "check", *lint],
         "ruff-format": [*tool("ruff"), "format", "--check", *lint],
         "basedpyright": script("typecheck_workspace.py", *py),
@@ -89,8 +86,7 @@ def check_command(name: str, scope: Scope) -> list[str] | None:
         ),
         "architecture": script("architecture_gate.py", *(["--fast"] * changed)),
         "js-modules": script("check_js_modules.py"),
-    }
-    return None if skipped.get(name) else commands[name]
+    }[name]
 
 
 def _status(returncode: int) -> str:
@@ -157,19 +153,19 @@ def run_all(scope: Scope, logs: Path, timeout: float) -> list[tuple[str, str, in
     return results
 
 
-def _advisories(log: Path) -> list[str]:
+def _read_lines(log: Path) -> list[str]:
     try:
-        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+        return log.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
-    return [line for line in lines if line.startswith("advisory: ")]
+
+
+def _advisories(log: Path) -> list[str]:
+    return [line for line in _read_lines(log) if line.startswith("advisory: ")]
 
 
 def _tail(log: Path, count: int) -> str:
-    try:
-        return "\n".join(log.read_text(encoding="utf-8", errors="replace").splitlines()[-count:])
-    except OSError:
-        return ""
+    return "\n".join(_read_lines(log)[-count:])
 
 
 def report(
@@ -247,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             ran = [name for name, status, _ in results if status != "skipped"]
             advisory = sum(len(_advisories(logs / f"{name}.log")) for name in ran)
             summary = ", ".join(ran) + (f"; {advisory} advisory" if advisory else "")
-            skipped = ", ".join(name for name, status, _ in results if status == "skipped")
+            skipped = ", ".join(n for n, s, _ in results if s == "skipped")
             if not failures and not unavailable:
                 print(f"check_health (changed): passed in {elapsed}s ({summary})")
             print(f"skipped (full gate): {skipped or 'none'}")

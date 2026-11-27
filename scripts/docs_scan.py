@@ -12,8 +12,6 @@ rewritten: ``docs/inputs/`` (bytes pinned by ``docs/inputs/manifest.json``),
 ``docs/research/results/received/`` and ``docs/research/reuse/``.
 """
 
-from __future__ import annotations
-
 import argparse
 import re
 from pathlib import Path

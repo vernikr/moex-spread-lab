@@ -5,8 +5,6 @@ Keeps ``remote.bench`` under the token ceiling; the trust decision
 here next to the verification that the candidate actually shadows the root.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 from dataclasses import dataclass

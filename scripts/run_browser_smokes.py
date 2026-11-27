@@ -13,8 +13,6 @@ aggregates them into the table printed after the run, so the next optimization t
 the measured term instead of guessing.
 """
 
-from __future__ import annotations
-
 import argparse
 import io
 import json

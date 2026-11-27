@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Enforce repository-local LOC, cognitive-complexity, C, parity, and exception ratchets."""
 
-from __future__ import annotations
-
 import argparse
 import csv
 import json
@@ -52,12 +50,14 @@ def _touched_files(base: str) -> list[Path]:
     files = []
     for rel in touched:
         parts = Path(rel).parts
-        if not parts or parts[0] not in SOURCE_TOP_LEVELS:
-            continue
-        if set(parts) & set(EXCLUDED_PARTS):
-            continue
         path = ROOT / rel
-        if path.suffix.lower() in SOURCE_SUFFIXES and path.is_file():
+        if (
+            parts
+            and parts[0] in SOURCE_TOP_LEVELS
+            and not set(parts) & EXCLUDED_PARTS
+            and path.suffix.lower() in SOURCE_SUFFIXES
+            and path.is_file()
+        ):
             files.append(path)
     return files
 
@@ -86,10 +86,8 @@ def _complexipy_run(executable: str, paths: list[Path], directory: str) -> list[
         findings = json.loads(report.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise GateError(f"cannot read complexipy JSON output: {exc}") from exc
-    if not isinstance(findings, list):
-        raise GateError("complexipy JSON output must be a list")
-    if not all(isinstance(finding, dict) for finding in findings):
-        raise GateError("complexipy emitted a malformed finding")
+    if not isinstance(findings, list) or not all(isinstance(f, dict) for f in findings):
+        raise GateError("complexipy emitted malformed JSON output")
     return findings
 
 
@@ -97,12 +95,9 @@ def _run_complexipy(paths: list[Path] | None = None) -> dict[str, int]:
     executable = shutil.which("complexipy")
     if executable is None:
         raise GateError("complexipy is not installed; run `uv sync --frozen`")
-    # complexipy reports only the file basename, so group inputs by basename and
-    # run same-name files in separate invocations where attribution needs it.
-    runs: list[tuple[list[Path], str | None]] = []
-    if paths is None:
-        runs.append(([], None))
-    else:
+    # complexipy reports only file basenames: batch unique names, run duplicates alone.
+    runs: list[tuple[list[Path], str | None]] = [([], None)] if paths is None else []
+    if paths is not None:
         by_name: dict[str, list[Path]] = {}
         for path in paths:
             by_name.setdefault(path.name, []).append(path)
@@ -131,43 +126,30 @@ def _run_complexipy(paths: list[Path] | None = None) -> dict[str, int]:
     return scores
 
 
-def _lizard_command(executable: str, report: Path, paths: list[Path] | None) -> list[str]:
-    command = [
-        executable,
-        "-l",
-        "c",
-        "-C",
-        str(POLICY["max_c_function_ccn"]),
-        "-L",
-        str(POLICY["max_c_function_nloc"]),
-        "-a",
-        str(POLICY["max_c_function_parameters"]),
-        "-i",
-        "-1",
-        "--csv",
-        "-o",
-        str(report),
-    ]
-    if paths is not None:
-        command += [str(path) for path in paths]
-    else:
-        command += ["packages", "src"]
-    return command
-
-
 def _run_lizard(paths: list[Path] | None = None) -> dict[str, dict[str, int]]:
     executable = shutil.which("lizard")
     if executable is None:
         raise GateError("lizard is not installed; run `uv sync --frozen`")
     with tempfile.TemporaryDirectory(prefix="msl-lizard-") as directory:
         report = Path(directory) / "c-functions.csv"
-        result = subprocess.run(
-            _lizard_command(executable, report, paths),
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        command = [
+            executable,
+            "-l",
+            "c",
+            "-C",
+            str(POLICY["max_c_function_ccn"]),
+            "-L",
+            str(POLICY["max_c_function_nloc"]),
+            "-a",
+            str(POLICY["max_c_function_parameters"]),
+            "-i",
+            "-1",
+            "--csv",
+            "-o",
+            str(report),
+            *([str(path) for path in paths] if paths is not None else ["packages", "src"]),
+        ]
+        result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
         if result.returncode:
             details = (result.stderr or result.stdout).strip()[-1500:]
             raise GateError(f"lizard failed ({result.returncode}): {details}")
@@ -202,12 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="lock in reductions only; never accept new growth or new offenders",
     )
-    parser.add_argument(
-        "--changed",
-        action="store_true",
-        help="only check touched files (LOC/token, complexity, broad exceptions; "
-        "lizard/fastcore parity only when their inputs changed)",
-    )
+    parser.add_argument("--changed", action="store_true", help="only check touched files")
     parser.add_argument("--base", default="HEAD", help="base revision for --changed")
     args = parser.parse_args(argv)
     if args.changed and args.update_baseline:
@@ -251,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"code-health-gate (changed): passed ({len(file_metrics)} touched files; base {args.base})"
         )
-        print(f"skipped: {', '.join(skipped) if skipped else 'nothing'}")
+        print(f"skipped: {', '.join(skipped) or 'nothing'}")
     else:
         print("code-health-gate: passed")
     _print_advisories(advisories)
@@ -289,13 +266,13 @@ def _changed_failures(
         failures.extend(_fastcore_parity_failures())
     else:
         skipped.append("fastcore parity (inputs untouched)")
-    protected = [path for path in py_files if _is_under(path, PROTECTED_EXCEPTION_ROOTS)]
+    protected = [
+        path
+        for path in py_files
+        if any(path == root or root in path.parents for root in PROTECTED_EXCEPTION_ROOTS)
+    ]
     failures.extend(_exception_failures(protected))
     return failures, file_metrics, advisories, skipped
-
-
-def _is_under(path: Path, roots: tuple[Path, ...]) -> bool:
-    return any(path == root or root in path.parents for root in roots)
 
 
 if __name__ == "__main__":

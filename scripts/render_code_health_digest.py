@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Collect and render the weekly Tier 3 code-health, hotspot, coupling, and duplication digest."""
 
-from __future__ import annotations
-
 import argparse
 import csv
 import json

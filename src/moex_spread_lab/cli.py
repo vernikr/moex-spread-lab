@@ -1,7 +1,5 @@
 """Command-line entry point for offline research and installed command providers."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 from importlib.metadata import entry_points

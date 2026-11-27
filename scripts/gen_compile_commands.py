@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Generate git-ignored compile_commands.json for C99 `_fastcore.c` static analysis."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import shutil

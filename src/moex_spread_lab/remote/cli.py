@@ -1,7 +1,5 @@
 """Authenticated workstation bridge client for status and fast-forward sync."""
 
-from __future__ import annotations
-
 import argparse
 import base64
 import json

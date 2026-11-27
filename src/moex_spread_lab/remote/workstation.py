@@ -1,7 +1,5 @@
 """Workstation-side actions transported by the authenticated bridge client."""
 
-from __future__ import annotations
-
 import json
 import os
 import re

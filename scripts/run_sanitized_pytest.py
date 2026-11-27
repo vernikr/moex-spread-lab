@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Run pytest with C99 `_fastcore` compiled and preloaded under AddressSanitizer + UBSan."""
 
-from __future__ import annotations
-
 import os
 import platform
 import shutil

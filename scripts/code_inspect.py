@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Compact source inspection: outline and fast edit checks."""
 
-from __future__ import annotations
-
 import argparse
 import ast
 import shutil

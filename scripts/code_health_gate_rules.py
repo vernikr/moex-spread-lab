@@ -1,7 +1,5 @@
 """Pure ratchet and policy checks used by the code-health gate."""
 
-from __future__ import annotations
-
 import ast
 import re
 from pathlib import Path, PurePosixPath
@@ -39,7 +37,8 @@ def _fastcore_exports(c_source: str) -> tuple[list[str], str | None]:
 def _parity_inventory(
     test_tree: ast.Module, test_path: Path
 ) -> tuple[dict[str, str] | None, str | None]:
-    inventory_node = next(
+    rel = test_path.relative_to(ROOT)
+    node = next(
         (
             node
             for node in test_tree.body
@@ -51,22 +50,16 @@ def _parity_inventory(
         ),
         None,
     )
-    if inventory_node is None:
-        return (
-            None,
-            f"{test_path.relative_to(ROOT)}: FASTCORE_EXPORT_PARITY_TESTS inventory is missing",
-        )
+    if node is None:
+        return None, f"{rel}: FASTCORE_EXPORT_PARITY_TESTS inventory is missing"
     try:
-        inventory = ast.literal_eval(inventory_node.value)
+        inventory = ast.literal_eval(node.value)
     except (ValueError, TypeError):
-        return None, f"{test_path.relative_to(ROOT)}: parity inventory must be a literal mapping"
+        return None, f"{rel}: parity inventory must be a literal mapping"
     if not isinstance(inventory, dict) or not all(
         isinstance(name, str) and isinstance(target, str) for name, target in inventory.items()
     ):
-        return (
-            None,
-            f"{test_path.relative_to(ROOT)}: parity inventory must map export names to test targets",
-        )
+        return None, f"{rel}: parity inventory must map export names to test targets"
     return inventory, None
 
 
@@ -83,14 +76,13 @@ def _parity_target_exists(relative: str, selector: str) -> bool:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == selector
             for node in tree.body
         )
-    class_name, function_name = selector.rsplit(".", 1)
+    cls, fn = selector.rsplit(".", 1)
     return any(
         isinstance(node, ast.ClassDef)
-        and node.name == class_name
+        and node.name == cls
         and any(
-            isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and member.name == function_name
-            for member in node.body
+            isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name == fn
+            for m in node.body
         )
         for node in tree.body
     )
@@ -108,26 +100,20 @@ def _fastcore_parity_failures() -> list[str]:
     if error:
         return [error]
     inventory, error = _parity_inventory(test_tree, test_path)
-    if error or inventory is None:
+    if inventory is None:
         return [error or "fastcore parity inventory is malformed"]
-
+    rel = test_path.relative_to(ROOT)
     failures = []
-    missing = sorted(set(exports) - inventory.keys())
-    extra = sorted(inventory.keys() - set(exports))
+    missing = sorted(set(exports) - set(inventory))
+    extra = sorted(set(inventory) - set(exports))
     if missing:
-        failures.append(
-            f"{test_path.relative_to(ROOT)}: add parity tests for C exports {', '.join(missing)}"
-        )
+        failures.append(f"{rel}: add parity tests for C exports {', '.join(missing)}")
     if extra:
-        failures.append(
-            f"{test_path.relative_to(ROOT)}: remove stale C exports {', '.join(extra)} from parity inventory"
-        )
-    for export in sorted(set(exports) & inventory.keys()):
+        failures.append(f"{rel}: remove stale C exports {', '.join(extra)} from parity inventory")
+    for export in sorted(set(exports) & set(inventory)):
         target = inventory[export]
         if "::" not in target:
-            failures.append(
-                f"{test_path.relative_to(ROOT)}: invalid parity test target for {export}: {target}"
-            )
+            failures.append(f"{rel}: invalid parity test target for {export}: {target}")
             continue
         relative, selector = target.split("::", 1)
         if not _parity_target_exists(relative, selector):
@@ -158,9 +144,8 @@ def _source_exception_failures(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.ExceptHandler) or not _broad_exception(node.type):
             continue
-        line = lines[node.lineno - 1]
-        previous = lines[node.lineno - 2] if node.lineno > 1 else ""
-        if ALLOW_MARKER not in line and ALLOW_MARKER not in previous:
+        nearby = "\n".join(lines[max(0, node.lineno - 2) : node.lineno])
+        if ALLOW_MARKER not in nearby:
             failures.append(
                 f"{_relative(path)}:{node.lineno}: broad exception needs an inline "
                 f"justification containing {ALLOW_MARKER!r}"
@@ -259,11 +244,13 @@ def _shallow_shard_paths(files: list[Path], file_metrics: dict[str, dict[str, in
     flagged = []
     for path in sorted(files):
         relative = _relative(path)
-        if file_metrics[relative]["loc"] >= max_loc:
-            continue
-        if path.suffix.lower() != ".py" or path.name == "__init__.py":
-            continue
-        if "tests" in PurePosixPath(relative).parts or _is_compatibility_shim(relative):
+        if (
+            file_metrics[relative]["loc"] >= max_loc
+            or path.suffix.lower() != ".py"
+            or path.name == "__init__.py"
+            or "tests" in PurePosixPath(relative).parts
+            or _is_compatibility_shim(relative)
+        ):
             continue
         if _intra_package_callers(path, relative) <= max_callers:
             flagged.append(relative)
@@ -286,8 +273,7 @@ def _shallow_shard_advisories(
 def _package_totals(file_metrics: dict[str, dict[str, int]]) -> dict[str, int]:
     totals: dict[str, int] = {}
     for relative, metrics in file_metrics.items():
-        group = _package_group(relative)
-        if group is not None:
+        if (group := _package_group(relative)) is not None:
             totals[group] = totals.get(group, 0) + metrics["tokens"]
     return totals
 

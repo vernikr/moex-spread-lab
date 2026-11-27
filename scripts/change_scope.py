@@ -12,8 +12,6 @@ files); with ``--event`` it routes ``git diff base..head``, and any error,
 ``schedule``/``workflow_dispatch`` or a missing base resolves to full (CI contract).
 """
 
-from __future__ import annotations
-
 import argparse
 import fnmatch
 import json

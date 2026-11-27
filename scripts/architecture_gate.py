@@ -10,8 +10,6 @@ drift from ``pyproject.toml`` or the Stage-5 required keys fails loudly before
 any heavy import is needed.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

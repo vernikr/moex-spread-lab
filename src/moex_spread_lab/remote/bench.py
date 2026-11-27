@@ -1,13 +1,9 @@
 """Offline benchmark helpers for a workstation and disposable candidate worktree.
 
-Candidate data is provisioned privately by default (APFS copy-on-write clone on
-macOS, a byte copy elsewhere), so candidate code cannot mutate the live data
-through the benchmark root. A read-only-by-convention symlink farm exists as an
-explicit opt-in (``MOEX_BENCH_DATA=symlink``). The candidate is trusted code, not
-a security sandbox; the trust boundary is documented in ``remote.candidate_data``.
+Data is provisioned privately by default (copy-on-write clone on macOS, byte copy
+elsewhere); ``MOEX_BENCH_DATA=symlink`` opts into a read-only symlink farm. The
+candidate is trusted code, not a security sandbox — see ``remote.candidate_data``.
 """
-
-from __future__ import annotations
 
 import fcntl
 import hashlib
@@ -23,7 +19,7 @@ import urllib.request
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from .candidate_data import provision_data
 from .candidate_data import relocate_copied_seal as _relocate_copied_seal
@@ -40,17 +36,16 @@ from .workstation import patch_paths as _patch_paths
 def normalize_provenance(full: Any, root: Path | None) -> Any:
     if root is None or not isinstance(full, dict):
         return full
-    mapping = cast(dict[str, Any], full)
-    raw: Any = mapping.get("provenance")
+    raw = full.get("provenance")
     if not isinstance(raw, dict):
-        return mapping
-    provenance = dict(cast(dict[str, Any], raw))
+        return full
+    provenance = dict(raw)
     for key, entry in provenance.items():
         if key.endswith("_path") and isinstance(entry, str) and Path(entry).is_absolute():
             # External paths stay unchanged, and cannot compare equal accidentally.
             with suppress(ValueError):
                 provenance[key] = "$ROOT/" + str(Path(entry).resolve().relative_to(root.resolve()))
-    return {**mapping, "provenance": provenance}
+    return {**full, "provenance": provenance}
 
 
 def _post(port: int, payload: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -75,17 +70,15 @@ def _compact(value: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     digest = hashlib.sha256(
         json.dumps(full, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
-    mapping = cast(dict[str, Any], full) if isinstance(full, dict) else {}
-    summary: Any = mapping.get("summary", {})
+    mapping = full if isinstance(full, dict) else {}
+    summary = mapping.get("summary", {})
     result = {"sha256": digest}
     if isinstance(full, dict):
         for key in ("run_id", "rank_score", "seed_used", "trial_count"):
             if key in full:
                 result[key] = full[key]
     if isinstance(summary, dict) and "ledger_reconciliation_rub" in summary:
-        result["ledger_reconciliation_rub"] = cast(dict[str, Any], summary)[
-            "ledger_reconciliation_rub"
-        ]
+        result["ledger_reconciliation_rub"] = summary["ledger_reconciliation_rub"]
     return {"action": value["action"], "result": result, "telemetry": value["telemetry"]}
 
 
@@ -269,14 +262,14 @@ def _benchmark_fastcore(
     setup_start = time.perf_counter()
     with candidate_worktree(root, revision, patch) as candidate:
         setup_ms = round((time.perf_counter() - setup_start) * 1000, 1)
-        with candidate_server(
-            candidate, {"MOEX_PROOF_DISABLE_C": "0", "MOEX_PROOF_WORKERS": "6"}
-        ) as port:
-            baseline = [_post(port, job, candidate.path) for job in jobs]
-        with candidate_server(
-            candidate, {"MOEX_PROOF_DISABLE_C": "1", "MOEX_PROOF_WORKERS": "1"}
-        ) as port:
-            comparison = [_post(port, job, candidate.path) for job in jobs]
+        runs = []
+        for env in (
+            {"MOEX_PROOF_DISABLE_C": "0", "MOEX_PROOF_WORKERS": "6"},
+            {"MOEX_PROOF_DISABLE_C": "1", "MOEX_PROOF_WORKERS": "1"},
+        ):
+            with candidate_server(candidate, env) as port:
+                runs.append([_post(port, job, candidate.path) for job in jobs])
+        baseline, comparison = runs
     exact = [a["result"] for a in baseline] == [b["result"] for b in comparison]
     if not exact:
         raise RuntimeError("fastcore A/B benchmark results differ")

@@ -8,8 +8,6 @@ trusted code, not a security sandbox: ``data/analytics`` and the H1 seal files
 are always private copies, and ``research-settings.json`` is never shared.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import shutil

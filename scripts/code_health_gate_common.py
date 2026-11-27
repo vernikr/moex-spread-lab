@@ -1,7 +1,5 @@
 """Shared policy, repository paths, and validated file operations for the code-health gate."""
 
-from __future__ import annotations
-
 import json
 import re
 from pathlib import Path, PurePosixPath

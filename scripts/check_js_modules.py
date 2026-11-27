@@ -6,8 +6,6 @@ It checks references to sibling top-level declarations and ignores properties an
 object keys. Node is optional; without it syntax checking is skipped explicitly.
 """
 
-from __future__ import annotations
-
 import re
 import shutil
 import subprocess

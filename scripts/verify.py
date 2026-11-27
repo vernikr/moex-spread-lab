@@ -13,13 +13,9 @@ and raw output never enters a record. pytest workers default to the usable CPU b
 ``MSL_VERIFY_WORKERS`` overrides.
 """
 
-from __future__ import annotations
-
 import argparse
-import hashlib
 import json
 import os
-import platform
 import re
 import subprocess
 import sys
@@ -61,15 +57,6 @@ _REDACTIONS = (
         r"\1<redacted>",
     ),
 )
-STEP_TASK_CLASS = {
-    "docs-scan": "docs-check",
-    "health-changed": "changed-gate",
-    "health-full": "full-gate",
-    "architecture": "architecture-gate",
-    "always-run": "always-run-suite",
-    "pytest-affected": "affected-suite",
-    "suite-full": "full-suite",
-}
 
 
 def cpu_budget() -> int:
@@ -119,20 +106,6 @@ def _git(*args: str) -> str:
         return ""
 
 
-def _fingerprint(head: str) -> str:
-    digest = hashlib.sha256(head.encode())
-    digest.update(_git("diff", "--binary", "HEAD").encode(errors="surrogateescape"))
-    for rel in sorted(
-        filter(None, _git("ls-files", "--others", "--exclude-standard", "-z").split("\0"))
-    ):
-        digest.update(rel.encode())
-        try:
-            digest.update((ROOT / rel).read_bytes())
-        except OSError:
-            digest.update(b"<unreadable>")
-    return "sha256:" + digest.hexdigest()
-
-
 def _status_of(returncode: int, detail: dict[str, str] | None = None) -> str:
     statuses = list((detail or {}).values())
     for wanted in ("failed", "timeout", "unavailable"):
@@ -144,29 +117,16 @@ def _status_of(returncode: int, detail: dict[str, str] | None = None) -> str:
 
 
 def _record(step: Step, started: datetime, wall: float, rc: int, detail: dict | None) -> dict:
-    head = _git("rev-parse", "HEAD").strip() or "unknown"
-    workers = worker_count() if "pytest" in step.command else os.cpu_count() or 1
     return {
         "schema": "msl.verification-record/1",
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "task_class": STEP_TASK_CLASS[step.key],
-        "phase": "S2",
         "base_sha": _git("merge-base", "HEAD", "origin/main").strip() or None,
-        "head_sha": head,
-        "candidate_fingerprint": _fingerprint(head),
+        "head_sha": _git("rev-parse", "HEAD").strip() or "unknown",
         "selected_checks": [{"name": step.key, "reason": sanitize(step.reason)}],
-        "runner": {
-            "platform": sys.platform,
-            "machine": platform.machine(),
-            "cpu_count": os.cpu_count() or 1,
-            "python": platform.python_version(),
-        },
-        "workers": workers,
-        "offline_only": True,
+        "workers": worker_count() if "pytest" in step.command else os.cpu_count() or 1,
         "durations": {"call_s": round(wall, 3)},
         "outcome": _status_of(rc, detail),
-        "phase_started": started.isoformat(timespec="seconds"),
-        "phase_finished": datetime.now(UTC).isoformat(timespec="seconds"),
+        "started": started.isoformat(timespec="seconds"),
         "command": [sanitize(item) for item in step.command],
         "checks_detail": detail,
     }

@@ -1,7 +1,7 @@
 """Run the repository-wide, dependency-light architecture gate.
 
 This script intentionally reuses the checked-in DAG/conformance tests and invokes
-both governance CLI commands in-process. It is designed for the fast CI gate;
+the governance CLI check in-process. It is designed for the fast CI gate;
 full behavioral and numerical suites run in the package test matrix.
 
 Package-manifest conformance (Issue #140) is validated in-process with the
@@ -252,8 +252,8 @@ def main() -> int:
         "--fast",
         action="store_true",
         help="import-graph tests only; skip plugin-conformance discovery, the "
-        "package-manifest conformance check and the validate-manifest/secret-scan "
-        "CLI checks (for `check_health.sh --changed`)",
+        "package-manifest conformance check and the secret-scan CLI check "
+        "(for `check_health.sh --changed`)",
     )
     args = parser.parse_args()
     started = time.perf_counter()
@@ -282,10 +282,7 @@ def main() -> int:
     if not args.fast:
         from moex_spread_lab import cli
 
-        commands = (
-            ["validate-manifest", "--manifest", "config/run-manifest.json"],
-            ["secret-scan", "--tracked-only"],
-        )
+        commands = (["secret-scan", "--tracked-only"],)
         original_argv = sys.argv
         try:
             for command_args in commands:

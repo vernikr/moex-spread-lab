@@ -1,29 +1,21 @@
 """Positive and negative tests for the repository-wide architecture gate: package-manifest
-conformance, the tracked-file secret scan and the run-manifest contract (hash pins, path
-escape, offline invariants). Negative cases use synthetic trees under ``tmp_path``."""
+conformance and the tracked-file secret scan. Negative cases use synthetic trees under
+``tmp_path``."""
 
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 from scripts import architecture_gate
 
-from moex_spread_lab.core.w0 import (
-    W0Error,
-    manifest_config_hash,
-    scan_secrets,
-    sha256_file,
-    validate_manifest,
-)
+from moex_spread_lab.core.w0 import scan_secrets
 
 ROOT = Path(__file__).resolve().parents[3]
-Mutator = Callable[[dict[str, Any]], None]
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -155,73 +147,6 @@ def test_secret_scan_skips_clean_large_and_untracked_files(tmp_path: Path) -> No
     assert scan_secrets(tmp_path, tracked_only=True) == []  # untracked files are ignored
     subprocess.run(["git", "add", "sample.txt"], cwd=tmp_path, check=True)
     assert scan_secrets(tmp_path, tracked_only=True)
-
-
-def _run_tree(root: Path, mutate: Mutator | None = None) -> Path:
-    module_path = root / "config/modules/w0.json"
-    _write_json(module_path, {"module_id": "moex-spread-lab.w0", "release": "0.1.0"})
-    artifact_path = root / "fixtures/replay.json"
-    _write_json(artifact_path, {"schema_version": "w0.fixture.v1", "records": []})
-    manifest: dict[str, Any] = {
-        "schema_version": "run-manifest.v1",
-        "run_id": "contract-test",
-        "configuration": {"mode": "offline", "network_access": False},
-        "trial_counter": 0,
-        "modules": [
-            {"manifest_path": "config/modules/w0.json", "manifest_sha256": sha256_file(module_path)}
-        ],
-        "artifacts": [
-            {
-                "path": "fixtures/replay.json",
-                "rights_status": "synthetic_test_data",
-                "sha256": sha256_file(artifact_path),
-            }
-        ],
-        "source_requests": [{"network_required": False, "rights_status": "synthetic_test_data"}],
-        "config_hash": "",
-    }
-    if mutate is not None:
-        mutate(manifest)
-    manifest["config_hash"] = manifest_config_hash(manifest)
-    manifest_path = root / "config/run-manifest.json"
-    _write_json(manifest_path, manifest)
-    return manifest_path
-
-
-def _set(path: tuple[Any, ...], value: Any) -> Mutator:
-    def mutate(manifest: dict[str, Any]) -> None:
-        target: Any = manifest
-        for key in path[:-1]:
-            target = target[key]
-        target[path[-1]] = value
-
-    return mutate
-
-
-RUN_MANIFEST_FAILURES = [
-    (_set(("schema_version",), "run-manifest.v9"), "unsupported run manifest schema"),
-    (_set(("configuration", "network_access"), True), "network_access=false"),
-    (_set(("source_requests", 0, "network_required"), True), "network_required=false"),
-    (_set(("artifacts", 0, "rights_status"), ""), "rights_status is empty"),
-    (_set(("artifacts", 0, "path"), "../outside.json"), "path escapes repository root"),
-    (_set(("modules", 0, "manifest_sha256"), "0" * 64), "module manifest hash mismatch"),
-    (_set(("artifacts", 0, "sha256"), "0" * 64), "artifact hash mismatch"),
-]
-
-
-def test_run_manifest_accepts_a_consistent_tree_and_rejects_config_hash_drift(tmp_path: Path):
-    manifest_path = _run_tree(tmp_path)
-    assert validate_manifest(manifest_path)["run_id"] == "contract-test"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) | {"config_hash": "0" * 64}
-    _write_json(manifest_path, manifest)
-    with pytest.raises(W0Error, match="config_hash does not match"):
-        validate_manifest(manifest_path)
-
-
-@pytest.mark.parametrize(("mutate", "match"), RUN_MANIFEST_FAILURES)
-def test_run_manifest_fails_closed(tmp_path: Path, mutate: Mutator, match: str) -> None:
-    with pytest.raises(W0Error, match=match):
-        validate_manifest(_run_tree(tmp_path, mutate))
 
 
 def test_gate_main_reports_manifest_failures_and_fast_mode_skips_cli_checks(

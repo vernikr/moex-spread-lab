@@ -30,13 +30,15 @@ def test_discovered_plugin_is_helpable_and_dispatches_with_arguments(capsys):
         parser.add_argument("--value", required=True)
         parser.set_defaults(_msl_cli_handler=lambda args: print(args.value) or 7)
 
-    with _plugins(register) as discover:
-        with pytest.raises(SystemExit) as exit_info:
-            cli.build_parser().parse_args(["sample-plugin", "--help"])
-        assert exit_info.value.code == 0 and "--value" in capsys.readouterr().out
-        discover.assert_called_once_with(group="moex_spread_lab.cli")
-        with patch("sys.argv", ["moex-spread-lab", "sample-plugin", "--value", "hello"]):
-            assert cli.main() == 7
+    with _plugins(register) as discover, pytest.raises(SystemExit) as exit_info:
+        cli.build_parser().parse_args(["sample-plugin", "--help"])
+    assert exit_info.value.code == 0 and "--value" in capsys.readouterr().out
+    discover.assert_called_once_with(group="moex_spread_lab.cli")
+    with (
+        _plugins(register),
+        patch("sys.argv", ["moex-spread-lab", "sample-plugin", "--value", "hello"]),
+    ):
+        assert cli.main() == 7
     assert capsys.readouterr().out == "hello\n"
 
 
@@ -63,8 +65,8 @@ def test_duplicate_plugin_command_is_rejected():
         cli.build_parser()
 
 
-def test_core_validate_manifest_help_keeps_supported_arguments(capsys):
+def test_retired_validate_manifest_command_is_rejected(capsys):
     with _plugins(register_core_cli), pytest.raises(SystemExit) as exit_info:
-        cli.build_parser().parse_args(["validate-manifest", "--help"])
-    assert exit_info.value.code == 0
-    assert "--manifest" in capsys.readouterr().out
+        cli.build_parser().parse_args(["validate-manifest"])
+    assert exit_info.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err

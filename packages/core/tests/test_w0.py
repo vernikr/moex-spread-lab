@@ -7,7 +7,6 @@ from moex_spread_lab.core.w0 import (
     W0Error,
     canonical_bytes,
     load_contracts,
-    manifest_config_hash,
     run_id,
     scan_secrets,
 )
@@ -38,10 +37,6 @@ def _write_intake(directory: str, *, lot_size: object = 1, tick_size: object = 0
 class W0Tests(unittest.TestCase):
     def test_canonical_hash_is_independent_of_object_order(self):
         self.assertEqual(canonical_bytes({"b": 2, "a": 1}), canonical_bytes({"a": 1, "b": 2}))
-
-    def test_manifest_hash_matches_pinned_manifest(self):
-        manifest = json.loads((ROOT / "config/run-manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["config_hash"], manifest_config_hash(manifest))
 
     def test_run_id_is_stable_and_order_independent(self):
         identity = {"b": 2, "a": 1}
@@ -82,8 +77,8 @@ class W0Tests(unittest.TestCase):
             (root / "sample.txt").write_text(marker, encoding="utf-8")
             self.assertTrue(scan_secrets(root))
 
-    def test_secret_scan_ignores_clean_fixture(self):
-        self.assertEqual(scan_secrets(ROOT / "fixtures"), [])
+    def test_secret_scan_ignores_clean_config(self):
+        self.assertEqual(scan_secrets(ROOT / "config"), [])
 
     def test_tracked_secret_scan_uses_git_index(self):
         self.assertEqual(scan_secrets(ROOT, tracked_only=True), [])

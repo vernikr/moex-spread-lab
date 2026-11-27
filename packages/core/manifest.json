@@ -5,7 +5,6 @@
   "kind": "core",
   "capabilities": [
     "canonical_hash",
-    "manifest_validation",
     "secret_scan",
     "contract_intake",
     "hashed_json_cache",
@@ -17,7 +16,6 @@
     "c99_fastcore_accelerator"
   ],
   "inputs": [
-    "run-manifest.v1",
     "iss-intake.v1"
   ],
   "outputs": [

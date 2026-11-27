@@ -1,4 +1,4 @@
-"""Stage-9 W0: offline run manifests and secret scanning."""
+"""Stage-9 W0: canonical hashing, contract intake, JSON boundaries and secret scanning."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from .derived_cache import (
 from .derived_cache import (
     canonical_bytes,
     sha256_bytes,
-    sha256_file,
+)
+from .derived_cache import (
+    # Redundant alias keeps the historical w0 export for data/retention callers.
+    sha256_file as sha256_file,
 )
 
 type JsonScalar = bool | int | float | str | None
@@ -67,8 +70,6 @@ def load_object(
     return as_str_dict(decoded, label=context, error=error)
 
 
-MANIFEST_SCHEMA = "run-manifest.v1"
-
 SECRET_PATTERNS = (
     re.compile(rb"gh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(rb"github_pat_[A-Za-z0-9_]{20,}"),
@@ -80,14 +81,7 @@ SECRET_PATTERNS = (
 
 
 class W0Error(ValueError):
-    """Raised when a W0 manifest is invalid."""
-
-
-def load_json(path: Path) -> dict[str, Any]:
-    try:
-        return cast(dict[str, Any], load_object(path, label=f"JSON: {path}", error=W0Error))
-    except FileNotFoundError as exc:
-        raise W0Error(f"cannot read JSON: {path}: {exc}") from exc
+    """Raised when W0 input validation fails."""
 
 
 # Thread-safe (resolved_path, st_mtime_ns, st_size) LRU cache for hashed JSON reads.
@@ -228,107 +222,6 @@ def load_contracts(
             "historical_specification_basis": instrument.get("historical_specification_basis"),
         }
     return selected, digest
-
-
-def manifest_config_hash(manifest: dict[str, Any]) -> str:
-    payload = dict(manifest)
-    payload["config_hash"] = None
-    return sha256_bytes(canonical_bytes(payload))
-
-
-def _require(mapping: dict[str, Any], key: str, context: str) -> Any:
-    if key not in mapping:
-        raise W0Error(f"missing {key!r} in {context}")
-    return mapping[key]
-
-
-def _resolve(root: Path, relative: str) -> Path:
-    path = (root / relative).resolve()
-    try:
-        path.relative_to(root.resolve())
-    except ValueError as exc:
-        raise W0Error(f"path escapes repository root: {relative}") from exc
-    return path
-
-
-def _validate_manifest_header(manifest: dict[str, Any]) -> None:
-    if _require(manifest, "schema_version", "run manifest") != MANIFEST_SCHEMA:
-        raise W0Error("unsupported run manifest schema")
-    run_id_value = _require(manifest, "run_id", "run manifest")
-    if not isinstance(run_id_value, str) or not run_id_value:
-        raise W0Error("run_id must be a non-empty string")
-    if _require(manifest, "configuration", "run manifest").get("network_access") is not False:
-        raise W0Error("W0 requires configuration.network_access=false")
-    trial_counter = _require(manifest, "trial_counter", "run manifest")
-    if type(trial_counter) is not int or trial_counter < 0:
-        raise W0Error("trial_counter must be a non-negative integer")
-    if manifest.get("config_hash") != manifest_config_hash(manifest):
-        raise W0Error("config_hash does not match the canonical run manifest")
-
-
-def _check_manifest_pins(
-    root: Path,
-    pins: list[object],
-    *,
-    path_key: str,
-    hash_key: str,
-    kind: str,
-    hash_label: str,
-    check_rights: bool = False,
-) -> None:
-    for pin_value in pins:
-        if not isinstance(pin_value, dict):
-            raise W0Error(f"{kind} pin must be an object")
-        pin = cast(dict[str, Any], pin_value)
-        pin_path = _resolve(root, cast(str, _require(pin, path_key, f"{kind} pin")))
-        if sha256_file(pin_path) != _require(pin, hash_key, f"{kind} pin"):
-            raise W0Error(f"{hash_label} hash mismatch: {pin_path}")
-        if check_rights and not _require(pin, "rights_status", f"{kind} pin"):
-            raise W0Error(f"{kind} rights_status is empty: {pin_path}")
-
-
-def _validate_source_requests(manifest: dict[str, Any]) -> None:
-    requests = _require(manifest, "source_requests", "run manifest")
-    if not isinstance(requests, list):
-        raise W0Error("source_requests must be a list")
-    for request_value in cast(list[object], requests):
-        if not isinstance(request_value, dict):
-            raise W0Error("source request must be an object")
-        request = cast(dict[str, Any], request_value)
-        _require(request, "rights_status", "source request")
-        if request.get("network_required") is not False:
-            raise W0Error("W0 source requests must declare network_required=false")
-
-
-def validate_manifest(manifest_path: Path) -> dict[str, Any]:
-    root = manifest_path.resolve().parents[1]
-    manifest = load_json(manifest_path)
-    _validate_manifest_header(manifest)
-    modules = _require(manifest, "modules", "run manifest")
-    if not isinstance(modules, list) or not modules:
-        raise W0Error("run manifest must pin at least one module")
-    _check_manifest_pins(
-        root,
-        cast(list[object], modules),
-        path_key="manifest_path",
-        hash_key="manifest_sha256",
-        kind="module",
-        hash_label="module manifest",
-    )
-    artifacts = _require(manifest, "artifacts", "run manifest")
-    if not isinstance(artifacts, list):
-        raise W0Error("artifacts must be a list")
-    _check_manifest_pins(
-        root,
-        cast(list[object], artifacts),
-        path_key="path",
-        hash_key="sha256",
-        kind="artifact",
-        hash_label="artifact",
-        check_rights=True,
-    )
-    _validate_source_requests(manifest)
-    return manifest
 
 
 def iter_scan_files(root: Path) -> Iterable[Path]:

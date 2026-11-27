@@ -6,8 +6,7 @@ constructs no proof service and holds no numeric expectation.
 
 The helper names (``_write_h1_candles``, ``_build_h1_workspace``, ``_canon``,
 ``_canon_sha``) are re-exported by the canary ``test_perf_equivalence``, because the
-drop-in plugin integration test imports them from there. The class lifecycle and
-the reference-vs-fast comparison live in ``perf_equivalence_case``.
+drop-in plugin integration test imports them from there. Workspace construction, lifecycle and mode comparison share this module.
 """
 
 from __future__ import annotations
@@ -15,9 +14,22 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import sys
+import tempfile
+import unittest
+from contextlib import ExitStack, contextmanager
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
+from moex_spread_lab.core.settings import ResearchSettings, save_settings
+from moex_spread_lab.proof.proof_search import research_run
+from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.strategy_catalog import (
+    clear_strategy_registry_cache,
+    get_strategy_registry,
+)
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from proof_fixtures import fixture
@@ -301,3 +313,125 @@ def _build_calendar_h1(root: Path, srh3_days: list[str], overlap_m3_u3: list[str
     _write_h1_candles(root, "candles", "SRM3", srm3_h1)
     _write_h1_candles(root, "candles", "SRU3", sru3_h1)
     _write_h1_candles(root, "candles", "SRM3SRU3", native_m3u3_h1)
+
+
+class H1WorkspaceCase(unittest.TestCase):
+    """One synthetic 1h workspace per class plus reference-vs-fast comparison."""
+
+    root: Path
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name)
+        _build_h1_workspace(cls.root)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _compare_modes(self, settings: ResearchSettings, fn):
+        with patch.object(ResearchSettings, "load", return_value=settings):
+            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "1"}):
+                expected = fn(ProofService(self.root))
+            with patch.dict(os.environ, {"MOEX_PROOF_REFERENCE_EVAL": "0"}):
+                actual = fn(ProofService(self.root))
+        self.assertEqual(_canon_sha(actual), _canon_sha(expected))
+        self.assertEqual(actual, expected)
+        return actual
+
+
+def _build_pool_test_workspace(root: Path) -> None:
+    _build_h1_workspace(root)
+    intake_path = root / "data/w1/current-intake.json"
+    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    crz6 = next(item for item in intake["instruments"] if item.get("secid") == "CRZ6")
+    intake["instruments"] = [item for item in intake["instruments"] if item.get("secid") != "CRM6"]
+    intake["instruments"].append(
+        {
+            **crz6,
+            "secid": "CRM6",
+            "expiry": "2026-06-18",
+            "settlement": 13.45,
+            "tariff_group": "currency",
+        }
+    )
+    intake["instruments"].append(
+        {
+            **crz6,
+            "secid": "CRU6",
+            "expiry": "2026-09-17",
+            "settlement": 13.55,
+            "tariff_group": "currency",
+        }
+    )
+    intake_path.write_text(json.dumps(intake), encoding="utf-8")
+    crz6_candles = root / "data/w1/candles-screen/CRZ6_1h.json"
+    (root / "data/w1/candles-screen/CRU6_1h.json").write_text(
+        crz6_candles.read_text(encoding="utf-8").replace("CRZ6", "CRU6"),
+        encoding="utf-8",
+    )
+    save_settings(
+        root,
+        {
+            "timeframe": "1h",
+            "validation_percent": 20,
+            "allow_failed_volume": True,
+            "allow_failed_capital": True,
+            "initial_capital_rub": 100000.0,
+            # A fixed seed keeps two runs comparable; seed 0 would draw a new one.
+            "random_seed": 41,
+        },
+    )
+
+
+@contextmanager
+def installed_plugin(tmp_path, monkeypatch, module, source, entries):
+    """Real entry-point discovery, including spawned workers, without process leakage."""
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / f"{module}.py").write_text(source)
+    dist = plugin_dir / f"{module}-1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {module}\nVersion: 1.0\n")
+    (dist / "entry_points.txt").write_text(
+        "[moex_spread_lab.strategies]\n"
+        + "".join(f"{sid} = {module}:{attr}\n" for sid, attr in entries.items())
+    )
+    with monkeypatch.context() as isolated, ExitStack() as services:
+        isolated.syspath_prepend(str(plugin_dir))
+        isolated.setenv("MOEX_OFFLINE_ONLY", "1")
+        isolated.setenv("MOEX_PROOF_WORKERS", "1")
+        isolated.delenv("MOEX_PROOF_FORCE_POOL", raising=False)
+        clear_strategy_registry_cache()
+
+        def service(root):
+            instance = ProofService(root)
+            services.callback(instance.close)
+            return instance
+
+        try:
+            assert set(entries) <= set(get_strategy_registry().ids())
+            yield service
+        finally:
+            # Close pools before removing entry points from the parent and workers.
+            services.close()
+            sys.modules.pop(module, None)
+            clear_strategy_registry_cache()
+    assert not set(entries) & set(get_strategy_registry().ids())
+
+
+def assert_pool_parity(root, request, pairs, service_factory, monkeypatch):
+    cohort = {**request, "targets": [{"universe": "pair_screen", "pair": pair} for pair in pairs]}
+    with monkeypatch.context() as workers:
+        workers.setenv("MOEX_PROOF_WORKERS", "1")
+        serial = research_run(service_factory(root), cohort, optimize=True)
+        workers.setenv("MOEX_PROOF_WORKERS", "2")
+        workers.setenv("MOEX_PROOF_FORCE_POOL", "1")
+        parallel_service = service_factory(root)
+        parallel = research_run(parallel_service, cohort, optimize=True)
+        assert len(parallel_service._pool._worker_slots) == 2
+        assert serial["selected_parameters"] is not None
+        assert serial["selected_parameters"] == parallel["selected_parameters"]
+        assert serial["run_id"] == parallel["run_id"]
+        parallel_service.close()

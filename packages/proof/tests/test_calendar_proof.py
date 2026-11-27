@@ -29,7 +29,6 @@ from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from synthetic_history import iso_weekdays_until as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
 
-# ---- folded from the retired P7.2 shard calendar_proof_fixtures_p72_packages_proof_tests_test_calendar_proof ----
 TILL = "2023-06-15"
 
 
@@ -179,7 +178,6 @@ def _write_h1_http_prereqs(root: Path) -> None:
     )
 
 
-# ---- folded from the retired P7.2 shard calendar_proof_expectations_p72_packages_proof_tests_test_calendar_proof ----
 def assert_spread_relative_to_far_price(testcase: unittest.TestCase, proof: dict[str, Any]) -> None:
     for row in proof["series"]:
         testcase.assertAlmostEqual(row["spread_rel"], row["spread"] / row["far"] * 100, delta=1e-4)

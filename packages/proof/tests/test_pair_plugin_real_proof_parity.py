@@ -15,7 +15,6 @@ from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanRevers
 from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
 
 
-# ---- folded from the retired P7.2 shard pair_plugin_real_proof_parity_assertions_p72_packages_proof_tests_test_pair_plugin_real_proof_parity ----
 def assert_loaded_pair_plugin_matches_native_accounting(actual, expected):
     """Keep the parity contract explicit while the test remains a thin scenario runner."""
     assert actual["trades"]

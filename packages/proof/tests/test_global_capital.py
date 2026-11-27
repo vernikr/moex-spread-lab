@@ -19,7 +19,6 @@ from proof_fixtures import CAL, FLAT, PAIR, two_calendar_windows
 from test_position_sizing import unit_proof
 
 
-# ---- folded from the retired P7.2 shard global_capital_replay_p72_packages_proof_tests_test_global_capital ----
 def published_marks(root, ledger):
     """LQDT closes for exactly the dates the proof ledger reports."""
     source = json.loads((root / LINEAGE_PATH).read_text())

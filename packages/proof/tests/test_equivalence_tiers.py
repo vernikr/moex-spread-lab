@@ -24,7 +24,6 @@ STREAM = PROOF_TESTS / "test_perf_equivalence_stream.py"
 FULL = PROOF_TESTS / "test_perf_equivalence_full.py"
 SLOW_TIERS = (PAIR, POOL, STREAM, FULL)
 FIXTURES = PROOF_TESTS / "perf_equivalence_fixtures.py"
-POOL_FIXTURES = PROOF_TESTS / "perf_equivalence_pool_fixtures.py"
 SCRIPTS = PROOF_TESTS.parents[2] / "scripts"
 
 # Every equivalence case that existed before the split, in its new home. Adding a
@@ -145,7 +144,10 @@ def test_worker_count_is_cgroup_aware_and_overridable(monkeypatch) -> None:
 def test_shared_builders_live_outside_the_test_modules() -> None:
     """Every tier must clone identical bytes; the builders are not duplicated."""
     assert "def _build_h1_workspace(" in FIXTURES.read_text(encoding="utf-8")
-    assert "def _build_pool_test_workspace(" in POOL_FIXTURES.read_text(encoding="utf-8")
+    assert "def _build_pool_test_workspace(" in FIXTURES.read_text(encoding="utf-8")
+    assert "class H1WorkspaceCase(" in FIXTURES.read_text(encoding="utf-8")
+    for retired in ("perf_equivalence_case.py", "perf_equivalence_pool_fixtures.py"):
+        assert not (PROOF_TESTS / retired).exists()
     for tier in (CANARY, PAIR, POOL, STREAM, FULL):
         source = tier.read_text(encoding="utf-8")
         assert "def _build_h1_workspace(" not in source, tier.name

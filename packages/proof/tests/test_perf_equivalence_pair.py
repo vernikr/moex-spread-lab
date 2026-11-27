@@ -17,7 +17,7 @@ from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import PAIR_UNIVERSE, ProofService
-from perf_equivalence_case import H1WorkspaceCase
+from perf_equivalence_fixtures import H1WorkspaceCase
 
 pytestmark = pytest.mark.slow_equiv
 

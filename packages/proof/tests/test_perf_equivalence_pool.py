@@ -21,9 +21,7 @@ from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import CALENDAR_UNIVERSE, PAIR_UNIVERSE, ProofService
-from perf_equivalence_case import H1WorkspaceCase
-from perf_equivalence_fixtures import _canon_sha
-from perf_equivalence_pool_fixtures import _build_pool_test_workspace
+from perf_equivalence_fixtures import H1WorkspaceCase, _build_pool_test_workspace, _canon_sha
 
 pytestmark = pytest.mark.slow_equiv
 

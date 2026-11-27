@@ -26,7 +26,6 @@ from moex_spread_lab.proof.pair_plugin_accounting import (
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
-# ---- folded from the retired P7.2 shard pair_plugin_pipeline_fixtures_p72_packages_proof_tests_test_pair_plugin_pipeline ----
 DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
 
 
@@ -64,6 +63,7 @@ class PairPlugin:
         *,
         far_point_value_rub: float = 1.0,
     ) -> list[EntryBandPoint]:
+        del far_point_value_rub
         return []
 
     def __init__(self, side: str, terminal: bool, bad_price: bool = False) -> None:

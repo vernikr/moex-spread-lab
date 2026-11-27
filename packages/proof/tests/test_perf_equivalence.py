@@ -32,8 +32,8 @@ from moex_spread_lab.proof.service import (
 )
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
 from moex_spread_lab.strategies.funding_carry.carry import fetch_history
-from perf_equivalence_case import H1WorkspaceCase
 from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
+    H1WorkspaceCase,
     _build_h1_workspace,
     _canon,
     _canon_sha,
@@ -42,7 +42,6 @@ from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names
 from proof_fixtures import funding_winner
 
 
-# ---- folded from the retired P7.2 shard helpers_p72_packages_proof_tests_test_perf_equivalence ----
 def research_settings(*, timeframe: str, initial_capital_rub: float) -> ResearchSettings:
     """Fixed-seed comparison settings; both eval modes must stay comparable."""
     return ResearchSettings(

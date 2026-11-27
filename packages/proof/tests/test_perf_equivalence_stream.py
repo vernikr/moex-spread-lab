@@ -23,8 +23,7 @@ from moex_spread_lab.proof.proof_pool import get_worker_pool
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import PAIR_UNIVERSE, ProofService
-from perf_equivalence_fixtures import _canon
-from perf_equivalence_pool_fixtures import _build_pool_test_workspace
+from perf_equivalence_fixtures import _build_pool_test_workspace, _canon
 
 pytestmark = pytest.mark.slow_equiv
 

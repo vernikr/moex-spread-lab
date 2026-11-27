@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Tier-1 repository gate behind ``scripts/check_health.sh``.
 
-Full mode runs the seven checks in waves of at most the usable CPU count, one
-line per passing check (``--verbose`` prints every log) and a log tail per
-failure. ``--changed [--base REV]`` scopes ruff/basedpyright/ratchets to touched
-files, runs ``js-modules`` only for touched static JS and ``architecture --fast``
-only when imports moved, and names what it skipped. Each check runs in its own
-process group under ``--timeout`` (``MSL_HEALTH_TIMEOUT``, default 900 s).
-Exit 0 = all run checks passed, 1 = a failure or timeout, 2 = a check could not
-run; a skipped check is never reported as passed. ``MSL_HEALTH_STATUS_FILE``
-receives the per-check status JSON.
-"""
+Full mode runs the seven checks in waves of at most the usable CPU count, one line
+per passing check (``--verbose`` prints every log) and a log tail per failure.
+``--changed [--base REV]`` scopes ruff/basedpyright/ratchets to touched files and
+names what it skipped. Each check runs in its own process group under ``--timeout``
+(``MSL_HEALTH_TIMEOUT``, default 900 s). Exit 0 = all run checks passed, 1 = a
+failure or timeout, 2 = a check could not run; a skipped check is never reported
+as passed. ``MSL_HEALTH_STATUS_FILE`` receives the per-check status JSON."""
 
 import argparse
 import fnmatch

@@ -172,11 +172,6 @@ def _run_lizard(paths: list[Path] | None = None) -> dict[str, dict[str, int]]:
     return metrics
 
 
-def _write_baseline(value: dict[str, Any]) -> None:
-    BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE_PATH.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -220,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
         _print_advisories(advisories)
         return 1
     if args.update_baseline:
-        _write_baseline(_updated_baseline(baseline, file_metrics, complexity, c_functions, sources))
+        updated = _updated_baseline(baseline, file_metrics, complexity, c_functions, sources)
+        BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        BASELINE_PATH.write_text(
+            json.dumps(updated, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         print(
             f"code-health-gate: baseline reductions recorded in {BASELINE_PATH.relative_to(ROOT)}"
         )

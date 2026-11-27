@@ -172,8 +172,9 @@ def _classify(normed: list[str], nod: set[str]):
     package_other: dict[str, list[str]] = {}
     for path in normed:
         pkg = package_of(path)
-        if is_docs_path(path) or pkg is None:
-            (docs if is_docs_path(path) else unmatched).append(path)
+        is_doc = is_docs_path(path)
+        if is_doc or pkg is None:
+            (docs if is_doc else unmatched).append(path)
             continue
         in_code = path.startswith((f"packages/{pkg}/src/", f"packages/{pkg}/tests/"))
         group = (

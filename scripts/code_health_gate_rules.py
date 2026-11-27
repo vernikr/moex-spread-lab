@@ -153,17 +153,17 @@ def _source_exception_failures(path: Path) -> list[str]:
     return failures
 
 
-def _is_protected(path: Path) -> bool:
-    return any(path == root or root in path.parents for root in PROTECTED_EXCEPTION_ROOTS)
-
-
 def _exception_failures(paths: list[Path] | None = None) -> list[str]:
     if paths is None:
         candidates = [
             path for root in PROTECTED_EXCEPTION_ROOTS for path in sorted(root.rglob("*.py"))
         ]
     else:
-        candidates = [path for path in sorted(paths) if _is_protected(path)]
+        candidates = [
+            path
+            for path in sorted(paths)
+            if any(path == root or root in path.parents for root in PROTECTED_EXCEPTION_ROOTS)
+        ]
     return [failure for path in candidates for failure in _source_exception_failures(path)]
 
 

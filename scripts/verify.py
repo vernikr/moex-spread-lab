@@ -238,7 +238,7 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         ),
         Step(
             "architecture",
-            "affected profile always runs the architecture gate",
+            "always runs the architecture gate",
             [*python_cmd(), "scripts/architecture_gate.py"],
         ),
     ]
@@ -254,26 +254,17 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         steps.append(Step("always-run", reason, pytest_cmd(["-p", "no:testmon", *always_files])))
     leg_dirs = [f"packages/{leg}/tests" for leg in legs]
     if decision.testmon and _testmon_available():
-        steps.append(
-            Step(
-                "pytest-affected",
-                f"affected (advisory) selection over legs: {','.join(legs)}",
-                pytest_cmd(["--testmon", *leg_dirs, *ignores]),
-            )
-        )
+        reason = f"affected (advisory) selection over legs: {','.join(legs)}"
+        command = pytest_cmd(["--testmon", *leg_dirs, *ignores])
     else:
         print(
             "verify: pytest-testmon not importable; legs run WITHOUT deselection"
             if decision.testmon
             else f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full"
         )
-        steps.append(
-            Step(
-                "pytest-affected",
-                f"full legs (no deselection): {','.join(legs)}",
-                pytest_cmd(leg_dirs, marker=""),
-            )
-        )
+        reason = f"full legs (no deselection): {','.join(legs)}"
+        command = pytest_cmd(leg_dirs, marker="")
+    steps.append(Step("pytest-affected", reason, command))
     skipped = [
         BROWSER_SKIPPED,
         "vulture (full gate only)",

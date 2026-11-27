@@ -46,16 +46,11 @@ def request(url: str, token: str, *, body: dict[str, Any] | None = None) -> dict
 
 
 def _candidate_options(include_patch: bool) -> dict[str, str]:
-    revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    patch = (
-        subprocess.run(
-            ["git", "diff", "--binary", "HEAD"], capture_output=True, text=True, check=True
-        ).stdout
-        if include_patch
-        else ""
-    )
+    def _git(*args: str) -> str:
+        return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+
+    revision = _git("rev-parse", "HEAD").strip()
+    patch = _git("diff", "--binary", "HEAD") if include_patch else ""
     if len(patch.encode()) > 16000:
         raise ValueError("tracked patch exceeds the 16 KB bridge limit")
     # Defense in depth: market data must never leave the workstation in a patch.
@@ -66,10 +61,9 @@ def _candidate_options(include_patch: bool) -> dict[str, str]:
 
 
 def _workstation_command(args: argparse.Namespace, code: str) -> str:
-    parts = ["python3", "-c", code, args.remote_command]
-    root = os.environ.get("MOEX_WORKSTATION_ROOT")
+    root = os.environ.get("MOEX_WORKSTATION_ROOT") or "~/Downloads/projects/moex-spread-lab"
+    parts = ["python3", "-c", code, args.remote_command, root]
     if args.remote_command == "probe":
-        parts.append(root or "~/Downloads/projects/moex-spread-lab")
         payload = json.loads(args.json)
         settings = json.loads(args.settings)
         if not isinstance(payload, dict) or not isinstance(settings, dict):
@@ -89,7 +83,6 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
             )
         )
     elif args.remote_command == "bench":
-        parts.append(root or "~/Downloads/projects/moex-spread-lab")
         request_data = json.loads(args.json)
         if not isinstance(request_data, dict):
             raise ValueError("--json must be a JSON object")
@@ -102,8 +95,6 @@ def _workstation_command(args: argparse.Namespace, code: str) -> str:
         if args.worktree_patch or args.suite == "ab_fastcore":
             options.update(_candidate_options(bool(args.worktree_patch)))
         parts.append(json.dumps(options))
-    elif root:
-        parts.append(root)
     return " ".join(shlex.quote(part) for part in parts)
 
 

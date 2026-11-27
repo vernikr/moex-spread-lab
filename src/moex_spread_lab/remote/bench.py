@@ -98,26 +98,20 @@ def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[Candi
                 _cmd(path, "git", "apply", "--binary", "-", input_text=patch)
             data_mode = provision_data(root, path)
             _relocate_copied_seal(root, path)
-            if deps_inputs_touched(_patch_paths(patch)):
+            isolated = deps_inputs_touched(_patch_paths(patch))
+            if isolated:
                 _cmd(path, "uv", "sync", "--frozen")
-                candidate = CandidateWorktree(
-                    path=path,
-                    python=path / ".venv/bin/python3",
-                    pythonpath=None,
-                    data_mode=data_mode,
-                    isolated_venv=True,
-                )
-            else:
-                python = root / ".venv/bin/python3"
-                pythonpath = candidate_pythonpath(path)
+            python = path / ".venv/bin/python3" if isolated else root / ".venv/bin/python3"
+            pythonpath = None if isolated else candidate_pythonpath(path)
+            if pythonpath is not None:
                 assert_candidate_python(python, pythonpath, path)
-                candidate = CandidateWorktree(
-                    path=path,
-                    python=python,
-                    pythonpath=pythonpath,
-                    data_mode=data_mode,
-                    isolated_venv=False,
-                )
+            candidate = CandidateWorktree(
+                path=path,
+                python=python,
+                pythonpath=pythonpath,
+                data_mode=data_mode,
+                isolated_venv=isolated,
+            )
             yield candidate
         finally:
             _cmd(root, "git", "worktree", "remove", "--force", str(path))
@@ -237,14 +231,15 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
             result["candidate_isolated_venv"] = candidate.isolated_venv
             comparison = [_post(port, job, candidate.path) for job in jobs]
         result["candidate"] = comparison
-        result["exact_match"] = [a["result"] for a in baseline] == [b["result"] for b in comparison]
+        exact = [a["result"] for a in baseline] == [b["result"] for b in comparison]
+        result["exact_match"] = exact
         result["speedup_x"] = [
             round(a["telemetry"]["median_ms"] / b["telemetry"]["median_ms"], 3)
             if b["telemetry"]["median_ms"]
             else None
             for a, b in zip(baseline, comparison, strict=True)
         ]
-        if not result["exact_match"]:
+        if not exact:
             raise RuntimeError("candidate benchmark results differ from baseline")
     return result
 

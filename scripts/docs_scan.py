@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Docs-file integrity scan (plan S2 docs profile).
 
-Checks changed Markdown/docs files for trailing whitespace, merge conflict
-markers and credential-shaped tokens. Exit 0 = clean, 1 = findings, 2 = usage
-error. ``--links`` additionally verifies relative Markdown links and anchors
-resolve inside the repository; ``--repo --links`` checks the whole authored docs
-surface (``README.md``, ``AGENTS.md``, ``docs/**``, ``packages/*/docs/**``) and
-skips the style scan, which is reserved for changed files. Preserved evidence is
-excluded from link checking because it is reproduced as received and must not be
-rewritten: ``docs/inputs/`` (bytes pinned by ``docs/inputs/manifest.json``),
+Checks changed Markdown/docs files for trailing whitespace, merge conflict markers
+and credential-shaped tokens. Exit 0 = clean, 1 = findings, 2 = usage error.
+``--links`` additionally verifies relative Markdown links and anchors resolve inside
+the repository; ``--repo --links`` checks the whole authored docs surface and skips
+the style scan, which is reserved for changed files. Preserved evidence is excluded
+from link checking because it is reproduced as received and must not be rewritten:
+``docs/inputs/`` (bytes pinned by ``docs/inputs/manifest.json``),
 ``docs/research/results/received/`` and ``docs/research/reuse/``.
 """
 

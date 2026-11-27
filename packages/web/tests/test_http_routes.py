@@ -58,9 +58,9 @@ class WebPackageArchitectureTests(unittest.TestCase):
         self.assertEqual(
             dispatch.ALL_POST_ROUTES & {"/api/run", "/api/screen", "/api/optimize"}, set()
         )
-        for module in ("moex_spread_lab.screener_search", "moex_spread_lab.proof.screener_search"):
+        for name in ("screener_app", "screener_search", "proof.screener_search"):
             with self.assertRaises(ModuleNotFoundError):
-                __import__(module)
+                __import__(f"moex_spread_lab.{name}")
         retired_methods = {"save", "list_runs", "list_searches", "save_screen", "save_search"}
         self.assertEqual(set(dir(web_server.ScreenerStore)) & retired_methods, set())
 

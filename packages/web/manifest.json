@@ -7,7 +7,9 @@
     "loopback_http_server",
     "execution_proof_ui",
     "strategy_schema_api",
-    "ndjson_progress_streaming"
+    "ndjson_progress_streaming",
+    "loopback_diagnostics",
+    "workstation_daemon_installation"
   ],
   "inputs": [
     "execution-proof.v1",
@@ -24,8 +26,8 @@
   ],
   "owner": "project-web",
   "resource_profile": {
-    "network": "loopback_only_127_0_0_1",
-    "runtime": "single-process-threaded",
+    "network": "loopback_default_with_explicit_host_origin_opt_in",
+    "runtime": "threaded_http_with_proof_managed_workers",
     "storage": "caller-selected"
   },
   "rights_provenance": {
@@ -40,5 +42,14 @@
   "health": {
     "supported_python": ">=3.12,<3.13",
     "status": "active"
-  }
+  },
+  "invariants": [
+    "Numerical evaluation and randomness are delegated to ProofService.",
+    "Host/Origin checks precede dispatch; diagnostics remain loopback-only.",
+    "Static assets are same-origin; diagnostics do not persist research state."
+  ],
+  "notes": [
+    "CLI discovery: moex_spread_lab.web.cli:register.",
+    "moex_spread_lab.web exports STATIC_DIR, VENDOR_DIR, ScreenerStore, make_handler, serve and strategy_registry_payload."
+  ]
 }

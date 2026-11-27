@@ -1,4 +1,4 @@
-"""Fixture templates for browser smokes: cached by builder identity, cloned per suite (S4b)."""
+"""Fixture templates are cached by builder identity and cloned per smoke scenario."""
 
 from __future__ import annotations
 

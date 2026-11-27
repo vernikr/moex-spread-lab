@@ -1,12 +1,4 @@
-"""P0 regression guard: ``GET /api/proof/catalog`` must resolve fully offline (never reach MOEX ISS).
-
-``/api/proof/catalog`` used to take ~181 s on synthetic fixtures because ``CalendarData``
-allowed live ISS history fetching whenever ``MOEX_OFFLINE_ONLY`` / ``PYTEST_CURRENT_TEST``
-were unset, so the first catalog call paid a rate-limit sleep plus an HTTP round-trip for
-~1,050 uncached contract secids. The web route must serve the offline contract in-process; a
-cold, network-less process with ``MOEX_OFFLINE_ONLY=1`` is enough — no subprocess spawn and no
-``strategies.calendar`` private-helper assertions.
-"""
+"""The proof catalog resolves synthetic local inputs without live ISS requests."""
 
 from __future__ import annotations
 

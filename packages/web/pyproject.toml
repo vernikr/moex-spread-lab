@@ -1,7 +1,7 @@
 [project]
 name = "msl-web"
 version = "0.9.0"
-description = "MOEX Spread Lab loopback HTTP screener, execution-proof routes, and modular static web UI"
+description = "Loopback execution-proof workbench, streaming API, and same-origin UI"
 requires-python = ">=3.12,<3.13"
 dependencies = ["msl-core", "msl-proof"]
 

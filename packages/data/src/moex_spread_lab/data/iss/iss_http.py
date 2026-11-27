@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
+from moex_spread_lab.core.derived_cache import HashedJSONCache as _HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error
 
 ISS_MODULE_SCHEMA = "iss-intake.v1"

@@ -18,8 +18,7 @@ from typing import Any, TypedDict, cast
 
 import zstandard as zstd
 
-from moex_spread_lab.core.json_types import JsonObject
-from moex_spread_lab.core.w0 import as_str_dict, canonical_bytes, sha256_file
+from moex_spread_lab.core.w0 import JsonObject, as_str_dict, canonical_bytes, sha256_file
 
 from . import data_retention as _data_retention
 from .data_inventory import _inspect_file, _policy, build_data_inventory

@@ -13,8 +13,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from moex_spread_lab.core.json_types import JsonObject, JsonValue, as_str_dict
-from moex_spread_lab.core.w0 import W0Error, canonical_bytes, sha256_file
+from moex_spread_lab.core.w0 import (
+    JsonObject,
+    JsonValue,
+    W0Error,
+    as_str_dict,
+    canonical_bytes,
+    sha256_file,
+)
 
 from .data_inventory import DATA_INVENTORY_SCHEMA, _inspect_file, _policy
 

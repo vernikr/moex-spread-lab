@@ -8,9 +8,7 @@ The pair strategies and the funding engine fill the shared structs; the retired 
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
 from dataclasses import dataclass
-from math import fsum
 from typing import Any
 
 from moex_spread_lab.accounting.costs import (
@@ -24,8 +22,10 @@ from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.strategies import attach_entry_levels
+from moex_spread_lab.strategies import REFERENCE_WARNING, attach_entry_levels
 
+from .ledger_blocks import apply_raw_trade_totals
+from .market_window import PairMarketWindow
 from .payload_tools import PROOF_SCHEMA, clean, observed_min_leg_volume, point_value
 
 
@@ -247,31 +247,6 @@ def pair_payload(spec: PairPayloadSpec) -> dict[str, Any]:
     return payload
 
 
-def apply_raw_trade_totals(
-    summary: dict[str, Any],
-    trades: list[dict[str, Any]],
-    ledger: list[dict[str, Any]],
-    raw_totals: Sequence[float],
-) -> None:
-    """Update summary only; do not mutate the ledger, trade rows or account curve."""
-    gross, costs, net = raw_totals
-    for name, value in (("gross", gross), ("costs", costs), ("net", net)):
-        key = f"{name}_rub"
-        rounded = round(value, 2)
-        displayed_sum = round(fsum(float(t[key]) for t in trades), 2)
-        delta = round(displayed_sum - rounded, 2)
-        summary[key] = rounded
-        delta_key = f"displayed_trade_{name}_rounding_delta_rub"
-        if delta:
-            summary[delta_key] = delta
-        else:
-            summary.pop(delta_key, None)
-    hurdle = fsum(float(t["lqdt_on_margin_rub"]) for t in trades)
-    summary["excess_over_lqdt_rub"] = round(net - hurdle, 2)
-    cumulative = ledger[-1]["cumulative_net_rub"] if ledger else 0.0
-    summary["ledger_reconciliation_rub"] = round(round(net, 2) - cumulative, 2)
-
-
 OPEN_POSITION_NOTE = (
     "Открытая на конец выборки позиция — принудительный прокси-выход, не исполнимая сделка."
 )
@@ -318,3 +293,88 @@ def budget() -> int:
     if not raw.isdigit() or int(raw) <= 0:
         return TRIALS_PER_STRATEGY
     return min(int(raw), TRIALS_PER_STRATEGY)
+
+
+CARRY_FILL_NOTE = (
+    "Фандинг удерживаемой позиции = −position × SWAPRATE × лот × число контрактов. Источник ставки — "
+    "итог клиринга MOEX ISS, кроме явно отмеченных оценок. Вход/выход по open — прокси времени "
+    "исполнения; лот — из текущего снапшота. Это не пересчёт минутных D/K1/K2 и не брокерская выписка."
+)
+VOLUME_RULE_NOTE = (
+    "Дни, когда объём любой ноги равен нулю или отсутствует, остаются в журнале, но исключены из "
+    "индикаторов, гейта объёма и симуляции сделок; позиции на этих датах не переоцениваются."
+)
+NATIVE_OPEN_POSITION_NOTE = (
+    "Открытая на конец выборки позиция отмечается как принудительный прокси-выход, а не как "
+    "исполнимая сделка."
+)
+SPREAD_NOTES = (
+    "Спред пары — близкая минус дальняя, нормированный в рублях, а не собственный инструмент; его "
+    "объём не наблюдаем.",
+    "Спред показан в % от стоимости дальней ноги; абсолютные отметки в рублях — в CSV и во второй "
+    "строке таблицы.",
+)
+
+
+def notes(window: PairMarketWindow, trades: list[dict[str, Any]]) -> list[str]:
+    """Qualify the proxy price path, funding proxies and any forced end-of-sample exit."""
+    intraday = get_timeframe(window.series["timeframe"]).intraday
+    evidence = window.evidence
+    if evidence is None:
+        funding_notes = [
+            "На выбранном внутридневном таймфрейме SWAPRATE не включён: дневную ставку нельзя "
+            "размножать на внутридневные бары."
+            if intraday
+            else "Для пары без вечного фьючерса фандинг неприменим."
+        ]
+    else:
+        funding_notes = [*evidence.notes(), CARRY_FILL_NOTE]
+    fill_note = {
+        "reference_same_bar": REFERENCE_WARNING,
+        "next_open": (
+            "Сигнал по закрытию дня; исполнение по следующему открытию дня (прокси открытия candle); "
+            "отметки по закрытию."
+        ),
+    }.get(
+        window.spec.execution["fill"],
+        "Сигнал по закрытию дня; исполнение по закрытию следующего дня (ценовой прокси); отметки по "
+        "закрытию.",
+    )
+    return [
+        *funding_notes,
+        VOLUME_RULE_NOTE,
+        fill_note,
+        *([NATIVE_OPEN_POSITION_NOTE] if any(trade["open_at_end"] for trade in trades) else []),
+        *SPREAD_NOTES,
+    ]
+
+
+def full_payload(
+    window: PairMarketWindow,
+    accounted: tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], float],
+    raw_totals: tuple[float, float, float],
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    """Full `execution-proof.v1` payload with chart series, notes and the built-in run id."""
+    rows, trades, ledger, drawdown = accounted
+    spec = window.spec
+    return pair_payload(
+        PairPayloadSpec(
+            pair=spec.pair,
+            strategy="mean_reversion",
+            fill_label=spec.execution["fill"],
+            quantity=int(spec.execution["quantity"]),
+            slippage=float(spec.execution["slippage_ticks"]),
+            params=spec.params,
+            terms=spec.terms,
+            series_rows=rows,
+            trades=trades,
+            ledger=ledger,
+            daily_rows=[{"D": drawdown}],
+            margin_pair=window.margin_pair,
+            provenance=provenance,
+            notes=notes(window, trades),
+            risk=spec.risk,
+            raw_trade_totals=raw_totals,
+        )
+    )

@@ -94,9 +94,14 @@ def _invalid_intent(
         or e <= prev
         or dates[e] >= cutoff
         or dates[x] >= exp
-        or (terminal and (x != len(dates) - 1 or dates[x] >= cutoff))
-        or (not terminal and dates[x] > cutoff and any(d >= cutoff for d in dates[e:x]))
+        or _invalid_exit(dates, e, x, cutoff, terminal)
     )
+
+
+def _invalid_exit(dates: list[date], entry: int, exit_: int, cutoff: date, terminal: bool) -> bool:
+    if terminal:
+        return exit_ != len(dates) - 1 or dates[exit_] >= cutoff
+    return dates[exit_] > cutoff and any(day >= cutoff for day in dates[entry:exit_])
 
 
 def _indexed_intents(

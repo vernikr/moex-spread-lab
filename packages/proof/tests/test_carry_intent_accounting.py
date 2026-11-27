@@ -55,6 +55,31 @@ def test_expiry_and_assignment_cannot_be_overridden():
         replay([T, T])
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"side": "long_spread"},
+        {"reason": ""},
+        {"open_at_end": 1},
+        {"signal_date": DAYS[2]},
+        {"exit_date": DAYS[1]},
+        {"open_at_end": True, "exit_date": DAYS[4]},
+    ],
+)
+def test_external_carry_intents_fail_closed(change):
+    with pytest.raises(W0Error):
+        replay([{**T, **change}])
+
+
+def test_exit_at_cutoff_is_allowed_but_crossing_it_is_not():
+    accepted = {**T, "exit_date": DAYS[3]}
+    assert len(replay([accepted], "2026-01-09")["trades"]) == 1
+    with pytest.raises(W0Error):
+        replay([T], "2026-01-09")
+    with pytest.raises(W0Error):
+        replay([{**T, "exit_date": DAYS[-1], "open_at_end": True}], "2026-01-09")
+
+
 def test_nonfinite_inputs_fail_closed():
     bad = {
         "rows": [*STUDY["rows"][:-1], {**STUDY["rows"][-1], "daily_gross_carry_pnl": float("nan")}]

@@ -22,6 +22,7 @@ from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
 from .carry_intent_accounting import replay_carry_intents
+from .ledger_blocks import pair_selection
 from .market_window import ReplaySpec
 from .payload_tools import PROOF_SCHEMA, load_contracts_for_side_cost, point_value
 
@@ -70,6 +71,15 @@ class CarryWindowState:
     margin_pair: float
 
 
+def _study_min_volume(rows: list[dict[str, Any]]) -> Any:
+    volumes: list[Any] = []
+    for row in rows:
+        near, far = row.get("near_volume"), row.get("far_volume")
+        if near is not None and far is not None and float(near) > 0 and float(far) > 0:
+            volumes.append(min(near, far))
+    return min(volumes) if volumes else None
+
+
 def study_cut(spec: ReplaySpec) -> CarryWindowState:
     """Cut the study at `through` and derive the quantities every parameter reuses."""
     study, _, _, window = spec.prepared[:4]
@@ -84,15 +94,7 @@ def study_cut(spec: ReplaySpec) -> CarryWindowState:
         by_date = {row["date"]: row for row in study_rows}
         ref_near = float(study_rows[-1]["near_settle"])
         ref_far = float(study_rows[-1]["far_settle"])
-        volumes = [
-            min(row.get("near_volume"), row.get("far_volume"))
-            for row in study_rows
-            if row.get("near_volume") is not None
-            and row.get("far_volume") is not None
-            and float(row.get("near_volume")) > 0
-            and float(row.get("far_volume")) > 0
-        ]
-        smallest = min(volumes) if volumes else None
+        smallest = _study_min_volume(study_rows)
         meta = {
             "min_leg_volume": smallest,
             "tradable_every_day": bool(smallest is not None and smallest >= MIN_DAILY_VOLUME),
@@ -265,6 +267,17 @@ def sizing_intent_payload(
         for row in report["daily"]
     ]
     return {
+        **funding_head(state, strategy_name),
+        "contract": {},
+        "series": series_rows,
+        "trades": trades,
+        "provenance": state.evidence.provenance,
+    }
+
+
+def funding_head(state: CarryWindowState, strategy_name: str) -> dict[str, Any]:
+    spec = state.spec
+    return {
         "schema_version": PROOF_SCHEMA,
         "universe": PAIR_UNIVERSE,
         "selection": funding_selection(state, strategy_name),
@@ -274,26 +287,18 @@ def sizing_intent_payload(
             **state.window_meta,
             "passes_capital_screen": spec.risk["summary"]["all_scenarios_passed"],
         },
-        "contract": {},
-        "series": series_rows,
-        "trades": trades,
-        "provenance": state.evidence.provenance,
     }
 
 
 def funding_selection(state: CarryWindowState, strategy_name: str) -> dict[str, Any]:
     spec = state.spec
-    return {
-        "universe": PAIR_UNIVERSE,
-        "pair": spec.pair["pair_id"],
-        "strategy": strategy_name,
-        "timeframe": "1d",
-        "fill": "same_day_settlement",
-        "quantity": int(spec.execution["quantity"]),
-        "slippage_ticks": float(spec.execution["slippage_ticks"]),
-        "parameters": spec.params,
-        "initial_capital_rub": spec.execution["initial_capital_rub"],
-    }
+    return pair_selection(
+        spec.pair["pair_id"],
+        strategy_name,
+        "1d",
+        {**spec.execution, "fill": "same_day_settlement"},
+        spec.params,
+    )
 
 
 def funding_instrument(state: CarryWindowState) -> dict[str, Any]:

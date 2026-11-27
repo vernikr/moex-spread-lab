@@ -10,14 +10,12 @@ from typing import Any
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.core.contracts import plugin_trust_tier
-from moex_spread_lab.core.universe import PAIR_UNIVERSE
 
 from .carry_route import (
     PERPETUAL_OPEN_STATUS,
     CarryWindowState,
     carry_plugin_of,
-    funding_instrument,
-    funding_selection,
+    funding_head,
     report_for,
     sizing_intent_payload,
     strategy_name_of,
@@ -25,10 +23,8 @@ from .carry_route import (
 )
 from .ledger_blocks import funding_ledger
 from .market_window import ReplaySpec
-from .pair_payload import PairPayloadSpec, pair_payload
-from .pair_template import SPREAD_NOTES
+from .pair_payload import SPREAD_NOTES, PairPayloadSpec, pair_payload
 from .payload_tools import (
-    PROOF_SCHEMA,
     TradeSpec,
     fill_block,
     load_contracts_for_side_cost,
@@ -224,17 +220,8 @@ def _metrics_payload(
     strategy_name: str,
 ) -> dict[str, Any]:
     """Tuning-search shape: trades and ledger only."""
-    spec = state.spec
     return {
-        "schema_version": PROOF_SCHEMA,
-        "universe": PAIR_UNIVERSE,
-        "selection": funding_selection(state, strategy_name),
-        "initial_capital_rub": spec.execution["initial_capital_rub"],
-        "instrument": funding_instrument(state),
-        "window": {
-            **state.window_meta,
-            "passes_capital_screen": spec.risk["summary"]["all_scenarios_passed"],
-        },
+        **funding_head(state, strategy_name),
         "trades": trades,
         "ledger": ledger,
         "provenance": state.evidence.provenance,

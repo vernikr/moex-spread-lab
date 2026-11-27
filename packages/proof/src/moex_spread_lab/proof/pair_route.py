@@ -38,9 +38,10 @@ from moex_spread_lab.strategies.pair_screener.pair_screener import (
 
 from .carry_payload import run_carry
 from .fixed_plugin_payload import fixed_pair_accounting
+from .ledger_blocks import chart_rows, metrics_payload, sizing_unit
 from .market_window import ReplaySpec, cached, chart_signal_z, resolve_window
+from .pair_payload import full_payload
 from .pair_plugin_accounting import prepare_daily_pair_unit as _prepare_unit
-from .pair_template import chart_rows, full_payload, metrics_payload, sizing_unit
 from .payload_tools import benchmark_marks, load_instruments, sha256_bytes
 
 

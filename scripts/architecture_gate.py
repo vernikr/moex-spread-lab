@@ -231,9 +231,7 @@ def main() -> int:
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="import-graph tests only; skip plugin-conformance discovery, the "
-        "package-manifest conformance check and the secret-scan CLI check "
-        "(for `check_health.sh --changed`)",
+        help="import-graph tests only; skip conformance, manifest and secret-scan checks",
     )
     args = parser.parse_args()
     started = time.perf_counter()
@@ -262,13 +260,11 @@ def main() -> int:
     if not args.fast:
         from moex_spread_lab import cli
 
-        commands = (["secret-scan", "--tracked-only"],)
         original_argv = sys.argv
         try:
-            for command_args in commands:
-                sys.argv = ["moex-spread-lab", *command_args]
-                if cli.main() != 0:
-                    return 1
+            sys.argv = ["moex-spread-lab", "secret-scan", "--tracked-only"]
+            if cli.main() != 0:
+                return 1
         finally:
             sys.argv = original_argv
         print(f"architecture-gate: passed in {time.perf_counter() - started:.2f}s")

@@ -39,10 +39,6 @@ LINT_ROOTS = ["packages", "src", "tests", "scripts"]
 GRACE_SECONDS = 5.0
 
 
-def script(name: str, *args: str) -> list[str]:
-    return [*tool("python"), f"scripts/{name}", *args]
-
-
 @dataclass
 class Scope:
     changed: bool
@@ -72,13 +68,15 @@ def check_command(name: str, scope: Scope) -> list[str] | None:
     return {
         "ruff-check": [*tool("ruff"), "check", *lint],
         "ruff-format": [*tool("ruff"), "format", "--check", *lint],
-        "basedpyright": script("typecheck_workspace.py", *py),
+        "basedpyright": [*tool("python"), "scripts/typecheck_workspace.py", *py],
         "vulture": [*tool("vulture"), "packages", "src", "scripts", "--min-confidence", "80"],
-        "custom-gate": script(
-            "code_health_gate.py", *(["--changed", "--base", scope.base] * changed)
-        ),
-        "architecture": script("architecture_gate.py", *(["--fast"] * changed)),
-        "js-modules": script("check_js_modules.py"),
+        "custom-gate": [
+            *tool("python"),
+            "scripts/code_health_gate.py",
+            *(["--changed", "--base", scope.base] * changed),
+        ],
+        "architecture": [*tool("python"), "scripts/architecture_gate.py", *(["--fast"] * changed)],
+        "js-modules": [*tool("python"), "scripts/check_js_modules.py"],
     }[name]
 
 
@@ -192,15 +190,6 @@ def _scope(args: argparse.Namespace) -> Scope:
     return Scope(True, args.base, touched, bool(touched) and imports_changed(args.base))
 
 
-def _write_status(mode: str, results: list[tuple[str, str, int]]) -> None:
-    target = os.environ.get("MSL_HEALTH_STATUS_FILE")
-    if target:
-        checks = {name: status for name, status, _ in results}
-        Path(target).write_text(
-            json.dumps({"mode": mode, "checks": checks}) + "\n", encoding="utf-8"
-        )
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="check_health.sh", description=__doc__)
     parser.add_argument("--verbose", "-v", action="store_true", help="print every check's log")
@@ -212,6 +201,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     started = time.monotonic()
     mode = "changed" if args.changed else "full"
+
+    def _write_status(mode_: str, results_: list[tuple[str, str, int]]) -> None:
+        if target := os.environ.get("MSL_HEALTH_STATUS_FILE"):
+            checks = {name: status for name, status, _ in results_}
+            Path(target).write_text(
+                json.dumps({"mode": mode_, "checks": checks}) + "\n", encoding="utf-8"
+            )
+
     try:
         scope = _scope(args)
     except RuntimeError as exc:

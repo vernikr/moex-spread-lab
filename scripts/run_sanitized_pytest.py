@@ -106,19 +106,18 @@ def build_sanitized_env(
     env["MOEX_FASTCORE_SANITIZE"] = "1"
     env["MOEX_FASTCORE_ASAN_RUNTIME"] = str(asan_runtime)
     env.pop("MOEX_PROOF_DISABLE_C", None)
-    sysname = platform.system()
-    if sysname == "Darwin":
-        existing = env.get("DYLD_INSERT_LIBRARIES", "")
-        env["DYLD_INSERT_LIBRARIES"] = (
-            f"{asan_runtime}:{existing}" if existing else str(asan_runtime)
-        )
-        env.setdefault("ASAN_OPTIONS", "detect_leaks=0:halt_on_error=1:abort_on_error=1")
-    else:
-        existing = env.get("LD_PRELOAD", "")
-        env["LD_PRELOAD"] = f"{asan_runtime}:{existing}" if existing else str(asan_runtime)
-        env.setdefault("ASAN_OPTIONS", "detect_leaks=1:halt_on_error=1")
-        if lsan_supp_path is not None:
-            env.setdefault("LSAN_OPTIONS", f"suppressions={lsan_supp_path}")
+    insert_var = "DYLD_INSERT_LIBRARIES" if platform.system() == "Darwin" else "LD_PRELOAD"
+    existing = env.get(insert_var, "")
+    env[insert_var] = f"{asan_runtime}:{existing}" if existing else str(asan_runtime)
+    darwin = insert_var == "DYLD_INSERT_LIBRARIES"
+    env.setdefault(
+        "ASAN_OPTIONS",
+        "detect_leaks=0:halt_on_error=1:abort_on_error=1"
+        if darwin
+        else "detect_leaks=1:halt_on_error=1",
+    )
+    if not darwin and lsan_supp_path is not None:
+        env.setdefault("LSAN_OPTIONS", f"suppressions={lsan_supp_path}")
     env.setdefault("UBSAN_OPTIONS", "print_stacktrace=1:halt_on_error=1")
     return env
 

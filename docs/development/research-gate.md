@@ -64,12 +64,12 @@ Parameter optimization of this baseline, M1 promotion of this high-turnover rule
 
 ## Reproducible artifacts
 
-- [Analytical baseline](../../packages/strategies/docs/analytical-baseline.md)
-- [Execution ledger](../../packages/accounting/docs/execution-ledger.md)
-- [W7 validation](../../packages/accounting/docs/w7-validation.md)
+- [Analytical baseline (archived, Issue #175)](https://github.com/vernikr/moex-spread-lab/issues/175)
+- [Execution ledger (archived, Issue #173)](https://github.com/vernikr/moex-spread-lab/issues/173)
+- [W7 validation (archived, Issue #173)](https://github.com/vernikr/moex-spread-lab/issues/173)
 - [Pilot policy](../risk/pilot-policy.md)
 - [Account and risk blockers](../blockers/b01-account-and-risk.md)
-- [VTB EBS/KПУР account-risk screen](../../packages/accounting/docs/vtb-account-risk-check.md)
-- [Flagship futures-pair screen](../../packages/strategies/docs/pair-screen.md)
-- [Funding-aware flagship-pair screen](../../packages/strategies/docs/funding-screen.md)
+- [VTB EBS/KПУР account-risk screen](../../packages/accounting/docs/vtb-account-risk-profile.md)
+- [Flagship futures-pair screen (archived, Issue #175)](https://github.com/vernikr/moex-spread-lab/issues/175)
+- [Funding-aware flagship-pair screen (archived, Issue #175)](https://github.com/vernikr/moex-spread-lab/issues/175)
 - [Workflow and research blockers](../blockers/b02-research-and-workflow.md)

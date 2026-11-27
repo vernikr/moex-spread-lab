@@ -65,6 +65,6 @@ Local evidence and limits:
 
 - `data/analytics/cnyrubf-crz6-carry-study.json` — local ISS EOD intake and funding decomposition.
 - `docs/research/results/received/R06/R06.md` — received research synthesis; used as intake and not upgraded into account-specific evidence.
-- `packages/strategies/docs/carry-strategy.md` — H2-S1 proxy result.
+- `packages/strategies/docs/carry-intent-boundary.md` — H2-S1 proxy result.
 
 This document records evidence status. It is not a broker approval, legal opinion, execution reconstruction or trading recommendation.

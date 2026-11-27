@@ -99,7 +99,7 @@ def _resolve_exports(
     reexports: list[tuple[Path, Path | None, str, str]],
 ) -> list[str]:
     errors: list[str] = []
-    # Fixed point supports chains and cycles without recursion.
+    # Fixed point handles chains and cycles without recursion.
     changed = True
     while changed:
         changed = False
@@ -146,7 +146,7 @@ def _identifier_check(
         text = MASK.sub(" ", text)
         tokens = TOKEN.findall(text)
         local = declared[path] | local_imports[path]
-        # Any explicit local declaration/parameter may shadow a sibling name.
+        # Explicit locals/parameters may shadow sibling names.
         local.update(re.findall(rf"\b(?:const|let|var|function|class)\s+({IDENT})", text))
         errors.extend(_token_errors(path, tokens, siblings, local))
 
@@ -173,8 +173,7 @@ def _syntax_check(paths: list[Path]) -> list[str]:
     errors: list[str] = []
 
     if node := shutil.which("node"):
-        # node --check accepts only one file; vm.SourceTextModule parses all
-        # modules in one process without executing application code.
+        # node --check takes one file; vm.SourceTextModule parses them in-process.
         program = """const fs = require('fs'), vm = require('vm');
 let failed = false;
 for (const file of process.argv.slice(1)) {

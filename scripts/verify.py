@@ -307,9 +307,9 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=PROFILES, required=True)
-    parser.add_argument("--base", default="HEAD", help="base revision for the change set")
-    parser.add_argument("--records", default=None, help="JSONL path for measurement records")
-    parser.add_argument("--dry-run", action="store_true", help="print steps, run nothing")
+    parser.add_argument("--base", default="HEAD", help="base revision")
+    parser.add_argument("--records", default=None, help="JSONL records path")
+    parser.add_argument("--dry-run", action="store_true", help="print steps only")
     args = parser.parse_args(argv)
     records = Path(args.records or os.environ.get("MSL_VERIFICATION_RECORDS") or DEFAULT_RECORDS)
     started = time.monotonic()

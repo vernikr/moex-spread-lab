@@ -10,8 +10,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Plan S4a splits the equivalence suite by trial tier; the sanitizer gate is a
-# full-resolution gate, so its default target list is every tier.
+# Sanitizer gate is full-resolution: default targets cover every equivalence tier.
 DEFAULT_TARGETS = (
     "packages/proof/tests/test_perf_equivalence.py",
     "packages/proof/tests/test_perf_equivalence_pair.py",
@@ -20,8 +19,7 @@ DEFAULT_TARGETS = (
     "packages/proof/tests/test_perf_equivalence_full.py",
 )
 
-# CPython/DuckDB/NumPy retain intentional interpreter-lifetime allocations across exit.
-# Suppressing only those allocators keeps LSan (`detect_leaks=1`) armed for any leak in `_fastcore`.
+# Suppress only interpreter-lifetime allocators so LSan stays armed for _fastcore leaks.
 LSAN_SUPPRESSIONS = """\
 leak:_PyObject_Malloc
 leak:_PyObject_Realloc
@@ -132,9 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     if not any(not a.startswith("-") for a in args):
         args.extend(DEFAULT_TARGETS)
     if not _deselection_overridden(args):
-        # Plan S4a: pyproject deselects the slow_equiv tier by default. A
-        # sanitizer run is a full-resolution gate, so the marker expression is
-        # cleared unless the caller passes its own ``-m``.
+        # pyproject deselects slow_equiv by default; a sanitizer run is full-resolution.
         args = ["-m", "", *args]
     asan_runtime = discover_asan_runtime()
     with tempfile.TemporaryDirectory(prefix="moex_fastcore_san_") as tmp_dir:
@@ -147,9 +143,8 @@ def main(argv: list[str] | None = None) -> int:
             "os.environ['DYLD_INSERT_LIBRARIES'] = rt if (sys.platform == 'darwin' and rt and not os.environ.get('DYLD_INSERT_LIBRARIES')) else os.environ.get('DYLD_INSERT_LIBRARIES', ''); "
             "raise SystemExit(pytest.main(sys.argv[1:]))"
         )
-        # Invoke sys.executable directly so macOS SIP cannot strip DYLD_INSERT_LIBRARIES
-        # via an intermediate wrapper, and restore DYLD_INSERT_LIBRARIES inside Python
-        # before pytest runs so multiprocessing `spawn` workers also preload ASan.
+        # sys.executable bypasses macOS SIP stripping; DYLD_* is restored in-process
+        # so multiprocessing spawn workers preload ASan too.
         cmd = [sys.executable, "-c", bootstrap, *args]
         proc = subprocess.run(cmd, cwd=ROOT, env=env, check=False)
         return proc.returncode

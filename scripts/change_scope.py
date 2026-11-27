@@ -279,10 +279,10 @@ def write_github_output(path: Path, decision: ScopeDecision) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="HEAD", help="base revision (default: HEAD)")
-    parser.add_argument("--event", default=None, help="CI event name (enables CI mode)")
-    parser.add_argument("--head", default="HEAD", help="CI head revision (default: HEAD)")
-    parser.add_argument("--github-output", type=Path, default=None, help="$GITHUB_OUTPUT file")
+    parser.add_argument("--base", default="HEAD", help="base revision")
+    parser.add_argument("--event", default=None, help="CI event name")
+    parser.add_argument("--head", default="HEAD", help="CI head revision")
+    parser.add_argument("--github-output", type=Path, default=None, help="$GITHUB_OUTPUT path")
     parser.add_argument("--format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
     try:

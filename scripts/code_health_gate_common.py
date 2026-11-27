@@ -12,9 +12,8 @@ SOURCE_SUFFIXES = {".py", ".c", ".js", ".css", ".html"}
 EXCLUDED_PARTS = {"vendor", "__pycache__"}
 ALLOW_MARKER = "code-health: allow broad exception:"
 
-# Tiered file-size policy (TD-1): soft target (green), advisory band (yellow,
-# logged, never fails) and hard ceiling (red, fails CI). Cognitive complexity and
-# the import DAG stay strictly hard; they, not file length, drive reasoning cost.
+# Tiered size policy: soft green, advisory yellow (never fails), hard red (fails CI).
+# Complexity and the import DAG stay strictly hard — they drive reasoning cost.
 FILE_BUDGETS: dict[str, dict[str, int]] = {
     "production": {"soft_loc": 400, "soft_tokens": 4000, "hard_loc": 600, "hard_tokens": 6000},
     "declarative": {"soft_loc": 550, "soft_tokens": 5500, "hard_loc": 800, "hard_tokens": 8000},
@@ -26,8 +25,7 @@ DECLARATIVE_STEMS = ("contracts", "universe", "catalog", "cli_parsers", "registr
 DECLARATIVE_COMPOUND_STEMS = tuple(f"_{stem}" for stem in DECLARATIVE_STEMS)
 DECLARATIVE_SUFFIXES = (".html", ".css")
 DECLARATIVE_DIRS = ("universe",)
-# Anti-fragmentation guardrail: token-driven splits produce shallow pass-through
-# shards (Ousterhout; arXiv:2610.21914).
+# Anti-fragmentation: token-driven splits produce shallow pass-through shards (Ousterhout).
 FORBIDDEN_FRAGMENT_PATTERNS: dict[str, str] = {
     "p72 overflow shard": r"p72",
     "issue-numbered shard": r"(?:^|[_-])\d{2,4}(?:$|[_-])",

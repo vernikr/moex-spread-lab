@@ -231,7 +231,7 @@ def main() -> int:
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="import-graph tests only; skip conformance, manifest and secret-scan checks",
+        help="import-graph tests only; skip conformance, manifest, secret-scan",
     )
     args = parser.parse_args()
     started = time.perf_counter()

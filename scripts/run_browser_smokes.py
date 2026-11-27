@@ -216,16 +216,16 @@ def _print_phases(results: list[dict[str, Any]], elapsed: float) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--filter", default="", help="Run suites whose filename contains this substring"
+        "--filter", default="", help="suites whose filename contains this substring"
     )
     parser.add_argument(
         "--jobs",
         type=int,
         choices=(1, 2),
         default=None,
-        help="Concurrent workers (default: CPU-aware)",
+        help="workers (default: CPU-aware)",
     )
-    parser.add_argument("--no-timings", action="store_true", help="Skip the aggregated phase table")
+    parser.add_argument("--no-timings", action="store_true", help="skip phase table")
     args = parser.parse_args(argv)
     limit = cpu_limit()
     if args.jobs is not None and args.jobs > limit:

@@ -154,9 +154,7 @@ def _existing_file_failures(
     for name in ("loc", "tokens"):
         ceiling = int(old[f"baseline_{name}"])
         if metrics[name] > ceiling:
-            failures.append(
-                f"{relative}: {name} grew from {ceiling} to {metrics[name]} (ratchet allows no growth)"
-            )
+            failures.append(f"{relative}: {name} grew from {ceiling} to {metrics[name]}")
         elif name == "loc" and metrics[name] <= ceiling * 0.9:
             print(f"baseline improvement available: {relative} ({name} fell by >=10%)")
     return failures
@@ -174,8 +172,7 @@ def _budget_outcome(relative: str, metrics: dict[str, int]) -> tuple[list[str], 
         soft = budget[f"soft_{measure}"]
         if value > hard:
             failures.append(
-                f"{relative}: {value} {measure} exceed the {archetype} hard ceiling {hard}; "
-                "split it along a real domain seam, never into pass-through shards"
+                f"{relative}: {value} {measure} exceed the {archetype} hard ceiling {hard}"
             )
         elif value > soft:
             advisories.append(
@@ -193,10 +190,7 @@ def _fragment_name_failures(files: list[Path], baseline: dict[str, Any]) -> list
         relative = _relative(path)
         if problem is None or relative in legacy:
             continue
-        failures.append(
-            f"{relative}: forbidden overflow filename ({problem}); keep the code in its "
-            "cohesive module instead of sharding it by issue or path"
-        )
+        failures.append(f"{relative}: forbidden overflow filename ({problem})")
     return failures
 
 
@@ -243,8 +237,7 @@ def _shallow_shard_advisories(
     legacy = {str(path) for path in baseline["legacy_shallow_shards"]}
     return [
         f"{relative}: {file_metrics[relative]['loc']} LOC module with at most "
-        f"{POLICY['shallow_shard_max_callers']} intra-package caller(s); fold it back into a "
-        "deep module unless it is a real seam"
+        f"{POLICY['shallow_shard_max_callers']} intra-package caller(s)"
         for relative in _shallow_shard_paths(files, file_metrics)
         if relative not in legacy
     ]
@@ -270,8 +263,7 @@ def _package_token_advisories(totals: dict[str, int], baseline: dict[str, Any]) 
         ceiling = int(old["baseline_tokens"])
         if total > ceiling * (100 + tolerance) // 100:
             advisories.append(
-                f"{group}: source tokens grew from {ceiling} to {total} "
-                f"(+{total - ceiling}); a split must lower the package total"
+                f"{group}: source tokens grew from {ceiling} to {total} (+{total - ceiling})"
             )
     return advisories
 

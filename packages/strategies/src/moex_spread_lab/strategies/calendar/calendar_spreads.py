@@ -9,7 +9,7 @@ from typing import Any
 
 from moex_spread_lab.core.settings import INITIAL_CAPITAL
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.lake.data_lake import MarketDataStore
+from moex_spread_lab.data import MarketDataStore
 
 from ..calendar_eval import FILLS, account_trades, evaluate_variants, read_benchmark
 from .data_cache import (

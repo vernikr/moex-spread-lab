@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from moex_spread_lab.accounting.costs import TAKER_RATE_PERCENT
+from moex_spread_lab.core._fastcore_loader import clean_obj
 from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
 
 from .contracts import ASSETS, stress_ok
 from .proof_ledger import (
-    clean_payload,
     compact_series,
     elapsed_days,
     full_event_dict,
@@ -247,4 +247,4 @@ def build_proof_payload(
         }
     )
     payload.update({"trades": trades, "ledger": ledger, "summary": summary, "notes": _PROOF_NOTES})
-    return clean_payload(payload)
+    return clean_obj(payload)

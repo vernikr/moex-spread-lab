@@ -8,10 +8,11 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, TypedDict
 
-from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
+from moex_spread_lab.core.derived_cache import HashedJSONCache
 from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
+from moex_spread_lab.data import MarketDataStore
+from moex_spread_lab.data.lake import BarSeries
 
 from ..funding_carry.proof_funding import ProofFunding
 from ..funding_carry.study import fetch_history

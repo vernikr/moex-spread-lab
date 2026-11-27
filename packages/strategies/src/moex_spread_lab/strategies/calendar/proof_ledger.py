@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..base import clean_nonfinite_json, elapsed_calendar_days
+from ..base import elapsed_calendar_days
 from ..calendar_ruonia.engine import QUARTER_DAYS
 
 _COMPACT_KEYS = "date session_date benchmark_mark_date near far near_open far_open spread volume_eligible entry_eligible exit_eligible point_value_rub"
@@ -28,9 +28,6 @@ def rel_pct(value: Any, base: Any) -> float | None:
     if not math.isfinite(b) or not math.isfinite(a) or a == 0.0:
         return None
     return round(b / a * 100, 6)
-
-
-clean_payload = clean_nonfinite_json
 
 
 def elapsed_days(start: str, end: str) -> float:

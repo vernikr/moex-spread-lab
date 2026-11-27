@@ -8,10 +8,11 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
+from moex_spread_lab.core.derived_cache import HashedJSONCache
 from moex_spread_lab.core.timeframes import get_timeframe, timeframe_for_interval
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
-from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
+from moex_spread_lab.data import DataLakeError, LegacyJsonBarStore
+from moex_spread_lab.data.lake import BarSeries
 
 from ..pair_mean_reversion.engine import load_contracts
 

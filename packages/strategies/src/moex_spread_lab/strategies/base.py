@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, cast
 
-from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
     ParameterSpec,
@@ -202,20 +201,6 @@ def validate_parameter_map(
     return resolved
 
 
-def clean_nonfinite_json(value: Any) -> Any:
-    """Replace non-finite floats with None (C99 fastcore + pure-Python fallback)."""
-    fc = load_fastcore()
-    if fc is not None:
-        return fc.clean_obj(value)
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if isinstance(value, dict):
-        return {k: clean_nonfinite_json(v) for k, v in cast(dict[Any, Any], value).items()}
-    if isinstance(value, (list, tuple)):
-        return [clean_nonfinite_json(v) for v in cast(list[Any] | tuple[Any, ...], value)]
-    return value
-
-
 def require_finite_number(
     value: Any,
     msg: str = "Требуется конечное числовое значение.",
@@ -375,7 +360,6 @@ __all__ = [
     "calendar_row_buffers",
     "carry_proof_plugin_ids",
     "check_calendar_liquidity",
-    "clean_nonfinite_json",
     "daily_pair_proof_plugin_ids",
     "discover_strategies",
     "elapsed_calendar_days",

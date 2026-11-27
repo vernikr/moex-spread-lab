@@ -2,9 +2,9 @@
 
 import json
 
+from moex_spread_lab.data import history_url
 from moex_spread_lab.data.universe import HISTORY_WINDOWS
-from moex_spread_lab.strategies.funding_carry.carry import _history_url
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 from test_execution_proof import _build_root
 
 PAIR = "CNYRUBF/CRZ6"
@@ -57,7 +57,7 @@ def weekend(root):
     src = ScreenerInputs(root)
     near, far = WEEKEND_PAIR.split("/")
     contracts = json.loads(src.contracts.read_text())
-    for old, new in zip(PAIR.split("/"), (near, far)):
+    for old, new in zip(PAIR.split("/"), (near, far), strict=True):
         contract = next(r for r in contracts["instruments"] if r["secid"] == old)
         contracts["instruments"].append(
             dict(
@@ -78,7 +78,7 @@ def weekend(root):
         idx = block["columns"].index("SECID")
         for row in block["data"]:
             row[idx] = new
-        doc["url"] = _history_url(new, *HISTORY_WINDOWS[WEEKEND_PAIR], 0)
+        doc["url"] = history_url(new, *HISTORY_WINDOWS[WEEKEND_PAIR], 0)
         p = page(root, new, WEEKEND_PAIR)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(doc))

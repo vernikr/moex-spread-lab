@@ -12,7 +12,7 @@ from typing import Any, cast
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.costs import lqdt_overlay_values, side_cost, tariff_profile
-from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
+from moex_spread_lab.core.derived_cache import HashedJSONCache
 from moex_spread_lab.core.w0 import W0Error, load_contracts, read_hashed_json
 
 from .study import CARRY_SCHEMA, STRATEGY_SCHEMA, CarryStrategyError, _round

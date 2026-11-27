@@ -13,7 +13,6 @@ from moex_spread_lab.data.iss.catalog import (
     HISTORY_FIELDS,
     HISTORY_SCHEMA,
     IssHistoryError,
-    _history_url,
 )
 from moex_spread_lab.data.iss.catalog import fetch_history as _iss_fetch_history
 
@@ -341,7 +340,6 @@ __all__ = [
     "CarryError",
     "CarryStrategyError",
     "_funding_regime",
-    "_history_url",
     "_normalize_history",
     "_round",
     "build_carry_study",

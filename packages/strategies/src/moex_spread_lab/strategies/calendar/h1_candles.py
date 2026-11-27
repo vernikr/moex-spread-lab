@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, MarketDataStore
+from moex_spread_lab.data import DataLakeError, MarketDataStore
+from moex_spread_lab.data.lake import BarSeries
 
 from ..calendar_eval import row_dict
 from .contracts import (

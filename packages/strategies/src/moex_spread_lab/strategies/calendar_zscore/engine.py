@@ -8,8 +8,8 @@ from datetime import date, datetime
 from typing import Any
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
-from moex_spread_lab.core.cache_metrics import record_cache_lookup
 from moex_spread_lab.core.contracts import EntryBandPoint
+from moex_spread_lab.core.derived_cache import record_cache_lookup
 
 from ..base import (
     CALENDAR_EXIT_REASONS,

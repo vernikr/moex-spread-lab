@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Run the standalone browser smoke suites offline with a shared browser per worker.
 
-S4b: the runner used to start one Python process, one server and one cold Chromium per
-scenario. Now each worker process launches Chromium once, and every suite's
-`scenario(browser)` entry point keeps its own `BrowserContext` and loopback server, so
-no writable state is shared between scenarios. Fixture templates are built once per
-worker and cloned per suite (`_templates`), and a scenario that asserts no numerical
-result may bound its Optuna budget (`_harness.ui_only_trials`).
+Each worker launches Chromium once; every suite's ``scenario(browser)`` keeps its
+own ``BrowserContext`` and loopback server (no shared writable state); fixture
+templates are built once per worker and cloned per suite (``_templates``); a
+scenario asserting no numerical result may bound its Optuna budget
+(``_harness.ui_only_trials``).
 
-Each suite reports its phase split as one `MOEX_SMOKE_PHASES` line; the runner
-aggregates them into the table printed after the run, so the next optimization targets
-the measured term instead of guessing.
+Each suite reports its phase split as one ``MOEX_SMOKE_PHASES`` line; the runner
+aggregates them into the printed table.
 """
 
 import argparse
@@ -29,10 +27,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_DIR = ROOT / "packages/web/tests/browser"
-#: Where `_harness` lives; the discovery directory (`SMOKE_DIR`) may be redirected.
 HARNESS_DIR = SMOKE_DIR
 PHASES_MARKER = "MOEX_SMOKE_PHASES="
-#: Phase columns, in report order.
 PHASE_FIELDS = (
     "template_build",
     "fixture_clone",

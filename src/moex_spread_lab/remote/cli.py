@@ -159,28 +159,24 @@ def run(args: argparse.Namespace) -> int:
 def register(subparsers: SubparserRegistry) -> None:
     parser = subparsers.add_parser("remote", help="manage the authenticated workstation bridge")
     commands = parser.add_subparsers(dest="remote_command", required=True)
-    commands.add_parser("status", help="show workstation checkout and server status")
-    commands.add_parser("sync", help="fast-forward workstation main and restart its launch agent")
-    probe = commands.add_parser("probe", help="run a non-persisting loopback diagnostic")
+    commands.add_parser("status", help="show workstation status")
+    commands.add_parser("sync", help="fast-forward main and restart launch agent")
+    probe = commands.add_parser("probe", help="run loopback diagnostic")
     probe.add_argument(
         "--action", required=True, choices=("catalog", "run", "optimize", "plateau", "windows")
     )
-    probe.add_argument("--json", default="{}", help="proof request JSON object")
-    probe.add_argument("--settings", default="{}", help="in-memory settings overrides")
+    probe.add_argument("--json", default="{}", help="proof request JSON")
+    probe.add_argument("--settings", default="{}", help="settings overrides")
     probe.add_argument("--repeat", type=int, default=1)
     probe.add_argument("--warmup", type=int, default=0)
     probe.add_argument("--profile", action="store_true")
     probe.add_argument(
         "--sample-worker-rss",
         action="store_true",
-        help="sample aggregate worker RSS during the request",
+        help="sample aggregate worker RSS",
     )
-    probe.add_argument(
-        "--full", action="store_true", help="return full result rather than compact summary"
-    )
-    bench = commands.add_parser(
-        "bench", help="benchmark the workstation, optionally with an isolated tracked patch"
-    )
+    probe.add_argument("--full", action="store_true", help="full result instead of compact summary")
+    bench = commands.add_parser("bench", help="benchmark workstation (optional tracked patch)")
     bench.add_argument(
         "--suite",
         required=True,
@@ -195,15 +191,11 @@ def register(subparsers: SubparserRegistry) -> None:
         ),
     )
     bench.add_argument("--repeat", type=int, default=1)
-    bench.add_argument(
-        "--warmup", type=int, default=1, help="warm-up calls per workload (default: 1)"
-    )
-    bench.add_argument(
-        "--json", default="{}", help="custom action/payload/settings_override object"
-    )
+    bench.add_argument("--warmup", type=int, default=1, help="warm-up calls per workload")
+    bench.add_argument("--json", default="{}", help="custom action/payload/settings object")
     bench.add_argument(
         "--worktree-patch",
         choices=("HEAD",),
-        help="compare against current tracked Git diff; untracked files are excluded",
+        help="compare against current tracked diff (untracked excluded)",
     )
     parser.set_defaults(_msl_cli_handler=run)

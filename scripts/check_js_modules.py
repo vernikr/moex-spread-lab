@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Lightweight checks for the project's ES modules; Node adds a full syntax check.
 
-The identifier guard is intentionally heuristic, not a JavaScript scope analyser.
-It checks references to sibling top-level declarations and ignores properties and
-object keys. Node is optional; without it syntax checking is skipped explicitly.
+The identifier guard is heuristic, not a JS scope analyser: it checks references to
+sibling top-level declarations and ignores properties and object keys. Node is
+optional; without it syntax checking is skipped explicitly.
 """
 
 import re

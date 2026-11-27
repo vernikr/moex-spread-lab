@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 LABEL = "local.moex-spread-lab.screener"
 FASTCORE_SOURCE = "packages/core/src/moex_spread_lab/core/_fastcore.c"
@@ -104,14 +104,11 @@ def await_readiness(
             last_error = str(exc)
         else:
             if not isinstance(payload, dict):
-                last_error = "health endpoint returned a non-object payload"
+                last_error = "health payload is not an object"
+            elif payload.get("git_head") == expected_head:
+                return payload
             else:
-                payload_map = cast(dict[str, Any], payload)
-                if payload_map.get("git_head") == expected_head:
-                    return payload_map
-                last_error = (
-                    f"daemon serves {payload_map.get('git_head')}, expected {expected_head}"
-                )
+                last_error = f"daemon serves {payload.get('git_head')}, expected {expected_head}"
         time.sleep(interval_s)
     raise RuntimeError(
         f"workstation service did not become ready within {timeout_s:.0f}s ({last_error})"
@@ -163,13 +160,17 @@ def service(root: Path) -> dict[str, Any]:
     return {"launchd_loaded": result.returncode == 0, "http_status": http_status}
 
 
+def _get_json(url: str, timeout: float) -> Any:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return json.load(response)
+    except (OSError, urllib.error.URLError, ValueError):
+        return None
+
+
 def status(root: Path) -> dict[str, Any]:
     tracked = command(root, "git", "status", "--porcelain", "--untracked-files=no")
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:8765/api/dev/health", timeout=5) as response:
-            dev_health = json.load(response)
-    except (OSError, urllib.error.URLError, ValueError):
-        dev_health = None
+    dev_health = _get_json("http://127.0.0.1:8765/api/dev/health", 5)
     return {
         "head": command(root, "git", "rev-parse", "HEAD"),
         "branch": command(root, "git", "branch", "--show-current"),

@@ -1,13 +1,9 @@
 """Run the repository-wide, dependency-light architecture gate.
 
-This script intentionally reuses the checked-in DAG/conformance tests and invokes
-the governance CLI check in-process. It is designed for the fast CI gate;
-full behavioral and numerical suites run in the package test matrix.
-
-Package-manifest conformance (Issue #140) is validated in-process with the
-standard library only (``json`` + ``tomllib``), so ``packages/*/manifest.json``
-drift from ``pyproject.toml`` or the Stage-5 required keys fails loudly before
-any heavy import is needed.
+Reuses the checked-in DAG/conformance tests and invokes the governance CLI check
+in-process for the fast CI gate; full behavioral and numerical suites run in the
+package test matrix. Package-manifest conformance (#140) is validated stdlib-only
+(``json`` + ``tomllib``), so manifest drift fails before any heavy import.
 """
 
 import argparse
@@ -24,20 +20,16 @@ from typing import Any, TypeGuard
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 
-# Make the script usable both from an installed uv workspace and from a plain
-# repository checkout, without adding a runtime dependency or build step.
+# Installed uv workspace or plain checkout alike, with no runtime dependency.
 for source in sorted((ROOT / "packages").glob("*/src"), reverse=True):
     sys.path.insert(0, str(source))
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "packages" / "core" / "tests"))
-# The conformance module lives in ``tests/contract`` and imports its shared fixture
-# builders from ``tests/``, so both directories must be importable here.
+# tests/contract imports shared fixtures from tests/: both must be importable.
 sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests"))
 sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests" / "contract"))
 
-# NOTE: the DAG/conformance test modules are imported inside ``main()`` so that
-# importing this module (and running the stdlib-only manifest check below)
-# never requires the heavy package dependencies.
+# DAG/conformance tests import inside main() so importing this module stays light.
 
 # Stage-5 required keys for every packages/<name>/manifest.json
 # (docs/stages/05-architecture.md, "Module contract").

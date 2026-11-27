@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""Build the unified namespace typing view, then run basedpyright on the workspace.
-
-The generated view is ignored by git and only contains symlinks. Source remains in
-its owning package; this gives the type checker one deterministic namespace root.
-"""
+"""Build the unified namespace typing view (git-ignored symlinks only), then run
+basedpyright on the workspace: one deterministic namespace root, sources stay put."""
 
 import argparse
 import shutil

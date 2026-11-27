@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Change-scope router and touched-file helpers (stdlib only; used by ci.yml, verify, gates).
 
-Per changed path; any unmatched path resolves to ``full``: ``docs/**`` and root-level
+Per changed path, any unmatched path resolves to ``full``: ``docs/**`` and root-level
 ``*.md`` are docs (Markdown inside ``packages/**`` is not); ``packages/<p>/{src,tests}/**/*.py``
-selects ``p`` plus its reverse dependents (any other, new or deleted package file selects
-the same legs with testmon disabled); everything else is ``full``, and C99/sanitizer/CI
-paths also set ``run_tier2``.
-
-Without ``--event`` it routes the working tree (diff vs ``--base`` plus untracked
-files); with ``--event`` it routes ``git diff base..head``, and any error,
-``schedule``/``workflow_dispatch`` or a missing base resolves to full (CI contract).
+selects ``p`` plus its reverse dependents (any other package file selects the same legs
+with testmon disabled); everything else is ``full``, and C99/sanitizer/CI paths also set
+``run_tier2``. Without ``--event`` it routes the working tree; with ``--event`` it routes
+``git diff base..head``, and any error, ``schedule``/``workflow_dispatch`` or a missing
+base resolves to full (CI contract).
 """
 
 import argparse
@@ -227,8 +225,8 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
     reasons = [f"package change \u2192 legs {','.join(legs)}", *summary]
     skipped: tuple[str, ...] = ()
     if not testmon:
-        reasons.append("non-.py or new/deleted package file(s): testmon deselection disabled")
-        skipped = ("testmon deselection (non-.py or new/deleted input)",)
+        reasons.append("non-.py or new/deleted package file(s): testmon off")
+        skipped = ("testmon deselection (non-.py/new/deleted)",)
     perf = legs != ("web",)
     return ScopeDecision(
         "packages", legs, False, testmon, check_js, False, perf, tuple(reasons), skipped
@@ -239,7 +237,7 @@ def decide_local(base: str = "HEAD", root: Path = ROOT) -> ScopeDecision:
     try:
         paths, nod = local_change_set(base, root)
     except RuntimeError as exc:
-        return _full([f"{exc}; resolving to full"], run_tier2=True)
+        return _full([f"{exc} -> full"], run_tier2=True)
     return decide_paths(paths, new_or_deleted=nod)
 
 
@@ -247,10 +245,10 @@ def decide_ci(event_name: str, base_sha: str = "", head_sha: str = "HEAD", root:
     if event_name in _FULL_EVENTS:
         return _full([f"event={event_name} resolves to full unconditionally"], run_tier2=True)
     if not base_sha or base_sha == NULL_SHA:
-        return _full(["missing base SHA; resolving to full conservatively"], run_tier2=True)
+        return _full(["missing base SHA -> full"], run_tier2=True)
     changed = git_diff_names(base_sha, head_sha, root)
     if changed is None:
-        reason = f"git diff {base_sha}..{head_sha} unavailable; resolving to full"
+        reason = f"git diff {base_sha}..{head_sha} unavailable"
         return _full([reason], run_tier2=True)
     nod = git_diff_names(base_sha, head_sha, root, "--diff-filter=ADR") or []
     return decide_paths(changed, new_or_deleted=nod)
@@ -292,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             decision = decide_ci(args.event, args.base, args.head)
     except Exception as exc:  # noqa: BLE001 — CI contract: any router error resolves to full
-        decision = _full([f"router error: {exc}; resolving to full"], run_tier2=True)
+        decision = _full([f"router error: {exc} -> full"], run_tier2=True)
     print(
         json.dumps(decision.to_dict(), sort_keys=True)
         if args.format == "json"

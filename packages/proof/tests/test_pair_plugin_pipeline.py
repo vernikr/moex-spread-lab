@@ -386,7 +386,7 @@ def test_funding_history_must_match_near_contract():
 def test_fixed_pair_curve_uses_each_leg_multiplier(far_mult, side, terminal, fill):
     window, evidence, _ = fixture()
     window.contracts["F"]["tick_value"] = far_mult
-    window.rows[3].update(far_open=50000, far_close=50010)
+    window.rows[3].update(far_close=50010)
     window.rows[4].update(far_open=49980, far_close=50050)
     unit, _ = prepare_daily_pair_unit(
         PairPlugin(side, terminal),
@@ -415,23 +415,17 @@ def test_fixed_pair_curve_uses_each_leg_multiplier(far_mult, side, terminal, fil
     sign = 1 if side == "long_spread" else -1
     entry_cost = sum(entry["costs"].values())
     exit_cost = sum(exit_["costs"].values())
+
+    def price_pnl(near, far):
+        return sign * 2 * ((near - entry["near_price"]) - (far - entry["far_price"]) * far_mult)
+
     first_pnl = (
-        sign
-        * 2
-        * (
-            (window.rows[3]["near_close"] - entry["near_price"])
-            - (window.rows[3]["far_close"] - entry["far_price"]) * far_mult
-        )
+        price_pnl(window.rows[3]["near_close"], window.rows[3]["far_close"])
         - entry_cost
         + rows[3]["funding_rub"]
     )
     final_pnl = (
-        sign
-        * 2
-        * (
-            (exit_["near_price"] - entry["near_price"])
-            - (exit_["far_price"] - entry["far_price"]) * far_mult
-        )
+        price_pnl(exit_["near_price"], exit_["far_price"])
         - entry_cost
         - exit_cost
         + sum(row["funding_rub"] for row in rows)

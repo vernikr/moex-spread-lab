@@ -52,14 +52,6 @@ def _is_mapping(value: object) -> bool:
     return isinstance(value, Mapping)
 
 
-def _is_list_or_tuple(value: object) -> bool:
-    return isinstance(value, (list, tuple))
-
-
-def _is_instance(value: object, instance_type: type[object]) -> bool:
-    return isinstance(value, instance_type)
-
-
 def _finite(value: object) -> bool:
     if isinstance(value, bool) or not isinstance(value, Real):
         return False
@@ -231,7 +223,7 @@ def replay_daily_pair_funding(
 
     from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 
-    if not _is_instance(window, FundingWindow) or not dates:
+    if not isinstance(cast(object, window), FundingWindow) or not dates:
         raise W0Error("Для дневного расчёта нужны окно и даты фондирования.")
     _validate_daily_dates(dates, through)
     expected = [day for day in window.days if through is None or day <= through]
@@ -286,7 +278,9 @@ def attach_daily_unit_funding(
     journal-only extras and is not a complete proof or an enabled plugin adapter.
     Quantity is fixed at one here; the sizing engine applies accepted quantities.
     """
-    if not _is_list_or_tuple(series) or any(not _is_mapping(row) for row in series):
+    if not isinstance(cast(object, series), (list, tuple)) or any(
+        not _is_mapping(row) for row in series
+    ):
         raise W0Error("Некорректные строки анализа для фондирования.")
     if any(row.get("volume_eligible", True) is not True for row in series):
         raise W0Error("В расчёт фондирования допускаются только подходящие бары анализа.")

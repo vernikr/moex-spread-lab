@@ -280,18 +280,11 @@ def prepare_daily_pair_unit(
     settings: ResearchSettings,
     **options: Unpack[_UnitOptions],
 ) -> tuple[dict[str, Any], dict[str, float]]:
-    """Validate decisions and size them against resolved funding and one account.
+    """Prepare isolated unit intents and funding from the eligible prefix.
 
-    Zero-volume rows stay in the journal without revaluation or funding. Only the
-    eligible prefix reaches the plugin; no later bars or benchmark marks are used.
-    Inputs are not mutated; plugin-supplied money fields are ignored.
-    Daily perpetual funding evidence must match the near contract. Missing daily
-    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
-    prices follow native proof and omit funding rather than invent clearing times.
-    `isolate=False` (first-party built-ins only) skips the defensive input copies.
-    A request-scoped `memo` (first-party built-ins only) reuses the validated and
-    priced rows of each cut-off across trials and leaves the unit `run_id` unset:
-    built-in payloads derive their identity from the full replay, not the unit.
+    Journal-only bars never revalue or receive funding. Plugin money is ignored.
+    First-party built-ins may skip copies (`isolate=False`) and cache validated,
+    priced cutoffs (`memo`); their identity comes from the full replay, not the unit.
     """
     through = options.get("through")
     isolate = options.get("isolate", True)

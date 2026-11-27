@@ -33,8 +33,6 @@ from .payload_tools import (
     trade_block,
 )
 
-_Obj = dict[str, Any]
-
 
 class PairPluginRoute:
     """Pair-plugin route: plugin intents with an independently calculated account."""

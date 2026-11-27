@@ -17,7 +17,8 @@ def _result() -> dict[str, Any]:
 def test_builtin_carry_is_discovered_as_an_adapted_strategy() -> None:
     from moex_spread_lab.strategies.base import carry_proof_plugin_ids
 
-    registry = StrategyRegistry({"funding_only": FundingCarryPlugin()})
+    plugins: dict[str, Any] = {"funding_only": FundingCarryPlugin()}
+    registry = StrategyRegistry(plugins)
     assert carry_proof_plugin_ids(registry) == {"funding_only"}
     assert "funding_only" in get_proof_adapter_ids(registry)
 

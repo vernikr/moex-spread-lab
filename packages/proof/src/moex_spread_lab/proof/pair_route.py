@@ -21,12 +21,13 @@ from moex_spread_lab.core.contracts import (
 )
 from moex_spread_lab.core.settings import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
-from moex_spread_lab.core.universe import PAIR_UNIVERSE, STRATEGIES
+from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import PRICE_FILLS, pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import AnalyticsError
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    STRATEGIES,
     _pair,
     _parameters,
     execution_settings,

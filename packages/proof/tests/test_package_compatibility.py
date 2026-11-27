@@ -28,12 +28,15 @@ def test_builtin_replays_use_the_canonical_intent_pipeline():
     from moex_spread_lab.proof import carry_payload, pair_route
 
     assert pair_route.run_carry is carry_payload.run_carry
+    spec = pair_route.ReplaySpec(
+        inputs=None, pair={}, execution={}, params={}, terms={}, risk={}, prepared=()
+    )
     with (
         patch.object(pair_route, "builtin_pair_proof") as mean_reversion,
         patch.object(pair_route, "run_carry") as funding,
     ):
-        pair_route._replay_once(object(), True, metrics_only=False)
-        pair_route._replay_once(object(), False, metrics_only=False)
+        pair_route._replay_once(spec, True, metrics_only=False)
+        pair_route._replay_once(spec, False, metrics_only=False)
     mean_reversion.assert_called_once()
     funding.assert_called_once()
 

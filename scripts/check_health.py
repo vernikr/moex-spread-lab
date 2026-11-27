@@ -218,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     if scope.changed and not scope.touched:
-        print(f"check_health (changed): no touched files (base {args.base})")
+        print(f"check_health (changed): no touched files ({args.base})")
         _write_status(mode, [])
         return 0
     with tempfile.TemporaryDirectory(prefix="msl-health.") as tmp:

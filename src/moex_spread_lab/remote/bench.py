@@ -181,7 +181,7 @@ def benchmark_lock(root: Path) -> Generator[None]:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError("another benchmark is running for this checkout") from None
+            raise RuntimeError("another benchmark is running") from None
         try:
             yield
         finally:
@@ -206,7 +206,7 @@ def _benchmark(root: Path, options: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("workstation server is busy; benchmark refused")
     revision = options.get("revision")
     if revision and _cmd(root, "git", "rev-parse", "HEAD") != revision:
-        raise RuntimeError("workstation HEAD differs from candidate base; run remote sync first")
+        raise RuntimeError("HEAD differs from candidate base; run remote sync first")
     if suite == "ab_fastcore":
         if not revision:
             raise ValueError("ab_fastcore requires a candidate revision")
@@ -312,6 +312,7 @@ def _suite(name: str, request: dict[str, Any], repeat: int, warmup: int) -> list
     targets = [{"universe": "calendar_native", "asset": "Si", "pair": p} for p in si_pairs]
     si_windows = [{**t, "strategy": "zscore_mean_reversion"} for t in targets]
     cohort = {**si_windows[-1], "optimize_strategy": True, "targets": targets}
+    cohort_job = ("optimize", cohort, {"timeframe": "1d", "random_seed": 41})
     pair_sized = {**pair, "sizing": "max_affordable"}
     gold = {**pair_sized, "pair": "GLDRUBF/GLZ6"}
     jobs: dict[str, list[tuple[str, dict[str, Any], dict[str, Any]]]] = {
@@ -324,8 +325,8 @@ def _suite(name: str, request: dict[str, Any], repeat: int, warmup: int) -> list
             for strategy in ("zscore_mean_reversion", "convergence_to_ruonia")
         ],
         "window_table_batch": [("windows", {"requests": si_windows}, {"timeframe": "1d"})],
-        "cohort_optimize": [("optimize", cohort, {"timeframe": "1d", "random_seed": 41})],
-        "ab_fastcore": [("optimize", cohort, {"timeframe": "1d", "random_seed": 41})],
+        "cohort_optimize": [cohort_job],
+        "ab_fastcore": [cohort_job],
         "custom": [
             (
                 str(request.get("action", "catalog")),

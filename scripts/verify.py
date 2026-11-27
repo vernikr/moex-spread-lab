@@ -207,9 +207,7 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         ]
         return steps, skipped, "affected/docs"
     if decision.profile == "full":
-        print(
-            f"verify: no scoped path applies — falling back to full ({'; '.join(decision.reasons)})"
-        )
+        print(f"verify: no scoped path applies — full ({'; '.join(decision.reasons)})")
         return build_steps("full", base)
     os.environ.setdefault("TESTMON_DATAFILE", str(ROOT / ".testmondata"))
     legs = list(decision.packages)
@@ -226,7 +224,7 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
     steps = [
         Step(
             "health-changed",
-            f"affected profile (--changed --base {base})",
+            f"affected (--changed --base {base})",
             [*HEALTH_CMD, "--changed", "--base", base],
         ),
         Step(
@@ -241,13 +239,11 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
             if triggers
             else ""
         )
-        reason = (
-            f"subprocess/CLI/proof_pool and {trigger}{len(always_files)} file(s), testmon disabled"
-        )
+        reason = f"subprocess/CLI/proof_pool{trigger}{len(always_files)} file(s), testmon off"
         steps.append(Step("always-run", reason, pytest_cmd(["-p", "no:testmon", *always_files])))
     leg_dirs = [f"packages/{leg}/tests" for leg in legs]
     if decision.testmon and _testmon_available():
-        reason = f"affected (advisory) selection over legs: {','.join(legs)}"
+        reason = f"affected (advisory): {','.join(legs)}"
         command = pytest_cmd(["--testmon", *leg_dirs, *ignores])
     else:
         print(
@@ -272,7 +268,7 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
         steps = [
             Step(
                 "health-changed",
-                f"quick profile (--changed --base {base})",
+                f"quick (--changed --base {base})",
                 [*HEALTH_CMD, "--changed", "--base", base],
             )
         ]
@@ -286,7 +282,7 @@ def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
             Step("health-full", f"{profile} profile (full gate)", list(HEALTH_CMD)),
             Step(
                 "suite-full",
-                f"{profile}: whole suite, every parity tier (no deselection)",
+                f"{profile}: whole suite, all tiers, no deselection",
                 pytest_cmd([], marker=""),
             ),
         ]

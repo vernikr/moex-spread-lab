@@ -179,11 +179,11 @@ def status(root: Path) -> dict[str, Any]:
 
 def sync(root: Path) -> dict[str, Any]:
     if command(root, "git", "status", "--porcelain", "--untracked-files=no"):
-        raise RuntimeError("tracked checkout changes detected; refusing to sync")
+        raise RuntimeError("tracked changes; refusing to sync")
     if command(root, "git", "branch", "--show-current") != "main":
-        raise RuntimeError("checkout must be on main; refusing to sync")
+        raise RuntimeError("not on main; refusing to sync")
     if not service(root)["launchd_loaded"]:
-        raise RuntimeError("launchd service is not installed; refusing to sync")
+        raise RuntimeError("launchd service missing; refusing to sync")
     old = command(root, "git", "rev-parse", "HEAD")
     command(root, "git", "fetch", "origin", "main")
     new = command(root, "git", "rev-parse", "origin/main")

@@ -272,7 +272,7 @@ def main() -> int:
     else:
         print(
             f"architecture-gate: fast passed in {time.perf_counter() - started:.2f}s "
-            "(plugin conformance and CLI checks skipped)"
+            "(conformance/CLI skipped)"
         )
     return 0
 

@@ -34,7 +34,7 @@ class ProofPerfEquivalenceFastcoreTests(H1WorkspaceCase):
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):
         from moex_spread_lab.core._fastcore_loader import load_fastcore
-        from moex_spread_lab.proof.service import _clean
+        from moex_spread_lab.proof.payload_tools import clean as _clean
         from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
             compute_rolling_z,
             run_mean_reversion_baseline,

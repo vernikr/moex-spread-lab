@@ -9,20 +9,38 @@ plugin, and rendered with the built-in provenance (`trust_tier="builtin"`).
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import cache
 from typing import Any, cast
 
+from moex_spread_lab.accounting.account_risk import assess_vtb_pair
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
-from moex_spread_lab.core.contracts import StrategyIntentRun, WindowSnapshot
+from moex_spread_lab.core.contracts import (
+    StrategyIntentRun,
+    WindowSnapshot,
+    plugin_is_builtin,
+)
 from moex_spread_lab.core.settings import STRICT_SCREENS, ResearchSettings
-from moex_spread_lab.core.universe import PAIR_UNIVERSE
+from moex_spread_lab.core.timeframes import get_timeframe
+from moex_spread_lab.core.universe import PAIR_UNIVERSE, STRATEGIES
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.strategies import PRICE_FILLS
+from moex_spread_lab.strategies import PRICE_FILLS, pair_fill
+from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import AnalyticsError
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    _pair,
+    _parameters,
+    execution_settings,
+)
+from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    catalog as _pair_catalog,
+)
 
+from .carry_payload import run_carry
 from .fixed_plugin_payload import fixed_pair_accounting
 from .market_window import ReplaySpec, cached, chart_signal_z, resolve_window
 from .pair_plugin_accounting import prepare_daily_pair_unit as _prepare_unit
 from .pair_template import chart_rows, full_payload, metrics_payload, sizing_unit
+from .payload_tools import benchmark_marks, load_instruments, sha256_bytes
 
 
 def check_sizing_request(selection: dict[str, Any]) -> None:
@@ -155,13 +173,79 @@ def builtin_pair_proof(
     )
 
 
-def _replay_once(
-    facade: Any, spec: ReplaySpec, price_strategy: bool, metrics_only: bool
-) -> dict[str, Any]:
-    """Dispatch through the facade hooks so tests can patch either replay."""
+def _plugin_parameters(plugin: Any, request: Any, pair: Any, settings: Any) -> dict[str, Any]:
+    """Validate trusted-plugin parameters against the schema it declares."""
+    from copy import deepcopy
+
+    from moex_spread_lab.core.contracts import InstrumentContext
+    from moex_spread_lab.strategies.base import validate_parameter_map
+
+    context = InstrumentContext(
+        universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe
+    )
+    schema = plugin.parameter_schema(context)
+    clean = validate_parameter_map(request.get("parameters", {}), schema)
+    params = validate_parameter_map(plugin.validate_parameters(deepcopy(clean), context), schema)
+    if params != clean or any(not param.contains(params[param.name]) for param in schema):
+        raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
+    return params
+
+
+def _validate_pair_screen(
+    inputs: Any, pair: Any, funding: Any, screen_strategy: Any, settings: ResearchSettings
+) -> None:
+    tf = get_timeframe(settings.timeframe)
+    if not tf.supports_pair_proof:
+        raise W0Error(f"{tf.label}: pair-proof не поддерживается.")
+    catalog = _pair_catalog(
+        inputs,
+        registry=(pair,),
+        funding=funding,
+        initial_capital=settings.initial_capital_rub,
+        timeframe=settings.timeframe,
+    )
+    entry = cast(dict[str, Any], catalog["pairs"][0])
+    if not cast(dict[str, Any], entry["proof_strategies"]).get(screen_strategy):
+        raise W0Error(cast(str, cast(dict[str, Any], entry["data_reasons"])[screen_strategy]))
+    if not (settings.validation_percent or settings.allow_failed_volume) and not cast(
+        dict[str, Any], entry["strategies"]
+    ).get(screen_strategy):
+        raise W0Error("Не пройдено правило ликвидности пары.")
+
+
+def _validate_pair_request(
+    request: Any, strategy: Any, pair: Any, carry_plugin: Any, sizing_intents: Any
+) -> None:
+    req = cast(dict[str, Any], request)
+    if (
+        req.get("strategy") != strategy
+        or req.get("pair") != cast(dict[str, Any], pair)["pair_id"]
+        or req.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
+        or (carry_plugin is not None and automatic(request) != sizing_intents)
+    ):
+        raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
+
+
+def _validate_carry_result(result: Any, carry_plugin: Any, metrics_only: bool) -> None:
+    # Built-in engines keep their native payload shape; drop-ins carry the marker even
+    # when they subclass a built-in plugin and inherit its trust tier.
+    if carry_plugin is None or plugin_is_builtin(carry_plugin):
+        return
+    res = cast(dict[str, Any], result)
+    res["accounting_policy"] = "carry_settlement.v1"
+    if (
+        not metrics_only
+        and abs(cast(float, cast(dict[str, Any], res["summary"])["ledger_reconciliation_rub"]))
+        > 0.02
+    ):
+        raise W0Error("Учёт carry-плагина не согласован с журналом сделок.")
+
+
+def _replay_once(spec: ReplaySpec, price_strategy: bool, metrics_only: bool) -> dict[str, Any]:
+    """Dispatch a prepared spec to its canonical replay pipeline."""
     if price_strategy:
-        return facade.run_mean_reversion(spec, metrics_only=metrics_only)
-    return facade.run_funding(spec, metrics_only=metrics_only)
+        return builtin_pair_proof(spec, metrics_only=metrics_only)
+    return run_carry(spec, metrics_only=metrics_only)
 
 
 def prepare_pair(
@@ -170,24 +254,21 @@ def prepare_pair(
     settings: ResearchSettings,
     sizing_intents: Any,
     carry_plugin: Any,
-    facade: Any,
 ) -> Callable[..., dict[str, Any]]:
-    """Prepare a request-scoped pair replay using the facade's injectable hooks."""
-    pair = facade._pair(selection.get("pair"))
+    """Prepare a request-scoped pair replay over directly imported canonical hooks."""
+    pair = _pair(selection.get("pair"))
     near, far = pair["near"], pair["far"]
     strategy = selection.get("strategy")
-    if not isinstance(strategy, str) or (
-        strategy not in facade.STRATEGIES and carry_plugin is None
-    ):
+    if not isinstance(strategy, str) or (strategy not in STRATEGIES and carry_plugin is None):
         raise W0Error("неизвестная стратегия")
     screen_strategy = "funding_only" if carry_plugin is not None else strategy
     inputs = service.screener_inputs
-    funding = facade.ProofFunding(inputs)
-    facade._validate_pair_screen(inputs, pair, funding, screen_strategy, settings)
+    funding = ProofFunding(inputs)
+    _validate_pair_screen(inputs, pair, funding, screen_strategy, settings)
 
-    @facade.cache
+    @cache
     def risk_for(quantity: Any) -> Any:
-        risk = facade.assess_vtb_pair(
+        risk = assess_vtb_pair(
             inputs.contracts,
             near,
             far,
@@ -198,10 +279,10 @@ def prepare_pair(
             raise W0Error("пара не проходит стресс-экран рабочего капитала")
         return risk
 
-    risk_for(facade.execution_settings(selection)["quantity"])
-    instruments = facade._load_instruments(inputs.contracts)
+    risk_for(execution_settings(selection)["quantity"])
+    instruments = load_instruments(inputs.contracts)
     terms = {secid: instruments.get(secid, {}) for secid in (near, far)}
-    dates, prices = facade._benchmark_marks(inputs.benchmark)
+    dates, prices = benchmark_marks(inputs.benchmark)
     price_strategy = strategy == "mean_reversion"
     prepared = (
         service._price_inputs(
@@ -212,9 +293,9 @@ def prepare_pair(
     )
     # Reuse immutable input hashes throughout this request's Optuna trials.
     source_hashes = {
-        "benchmark_sha256": facade._sha256_bytes(inputs.benchmark),
-        "contracts_sha256": facade._sha256_bytes(inputs.contracts),
-        "historical_contracts_sha256": facade._sha256_bytes(
+        "benchmark_sha256": sha256_bytes(inputs.benchmark),
+        "contracts_sha256": sha256_bytes(inputs.contracts),
+        "historical_contracts_sha256": sha256_bytes(
             inputs.contracts.parent / "historical-contracts.json"
         ),
     }
@@ -241,16 +322,16 @@ def prepare_pair(
         template: bool = False,
     ) -> dict[str, Any]:
         execution = {
-            **facade.execution_settings(request),
+            **execution_settings(request),
             "sizing_intents": sizing_intents,
-            "fill": facade.pair_fill(request, strategy, default_price_fill=settings.price_fill),
+            "fill": pair_fill(request, strategy, default_price_fill=settings.price_fill),
             "initial_capital_rub": settings.initial_capital_rub,
         }
-        facade._validate_pair_request(request, strategy, pair, carry_plugin, sizing_intents)
+        _validate_pair_request(request, strategy, pair, carry_plugin, sizing_intents)
         params = (
-            facade._parameters(request, strategy)
+            _parameters(request, strategy)
             if carry_plugin is None
-            else facade._plugin_parameters(carry_plugin, request, pair, settings)
+            else _plugin_parameters(carry_plugin, request, pair, settings)
         )
         spec = ReplaySpec(
             inputs=inputs,
@@ -267,8 +348,8 @@ def prepare_pair(
         )
         if template:
             return pair_template_payload(spec)
-        result = _replay_once(facade, spec, price_strategy, metrics_only)
-        facade._validate_carry_result(result, carry_plugin, metrics_only)
+        result = _replay_once(spec, price_strategy, metrics_only)
+        _validate_carry_result(result, carry_plugin, metrics_only)
         return result
 
     return replay

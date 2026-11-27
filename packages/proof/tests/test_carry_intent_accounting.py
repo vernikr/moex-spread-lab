@@ -129,7 +129,7 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
         far_expiry=contracts[pair["far"]]["expiry"],
     )
     assert actual["trades"] == native["trades"]
-    from moex_spread_lab.proof.service import _benchmark_marks
+    from moex_spread_lab.proof.payload_tools import benchmark_marks as _benchmark_marks
 
     days, prices = _benchmark_marks(inputs.benchmark)
     full = replay_carry_intents(

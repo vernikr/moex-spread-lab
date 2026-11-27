@@ -22,10 +22,20 @@ def test_legacy_module_is_same_object(old, new):
 
 
 def test_builtin_replays_use_the_canonical_intent_pipeline():
-    from moex_spread_lab.proof import carry_payload, pair_route, service
+    """#220 retired the service façade hooks; prepare_pair dispatches directly."""
+    from unittest.mock import patch
 
-    assert service.run_mean_reversion is pair_route.builtin_pair_proof
-    assert service.run_funding is carry_payload.run_carry
+    from moex_spread_lab.proof import carry_payload, pair_route
+
+    assert pair_route.run_carry is carry_payload.run_carry
+    with (
+        patch.object(pair_route, "builtin_pair_proof") as mean_reversion,
+        patch.object(pair_route, "run_carry") as funding,
+    ):
+        pair_route._replay_once(object(), True, metrics_only=False)
+        pair_route._replay_once(object(), False, metrics_only=False)
+    mean_reversion.assert_called_once()
+    funding.assert_called_once()
 
 
 @pytest.mark.parametrize(

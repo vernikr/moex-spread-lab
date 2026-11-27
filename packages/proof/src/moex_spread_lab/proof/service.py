@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
-from functools import cache as cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
-import moex_spread_lab.core.universe as _universe
-import moex_spread_lab.core.w0 as _w0
-from moex_spread_lab.accounting.account_risk import assess_vtb_pair as assess_vtb_pair
 from moex_spread_lab.accounting.position_sizing import (
     automatic,
+    size_proof,
 )
-from moex_spread_lab.accounting.position_sizing import (
-    size_proof as size_proof,
-)
-from moex_spread_lab.core.contracts import plugin_is_builtin
 from moex_spread_lab.core.settings import STRICT_SCREENS, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import (
@@ -27,72 +19,24 @@ from moex_spread_lab.core.universe import (
     PAIR_UNIVERSE,
 )
 from moex_spread_lab.core.w0 import W0Error, run_id
-from moex_spread_lab.strategies import pair_fill as pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import (
     FundingWindow,
-)
-from moex_spread_lab.strategies.funding_carry.proof_funding import (
-    ProofFunding as ProofFunding,
 )
 from moex_spread_lab.strategies.pair_screener.pair_screener import (
     ScreenerInputs,
     pair_price_inputs,
 )
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
-    _pair as _pair,
-)
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
-    _parameters as _parameters,
-)
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
-    catalog as _pair_catalog,
-)
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
-    execution_settings as execution_settings,
-)
 
 from .calendar_adapter import calendar_proof as calendar_proof
-from .carry_payload import run_carry
 from .carry_route import funding_inputs
 from .pair_plugins import PairPluginRoute
-from .pair_route import builtin_pair_proof, check_sizing_request, prepare_native, prepare_pair
+from .pair_route import check_sizing_request, prepare_native, prepare_pair
 from .payload_tools import (
     benchmark_marks,
-    clean,
-    events,
-    load_contracts_for_side_cost,
     load_instruments,
     mark,
     positive_pair_volume,
-    result_label,
-    sha256_bytes,
 )
-
-_HashedJSONCache: Any = vars(_w0)["_HashedJSONCache"]
-STRATEGIES: dict[str, dict[str, Any]] = cast(
-    dict[str, dict[str, Any]], vars(_universe)["STRATEGIES"]
-)
-
-# Replay hooks resolved through the module at call time, so tests may patch them.
-run_mean_reversion = builtin_pair_proof
-run_funding = run_carry
-
-PROOF_SCHEMA = "execution-proof.v1"
-FORCED_EXIT_REASONS = frozenset(
-    {"end_of_sample", "end_of_window", "open_at_data_end_no_executable_exit"}
-)
-_BENCHMARK_MARKS_CACHE: Any = _HashedJSONCache(32)
-_INSTRUMENTS_CACHE: Any = _HashedJSONCache(32)
-_SHA256_CACHE: Any = _HashedJSONCache(512)
-
-_benchmark_marks = benchmark_marks
-_load_instruments = load_instruments
-_sha256_bytes = sha256_bytes
-_mark = mark
-_load_contracts_for_side_cost = load_contracts_for_side_cost
-_result = result_label
-_clean = clean
-_events = events
 
 
 def reference_eval() -> bool:
@@ -100,24 +44,6 @@ def reference_eval() -> bool:
     import os
 
     return os.environ.get("MOEX_PROOF_REFERENCE_EVAL", "0") == "1"
-
-
-def _plugin_parameters(plugin: Any, request: Any, pair: Any, settings: Any) -> dict[str, Any]:
-    """Validate trusted-plugin parameters against the schema it declares."""
-    from copy import deepcopy
-
-    from moex_spread_lab.core.contracts import InstrumentContext
-    from moex_spread_lab.strategies.base import validate_parameter_map
-
-    context = InstrumentContext(
-        universe=PAIR_UNIVERSE, pair=pair["pair_id"], timeframe=settings.timeframe
-    )
-    schema = plugin.parameter_schema(context)
-    clean = validate_parameter_map(request.get("parameters", {}), schema)
-    params = validate_parameter_map(plugin.validate_parameters(deepcopy(clean), context), schema)
-    if params != clean or any(not param.contains(params[param.name]) for param in schema):
-        raise W0Error("Параметры carry-плагина не соответствуют объявленной схеме.")
-    return params
 
 
 def _calendar_sizing_unit(
@@ -251,8 +177,8 @@ def prepare_automatic(
         settings=settings,
         sizing_intents=True,
     )
-    dates, prices = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
-    contracts = _load_instruments(service.root / "data/w1/current-intake.json")
+    dates, prices = benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
+    contracts = load_instruments(service.root / "data/w1/current-intake.json")
     marks_cache: dict[str | None, dict[str, float]] = {}
     scan_cols_cache: dict[str | None, Any] = {}
 
@@ -284,7 +210,7 @@ def prepare_automatic(
             if not dates or dates[0] > unit["series"][0]["date"]:
                 raise W0Error("Нет отметки LQDT на начало истории.")
             marks = {
-                r["date"]: _mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
+                r["date"]: mark(dates, prices, r.get("benchmark_mark_date") or r["date"][:10])
                 for r in unit["series"]
             }
             marks_cache[through] = marks
@@ -301,56 +227,6 @@ def prepare_automatic(
         )
 
     return sized_replay
-
-
-def _validate_pair_screen(
-    inputs: Any, pair: Any, funding: Any, screen_strategy: Any, settings: ResearchSettings
-) -> None:
-    tf = get_timeframe(settings.timeframe)
-    if not tf.supports_pair_proof:
-        raise W0Error(f"{tf.label}: pair-proof не поддерживается.")
-    catalog = _pair_catalog(
-        inputs,
-        registry=(pair,),
-        funding=funding,
-        initial_capital=settings.initial_capital_rub,
-        timeframe=settings.timeframe,
-    )
-    entry = cast(dict[str, Any], catalog["pairs"][0])
-    if not cast(dict[str, Any], entry["proof_strategies"]).get(screen_strategy):
-        raise W0Error(cast(str, cast(dict[str, Any], entry["data_reasons"])[screen_strategy]))
-    if not (settings.validation_percent or settings.allow_failed_volume) and not cast(
-        dict[str, Any], entry["strategies"]
-    ).get(screen_strategy):
-        raise W0Error("Не пройдено правило ликвидности пары.")
-
-
-def _validate_pair_request(
-    request: Any, strategy: Any, pair: Any, carry_plugin: Any, sizing_intents: Any
-) -> None:
-    req = cast(dict[str, Any], request)
-    if (
-        req.get("strategy") != strategy
-        or req.get("pair") != cast(dict[str, Any], pair)["pair_id"]
-        or req.get("universe", PAIR_UNIVERSE) != PAIR_UNIVERSE
-        or (carry_plugin is not None and automatic(request) != sizing_intents)
-    ):
-        raise W0Error("Запрос не соответствует подготовленному окну стратегии.")
-
-
-def _validate_carry_result(result: Any, carry_plugin: Any, metrics_only: bool) -> None:
-    # Built-in engines keep their native payload shape; drop-ins carry the marker even
-    # when they subclass a built-in plugin and inherit its trust tier.
-    if carry_plugin is None or plugin_is_builtin(carry_plugin):
-        return
-    res = cast(dict[str, Any], result)
-    res["accounting_policy"] = "carry_settlement.v1"
-    if (
-        not metrics_only
-        and abs(cast(float, cast(dict[str, Any], res["summary"])["ledger_reconciliation_rub"]))
-        > 0.02
-    ):
-        raise W0Error("Учёт carry-плагина не согласован с журналом сделок.")
 
 
 class ProofService:
@@ -382,15 +258,6 @@ class ProofService:
         if self._pool is not None:
             self._pool.shutdown(wait_for=True)
             self._pool = None
-
-    def worker_pool(self) -> Any:
-        if self._pool is None:
-            if self._pool_factory is None:
-                raise W0Error(
-                    "CohortWorkerPool factory is not configured; call proof_pool.get_worker_pool(service)."
-                )
-            self._pool = self._pool_factory(self)
-        return self._pool
 
     def catalog(self, override: ResearchSettings | None = None) -> dict[str, Any]:
         from .catalog_payload import catalog_payload
@@ -470,9 +337,7 @@ class ProofService:
         sizing_intents: bool = False,
         carry_plugin: Any = None,
     ) -> Callable[..., dict[str, Any]]:
-        return prepare_pair(
-            self, selection, settings, sizing_intents, carry_plugin, sys.modules[__name__]
-        )
+        return prepare_pair(self, selection, settings, sizing_intents, carry_plugin)
 
     def _prepare_daily_pair_plugin(
         self, selection: dict[str, Any], settings: ResearchSettings, plugin: Any
@@ -502,17 +367,6 @@ class ProofService:
         return funding_inputs(inputs, pair, funding, validation_percent)
 
 
-if TYPE_CHECKING:
-    _facade_hook_refs: tuple[object, ...] = (
-        _plugin_parameters,
-        _calendar_sizing_unit,
-        _intent_request,
-        _validate_pair_screen,
-        _validate_pair_request,
-        _validate_carry_result,
-    )
-
-
 # Typed internal exports used by other proof modules.
-shared_benchmark_marks = _benchmark_marks
-shared_mark = _mark
+shared_benchmark_marks = benchmark_marks
+shared_mark = mark

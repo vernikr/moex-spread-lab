@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from moex_spread_lab.core.contracts import WindowSnapshot
-from moex_spread_lab.strategies.funding_carry.carry import build_carry_study
+from moex_spread_lab.strategies.funding_carry.study import build_carry_study
 
 CONFORMANCE_CUTOFFS = (14, 20, 26)
 

@@ -18,7 +18,7 @@ from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, TimeframeSpec, ge
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data import universe as _catalog
 
-from ..funding_carry.carry import fetch_history
+from ..funding_carry.study import fetch_history
 from ..pair_data import leg_volumes, positive_leg_days
 from .inputs import ScreenerInputs, _candle_summary, _make_proof_funding
 

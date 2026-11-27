@@ -13,8 +13,8 @@ from moex_spread_lab.core.timeframes import DEFAULT_TIMEFRAME, get_timeframe
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.data.lake.data_lake import BarSeries, MarketDataStore
 
-from ..funding_carry.carry import fetch_history
 from ..funding_carry.proof_funding import ProofFunding
+from ..funding_carry.study import fetch_history
 from ..pair_data import (
     HISTORY_WINDOWS,
     PAIRS,

@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from moex_spread_lab.accounting.costs import side_cost
-from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+from moex_spread_lab.accounting.costs import lqdt_overlay_values, side_cost
 from moex_spread_lab.core.contracts import EntryBandPoint
 
 from ..base import population_rolling_stats

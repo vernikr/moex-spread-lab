@@ -13,7 +13,7 @@ from moex_spread_lab.core.timeframes import get_timeframe, timeframe_for_interva
 from moex_spread_lab.core.w0 import W0Error, read_hashed_json
 from moex_spread_lab.data.lake.data_lake import BarSeries, DataLakeError, LegacyJsonBarStore
 
-from ..pair_mean_reversion.analytics import load_contracts
+from ..pair_mean_reversion.engine import load_contracts
 
 # Preserve pre-leaf wildcard bindings as well as the declared screener hooks.
 __all__ = [

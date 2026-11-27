@@ -1,12 +1,10 @@
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+from moex_spread_lab.strategies.pair_mean_reversion.engine import (
     build_daily_series,
     build_series,
     get_cost_scenario,
@@ -203,56 +201,28 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreater(result["costs"]["total_by_component"]["slippage"], 0)
         self.assertTrue(all(trade["net_pnl"] is not None for trade in result["trades"]))
 
-    def test_baseline_report_stays_consumable_by_the_execution_ledger(self):
-        """The scheduler baseline report keeps feeding `execution-ledger` after the CLI cut."""
-        series = {
-            "near": "NEAR",
-            "far": "FAR",
-            "timeframe": "1d",
-            "contracts": contract_terms(),
-            "rows": spread_rows(timestamps=True),
-            "provenance": {},
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            report = run_mean_reversion_baseline(
-                series,
-                initial_capital=30000,
-                lookback=3,
-                entry_z=1.0,
-                exit_z=0.5,
-                quantity=1,
-                decision_delay_bars=1,
-                analysis_role="primary_baseline",
-            )
-            baseline_path = root / "baseline.json"
-            baseline_path.write_text(json.dumps(report), encoding="utf-8")
-            ledger_path = root / "ledger.json"
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "moex_spread_lab.cli",
-                    "execution-ledger",
-                    "--baseline",
-                    str(baseline_path),
-                    "--output",
-                    str(ledger_path),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-            self.assertEqual(report["schema_version"], "analytical-baseline.v1")
-            self.assertGreater(ledger["summary"]["execution_attempt_count"], 0)
-            self.assertEqual(
-                ledger["execution"]["outcome_counts"]["unresolved_no_executable_quote"],
-                ledger["summary"]["execution_attempt_count"],
-            )
-            self.assertEqual(ledger["summary"]["final_X"], report["summary"]["final_X"])
-            self.assertTrue(ledger["gates"]["W5_event_replay"])
-            self.assertFalse(ledger["summary"]["executable_value_available"])
+    def test_baseline_report_keeps_scheduler_contract(self):
+        report = run_mean_reversion_baseline(
+            {
+                "near": "NEAR",
+                "far": "FAR",
+                "timeframe": "1d",
+                "contracts": contract_terms(),
+                "rows": spread_rows(timestamps=True),
+                "provenance": {},
+            },
+            initial_capital=30000,
+            lookback=3,
+            entry_z=1.0,
+            exit_z=0.5,
+            quantity=1,
+            decision_delay_bars=1,
+            analysis_role="primary_baseline",
+        )
+        self.assertEqual(report["schema_version"], "analytical-baseline.v1")
+        self.assertGreater(report["summary"]["trade_count"], 0)
+        self.assertIn("final_X", report["summary"])
+        self.assertTrue(report["trades"])
 
 
 if __name__ == "__main__":

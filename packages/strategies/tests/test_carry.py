@@ -12,12 +12,11 @@ from pathlib import Path
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
 from moex_spread_lab.strategies.cli import register as register_strategy_cli
-from moex_spread_lab.strategies.funding_carry.carry import (
-    CarryStrategyError,
-    _transaction_cost_profile,
-    build_carry_strategy,
-    build_carry_study,
+from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
+from moex_spread_lab.strategies.funding_carry.engine import (
+    transaction_cost_profile as _transaction_cost_profile,
 )
+from moex_spread_lab.strategies.funding_carry.study import CarryStrategyError, build_carry_study
 from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 STRATEGY_KWARGS = {

@@ -16,7 +16,7 @@ import pytest
 from moex_spread_lab.core.hashed_json_cache import HashedJSONCache
 from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.universe import MAX_QUANTITY
-from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
+from moex_spread_lab.data.iss.catalog import HISTORY_FIELDS, _history_url
 from moex_spread_lab.strategies.pair_screener import inputs as inputs_module
 from moex_spread_lab.strategies.pair_screener import normalization as normalization_module
 from moex_spread_lab.strategies.pair_screener.inputs import (

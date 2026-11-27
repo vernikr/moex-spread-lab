@@ -15,9 +15,10 @@ from moex_spread_lab.core import universe as _universe
 from moex_spread_lab.core.settings import MAX_QUANTITY, EvaluationSplit, read_settings
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
 
-from ..funding_carry.carry import build_carry_strategy, build_carry_study, fetch_history
+from ..funding_carry.engine import build_carry_strategy
 from ..funding_carry.proof_funding import FundingWindow
-from ..pair_mean_reversion.analytics import run_mean_reversion_baseline
+from ..funding_carry.study import build_carry_study, fetch_history
+from ..pair_mean_reversion.engine import run_mean_reversion_baseline
 from .catalog import catalog
 from .inputs import ScreenerError, ScreenerInputs, _make_proof_funding, _pair, pair_price_inputs
 

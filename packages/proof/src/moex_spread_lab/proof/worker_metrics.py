@@ -1,8 +1,4 @@
-"""Opt-in task-local worker telemetry transported with executor results.
-
-Only probe-owned tasks use envelopes. Ordinary application tasks and their
-return values remain unchanged; aggregation happens in the requesting thread.
-"""
+"""Opt-in task-local worker telemetry transported with executor results."""
 
 from __future__ import annotations
 
@@ -16,17 +12,12 @@ from typing import Any
 
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 
+_CACHE_KEYS = ("json_hits", "json_misses", "zscore_hits", "zscore_misses")
+
 
 @dataclass
 class WorkerTotals:
-    cache: dict[str, int] = field(
-        default_factory=lambda: {
-            "json_hits": 0,
-            "json_misses": 0,
-            "zscore_hits": 0,
-            "zscore_misses": 0,
-        }
-    )
+    cache: dict[str, int] = field(default_factory=lambda: dict.fromkeys(_CACHE_KEYS, 0))
     pids: set[int] = field(default_factory=set)
     tasks: int = 0
     user_ms: float = 0.0

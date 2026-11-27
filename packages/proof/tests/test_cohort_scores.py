@@ -1,11 +1,11 @@
 """Canonical aggregation and adaptive canary regression cases."""
 
+import importlib
 from concurrent.futures import Future
 from unittest.mock import Mock
 
 import pytest
 
-from moex_spread_lab.proof import pool_reports as cohort_scores
 from moex_spread_lab.proof import proof_pool
 from moex_spread_lab.proof.proof_pool import CohortWorkerPool
 
@@ -26,7 +26,7 @@ class ImmediateSlot:
 
 
 def test_aggregation_preserves_canonical_order_failure_and_inactive_utility():
-    failure, scores = cohort_scores.combine_shards(
+    failure, scores = proof_pool.combine_shards(
         [
             ((3, "D", "later"), [(2, 3.0, False)]),
             ((1, "B", "first"), [(0, 1.0, False)]),
@@ -34,8 +34,8 @@ def test_aggregation_preserves_canonical_order_failure_and_inactive_utility():
     )
     assert failure is not None
     assert failure == (1, "B", "first")
-    assert cohort_scores.failure_payload(failure)["reason"] == "B: first"
-    assert cohort_scores.score_payload(scores) == {
+    assert proof_pool.failure_payload(failure)["reason"] == "B: first"
+    assert proof_pool.score_payload(scores) == {
         "rank_score": 2.0,
         "by_window_pp": [1.0, 3.0],
         "utility": None,
@@ -94,6 +94,12 @@ def test_canary_switches_and_selects_earliest_failure():
 def test_await_futures_cancels_pending_when_check_raises():
     futures = [Future(), Future()]
     with pytest.raises(RuntimeError, match="cancelled"):
-        proof_pool._await_futures(futures, Mock(side_effect=RuntimeError("cancelled")))
+        proof_pool.await_futures(futures, Mock(side_effect=RuntimeError("cancelled")))
     for future in futures:
         assert future.cancelled()
+
+
+@pytest.mark.parametrize("module", ["pool_reports", "worker_window"])
+def test_retired_pool_shards_stay_deleted(module):
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(f"moex_spread_lab.proof.{module}")

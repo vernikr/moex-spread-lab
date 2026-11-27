@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
@@ -15,6 +14,8 @@ from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
 
 if TYPE_CHECKING:
+    from moex_spread_lab.core.settings import ResearchSettings
+
     from .service import ProofService
 
 type _Obj = dict[str, Any]

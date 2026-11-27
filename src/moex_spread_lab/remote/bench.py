@@ -84,11 +84,10 @@ def _compact(value: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
 
 @contextmanager
 def candidate_worktree(root: Path, revision: str, patch: str) -> Generator[CandidateWorktree]:
-    """Detached worktree + provisioned data + a ready-to-import candidate.
+    """Detached worktree + provisioned data + ready candidate.
 
-    Reuses the root ``.venv`` with ``PYTHONPATH`` shadowing when the patch does
-    not touch dependency or native-build inputs; falls back to an isolated
-    ``uv sync --frozen`` candidate environment otherwise.
+    Reuses the root ``.venv`` via ``PYTHONPATH`` unless the patch touches
+    dependency/native inputs; then an isolated ``uv sync --frozen`` env.
     """
     with tempfile.TemporaryDirectory(prefix="moex-bench-") as directory:
         path = Path(directory) / "checkout"

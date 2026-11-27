@@ -1,12 +1,11 @@
 """Provisioning of the isolated benchmark candidate checkout.
 
 ``MOEX_BENCH_DATA`` selects how ``data/`` and ``data-lake/`` reach the candidate:
-``clone`` (APFS copy-on-write, the ``auto`` macOS default), ``copy`` (private byte
-copy, the portable default) or ``symlink`` (read-only-by-convention; trusted
-candidates only). ``clone`` failures fall back to ``copy``. The candidate is
-trusted code, not a security sandbox: ``data/analytics`` and the H1 seal files
-are always private copies, and ``research-settings.json`` is never shared.
-"""
+``clone`` (APFS copy-on-write, macOS default), ``copy`` (private byte copy, portable
+default) or ``symlink`` (read-only by convention; trusted candidates only);
+``clone`` falls back to ``copy``. The candidate is trusted code, not a sandbox:
+``data/analytics`` and the H1 seal files are always private copies;
+``research-settings.json`` is never shared."""
 
 import json
 import os

@@ -220,7 +220,7 @@ def _changed_failures(
     base: str, baseline: dict[str, Any]
 ) -> tuple[list[str], dict[str, dict[str, int]], list[str], list[str]]:
     try:
-        touched = changed_paths(base, existing_only=True)
+        touched = changed_paths(base)
     except RuntimeError as exc:
         raise GateError(str(exc)) from exc
     files = []

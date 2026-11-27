@@ -87,12 +87,8 @@ def local_change_set(base: str = "HEAD", root: Path = ROOT) -> tuple[list[str], 
     return sorted({*tracked, *untracked}), nod
 
 
-def changed_paths(
-    base: str = "HEAD", existing_only: bool = True, suffixes: tuple[str, ...] | None = None
-) -> list[str]:
+def changed_paths(base: str = "HEAD", existing_only: bool = True) -> list[str]:
     paths, _ = local_change_set(_git(["rev-parse", "--verify", f"{base}^{{commit}}"]).strip())
-    if suffixes:
-        paths = [path for path in paths if path.lower().endswith(tuple(map(str.lower, suffixes)))]
     return [path for path in paths if (ROOT / path).is_file()] if existing_only else paths
 
 

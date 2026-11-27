@@ -197,42 +197,6 @@ def _pair_quantity_and_slippage(service):
             assert_same_fields(actual, expected, "trades", "ledger", "summary")
 
 
-def _exercise_plugin(root, monkeypatch, service_factory):
-    _pair_workspace(root)
-    assert "demo_pair" in get_strategy_axes()
-    service = service_factory(root)
-    plugins = service.catalog()["pair_screen"]["proof_plugins"]
-    assert [p["id"] for p in plugins] == ["demo_pair", "demo_pair_hourly"]
-    assert all(p["timeframe_supported"] for p in plugins)
-    assert all(
-        {s["name"] for s in p["parameters"]} == {"lookback", "entry_z", "exit_z"} for p in plugins
-    )
-    _automatic_pair_fills(service)
-    _fixed_pair_fills(service)
-    _weekend_and_dated_pair_fills(service)
-    _pair_quantity_and_slippage(service)
-    candidate = {
-        **request(),
-        "sizing": "max_affordable",
-        "fill": "reference_same_bar",
-        "strategy": "demo_pair",
-    }
-    candidate.pop("quantity")
-    _reject_invalid_pair_replays(service, candidate)
-    search = research_run(service, {**candidate, "optimize_strategy": True}, optimize=True)
-    row = next(
-        item
-        for item in search["strategy_search"]["alternatives"]
-        if item["strategy"] == "demo_pair"
-    )
-    assert row["trial_count"] == 80, row
-    assert_pool_parity(
-        root, candidate, (PAIR, WEEKEND_PAIR, "GLZ6/GLH7"), service_factory, monkeypatch
-    )
-    _hourly_pair_workspace(root)
-    _hourly_pair_parity(service_factory(root))
-
-
 def test_drop_in_pair_plugin_proof_and_search(tmp_path, monkeypatch):
     with installed_plugin(
         tmp_path,
@@ -241,4 +205,38 @@ def test_drop_in_pair_plugin_proof_and_search(tmp_path, monkeypatch):
         PLUGIN_SOURCE,
         {"demo_pair": "PLUGIN", "demo_pair_hourly": "HOURLY"},
     ) as service_factory:
-        _exercise_plugin(tmp_path / "root", monkeypatch, service_factory)
+        root = tmp_path / "root"
+        _pair_workspace(root)
+        assert "demo_pair" in get_strategy_axes()
+        service = service_factory(root)
+        plugins = service.catalog()["pair_screen"]["proof_plugins"]
+        assert [p["id"] for p in plugins] == ["demo_pair", "demo_pair_hourly"]
+        assert all(p["timeframe_supported"] for p in plugins)
+        assert all(
+            {s["name"] for s in p["parameters"]} == {"lookback", "entry_z", "exit_z"}
+            for p in plugins
+        )
+        _automatic_pair_fills(service)
+        _fixed_pair_fills(service)
+        _weekend_and_dated_pair_fills(service)
+        _pair_quantity_and_slippage(service)
+        candidate = {
+            **request(),
+            "sizing": "max_affordable",
+            "fill": "reference_same_bar",
+            "strategy": "demo_pair",
+        }
+        candidate.pop("quantity")
+        _reject_invalid_pair_replays(service, candidate)
+        search = research_run(service, {**candidate, "optimize_strategy": True}, optimize=True)
+        row = next(
+            item
+            for item in search["strategy_search"]["alternatives"]
+            if item["strategy"] == "demo_pair"
+        )
+        assert row["trial_count"] == 80, row
+        assert_pool_parity(
+            root, candidate, (PAIR, WEEKEND_PAIR, "GLZ6/GLH7"), service_factory, monkeypatch
+        )
+        _hourly_pair_workspace(root)
+        _hourly_pair_parity(service_factory(root))

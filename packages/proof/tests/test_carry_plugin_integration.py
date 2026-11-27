@@ -154,35 +154,6 @@ def _carry_cohort_workspace(root):
     return third
 
 
-def _exercise_plugin(root, monkeypatch, service_factory):
-    days = fixture(root)
-    change(root, "CNYRUBF", dict.fromkeys(days[20:32], -0.04))
-    service = service_factory(root)
-    meta = next(
-        p for p in service.catalog()["pair_screen"]["proof_plugins"] if p["id"] == "demo_carry"
-    )
-    assert meta["adapter"] == "carry_settlement_intents.v1" and meta["timeframe_supported"]
-    for validation, auto, slip in product((0, 20), (False, True), (0.0, 2.0)):
-        _carry_case(service, days, validation, auto, slip)
-    _carry_fail_closed_and_mutation(service)
-    _estimated_funding_prefix(root, service_factory)
-    save_settings(root, {"random_seed": 41, "validation_percent": 20})
-    req = {
-        **request("funding_only"),
-        "strategy": "demo_carry",
-        "sizing": "max_affordable",
-        "fill": "same_day_settlement",
-    }
-    req.pop("quantity")
-    search = research_run(service, {**req, "optimize_strategy": True}, optimize=True)
-    row = next(
-        x for x in search["strategy_search"]["alternatives"] if x["strategy"] == "demo_carry"
-    )
-    assert row["trial_count"] == 80, row
-    third = _carry_cohort_workspace(root)
-    assert_pool_parity(root, req, (PAIR, WEEKEND_PAIR, third), service_factory, monkeypatch)
-
-
 def test_drop_in_carry_plugin_proof_and_search(tmp_path, monkeypatch):
     with installed_plugin(
         tmp_path,
@@ -191,7 +162,33 @@ def test_drop_in_carry_plugin_proof_and_search(tmp_path, monkeypatch):
         PLUGIN_SOURCE,
         {"demo_carry": "PLUGIN", "mutating_carry": "MUTATING"},
     ) as service_factory:
-        _exercise_plugin(tmp_path / "root", monkeypatch, service_factory)
+        root = tmp_path / "root"
+        days = fixture(root)
+        change(root, "CNYRUBF", dict.fromkeys(days[20:32], -0.04))
+        service = service_factory(root)
+        meta = next(
+            p for p in service.catalog()["pair_screen"]["proof_plugins"] if p["id"] == "demo_carry"
+        )
+        assert meta["adapter"] == "carry_settlement_intents.v1" and meta["timeframe_supported"]
+        for validation, auto, slip in product((0, 20), (False, True), (0.0, 2.0)):
+            _carry_case(service, days, validation, auto, slip)
+        _carry_fail_closed_and_mutation(service)
+        _estimated_funding_prefix(root, service_factory)
+        save_settings(root, {"random_seed": 41, "validation_percent": 20})
+        req = {
+            **request("funding_only"),
+            "strategy": "demo_carry",
+            "sizing": "max_affordable",
+            "fill": "same_day_settlement",
+        }
+        req.pop("quantity")
+        search = research_run(service, {**req, "optimize_strategy": True}, optimize=True)
+        row = next(
+            x for x in search["strategy_search"]["alternatives"] if x["strategy"] == "demo_carry"
+        )
+        assert row["trial_count"] == 80, row
+        third = _carry_cohort_workspace(root)
+        assert_pool_parity(root, req, (PAIR, WEEKEND_PAIR, third), service_factory, monkeypatch)
 
 
 def _result() -> dict[str, Any]:

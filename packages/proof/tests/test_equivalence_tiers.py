@@ -153,3 +153,21 @@ def test_shared_builders_live_outside_the_test_modules() -> None:
         assert "def _build_h1_workspace(" not in source, tier.name
         assert "def _build_pool_test_workspace(" not in source, tier.name
         assert "perf_equivalence" in source, tier.name
+
+
+@pytest.mark.parametrize("kind", ("pair", "calendar", "carry"))
+def test_plugin_harness_does_not_spawn_nested_python(kind):
+    path = PROOF_TESTS / f"test_{kind}_plugin_integration.py"
+    tree = ast.parse(path.read_text())
+    imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
+    for node in imports:
+        if isinstance(node, ast.Import):
+            assert all(alias.name != "subprocess" for alias in node.names)
+        else:
+            assert node.module != "subprocess"
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"exec", "eval"}
+        for node in ast.walk(tree)
+    )

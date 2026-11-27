@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,7 +22,6 @@ from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
 from moex_spread_lab.proof.service import ProofService
 from perf_equivalence_fixtures import (
-    H1WorkspaceCase,
     _build_pool_test_workspace,
     _canon_sha,
     calendar_spread_request,
@@ -32,7 +32,7 @@ from perf_equivalence_fixtures import (
 pytestmark = pytest.mark.slow_equiv
 
 
-class ProofPerfEquivalencePoolTests(H1WorkspaceCase):
+class ProofPerfEquivalencePoolTests(unittest.TestCase):
     """Worker pool and streaming progress must match the sequential path bit for bit."""
 
     def test_spawn_pool_matches_sequential_bit_for_bit(self):

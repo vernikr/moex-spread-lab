@@ -75,55 +75,54 @@ def _calendar_hourly_parity(root, request, service_factory):
             assert_same_fields(actual, reference, "trades", "ledger", "summary")
 
 
-def _exercise_plugin(root, monkeypatch, service_factory):
-    two_calendar_windows(root)
-    save_settings(root, {"random_seed": 41})
-    assert "demo_calendar" in get_strategy_axes()
-    fixture, chart = calendar_fixture()
-    assert_causal_conformance(
-        discover_strategies().get("demo_calendar"),
-        fixture,
-        chart,
-        {"window": 6, "entry_z": 1.5, "exit_z": 0.5},
-        cutoffs=(14, 20, 26),
-    )
-    request = {
-        "universe": "calendar_native",
-        "asset": "SR",
-        "pair": "SRH3/SRM3",
-        "strategy": "demo_calendar",
-        "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
-        "sizing": "max_affordable",
-        "fill": "next_close",
-    }
-    service = service_factory(root)
-    proof = research_run(service, request, optimize=False, include_plateau=False)
-    assert proof["selection"]["strategy"] == "demo_calendar"
-    assert set(proof["selection"]["parameters"]) == {"window", "entry_z", "exit_z"}
-    assert proof["summary"]["ledger_reconciliation_rub"] == 0
-    reference = research_run(
-        service,
-        {**request, "strategy": "zscore_mean_reversion"},
-        optimize=False,
-        include_plateau=False,
-    )
-    assert_same_fields(proof, reference, "trades", "ledger", "summary")
-    result = research_run(service, {**request, "optimize_strategy": True}, optimize=True)
-    alternatives = result["strategy_search"]["alternatives"]
-    assert [a["strategy"] for a in alternatives] == [
-        "zscore_mean_reversion",
-        "convergence_to_ruonia",
-        "demo_calendar",
-    ]
-    assert next(a for a in alternatives if a["strategy"] == "demo_calendar")["trial_count"] == 80
-    _calendar_hourly_parity(root, request, service_factory)
-
-
 def test_drop_in_calendar_plugin_proof_and_search(tmp_path, monkeypatch):
     with installed_plugin(
         tmp_path, monkeypatch, "demo_calendar", PLUGIN_SOURCE, {"demo_calendar": "PLUGIN"}
     ) as service_factory:
-        _exercise_plugin(tmp_path / "root", monkeypatch, service_factory)
+        root = tmp_path / "root"
+        two_calendar_windows(root)
+        save_settings(root, {"random_seed": 41})
+        assert "demo_calendar" in get_strategy_axes()
+        fixture, chart = calendar_fixture()
+        assert_causal_conformance(
+            discover_strategies().get("demo_calendar"),
+            fixture,
+            chart,
+            {"window": 6, "entry_z": 1.5, "exit_z": 0.5},
+            cutoffs=(14, 20, 26),
+        )
+        request = {
+            "universe": "calendar_native",
+            "asset": "SR",
+            "pair": "SRH3/SRM3",
+            "strategy": "demo_calendar",
+            "parameters": {"window": 10, "entry_z": 1.5, "exit_z": 0.5},
+            "sizing": "max_affordable",
+            "fill": "next_close",
+        }
+        service = service_factory(root)
+        proof = research_run(service, request, optimize=False, include_plateau=False)
+        assert proof["selection"]["strategy"] == "demo_calendar"
+        assert set(proof["selection"]["parameters"]) == {"window", "entry_z", "exit_z"}
+        assert proof["summary"]["ledger_reconciliation_rub"] == 0
+        reference = research_run(
+            service,
+            {**request, "strategy": "zscore_mean_reversion"},
+            optimize=False,
+            include_plateau=False,
+        )
+        assert_same_fields(proof, reference, "trades", "ledger", "summary")
+        result = research_run(service, {**request, "optimize_strategy": True}, optimize=True)
+        alternatives = result["strategy_search"]["alternatives"]
+        assert [a["strategy"] for a in alternatives] == [
+            "zscore_mean_reversion",
+            "convergence_to_ruonia",
+            "demo_calendar",
+        ]
+        assert (
+            next(a for a in alternatives if a["strategy"] == "demo_calendar")["trial_count"] == 80
+        )
+        _calendar_hourly_parity(root, request, service_factory)
 
 
 def test_plugin_discovery_is_restored_after_failure_and_reinstallation(tmp_path, monkeypatch):

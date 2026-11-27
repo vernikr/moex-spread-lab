@@ -21,7 +21,6 @@ import pytest
 
 from moex_spread_lab.proof.service import CALENDAR_UNIVERSE
 from perf_equivalence_fixtures import (
-    H1WorkspaceCase,
     _build_pool_test_workspace,
     _canon,
     calendar_spread_request,
@@ -33,7 +32,7 @@ from perf_equivalence_fixtures import (
 pytestmark = pytest.mark.slow_equiv
 
 
-class ProofPerfEquivalenceFastcoreTests(H1WorkspaceCase):
+class ProofPerfEquivalenceFastcoreTests(unittest.TestCase):
     """C99 fastcore exports must match the pure-Python fallback bit for bit."""
 
     def test_fastcore_c_matches_python_fallback_bit_for_bit(self):

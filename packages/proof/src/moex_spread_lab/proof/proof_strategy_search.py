@@ -7,19 +7,21 @@ funding carry keeps its mandatory same-day settlement (explicit user decision).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import optuna
 
+from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.timeframes import TimeframeSpec, get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE as CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import run_id
-from moex_spread_lab.strategies.base import StrategyRegistry
+from moex_spread_lab.strategies.base import StrategyPlugin, StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
+from .cohort_models import Cohort, RemoteCohort
+from .cohort_prepare import RemoteCase
 from .cohort_prepare import targets as _targets
 from .cohort_prepare import translate as _translate
 from .landscape import Axis
@@ -27,8 +29,10 @@ from .pair_payload import budget
 from .proof_batch import call_with_optional_progress as _call_with_optional_progress
 from .proof_batch import cohort_result as _cohort_result
 from .proof_batch import shared_prepare_cohort as _prepare_cohort
+from .proof_kernel import StudyWindow, TuningOptions
 from .proof_kernel import resolve_seed as resolve_seed
 from .proof_kernel import tune as _tune
+from .service import ProofService
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import resolve_strategy_registry
 from .strategy_search_prepare import no_prepared_result as _no_prepared_result
@@ -48,70 +52,7 @@ LabelMap = dict[str, str]
 Axes = dict[str, Axis]
 
 
-class PluginLike(Protocol):
-    """The plugin surface the family allowlist reads."""
-
-    strategy_id: str
-    family_id: str
-    short_label_ru: str
-    supported_universes: frozenset[str]
-    supported_fills: tuple[str, ...]
-    requires_daily_bars: bool
-
-
-class LandLike(Protocol):
-    """Landscape surface the search measures through."""
-
-    def measure(self, values: Obj | None) -> Obj: ...
-
-
-class CohortLike(Protocol):
-    """Structural view of the local and remote cohorts the search consumes.
-
-    Members are read-only properties: the search never assigns them, and that
-    keeps the protocol covariant over the concrete cohort's own attribute types.
-    """
-
-    @property
-    def active(self) -> str: ...
-
-    @property
-    def axes(self) -> Axes: ...
-
-    @property
-    def seed(self) -> Obj: ...
-
-    @property
-    def members(self) -> list[tuple[Target, Any]]: ...
-
-    @property
-    def land(self) -> LandLike: ...
-
-    def close(self) -> None: ...
-
-
-class ServiceLike(Protocol):
-    """The service facade; the calendar may be absent before the first replay."""
-
-    root: Path
-
-
-class SettingsLike(Protocol):
-    """Research settings surface read by the search payload."""
-
-    @property
-    def timeframe(self) -> str: ...
-
-    @property
-    def random_seed(self) -> int: ...
-
-    @property
-    def price_fill(self) -> str: ...
-
-    def metadata(self) -> dict[str, Any]: ...
-
-
-Winner = tuple[Obj, CohortLike, "Obj | None", int, Attempts]
+Winner = tuple[Obj, Cohort | RemoteCohort, "Obj | None", int, Attempts]
 
 
 @dataclass
@@ -119,7 +60,7 @@ class Run:
     """Mutable per-request search state shared by the family loop."""
 
     request: Obj
-    settings: SettingsLike
+    settings: ResearchSettings
     check_cancelled: Callable[[], None]
     registry: StrategyRegistry
     labels: LabelMap
@@ -130,11 +71,6 @@ class Run:
     top: float = -float("inf")
     winner: Winner | None = None
     records: list[Obj] = field(default_factory=list)
-
-
-def plugins(registry: StrategyRegistry) -> Iterator[PluginLike]:
-    """Registry plugins behind the structural view the allowlist reads."""
-    return iter(registry.values())
 
 
 def _preferred_universe(
@@ -156,10 +92,10 @@ def _preferred_universe(
 
 def _group_families(
     registry: StrategyRegistry, adapter_ids: frozenset[str], timeframe: TimeframeSpec
-) -> dict[str, list[PluginLike]]:
+) -> dict[str, list[StrategyPlugin]]:
     """Compatible adapters by family, in registry order, funding carry last on intraday."""
-    grouped: dict[str, list[PluginLike]] = {}
-    for plugin in plugins(registry):
+    grouped: dict[str, list[StrategyPlugin]] = {}
+    for plugin in registry.values():
         if plugin.strategy_id not in adapter_ids:
             continue
         if plugin.requires_daily_bars and not timeframe.supports_funding_strategy:
@@ -194,25 +130,7 @@ def families(
     return result
 
 
-_Obj = Obj
-_Target = Target
-_Progress = Progress
-_Axes = Axes
-_Attempts = Attempts
-_Prepared = Prepared
-_LabelMap = LabelMap
-_Winner = Winner
-_CohortLike = CohortLike
-_ServiceLike = ServiceLike
-_SettingsLike = SettingsLike
-_Run = Run
 _families = families
-
-# Public pre-P7.2 names and current private patch points share their originals.
-prepare_candidates = _prepare_candidates
-record_trials = _record_trials
-winner_is_better = _winner_is_better
-no_prepared_result = _no_prepared_result
 
 
 def _same_family(a: Any, b: Any, registry: StrategyRegistry) -> bool:
@@ -223,10 +141,10 @@ def _same_family(a: Any, b: Any, registry: StrategyRegistry) -> bool:
 def _candidate_request(
     request: Mapping[str, Any],
     strategy: str,
-    targets: list[_Target],
+    targets: list[Target],
     price_fill: str,
     registry: StrategyRegistry,
-) -> _Obj:
+) -> Obj:
     shared = request.get("parameters", {})
     params = (
         _translate(cast(Mapping[str, Any], shared), strategy)
@@ -245,7 +163,7 @@ def _candidate_request(
     }
 
 
-def _price_fill(request: Mapping[str, Any], settings: _SettingsLike) -> str:
+def _price_fill(request: Mapping[str, Any], settings: ResearchSettings) -> str:
     """An explicit price fill wins; otherwise the legacy fill or the settings default."""
     if request.get("price_fill"):
         return cast(str, request["price_fill"])
@@ -254,7 +172,7 @@ def _price_fill(request: Mapping[str, Any], settings: _SettingsLike) -> str:
 
 
 def _progress_callback(
-    run: _Run, p_idx: int, label: str, total_prepared: int, total_budget: int
+    run: Run, p_idx: int, label: str, total_prepared: int, total_budget: int
 ) -> Callable[[int, int], None] | None:
     callback = run.on_progress
     if callback is None:
@@ -275,25 +193,29 @@ def _progress_callback(
     return report
 
 
-def _search_family(run: _Run, p_idx: int, prepared: list[_Prepared], total_budget: int) -> None:
+def _search_family(run: Run, p_idx: int, prepared: list[Prepared], total_budget: int) -> None:
     """Tune one prepared family, then keep it only if it beats the running winner."""
     proposed, group, item = prepared[p_idx]
-    cohort = cast(_CohortLike, group)
+    cohort = cast(Cohort | RemoteCohort, group)
     run.check_cancelled()
     label = run.labels.get(cohort.active, cohort.active)
     best, count, attempts = cast(
-        tuple[_Obj | None, int, _Attempts],
-        _call_with_optional_progress(
-            _tune,
+        tuple[Obj | None, int, Attempts],
+        _tune(
             cohort.land,
             cohort.seed,
             cohort.axes,
-            min(len(case.split.training) for _, case in cohort.members),
-            trials=budget(),
-            random_seed=run.base_seed,
-            # Own derived seed per family: two families never share a sequence.
-            seed_label=cohort.active,
-            on_progress=_progress_callback(run, p_idx, label, len(prepared), total_budget),
+            min(
+                len(case.split.training)
+                for _, case in cast(list[tuple[Target, StudyWindow | RemoteCase]], cohort.members)
+            ),
+            TuningOptions(
+                budget(),
+                _progress_callback(run, p_idx, label, len(prepared), total_budget),
+                run.base_seed,
+                # Own derived seed per family: two families never share a sequence.
+                cohort.active,
+            ),
         ),
     )
     item["trial_count"] = count
@@ -315,7 +237,7 @@ def _search_family(run: _Run, p_idx: int, prepared: list[_Prepared], total_budge
         run.top = cast(float, score)
 
 
-def _no_winner(run: _Run) -> _Obj:
+def _no_winner(run: Run) -> Obj:
     result = {
         **run.base,
         "status": "no_admissible_candidate",
@@ -326,7 +248,7 @@ def _no_winner(run: _Run) -> _Obj:
     return {**result, "run_id": run_id(result)}
 
 
-def _final_result(run: _Run, winner: _Winner, policy: _Obj, settings: _SettingsLike) -> _Obj:
+def _final_result(run: Run, winner: Winner, policy: Obj, settings: ResearchSettings) -> Obj:
     """Report only the training-selected family on full and validation data."""
     proposed, group, best, count, attempts = winner
     result = _cohort_result(
@@ -353,7 +275,7 @@ def _final_result(run: _Run, winner: _Winner, policy: _Obj, settings: _SettingsL
     return {**result, "run_id": run_id(result)}
 
 
-def _base_payload(run: _Run, targets: list[_Target], policy: _Obj) -> _Obj:
+def _base_payload(run: Run, targets: list[Target], policy: Obj) -> Obj:
     return {
         "schema_version": "proof-search.v4",
         "method": "Optuna TPESampler per compatible strategy",
@@ -374,17 +296,17 @@ def _base_payload(run: _Run, targets: list[_Target], policy: _Obj) -> _Obj:
 
 
 def strategy_search(
-    service: _ServiceLike,
+    service: ProofService,
     request: dict[str, Any],
-    settings: _SettingsLike,
+    settings: ResearchSettings,
     benchmark: Any,
     check_cancelled: Callable[[], None],
     *,
-    on_progress: _Progress | None = None,
+    on_progress: Progress | None = None,
     registry: StrategyRegistry | None = None,
-) -> _Obj:
+) -> Obj:
     resolved = resolve_strategy_registry(registry)
-    labels: _LabelMap = {p.strategy_id: p.short_label_ru for p in resolved}
+    labels: LabelMap = {p.strategy_id: p.short_label_ru for p in resolved}
     targets = _targets(request)
     spec = get_timeframe(settings.timeframe)
     price_fill = _price_fill(request, settings)
@@ -392,7 +314,7 @@ def strategy_search(
     calendar = getattr(service, "_calendar", None) or CalendarData(service.root)
     # Resolve the run seed before any cohort is prepared: an invalid setting must
     # fail before the expensive replays start.
-    run = _Run(
+    run = Run(
         request=request,
         settings=settings,
         check_cancelled=check_cancelled,
@@ -422,7 +344,7 @@ def strategy_search(
         _prepare_cohort,
         _call_with_optional_progress,
     )
-    policy: _Obj = {
+    policy: Obj = {
         "policy": "common-strategy.v1",
         "execution_policy": "native_rules",
         "targets": targets,
@@ -445,4 +367,4 @@ def strategy_search(
         return _final_result(run, run.winner, policy, settings)
     finally:
         for _, group, _ in prepared:
-            cast(_CohortLike, group).close()
+            group.close()

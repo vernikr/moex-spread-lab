@@ -87,7 +87,6 @@ def cpu_budget() -> int:
 
 
 def worker_count() -> int:
-    """``MSL_VERIFY_WORKERS`` wins when it is a positive integer, else the CPU budget."""
     override = os.environ.get("MSL_VERIFY_WORKERS", "")
     return int(override) if override.isdigit() and int(override) > 0 else cpu_budget()
 
@@ -135,7 +134,6 @@ def _fingerprint(head: str) -> str:
 
 
 def _status_of(returncode: int, detail: dict[str, str] | None = None) -> str:
-    """Exit code (or check_health detail) -> status; 124/137/143 are timeouts."""
     statuses = list((detail or {}).values())
     for wanted in ("failed", "timeout", "unavailable"):
         if wanted in statuses:
@@ -216,7 +214,6 @@ def pytest_cmd(extra: list[str], marker: str = "not slow_equiv") -> list[str]:
 
 
 def always_run_files(legs: list[str]) -> list[str]:
-    """Test modules spawning subprocesses / the CLI / proof_pool (testmon-unsafe)."""
     files: list[str] = []
     for leg in legs:
         tests_dir = ROOT / "packages" / leg / "tests"
@@ -330,7 +327,6 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
 
 
 def build_steps(profile: str, base: str) -> tuple[list[Step], list[str], str]:
-    """Return ``(steps, skipped, label)`` for a profile (no execution)."""
     if profile == "quick":
         steps = [
             Step(

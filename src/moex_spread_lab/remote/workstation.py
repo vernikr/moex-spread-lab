@@ -29,7 +29,6 @@ _NON_RUNTIME_PREFIXES = (
 
 
 def patch_paths(patch: str) -> list[str]:
-    """Extract the changed paths from a unified diff (both sides of renames)."""
     paths: set[str] = set()
     for line in patch.splitlines():
         if not line.startswith("diff --git "):
@@ -95,7 +94,6 @@ def await_readiness(
     timeout_s: float = READINESS_TIMEOUT_S,
     interval_s: float = READINESS_INTERVAL_S,
 ) -> dict[str, Any]:
-    """Poll loopback readiness until the daemon serves ``expected_head``."""
     deadline = time.monotonic() + timeout_s
     last_error = "no attempt made"
     while time.monotonic() < deadline:

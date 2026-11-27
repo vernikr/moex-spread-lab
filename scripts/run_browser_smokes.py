@@ -48,7 +48,6 @@ PHASE_FIELDS = (
 
 
 def cpu_limit() -> int:
-    """Account for affinity where available, not just the host's CPU count."""
     count = os.cpu_count() or 1
     if hasattr(os, "sched_getaffinity"):
         count = min(count, len(os.sched_getaffinity(0)))
@@ -81,7 +80,6 @@ def _playwright() -> Any:
 
 
 def _launch(pw: Any) -> Any:
-    """Launch the one browser a worker keeps warm across its suites."""
     import _harness
 
     return _harness.launch(pw)
@@ -92,7 +90,6 @@ def _suite_paths(filter_text: str) -> list[Path]:
 
 
 def _phases_from_output(output: str) -> dict[str, float] | None:
-    """Read the phase line a self-re-executing suite printed in its child process."""
     for line in reversed(output.splitlines()):
         if line.startswith(PHASES_MARKER):
             try:
@@ -104,19 +101,16 @@ def _phases_from_output(output: str) -> dict[str, float] | None:
 
 
 def _partition(suites: list[Path], jobs: int) -> list[list[Path]]:
-    """Round-robin so both workers get a similar mix of cheap and expensive suites."""
     return [suites[index::jobs] for index in range(jobs)]
 
 
 def _prepare_imports() -> None:
-    """Make `_harness`, the smoke directory and the repository root importable."""
     for directory in (str(ROOT), str(HARNESS_DIR), str(SMOKE_DIR)):
         if directory not in sys.path:
             sys.path.insert(0, directory)
 
 
 def _run_scenario(namespace: dict[str, Any], ensure_browser: Callable[[], Any]) -> None:
-    """Call a suite's `scenario(browser)` entry point and echo its success message."""
     scenario = namespace.get("scenario")
     if scenario is None:  # a plain script has already run its module body
         return
@@ -127,7 +121,6 @@ def _run_scenario(namespace: dict[str, Any], ensure_browser: Callable[[], Any]) 
 
 
 def _execute(path: Path, ensure_browser: Callable[[], Any]) -> tuple[int, str]:
-    """Run one suite with captured output; one failure must not stop the worker."""
     captured = io.StringIO()
     code = 0
     with redirect_stdout(captured), redirect_stderr(captured):
@@ -144,7 +137,6 @@ def _execute(path: Path, ensure_browser: Callable[[], Any]) -> tuple[int, str]:
 
 
 def _run_suite(path: Path, ensure_browser: Callable[[], Any]) -> dict[str, Any]:
-    """Time one suite and attach its phase split, from memory or from its child's line."""
     import _harness
 
     _harness.reset()
@@ -164,14 +156,11 @@ def _run_suite(path: Path, ensure_browser: Callable[[], Any]) -> dict[str, Any]:
 
 
 class _WorkerBrowser:
-    """One Chromium per worker, started only by the first suite that needs a browser."""
-
     def __init__(self) -> None:
         self._stack = ExitStack()
         self._browser: Any = None
 
     def get(self) -> Any:
-        """Return the shared browser, launching Playwright and Chromium on first use."""
         if self._browser is None:
             playwright = self._stack.enter_context(_playwright())
             self._browser = _launch(playwright)
@@ -185,7 +174,6 @@ class _WorkerBrowser:
 
 
 def run_worker(paths: list[Path]) -> list[dict[str, Any]]:
-    """Run a group of suites in one process with one Chromium launch."""
     _prepare_imports()
     pool = _WorkerBrowser()
     try:
@@ -211,7 +199,6 @@ def _print_result(index: int, total: int, result: dict[str, Any]) -> bool:
 
 
 def _print_phases(results: list[dict[str, Any]], elapsed: float) -> None:
-    """Aggregate the per-suite phase lines so the optimization targets a measured term."""
     rows = [result for result in results if result["phases"]]
     if not rows:
         return

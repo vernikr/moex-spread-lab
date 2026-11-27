@@ -259,7 +259,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _print_advisories(advisories: list[str]) -> None:
-    """Log yellow-band size and fragmentation findings without failing the gate."""
     for advisory in advisories:
         print(f"advisory: {advisory}")
 

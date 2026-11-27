@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Change-scope router and touched-file helpers (stdlib only; used by ci.yml, verify, gates).
 
-Per changed path; any unmatched path resolves to ``full``:
-
-1. ``docs/**`` and root-level ``*.md`` are docs (Markdown inside ``packages/**`` is not).
-2. ``packages/<p>/{src,tests}/**/*.py`` selects ``p`` plus its reverse dependents; any
-   other, new or deleted package file selects the same legs with testmon disabled.
-3. Everything else is ``full``; C99/sanitizer/CI paths also set ``run_tier2``.
+Per changed path; any unmatched path resolves to ``full``: ``docs/**`` and root-level
+``*.md`` are docs (Markdown inside ``packages/**`` is not); ``packages/<p>/{src,tests}/**/*.py``
+selects ``p`` plus its reverse dependents (any other, new or deleted package file selects
+the same legs with testmon disabled); everything else is ``full``, and C99/sanitizer/CI
+paths also set ``run_tier2``.
 
 Without ``--event`` it routes the working tree (diff vs ``--base`` plus untracked
 files); with ``--event`` it routes ``git diff base..head``, and any error,
@@ -26,8 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ("core", "data", "accounting", "strategies", "proof", "web")
-# Which legs run when a package changes; pinned to the architecture DAG by
-# packages/core/tests/test_change_scope.py.
+# Which legs run when a package changes; pinned to test_change_scope.py.
 REVERSE_DEPENDENTS: dict[str, tuple[str, ...]] = {
     "core": PACKAGES,
     "data": ("data", "strategies", "proof", "web"),
@@ -61,7 +59,6 @@ def norm_path(path: str) -> str:
 
 
 def matches_c_tier2(paths: list[str]) -> bool:
-    """Return True if any changed path requires the C99 Tier 2 checks."""
     return any(fnmatch.fnmatch(norm_path(p), pat) for p in paths for pat in TIER2_PATTERNS)
 
 
@@ -87,7 +84,6 @@ def git_diff_names(base: str, head: str, root: Path, *extra: str) -> list[str] |
 
 
 def local_change_set(base: str = "HEAD", root: Path = ROOT) -> tuple[list[str], set[str]]:
-    """Return ``(paths, new_or_deleted)`` for the working-tree change set vs ``base``."""
     try:
         tracked = _names(_git(["diff", "--name-only", "-z", base, "--"], root))
         untracked = _names(_git(["ls-files", "--others", "--exclude-standard", "-z"], root))
@@ -100,7 +96,6 @@ def local_change_set(base: str = "HEAD", root: Path = ROOT) -> tuple[list[str], 
 def changed_paths(
     base: str = "HEAD", existing_only: bool = True, suffixes: tuple[str, ...] | None = None
 ) -> list[str]:
-    """Repo-relative touched paths (tracked diff vs ``base`` plus untracked), sorted."""
     paths, _ = local_change_set(_git(["rev-parse", "--verify", f"{base}^{{commit}}"]).strip())
     if suffixes:
         paths = [path for path in paths if path.lower().endswith(tuple(map(str.lower, suffixes)))]
@@ -108,7 +103,6 @@ def changed_paths(
 
 
 def imports_changed(base: str = "HEAD") -> bool:
-    """True when the change adds/removes/moves imports or Python modules."""
     base = _git(["rev-parse", "--verify", f"{base}^{{commit}}"]).strip()
     for line in _git(["diff", "--name-status", "-M", base, "--"]).splitlines():
         code, *paths = line.split("\t")
@@ -121,8 +115,6 @@ def imports_changed(base: str = "HEAD") -> bool:
 
 @dataclass(frozen=True)
 class ScopeDecision:
-    """Result of routing a change set; see the module docstring for the rules."""
-
     profile: str  # "docs" | "packages" | "full"
     packages: tuple[str, ...]
     docs_only: bool
@@ -208,7 +200,6 @@ def _full(reasons, *, run_tier2: bool, check_js_modules: bool = False) -> ScopeD
 
 
 def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
-    """Route an explicit change set. Pure; does no I/O or git access."""
     normed = sorted({norm_path(p) for p in paths if norm_path(p)})
     nod = {norm_path(p) for p in new_or_deleted if norm_path(p)}
     if not normed:
@@ -247,7 +238,6 @@ def decide_paths(paths, *, new_or_deleted=()) -> ScopeDecision:
 
 
 def decide_local(base: str = "HEAD", root: Path = ROOT) -> ScopeDecision:
-    """Route the working-tree change set (tracked diff vs ``base`` + untracked files)."""
     try:
         paths, nod = local_change_set(base, root)
     except RuntimeError as exc:
@@ -256,7 +246,6 @@ def decide_local(base: str = "HEAD", root: Path = ROOT) -> ScopeDecision:
 
 
 def decide_ci(event_name: str, base_sha: str = "", head_sha: str = "HEAD", root: Path = ROOT):
-    """Route a CI change set. Any error resolves to full (with Tier 2)."""
     if event_name in _FULL_EVENTS:
         return _full([f"event={event_name} resolves to full unconditionally"], run_tier2=True)
     if not base_sha or base_sha == NULL_SHA:

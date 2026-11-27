@@ -32,20 +32,20 @@ _TEXT_COLS = {
     "Second Location",
     "Function",
 }
-# (title, payload key, empty message, [(header, row -> cell)]); "#" is prepended.
-_TABLES: tuple[tuple[str, str, str, list[tuple[str, Any]]], ...] = (
+# (title, payload key, empty message, [(header, str.format_map template)]); "#" is prepended.
+_TABLES: tuple[tuple[str, str, str, list[tuple[str, str]]], ...] = (
     (
         "Top-10 Hotspots (Lowest Code Health × 90d Churn)",
         "hotspots",
         "No repowise health metrics available",
         [
-            ("File", lambda h: f"`{h['path']}`"),
-            ("Health", lambda h: f"{h['score']:.2f}"),
-            ("NLOC", lambda h: h["nloc"]),
-            ("Max CCN", lambda h: h["max_ccn"]),
-            ("90d Commits", lambda h: h["commits_90d"]),
-            ("90d Churn", lambda h: h["churn_90d"]),
-            ("Priority", lambda h: f"{h['priority']:.2f}"),
+            ("File", "`{path}`"),
+            ("Health", "{score:.2f}"),
+            ("NLOC", "{nloc}"),
+            ("Max CCN", "{max_ccn}"),
+            ("90d Commits", "{commits_90d}"),
+            ("90d Churn", "{churn_90d}"),
+            ("Priority", "{priority:.2f}"),
         ],
     ),
     (
@@ -53,11 +53,11 @@ _TABLES: tuple[tuple[str, str, str, list[tuple[str, Any]]], ...] = (
         "coupled_pairs",
         "No active co-change pairs recorded",
         [
-            ("File A", lambda p: f"`{p['left']}`"),
-            ("File B", lambda p: f"`{p['right']}`"),
-            ("Co-changes", lambda p: p["frequency"]),
-            ("Score", lambda p: f"{p['weight']:.3f}"),
-            ("Link", lambda p: f"`{p['structural']}`"),
+            ("File A", "`{left}`"),
+            ("File B", "`{right}`"),
+            ("Co-changes", "{frequency}"),
+            ("Score", "{weight:.3f}"),
+            ("Link", "`{structural}`"),
         ],
     ),
     (
@@ -65,32 +65,28 @@ _TABLES: tuple[tuple[str, str, str, list[tuple[str, Any]]], ...] = (
         "top_clones",
         "No clones detected",
         [
-            ("Format", lambda c: f"`{c['format']}`"),
-            ("Lines", lambda c: c["lines"]),
-            ("First Location", lambda c: f"`{c['first']}`"),
-            ("Second Location", lambda c: f"`{c['second']}`"),
+            ("Format", "`{format}`"),
+            ("Lines", "{lines}"),
+            ("First Location", "`{first}`"),
+            ("Second Location", "`{second}`"),
         ],
     ),
     (
         "Top-20 Token-Heaviest Production Files",
         "top_files",
         "None",
-        [
-            ("File", lambda f: f"`{f['path']}`"),
-            ("LOC", lambda f: f["loc"]),
-            ("Tokens", lambda f: f["tokens"]),
-        ],
+        [("File", "`{path}`"), ("LOC", "{loc}"), ("Tokens", "{tokens}")],
     ),
     (
         "Top-20 Token-Heaviest Production Functions (`lizard`)",
         "top_functions",
         "None",
         [
-            ("Function", lambda fn: f"`{fn['path']}::{fn['function']}`"),
-            ("NLOC", lambda fn: fn["nloc"]),
-            ("CCN", lambda fn: fn["ccn"]),
-            ("Tokens", lambda fn: fn["tokens"]),
-            ("Params", lambda fn: fn["parameters"]),
+            ("Function", "`{path}::{function}`"),
+            ("NLOC", "{nloc}"),
+            ("CCN", "{ccn}"),
+            ("Tokens", "{tokens}"),
+            ("Params", "{parameters}"),
         ],
     ),
 )
@@ -281,12 +277,14 @@ def build_digest_payload(
 
 
 def _md_table(
-    title: str, rows: list[dict], empty: str, columns: list[tuple[str, Any]]
+    title: str, rows: list[dict], empty: str, columns: list[tuple[str, str]]
 ) -> list[str]:
     headers = ["#", *(name for name, _ in columns)]
     sep = ["---" if col in _TEXT_COLS else "---:" for col in headers]
     out = [f"## {title}", "", f"| {' | '.join(headers)} |", f"| {' | '.join(sep)} |"]
-    body = [[str(i), *(str(cell(row)) for _, cell in columns)] for i, row in enumerate(rows, 1)]
+    body = [
+        [str(i), *(spec.format_map(row) for _, spec in columns)] for i, row in enumerate(rows, 1)
+    ]
     out.extend(
         f"| {' | '.join(cells)} |"
         for cells in body or [["–", f"_{empty}_", *["–"] * (len(headers) - 2)]]
@@ -295,7 +293,6 @@ def _md_table(
 
 
 def render_digest_markdown(payload: dict[str, Any]) -> str:
-    """Render the Tier 3 digest payload as GitHub Step Summary Markdown."""
     kpis, dup = payload.get("kpis", {}), payload["duplication"]
     avg = kpis.get("production_average") or kpis.get("average_health")
     health = (

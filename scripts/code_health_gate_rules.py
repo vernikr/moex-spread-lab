@@ -198,7 +198,6 @@ def _existing_file_failures(
 
 
 def _budget_outcome(relative: str, metrics: dict[str, int]) -> tuple[list[str], list[str]]:
-    """Return ``(failures, advisories)`` for one unratcheted file against its archetype budget."""
     archetype, budget = _budget_for(relative)
     failures: list[str] = []
     advisories: list[str] = []
@@ -222,7 +221,6 @@ def _budget_outcome(relative: str, metrics: dict[str, int]) -> tuple[list[str], 
 
 
 def _fragment_name_failures(files: list[Path], baseline: dict[str, Any]) -> list[str]:
-    """Hard-forbid new ``*p72*``, issue-numbered and path-encoded overflow filenames."""
     legacy = {str(path) for path in baseline["legacy_fragment_files"]}
     failures = []
     for path in files:
@@ -238,7 +236,6 @@ def _fragment_name_failures(files: list[Path], baseline: dict[str, Any]) -> list
 
 
 def _intra_package_callers(path: Path, relative: str) -> int:
-    """Count sibling modules in the same package that import this module."""
     package_root = _package_root(relative)
     if package_root is None or not package_root.is_dir():
         return 0
@@ -257,7 +254,6 @@ def _intra_package_callers(path: Path, relative: str) -> int:
 
 
 def _shallow_shard_paths(files: list[Path], file_metrics: dict[str, dict[str, int]]) -> list[str]:
-    """Return production micro-modules that a single sibling imports (fragmentation)."""
     max_loc = int(POLICY["shallow_shard_max_loc"])
     max_callers = int(POLICY["shallow_shard_max_callers"])
     flagged = []
@@ -288,7 +284,6 @@ def _shallow_shard_advisories(
 
 
 def _package_totals(file_metrics: dict[str, dict[str, int]]) -> dict[str, int]:
-    """Sum estimated tokens per workspace package (or top-level source root)."""
     totals: dict[str, int] = {}
     for relative, metrics in file_metrics.items():
         group = _package_group(relative)
@@ -298,7 +293,6 @@ def _package_totals(file_metrics: dict[str, dict[str, int]]) -> dict[str, int]:
 
 
 def _package_token_advisories(totals: dict[str, int], baseline: dict[str, Any]) -> list[str]:
-    """Surface package-level token regressions that a file split would otherwise hide."""
     recorded = baseline["packages"]
     tolerance = int(POLICY["package_token_tolerance_pct"])
     advisories = []
@@ -383,7 +377,6 @@ def _c_function_failures(current: dict[str, dict[str, int]], baseline: dict[str,
 
 
 def _baseline_entry_is_obsolete(relative: str, metrics: dict[str, int]) -> bool:
-    """A ratchet entry is obsolete once the file fits its role-aware budget again."""
     archetype, budget = _budget_for(relative)
     if archetype == "kernel":
         # The C99 kernel is one translation unit: keep its LOC ratchet above the soft target.

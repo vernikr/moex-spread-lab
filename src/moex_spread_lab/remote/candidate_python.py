@@ -50,8 +50,6 @@ def assert_candidate_python(python: Path, pythonpath: str, path: Path) -> None:
 
 @dataclass
 class CandidateWorktree:
-    """The disposable bench candidate: provenance matters more than convenience."""
-
     path: Path
     python: Path
     pythonpath: str | None

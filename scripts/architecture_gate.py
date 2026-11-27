@@ -62,13 +62,10 @@ _DEP_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def _normalize_dist_name(name: str) -> str:
-    """PEP 503-normalize a distribution name for comparison."""
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _workspace_module_id(dist_name: str) -> str | None:
-    """Map a workspace distribution name (``msl-<name>``) to its manifest
-    ``module_id`` (``moex-spread-lab.<name>``); ``None`` for external deps."""
     normalized = _normalize_dist_name(dist_name)
     if normalized.startswith("msl-"):
         return f"moex-spread-lab.{normalized[4:]}"
@@ -221,12 +218,6 @@ def _validate_package(package_dir: Path, known: set[str]) -> list[str]:
 
 
 def validate_package_manifests(root: Path = ROOT) -> list[str]:
-    """Validate every ``packages/<name>/manifest.json`` against its
-    ``pyproject.toml`` and the Stage-5 required keys.
-
-    Stdlib-only (``json`` + ``tomllib``); returns a list of human-readable
-    errors, empty when every manifest conforms.
-    """
     package_dirs = _package_dirs(root)
     known = {path.name for path in package_dirs}
     errors: list[str] = []
@@ -236,7 +227,6 @@ def validate_package_manifests(root: Path = ROOT) -> list[str]:
 
 
 def _run_manifest_check() -> bool:
-    """Run package-manifest conformance; print every error. True when clean."""
     errors = validate_package_manifests()
     if errors:
         for error in errors:

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ViewError(RuntimeError):
-    """The source layout cannot be represented safely in the generated view."""
+    pass
 
 
 def _add_link(destination: Path, source: Path, view_root: Path) -> None:
@@ -27,7 +27,6 @@ def _add_link(destination: Path, source: Path, view_root: Path) -> None:
 
 
 def build_view(root: Path = ROOT) -> Path:
-    """Rebuild and return the generated namespace root; refuses unmanaged data."""
     view_root = root / ".typecheck_typings"
     namespace_view = view_root / "moex_spread_lab"
     marker = view_root / ".generated-by-typecheck-workspace"

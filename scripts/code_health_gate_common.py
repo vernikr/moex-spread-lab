@@ -99,7 +99,6 @@ def _file_metrics(path: Path) -> dict[str, int]:
 
 
 def _archetype_for(relative: str) -> str:
-    """Classify a repository-relative source path into its budget archetype."""
     path = PurePosixPath(relative)
     suffix = path.suffix.lower()
     if suffix == ".c":
@@ -121,7 +120,6 @@ def _budget_for(relative: str) -> tuple[str, dict[str, int]]:
 
 
 def _package_group(relative: str) -> str | None:
-    """Return the workspace package (or top-level source root) a path belongs to."""
     parts = relative.split("/")
     if not parts or parts[0] not in {"packages", "src", "scripts"}:
         return None
@@ -140,7 +138,6 @@ def _is_compatibility_shim(relative: str) -> bool:
 
 
 def _fragment_name_problem(name: str) -> str | None:
-    """Return the forbidden-filename rule a source filename violates, if any."""
     stem = PurePosixPath(name).stem
     for label, pattern in FORBIDDEN_FRAGMENT_PATTERNS.items():
         if re.search(pattern, stem):

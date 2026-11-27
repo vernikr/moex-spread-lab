@@ -82,7 +82,6 @@ def _probe_resource_dir(cc: str, names: tuple[str, ...]) -> Path | None:
 
 
 def discover_asan_runtime(clang_bin: str | None = None) -> Path:
-    """Locate the dynamic clang AddressSanitizer runtime matching this platform."""
     cc = clang_bin or shutil.which("clang")
     if not cc:
         raise RuntimeError("clang was not found on PATH; cannot locate ASan runtime")
@@ -105,7 +104,6 @@ def build_sanitized_env(
     lsan_supp_path: Path | None,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Construct environment variables for preloading ASan + UBSan into CPython."""
     env = dict(os.environ if base_env is None else base_env)
     env["MOEX_FASTCORE_SANITIZE"] = "1"
     env["MOEX_FASTCORE_ASAN_RUNTIME"] = str(asan_runtime)

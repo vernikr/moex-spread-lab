@@ -38,7 +38,6 @@ from .workstation import patch_paths as _patch_paths
 
 
 def normalize_provenance(full: Any, root: Path | None) -> Any:
-    """Rewrite root-bound provenance paths so isolated worktree results compare equal."""
     if root is None or not isinstance(full, dict):
         return full
     mapping = cast(dict[str, Any], full)
@@ -188,7 +187,6 @@ def _health() -> dict[str, Any]:
 
 @contextmanager
 def benchmark_lock(root: Path) -> Generator[None]:
-    """Reject concurrent benchmark runs on the same workstation checkout."""
     cache = Path.home() / ".cache/moex-spread-lab/bench-locks"
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     name = hashlib.sha256(str(root.resolve()).encode()).hexdigest() + ".lock"

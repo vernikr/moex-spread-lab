@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.change_scope import changed_paths, imports_changed  # noqa: E402
+from scripts.code_health_gate_common import tool  # noqa: E402
 from scripts.verify import cpu_budget  # noqa: E402
 
 TASKS = ("ruff-check", "ruff-format", "basedpyright", "vulture", "custom-gate")
@@ -39,11 +40,6 @@ CHANGED_ORDER += ("js-modules", "vulture")
 HEAVY = ("basedpyright", "custom-gate")
 LINT_ROOTS = ["packages", "src", "tests", "scripts"]
 GRACE_SECONDS = 5.0
-
-
-def tool(name: str) -> list[str]:
-    local = ROOT / ".venv" / "bin" / name
-    return [str(local)] if local.is_file() else ["uv", "run", "--no-sync", name]
 
 
 def script(name: str, *args: str) -> list[str]:

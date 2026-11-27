@@ -3,13 +3,12 @@
 
 import argparse
 import ast
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics
+from scripts.code_health_gate_common import POLICY, GateError, _budget_for, _file_metrics, tool
 
 ROOT = Path(__file__).resolve().parents[1]
 # Size budgets, the token estimator and the complexity ceiling are the gate's own
@@ -137,17 +136,6 @@ def _complexities(path: Path) -> dict[str, int]:
     return {f"{node.name}@{node.lineno}": _complexity(node) for node in _function_nodes(tree)}
 
 
-def _ruff_command() -> list[str]:
-    local = ROOT / ".venv/bin/ruff"
-    if local.is_file():
-        return [str(local)]
-    executable = shutil.which("ruff")
-    if executable:
-        return [executable]
-    uv = shutil.which("uv")
-    return [uv, "run", "--no-sync", "ruff"] if uv else [sys.executable, "-m", "ruff"]
-
-
 def _check_file(path: Path, *, strict_limits: bool) -> tuple[bool, bool]:
     if not path.is_file():
         print(f"missing file: {path}")
@@ -175,8 +163,8 @@ def _run_file_checks(paths: list[Path]) -> bool:
         str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path) for path in paths
     ]
     results = (
-        _run("ruff check", [*_ruff_command(), "check", *arguments]),
-        _run("ruff format", [*_ruff_command(), "format", "--check", *arguments]),
+        _run("ruff check", [*tool("ruff"), "check", *arguments]),
+        _run("ruff format", [*tool("ruff"), "format", "--check", *arguments]),
         _run("basedpyright", [sys.executable, "scripts/typecheck_workspace.py", *arguments]),
     )
     return all(results)

@@ -143,6 +143,11 @@ def _fragment_name_problem(name: str) -> str | None:
     return None
 
 
+def tool(name: str) -> list[str]:
+    local = ROOT / ".venv" / "bin" / name
+    return [str(local)] if local.is_file() else ["uv", "run", "--no-sync", name]
+
+
 def _load_baseline() -> dict[str, Any]:
     try:
         value = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))

@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.code_health_gate_common import tool  # noqa: E402
 
 
 class ViewError(RuntimeError):
@@ -61,19 +63,6 @@ def build_view(root: Path = ROOT) -> Path:
     return view_root
 
 
-def _basedpyright_command() -> list[str]:
-    local = ROOT / ".venv/bin/basedpyright"
-    if local.is_file():
-        return [str(local)]
-    executable = shutil.which("basedpyright")
-    if executable:
-        return [executable]
-    uv = shutil.which("uv")
-    if uv:
-        return [uv, "run", "--no-sync", "basedpyright"]
-    raise ViewError("basedpyright is unavailable; run `uv sync --frozen`")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -88,8 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.build_only:
             print("typecheck namespace view: .typecheck_typings")
             return 0
-        result = subprocess.run(_basedpyright_command() + args.paths, cwd=ROOT, check=False)
-    except (OSError, ViewError) as exc:
+        result = subprocess.run([*tool("basedpyright"), *args.paths], cwd=ROOT, check=False)
+    except (OSError, RuntimeError) as exc:  # ViewError and tool-resolution failures
         print(f"typecheck workspace: {exc}", file=sys.stderr)
         return 2
     return result.returncode

@@ -52,7 +52,7 @@ class DerivedCatalogCacheTests(unittest.TestCase):
             self.assertEqual(cache_files[0].read_bytes(), first_bytes)
 
     def test_cache_hit_skips_the_build_entirely(self) -> None:
-        from moex_spread_lab.proof import catalog_payload
+        from moex_spread_lab.proof import payload_tools
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -60,24 +60,24 @@ class DerivedCatalogCacheTests(unittest.TestCase):
             service = _fresh_service(root)
             try:
                 calls = []
-                original_build = catalog_payload._build_catalog
+                original_build = payload_tools._build_catalog
 
                 def counting_build(*args):
                     calls.append(args)
                     return original_build(*args)
 
-                catalog_payload._build_catalog = counting_build
+                payload_tools._build_catalog = counting_build
                 try:
                     service.catalog()
                     service.catalog()
                 finally:
-                    catalog_payload._build_catalog = original_build
+                    payload_tools._build_catalog = original_build
                 self.assertEqual(len(calls), 1)
             finally:
                 service.close()
 
     def test_same_size_same_mtime_tick_edit_invalidates(self) -> None:
-        from moex_spread_lab.proof import catalog_payload
+        from moex_spread_lab.proof import payload_tools
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -95,17 +95,17 @@ class DerivedCatalogCacheTests(unittest.TestCase):
                 self.assertEqual(target.stat().st_mtime_ns, stamp_ns)
 
                 calls = []
-                original_build = catalog_payload._build_catalog
+                original_build = payload_tools._build_catalog
 
                 def counting_build(*args):
                     calls.append(args)
                     return original_build(*args)
 
-                catalog_payload._build_catalog = counting_build
+                payload_tools._build_catalog = counting_build
                 try:
                     service.catalog()
                 finally:
-                    catalog_payload._build_catalog = original_build
+                    payload_tools._build_catalog = original_build
                 self.assertEqual(len(calls), 1, "stale cache served after a content edit")
             finally:
                 service.close()

@@ -33,6 +33,7 @@ from .pair_plugins import PairPluginRoute
 from .pair_route import check_sizing_request, prepare_native, prepare_pair
 from .payload_tools import (
     benchmark_marks,
+    catalog_payload,
     load_instruments,
     mark,
     positive_pair_volume,
@@ -260,8 +261,6 @@ class ProofService:
             self._pool = None
 
     def catalog(self, override: ResearchSettings | None = None) -> dict[str, Any]:
-        from .catalog_payload import catalog_payload
-
         settings = override if override is not None else ResearchSettings.load(self.root)
         return catalog_payload(self, settings)
 

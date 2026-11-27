@@ -106,20 +106,14 @@ def _prepare_remote(ctx: _Preparation) -> _RemoteCohort | _Obj:
     if rejected:
         pool.release_cohort(state["cohort_id"], state["owner_of"])
         return _confirmation(inputs.settings, rejected, members)
-    distinct: tuple[str, ...] = tuple(
-        dict.fromkeys(cast(str, case.request["strategy"]) for _, case in members)
-    )
+    distinct = tuple(dict.fromkeys(cast(str, c.request["strategy"]) for _, c in members))
     canary_box: list[int] = [0]
     total_members = len(members)
+    check = inputs.check_cancelled
 
     def mean(point: _Obj) -> _Obj:
-        point_by_strat = {strat: _translate(point, strat) for strat in distinct}
-        return cast(
-            _Obj,
-            pool.eval_point(
-                state, point_by_strat, canary_box, total_members, inputs.check_cancelled
-            ),
-        )
+        by_strat = {s: _translate(point, s) for s in distinct}
+        return cast(_Obj, pool.eval_point(state, by_strat, canary_box, total_members, check))
 
     land = Landscape(ctx.axes | execution_axes(cast(dict[str, Any], inputs.request)), mean)
     return _RemoteCohort(
@@ -167,6 +161,26 @@ def _local_case(ctx: _Preparation, target: _Obj, native: _Obj) -> Any:
         )
 
 
+def _admit_local(
+    ctx: _Preparation, target: _Obj, native: _Obj, members: list[_Member], rejected: list[_Obj]
+) -> _Obj | None:
+    inputs = ctx.inputs
+    try:
+        case = _local_case(ctx, target, native)
+        reason = case.admission()
+        if reason:
+            if not ctx.checked:
+                return cast(_Obj, inputs.unavailable(case, reason))
+            raise W0Error(reason)
+        members.append((target, case))
+        _intersect_axes(ctx.axes, case.strategy_axes, ctx.active)
+    except (W0Error, OSError) as exc:
+        if not ctx.checked:
+            raise
+        rejected.append({"target": target, "reason": str(exc)})
+    return None
+
+
 def _local_members(ctx: _Preparation) -> tuple[list[_Member], list[_Obj]] | _Obj:
     inputs = ctx.inputs
     members: list[_Member] = []
@@ -178,20 +192,9 @@ def _local_members(ctx: _Preparation) -> tuple[list[_Member], list[_Obj]] | _Obj
         if idx in ctx.early_rejected:
             rejected.append(ctx.early_rejected[idx])
         else:
-            native = spec_by_idx[idx]
-            try:
-                case = _local_case(ctx, target, native)
-                reason = case.admission()
-                if reason:
-                    if not ctx.checked:
-                        return cast(_Obj, inputs.unavailable(case, reason))
-                    raise W0Error(reason)
-                members.append((target, case))
-                _intersect_axes(ctx.axes, case.strategy_axes, ctx.active)
-            except (W0Error, OSError) as exc:
-                if not ctx.checked:
-                    raise
-                rejected.append({"target": target, "reason": str(exc)})
+            unavailable = _admit_local(ctx, target, spec_by_idx[idx], members, rejected)
+            if unavailable is not None:
+                return unavailable
         if inputs.on_progress is not None:
             inputs.on_progress(idx + 1, total)
     return members, rejected

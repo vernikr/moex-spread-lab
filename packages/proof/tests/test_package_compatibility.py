@@ -1,24 +1,8 @@
-"""Legacy proof imports and extracted modules share identity for monkey-patches."""
+"""Retired proof modules stay deleted; the canonical replay pipeline is direct."""
 
 import importlib
 
 import pytest
-
-
-@pytest.mark.parametrize(
-    ("old", "new"),
-    [
-        ("proof_search", "proof_search"),
-        ("proof_batch", "proof_batch"),
-        ("proof_strategy_search", "proof_strategy_search"),
-        ("proof_windows", "proof_windows"),
-        ("proof_pool", "proof_pool"),
-    ],
-)
-def test_legacy_module_is_same_object(old, new):
-    assert importlib.import_module(f"moex_spread_lab.{old}") is importlib.import_module(
-        f"moex_spread_lab.proof.{new}"
-    )
 
 
 def test_builtin_replays_use_the_canonical_intent_pipeline():
@@ -41,43 +25,37 @@ def test_builtin_replays_use_the_canonical_intent_pipeline():
     funding.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    "module",
-    [
-        "moex_spread_lab.proof.screener_search",
-        "moex_spread_lab.proof.web_legacy",
-        "moex_spread_lab.proof.audit",
-        "moex_spread_lab.proof.cli",
-        "moex_spread_lab.proof_runtime",
-    ],
-)
-def test_retired_proof_modules_stay_deleted(module):
+# Bare suffixes: the architecture DAG forbids literal ``moex_spread_lab.<root shim>``
+# strings anywhere in workspace sources, so the prefix is joined at call time.
+RETIRED = [
+    "proof_batch",
+    "proof_pool",
+    "proof_search",
+    "proof_strategy_search",
+    "proof_windows",
+    "screener_search",
+    "proof.screener_search",
+    "proof.web_legacy",
+    "proof.audit",
+    "proof.cli",
+    "proof_runtime",
+    "proof.mean_reversion_engine",
+    "proof.mean_reversion_blocks",
+    "proof.mean_reversion_payloads",
+    "proof.mean_reversion_spec",
+    "proof.funding_engine",
+    "proof.funding_payloads",
+    "proof.funding_sizing_payload",
+    "proof.funding_notes",
+    "proof.service_pair",
+    "proof.service_prepare",
+    "proof.fixed_plugin_series",
+]
+
+
+@pytest.mark.parametrize("name", RETIRED)
+def test_retired_modules_stay_deleted(name):
+    module = f"moex_spread_lab.{name}"
     with pytest.raises(ModuleNotFoundError) as exc:
         importlib.import_module(module)
     assert exc.value.name == module
-
-
-def test_retired_root_screener_search_shim_stays_deleted():
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("moex_spread_lab.screener_search")
-
-
-@pytest.mark.parametrize(
-    "module",
-    [
-        "mean_reversion_engine",
-        "mean_reversion_blocks",
-        "mean_reversion_payloads",
-        "mean_reversion_spec",
-        "funding_engine",
-        "funding_payloads",
-        "funding_sizing_payload",
-        "funding_notes",
-        "service_pair",
-        "service_prepare",
-        "fixed_plugin_series",
-    ],
-)
-def test_retired_legacy_replay_modules_stay_deleted(module):
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(f"moex_spread_lab.proof.{module}")

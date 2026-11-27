@@ -7,9 +7,10 @@ import pytest
 
 import test_store_cutover as fixtures
 from moex_spread_lab.cli import main
-from moex_spread_lab.data.lake.data_lake import DataLakeError, MarketDataStore
+from moex_spread_lab.data.lake.bar_types import DataLakeError
 from moex_spread_lab.data.lake.h1_migration import stage_h1, write_h1_plan
 from moex_spread_lab.data.lake.h1_seal import activate_h1, deactivate_h1, verify_sealed_h1
+from moex_spread_lab.data.lake.market_store import MarketDataStore
 
 
 def _read_projected_h1(store: MarketDataStore, secid: str):

@@ -31,6 +31,7 @@ from .iss_http import (
     IssIntakeError,
     fetch_history,
     fetch_json_with_raw,
+    history_url,
 )
 from .iss_http import HISTORY_JSON_CACHE as _HISTORY_JSON_CACHE
 from .iss_http import (
@@ -41,13 +42,15 @@ from .iss_http import (
     fetch_json as _fetch_json,
 )
 from .iss_http import history_rows as _history_rows
-from .iss_http import history_url as _history_url
 from .iss_http import (
     rows as _rows,
 )
 from .iss_http import (
     url as _url,
 )
+
+# Compat alias for `strategies.funding_carry` private imports until Post-Wave 3 (#246).
+_history_url = history_url
 
 __all__ = [
     "CANDLE_FIELDS",
@@ -84,6 +87,7 @@ __all__ = [
     "fetch_history",
     "fetch_iss_catalog",
     "fetch_json_with_raw",
+    "history_url",
     "normalize_candles",
     "normalize_iss_intake",
     "normalize_iss_payload",

@@ -11,7 +11,7 @@ from typing import Any
 
 from moex_spread_lab.core.w0 import W0Error
 
-from ..lake.data_lake import RawResponseArchive
+from ..lake.raw_archive import RawResponseArchive
 from .data_inventory import _policy
 
 

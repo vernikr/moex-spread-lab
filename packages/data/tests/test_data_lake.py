@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from moex_spread_lab.data.lake.data_lake import DataLakeError, ParquetBarStore
+from moex_spread_lab.data.lake.bar_types import DataLakeError
+from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 
 
 class DataLakeTests(unittest.TestCase):

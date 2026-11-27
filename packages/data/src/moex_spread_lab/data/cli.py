@@ -9,9 +9,9 @@ from typing import Any
 from moex_spread_lab.core.w0 import W0Error, write_json
 from moex_spread_lab.data.benchmark.lineage import build_lineage, collect_benchmark_sources
 from moex_spread_lab.data.iss.catalog import fetch_candle_series, fetch_iss_catalog
-from moex_spread_lab.data.lake.data_lake import ParquetBarStore
 from moex_spread_lab.data.lake.data_refresh import RefreshTarget, refresh_candle_datasets
 from moex_spread_lab.data.lake.h1_seal import activate_h1, deactivate_h1, verify_sealed_h1
+from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 from moex_spread_lab.data.retention.data_inventory import build_data_inventory
 from moex_spread_lab.data.retention.data_retention import (
     archive_rebuildable_caches,

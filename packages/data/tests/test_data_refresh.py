@@ -5,12 +5,13 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from moex_spread_lab.data.lake.data_lake import ParquetBarStore, RawResponseArchive
 from moex_spread_lab.data.lake.data_refresh import (
     DataRefreshError,
     RefreshTarget,
     refresh_candle_datasets,
 )
+from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
+from moex_spread_lab.data.lake.raw_archive import RawResponseArchive
 from moex_spread_lab.data.lake.refresh_merge import (
     _overlap_start,
     _payload_rows,

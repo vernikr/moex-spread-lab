@@ -5,12 +5,10 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import load_contracts, sha256_file
-from moex_spread_lab.data.lake.data_lake import (
-    BarSeries,
-    LegacyJsonBarStore,
-    MarketDataStore,
-    ParquetBarStore,
-)
+from moex_spread_lab.data.lake.bar_types import BarSeries
+from moex_spread_lab.data.lake.legacy_series import LegacyJsonBarStore
+from moex_spread_lab.data.lake.market_store import MarketDataStore
+from moex_spread_lab.data.lake.parquet_store import ParquetBarStore
 
 
 def _pair_bars_and_provenance(

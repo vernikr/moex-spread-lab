@@ -12,7 +12,8 @@ from typing import Any, cast
 from moex_spread_lab.core.w0 import sha256_file
 
 from ..iss.catalog import CANDLE_INTERVAL_LABELS
-from .data_lake import DataLakeError, ParquetBarStore
+from .bar_types import DataLakeError
+from .parquet_store import ParquetBarStore
 
 REFRESH_SCHEMA = "market-data-refresh.v1"
 

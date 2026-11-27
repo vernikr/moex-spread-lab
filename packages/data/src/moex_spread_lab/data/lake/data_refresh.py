@@ -16,9 +16,9 @@ from ..iss.catalog import (
     DEFAULT_ISS_BASE_URL,
     fetch_candle_series,
 )
-from .data_lake import ParquetBarStore
 from .h1_seal import SealedH1Reader
 from .io import atomic_write_json, writer_lock
+from .parquet_store import ParquetBarStore
 from .refresh_merge import (
     REFRESH_SCHEMA,
     DataRefreshError,

@@ -18,8 +18,8 @@ from .bar_types import (
     reject_sealed_table_write,
     verify_archived_record,
 )
-from .data_lake import ParquetBarStore
 from .h1_migration import build_h1_plan, verify_h1_stage
+from .parquet_store import ParquetBarStore
 
 SCHEMA = H1_SEAL_SCHEMA
 

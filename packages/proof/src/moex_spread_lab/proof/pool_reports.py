@@ -55,7 +55,7 @@ def report_cohort(
 
 
 def window_summaries(
-    deps: tuple[Any, Any],
+    deps: tuple[Any, ...],
     root: Path,
     settings: ResearchSettings,
     benchmark: tuple[list[str], dict[str, float]],
@@ -63,7 +63,7 @@ def window_summaries(
     check_cancelled: Any,
     on_progress: Any,
 ) -> list[dict[str, Any]]:
-    pool, facade = deps
+    pool, facade, worker_fn = deps
     n = len(items)
     w = min(pool.max_workers, n)
     slots = pool._ensure_workers(w)
@@ -90,7 +90,7 @@ def window_summaries(
         if shard:
             fut = facade.submit_worker(
                 slots[b_idx % w],
-                facade._worker_window_summaries,
+                worker_fn,
                 root_str,
                 settings,
                 benchmark,

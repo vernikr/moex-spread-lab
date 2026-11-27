@@ -53,8 +53,6 @@ from .worker_cohort import worker_release_cohort as release_cohort_task
 from .worker_cohort import worker_report_cohort as report_cohort_task
 from .worker_metrics import submit_worker
 from .worker_metrics import unwrap_worker_result as unwrap_worker_result
-from .worker_window import worker_service as worker_service
-from .worker_window import worker_window_summaries as window_summaries_task
 
 window_summaries = _window_summaries
 
@@ -158,8 +156,6 @@ def cohort_state(
 
 _WORKER_COHORTS = WORKER_COHORTS
 _worker_report_cohort = report_cohort_task
-_worker_window_summaries = window_summaries_task
-_worker_service = worker_service
 _worker_init_cohort = init_cohort_task
 _worker_eval_indices = eval_indices_task
 _worker_release_cohort = release_cohort_task
@@ -428,9 +424,10 @@ class CohortWorkerPool:
         items: list[tuple[int, Obj, Obj]],
         check_cancelled: CheckCancelled,
         on_progress: ProgressCallback | None = None,
+        worker_fn: Callable[..., list[tuple[int, Obj]]] | None = None,
     ) -> list[Obj]:
         return _window_summaries(
-            (self, sys.modules[__name__]),
+            (self, sys.modules[__name__], worker_fn),
             root,
             settings,
             benchmark,

@@ -21,6 +21,7 @@ from .request_validation import compact_result as compact_result
 from .request_validation import identity as _identity
 from .request_validation import validate as _validate
 from .service import benchmark_marks as _benchmark_marks
+from .worker_cohort import worker_service
 
 MAX_WINDOW_REQUESTS = 128
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -50,6 +51,7 @@ class _WindowPoolLike(Protocol):
         items: list[tuple[int, _Obj, _Obj]],
         check_cancelled: Callable[[], None],
         on_progress: Callable[[int, int], None] | None = None,
+        worker_fn: Callable[..., list[tuple[int, _Obj]]] | None = None,
     ) -> list[_Obj]: ...
 
 
@@ -91,6 +93,42 @@ def _progress(on_progress: Callable[[_Obj], None] | None, done: int, total: int)
         )
 
 
+def _summarize_window(
+    service: Any,
+    item: _Obj,
+    target: _Obj,
+    settings: ResearchSettings,
+    benchmark: tuple[list[str], dict[str, float]],
+    calendar: Any,
+) -> _Obj:
+    try:
+        _validate(item)
+        case = cast(_StudyWindowLike, StudyWindow(service, item, settings, benchmark, calendar))
+        result: _Obj = compact_result(case.report(case.seed))
+    except (W0Error, OSError) as exc:
+        result = {
+            "status": "unavailable",
+            "trades": None,
+            "annualized_excess_pp": None,
+            "reason": str(exc),
+        }
+    return {"target": target, **result}
+
+
+def _worker_window_summaries(
+    root_str: str,
+    settings: ResearchSettings,
+    benchmark: tuple[list[str], dict[str, float]],
+    items: list[tuple[int, _Obj, _Obj]],
+) -> list[tuple[int, _Obj]]:
+    svc = worker_service(root_str)
+    calendar = svc.calendar_data
+    return [
+        (idx, _summarize_window(svc, item, target, settings, benchmark, calendar))
+        for idx, item, target in items
+    ]
+
+
 def window_summaries(
     service: Any,
     request: Any,
@@ -128,22 +166,12 @@ def window_summaries(
                     if on_progress is None
                     else lambda done, total: _progress(on_progress, done, total)
                 ),
+                worker_fn=_worker_window_summaries,
             )
             return {**settings.metadata(), "rows": rows}
     rows: list[_Obj] = []
     for idx, (item, target) in enumerate(zip(requests, identities, strict=False), start=1):
         check_cancelled()
-        try:
-            _validate(item)
-            case = cast(_StudyWindowLike, StudyWindow(service, item, settings, benchmark, calendar))
-            result: _Obj = compact_result(case.report(case.seed))
-        except (W0Error, OSError) as exc:
-            result = {
-                "status": "unavailable",
-                "trades": None,
-                "annualized_excess_pp": None,
-                "reason": str(exc),
-            }
-        rows.append({"target": target, **result})
+        rows.append(_summarize_window(service, item, target, settings, benchmark, calendar))
         _progress(on_progress, idx, total_windows)
     return {**settings.metadata(), "rows": rows}

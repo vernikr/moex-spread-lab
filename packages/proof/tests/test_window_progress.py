@@ -19,7 +19,9 @@ class WindowProgressTests(FixtureCase):
             pool = get_pool.return_value
             pool.should_use.return_value = True
 
-            def run_workers(root, settings, benchmark, payload, check_cancelled, on_progress):
+            def run_workers(
+                root, settings, benchmark, payload, check_cancelled, on_progress, **_kwargs
+            ):
                 self.assertEqual([entry[0] for entry in payload], [0, 1])
                 on_progress(1, 2)
                 on_progress(2, 2)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Protocol, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
@@ -14,7 +15,9 @@ from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 from .landscape import Axis
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
-from .worker_window import worker_service as _worker_service
+
+if TYPE_CHECKING:
+    from .service import ProofService
 
 # Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
 # bindings they exposed before the strict-typing pass. ``_WORKER_COHORTS`` and the task
@@ -77,7 +80,19 @@ class _CaseLike(Protocol):
     def report(self, point: _Obj) -> _Obj: ...
 
 
+_WORKER_SERVICES: dict[str, ProofService] = {}
 _WORKER_COHORTS: dict[str, dict[int, tuple[_Obj, _CaseLike]]] = {}
+
+
+def worker_service(root_str: str) -> ProofService:
+    svc = _WORKER_SERVICES.get(root_str)
+    if svc is None:
+        from .service import ProofService
+
+        root = Path(root_str).resolve()
+        svc = ProofService(root, calendar=CalendarData(root))
+        _WORKER_SERVICES[root_str] = svc
+    return svc
 
 
 def _prepare_worker_case(
@@ -128,7 +143,7 @@ def _worker_init_cohort(
     items: list[tuple[int, _Obj, _Obj, bool]],
 ) -> list[tuple[int, str, _Obj]]:
     """Initialize assigned StudyWindows inside the worker and keep them sticky."""
-    svc = cast(_WorkerService, _worker_service(root_str))
+    svc = cast(_WorkerService, worker_service(root_str))
     # The worker-service factory always installs CalendarData for this process.
     calendar = svc.calendar_data
     bucket = _WORKER_COHORTS.setdefault(cohort_id, {})

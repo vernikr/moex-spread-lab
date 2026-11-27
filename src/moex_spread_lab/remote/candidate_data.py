@@ -1,22 +1,11 @@
-"""Provisioning of the isolated benchmark candidate checkout (agent-performance-2, S4c).
+"""Provisioning of the isolated benchmark candidate checkout.
 
-Three provisioning modes for the market-data trees (``data/``, ``data-lake/``):
-
-- ``clone`` — APFS copy-on-write (``cp -cR``). Cloned files share extents with the
-  live trees and decouple on write, so the candidate is private and setup stays
-  seconds even for large datasets. Only available on macOS/APFS.
-- ``copy`` — private byte copy (``shutil.copytree``). Portable default on every
-  non-APFS filesystem; preserves the isolation invariant everywhere.
-- ``symlink`` — read-only-by-convention symlink farm. The fastest fallback for very
-  large non-APFS datasets, but the candidate *can* write through the links into the
-  live trees. Opt in via ``MOEX_BENCH_DATA=symlink`` only for trusted candidates;
-  H1 seal files and ``data/analytics`` always stay private copies.
-
-``MOEX_BENCH_DATA`` selects the mode (``auto`` by default: ``clone`` on macOS,
-``copy`` elsewhere). Any ``clone`` failure falls back to ``copy`` — a half-cloned
-tree is worse than a slow one. The candidate is trusted code, not a security
-sandbox; ``data/analytics`` (mutable runtime state) is never linked or cloned,
-and ``research-settings.json`` is always a private copy.
+``MOEX_BENCH_DATA`` selects how ``data/`` and ``data-lake/`` reach the candidate:
+``clone`` (APFS copy-on-write, the ``auto`` macOS default), ``copy`` (private byte
+copy, the portable default) or ``symlink`` (read-only-by-convention; trusted
+candidates only). ``clone`` failures fall back to ``copy``. The candidate is
+trusted code, not a security sandbox: ``data/analytics`` and the H1 seal files
+are always private copies, and ``research-settings.json`` is never shared.
 """
 
 from __future__ import annotations
@@ -67,7 +56,6 @@ def copy_data(root: Path, candidate: Path) -> None:
 
 
 def clone_data(root: Path, candidate: Path) -> None:
-    """APFS copy-on-write clone of the top-level entries (millisecond metadata)."""
     _check_source(root)
     for name in _DATA_NAMES:
         src = root / name
@@ -118,8 +106,7 @@ def provision_data(root: Path, candidate: Path, mode: str | None = None) -> str:
             clone_data(root, candidate)
             return "clone"
         except (OSError, RuntimeError, subprocess.SubprocessError):
-            # Partial clones must never leak into the candidate: drop cloned trees
-            # and fall back to a private byte copy.
+            # Partial clones must never leak into the candidate.
             for name in _DATA_NAMES:
                 shutil.rmtree(candidate / name, ignore_errors=True)
             copy_data(root, candidate)
@@ -132,7 +119,6 @@ def provision_data(root: Path, candidate: Path, mode: str | None = None) -> str:
 
 
 def relocate_copied_seal(root: Path, candidate: Path) -> None:
-    """Rebind only an integrity-checked private seal copy to its temporary root."""
     seal = candidate / "data-lake/h1-seal.json"
     marker = candidate / "data-lake/h1-seal.enabled.json"
     if not seal.exists() and not marker.exists():

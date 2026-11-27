@@ -14,11 +14,9 @@ SOURCE_SUFFIXES = {".py", ".c", ".js", ".css", ".html"}
 EXCLUDED_PARTS = {"vendor", "__pycache__"}
 ALLOW_MARKER = "code-health: allow broad exception:"
 
-# Tiered file-size policy (TD-1, GitHub Issue #152). Each archetype keeps a soft
-# target (green, silent), an advisory band (yellow, logged in the check_health
-# summary, never fails) and a role-aware hard ceiling (red, fails CI and needs a
-# genuine domain split). Function-level cognitive complexity and the acyclic DAG
-# stay strictly hard: they, not file length, drive agent reasoning cost.
+# Tiered file-size policy (TD-1): soft target (green), advisory band (yellow,
+# logged, never fails) and hard ceiling (red, fails CI). Cognitive complexity and
+# the import DAG stay strictly hard; they, not file length, drive reasoning cost.
 FILE_BUDGETS: dict[str, dict[str, int]] = {
     "production": {"soft_loc": 400, "soft_tokens": 4000, "hard_loc": 600, "hard_tokens": 6000},
     "declarative": {"soft_loc": 550, "soft_tokens": 5500, "hard_loc": 800, "hard_tokens": 8000},
@@ -30,8 +28,8 @@ DECLARATIVE_STEMS = ("contracts", "universe", "catalog", "cli_parsers", "registr
 DECLARATIVE_COMPOUND_STEMS = tuple(f"_{stem}" for stem in DECLARATIVE_STEMS)
 DECLARATIVE_SUFFIXES = (".html", ".css")
 DECLARATIVE_DIRS = ("universe",)
-# Anti-fragmentation guardrail: splitting a cohesive module just to save a few
-# tokens produces shallow pass-through shards (Ousterhout; arXiv:2610.21914).
+# Anti-fragmentation guardrail: token-driven splits produce shallow pass-through
+# shards (Ousterhout; arXiv:2610.21914).
 FORBIDDEN_FRAGMENT_PATTERNS: dict[str, str] = {
     "p72 overflow shard": r"p72",
     "issue-numbered shard": r"(?:^|[_-])\d{2,4}(?:$|[_-])",
@@ -39,8 +37,7 @@ FORBIDDEN_FRAGMENT_PATTERNS: dict[str, str] = {
 }
 SHALLOW_SHARD_MAX_LOC = 40
 SHALLOW_SHARD_MAX_CALLERS = 1
-# Package totals are a split-vs-cohesion signal, not a per-line ratchet: only a
-# material net regression is worth reporting.
+# Package totals are a split-vs-cohesion signal: only material regressions report.
 PACKAGE_TOKEN_TOLERANCE_PCT = 2
 
 POLICY: dict[str, Any] = {
@@ -96,8 +93,7 @@ def _file_metrics(path: Path) -> dict[str, int]:
         raise GateError(f"cannot read UTF-8 source {path}: {exc}") from exc
     return {
         "loc": sum(bool(line.strip()) for line in text.splitlines()),
-        # ~4.2 bytes/token matches o200k_base on ASCII code within ~3%, instead
-        # of the ~18%-strict prose-calibrated 3.6 bytes/token.
+        # ~4.2 bytes/token matches o200k_base on ASCII code within ~3%.
         "tokens": len(raw) * 10 // 42,
     }
 

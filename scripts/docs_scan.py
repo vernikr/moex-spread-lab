@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
 """Docs-file integrity scan (plan S2 docs profile).
 
-Checks changed Markdown/docs files for trailing whitespace, unresolved merge
-conflict markers and credential-shaped tokens. Stdlib only; used by
-``scripts/verify.py --profile affected`` for docs-only changes and runnable
-standalone. Exit 0 = clean, 1 = findings, 2 = usage error.
-
-``--links`` additionally verifies that every relative Markdown link and anchor
-resolves inside the repository. ``--repo --links`` checks the whole authored docs
-surface (``README.md``, ``AGENTS.md``, ``docs/**`` and ``packages/*/docs/**``) and
-skips the style scan, which is reserved for changed files. Run it standalone, as
-``uv run python scripts/docs_scan.py --repo --links``, before any move or rename;
-``packages/core/tests/test_change_scope.py`` pins the surface and the exclusions.
-
-Preserved evidence is excluded from link checking because it is reproduced as
-received and must not be rewritten: ``docs/inputs/`` (bytes pinned by
-``docs/inputs/manifest.json``), ``docs/research/results/received/`` and
-``docs/research/reuse/``.
+Checks changed Markdown/docs files for trailing whitespace, merge conflict
+markers and credential-shaped tokens. Exit 0 = clean, 1 = findings, 2 = usage
+error. ``--links`` additionally verifies relative Markdown links and anchors
+resolve inside the repository; ``--repo --links`` checks the whole authored docs
+surface (``README.md``, ``AGENTS.md``, ``docs/**``, ``packages/*/docs/**``) and
+skips the style scan, which is reserved for changed files. Preserved evidence is
+excluded from link checking because it is reproduced as received and must not be
+rewritten: ``docs/inputs/`` (bytes pinned by ``docs/inputs/manifest.json``),
+``docs/research/results/received/`` and ``docs/research/reuse/``.
 """
 
 from __future__ import annotations
@@ -77,7 +70,6 @@ def _scan_text(display: str, text: str) -> list[str]:
 
 
 def repo_doc_paths() -> list[str]:
-    """The repository-wide docs surface covered by ``--repo``."""
     found: list[str] = []
     for pattern in _REPO_DOC_GLOBS:
         for path in sorted(ROOT.glob(pattern)):
@@ -105,7 +97,6 @@ def _is_external(target: str) -> bool:
 
 
 def _resolve_link(path: Path, location: str) -> Path:
-    """Resolve a link target; an empty location means "this document"."""
     return path if not location else (path.parent / location).resolve()
 
 
@@ -133,7 +124,6 @@ def _link_findings(display: str, path: Path, text: str) -> list[str]:
 
 
 def scan_docs_files(paths: list[str]) -> tuple[list[str], list[str]]:
-    """Return ``(findings, notes)`` for the given paths (``path[:line]: message``)."""
     findings: list[str] = []
     notes: list[str] = []
     for raw in paths:
@@ -154,7 +144,6 @@ def scan_docs_files(paths: list[str]) -> tuple[list[str], list[str]]:
 
 
 def scan_links(paths: list[str]) -> tuple[list[str], list[str]]:
-    """Return ``(findings, notes)`` for relative Markdown links in ``paths``."""
     findings: list[str] = []
     notes: list[str] = []
     for raw in paths:
@@ -183,9 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.repo:
-        # Authored repository docs surface: link integrity only. Style findings are
-        # reported for changed files, so preserved evidence is never rewritten.
-        args.links = True
+        args.links = True  # authored surface: link integrity only, never restyled
         paths = repo_doc_paths()
         findings, notes = [], []
     else:

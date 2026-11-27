@@ -33,6 +33,7 @@ from .candidate_python import (
     candidate_pythonpath,
     deps_inputs_touched,
 )
+from .workstation import command as _cmd
 from .workstation import patch_paths as _patch_paths
 
 
@@ -51,15 +52,6 @@ def normalize_provenance(full: Any, root: Path | None) -> Any:
             with suppress(ValueError):
                 provenance[key] = "$ROOT/" + str(Path(entry).resolve().relative_to(root.resolve()))
     return {**mapping, "provenance": provenance}
-
-
-def _cmd(root: Path, *args: str, input_text: str | None = None) -> str:
-    proc = subprocess.run(
-        args, cwd=root, input=input_text, text=True, capture_output=True, check=False
-    )
-    if proc.returncode:
-        raise RuntimeError(f"{args[0]} failed ({proc.returncode}): {proc.stderr[-1000:]}")
-    return proc.stdout.strip()
 
 
 def _post(port: int, payload: dict[str, Any], root: Path) -> dict[str, Any]:

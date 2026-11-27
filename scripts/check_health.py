@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Tier-1 repository gate behind ``scripts/check_health.sh``.
 
-Full mode runs the seven checks in waves of at most the usable CPU count, one line
-per passing check (``--verbose`` prints every log) and a log tail per failure.
-``--changed [--base REV]`` scopes ruff/basedpyright/ratchets to touched files, runs
-``js-modules`` only for touched static JS and ``architecture --fast`` only when imports
-moved, and names what it skipped. Each check runs in its own process group under
-``--timeout`` (``MSL_HEALTH_TIMEOUT``, default 900 s). Exit 0 = all run checks passed,
-1 = a failure or timeout, 2 = a check could not run; a skipped check is never reported
-as passed. ``MSL_HEALTH_STATUS_FILE`` receives the per-check status JSON.
+Full mode runs the seven checks in waves of at most the usable CPU count, one
+line per passing check (``--verbose`` prints every log) and a log tail per
+failure. ``--changed [--base REV]`` scopes ruff/basedpyright/ratchets to touched
+files, runs ``js-modules`` only for touched static JS and ``architecture --fast``
+only when imports moved, and names what it skipped. Each check runs in its own
+process group under ``--timeout`` (``MSL_HEALTH_TIMEOUT``, default 900 s).
+Exit 0 = all run checks passed, 1 = a failure or timeout, 2 = a check could not
+run; a skipped check is never reported as passed. ``MSL_HEALTH_STATUS_FILE``
+receives the per-check status JSON.
 """
 
 from __future__ import annotations
@@ -34,8 +35,7 @@ from scripts.verify import cpu_budget  # noqa: E402
 
 TASKS = ("ruff-check", "ruff-format", "basedpyright", "vulture", "custom-gate")
 TASKS += ("architecture", "js-modules")
-# Changed mode overlaps the import probe with basedpyright startup; basedpyright and
-# the complexipy-backed gate never share a wave on small machines in full mode.
+# Changed mode overlaps the import probe with basedpyright startup.
 CHANGED_ORDER = ("basedpyright", "architecture", "custom-gate", "ruff-check", "ruff-format")
 CHANGED_ORDER += ("js-modules", "vulture")
 HEAVY = ("basedpyright", "custom-gate")
@@ -69,7 +69,6 @@ class Scope:
 
 
 def check_command(name: str, scope: Scope) -> list[str] | None:
-    """The command for one check, or ``None`` when changed mode skips it."""
     py, changed = scope.py, scope.changed
     lint = py if changed else LINT_ROOTS
     skipped = {
@@ -101,7 +100,6 @@ def _status(returncode: int) -> str:
 
 
 def run_check(command: list[str], log: Path, timeout: float) -> tuple[str, int]:
-    """Run one check in a fresh process group; return ``(status, seconds)``."""
     started = time.monotonic()
     env = {
         **os.environ,
@@ -143,7 +141,6 @@ def _waves(tasks: list[str], scope: Scope, ncpus: int) -> list[list[str]]:
 
 
 def run_all(scope: Scope, logs: Path, timeout: float) -> list[tuple[str, str, int]]:
-    """Run every check wave by wave; return ``(name, status, seconds)`` in launch order."""
     results: list[tuple[str, str, int]] = []
     ncpus = cpu_budget()
     for wave in _waves(list(TASKS), scope, ncpus):

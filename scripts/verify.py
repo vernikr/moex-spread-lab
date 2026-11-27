@@ -9,8 +9,8 @@ parity tier. Browser smokes live in the scheduled ``run_browser_smokes.py`` job.
 Steps run with ``MOEX_OFFLINE_ONLY=1``/``UV_NO_SYNC=1`` and append one sanitized
 ``msl.verification-record/1`` line to ``reports/perf/records.jsonl`` (``--records`` or
 ``MSL_VERIFICATION_RECORDS`` override); paths and credential-shaped tokens are redacted
-and raw output never enters a record. pytest workers default to the usable CPU budget
-(2-vCPU A/B: -n 0 73.5 s, -n 2 42.5 s, -n 4 37.0 s); ``MSL_VERIFY_WORKERS`` overrides.
+and raw output never enters a record. pytest workers default to the usable CPU budget;
+``MSL_VERIFY_WORKERS`` overrides.
 """
 
 from __future__ import annotations
@@ -242,9 +242,12 @@ def _docs_steps(paths: list[str]) -> tuple[list[Step], list[str], str]:
     reason = (
         f"docs-only change ({len(docs)} file(s)): whitespace, conflict markers, credential tokens"
     )
-    skipped = ["check_health.sh", "pytest", "architecture gate"]
     steps = [Step("docs-scan", reason, [*python_cmd(), "scripts/docs_scan.py", *docs])]
-    return steps, [BROWSER_SKIPPED, *(f"{name} (docs-only)" for name in skipped)], "affected/docs"
+    skipped = [
+        BROWSER_SKIPPED,
+        *(f"{name} (docs-only)" for name in ("check_health.sh", "pytest", "architecture gate")),
+    ]
+    return steps, skipped, "affected/docs"
 
 
 def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
@@ -297,14 +300,16 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         steps.append(Step("always-run", reason, pytest_cmd(["-p", "no:testmon", *always_files])))
     leg_dirs = [f"packages/{leg}/tests" for leg in legs]
     if decision.testmon and _testmon_available():
-        reason = f"affected (advisory) selection over legs: {','.join(legs)}"
         steps.append(
-            Step("pytest-affected", reason, pytest_cmd(["--testmon", *leg_dirs, *ignores]))
+            Step(
+                "pytest-affected",
+                f"affected (advisory) selection over legs: {','.join(legs)}",
+                pytest_cmd(["--testmon", *leg_dirs, *ignores]),
+            )
         )
     else:
-        why = "pytest-testmon not importable; legs run WITHOUT deselection"
         print(
-            f"verify: {why}"
+            "verify: pytest-testmon not importable; legs run WITHOUT deselection"
             if decision.testmon
             else f"verify: testmon disabled ({'; '.join(decision.reasons)}); legs run in full"
         )

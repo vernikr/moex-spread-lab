@@ -125,11 +125,10 @@ def await_readiness(
 def _sync_result(
     old: str,
     head: str,
-    *,
     published: str,
     synced: str,
     health_confirmed: str,
-    state: dict[str, Any],
+    **state: Any,
 ) -> dict[str, Any]:
     return {
         "old_head": old,
@@ -144,8 +143,10 @@ def _sync_result(
     }
 
 
-def command(root: Path, *args: str) -> str:
-    result = subprocess.run(args, cwd=root, capture_output=True, text=True, check=False)
+def command(root: Path, *args: str, input_text: str | None = None) -> str:
+    result = subprocess.run(
+        args, cwd=root, input=input_text, capture_output=True, text=True, check=False
+    )
     if result.returncode:
         raise RuntimeError(
             f"{args[0]} failed ({result.returncode}): {result.stderr.strip()[:1000]}"
@@ -198,27 +199,24 @@ def sync(root: Path) -> dict[str, Any]:
         return _sync_result(
             old,
             old,
-            published="up-to-date",
-            synced="skipped-up-to-date",
-            health_confirmed="not-required",
-            state={
-                "restarted": False,
-                "health": None,
-                "dependencies_synced": False,
-                "fastcore_source_changed": False,
-                "fastcore_verified": False,
-                "changed_files": 0,
-            },
+            "up-to-date",
+            "skipped-up-to-date",
+            "not-required",
+            restarted=False,
+            health=None,
+            dependencies_synced=False,
+            fastcore_source_changed=False,
+            fastcore_verified=False,
+            changed_files=0,
         )
     changed = command(root, "git", "diff", "--name-only", f"{old}..{new}").splitlines()
     command(root, "git", "merge", "--ff-only", "origin/main")
-    dependencies_synced = False
-    if (
+    dependencies_synced = (
         any(is_dependency_input(path) for path in changed)
         or not (root / ".venv/bin/python3").exists()
-    ):
+    )
+    if dependencies_synced:
         command(root, "uv", "sync", "--frozen")
-        dependencies_synced = True
     fastcore_changed = FASTCORE_SOURCE in changed
     fastcore_verified = False
     if dependencies_synced or fastcore_changed:
@@ -227,40 +225,23 @@ def sync(root: Path) -> dict[str, Any]:
         _verify_fastcore(root)
         fastcore_verified = True
     head = command(root, "git", "rev-parse", "HEAD")
+    state: dict[str, Any] = {
+        "restarted": False,
+        "health": None,
+        "dependencies_synced": dependencies_synced,
+        "fastcore_source_changed": fastcore_changed,
+        "fastcore_verified": fastcore_verified,
+        "changed_files": len(changed),
+    }
     runtime_changed = dependencies_synced or any(_is_runtime_path(path) for path in changed)
     if not runtime_changed:
         return _sync_result(
-            old,
-            head,
-            published="fast-forwarded",
-            synced="skipped-no-dependency-changes",
-            health_confirmed="not-required",
-            state={
-                "restarted": False,
-                "health": None,
-                "dependencies_synced": dependencies_synced,
-                "fastcore_source_changed": fastcore_changed,
-                "fastcore_verified": fastcore_verified,
-                "changed_files": len(changed),
-            },
+            old, head, "fast-forwarded", "skipped-no-dependency-changes", "not-required", **state
         )
     command(root, "launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LABEL}")
-    health = await_readiness(root, head)
-    return _sync_result(
-        old,
-        head,
-        published="fast-forwarded",
-        synced="uv-sync" if dependencies_synced else "skipped-no-dependency-changes",
-        health_confirmed="confirmed",
-        state={
-            "restarted": True,
-            "health": health,
-            "dependencies_synced": dependencies_synced,
-            "fastcore_source_changed": fastcore_changed,
-            "fastcore_verified": fastcore_verified,
-            "changed_files": len(changed),
-        },
-    )
+    state.update(restarted=True, health=await_readiness(root, head))
+    synced = "uv-sync" if dependencies_synced else "skipped-no-dependency-changes"
+    return _sync_result(old, head, "fast-forwarded", synced, "confirmed", **state)
 
 
 def probe(payload: dict[str, Any]) -> dict[str, Any]:

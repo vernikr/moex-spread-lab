@@ -23,7 +23,7 @@ from moex_spread_lab.proof.strategy_catalog import (
     get_proof_adapter_ids,
     get_strategy_registry,
 )
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
+from moex_spread_lab.strategies.pair_screener import ScreenerError
 
 PROOF_POST_ROUTES = frozenset(
     {

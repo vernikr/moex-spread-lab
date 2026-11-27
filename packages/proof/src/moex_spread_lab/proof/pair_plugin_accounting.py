@@ -199,7 +199,7 @@ def _funding_journal(
     through: str | None,
     lot: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+    from moex_spread_lab.strategies.pair_screener import _pair
 
     if window.timeframe != "1h" and funding_window is not None:
         return _daily_funding_journal(window, funding_window, rows, trades, (through, lot))

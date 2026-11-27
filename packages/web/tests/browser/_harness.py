@@ -121,7 +121,7 @@ def _timed_handler(base: type[BaseHTTPRequestHandler]) -> type[BaseHTTPRequestHa
 def serve(root: Path) -> Iterator[str]:
     import optuna.logging
 
-    from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+    from moex_spread_lab.strategies.pair_screener import ScreenerInputs
     from moex_spread_lab.web.server import ScreenerStore, make_handler
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)

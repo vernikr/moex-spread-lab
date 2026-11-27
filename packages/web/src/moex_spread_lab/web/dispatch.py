@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 from moex_spread_lab.core.settings import read_settings, save_settings
 from moex_spread_lab.core.timeframes import timeframe_options
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerError
+from moex_spread_lab.strategies.pair_screener import ScreenerError
 
 from .routes_dev import health, probe
 from .routes_proof import (

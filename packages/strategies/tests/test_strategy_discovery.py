@@ -241,6 +241,9 @@ def test_pair_fill_defaults_and_rejections():
         "proof_funding",
         "proof_signals",
         "screener",
+        "strategies.funding_carry.carry",
+        "strategies.pair_mean_reversion.analytics",
+        "strategies.pair_screener.pair_screener",
         "strategies.pair_screener.screener",
     ),
 )

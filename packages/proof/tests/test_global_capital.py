@@ -11,7 +11,7 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_search import _annualized_returns
 from moex_spread_lab.proof.proof_windows import window_summaries
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs, catalog
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs, catalog
 from perf_equivalence_fixtures import ProofWorkspaceCase
 from proof_fixtures import CAL, FLAT, PAIR
 from test_position_sizing import unit_proof

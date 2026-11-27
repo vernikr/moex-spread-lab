@@ -16,7 +16,7 @@ from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.strategy_catalog import get_proof_adapter_ids
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 from perf_equivalence_fixtures import assert_pool_parity, assert_same_fields, installed_plugin
 
 PLUGIN_SOURCE = """

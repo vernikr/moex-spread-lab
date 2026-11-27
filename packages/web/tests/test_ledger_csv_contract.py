@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from funding_fixtures import change, fixture, request
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 
 LEDGER_JS = (

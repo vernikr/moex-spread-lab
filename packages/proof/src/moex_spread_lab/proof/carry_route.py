@@ -20,7 +20,7 @@ from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
 from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.funding_carry.study import build_carry_study
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 
 from .carry_intent_accounting import AccountTerms, replay_carry_intents
 from .ledger_blocks import pair_selection

@@ -16,7 +16,7 @@ from typing import Any
 
 from moex_spread_lab.proof.proof_pool import get_worker_pool
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.strategies.pair_screener import pair_screener as _pair_screener
+from moex_spread_lab.strategies import pair_screener as _pair_screener
 
 from .dispatch import dispatch_get, dispatch_post, split_path
 from .http_handler import LoopbackHandler

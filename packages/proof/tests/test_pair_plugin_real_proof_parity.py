@@ -12,7 +12,7 @@ from moex_spread_lab.proof.pair_plugin_accounting import prepare_daily_pair_unit
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
-from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+from moex_spread_lab.strategies.pair_screener import _pair
 
 
 def assert_loaded_pair_plugin_matches_native_accounting(actual, expected):

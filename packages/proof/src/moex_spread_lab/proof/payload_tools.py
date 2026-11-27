@@ -402,7 +402,7 @@ def _build_catalog(service: CatalogService, settings: ResearchSettings) -> dict[
             "assets": [],
             "error": str(exc),
         }
-    from moex_spread_lab.strategies.pair_screener.pair_screener import catalog as _pair_catalog
+    from moex_spread_lab.strategies.pair_screener import catalog as _pair_catalog
 
     pair = _pair_catalog(
         service.screener_inputs,

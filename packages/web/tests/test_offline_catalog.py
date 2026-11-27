@@ -18,7 +18,7 @@ for extra in (_REPO_ROOT / "packages" / "proof" / "tests", _REPO_ROOT / "tests")
         sys.path.insert(0, str(extra))
 
 import moex_spread_lab.web.server as web_server  # noqa: E402
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs  # noqa: E402
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs  # noqa: E402
 from proof_fixtures import two_calendar_windows  # noqa: E402
 
 

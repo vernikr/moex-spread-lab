@@ -50,7 +50,7 @@ def register(subparsers: Any) -> None:
 
 
 def _run_screener_run_cmd(args: Any) -> int:
-    from moex_spread_lab.strategies.pair_screener.pair_screener import (
+    from moex_spread_lab.strategies.pair_screener import (
         ScreenerInputs,
         build_result,
     )

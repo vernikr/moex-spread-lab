@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from moex_spread_lab.core.settings import save_settings
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 from moex_spread_lab.web import routes_dev
 from moex_spread_lab.web.server import ScreenerStore, make_handler
 from proof_fixtures import two_calendar_windows

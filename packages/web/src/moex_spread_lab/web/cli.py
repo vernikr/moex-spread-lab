@@ -37,7 +37,7 @@ def run(args: Any) -> int:
     if args.command == "screener":
         import signal
 
-        from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
+        from moex_spread_lab.strategies.pair_screener import ScreenerInputs
 
         from .server import serve
 

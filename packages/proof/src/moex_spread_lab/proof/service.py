@@ -22,7 +22,7 @@ from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies.funding_carry.proof_funding import (
     FundingWindow,
 )
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
+from moex_spread_lab.strategies.pair_screener import (
     ScreenerInputs,
     pair_price_inputs,
 )

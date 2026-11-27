@@ -98,7 +98,7 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
     from moex_spread_lab.proof.service import ProofService
     from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
     from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
-    from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+    from moex_spread_lab.strategies.pair_screener import _pair
 
     dates = fixture(tmp_path)
     if negative_late:

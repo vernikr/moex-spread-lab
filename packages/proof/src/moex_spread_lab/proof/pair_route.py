@@ -26,13 +26,13 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import PRICE_FILLS, pair_fill
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.engine import AnalyticsError
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
+from moex_spread_lab.strategies.pair_screener import (
     STRATEGIES,
     _pair,
     _parameters,
     execution_settings,
 )
-from moex_spread_lab.strategies.pair_screener.pair_screener import (
+from moex_spread_lab.strategies.pair_screener import (
     catalog as _pair_catalog,
 )
 

@@ -27,13 +27,13 @@ from moex_spread_lab.core.contracts import (  # noqa: E402
     StrategyPlugin,
 )
 from moex_spread_lab.core.settings import save_settings  # noqa: E402
+from moex_spread_lab.strategies import pair_screener  # noqa: E402
 from moex_spread_lab.strategies.base import StrategyRegistry  # noqa: E402
 from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin  # noqa: E402
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import (  # noqa: E402
     PairMeanReversionPlugin,
 )
-from moex_spread_lab.strategies.pair_screener import pair_screener  # noqa: E402
-from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs  # noqa: E402
+from moex_spread_lab.strategies.pair_screener import ScreenerInputs  # noqa: E402
 from moex_spread_lab.web import dispatch  # noqa: E402
 from proof_fixtures import two_calendar_windows  # noqa: E402
 

@@ -20,8 +20,8 @@ from moex_spread_lab.proof.proof_kernel import StudyWindow
 from moex_spread_lab.proof.proof_search import _measure, _tune, _validate, research_run
 from moex_spread_lab.proof.proof_windows import compact_result
 from moex_spread_lab.proof.service import ProofService
-from proof_fixtures import funding_winner, rising_calendar, screen_failures
-from test_global_capital import FLAT, PAIR, TARGETS
+from proof_fixtures import FLAT, PAIR, funding_winner, rising_calendar, screen_failures
+from test_global_capital import TARGETS
 from test_position_sizing import unit_proof
 
 

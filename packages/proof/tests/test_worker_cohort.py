@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from moex_spread_lab.core.cache_metrics import record_cache_lookup
+from moex_spread_lab.core.derived_cache import record_cache_lookup
 from moex_spread_lab.proof import proof_pool, worker_cohort, worker_metrics
 from moex_spread_lab.proof.landscape import Axis
 from moex_spread_lab.proof.worker_metrics import (

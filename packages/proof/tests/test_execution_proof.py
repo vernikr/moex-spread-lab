@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from moex_spread_lab.data.iss.catalog import HISTORY_FIELDS, _history_url
+from moex_spread_lab.data import HISTORY_FIELDS, history_url
 from moex_spread_lab.proof.service import ProofService
 from perf_equivalence_fixtures import temporary_workspace
 from synthetic_history import weekdays
@@ -51,7 +51,7 @@ def _write_carry_history(root: Path, secid: str, days: list[date], close) -> Non
         )
     path = root / "data" / "carry-history-cache" / f"{secid}-{START}-{END}-0.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    url = _history_url(secid, START, END, 0, HISTORY_FIELDS)
+    url = history_url(secid, START, END, 0, HISTORY_FIELDS)
     payload = {
         "history": {"columns": list(HISTORY_FIELDS), "data": data},
         "history.cursor": {

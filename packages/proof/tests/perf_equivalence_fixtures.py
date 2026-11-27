@@ -22,7 +22,7 @@ from unittest.mock import patch
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
-from moex_spread_lab.data.iss.catalog import _history_url
+from moex_spread_lab.data import history_url
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.proof.strategy_catalog import (
@@ -181,7 +181,7 @@ def _build_pair_h1_candles(root: Path, h1_days: list[str]) -> None:
 
 
 def write_calendar_history(root, secid, rows, *, response_hash):
-    url = _history_url(secid, HISTORY_FROM, TILL, 0, HISTORY_FIELDS)
+    url = history_url(secid, HISTORY_FROM, TILL, 0, HISTORY_FIELDS)
     payload = {
         "history": {"columns": list(HISTORY_FIELDS), "data": rows},
         "history.cursor": {

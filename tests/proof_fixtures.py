@@ -33,7 +33,7 @@ def fixture(root):
     ]
     previous = [json.loads(p.read_text()) for p, _ in paths]
     calendar_root(root)
-    for (path, key), data in zip(paths, previous):
+    for (path, key), data in zip(paths, previous, strict=True):
         if key == "instruments":
             for contract in data[key]:
                 contract["settlement"] = (

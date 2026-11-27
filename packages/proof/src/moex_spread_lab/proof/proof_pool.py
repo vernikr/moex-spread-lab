@@ -17,7 +17,7 @@ from statistics import fmean
 from typing import Any, cast
 
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.data.lake.bar_types import SealedH1Reader
+from moex_spread_lab.data import SealedH1Reader
 
 from .worker_cohort import (
     worker_eval_indices,

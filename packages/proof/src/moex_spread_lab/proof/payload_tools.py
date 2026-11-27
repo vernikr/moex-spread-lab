@@ -19,13 +19,16 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from moex_spread_lab.core._fastcore_loader import clean_obj
+from moex_spread_lab.core.derived_cache import (
+    HashedJSONCache as _HashedJSONCache,
+)
 from moex_spread_lab.core.derived_cache import (
     derived_cache_enabled,
     fingerprint,
     load_bytes,
     store_bytes,
 )
-from moex_spread_lab.core.hashed_json_cache import HashedJSONCache as _HashedJSONCache
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME, ResearchSettings
 from moex_spread_lab.core.timeframes import get_timeframe, timeframe_options
 from moex_spread_lab.core.universe import (
@@ -49,19 +52,8 @@ _SHA256_CACHE: _HashedJSONCache[tuple[str, int, int], tuple[None, str]] = _Hashe
 
 
 def clean(value: Any) -> Any:
-    """Replace non-finite floats with None; delegate to the C99 cleaner when built."""
-    from moex_spread_lab.core._fastcore_loader import load_fastcore
-
-    fc = load_fastcore()
-    if fc is not None:
-        return fc.clean_obj(value)
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if isinstance(value, dict):
-        return {key: clean(item) for key, item in cast(dict[Any, Any], value).items()}
-    if isinstance(value, (list, tuple)):
-        return [clean(item) for item in cast(list[Any] | tuple[Any, ...], value)]
-    return value
+    """Replace non-finite floats with None; delegate to the canonical core cleaner."""
+    return clean_obj(value)
 
 
 def sha256_bytes(path: Path) -> str | None:

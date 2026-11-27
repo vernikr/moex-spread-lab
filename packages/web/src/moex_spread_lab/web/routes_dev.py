@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from moex_spread_lab.core import _fastcore_loader
-from moex_spread_lab.core.cache_metrics import collect_cache_metrics
+from moex_spread_lab.core.derived_cache import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.proof_batch import checked_plateau

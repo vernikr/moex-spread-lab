@@ -9,7 +9,7 @@ import pytest
 from funding_fixtures import PAIR, WEEKEND_PAIR, change, fixture, page, request, weekend
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.data.iss.catalog import _history_url
+from moex_spread_lab.data import history_url
 from moex_spread_lab.data.universe import HISTORY_WINDOWS
 from moex_spread_lab.proof.pair_route import _validate_carry_result
 from moex_spread_lab.proof.proof_search import research_run
@@ -146,7 +146,7 @@ def _carry_cohort_workspace(root):
         idx = block["columns"].index("SECID")
         for row in block["data"]:
             row[idx] = new
-        doc["url"] = _history_url(new, *HISTORY_WINDOWS[third], 0)
+        doc["url"] = history_url(new, *HISTORY_WINDOWS[third], 0)
         out = page(root, new, third)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(doc))

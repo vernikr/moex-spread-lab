@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
 
-from moex_spread_lab.core.cache_metrics import collect_cache_metrics
+from moex_spread_lab.core.derived_cache import collect_cache_metrics
 
 _CACHE_KEYS = ("json_hits", "json_misses", "zscore_hits", "zscore_misses")
 

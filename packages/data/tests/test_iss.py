@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import pytest
 
 from moex_spread_lab.data.iss.catalog import (
     analyze_candle_pair,
@@ -333,7 +336,10 @@ class IssHistoryContractTests(unittest.TestCase):
         self.assertEqual(first["page_count"], 2)
         self.assertEqual(first["row_count"], 101)
         self.assertEqual(first["rows"][99]["CLOSE"], 999)
-        empty = lambda url, timeout: _Response(b'{"history":{"columns":["TRADEDATE"],"data":[]}}')
+
+        def empty(url, timeout):
+            return _Response(b'{"history":{"columns":["TRADEDATE"],"data":[]}}')
+
         self.assertEqual(
             fetch_history("TEST", "a", "b", opener=empty, delay_seconds=0, allow_empty=True)[
                 "rows"
@@ -359,3 +365,12 @@ class IssHistoryContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_retired_data_compatibility_paths_are_absent():
+    module = "moex_spread_lab.data.lake.data_lake"
+    with pytest.raises(ModuleNotFoundError) as exc:
+        importlib.import_module(module)
+    assert exc.value.name == module
+    for name in ("moex_spread_lab.data.iss", "moex_spread_lab.data.iss.catalog"):
+        assert not hasattr(importlib.import_module(name), "_history_url")

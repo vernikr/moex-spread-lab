@@ -107,7 +107,7 @@ def test_tampering_never_falls_back_even_with_warm_cache(prepared, fault):
 
 
 def test_missing_preferred_parquet_never_selects_intake(prepared):
-    root, intake, screen, plan, candidate = prepared
+    root, _intake, screen, plan, candidate = prepared
     activate_h1(root, plan, candidate)
     screen.unlink()
     next((candidate / "candles-screen").rglob("data.parquet")).unlink()
@@ -118,7 +118,7 @@ def test_missing_preferred_parquet_never_selects_intake(prepared):
 
 
 def test_new_screened_copy_invalidates_selection(prepared):
-    root, intake, screen, plan, candidate = prepared
+    root, intake, screen, plan, _candidate = prepared
     screen.unlink()
     plan.unlink()
     write_h1_plan(root, plan)
@@ -134,7 +134,7 @@ def test_new_screened_copy_invalidates_selection(prepared):
 
 
 def test_deactivation_requires_originals_and_preserves_evidence(prepared):
-    root, intake, screen, plan, candidate = prepared
+    root, _intake, screen, plan, candidate = prepared
     activate_h1(root, plan, candidate)
     with pytest.raises(DataLakeError):
         activate_h1(root, plan, candidate)
@@ -152,7 +152,7 @@ def test_deactivation_requires_originals_and_preserves_evidence(prepared):
 
 
 def test_manifest_mutation_does_not_change_sealed_record(prepared):
-    root, intake, screen, plan, candidate = prepared
+    root, _intake, screen, plan, candidate = prepared
     activate_h1(root, plan, candidate)
     (candidate / "candles-screen/manifest.json").write_text("{}")
     screen.unlink()

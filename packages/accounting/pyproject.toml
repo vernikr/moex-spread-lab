@@ -5,7 +5,6 @@ description = "MOEX Spread Lab Layer 1 accounting: costs, VTB risk, sizing, port
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "msl-core",
-    "pyarrow>=18,<20",
 ]
 
 [project.entry-points."moex_spread_lab.cli"]

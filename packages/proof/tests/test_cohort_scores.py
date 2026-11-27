@@ -22,9 +22,7 @@ class ImmediateSlot:
         future = Future()
         try:
             future.set_result(self.handler(fn.__name__, *args))
-        except (
-            BaseException
-        ) as exc:  # Future must model executor error propagation, including cancellation.
+        except BaseException as exc:  # noqa: BLE001 - executor futures capture even BaseException.
             future.set_exception(exc)
         return future
 

@@ -138,9 +138,10 @@ class MaximumQuantityTests(unittest.TestCase):
                 for fee in (0, 0.001, 0.0049, 0.015, 32.79):
                     costs = {"exchange_clearing": fee, "slippage": 0.5}
                     q = maximum_quantity(budget, margin, costs, stress=False)
-                    required = lambda n, margin=margin, costs=costs: (
-                        n * margin + 2 * sum(round(v * n, 2) for v in costs.values())
-                    )
+
+                    def required(n, margin=margin, costs=costs):
+                        return n * margin + 2 * sum(round(v * n, 2) for v in costs.values())
+
                     self.assertLessEqual(required(q), budget + 1e-9)
                     self.assertGreater(required(q + 1), budget + 1e-9)
 

@@ -58,17 +58,20 @@ def _build_root(root: Path) -> None:
     far_price = {
         d: 31000 + 40 * math.sin(i / 2) + (350 if i == 30 else 0) for i, d in enumerate(far_days)
     }
-    row = lambda secid, d, settle, volume, opening: [
-        d,
-        secid,
-        opening,
-        settle + 5,
-        settle - 5,
-        settle,
-        settle,
-        volume,
-        20,
-    ]
+
+    def row(secid, d, settle, volume, opening):
+        return [
+            d,
+            secid,
+            opening,
+            settle + 5,
+            settle - 5,
+            settle,
+            settle,
+            volume,
+            20,
+        ]
+
     _write_history(root, "SRH3", [row("SRH3", d, 30000.0, 9000, 29990.0) for d in near_days])
     _write_history(
         root, "SRM3", [row("SRM3", d, far_price[d], 3000, far_price[d] + 8) for d in far_days]

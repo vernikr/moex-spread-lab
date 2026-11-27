@@ -127,12 +127,6 @@ def _package_root(relative: str) -> Path | None:
     return ROOT / group if group is not None else None
 
 
-def _is_compatibility_shim(relative: str) -> bool:
-    """Root ``src/moex_spread_lab/*.py`` shims re-export a canonical module."""
-    parts = PurePosixPath(relative).parts
-    return parts[:2] == ("src", "moex_spread_lab") and len(parts) == 3
-
-
 def _fragment_name_problem(name: str) -> str | None:
     stem = PurePosixPath(name).stem
     for label, pattern in FORBIDDEN_FRAGMENT_PATTERNS.items():

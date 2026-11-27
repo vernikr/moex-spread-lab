@@ -15,7 +15,6 @@ from scripts.code_health_gate_common import (
     _budget_for,
     _file_metrics,
     _fragment_name_problem,
-    _is_compatibility_shim,
     _package_group,
     _package_root,
     _relative,
@@ -223,7 +222,6 @@ def _shallow_shard_paths(files: list[Path], file_metrics: dict[str, dict[str, in
             or path.suffix.lower() != ".py"
             or path.name == "__init__.py"
             or "tests" in PurePosixPath(relative).parts
-            or _is_compatibility_shim(relative)
         ):
             continue
         if _intra_package_callers(path, relative) <= max_callers:

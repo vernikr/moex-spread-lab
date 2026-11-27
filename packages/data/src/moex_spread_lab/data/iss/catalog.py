@@ -49,9 +49,6 @@ from .iss_http import (
     url as _url,
 )
 
-# Compat alias for `strategies.funding_carry` private imports until Post-Wave 3 (#246).
-_history_url = history_url
-
 __all__ = [
     "CANDLE_FIELDS",
     "CANDLE_INTERVAL_LABELS",
@@ -77,7 +74,6 @@ __all__ = [
     "_fetch_history_json",
     "_fetch_json",
     "_history_rows",
-    "_history_url",
     "_quote_quality",
     "_rows",
     "_url",

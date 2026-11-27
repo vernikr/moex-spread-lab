@@ -75,7 +75,7 @@ def test_stale_plan_fails_before_creating_output(inputs, change):
 
 @pytest.mark.parametrize("change", ["symlink", "identity", "interval", "order"])
 def test_invalid_source_refused(inputs, change):
-    root, intake, screen, path, output = inputs
+    root, intake, screen, path, _output = inputs
     if change == "symlink":
         screen.unlink()
         screen.symlink_to(intake)
@@ -94,7 +94,7 @@ def test_invalid_source_refused(inputs, change):
 
 
 def test_corruption_and_incomplete_stage_fail_closed(inputs):
-    root, intake, screen, path, output = inputs
+    root, _intake, _screen, path, output = inputs
     write_h1_plan(root, path)
     stage_h1(root, path, output)
     parquet = next((output / "candles").rglob("data.parquet"))

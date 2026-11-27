@@ -5,7 +5,6 @@ description = "Research-first MOEX futures-spread evaluation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "certifi>=2024",
-    "duckdb>=1.2,<2",
     "msl-accounting",
     "msl-core",
     "msl-data",
@@ -71,7 +70,6 @@ pythonpath = [
     "packages/proof/tests",
     "packages/web/tests",
     "packages/core/tests",
-    "packages/accounting/tests",
     "tests",
 ]
 # Test discovery is package-scoped; root tests/ contains shared synthetic fixtures only.
@@ -160,26 +158,8 @@ max-returns = 6
 max-statements = 50
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001", "E701", "E702", "RUF059", "E731"]
-"packages/*/tests/**/*.py" = ["PLR0913", "PLR0915", "BLE001", "E701", "E702", "RUF059", "E731"]
-# Legacy ratchet (Step 1): frozen violations in existing files. New files
-# have no ignores and must be clean. Burn down per Step 4 of the plan.
-"packages/accounting/tests/test_position_sizing.py" = ["B905"]
-"packages/accounting/tests/test_run_artifact_import.py" = ["C401", "SIM117"]
-"packages/core/src/moex_spread_lab/core/_fastcore_loader.py" = ["BLE001"]
-"packages/core/src/moex_spread_lab/core/settings.py" = ["PLR0912"]
-"packages/core/src/moex_spread_lab/core/w0.py" = ["C901", "PLR0912"]
-"packages/core/tests/test_cli_plugins.py" = ["SIM117"]
-"packages/data/tests/test_benchmark.py" = ["C408"]
-"packages/data/tests/test_iss.py" = ["RUF012"]
-"packages/data/tests/test_storage_policy.py" = ["SIM117"]
-"packages/proof/src/moex_spread_lab/proof/carry_intent_accounting.py" = ["PLR0913"]
-"packages/proof/src/moex_spread_lab/proof/pair_plugin_accounting.py" = ["PLR0913"]
-"packages/proof/src/moex_spread_lab/proof/proof_kernel.py" = ["PLR0913"]
-"packages/web/src/moex_spread_lab/web/routes_proof.py" = ["PLR0913"]
-"packages/web/src/moex_spread_lab/web/server.py" = ["C901", "PLR0911", "SIM105"]
-"tests/funding_fixtures.py" = ["B905"]
-"tests/proof_fixtures.py" = ["B905"]
+"tests/**/*.py" = ["S101"]
+"packages/*/tests/**/*.py" = ["S101"]
 
 [tool.basedpyright]
 pythonVersion = "3.12"
@@ -3804,6 +3784,10 @@ paths = ["packages/data/tests/test_p72_final_lake_contracts.py"]
 [[tool.size-report.columns]]
 label = "perf_equivalence_pool_fixtures.py"
 paths = ["packages/proof/tests/perf_equivalence_pool_fixtures.py"]
+
+[[tool.size-report.columns]]
+label = "packages/proof/src/moex_spread_lab/proof/axis.py"
+paths = ["packages/proof/src/moex_spread_lab/proof/axis.py"]
 
 [[tool.size-report.columns]]
 label = "packages/proof/src/moex_spread_lab/proof_runtime/axis.py"

@@ -358,7 +358,6 @@ version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
-    { name = "duckdb" },
     { name = "msl-accounting" },
     { name = "msl-core" },
     { name = "msl-data" },
@@ -391,7 +390,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "certifi", specifier = ">=2024" },
-    { name = "duckdb", specifier = ">=1.2,<2" },
     { name = "msl-accounting", editable = "packages/accounting" },
     { name = "msl-core", editable = "packages/core" },
     { name = "msl-data", editable = "packages/data" },
@@ -427,14 +425,10 @@ version = "0.9.0"
 source = { editable = "packages/accounting" }
 dependencies = [
     { name = "msl-core" },
-    { name = "pyarrow" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "msl-core", editable = "packages/core" },
-    { name = "pyarrow", specifier = ">=18,<20" },
-]
+requires-dist = [{ name = "msl-core", editable = "packages/core" }]
 
 [[package]]
 name = "msl-core"

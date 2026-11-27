@@ -134,6 +134,10 @@ def run_preferences(page, url):
                 "#col-norm input[data-axis=quantity],#col-norm input[data-axis=slippage_ticks]"
             )
         ).to_have_count(0)
+    verify_preferences(page, other, original, requests)
+
+
+def verify_preferences(page, other, original, requests):
     assert page.evaluate("payload.run_id") != original
     expect(page.locator("#lookback")).to_have_value("6")
     expect(other.locator("#clookback")).to_have_value("10")

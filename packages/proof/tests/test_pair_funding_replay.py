@@ -146,9 +146,12 @@ def test_daily_resolver_rejects_future_anchor_gap_and_partial_mismatch():
     days = DATES
     published = {days[0]: 0.1, days[1]: None, days[2]: 0.3, days[3]: 0.4, days[4]: 0.5}
     window = FundingWindow(FundingTimeline("TEST", published, days), days)
-    call = lambda ds, cutoff=None: replay_daily_pair_funding(
-        ds, [], window, through=cutoff, near_lot_size=1, quantity=1
-    )
+
+    def call(ds, cutoff=None):
+        return replay_daily_pair_funding(
+            ds, [], window, through=cutoff, near_lot_size=1, quantity=1
+        )
+
     with pytest.raises(W0Error):
         call(days[:2], days[1])  # midpoint's right anchor is after cutoff
     with pytest.raises(W0Error):

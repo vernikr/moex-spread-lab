@@ -26,9 +26,7 @@ def _assert_excluded_members(
     excluded: set[str],
     svc: ProofService,
     req: dict,
-    thin: dict,
-    allow_volume: bool,
-    capital: dict,
+    remaining: dict,
 ) -> None:
     assert result["status"] == "selection_requires_confirmation"
     assert result["trial_count"] == 0
@@ -38,7 +36,6 @@ def _assert_excluded_members(
     assert {x["target"]["pair"] for x in result["excluded"]} == excluded
     # A rejected member does not imply the other, waived (but failing) gate is enforced.
     if len(excluded) == 1:
-        remaining = thin if allow_volume else capital
         single = research_run(svc, {**req, "targets": [remaining]}, optimize=True)
         assert single["status"] == "maximum_found"
 
@@ -178,7 +175,9 @@ def test_all_four_combinations_in_preflight_search_report_and_live_lamps(
     for key, value in cfg.items():
         assert preview[key] == value
     if excluded:
-        _assert_excluded_members(preview, result, excluded, svc, req, thin, allow_volume, capital)
+        _assert_excluded_members(
+            preview, result, excluded, svc, req, thin if allow_volume else capital
+        )
     else:
         _assert_selected_book(result, share, svc, req, thin)
 
@@ -276,7 +275,7 @@ def _volume_anomaly(tmp_path_factory, name: str) -> tuple[Path, ProofService]:
 
 
 def test_two_failed_screens_on_one_carry_window_still_allow_the_search(tmp_path_factory):
-    root, svc = _volume_anomaly(tmp_path_factory, "two-failures")
+    _root, svc = _volume_anomaly(tmp_path_factory, "two-failures")
     req = _search_request()
     r = research_run(svc, req, optimize=True)
     assert r["status"] == "maximum_found"

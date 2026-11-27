@@ -1,81 +1,72 @@
 {
   "c_functions": {
-    "packages/core/src/moex_spread_lab/core/_fastcore.c::calc_max_quantity": {
-      "baseline_ccn": 19,
-      "baseline_nloc": 35,
-      "baseline_parameters": 5
-    },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_convergence_scan": {
-      "baseline_ccn": 38,
-      "baseline_nloc": 78,
+      "baseline_ccn": 26,
+      "baseline_nloc": 59,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_sample_z": {
-      "baseline_ccn": 42,
-      "baseline_nloc": 138,
+      "baseline_ccn": 28,
+      "baseline_nloc": 100,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_calendar_zscore_scan": {
-      "baseline_ccn": 46,
-      "baseline_nloc": 99,
+      "baseline_ccn": 32,
+      "baseline_nloc": 77,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_compute_rolling_z": {
-      "baseline_ccn": 27,
-      "baseline_nloc": 96,
+      "baseline_ccn": 20,
+      "baseline_nloc": 74,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_mean_reversion_scan": {
-      "baseline_ccn": 32,
-      "baseline_nloc": 101,
+      "baseline_ccn": 30,
+      "baseline_nloc": 82,
       "baseline_parameters": 2
     },
     "packages/core/src/moex_spread_lab/core/_fastcore.c::fast_size_proof_metrics": {
-      "baseline_ccn": 58,
-      "baseline_nloc": 153,
+      "baseline_ccn": 50,
+      "baseline_nloc": 148,
       "baseline_parameters": 2
     }
   },
-  "complexity": {
-    "packages/core/src/moex_spread_lab/core/settings.py::_validated_patch": 17,
-    "packages/data/tests/test_data_archive_candidates.py::test_member_verification": 22
-  },
+  "complexity": {},
   "files": {
     "packages/core/src/moex_spread_lab/core/_fastcore.c": {
-      "baseline_loc": 1314,
-      "baseline_tokens": 12534
+      "baseline_loc": 1155,
+      "baseline_tokens": 10968
     }
   },
   "guard_files": [],
   "legacy_fragment_files": [],
   "legacy_shallow_shards": [
-    "packages/proof/src/moex_spread_lab/proof/cli.py",
     "scripts/vulture_whitelist.py"
   ],
   "packages": {
     "packages/accounting": {
-      "baseline_tokens": 43500
+      "baseline_tokens": 16894
     },
     "packages/core": {
-      "baseline_tokens": 57172
+      "baseline_tokens": 50282
     },
     "packages/data": {
-      "baseline_tokens": 90306
+      "baseline_tokens": 69629
     },
     "packages/proof": {
-      "baseline_tokens": 175597
+      "baseline_tokens": 152126
     },
     "packages/strategies": {
-      "baseline_tokens": 127293
+      "baseline_tokens": 108471
     },
     "packages/web": {
-      "baseline_tokens": 104053
+      "baseline_tokens": 84342
     },
     "scripts": {
-      "baseline_tokens": 36195
+      "baseline_tokens": 31676
     },
     "src": {
-      "baseline_tokens": 13416
+      "baseline_tokens": 9631
     }
   },
   "policy": {

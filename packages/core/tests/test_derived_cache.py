@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from moex_spread_lab.core import cache_metrics, derived_cache, hashed_json_cache, json_types
+from moex_spread_lab.core import derived_cache
 from moex_spread_lab.core.derived_cache import (
     HashedJSONCache,
     collect_cache_metrics,
@@ -168,10 +168,17 @@ def test_load_object_preserves_the_callers_domain_exception(tmp_path: Path) -> N
         load_object(path, label="settings", error=DomainError)
 
 
-def test_wave1_stems_reexport_the_canonical_helpers() -> None:
-    assert cache_metrics.collect_cache_metrics is collect_cache_metrics
-    assert cache_metrics.record_cache_lookup is record_cache_lookup
-    assert hashed_json_cache.HashedJSONCache is HashedJSONCache
-    assert json_types.JSONBoundaryError is JSONBoundaryError
-    assert json_types.as_str_dict is as_str_dict
-    assert json_types.load_object is load_object
+@pytest.mark.parametrize(
+    "module",
+    [
+        "moex_spread_lab.core.cache_metrics",
+        "moex_spread_lab.core.hashed_json_cache",
+        "moex_spread_lab.core.json_types",
+    ],
+)
+def test_retired_modules_cannot_be_imported(module: str) -> None:
+    import importlib
+
+    with pytest.raises(ModuleNotFoundError, match=module.replace(".", r"\.")) as exc:
+        importlib.import_module(module)
+    assert exc.value.name == module

@@ -132,6 +132,30 @@ def _member_rate(row: _Obj) -> float | None:
     return cast(float | None, result.get("annualized_excess_pp"))
 
 
+def _member_records(attempts: list[_Obj], axes: dict[str, Axis], land: Landscape) -> list[_Obj]:
+    return [
+        {"trial": i, "parameters": {k: p[k] for k in axes}, **land.measure(p)}
+        for i, p in enumerate(attempts)
+    ]
+
+
+def _summary(
+    rows: list[_Obj], settings: Any, land: Landscape, best: _Obj | None, any_exec_ref: bool
+) -> _Obj:
+    rates: _Rates = [_member_rate(row) for row in rows]
+    complete = [rate for rate in rates if rate is not None]
+    return {
+        "member_count": len(rows),
+        "execution_reference": any_exec_ref,
+        "unit": "annualized_excess_pp",
+        "members": rows,
+        **settings.metadata(),
+        "result_basis": "validation" if settings.validation_percent else "training",
+        "training_mean_pp": land.measure(best)["rank_score"] if best else None,
+        "result_mean_pp": fmean(complete) if best and len(complete) == len(rates) else None,
+    }
+
+
 def build_cohort_result(report: CohortReport) -> _Obj:
     """Report the selected winner, preserving training and validation separation."""
     request, settings, group = report.request, report.settings, report.group
@@ -139,10 +163,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
     check_cancelled, on_progress = report.check_cancelled, report.on_progress
     axes, seed, members, land = group.axes, group.seed, group.members, group.land
     first = cast(_CaseLike, members[0][1])
-    records = [
-        {"trial": i, "parameters": {k: p[k] for k in axes}, **land.measure(p)}
-        for i, p in enumerate(attempts)
-    ]
+    records = _member_records(attempts, axes, land)
     point = best or seed
     if on_progress is not None:
         on_progress(
@@ -157,18 +178,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
             on_progress, "report", 88.0, 6.0, "Финальный расчёт: {done}/{total}"
         ),
     )
-    rates: _Rates = [_member_rate(row) for row in rows]
-    complete = [rate for rate in rates if rate is not None]
-    summary = {
-        "member_count": len(rows),
-        "execution_reference": any_exec_ref,
-        "unit": "annualized_excess_pp",
-        "members": rows,
-        **settings.metadata(),
-        "result_basis": "validation" if settings.validation_percent else "training",
-        "training_mean_pp": land.measure(best)["rank_score"] if best else None,
-        "result_mean_pp": fmean(complete) if best and len(complete) == len(rates) else None,
-    }
+    summary = _summary(rows, settings, land, best, any_exec_ref)
     native_single = len(members) == 1 and first.request["strategy"] == group.active
     plateau = _report_plateau(group, point, bool(best or native_single), on_progress)
     result = {

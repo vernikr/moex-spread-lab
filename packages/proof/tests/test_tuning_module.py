@@ -1,8 +1,12 @@
-"""Regression contracts for the extracted seeded Optuna trial engine."""
+"""Regression contracts for the seeded Optuna trial engine, the landscape
+diagnostics it drives, and the bounded offline trial budget."""
 
 import pytest
 
+from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof import landscape, proof_kernel, proof_search
 from moex_spread_lab.proof.landscape import Axis, Landscape
+from moex_spread_lab.proof.pair_payload import TRIALS_PER_STRATEGY, budget
 from moex_spread_lab.proof.proof_kernel import TuningOptions, _suggest_point, run_tuning
 from moex_spread_lab.proof.proof_search import _tune as facade_tune
 
@@ -106,3 +110,65 @@ def test_run_tuning_skips_a_seed_outside_the_train_bound_or_step_grid(seed, chec
     assert count == 3
     assert all(check(point) for point in attempts)
     assert best in attempts
+
+
+def test_kernel_and_search_reexport_landscape_api():
+    assert proof_kernel.Landscape is proof_search.Landscape is landscape.Landscape
+    assert proof_search._lamps is landscape._lamps
+    assert proof_kernel._ordered is proof_search._ordered is landscape.ordered
+    assert (proof_search.GREEN, proof_search.AMBER) == (landscape.GREEN, landscape.AMBER)
+
+
+def test_lamps_progress_preserves_profiles_and_skips_cached_probes():
+    axes = {"entry_z": Axis(0.5, 2.0, 0.1), "exit_z": Axis(0.0, 1.5, 0.1)}
+    center = {"entry_z": 1.0, "exit_z": 0.9}
+    calls = []
+
+    def evaluate(point):
+        calls.append(point.copy())
+        if point["entry_z"] == 1.2:
+            raise W0Error("unavailable")
+        return {"utility": 10.0}
+
+    land = landscape.Landscape(axes, evaluate)
+    land.measure(center)
+    events = []
+    result = landscape._lamps(
+        land, center, on_progress=lambda done, total: events.append((done, total))
+    )
+    assert events == [(1, 4), (2, 4), (3, 4), (4, 4)]
+    assert len(calls) == 5
+    assert result == landscape._lamps(land, center)
+    assert len(calls) == 5
+    assert result["fields"]["entry_z"]["neighbors"][1]["reason"] == "unavailable"
+    assert all(p["exit_z"] < p["entry_z"] for p in calls)
+    blocked = landscape._lamps(
+        land, center, reason="blocked", on_progress=lambda *_: events.append(None)
+    )
+    assert all(field["reason"] == "blocked" for field in blocked["fields"].values())
+    assert len(events) == 4
+
+
+def test_default_budget_is_the_production_value(monkeypatch):
+    monkeypatch.delenv("MOEX_UI_SMOKE_TRIALS", raising=False)
+    monkeypatch.setenv("MOEX_OFFLINE_ONLY", "1")
+    assert budget() == TRIALS_PER_STRATEGY
+
+
+def test_offline_smoke_may_lower_the_budget(monkeypatch):
+    monkeypatch.setenv("MOEX_OFFLINE_ONLY", "1")
+    monkeypatch.setenv("MOEX_UI_SMOKE_TRIALS", "12")
+    assert budget() == 12
+
+
+def test_budget_is_ignored_without_the_offline_contract(monkeypatch):
+    monkeypatch.setenv("MOEX_OFFLINE_ONLY", "0")
+    monkeypatch.setenv("MOEX_UI_SMOKE_TRIALS", "12")
+    assert budget() == TRIALS_PER_STRATEGY
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "many", "", "100000"])
+def test_invalid_or_upward_values_fall_back_to_the_production_budget(monkeypatch, value):
+    monkeypatch.setenv("MOEX_OFFLINE_ONLY", "1")
+    monkeypatch.setenv("MOEX_UI_SMOKE_TRIALS", value)
+    assert budget() == TRIALS_PER_STRATEGY

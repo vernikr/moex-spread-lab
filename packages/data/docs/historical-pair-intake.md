@@ -26,10 +26,4 @@ These standing rules govern funding coverage for every pair window:
 2. Pre-swap-points FX history: [MOEX n52418](https://www.moex.com/n52418) moved the evening calculation to swap points on 2022-12-05, so neither zero nor the later regime is a historical rate for earlier dates. [Spectra 6.18](https://fs.moex.com/f/16399/release-notes-6.pdf) identifies the historical `f07.csv:SWAP_RATE` clearing feed; a window without a verified dated production extract stays unresolved, and an FX TODTOM market quote is not the final per-contract clearing transfer.
 3. Extra sessions: [MOEX n92862](https://www.moex.com/n92862) and the [exchange session guide](https://www.moex.com/s3831) mark 2025-08-16–17 as extra sessions of the next trading day without separate clearing or funding. Treat those sessions as non-clearing for the windows that include them; a weekday or weekend flag is not a clearing calendar.
 
-A live source check without writing the original cache:
-
-```sh
-uv run --locked python -m moex_spread_lab.funding_recheck --secid CNYRUBF --from 2022-04-26 --till 2022-12-09
-```
-
 The default reports dates, row/null counts, first numeric date and response hashes only. `--apply --root .` atomically records supplementary published numbers under ignored `data/proof-funding-verified/`; primary ISS pages always win when numeric. The UI never fetches data, saves computed rates or removes checks on its own. See the [valuation and cutoff rules](../../proof/docs/execution-proof.md#exchange-check-and-short-gaps-2026-11-18).

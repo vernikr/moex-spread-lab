@@ -1,7 +1,10 @@
+import importlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
+
+import pytest
 
 from moex_spread_lab.data.lake.data_lake import DataLakeError, ParquetBarStore
 
@@ -146,6 +149,27 @@ class DataLakeTests(unittest.TestCase):
                 revisions[-1]["record"]["legacy_sha256"], replacement["legacy_sha256"]
             )
             self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
+
+
+def test_data_root_shims_and_h1_archive_fail_to_import():
+    """The deleted root data shims and the retired H1 archive command stay gone."""
+    for module in (
+        "benchmark",
+        "data_archive_candidates",
+        "data_inventory",
+        "data_lake",
+        "data_refresh",
+        "data_retention",
+        "h1_archive",
+        "h1_migration",
+        "h1_seal",
+        "iss",
+        "storage_policy",
+    ):
+        with pytest.raises(ImportError):
+            importlib.import_module(f"moex_spread_lab.{module}")
+    with pytest.raises(ImportError):
+        importlib.import_module("moex_spread_lab.data.retention.h1_archive")
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ from moex_spread_lab.core.settings import save_settings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.proof.proof_search import research_run
-from moex_spread_lab.proof.proof_kernel import STRATEGY_AXES
+from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
 root = Path(sys.argv[1])
 fixture(root)
 weekend(root)
@@ -62,7 +62,7 @@ for old, new in (("CNYRUBF", "GLZ6"), ("CRZ6", "GLH7")):
     (source.parent / (new + "_1d.json")).write_text(json.dumps(bars))
 path.write_text(json.dumps(contracts))
 save_settings(root, {"random_seed": 41, "validation_percent": 20})
-assert "demo_pair" in STRATEGY_AXES
+assert "demo_pair" in get_strategy_axes()
 service = ProofService(root)
 plugins = service.catalog()["pair_screen"]["proof_plugins"]
 assert [p["id"] for p in plugins] == ["demo_pair", "demo_pair_hourly"]

@@ -224,9 +224,9 @@ class CohortTests(CohortCase):
         self.assertGreater(g["group"]["training_mean_pp"], 0)
 
     def test_failed_member_prunes_the_whole_proposal_not_the_denominator(self):
-        from moex_spread_lab.proof import proof_search
+        from moex_spread_lab.proof import proof_kernel
 
-        original = proof_search._measure
+        original = proof_kernel._measure
 
         def fail_some(proof, marks, split, settings):
             if (
@@ -236,7 +236,7 @@ class CohortTests(CohortCase):
                 return {"utility": None, "reason": "unmeasurable member"}
             return original(proof, marks, split, settings)
 
-        with patch.object(proof_search, "_measure", side_effect=fail_some):
+        with patch.object(proof_kernel, "_measure", side_effect=fail_some):
             r = self.search(targets=[C, P])
         self.assertTrue(any(t["rank_score"] is None for t in r["candidates"]))
         self.assertLessEqual(r["selected_parameters"]["lookback"], 10)
@@ -245,7 +245,7 @@ class CohortTests(CohortCase):
                 self.assertIsNone(t["rank_score"])
                 self.assertIn(P["pair"], t["reason"])
         with patch.object(
-            proof_search,
+            proof_kernel,
             "_measure",
             return_value={"utility": None, "reason": "unmeasurable"},
         ):

@@ -7,15 +7,12 @@ simulators evaluate proposals, sensitivity probes and the displayed portfolio.
 from __future__ import annotations
 
 import hashlib
-import math as _math
+import math
 import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date as date
-from datetime import datetime as datetime
-from datetime import time as time
 from functools import cached_property
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import optuna
 
@@ -28,13 +25,11 @@ from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
 from moex_spread_lab.core.w0 import W0Error, run_id
 
 from .evaluation import account_checks as account_checks
+from .evaluation import annualize
 from .evaluation import annualized_returns as _annualized_returns
 from .evaluation import excess_curve as _excess_curve
 from .evaluation import missing_exposure as _missing_exposure
-from .landscape import AMBER as AMBER
-from .landscape import GREEN as GREEN
 from .landscape import Axis, Landscape
-from .landscape import lamps as _lamps
 from .landscape import ordered as _ordered
 from .phase_metrics import measure_phase as measure_phase
 from .request_validation import EXECUTION_AXES as EXECUTION_AXES
@@ -44,67 +39,34 @@ from .request_validation import identity
 from .request_validation import validate as _validate
 from .service import reference_eval as reference_eval
 from .service import shared_mark as _mark
-from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
-from .strategy_catalog import get_strategy_registry as get_strategy_registry
 
 _identity = identity
-
-# Shared numerical operations used by measurement and tuning.
-math = _math
 
 _Obj = dict[str, Any]
 _Axes = dict[str, Axis]
 _Marks = dict[str, float]
 
 _Summary = tuple[float, float, float, float, float, bool, bool]
-_ScalarAdmission = Callable[[_Obj, ResearchSettings], "str | None"]
 
 SHORTFALL_REASON = "Свободные средства недостаточны для маржи."
 UNEXPOSED_REASON = "Открытого спреда не было на обучении."
 
 
-def _as_datetime(value: str) -> datetime:
-    try:
-        return datetime.fromisoformat(value.replace("Z", ""))
-    except ValueError:
-        return datetime.combine(date.fromisoformat(value), time.min)
+def _blocked(metrics: _Obj, reasons: list[str]) -> _Obj:
+    return {**metrics, "rank_score": None, "utility": None, "reason": " ".join(reasons)}
 
 
-def _annualized(
-    initial: float,
-    end_wealth: float,
-    end_price: float,
-    anchor_price: float | None,
-    start: str,
-    end: str,
-) -> _Obj | str:
-    """Annualized strategy and LQDT returns, or the reason no finite estimate exists."""
-    if (
-        anchor_price is None
-        or not math.isfinite(anchor_price)
-        or anchor_price <= 0
-        or not math.isfinite(end_price)
-        or end_price <= 0
-    ):
-        return "Непригодная отметка LQDT в расчётном периоде."
-    elapsed_days = (_as_datetime(end) - _as_datetime(start)).total_seconds() / 86400
-    if elapsed_days <= 0 or min(initial, end_wealth) <= 0:
-        return "Нет положительного капитала или календарного интервала для годовой доходности."
-    power = 365 / elapsed_days
-    try:
-        strategy = 100 * math.expm1(power * math.log(end_wealth / initial))
-        benchmark = 100 * math.expm1(power * math.log(end_price / anchor_price))
-        excess = strategy - benchmark
-        if not all(math.isfinite(v) for v in (strategy, benchmark, excess)):
-            raise OverflowError
-    except (OverflowError, ValueError):
-        return "Годовая оценка не является конечным числом."
+def _metrics(
+    net: float, excess: float, train: float, rate: float, validation: float | None
+) -> _Obj:
     return {
-        "strategy_annualized_pct": strategy,
-        "lqdt_annualized_pct": benchmark,
-        "annualized_excess_pp": 0.0 if abs(excess) < 1e-10 else excess,
-        "calendar_days": round(elapsed_days, 4),
+        "net_rub": round(net, 2),
+        "lqdt_on_margin_rub": round(net - excess, 2),
+        "train": round(train, 6),
+        "validation": round(validation, 6) if validation is not None else None,
+        "excess_rub": round(excess, 2),
+        "rub_per_session": round(rate, 6),
     }
 
 
@@ -113,10 +75,9 @@ def measure_scalar_train(
     marks: _Marks,
     split: EvaluationSplit,
     settings: ResearchSettings,
-    admit: _ScalarAdmission,
 ) -> _Obj:
     """Score one metrics-only training replay; missing evidence is never a zero."""
-    if reason := admit(proof, settings):
+    if reason := admission(proof, settings):
         return {"utility": None, "reason": reason}
     summary: _Summary = proof["_scalar_train_summary"]
     initial, p0, end_price, end_wealth, end_cum_net, shortfall, exposed = summary
@@ -125,31 +86,18 @@ def measure_scalar_train(
     train_rate = train_x / len(split.training)
     if not all(math.isfinite(v) for v in (train_rate, train_x)):
         return {"utility": None, "reason": "Нет конечной оценки результата."}
-    metrics: _Obj = {
-        "net_rub": round(end_cum_net, 2),
-        "lqdt_on_margin_rub": round(end_cum_net - train_x, 2),
-        "train": round(train_rate, 6),
-        "validation": None,
-        "excess_rub": round(train_x, 2),
-        "rub_per_session": round(train_rate, 6),
-    }
+    metrics = _metrics(end_cum_net, train_x, train_rate, train_rate, None)
     reasons = [] if exposed else [UNEXPOSED_REASON]
-    annual = _annualized(initial, end_wealth, end_price, marks.get(start), start, end)
+    anchor = marks.get(start)
+    if anchor is None or not all(math.isfinite(v) and v > 0 for v in (anchor, end_price)):
+        annual: dict[str, float] | str = "Непригодная отметка LQDT в расчётном периоде."
+    else:
+        annual = annualize(initial, end_wealth, anchor, end_price, start, end)
     if isinstance(annual, str):
-        return {
-            **metrics,
-            "utility": None,
-            "rank_score": None,
-            "reason": " ".join([*reasons, annual]),
-        }
+        return _blocked(metrics, [*reasons, annual])
     if shortfall:
         # A failed cash path keeps the descriptive metrics and blocks only the score.
-        return {
-            **metrics,
-            "rank_score": None,
-            "utility": None,
-            "reason": " ".join([*reasons, SHORTFALL_REASON]),
-        }
+        return _blocked(metrics, [*reasons, SHORTFALL_REASON])
     score = annual["annualized_excess_pp"]
     return {
         **metrics,
@@ -166,9 +114,8 @@ SEED = 41
 def resolve_seed(configured: int | None) -> int:
     """Turn the global seed preference into the base seed of this run.
 
-    A configured seed of 0 means "no fixed seed": every run draws a fresh base
-    seed so repeated runs explore different parameter proposals. Any other value
-    is used verbatim, which makes every random choice of the run reproducible.
+    0 means "no fixed seed": every run draws a fresh base seed; any other value
+    is used verbatim, so every random choice of the run stays reproducible.
     """
     if configured is None:
         return SEED
@@ -182,9 +129,8 @@ def resolve_seed(configured: int | None) -> int:
 def derive_seed(base: int, *parts: object) -> int:
     """Derive a stable child seed from the run's base seed and a label.
 
-    Independent searches inside one run (one per strategy family) must not
-    propose the same parameter sequence, yet they must stay reproducible
-    together: the child seed depends only on the base seed and the label.
+    Independent family searches must not share a parameter sequence, yet they
+    stay reproducible together: the child seed depends only on base and label.
     """
     digest = hashlib.sha256(
         "|".join([str(base), *(str(part) for part in parts)]).encode("utf-8")
@@ -194,10 +140,6 @@ def derive_seed(base: int, *parts: object) -> int:
 
 type Numeric = int | float
 type Point = dict[str, Numeric]
-
-
-class _MeasuredLandscape(Protocol):
-    def measure(self, values: Point) -> Mapping[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -225,13 +167,15 @@ def _suggest_point(
     return point
 
 
+@measure_phase("optuna_trials")
 def run_tuning(
-    land: _MeasuredLandscape,
+    land: Landscape,
     seed: Mapping[str, Numeric],
     strategy_axes: Mapping[str, Axis],
     train_size: int,
     options: TuningOptions,
 ) -> tuple[Point | None, int, list[Point]]:
+    """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
     base = resolve_seed(options.random_seed)
     if options.seed_label is not None:
         base = derive_seed(base, options.seed_label)
@@ -272,7 +216,7 @@ def run_tuning(
     return best, len(study.trials), attempts
 
 
-def measure_full(
+def _measure(
     proof: _Obj,
     marks: _Marks,
     split: EvaluationSplit,
@@ -280,8 +224,8 @@ def measure_full(
 ) -> _Obj:
     """Measure a continuous ledger; the last training mark is validation's opening balance."""
     if "_scalar_train_summary" in proof and not split.validation:
-        return _measure_scalar_train(proof, marks, split, settings)
-    if reason := _admission(proof, settings):
+        return measure_scalar_train(proof, marks, split, settings)
+    if reason := admission(proof, settings):
         return {"utility": None, "reason": reason}
     curve = _excess_curve(proof, marks)
     train_x = curve[split.training[-1]]
@@ -301,37 +245,17 @@ def measure_full(
         if split.validation
         else net[split.training[-1]]
     )
-    metrics = {
-        "net_rub": round(net_change, 2),
-        "lqdt_on_margin_rub": round(net_change - result_x, 2),
-        "train": round(train_rate, 6),
-        "validation": round(validation_rate, 6) if validation_rate is not None else None,
-        "excess_rub": round(result_x, 2),
-        "rub_per_session": round(rate, 6),
-    }
+    metrics = _metrics(net_change, result_x, train_rate, rate, validation_rate)
     missing, reasons = _missing_exposure(proof, segments, split)
     try:
         annual = _annualized_returns(proof, marks, split)
     except W0Error as exc:
-        return {
-            **metrics,
-            "utility": None,
-            "rank_score": None,
-            "reason": " ".join([*reasons, str(exc)]),
-        }
+        return _blocked(metrics, [*reasons, str(exc)])
     if annual.pop("cash_shortfall"):
-        reasons.append("Свободные средства недостаточны для маржи.")
-        return {
-            **metrics,
-            "rank_score": None,
-            "utility": None,
-            "reason": " ".join(reasons),
-        }
+        return _blocked(metrics, [*reasons, SHORTFALL_REASON])
     # An honestly inactive book holds LQDT: include its zero in the fixed denominator.
     # It is not evidence of a stable trading neighborhood. A risk/data failure is NOT zero.
-    # Benchmark-relative drawdown/shortfall limits no longer veto a candidate: the
-    # measured excess over LQDT is the score, and the risk path stays visible in the
-    # proof itself.
+    # The measured excess over LQDT is the score; risk limits never veto a candidate.
     score = annual["annualized_excess_pp"]
     return {
         **metrics,
@@ -361,74 +285,6 @@ def admission(proof: _Obj, settings: ResearchSettings) -> str | None:
 
 TRIALS = 40
 MIN_SESSIONS = 24  # Stability gate only; short histories can still show P&L.
-
-
-ENTRY = Axis(0.5, 5, 0.1)
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated module attributes kept for out-of-tree readers; use the accessors."""
-    if name == "STRATEGY_REGISTRY":
-        return get_strategy_registry()
-    if name == "PROOF_ADAPTER_IDS":
-        return get_proof_adapter_ids()
-    if name == "STRATEGY_AXES":
-        return get_strategy_axes()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def _admission(proof: _Obj, settings: ResearchSettings) -> str | None:
-    return admission(proof, settings)
-
-
-def _measure_scalar_train(
-    proof: _Obj, marks: _Marks, split: EvaluationSplit, settings: ResearchSettings
-) -> _Obj:
-    return measure_scalar_train(proof, marks, split, settings, _admission)
-
-
-_measure_provider: Callable[[], Callable[..., _Obj]] | None = None
-
-
-def _set_measure_provider(provider: Callable[[], Callable[..., _Obj]]) -> None:
-    global _measure_provider
-    _measure_provider = provider
-
-
-def _active_measure(
-    proof: _Obj, marks: _Marks, split: EvaluationSplit, settings: ResearchSettings
-) -> _Obj:
-    fn = _measure_provider() if _measure_provider is not None else _measure
-    return fn(proof, marks, split, settings)
-
-
-def _measure(
-    proof: _Obj, marks: _Marks, split: EvaluationSplit, settings: ResearchSettings
-) -> _Obj:
-    """Measure a continuous ledger; validation starts at the last training mark."""
-    return measure_full(proof, marks, split, settings)
-
-
-@measure_phase("optuna_trials")
-def _tune(
-    land: Landscape,
-    seed: Mapping[str, float],
-    strategy_axes: Mapping[str, Axis],
-    train_size: int,
-    *,
-    trials: int = TRIALS,
-    on_progress: Callable[[int, int], None] | None = None,
-    random_seed: int | None = None,
-    seed_label: object | None = None,
-) -> tuple[dict[str, float] | None, int, list[dict[str, float]]]:
-    """Maximize the measured center; stability is descriptive, never a veto or a tie breaker."""
-    return run_tuning(
-        land,
-        seed,
-        strategy_axes,
-        train_size,
-        TuningOptions(trials, on_progress, random_seed, seed_label),
-    )
 
 
 class StudyWindow:
@@ -472,9 +328,7 @@ class StudyWindow:
         }
 
         def evaluate(point: dict[str, float]) -> _Obj:
-            return _active_measure(
-                self.proof(point, training=True), self.marks, self.train, self.settings
-            )
+            return _measure(self.proof(point, training=True), self.marks, self.train, self.settings)
 
         self.fit: Landscape = Landscape(self.axes, evaluate)
 
@@ -523,12 +377,12 @@ class StudyWindow:
         probe = dict(self.seed)
         if "lookback" in probe:
             probe["lookback"] = min(probe["lookback"], len(self.split.training) - 2)
-        return _admission(self.proof(probe, training=True), self.settings)
+        return admission(self.proof(probe, training=True), self.settings)
 
     @measure_phase("final_report")
     def report(self, point: Mapping[str, float]) -> _Obj:
         p = self.proof(point, training=False)
-        measured = _active_measure(p, self.marks, self.split, self.settings)
+        measured = _measure(p, self.marks, self.split, self.settings)
         evaluation: _Obj = {
             **self.settings.metadata(),
             **self.split.metadata(),
@@ -552,16 +406,6 @@ class StudyWindow:
         }
 
 
-# Facade hooks resolved dynamically by `measure_full` and by `proof_search`.
-_FACADE_HOOKS = (_measure_scalar_train, _set_measure_provider)
-
-
-# Typed internal exports used by other proof modules.
-shared_admission = _admission
-lamps = _lamps
 measure = _measure
-shared_measure_scalar_train = _measure_scalar_train
-ordered = _ordered
-set_measure_provider = _set_measure_provider
-tune = _tune
+tune = run_tuning
 validate = _validate

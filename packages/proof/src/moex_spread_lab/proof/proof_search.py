@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from moex_spread_lab.core.settings import (
     DEFAULT_INITIAL_CAPITAL_RUB,
@@ -19,15 +19,12 @@ from .evaluation import account_checks as account_checks
 from .evaluation import annualized_returns as _annualized_returns
 from .evaluation import excess_curve as _excess_curve
 from .landscape import AMBER, GREEN, Axis, Landscape
-from .proof_kernel import ENTRY, MIN_SESSIONS, SEED, TRIALS, derive_seed, resolve_seed
+from .landscape import lamps as _lamps
+from .landscape import ordered as _ordered
+from .proof_kernel import MIN_SESSIONS, SEED, TRIALS, derive_seed, resolve_seed
 from .proof_kernel import StudyWindow as StudyWindow
-from .proof_kernel import lamps as _lamps
 from .proof_kernel import measure as _measure
-from .proof_kernel import ordered as _ordered
 from .proof_kernel import run_id as _run_id
-from .proof_kernel import set_measure_provider as _set_measure_provider
-from .proof_kernel import shared_admission as _admission
-from .proof_kernel import shared_measure_scalar_train as _measure_scalar_train
 from .proof_kernel import tune as _tune
 from .request_validation import EXECUTION_AXES
 from .request_validation import compact_result as compact_result
@@ -54,35 +51,13 @@ _ProgressFn = Callable[[_Progress], None]
 _PlateauFn = Callable[[int, int], None]
 
 
-class _WindowLike(Protocol):
-    seed: _Obj
-    fit: Any
-
-    def report(self, point: Any) -> _Report: ...
-
-    def admission(self) -> str | None: ...
-
-    def lamp_warning(self) -> str | None: ...
-
-
 def _noop() -> None:
     """Default cancellation probe: a run that is never asked to stop."""
-
-
-_set_measure_provider(lambda: _measure)
-
-
-def __getattr__(name: str):
-    """Deprecated aliases kept for out-of-tree readers; use the accessors."""
-    if name == "STRATEGY_AXES":
-        return get_strategy_axes()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "AMBER",
     "DEFAULT_INITIAL_CAPITAL_RUB",
-    "ENTRY",
     "EXECUTION_AXES",
     "GREEN",
     "MIN_SESSIONS",
@@ -95,7 +70,6 @@ __all__ = [
     "ResearchSettings",
     "StudyWindow",
     "W0Error",
-    "_admission",
     "_annualized_returns",
     "_benchmark_marks",
     "_excess_curve",
@@ -103,7 +77,6 @@ __all__ = [
     "_lamps",
     "_mark",
     "_measure",
-    "_measure_scalar_train",
     "_ordered",
     "_run_id",
     "_tune",
@@ -135,9 +108,18 @@ def research_run(
     settings = settings_override or ResearchSettings.load(Path(service.root))
     benchmark = _benchmark_marks(Path(service.root) / "data/benchmark/lqdt-lineage.json")
     if optimize:
-        search = _strategy_search if request.get("optimize_strategy") else _batch_search
-        return cast(
-            _Report, search(service, request, settings, benchmark, check_cancelled, on_progress)
+        search = (
+            _proof_strategy_search.strategy_search
+            if request.get("optimize_strategy")
+            else _proof_batch.batch_search
+        )
+        return search(
+            service,
+            cast(dict[str, Any], request),
+            settings,
+            benchmark,
+            check_cancelled,
+            on_progress=on_progress,
         )
     if request.get("optimize_strategy"):
         raise W0Error("Выбор стратегии выполняется только запросом подбора.")
@@ -159,38 +141,7 @@ def research_run(
     return report
 
 
-def _batch_search(
-    service: Any,
-    request: _Request,
-    settings: ResearchSettings,
-    benchmark: _Benchmark,
-    check_cancelled: _Check,
-    on_progress: _ProgressFn | None,
-) -> _Obj | None:
-    search = _proof_batch.batch_search
-    return search(service, request, settings, benchmark, check_cancelled, on_progress=on_progress)
-
-
-def _strategy_search(
-    service: Any,
-    request: _Request,
-    settings: ResearchSettings,
-    benchmark: _Benchmark,
-    check_cancelled: _Check,
-    on_progress: _ProgressFn | None,
-) -> _Obj | None:
-    search = _proof_strategy_search.strategy_search
-    return search(
-        service,
-        cast(dict[str, Any], request),
-        settings,
-        benchmark,
-        check_cancelled,
-        on_progress=on_progress,
-    )
-
-
-def _plateau(case: _WindowLike, on_progress: _ProgressFn | None) -> _Obj:
+def _plateau(case: StudyWindow, on_progress: _ProgressFn | None) -> _Obj:
     """Descriptive training-time lamps; no study, no holdout and no trial log."""
     warn = case.admission() or case.lamp_warning()
     _emit(on_progress, "plateau", 0, 1, 58.0, "Оценка устойчивости параметров…")

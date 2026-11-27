@@ -7,9 +7,9 @@ from moex_spread_lab.proof.landscape import Axis
 
 def test_kernel_and_search_reexport_landscape_api():
     assert proof_kernel.Landscape is proof_search.Landscape is landscape.Landscape
-    assert proof_kernel._lamps is proof_search._lamps is landscape._lamps
-    assert proof_kernel._ordered is proof_search._ordered
-    assert (proof_kernel.GREEN, proof_kernel.AMBER) == (landscape.GREEN, landscape.AMBER)
+    assert proof_search._lamps is landscape._lamps
+    assert proof_kernel._ordered is proof_search._ordered is landscape.ordered
+    assert (proof_search.GREEN, proof_search.AMBER) == (landscape.GREEN, landscape.AMBER)
 
 
 def test_lamps_progress_preserves_profiles_and_skips_cached_probes():

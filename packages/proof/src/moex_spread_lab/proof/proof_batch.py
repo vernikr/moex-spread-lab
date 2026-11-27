@@ -40,7 +40,7 @@ from .cohort_prepare import targets as _targets
 from .cohort_reporting import CohortReport, build_cohort_result
 from .cohort_reporting import shared_unavailable as _unavailable
 from .phase_metrics import measure_phase
-from .proof_kernel import TRIALS, StudyWindow, lamps, ordered, resolve_seed
+from .proof_kernel import TRIALS, StudyWindow, TuningOptions, resolve_seed
 from .proof_kernel import Axis as Axis
 from .proof_kernel import tune as _tune
 from .proof_kernel import validate as _validate
@@ -96,8 +96,6 @@ _RemoteSplit = RemoteSplit
 _TrainingSlice = TrainingSlice
 _Cohort = Cohort
 _RemoteCohort = RemoteCohort
-_lamps = lamps
-_ordered = ordered
 _identity = identity
 
 _DEFAULT_STUDY_WINDOW = StudyWindow
@@ -315,18 +313,20 @@ def batch_search(
         return group
     try:
         axes, seed, members, land = group.axes, group.seed, group.members, group.land
-        best, trials, attempts = _call_with_optional_progress(
-            _tune,
+        best, trials, attempts = _tune(
             land,
             seed,
             axes,
             min(len(case.split.training) for _, case in members),
             # The base seed is drawn once per run, so seed 0 makes every run
             # different while one run stays internally consistent.
-            random_seed=resolve_seed(settings.random_seed),
-            seed_label="cohort",
-            on_progress=_step_progress(
-                on_progress, "search", 12.0, 76.0, "Optuna: испытание", default_total=TRIALS
+            TuningOptions(
+                TRIALS,
+                _step_progress(
+                    on_progress, "search", 12.0, 76.0, "Optuna: испытание", default_total=TRIALS
+                ),
+                resolve_seed(settings.random_seed),
+                "cohort",
             ),
         )
         return _cohort_result(

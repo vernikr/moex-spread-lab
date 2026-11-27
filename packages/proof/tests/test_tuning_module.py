@@ -3,7 +3,7 @@
 import pytest
 
 from moex_spread_lab.proof.landscape import Axis, Landscape
-from moex_spread_lab.proof.proof_kernel import TuningOptions, _suggest_point, _tune, run_tuning
+from moex_spread_lab.proof.proof_kernel import TuningOptions, _suggest_point, run_tuning
 from moex_spread_lab.proof.proof_search import _tune as facade_tune
 
 
@@ -24,15 +24,17 @@ def test_seeded_trials_preserve_order_bounds_winner_and_progress():
         }
 
     progress = []
-    best, count, attempts = _tune(
+    best, count, attempts = run_tuning(
         Landscape(axes, objective),
         seed,
         axes,
         11,
-        trials=6,
-        random_seed=42,
-        seed_label="regression",
-        on_progress=lambda done, total: progress.append((done, total)),
+        TuningOptions(
+            trials=6,
+            on_progress=lambda done, total: progress.append((done, total)),
+            random_seed=42,
+            seed_label="regression",
+        ),
     )
     expected = [
         (8, 1.0, 0.5),
@@ -50,28 +52,26 @@ def test_seeded_trials_preserve_order_bounds_winner_and_progress():
         p["window"] <= 9 and p["exit_z"] < p["entry_z"] and p["quantity"] == 1 for p in attempts
     )
     assert seed == {"window": 8, "entry_z": 1.0, "exit_z": 0.5, "quantity": 1}
-    assert facade_tune is _tune
+    assert facade_tune is run_tuning
 
 
 def test_pruned_trials_and_seed_tie_break_are_unchanged():
     axes = {"window": Axis(3, 10, 1)}
     seed = {"window": 5}
-    best, count, attempts = _tune(
+    best, count, attempts = run_tuning(
         Landscape(axes, lambda _: {"utility": None}),
         seed,
         axes,
         12,
-        trials=4,
-        random_seed=4,
+        TuningOptions(trials=4, on_progress=None, random_seed=4, seed_label=None),
     )
     assert best is None and count == len(attempts) == 4
-    best, count, attempts = _tune(
+    best, count, attempts = run_tuning(
         Landscape(axes, lambda _: {"utility": None, "rank_score": 1}),
         seed,
         axes,
         12,
-        trials=4,
-        random_seed=4,
+        TuningOptions(trials=4, on_progress=None, random_seed=4, seed_label=None),
     )
     assert best == seed and count == len(attempts) == 4
 

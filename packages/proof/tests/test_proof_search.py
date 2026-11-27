@@ -17,10 +17,10 @@ from moex_spread_lab.core.settings import (
     save_settings,
 )
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.proof.proof_kernel import TuningOptions
 from moex_spread_lab.proof.proof_search import (
     EXECUTION_AXES,
     GREEN,
-    STRATEGY_AXES,
     TRIALS,
     Axis,
     Landscape,
@@ -30,6 +30,7 @@ from moex_spread_lab.proof.proof_search import (
     research_run,
 )
 from moex_spread_lab.proof.service import ProofService
+from moex_spread_lab.proof.strategy_catalog import get_strategy_axes
 from test_calendar_proof import _build_root as calendar_fixture
 from test_execution_proof import _build_root as pair_fixture
 
@@ -218,7 +219,7 @@ def check_short_series_and_invalid_values_never_produce_a_fake_plateau(case):
 
 # ---- folded from the retired P7.2 shard proof_search_plateau_p72_packages_proof_tests_test_proof_search ----
 def check_one_axis_probes_with_constraints_missing_and_negative_results(case):
-    axes = STRATEGY_AXES["mean_reversion"] | EXECUTION_AXES
+    axes = get_strategy_axes()["mean_reversion"] | EXECUTION_AXES
     seed = {
         "lookback": 10,
         "entry_z": 1.0,
@@ -251,7 +252,7 @@ def check_one_axis_probes_with_constraints_missing_and_negative_results(case):
 
 
 def check_tpe_selects_the_highest_score_even_at_an_unstable_peak(case):
-    axes = STRATEGY_AXES["funding_only"]
+    axes = get_strategy_axes()["funding_only"]
     seed = {"lookback": 28, "quantity": 1, "slippage_ticks": 1.5}
 
     def objective(p):
@@ -260,15 +261,17 @@ def check_tpe_selects_the_highest_score_even_at_an_unstable_peak(case):
         return {"utility": 200 if v == 28 else 70 if 8 <= v <= 23 else -1}
 
     land = Landscape(axes | EXECUTION_AXES, objective)
-    chosen, tries, _ = _tune(land, seed, axes, 100)
+    chosen, tries, _ = _tune(land, seed, axes, 100, TuningOptions(TRIALS, None, None, None))
     case.assertEqual(tries, TRIALS)
     assert chosen is not None
     case.assertEqual(chosen["lookback"], 28)
     case.assertLess(land.profile(chosen, "lookback")["score"], GREEN)
     flat = Landscape(axes | EXECUTION_AXES, lambda _: {"utility": 0})
-    case.assertEqual(_tune(flat, seed, axes, 100)[0], seed)
+    case.assertEqual(_tune(flat, seed, axes, 100, TuningOptions(TRIALS, None, None, None))[0], seed)
     losing = Landscape(axes | EXECUTION_AXES, lambda p: {"utility": -1 - abs(28 - p["lookback"])})
-    case.assertEqual(_tune(losing, seed, axes, 100)[0], seed)
+    case.assertEqual(
+        _tune(losing, seed, axes, 100, TuningOptions(TRIALS, None, None, None))[0], seed
+    )
 
 
 def check_missing_exposure_names_each_period_and_counts_a_carried_spread(case):

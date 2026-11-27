@@ -13,7 +13,7 @@ from moex_spread_lab.core.settings import (
     save_settings,
 )
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof import proof_kernel, proof_search
+from moex_spread_lab.proof import proof_kernel
 from moex_spread_lab.proof.pair_payload import TRIALS_PER_STRATEGY
 from moex_spread_lab.proof.proof_kernel import StudyWindow
 from moex_spread_lab.proof.proof_search import _measure, _tune, _validate, research_run
@@ -52,7 +52,7 @@ class StrategyReportCases(unittest.TestCase):
             return original_report(case, point)
 
         with (
-            patch.object(proof_search, "_measure", side_effect=flat),
+            patch.object(proof_kernel, "_measure", side_effect=flat),
             patch.object(proof_kernel.StudyWindow, "report", report),
         ):
             r = self.search({**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}})
@@ -402,7 +402,7 @@ class StrategyChoiceCases(unittest.TestCase):
 
         req = {**PAIR, "strategy": "funding_only", "parameters": {"lookback": 8}}
         before = json.loads(json.dumps(req))
-        with patch("moex_spread_lab.proof.proof_search._measure", side_effect=fail):
+        with patch("moex_spread_lab.proof.proof_kernel._measure", side_effect=fail):
             r = self.search(req)
         self.assertEqual(r["status"], "no_admissible_candidate")
         self.assertEqual(r["trial_count"], 2 * TRIALS_PER_STRATEGY)

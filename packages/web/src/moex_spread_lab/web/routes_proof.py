@@ -169,17 +169,9 @@ def _search_run(
 
 
 def handle_post_proof(
-    path: str,
-    selection: Any,
-    store: Any,
-    *,
-    stream: bool,
-    start_ndjson: Callable[[], None],
-    emit_ndjson: Callable[[Any], None],
-    send_json: Callable[[int, Any], None],
-    check_connected: Callable[[], None],
+    path: str, selection: Any, store: Any, handler: Any
 ) -> tuple[bool, bool, Any]:
-    """Dispatch POST ``/api/proof/*`` routes.
+    """Dispatch POST ``/api/proof/*`` routes over the loopback request ``handler``.
 
     Returns ``(handled, response_already_sent, result_payload)``.
     """
@@ -188,19 +180,21 @@ def handle_post_proof(
     if not isinstance(selection, dict):
         raise ScreenerError("выбор должен быть объектом")
     diagnostics = selection.pop("include_plateau", False) is True
+    stream = handler.headers.get("X-Progress-Stream") == "1"
+    check_connected = handler.check_connected
     stream_started = False
 
     def run_and_send(fn: Callable[[Callable[[dict[str, Any]], None] | None], Any]) -> Any:
         nonlocal stream_started
         if not stream:
             return fn(None)
-        start_ndjson()
+        handler.start_ndjson()
         stream_started = True
         try:
-            data = fn(lambda ev: emit_ndjson({"type": "progress", **ev}))
-            emit_ndjson({"type": "result", "data": data})
+            data = fn(lambda ev: handler.emit_ndjson({"type": "progress", **ev}))
+            handler.emit_ndjson({"type": "result", "data": data})
         except (ValueError, OSError) as exc:
-            emit_ndjson({"type": "error", "error": str(exc)})
+            handler.emit_ndjson({"type": "error", "error": str(exc)})
         return None
 
     if path in {"/api/proof/windows", "/api/proof/plateau"}:
@@ -215,7 +209,7 @@ def handle_post_proof(
         )
     elif path == "/api/proof/optimize":
         if not store.proof_search_lock.acquire(blocking=False):
-            send_json(
+            handler.send_json(
                 409,
                 {"error": "Предыдущий подбор ещё выполняется. Повторите через несколько секунд."},
             )

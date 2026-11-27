@@ -93,16 +93,7 @@ def _post_result(handler: Any, store: Any, path: str, selection: Any):
     handled, result = handle_post_settings(path, selection, store)
     if handled:
         return False, result
-    handled, already_sent, result = handle_post_proof(
-        path,
-        selection,
-        store,
-        stream=handler.headers.get("X-Progress-Stream") == "1",
-        start_ndjson=handler.start_ndjson,
-        emit_ndjson=handler.emit_ndjson,
-        send_json=handler.send_json,
-        check_connected=handler.check_connected,
-    )
+    handled, already_sent, result = handle_post_proof(path, selection, store, handler)
     return already_sent, result
 
 

@@ -8,25 +8,21 @@ Only trusted offline inputs are accepted.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from datetime import date as date
 from datetime import datetime as datetime
-from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
 
-from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.contracts import InstrumentContext, StrategyPlugin, WindowSnapshot
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error, run_id
 from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 
-from . import pair_funding_replay
+from .pair_funding_replay import attach_daily_unit_funding
 
-
-def _has_non_mapping_rows(
-    rows: Iterable[object],
-) -> bool:
-    return any(not isinstance(row, Mapping) for row in rows)
+if TYPE_CHECKING:
+    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 
 
 def _eligible(
@@ -50,6 +46,23 @@ def _valid_date_key(key: object, daily: bool) -> bool:
     return len(key) == 19 and datetime.fromisoformat(key).isoformat(timespec="seconds") == key
 
 
+def _validate_window(window: object, params: object, marks: object, settings: object) -> None:
+    if not isinstance(window, WindowSnapshot) or not isinstance(settings, ResearchSettings):
+        raise W0Error("Для расчёта требуется корректное дневное окно пары.")
+    if (
+        window.timeframe not in ("1d", "1h")
+        or settings.timeframe != window.timeframe
+        or not isinstance(params, dict)
+        or not window.near
+        or not window.far
+        or window.near == window.far
+        or not isinstance(marks, Mapping)
+        or not window.rows
+        or any(not isinstance(row, Mapping) for row in cast(Sequence[object], window.rows))
+    ):
+        raise W0Error("Для расчёта требуется корректное дневное окно пары.")
+
+
 def _validated_rows(
     window: WindowSnapshot,
     params: dict[str, Any],
@@ -57,26 +70,7 @@ def _validated_rows(
     settings: ResearchSettings,
     through: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    is_instance = isinstance
-    window_input: object = window
-    if not is_instance(window_input, WindowSnapshot):
-        raise W0Error("Для расчёта требуется корректное дневное окно пары.")
-    params_input: object = params
-    marks_input: object = benchmark_marks
-    settings_input: object = settings
-    if (
-        window.timeframe not in ("1d", "1h")
-        or not is_instance(settings_input, ResearchSettings)
-        or settings.timeframe != window.timeframe
-        or not is_instance(params_input, dict)
-        or not window.near
-        or not window.far
-        or window.near == window.far
-        or not is_instance(marks_input, Mapping)
-        or not window.rows
-        or _has_non_mapping_rows(window.rows)
-    ):
-        raise W0Error("Для расчёта требуется корректное дневное окно пары.")
+    _validate_window(window, params, benchmark_marks, settings)
     try:
         dates: list[str] = [row["date"] for row in window.rows]
         if (
@@ -154,48 +148,17 @@ def _priced_rows(
     return rows, lot
 
 
-_COMPATIBILITY_HOOKS = (_eligible, _has_non_mapping_rows)
-
-if TYPE_CHECKING:
-    from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
-
-
-class _DailyFundingKeywords(TypedDict):
-    near_lot_size: float
-    through: NotRequired[str | None]
-
-
-class _DailyUnitFundingAttacher(Protocol):
-    def __call__(
-        self,
-        rows: Sequence[Mapping[str, Any]],
-        trades: Sequence[Mapping[str, Any]],
-        window: FundingWindow,
-        **_kwargs: Unpack[_DailyFundingKeywords],
-    ) -> dict[str, Any]: ...
-
-
-_ATTACH_DAILY_UNIT_FUNDING: _DailyUnitFundingAttacher = cast(
-    _DailyUnitFundingAttacher,
-    pair_funding_replay.attach_daily_unit_funding,
-)
-
-
-# Preserve both the historical public binding and the newer private hook.
-attach_daily_unit_funding = _ATTACH_DAILY_UNIT_FUNDING
-
-
 def _daily_funding_journal(
     window: WindowSnapshot,
     funding_window: FundingWindow,
     rows: list[dict[str, Any]],
     trades: list[dict[str, Any]],
-    through: str | None,
-    lot: float,
+    cutoff: tuple[str | None, float],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     from moex_spread_lab.data import universe as catalog_universe
     from moex_spread_lab.strategies.funding_carry.proof_funding import FundingWindow
 
+    through, lot = cutoff
     declared_pairs = cast(Sequence[Mapping[str, str]], catalog_universe.PAIRS)
     declared = next((pair for pair in declared_pairs if pair["pair_id"] == window.pair), None)
     if declared is not None and (
@@ -211,8 +174,10 @@ def _daily_funding_journal(
     ):
         raise W0Error("История фондирования не соответствует ближней ноге пары.")
     eligible_rows = [row for row in rows if row["volume_eligible"]]
-    prepared = attach_daily_unit_funding(
-        eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot
+    prepared: dict[str, Any] = dict(
+        attach_daily_unit_funding(
+            eligible_rows, trades, funding_window_input, through=through, near_lot_size=lot
+        )
     )
     prepared_series = cast(list[dict[str, Any]], prepared["series"])
     by_date: dict[str, dict[str, Any]] = {cast(str, row["date"]): row for row in prepared_series}
@@ -234,73 +199,41 @@ def _funding_journal(
     through: str | None,
     lot: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
+
+    if window.timeframe != "1h" and funding_window is not None:
+        return _daily_funding_journal(window, funding_window, rows, trades, (through, lot))
+    if window.timeframe == "1h" and funding_window is not None:
+        raise W0Error("Дневную ставку нельзя применять к каждому часовому бару.")
+    declared = _pair(window.pair)
+    if declared["near"] != window.near or declared["far"] != window.far:
+        raise W0Error(
+            "Идентификатор пары не совпадает с ногами."
+            if window.timeframe == "1h"
+            else "Для вечного фьючерса требуется история фондирования."
+        )
     if window.timeframe == "1h":
-        if funding_window is not None:
-            raise W0Error("Дневную ставку нельзя применять к каждому часовому бару.")
-        from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
-
-        declared = _pair(window.pair)
-        if declared["near"] != window.near or declared["far"] != window.far:
-            raise W0Error("Идентификатор пары не совпадает с ногами.")
-        prepared: dict[str, Any] = {
-            "provenance": {"funding_applicability": "intraday_not_included"}
-        }
-        journal: list[dict[str, Any]] = [
-            {**row, "funding_rub": None, "funding_contracts": 0} for row in rows
-        ]
-    elif funding_window is None:
-        # Only known dated-contract pairs may omit rates; a missing perpetual
-        # funding source must not silently become zero.
-        from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
-
-        declared = _pair(window.pair)
-        if (
-            declared["near"] != window.near
-            or declared["far"] != window.far
-            or declared["family"] not in {"dated_calendar_same_asset", "cross_contract_same_expiry"}
-        ):
-            raise W0Error("Для вечного фьючерса требуется история фондирования.")
-        prepared = {"provenance": {"funding_applicability": "no_perpetual_leg"}}
-        journal = [{**row, "funding_rub": None, "funding_contracts": 0} for row in rows]
+        applicability = "intraday_not_included"
     else:
-        return _daily_funding_journal(window, funding_window, rows, trades, through, lot)
-    return prepared, journal
+        # Missing perpetual evidence must not silently become zero funding.
+        if declared["family"] not in {"dated_calendar_same_asset", "cross_contract_same_expiry"}:
+            raise W0Error("Для вечного фьючерса требуется история фондирования.")
+        applicability = "no_perpetual_leg"
+    return {"provenance": {"funding_applicability": applicability}}, [
+        {**row, "funding_rub": None, "funding_contracts": 0} for row in rows
+    ]
 
 
-def prepare_daily_pair_unit(
+def _plugin_trades(
     plugin: StrategyPlugin,
     window: WindowSnapshot,
+    analysis_rows: list[dict[str, Any]],
     params: dict[str, Any],
     fill: str,
-    funding_window: FundingWindow | None,
-    benchmark_marks: Mapping[str, float],
     settings: ResearchSettings,
-    *,
-    through: str | None = None,
-    enforce_compatibility: bool = True,
-    isolate: bool = True,
-    memo: dict[str | None, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, float]]:
-    """Validate decisions and size them against resolved funding and one account.
-
-    Zero-volume rows stay in the journal without revaluation or funding. Only the
-    eligible prefix reaches the plugin; no later bars or benchmark marks are used.
-    Inputs are not mutated; plugin-supplied money fields are ignored.
-    Daily perpetual funding evidence must match the near contract. Missing daily
-    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
-    prices follow native proof and omit funding rather than invent clearing times.
-    `isolate=False` (first-party built-ins only) skips the defensive input copies.
-    A request-scoped `memo` (first-party built-ins only) reuses the validated and
-    priced rows of each cut-off across trials and leaves the unit `run_id` unset:
-    built-in payloads derive their identity from the full replay, not the unit.
-    """
-    window_rows = memo.get(through) if memo is not None else None
-    if window_rows is None:
-        prefix, analysis_rows = _validated_rows(window, params, benchmark_marks, settings, through)
-        window_rows = (prefix, analysis_rows, *_priced_rows(window, prefix, benchmark_marks))
-        if memo is not None:
-            memo[through] = window_rows
-    prefix, analysis_rows, rows, lot = window_rows
+    options: tuple[bool, bool],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    enforce_compatibility, isolate = options
     # Do not hand a plugin the original snapshot: benchmark/funding/extra fields
     # may contain future observations or unvalidated external data.
     analysis_window = WindowSnapshot(
@@ -327,12 +260,58 @@ def prepare_daily_pair_unit(
         if not verdict.compatible:
             raise W0Error(verdict.reason or "Стратегия несовместима с окном.")
     trades = pair_price_intent_trades(plugin, analysis_window, validated, fill, isolate=isolate)
-    if any(
-        not math.isfinite(trade[event]["spread_fill"])
-        for trade in trades
-        for event in ("entry", "exit")
-    ):
-        raise W0Error("Переполнение цены исполнения пары.")
+    return validated, trades
+
+
+class _UnitOptions(TypedDict, total=False):
+    through: str | None
+    enforce_compatibility: bool
+    isolate: bool
+    memo: dict[str | None, Any] | None
+
+
+def prepare_daily_pair_unit(
+    plugin: StrategyPlugin,
+    window: WindowSnapshot,
+    params: dict[str, Any],
+    fill: str,
+    funding_window: FundingWindow | None,
+    benchmark_marks: Mapping[str, float],
+    settings: ResearchSettings,
+    **options: Unpack[_UnitOptions],
+) -> tuple[dict[str, Any], dict[str, float]]:
+    """Validate decisions and size them against resolved funding and one account.
+
+    Zero-volume rows stay in the journal without revaluation or funding. Only the
+    eligible prefix reaches the plugin; no later bars or benchmark marks are used.
+    Inputs are not mutated; plugin-supplied money fields are ignored.
+    Daily perpetual funding evidence must match the near contract. Missing daily
+    evidence is allowed only for registry-confirmed non-perpetual pairs; hourly
+    prices follow native proof and omit funding rather than invent clearing times.
+    `isolate=False` (first-party built-ins only) skips the defensive input copies.
+    A request-scoped `memo` (first-party built-ins only) reuses the validated and
+    priced rows of each cut-off across trials and leaves the unit `run_id` unset:
+    built-in payloads derive their identity from the full replay, not the unit.
+    """
+    through = options.get("through")
+    isolate = options.get("isolate", True)
+    memo = options.get("memo")
+    window_rows = memo.get(through) if memo is not None else None
+    if window_rows is None:
+        prefix, analysis_rows = _validated_rows(window, params, benchmark_marks, settings, through)
+        window_rows = (prefix, analysis_rows, *_priced_rows(window, prefix, benchmark_marks))
+        if memo is not None:
+            memo[through] = window_rows
+    prefix, analysis_rows, rows, lot = window_rows
+    validated, trades = _plugin_trades(
+        plugin,
+        window,
+        analysis_rows,
+        params,
+        fill,
+        settings,
+        (options.get("enforce_compatibility", True), isolate),
+    )
     prepared, journal = _funding_journal(window, funding_window, rows, trades, through, lot)
     marks: dict[str, float] = {
         cast(str, row["date"]): benchmark_marks[cast(str, row["date"])] for row in rows
@@ -376,29 +355,3 @@ def prepare_daily_pair_unit(
         "notes": [],
     }
     return unit, marks
-
-
-def size_daily_pair_plugin(
-    plugin: StrategyPlugin,
-    window: WindowSnapshot,
-    params: dict[str, Any],
-    fill: str,
-    funding_window: FundingWindow | None,
-    benchmark_marks: Mapping[str, float],
-    settings: ResearchSettings,
-    *,
-    through: str | None = None,
-    enforce_compatibility: bool = True,
-) -> dict[str, Any]:
-    unit, marks = prepare_daily_pair_unit(
-        plugin,
-        window,
-        params,
-        fill,
-        funding_window,
-        benchmark_marks,
-        settings,
-        through=through,
-        enforce_compatibility=enforce_compatibility,
-    )
-    return size_proof(unit, marks, settings, cast(dict[str, Any], window.contracts))

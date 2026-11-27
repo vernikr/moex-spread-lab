@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
-from moex_spread_lab.accounting.position_sizing import automatic
+from moex_spread_lab.accounting.position_sizing import automatic, size_proof
 from moex_spread_lab.core.contracts import WindowSnapshot
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
@@ -25,7 +25,6 @@ from .pair_payload import (
     merge_pair_series_row,
 )
 from .pair_plugin_accounting import prepare_daily_pair_unit as _prepare_daily_pair_unit
-from .pair_plugin_accounting import size_daily_pair_plugin as _size_daily_pair_plugin
 from .payload_tools import (
     TradeSpec,
     benchmark_marks,
@@ -88,43 +87,24 @@ class PairPluginRoute:
             self.settings.validation_percent,
             self.settings.timeframe,
         )
-        return series, funding_window, provenance, inputs
-
-    @staticmethod
-    def _unit_or_actual(
-        plugin: Any,
-        request: dict[str, Any],
-        prepared: tuple[Any, ...],
-        fill: str,
-        through: str | None,
-    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
-        """Run the plugin's intents for this trial: sized in automatic mode, unit otherwise."""
-        snapshot, funding_window, marks, settings = prepared
-        params = request.get("parameters", {})
-        if automatic(request):
-            actual = _size_daily_pair_plugin(
-                plugin,
-                snapshot,
-                params,
-                fill,
-                funding_window,
-                marks,
-                settings,
-                through=through,
-            )
-            return None, None, actual
-        execution = execution_settings(request)
-        unit, _ = _prepare_daily_pair_unit(
-            plugin,
+        snapshot = WindowSnapshot(
+            universe=PAIR_UNIVERSE,
+            pair=pair["pair_id"],
+            timeframe=self.settings.timeframe,
+            near=pair["near"],
+            far=pair["far"],
+            rows=series["rows"],
+            contracts=series["contracts"],
+        )
+        marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
+        return (
             snapshot,
-            params,
-            fill,
             funding_window,
             marks,
-            settings,
-            through=through,
+            series,
+            provenance,
+            benchmark_marks(inputs.benchmark),
         )
-        return unit, execution, None
 
     def prepare(self) -> Callable[..., dict[str, Any]]:
         """Return the request-scoped replay callable for this plugin window."""
@@ -137,21 +117,7 @@ class PairPluginRoute:
             "parameters": (dict(self.selection.get("parameters") or {}) if self._builtin else {}),
         }
         native = self.service._prepare_native(native_selection, settings=self.settings)
-        if self._builtin:
-            return self._builtin_replay(native, pair["pair_id"])
-        series, funding_window, provenance, inputs = self._prepared_inputs(pair)
-        snapshot = WindowSnapshot(
-            universe=PAIR_UNIVERSE,
-            pair=pair["pair_id"],
-            timeframe=self.settings.timeframe,
-            near=pair["near"],
-            far=pair["far"],
-            rows=series["rows"],
-            contracts=series["contracts"],
-        )
-        marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
-        benchmark = benchmark_marks(inputs.benchmark)
-        plugin_prepared = (snapshot, funding_window, marks, self.settings)
+        prepared = None if self._builtin else self._prepared_inputs(pair)
 
         def replay(
             request: Any,
@@ -165,43 +131,35 @@ class PairPluginRoute:
             fill = pair_fill(
                 req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
             )
-            unit, execution, actual = self._unit_or_actual(
-                self.plugin, req, plugin_prepared, fill, through
+            if prepared is None:
+                return native(
+                    self._template_request(req, fill), through=through, metrics_only=metrics_only
+                )
+            snapshot, funding_window, marks, series, provenance, benchmark = prepared
+            auto = automatic(req)
+            execution = {} if auto else execution_settings(req)
+            unit, unit_marks = _prepare_daily_pair_unit(
+                self.plugin,
+                snapshot,
+                req.get("parameters", {}),
+                fill,
+                funding_window,
+                marks,
+                self.settings,
+                through=through,
+            )
+            actual = (
+                size_proof(unit, unit_marks, self.settings, snapshot.contracts) if auto else None
             )
             # The native proof supplies trusted market/chart/screen metadata only;
             # never retain its decisions, ledger or indicator values.
             template = native(self._template_request(req, fill), through=through, template=True)
-            if actual is None:
-                if unit is None or execution is None:
-                    raise W0Error("Плагин не вернул единичный расчёт для фиксированного размера.")
-                return fixed_daily_pair_plugin_payload(
-                    template, unit, (series, pair, provenance), execution, benchmark
+            if actual is not None:
+                return enrich_sized_plugin_payload(
+                    template, actual, series, pair, provenance, benchmark
                 )
-            return enrich_sized_plugin_payload(
-                template, actual, series, pair, provenance, benchmark
-            )
-
-        return replay
-
-    def _builtin_replay(
-        self, native: Callable[..., dict[str, Any]], pair_id: str
-    ) -> Callable[..., dict[str, Any]]:
-        """A built-in plugin is proven by the native replay of the same intent pipeline."""
-
-        def replay(
-            request: Any,
-            through: str | None = None,
-            *,
-            metrics_only: bool = False,
-            scalar_summary: Any | None = None,
-        ) -> dict[str, Any]:
-            req = cast(dict[str, Any], request)
-            self._ensure_request(req, pair_id)
-            fill = pair_fill(
-                req, self.plugin.strategy_id, default_price_fill=self.settings.price_fill
-            )
-            return native(
-                self._template_request(req, fill), through=through, metrics_only=metrics_only
+            return fixed_daily_pair_plugin_payload(
+                template, unit, (series, pair, provenance), execution, benchmark
             )
 
         return replay

@@ -139,6 +139,23 @@ def _funding_row(
     }
 
 
+def _funding_index(
+    dates: Sequence[str], rates: Mapping[str, float | None], near_lot_size: float, quantity: int
+) -> dict[str, int]:
+    if (
+        not dates
+        or any(not _is_string(day) or not day for day in dates)
+        or list(dates) != sorted(set(dates))
+        or not _is_mapping(rates)
+        or not _finite(near_lot_size)
+        or near_lot_size <= 0
+        or type(quantity) is not int
+        or quantity <= 0
+    ):
+        raise W0Error("Некорректные входные данные для расчёта фондирования.")
+    return {day: i for i, day in enumerate(dates)}
+
+
 def replay_pair_funding(
     dates: Sequence[str],
     trades: Sequence[Mapping[str, object]],
@@ -155,28 +172,17 @@ def replay_pair_funding(
     Unknown rates produce None on held bars. It computes no P&L, fees or capital.
     """
 
-    if (
-        not dates
-        or any(not _is_string(day) or not day for day in dates)
-        or list(dates) != sorted(set(dates))
-        or not _is_mapping(rates)
-        or not _finite(near_lot_size)
-        or near_lot_size <= 0
-        or type(quantity) is not int
-        or quantity <= 0
-    ):
-        raise W0Error("Некорректные входные данные для расчёта фондирования.")
-    index = {day: i for i, day in enumerate(dates)}
+    index = _funding_index(dates, rates, near_lot_size, quantity)
     if any(
         day not in index or (rate is not None and not _finite(rate)) for day, rate in rates.items()
     ) or any(day not in index or day in rates for day in no_clearing_dates):
         raise W0Error("Некорректная ставка фондирования или дата.")
     positions = _positions(dates, trades, index)
     no_clearing = set(no_clearing_dates)
-    result: list[_FundingRow] = []
-    for day, position in zip(dates, positions, strict=True):
-        result.append(_funding_row(day, position, rates, no_clearing, near_lot_size, quantity))
-    return result
+    return [
+        _funding_row(day, position, rates, no_clearing, near_lot_size, quantity)
+        for day, position in zip(dates, positions, strict=True)
+    ]
 
 
 def _validate_daily_dates(dates: Sequence[object], through: object | None) -> None:
@@ -211,9 +217,9 @@ def replay_daily_pair_funding(
     trades: Sequence[Mapping[str, object]],
     window: FundingWindow,
     *,
-    through: str | None = None,
     near_lot_size: float,
     quantity: int,
+    through: str | None = None,
 ) -> _DailyFundingReplay:
     """Resolve existing funding evidence for daily bars, then replay its payments.
 
@@ -267,7 +273,7 @@ def _isolated(row: Mapping[str, object]) -> dict[str, object]:
 
 
 def attach_daily_unit_funding(
-    series: list[Mapping[str, object]] | tuple[Mapping[str, object], ...],
+    series: Sequence[Mapping[str, object]],
     trades: Sequence[Mapping[str, object]],
     window: FundingWindow,
     *,

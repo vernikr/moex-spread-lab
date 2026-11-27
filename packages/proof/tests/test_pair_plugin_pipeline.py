@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from moex_spread_lab.accounting.costs import tariff_profile
+from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
     EntryBandPoint,
@@ -21,7 +22,6 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.fixed_plugin_payload import fixed_pair_accounting
 from moex_spread_lab.proof.pair_plugin_accounting import (
     prepare_daily_pair_unit,
-    size_daily_pair_plugin,
 )
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
@@ -132,8 +132,15 @@ def fixture():
     return window, evidence, rates
 
 
+def sized_unit(plugin, window, params, fill, evidence, marks, settings, **options):
+    unit, used_marks = prepare_daily_pair_unit(
+        plugin, window, params, fill, evidence, marks, settings, **options
+    )
+    return size_proof(unit, used_marks, settings, window.contracts)
+
+
 def pipeline(window, evidence, plugin, fill):
-    return size_daily_pair_plugin(
+    return sized_unit(
         plugin, window, {}, fill, evidence, dict.fromkeys(DAYS, 1.0), ResearchSettings()
     )
 
@@ -222,15 +229,13 @@ def test_accounting_rejects_unsafe_inputs_and_no_funding_inference():
         replace(window, rows=[{**r, "near_close": float("nan")} for r in window.rows]),
     ):
         with pytest.raises(W0Error):
-            size_daily_pair_plugin(
+            sized_unit(
                 plugin, changed, {}, "next_open", evidence, dict.fromkeys(DAYS, 1.0), settings
             )
     with pytest.raises(W0Error):
-        size_daily_pair_plugin(
-            plugin, window, {}, "next_open", None, dict.fromkeys(DAYS, 1.0), settings
-        )
+        sized_unit(plugin, window, {}, "next_open", None, dict.fromkeys(DAYS, 1.0), settings)
     with pytest.raises(W0Error):
-        size_daily_pair_plugin(plugin, window, {}, "next_open", evidence, {}, settings)
+        sized_unit(plugin, window, {}, "next_open", evidence, {}, settings)
 
 
 def test_incompatible_plugin_is_rejected_before_intent_evaluation():
@@ -297,7 +302,7 @@ def test_prefix_hides_future_rows_and_extra_snapshot_data_and_identity():
             return StrategyIntentRun(self.strategy_id, fill, dict(params), ())
 
     plugin = PrefixPlugin("long_spread", False)
-    first = size_daily_pair_plugin(
+    first = sized_unit(
         plugin,
         window,
         {},
@@ -309,7 +314,7 @@ def test_prefix_hides_future_rows_and_extra_snapshot_data_and_identity():
     )
     altered = deepcopy(window.rows)
     altered[-1]["near_close"] = 123456
-    second = size_daily_pair_plugin(
+    second = sized_unit(
         plugin,
         replace(window, rows=altered),
         {},
@@ -330,7 +335,7 @@ def test_dated_pair_without_funding_does_not_invent_zero_rate():
         "GLH7": {**window.contracts["F"], "secid": "GLH7"},
     }
     dated = replace(window, pair="GLZ6/GLH7", near="GLZ6", far="GLH7", contracts=contracts)
-    result = size_daily_pair_plugin(
+    result = sized_unit(
         PairPlugin("long_spread", False),
         dated,
         {},
@@ -346,7 +351,7 @@ def test_dated_pair_without_funding_does_not_invent_zero_rate():
     assert result["summary"]["ledger_reconciliation_rub"] == 0
     wrong_funding = FundingWindow(FundingTimeline("GLZ6", dict.fromkeys(DAYS, 0.2), DAYS), DAYS)
     with pytest.raises(W0Error, match="неприменима"):
-        size_daily_pair_plugin(
+        sized_unit(
             PairPlugin("long_spread", False),
             dated,
             {},
@@ -356,7 +361,7 @@ def test_dated_pair_without_funding_does_not_invent_zero_rate():
             ResearchSettings(),
         )
     with pytest.raises(W0Error):
-        size_daily_pair_plugin(
+        sized_unit(
             PairPlugin("long_spread", False),
             replace(dated, pair="CNYRUBF/CRZ6"),
             {},

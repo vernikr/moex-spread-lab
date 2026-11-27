@@ -5,9 +5,10 @@ from dataclasses import replace
 import pytest
 
 from funding_fixtures import PAIR, fixture, request
+from moex_spread_lab.accounting.position_sizing import size_proof
 from moex_spread_lab.core.contracts import WindowSnapshot
 from moex_spread_lab.core.settings import ResearchSettings
-from moex_spread_lab.proof.pair_plugin_accounting import size_daily_pair_plugin
+from moex_spread_lab.proof.pair_plugin_accounting import prepare_daily_pair_unit
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
 from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
@@ -99,7 +100,7 @@ def test_loaded_pair_plugin_matches_native_accounting(tmp_path, fill, validation
     marks = {row["date"]: row["benchmark_price"] for row in series["rows"]}
     for through in (None, funding_window.training_end) if validation else (None,):
         expected = native(selection, through=through)
-        actual = size_daily_pair_plugin(
+        unit, used_marks = prepare_daily_pair_unit(
             ExplicitSignalMeanReversion(),
             snap,
             selection["parameters"],
@@ -109,6 +110,7 @@ def test_loaded_pair_plugin_matches_native_accounting(tmp_path, fill, validation
             settings,
             through=through,
         )
+        actual = size_proof(unit, used_marks, settings, dict(snap.contracts))
         assert_loaded_pair_plugin_matches_native_accounting(actual, expected)
 
 

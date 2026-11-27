@@ -41,27 +41,6 @@ from scripts.code_health_gate_rules import (
 SOURCE_TOP_LEVELS = ("packages", "src", "scripts")
 
 
-def _touched_files(base: str) -> list[Path]:
-    """Repo-relative touched paths restricted to ratcheted source suffixes."""
-    try:
-        touched = changed_paths(base, existing_only=True)
-    except RuntimeError as exc:
-        raise GateError(str(exc)) from exc
-    files = []
-    for rel in touched:
-        parts = Path(rel).parts
-        path = ROOT / rel
-        if (
-            parts
-            and parts[0] in SOURCE_TOP_LEVELS
-            and not set(parts) & EXCLUDED_PARTS
-            and path.suffix.lower() in SOURCE_SUFFIXES
-            and path.is_file()
-        ):
-            files.append(path)
-    return files
-
-
 def _complexipy_run(executable: str, paths: list[Path], directory: str) -> list[dict]:
     report = Path(directory) / "complexity.json"
     result = subprocess.run(
@@ -242,7 +221,22 @@ def _print_advisories(advisories: list[str]) -> None:
 def _changed_failures(
     base: str, baseline: dict[str, Any]
 ) -> tuple[list[str], dict[str, dict[str, int]], list[str], list[str]]:
-    files = _touched_files(base)
+    try:
+        touched = changed_paths(base, existing_only=True)
+    except RuntimeError as exc:
+        raise GateError(str(exc)) from exc
+    files = []
+    for rel in touched:
+        parts = Path(rel).parts
+        path = ROOT / rel
+        if (
+            parts
+            and parts[0] in SOURCE_TOP_LEVELS
+            and not set(parts) & EXCLUDED_PARTS
+            and path.suffix.lower() in SOURCE_SUFFIXES
+            and path.is_file()
+        ):
+            files.append(path)
     py_files = [path for path in files if path.suffix.lower() == ".py"]
     c_files = [path for path in files if path.suffix.lower() == ".c"]
     failures, file_metrics, advisories = _check_files(files, baseline, check_guard=False)

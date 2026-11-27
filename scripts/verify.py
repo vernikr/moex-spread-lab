@@ -181,16 +181,6 @@ def always_run_files(legs: list[str]) -> list[str]:
     return files
 
 
-def _testmon_available() -> bool:
-    try:
-        probe = subprocess.run(
-            [*python_cmd(), "-c", "import testmon"], cwd=ROOT, capture_output=True, timeout=60
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return probe.returncode == 0
-
-
 def _docs_steps(paths: list[str]) -> tuple[list[Step], list[str], str]:
     docs = [p for p in paths if change_scope.is_docs_path(p)]
     reason = (
@@ -202,6 +192,16 @@ def _docs_steps(paths: list[str]) -> tuple[list[Step], list[str], str]:
         *(f"{name} (docs-only)" for name in ("check_health.sh", "pytest", "architecture gate")),
     ]
     return steps, skipped, "affected/docs"
+
+
+def _testmon_available() -> bool:
+    try:
+        probe = subprocess.run(
+            [*python_cmd(), "-c", "import testmon"], cwd=ROOT, capture_output=True, timeout=60
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
 
 
 def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:

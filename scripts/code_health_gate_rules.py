@@ -22,18 +22,6 @@ from scripts.code_health_gate_common import (
 )
 
 
-def _fastcore_exports(c_source: str) -> tuple[list[str], str | None]:
-    table_start = c_source.find("FastCoreMethods[]")
-    body_start = c_source.find("{", table_start)
-    table_end = c_source.find("};", body_start)
-    if min(table_start, body_start, table_end) < 0:
-        return [], "_fastcore.c: FastCoreMethods table was not found"
-    names = re.findall(r'\{\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,', c_source[body_start:table_end])
-    if not names:
-        return [], "_fastcore.c: FastCoreMethods table contains no exported methods"
-    return names, None
-
-
 def _parity_inventory(
     test_tree: ast.Module, test_path: Path
 ) -> tuple[dict[str, str] | None, str | None]:
@@ -96,9 +84,14 @@ def _fastcore_parity_failures() -> list[str]:
         test_tree = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
     except (OSError, UnicodeDecodeError, SyntaxError) as exc:
         raise GateError(f"cannot read or parse fastcore parity sources: {exc}") from exc
-    exports, error = _fastcore_exports(c_source)
-    if error:
-        return [error]
+    table_start = c_source.find("FastCoreMethods[]")
+    body_start = c_source.find("{", table_start)
+    table_end = c_source.find("};", body_start)
+    if min(table_start, body_start, table_end) < 0:
+        return ["_fastcore.c: FastCoreMethods table was not found"]
+    exports = re.findall(r'\{\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,', c_source[body_start:table_end])
+    if not exports:
+        return ["_fastcore.c: FastCoreMethods table contains no exported methods"]
     inventory, error = _parity_inventory(test_tree, test_path)
     if inventory is None:
         return [error or "fastcore parity inventory is malformed"]
@@ -133,26 +126,6 @@ def _broad_exception(node: ast.expr | None) -> bool:
     return False
 
 
-def _source_exception_failures(path: Path) -> list[str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-        tree = ast.parse(text, filename=str(path))
-    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-        raise GateError(f"cannot parse protected Python source {path}: {exc}") from exc
-    lines = text.splitlines()
-    failures = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ExceptHandler) or not _broad_exception(node.type):
-            continue
-        nearby = "\n".join(lines[max(0, node.lineno - 2) : node.lineno])
-        if ALLOW_MARKER not in nearby:
-            failures.append(
-                f"{_relative(path)}:{node.lineno}: broad exception needs an inline "
-                f"justification containing {ALLOW_MARKER!r}"
-            )
-    return failures
-
-
 def _exception_failures(paths: list[Path] | None = None) -> list[str]:
     if paths is None:
         candidates = [
@@ -164,7 +137,24 @@ def _exception_failures(paths: list[Path] | None = None) -> list[str]:
             for path in sorted(paths)
             if any(path == root or root in path.parents for root in PROTECTED_EXCEPTION_ROOTS)
         ]
-    return [failure for path in candidates for failure in _source_exception_failures(path)]
+    failures: list[str] = []
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text, filename=str(path))
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            raise GateError(f"cannot parse protected Python source {path}: {exc}") from exc
+        lines = text.splitlines()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ExceptHandler) or not _broad_exception(node.type):
+                continue
+            nearby = "\n".join(lines[max(0, node.lineno - 2) : node.lineno])
+            if ALLOW_MARKER not in nearby:
+                failures.append(
+                    f"{_relative(path)}:{node.lineno}: broad exception needs an inline "
+                    f"justification containing {ALLOW_MARKER!r}"
+                )
+    return failures
 
 
 def _existing_file_failures(

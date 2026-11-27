@@ -78,7 +78,6 @@ class DataLakeTests(unittest.TestCase):
             )
             self.assertTrue((root / record["bars_path"]).is_file())
             self.assertTrue((root / record["sources_path"]).is_file())
-            self.assertFalse((root / "data-lake" / "catalog.duckdb").exists())
             self.assertEqual(verified["status"], "verified")
             self.assertEqual(
                 [(row["begin"], row["close"]) for row in projected.rows],

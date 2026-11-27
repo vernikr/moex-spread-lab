@@ -143,11 +143,11 @@ def _run_lizard(paths: list[Path] | None = None) -> dict[str, dict[str, int]]:
             continue
         key = f"{_relative(ROOT / row[6])}::{row[7]}"
         values = {"nloc": int(row[0]), "ccn": int(row[1]), "parameters": int(row[3])}
-        if key not in metrics:
+        if (existing := metrics.get(key)) is None:
             metrics[key] = values
         else:
             for name, value in values.items():
-                metrics[key][name] = max(metrics[key][name], value)
+                existing[name] = max(existing[name], value)
     return metrics
 
 

@@ -187,21 +187,17 @@ def sync(root: Path) -> dict[str, Any]:
     old = command(root, "git", "rev-parse", "HEAD")
     command(root, "git", "fetch", "origin", "main")
     new = command(root, "git", "rev-parse", "origin/main")
+    state: dict[str, Any] = {
+        "restarted": False,
+        "health": None,
+        "dependencies_synced": False,
+        "fastcore_source_changed": False,
+        "fastcore_verified": False,
+        "changed_files": 0,
+    }
     if old == new:
         # Repeated-SHA no-op: the daemon already serves this head.
-        return _sync_result(
-            old,
-            old,
-            "up-to-date",
-            "skipped-up-to-date",
-            "not-required",
-            restarted=False,
-            health=None,
-            dependencies_synced=False,
-            fastcore_source_changed=False,
-            fastcore_verified=False,
-            changed_files=0,
-        )
+        return _sync_result(old, old, "up-to-date", "skipped-up-to-date", "not-required", **state)
     changed = command(root, "git", "diff", "--name-only", f"{old}..{new}").splitlines()
     command(root, "git", "merge", "--ff-only", "origin/main")
     dependencies_synced = (
@@ -218,14 +214,12 @@ def sync(root: Path) -> dict[str, Any]:
         _verify_fastcore(root)
         fastcore_verified = True
     head = command(root, "git", "rev-parse", "HEAD")
-    state: dict[str, Any] = {
-        "restarted": False,
-        "health": None,
-        "dependencies_synced": dependencies_synced,
-        "fastcore_source_changed": fastcore_changed,
-        "fastcore_verified": fastcore_verified,
-        "changed_files": len(changed),
-    }
+    state.update(
+        dependencies_synced=dependencies_synced,
+        fastcore_source_changed=fastcore_changed,
+        fastcore_verified=fastcore_verified,
+        changed_files=len(changed),
+    )
     runtime_changed = dependencies_synced or any(_is_runtime_path(path) for path in changed)
     if not runtime_changed:
         return _sync_result(

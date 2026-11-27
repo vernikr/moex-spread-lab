@@ -245,8 +245,7 @@ def decide_ci(event_name: str, base_sha: str = "", head_sha: str = "HEAD", root:
         return _full(["missing base SHA -> full"], run_tier2=True)
     changed = git_diff_names(base_sha, head_sha, root)
     if changed is None:
-        reason = f"git diff {base_sha}..{head_sha} unavailable"
-        return _full([reason], run_tier2=True)
+        return _full([f"git diff {base_sha}..{head_sha} unavailable"], run_tier2=True)
     nod = git_diff_names(base_sha, head_sha, root, "--diff-filter=ADR") or []
     return decide_paths(changed, new_or_deleted=nod)
 
@@ -297,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             write_github_output(args.github_output, decision)
         except OSError as exc:
-            print(f"change_scope: cannot write --github-output: {exc}", file=sys.stderr)
+            print(f"change_scope: cannot write output: {exc}", file=sys.stderr)
             return 64
     return 0
 

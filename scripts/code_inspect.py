@@ -88,13 +88,16 @@ def outline(path: Path) -> int:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     lines = source.splitlines()
-    imports: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.append(f"{node.lineno}: import {', '.join(alias.name for alias in node.names)}")
-        elif isinstance(node, ast.ImportFrom):
-            imports.append(f"{node.lineno}: from {'.' * node.level}{node.module or ''} import ...")
-    imports.sort(key=lambda item: int(item.split(":", 1)[0]))
+    imports = sorted(
+        (
+            f"{node.lineno}: import {', '.join(alias.name for alias in node.names)}"
+            if isinstance(node, ast.Import)
+            else f"{node.lineno}: from {'.' * node.level}{node.module or ''} import ..."
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        ),
+        key=lambda item: int(item.split(":", 1)[0]),
+    )
     print(f"{path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
     print(f"{_budget_text(path)[1]} bytes={len(source.encode('utf-8'))} total_lines={len(lines)}")
     print("Imports:")

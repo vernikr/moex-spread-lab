@@ -138,9 +138,10 @@ def run_all(scope: Scope, logs: Path, timeout: float) -> list[tuple[str, str, in
                 for name, cmd in commands.items()
                 if cmd is not None
             }
-        for name in wave:
-            status, secs = futures[name].result() if name in futures else ("skipped", 0)
-            results.append((name, status, secs))
+        results.extend(
+            (name, *futures[name].result()) if name in futures else (name, "skipped", 0)
+            for name in wave
+        )
     return results
 
 

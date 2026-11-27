@@ -1,27 +1,312 @@
-# ruff: noqa: E701, E702, I001, W191
-# fmt: off
-from __future__ import annotations;import itertools;from bisect import bisect_right;from datetime import date,timedelta;from pathlib import Path;from typing import Any;from moex_spread_lab.accounting.costs import tariff_profile;from moex_spread_lab.core.settings import INITIAL_CAPITAL,MIN_DAILY_VOLUME;from..calendar_eval import evaluate_variants,read_benchmark,row_dict;from..calendar_ruonia.engine import implied_ruonia_deviation_pp,window_dividend_rub;from.contracts import ASSETS,CROSS_EXPIRY_PAIRS,EXIT_BUFFER_DAYS,FILL_LABELS,FX_SOURCE,HISTORY_FIELDS,HISTORY_FROM,MIN_H1_CALENDAR_OBSERVATIONS,MIN_H1_NATIVE_SESSION_VOLUME,MIN_H1_PROXY_LEG_SESSION_VOLUME,MONTH_CODES,QUARTER_CODES,STRATEGIES,SYNTHETIC_TRIANGLE_PAIRS,ZSCORE_OPTIONS,contract_chain,fx_factors,positive_spread_volume_rows,ruonia,spread_id,stress_ok,terms,zscore_options;from.loaders import cached_till_date,fetch_inputs,offline_loader;_DAILY_ROW_KEYS='date spread open_spread near_close far_close dev_pp days_to_near_expiry dividend_in_window margin min_volume mult near_price far_price near_open_price far_open_price spread_price spread_open_price spread_last_trade spread_trades near_volume far_volume';_WINDOW_KEYS='pair spread_instrument near far first_date last_date near_expiry rows min_spread_volume max_pair_margin_rub';_STUDY_WINDOW_KEYS='pair spread_instrument from to observations min_spread_volume tradable_every_day max_pair_margin_rub passes_capital_screen';_SPAN_KEYS='from to years';_ASSET_KEYS='status name tariff_group span windows variants';_REPORT_KEYS='schema_version release_state pricing execution volume_rule margin fx dividends benchmark assets'
-def _build_daily_window_row(d:str,day_sources:tuple[dict[str,Any],dict[str,Any],dict[str,Any]],terms:dict[str,Any],fx_val:float,win_ctx:tuple[date,float,float,bool])->dict[str,Any]:c,e,f=day_sources;r,n,s,t=win_ctx;a=float(terms['mult'])*fx_val;g,h=float(c['SETTLEPRICE']),float(e['SETTLEPRICE']);i=float(c['OPEN']or 0);j=float(e['OPEN']or 0);b,k=g*a,h*a;m=k-b;o=h-g;p=i>0 and j>0;q=j-i if p else o;u=q*a if p else m;return row_dict(_DAILY_ROW_KEYS,(d,m,u,b,k,implied_ruonia_deviation_pp(m,b,n,s,convergence_supported=t),(r-date.fromisoformat(d)).days,n>0,float(terms['margin_rate'])*(b+k),float(f['VOLUME']or 0),a,g,h,i,j,o,q,f.get('CLOSE'),f.get('NUMTRADES'),c.get('VOLUME'),e.get('VOLUME')))
-def build_windows(histories:dict[str,dict[str,dict[str,Any]]],asset:str,terms:dict[str,Any],ruonia:tuple[list[str],dict[str,float]],factors:dict[str,dict[str,float]]|None=None)->list[dict[str,Any]]:
-	e=ASSETS[asset];n=contract_chain(asset);o=max(max(a)for a in histories.values()if a);k,p=ruonia;m=(factors or{}).get(e.get('fx',''),{});q=12 if e.get('monthly')else 25;windows:list[dict[str,Any]]=[];previous_expiry:str|None=None;r=bool(e.get('convergence'))
-	for(a,b)in itertools.pairwise(n):
-		c,h,f=histories.get(a),histories.get(spread_id(a,b)),histories.get(b)
-		if not c or not h or not f:continue
-		d=max(c)
-		if d>=o:break
-		i=date.fromisoformat(d);s=(i-timedelta(days=EXIT_BUFFER_DAYS)).isoformat();g=[d for d in sorted(h)if(previous_expiry is None or d>previous_expiry)and d<=s and d in c and d in f and c[d]['SETTLEPRICE']and f[d]['SETTLEPRICE']and(not e.get('fx')or d in m)];previous_expiry=d
-		if len(g)<q:continue
-		t=window_dividend_rub(asset,i);j=[_build_daily_window_row(d,(c[d],f[d],h[d]),terms,m.get(d,1.),(i,t,p[k[max(0,bisect_right(k,d)-1)]],r))for d in g];u=min((float(a['min_volume'])for a in positive_spread_volume_rows(j)),default=.0);windows.append(row_dict(_WINDOW_KEYS,(f"{a}/{b}",spread_id(a,b),a,b,g[0],g[-1],d,j,u,round(max(float(a['margin'])for a in j),2))))
-	return windows
-def span_years(windows:list[dict[str,Any]])->float:return(date.fromisoformat(windows[-1]['near_expiry'])-date.fromisoformat(windows[0]['first_date'])).days/365
-def _evaluate_asset_study(asset:str,windows:list[dict[str,Any]],benchmark:dict[str,float],profile:dict[str,Any])->dict[str,Any]:
-	if not windows:return{'status':'no_complete_windows'}
-	c={a['pair']:a['rows']for a in windows if a['min_spread_volume']>=MIN_DAILY_VOLUME};d=span_years(windows);e=evaluate_variants(c,benchmark,{**profile,'tariff_group':ASSETS[asset]['group']},native_spread=True,reference_cost=False,skip_dividend_windows_in_zscore=False,close_at_end=True,zscore_options=zscore_options(asset))if c else[];variants:list[dict[str,Any]]=[]
-	for b in e:
-		by_window:dict[str,float]={}
-		for a in b.pop('trade_list'):by_window[a['pair']]=by_window.get(a['pair'],.0)+a['gross_rub']-a['costs_rub']
-		variants.append({**b,'windows_with_trades':len(by_window),'windows_net_positive':sum(a>0 for a in by_window.values()),'excess_pp_per_year_on_allocation':round(b['excess_over_lqdt_on_margin_rub']/INITIAL_CAPITAL/d*100,3)})
-	return row_dict(_ASSET_KEYS,('evaluated',ASSETS[asset]['name'],ASSETS[asset]['group'],row_dict(_SPAN_KEYS,(windows[0]['first_date'],windows[-1]['near_expiry'],round(d,2))),[row_dict(_STUDY_WINDOW_KEYS,(a['pair'],a['spread_instrument'],a['first_date'],a['last_date'],len(a['rows']),a['min_spread_volume'],a['min_spread_volume']>=MIN_DAILY_VOLUME,a['max_pair_margin_rub'],stress_ok(a['max_pair_margin_rub'])))for a in windows],variants))
-def run_calendar_study(cache_dir:Path,benchmark_path:Path,benchmark_cache_dir:Path,contracts_path:Path,**options:Any)->dict[str,Any]:a=options.get('assets',tuple(ASSETS));till_date:str=options['till_date'];fetch_fn:Any=options.get('fetch_fn',fetch_inputs);histories=fetch_fn(cache_dir,a,till_date);benchmark=read_benchmark(benchmark_path);c=ruonia(benchmark_cache_dir/'CBR_RUONIA.json');b=terms(contracts_path,a);factors=fx_factors(histories);profile=tariff_profile(float(options.get('slippage_ticks',1.)));d={asset:_evaluate_asset_study(asset,build_windows(histories,asset,b[asset],c,factors)if asset in b else[],benchmark,profile)for asset in a};return row_dict(_REPORT_KEYS,('calendar-spread-study.v2','exploratory_inconclusive','spread = far leg settlement minus near leg settlement (identical to the exchange spread settlement where published); opens are leg opens','native spread order: tariff on both legs, slippage once per side; next_open is the primary fill',f"every day of the front window needs at least {MIN_DAILY_VOLUME} contracts in the spread instrument",'current margin-to-notional ratio of the live contract applied to historical settlements (fallback, A-05)','USD- and CNY-quoted point values are rescaled by the front Si or CR settlement relative to today (approximation)','SBER ex-dates from a third-party seed database, unverified; none for other stocks (convergence runs only for SR and GZ)','LQDT lineage; excess subtracts LQDT return on pair margin while a position is open',d))
-__all__=['ASSETS','CROSS_EXPIRY_PAIRS','EXIT_BUFFER_DAYS','FILL_LABELS','FX_SOURCE','HISTORY_FIELDS','HISTORY_FROM','MIN_H1_CALENDAR_OBSERVATIONS','MIN_H1_NATIVE_SESSION_VOLUME','MIN_H1_PROXY_LEG_SESSION_VOLUME','MONTH_CODES','QUARTER_CODES','STRATEGIES','SYNTHETIC_TRIANGLE_PAIRS','ZSCORE_OPTIONS','build_windows','cached_till_date','contract_chain','fetch_inputs','fx_factors','offline_loader','positive_spread_volume_rows','run_calendar_study','ruonia','spread_id','stress_ok','terms','zscore_options']
-# fmt: on
+from __future__ import annotations
+
+import itertools
+from bisect import bisect_right
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+from moex_spread_lab.accounting.costs import tariff_profile
+from moex_spread_lab.core.settings import INITIAL_CAPITAL, MIN_DAILY_VOLUME
+
+from ..calendar_eval import evaluate_variants, read_benchmark, row_dict
+from ..calendar_ruonia.engine import implied_ruonia_deviation_pp, window_dividend_rub
+from .contracts import (
+    ASSETS,
+    CROSS_EXPIRY_PAIRS,
+    EXIT_BUFFER_DAYS,
+    FILL_LABELS,
+    FX_SOURCE,
+    HISTORY_FIELDS,
+    HISTORY_FROM,
+    MIN_H1_CALENDAR_OBSERVATIONS,
+    MIN_H1_NATIVE_SESSION_VOLUME,
+    MIN_H1_PROXY_LEG_SESSION_VOLUME,
+    MONTH_CODES,
+    QUARTER_CODES,
+    STRATEGIES,
+    SYNTHETIC_TRIANGLE_PAIRS,
+    ZSCORE_OPTIONS,
+    contract_chain,
+    fx_factors,
+    positive_spread_volume_rows,
+    ruonia,
+    spread_id,
+    stress_ok,
+    terms,
+    zscore_options,
+)
+from .loaders import cached_till_date, fetch_inputs, offline_loader
+
+_DAILY_ROW_KEYS = "date spread open_spread near_close far_close dev_pp days_to_near_expiry dividend_in_window margin min_volume mult near_price far_price near_open_price far_open_price spread_price spread_open_price spread_last_trade spread_trades near_volume far_volume"
+_WINDOW_KEYS = "pair spread_instrument near far first_date last_date near_expiry rows min_spread_volume max_pair_margin_rub"
+_STUDY_WINDOW_KEYS = "pair spread_instrument from to observations min_spread_volume tradable_every_day max_pair_margin_rub passes_capital_screen"
+_SPAN_KEYS = "from to years"
+_ASSET_KEYS = "status name tariff_group span windows variants"
+_REPORT_KEYS = "schema_version release_state pricing execution volume_rule margin fx dividends benchmark assets"
+
+
+def _build_daily_window_row(
+    d: str,
+    day_sources: tuple[dict[str, Any], dict[str, Any], dict[str, Any]],
+    terms: dict[str, Any],
+    fx_val: float,
+    win_ctx: tuple[date, float, float, bool],
+) -> dict[str, Any]:
+    c, e, f = day_sources
+    r, n, s, t = win_ctx
+    a = float(terms["mult"]) * fx_val
+    g, h = float(c["SETTLEPRICE"]), float(e["SETTLEPRICE"])
+    i = float(c["OPEN"] or 0)
+    j = float(e["OPEN"] or 0)
+    b, k = g * a, h * a
+    m = k - b
+    o = h - g
+    p = i > 0 and j > 0
+    q = j - i if p else o
+    u = q * a if p else m
+    return row_dict(
+        _DAILY_ROW_KEYS,
+        (
+            d,
+            m,
+            u,
+            b,
+            k,
+            implied_ruonia_deviation_pp(m, b, n, s, convergence_supported=t),
+            (r - date.fromisoformat(d)).days,
+            n > 0,
+            float(terms["margin_rate"]) * (b + k),
+            float(f["VOLUME"] or 0),
+            a,
+            g,
+            h,
+            i,
+            j,
+            o,
+            q,
+            f.get("CLOSE"),
+            f.get("NUMTRADES"),
+            c.get("VOLUME"),
+            e.get("VOLUME"),
+        ),
+    )
+
+
+def build_windows(
+    histories: dict[str, dict[str, dict[str, Any]]],
+    asset: str,
+    terms: dict[str, Any],
+    ruonia: tuple[list[str], dict[str, float]],
+    factors: dict[str, dict[str, float]] | None = None,
+) -> list[dict[str, Any]]:
+    e = ASSETS[asset]
+    n = contract_chain(asset)
+    o = max(max(a) for a in histories.values() if a)
+    k, p = ruonia
+    m = (factors or {}).get(e.get("fx", ""), {})
+    q = 12 if e.get("monthly") else 25
+    windows: list[dict[str, Any]] = []
+    previous_expiry: str | None = None
+    r = bool(e.get("convergence"))
+    for a, b in itertools.pairwise(n):
+        c, h, f = histories.get(a), histories.get(spread_id(a, b)), histories.get(b)
+        if not c or not h or not f:
+            continue
+        d = max(c)
+        if d >= o:
+            break
+        i = date.fromisoformat(d)
+        s = (i - timedelta(days=EXIT_BUFFER_DAYS)).isoformat()
+        g = [
+            d
+            for d in sorted(h)
+            if (previous_expiry is None or d > previous_expiry)
+            and d <= s
+            and d in c
+            and d in f
+            and c[d]["SETTLEPRICE"]
+            and f[d]["SETTLEPRICE"]
+            and (not e.get("fx") or d in m)
+        ]
+        previous_expiry = d
+        if len(g) < q:
+            continue
+        t = window_dividend_rub(asset, i)
+        j = [
+            _build_daily_window_row(
+                d,
+                (c[d], f[d], h[d]),
+                terms,
+                m.get(d, 1.0),
+                (i, t, p[k[max(0, bisect_right(k, d) - 1)]], r),
+            )
+            for d in g
+        ]
+        u = min((float(a["min_volume"]) for a in positive_spread_volume_rows(j)), default=0.0)
+        windows.append(
+            row_dict(
+                _WINDOW_KEYS,
+                (
+                    f"{a}/{b}",
+                    spread_id(a, b),
+                    a,
+                    b,
+                    g[0],
+                    g[-1],
+                    d,
+                    j,
+                    u,
+                    round(max(float(a["margin"]) for a in j), 2),
+                ),
+            )
+        )
+    return windows
+
+
+def span_years(windows: list[dict[str, Any]]) -> float:
+    return (
+        date.fromisoformat(windows[-1]["near_expiry"])
+        - date.fromisoformat(windows[0]["first_date"])
+    ).days / 365
+
+
+def _evaluate_asset_study(
+    asset: str, windows: list[dict[str, Any]], benchmark: dict[str, float], profile: dict[str, Any]
+) -> dict[str, Any]:
+    if not windows:
+        return {"status": "no_complete_windows"}
+    c = {a["pair"]: a["rows"] for a in windows if a["min_spread_volume"] >= MIN_DAILY_VOLUME}
+    d = span_years(windows)
+    e = (
+        evaluate_variants(
+            c,
+            benchmark,
+            {**profile, "tariff_group": ASSETS[asset]["group"]},
+            native_spread=True,
+            reference_cost=False,
+            skip_dividend_windows_in_zscore=False,
+            close_at_end=True,
+            zscore_options=zscore_options(asset),
+        )
+        if c
+        else []
+    )
+    variants: list[dict[str, Any]] = []
+    for b in e:
+        by_window: dict[str, float] = {}
+        for a in b.pop("trade_list"):
+            by_window[a["pair"]] = by_window.get(a["pair"], 0.0) + a["gross_rub"] - a["costs_rub"]
+        variants.append(
+            {
+                **b,
+                "windows_with_trades": len(by_window),
+                "windows_net_positive": sum(a > 0 for a in by_window.values()),
+                "excess_pp_per_year_on_allocation": round(
+                    b["excess_over_lqdt_on_margin_rub"] / INITIAL_CAPITAL / d * 100, 3
+                ),
+            }
+        )
+    return row_dict(
+        _ASSET_KEYS,
+        (
+            "evaluated",
+            ASSETS[asset]["name"],
+            ASSETS[asset]["group"],
+            row_dict(
+                _SPAN_KEYS, (windows[0]["first_date"], windows[-1]["near_expiry"], round(d, 2))
+            ),
+            [
+                row_dict(
+                    _STUDY_WINDOW_KEYS,
+                    (
+                        a["pair"],
+                        a["spread_instrument"],
+                        a["first_date"],
+                        a["last_date"],
+                        len(a["rows"]),
+                        a["min_spread_volume"],
+                        a["min_spread_volume"] >= MIN_DAILY_VOLUME,
+                        a["max_pair_margin_rub"],
+                        stress_ok(a["max_pair_margin_rub"]),
+                    ),
+                )
+                for a in windows
+            ],
+            variants,
+        ),
+    )
+
+
+def run_calendar_study(
+    cache_dir: Path,
+    benchmark_path: Path,
+    benchmark_cache_dir: Path,
+    contracts_path: Path,
+    **options: Any,
+) -> dict[str, Any]:
+    a = options.get("assets", tuple(ASSETS))
+    till_date: str = options["till_date"]
+    fetch_fn: Any = options.get("fetch_fn", fetch_inputs)
+    histories = fetch_fn(cache_dir, a, till_date)
+    benchmark = read_benchmark(benchmark_path)
+    c = ruonia(benchmark_cache_dir / "CBR_RUONIA.json")
+    b = terms(contracts_path, a)
+    factors = fx_factors(histories)
+    profile = tariff_profile(float(options.get("slippage_ticks", 1.0)))
+    d = {
+        asset: _evaluate_asset_study(
+            asset,
+            build_windows(histories, asset, b[asset], c, factors) if asset in b else [],
+            benchmark,
+            profile,
+        )
+        for asset in a
+    }
+    return row_dict(
+        _REPORT_KEYS,
+        (
+            "calendar-spread-study.v2",
+            "exploratory_inconclusive",
+            "spread = far leg settlement minus near leg settlement (identical to the exchange spread settlement where published); opens are leg opens",
+            "native spread order: tariff on both legs, slippage once per side; next_open is the primary fill",
+            f"every day of the front window needs at least {MIN_DAILY_VOLUME} contracts in the spread instrument",
+            "current margin-to-notional ratio of the live contract applied to historical settlements (fallback, A-05)",
+            "USD- and CNY-quoted point values are rescaled by the front Si or CR settlement relative to today (approximation)",
+            "SBER ex-dates from a third-party seed database, unverified; none for other stocks (convergence runs only for SR and GZ)",
+            "LQDT lineage; excess subtracts LQDT return on pair margin while a position is open",
+            d,
+        ),
+    )
+
+
+__all__ = [
+    "ASSETS",
+    "CROSS_EXPIRY_PAIRS",
+    "EXIT_BUFFER_DAYS",
+    "FILL_LABELS",
+    "FX_SOURCE",
+    "HISTORY_FIELDS",
+    "HISTORY_FROM",
+    "MIN_H1_CALENDAR_OBSERVATIONS",
+    "MIN_H1_NATIVE_SESSION_VOLUME",
+    "MIN_H1_PROXY_LEG_SESSION_VOLUME",
+    "MONTH_CODES",
+    "QUARTER_CODES",
+    "STRATEGIES",
+    "SYNTHETIC_TRIANGLE_PAIRS",
+    "ZSCORE_OPTIONS",
+    "build_windows",
+    "cached_till_date",
+    "contract_chain",
+    "fetch_inputs",
+    "fx_factors",
+    "offline_loader",
+    "positive_spread_volume_rows",
+    "run_calendar_study",
+    "ruonia",
+    "spread_id",
+    "stress_ok",
+    "terms",
+    "zscore_options",
+]

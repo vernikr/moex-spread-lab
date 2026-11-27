@@ -1,36 +1,294 @@
-# ruff: noqa: E701, E702, I001, W191
-# fmt: off
-from __future__ import annotations;from bisect import bisect_left;from dataclasses import dataclass,field;from datetime import date;from typing import Any;from..calendar_eval import row_dict;from..calendar_ruonia.engine import implied_ruonia_deviation_pp,window_dividend_rub;from.contracts import ASSETS,MIN_H1_CALENDAR_OBSERVATIONS,spread_id;from.h1_candles import asof_before,candle_timestamp,fetch_h1_candles,finite_num,read_h1_candles,select_h1_source_mode;_H1_ROW_KEYS='date timestamp session_date benchmark_mark_date spread open_spread spread_price spread_open_price near_close far_close near_price far_price near_open_price far_open_price near_open far_open near_volume far_volume spread_volume spread_trades spread_last_trade min_volume session_liquidity_volume liquidity_cumulative_before liquidity_cumulative prior_bar_volume volume_eligible signal_eligible dev_pp ruonia_rate ruonia_rate_date fx_rate_date days_to_near_expiry dividend_in_window margin mult near_price_raw far_price_raw spread_open';_H1_WINDOW_KEYS='pair spread_instrument near far first_date last_date near_expiry rows observations min_spread_volume min_liquidity_volume max_pair_margin_rub timeframe price_source price_source_label native_fallback_reason has_native_spread_volume native_spread_order liquidity_source liquidity_gate liquidity_gate_unit liquidity_volume_label liquidity_rule tradable_every_day tradable_every_session session_count source_hashes';_SOURCE_KEYS='near_candles_sha256 far_candles_sha256'
-def _sum_session_volumes(session_days:list[str],stamps:list[str],sources:tuple[dict[str,dict[str,Any]],...])->tuple[list[dict[str,float]],set[str]]:
-	a=[dict.fromkeys(session_days,.0)for _ in sources];unknown:set[str]=set()
-	for stamp in stamps:
-		b=[a[stamp].get('volume')for a in sources]
-		if any(a is None for a in b):unknown.add(stamp[:10])
-		else:
-			for(c,d)in zip(a,b,strict=True):c[stamp[:10]]+=float(d or .0)
-	return a,unknown
-def _compute_h1_session_liquidity(is_native:bool,common:list[str],native_common:list[str],source_rows:dict[str,dict[str,Any]],near_rows:dict[str,dict[str,Any]],far_rows:dict[str,dict[str,Any]],gate:float)->tuple[list[str],dict[str,float],float,bool]:session_days=sorted({stamp[:10]for stamp in common});sources=(source_rows,)if is_native else(near_rows,far_rows);a,unknown=_sum_session_volumes(session_days,native_common if is_native else common,sources);session_volume=a[0]if is_native else{b:min(a[0][b],a[1][b])for b in session_days};return session_days,session_volume,min(session_volume.values(),default=.0),bool(session_days)and all(a not in unknown and session_volume.get(a,.0)>=gate for a in session_days)
+from __future__ import annotations
+
+from bisect import bisect_left
+from dataclasses import dataclass, field
+from datetime import date
+from typing import Any
+
+from ..calendar_eval import row_dict
+from ..calendar_ruonia.engine import implied_ruonia_deviation_pp, window_dividend_rub
+from .contracts import ASSETS, MIN_H1_CALENDAR_OBSERVATIONS, spread_id
+from .h1_candles import (
+    asof_before,
+    candle_timestamp,
+    fetch_h1_candles,
+    finite_num,
+    read_h1_candles,
+    select_h1_source_mode,
+)
+
+_H1_ROW_KEYS = "date timestamp session_date benchmark_mark_date spread open_spread spread_price spread_open_price near_close far_close near_price far_price near_open_price far_open_price near_open far_open near_volume far_volume spread_volume spread_trades spread_last_trade min_volume session_liquidity_volume liquidity_cumulative_before liquidity_cumulative prior_bar_volume volume_eligible signal_eligible dev_pp ruonia_rate ruonia_rate_date fx_rate_date days_to_near_expiry dividend_in_window margin mult near_price_raw far_price_raw spread_open"
+_H1_WINDOW_KEYS = "pair spread_instrument near far first_date last_date near_expiry rows observations min_spread_volume min_liquidity_volume max_pair_margin_rub timeframe price_source price_source_label native_fallback_reason has_native_spread_volume native_spread_order liquidity_source liquidity_gate liquidity_gate_unit liquidity_volume_label liquidity_rule tradable_every_day tradable_every_session session_count source_hashes"
+_SOURCE_KEYS = "near_candles_sha256 far_candles_sha256"
+
+
+def _sum_session_volumes(
+    session_days: list[str], stamps: list[str], sources: tuple[dict[str, dict[str, Any]], ...]
+) -> tuple[list[dict[str, float]], set[str]]:
+    a = [dict.fromkeys(session_days, 0.0) for _ in sources]
+    unknown: set[str] = set()
+    for stamp in stamps:
+        b = [a[stamp].get("volume") for a in sources]
+        if any(a is None for a in b):
+            unknown.add(stamp[:10])
+        else:
+            for c, d in zip(a, b, strict=True):
+                c[stamp[:10]] += float(d or 0.0)
+    return a, unknown
+
+
+def _compute_h1_session_liquidity(
+    is_native: bool,
+    common: list[str],
+    native_common: list[str],
+    source_rows: dict[str, dict[str, Any]],
+    near_rows: dict[str, dict[str, Any]],
+    far_rows: dict[str, dict[str, Any]],
+    gate: float,
+) -> tuple[list[str], dict[str, float], float, bool]:
+    session_days = sorted({stamp[:10] for stamp in common})
+    sources = (source_rows,) if is_native else (near_rows, far_rows)
+    a, unknown = _sum_session_volumes(session_days, native_common if is_native else common, sources)
+    session_volume = a[0] if is_native else {b: min(a[0][b], a[1][b]) for b in session_days}
+    return (
+        session_days,
+        session_volume,
+        min(session_volume.values(), default=0.0),
+        bool(session_days)
+        and all(a not in unknown and session_volume.get(a, 0.0) >= gate for a in session_days),
+    )
+
+
 @dataclass
-class _H1BuildState:is_native:bool;source_rows:dict[str,dict[str,Any]];near_rows:dict[str,dict[str,Any]];far_rows:dict[str,dict[str,Any]];session_volume:dict[str,float];gate:float;terms:dict[str,Any];config:dict[str,Any];expiry_date:date;dividend:float;ruonia_dates:list[str];rates:dict[str,float];benchmark_dates:list[str];fx_name:str|None;fx_dates:list[str];fx_values:dict[str,float];dte_cache:dict[str,int]=field(default_factory=dict);cum_native:dict[str,float]=field(default_factory=dict);cum_near:dict[str,float]=field(default_factory=dict);cum_far:dict[str,float]=field(default_factory=dict);prev_bar_vol:dict[str,float]=field(default_factory=dict)
-def _step_h1_cum_liquidity(st:_H1BuildState,s_day:str,stamp:str,nr:dict[str,Any],fr:dict[str,Any],near_open_raw:float,far_open_raw:float)->tuple[float,float,float,Any,float,float,float]:
-	if st.is_native:a=st.source_rows[stamp];g=float(a['close']);h=float(a['open'])if a['open']is not None else far_open_raw-near_open_raw;b=max(.0,float(a.get('volume')or .0));c=st.cum_native.get(s_day,.0);d=c+b;i=st.prev_bar_vol.get(s_day,.0);st.cum_native[s_day]=d;st.prev_bar_vol[s_day]=b;return g,h,b,a.get('volume'),c,d,i
-	o,p=float(nr['close']),float(fr['close']);g=p-o;h=far_open_raw-near_open_raw;e,f=nr.get('volume'),fr.get('volume');b=min(float(e),float(f))if e is not None and f is not None else .0;j,k=st.cum_near.get(s_day,.0),st.cum_far.get(s_day,.0);c=min(j,k);m=float(e)if e is not None else .0;n=float(f)if f is not None else .0;st.cum_near[s_day],st.cum_far[s_day]=j+m,k+n;d=min(st.cum_near[s_day],st.cum_far[s_day]);i=st.prev_bar_vol.get(s_day,.0);st.prev_bar_vol[s_day]=min(m,n);return g,h,b,None,c,d,i
-def _build_single_h1_row(st:_H1BuildState,stamp:str)->dict[str,Any]|None:
-	s_day=stamp[:10];nr,fr=st.near_rows[stamp],st.far_rows[stamp];b,c=float(nr['close']),float(fr['close']);e=float(nr['open'])if nr['open']is not None and nr['open']>0 else b;f=float(fr['open'])if fr['open']is not None and fr['open']>0 else c;s,h=asof_before(st.fx_dates,st.fx_values,s_day)if st.fx_name else(None,1.)
-	if h is None:return None
-	a=float(st.terms['mult'])*h;d,g=b*a,c*a;i=bisect_left(st.benchmark_dates,s_day)-1
-	if d<=0 or g<=0 or i<0:return None
-	j,k,m,t,u,n,v=_step_h1_cum_liquidity(st,s_day,stamp,nr,fr,e,f);w,o=asof_before(st.ruonia_dates,st.rates,s_day);p,q=j*a,k*a;r=n>=st.gate and m>0;return row_dict(_H1_ROW_KEYS,(stamp,stamp,s_day,st.benchmark_dates[i],p,q,j,k,d,g,b,c,e,f,e,f,nr.get('volume'),fr.get('volume'),t,None,None,m,st.session_volume.get(s_day,.0),u,n,v,r,r,implied_ruonia_deviation_pp(p,d,st.dividend,o,convergence_supported=bool(st.config.get('convergence'))),o,w,s,st.dte_cache.setdefault(s_day,(st.expiry_date-date.fromisoformat(s_day)).days),st.dividend>0,float(st.terms['margin_rate'])*(d+g),a,b,c,q))
-def _filtered_h1_rows(source:Any,first_day:str,last_day:str)->Any:return{a:b for(a,b)in source['rows'].items()if first_day<=a[:10]<=last_day and b['close']>0}
-def build_intraday_window(asset:str,daily_window:dict[str,Any],data:dict[str,Any],sources:tuple[dict[str,Any]|None,dict[str,Any]|None,dict[str,Any]|None,str|None])->dict[str,Any]|None:
-	c,d,b,k=sources
-	if c is None or d is None:return None
-	e,f=daily_window['near'],daily_window['far'];first_day,last_day=daily_window['first_date'][:10],daily_window['last_date'][:10];near_rows=_filtered_h1_rows(c,first_day,last_day);far_rows=_filtered_h1_rows(d,first_day,last_day);common=sorted(near_rows.keys()&far_rows.keys())
-	if len(common)<2:return None
-	native_rows:dict[str,Any]=b['rows']if b else{};native_common=[a for a in common if a in native_rows];is_native,source_rows,m,gate,n,o,p=select_h1_source_mode(native_common,b,k);session_days,q,g,h=_compute_h1_session_liquidity(is_native,common,native_common,source_rows,near_rows,far_rows,gate);i=daily_window['near_expiry'];expiry_date=date.fromisoformat(i);config=ASSETS[asset];fx_name=config.get('fx');fx_vals:dict[str,float]=data['fx_factors'].get(fx_name,{})if fx_name else{};ruonia_dates,rates=data['ruonia'];st=_H1BuildState(is_native=is_native,source_rows=source_rows,near_rows=near_rows,far_rows=far_rows,session_volume=q,gate=gate,terms=data['terms'][asset],config=config,expiry_date=expiry_date,dividend=window_dividend_rub(asset,expiry_date),ruonia_dates=ruonia_dates,rates=rates,benchmark_dates=data['benchmark_dates'],fx_name=fx_name,fx_dates=sorted(fx_vals),fx_values=fx_vals);s=native_common if is_native else common;a=[r for a in s if(r:=_build_single_h1_row(st,a))is not None]
-	if len(a)<MIN_H1_CALENDAR_OBSERVATIONS:return None
-	a.sort(key=lambda r:r['date']);j=row_dict(_SOURCE_KEYS,(c['sha256'],d['sha256']))
-	if b:j['native_spread_candles_sha256']=b['sha256']
-	return row_dict(_H1_WINDOW_KEYS,(daily_window['pair'],spread_id(e,f),e,f,a[0]['date'],a[-1]['date'],i,a,len(a),g if is_native else None,g,round(max(float(r['margin'])for r in a),2),'1h','native_h1_spread'if is_native else'synthetic_leg_proxy','Нативные часовые свечи календарного спреда'if is_native else'Синтетический прокси far − near по синхронизированным часовым свечам ног',m,is_native,is_native,n,gate,'контр./сессию',o,p,h,h,len(session_days),j))
-__all__=['asof_before','build_intraday_window','candle_timestamp','fetch_h1_candles','finite_num','read_h1_candles']
-# fmt: on
+class _H1BuildState:
+    is_native: bool
+    source_rows: dict[str, dict[str, Any]]
+    near_rows: dict[str, dict[str, Any]]
+    far_rows: dict[str, dict[str, Any]]
+    session_volume: dict[str, float]
+    gate: float
+    terms: dict[str, Any]
+    config: dict[str, Any]
+    expiry_date: date
+    dividend: float
+    ruonia_dates: list[str]
+    rates: dict[str, float]
+    benchmark_dates: list[str]
+    fx_name: str | None
+    fx_dates: list[str]
+    fx_values: dict[str, float]
+    dte_cache: dict[str, int] = field(default_factory=dict)
+    cum_native: dict[str, float] = field(default_factory=dict)
+    cum_near: dict[str, float] = field(default_factory=dict)
+    cum_far: dict[str, float] = field(default_factory=dict)
+    prev_bar_vol: dict[str, float] = field(default_factory=dict)
+
+
+def _step_h1_cum_liquidity(
+    st: _H1BuildState,
+    s_day: str,
+    stamp: str,
+    nr: dict[str, Any],
+    fr: dict[str, Any],
+    near_open_raw: float,
+    far_open_raw: float,
+) -> tuple[float, float, float, Any, float, float, float]:
+    if st.is_native:
+        a = st.source_rows[stamp]
+        g = float(a["close"])
+        h = float(a["open"]) if a["open"] is not None else far_open_raw - near_open_raw
+        b = max(0.0, float(a.get("volume") or 0.0))
+        c = st.cum_native.get(s_day, 0.0)
+        d = c + b
+        i = st.prev_bar_vol.get(s_day, 0.0)
+        st.cum_native[s_day] = d
+        st.prev_bar_vol[s_day] = b
+        return g, h, b, a.get("volume"), c, d, i
+    o, p = float(nr["close"]), float(fr["close"])
+    g = p - o
+    h = far_open_raw - near_open_raw
+    e, f = nr.get("volume"), fr.get("volume")
+    b = min(float(e), float(f)) if e is not None and f is not None else 0.0
+    j, k = st.cum_near.get(s_day, 0.0), st.cum_far.get(s_day, 0.0)
+    c = min(j, k)
+    m = float(e) if e is not None else 0.0
+    n = float(f) if f is not None else 0.0
+    st.cum_near[s_day], st.cum_far[s_day] = j + m, k + n
+    d = min(st.cum_near[s_day], st.cum_far[s_day])
+    i = st.prev_bar_vol.get(s_day, 0.0)
+    st.prev_bar_vol[s_day] = min(m, n)
+    return g, h, b, None, c, d, i
+
+
+def _build_single_h1_row(st: _H1BuildState, stamp: str) -> dict[str, Any] | None:
+    s_day = stamp[:10]
+    nr, fr = st.near_rows[stamp], st.far_rows[stamp]
+    b, c = float(nr["close"]), float(fr["close"])
+    e = float(nr["open"]) if nr["open"] is not None and nr["open"] > 0 else b
+    f = float(fr["open"]) if fr["open"] is not None and fr["open"] > 0 else c
+    s, h = asof_before(st.fx_dates, st.fx_values, s_day) if st.fx_name else (None, 1.0)
+    if h is None:
+        return None
+    a = float(st.terms["mult"]) * h
+    d, g = b * a, c * a
+    i = bisect_left(st.benchmark_dates, s_day) - 1
+    if d <= 0 or g <= 0 or i < 0:
+        return None
+    j, k, m, t, u, n, v = _step_h1_cum_liquidity(st, s_day, stamp, nr, fr, e, f)
+    w, o = asof_before(st.ruonia_dates, st.rates, s_day)
+    p, q = j * a, k * a
+    r = n >= st.gate and m > 0
+    return row_dict(
+        _H1_ROW_KEYS,
+        (
+            stamp,
+            stamp,
+            s_day,
+            st.benchmark_dates[i],
+            p,
+            q,
+            j,
+            k,
+            d,
+            g,
+            b,
+            c,
+            e,
+            f,
+            e,
+            f,
+            nr.get("volume"),
+            fr.get("volume"),
+            t,
+            None,
+            None,
+            m,
+            st.session_volume.get(s_day, 0.0),
+            u,
+            n,
+            v,
+            r,
+            r,
+            implied_ruonia_deviation_pp(
+                p, d, st.dividend, o, convergence_supported=bool(st.config.get("convergence"))
+            ),
+            o,
+            w,
+            s,
+            st.dte_cache.setdefault(s_day, (st.expiry_date - date.fromisoformat(s_day)).days),
+            st.dividend > 0,
+            float(st.terms["margin_rate"]) * (d + g),
+            a,
+            b,
+            c,
+            q,
+        ),
+    )
+
+
+def _filtered_h1_rows(source: Any, first_day: str, last_day: str) -> Any:
+    return {
+        a: b
+        for (a, b) in source["rows"].items()
+        if first_day <= a[:10] <= last_day and b["close"] > 0
+    }
+
+
+def build_intraday_window(
+    asset: str,
+    daily_window: dict[str, Any],
+    data: dict[str, Any],
+    sources: tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, str | None],
+) -> dict[str, Any] | None:
+    c, d, b, k = sources
+    if c is None or d is None:
+        return None
+    e, f = daily_window["near"], daily_window["far"]
+    first_day, last_day = daily_window["first_date"][:10], daily_window["last_date"][:10]
+    near_rows = _filtered_h1_rows(c, first_day, last_day)
+    far_rows = _filtered_h1_rows(d, first_day, last_day)
+    common = sorted(near_rows.keys() & far_rows.keys())
+    if len(common) < 2:
+        return None
+    native_rows: dict[str, Any] = b["rows"] if b else {}
+    native_common = [a for a in common if a in native_rows]
+    is_native, source_rows, m, gate, n, o, p = select_h1_source_mode(native_common, b, k)
+    session_days, q, g, h = _compute_h1_session_liquidity(
+        is_native, common, native_common, source_rows, near_rows, far_rows, gate
+    )
+    i = daily_window["near_expiry"]
+    expiry_date = date.fromisoformat(i)
+    config = ASSETS[asset]
+    fx_name = config.get("fx")
+    fx_vals: dict[str, float] = data["fx_factors"].get(fx_name, {}) if fx_name else {}
+    ruonia_dates, rates = data["ruonia"]
+    st = _H1BuildState(
+        is_native=is_native,
+        source_rows=source_rows,
+        near_rows=near_rows,
+        far_rows=far_rows,
+        session_volume=q,
+        gate=gate,
+        terms=data["terms"][asset],
+        config=config,
+        expiry_date=expiry_date,
+        dividend=window_dividend_rub(asset, expiry_date),
+        ruonia_dates=ruonia_dates,
+        rates=rates,
+        benchmark_dates=data["benchmark_dates"],
+        fx_name=fx_name,
+        fx_dates=sorted(fx_vals),
+        fx_values=fx_vals,
+    )
+    s = native_common if is_native else common
+    a = [r for a in s if (r := _build_single_h1_row(st, a)) is not None]
+    if len(a) < MIN_H1_CALENDAR_OBSERVATIONS:
+        return None
+    a.sort(key=lambda r: r["date"])
+    j = row_dict(_SOURCE_KEYS, (c["sha256"], d["sha256"]))
+    if b:
+        j["native_spread_candles_sha256"] = b["sha256"]
+    return row_dict(
+        _H1_WINDOW_KEYS,
+        (
+            daily_window["pair"],
+            spread_id(e, f),
+            e,
+            f,
+            a[0]["date"],
+            a[-1]["date"],
+            i,
+            a,
+            len(a),
+            g if is_native else None,
+            g,
+            round(max(float(r["margin"]) for r in a), 2),
+            "1h",
+            "native_h1_spread" if is_native else "synthetic_leg_proxy",
+            "Нативные часовые свечи календарного спреда"
+            if is_native
+            else "Синтетический прокси far − near по синхронизированным часовым свечам ног",
+            m,
+            is_native,
+            is_native,
+            n,
+            gate,
+            "контр./сессию",
+            o,
+            p,
+            h,
+            h,
+            len(session_days),
+            j,
+        ),
+    )
+
+
+__all__ = [
+    "asof_before",
+    "build_intraday_window",
+    "candle_timestamp",
+    "fetch_h1_candles",
+    "finite_num",
+    "read_h1_candles",
+]

@@ -18,7 +18,11 @@ from moex_spread_lab.core.contracts import (
 )
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof.pair_plugin_accounting import size_daily_pair_plugin
+from moex_spread_lab.proof.fixed_plugin_payload import fixed_pair_accounting
+from moex_spread_lab.proof.pair_plugin_accounting import (
+    prepare_daily_pair_unit,
+    size_daily_pair_plugin,
+)
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
 
@@ -368,3 +372,67 @@ def test_funding_history_must_match_near_contract():
     other = FundingWindow(FundingTimeline("OTHER", dict.fromkeys(DAYS, 0.2), DAYS), DAYS)
     with pytest.raises(W0Error, match="ближней"):
         pipeline(window, other, PairPlugin("long_spread", True), "next_open")
+
+
+@pytest.mark.parametrize("far_mult", [1.0, 3.0])
+@pytest.mark.parametrize("side", ["long_spread", "short_spread"])
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("fill", ["next_open", "next_close", "reference_same_bar"])
+def test_fixed_pair_curve_uses_each_leg_multiplier(far_mult, side, terminal, fill):
+    window, evidence, _ = fixture()
+    window.contracts["F"]["tick_value"] = far_mult
+    window.rows[3].update(far_open=50000, far_close=50010)
+    window.rows[4].update(far_open=49980, far_close=50050)
+    unit, _ = prepare_daily_pair_unit(
+        PairPlugin(side, terminal),
+        window,
+        {},
+        fill,
+        evidence,
+        dict.fromkeys(DAYS, 1.0),
+        ResearchSettings(),
+    )
+    rows, trades, ledger, drawdown, totals = fixed_pair_accounting(
+        unit["series"],
+        unit,
+        (
+            {"contracts": window.contracts, "provenance": {}},
+            {"near": "N", "far": "F"},
+            unit["provenance"],
+        ),
+        {"quantity": 2, "slippage_ticks": 1.0},
+        (DAYS, dict.fromkeys(DAYS, 1.0)),
+        30000,
+        builtin=False,
+    )
+    trade = trades[0]
+    entry, exit_ = trade["entry"], trade["exit"]
+    sign = 1 if side == "long_spread" else -1
+    entry_cost = sum(entry["costs"].values())
+    exit_cost = sum(exit_["costs"].values())
+    first_pnl = (
+        sign
+        * 2
+        * (
+            (window.rows[3]["near_close"] - entry["near_price"])
+            - (window.rows[3]["far_close"] - entry["far_price"]) * far_mult
+        )
+        - entry_cost
+        + rows[3]["funding_rub"]
+    )
+    final_pnl = (
+        sign
+        * 2
+        * (
+            (exit_["near_price"] - entry["near_price"])
+            - (exit_["far_price"] - entry["far_price"]) * far_mult
+        )
+        - entry_cost
+        - exit_cost
+        + sum(row["funding_rub"] for row in rows)
+    )
+    expected_drawdown = max(0, -first_pnl, max(0, first_pnl) - final_pnl)
+    assert drawdown == pytest.approx(expected_drawdown, abs=1e-7)
+    assert totals[2] == pytest.approx(final_pnl, abs=1e-7)
+    assert ledger[-1]["cumulative_net_rub"] == round(final_pnl, 2)
+    assert trade["net_rub"] == round(final_pnl, 2)

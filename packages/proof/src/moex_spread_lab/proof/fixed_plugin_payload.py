@@ -172,13 +172,12 @@ def _account_curve(
     rows: list[dict[str, Any]],
     trades: list[dict[str, Any]],
     ledger: list[dict[str, Any]],
-    curve: tuple[float, float, int, list[float]],
+    curve: tuple[tuple[float, float], float, int, list[float]],
 ) -> float:
     """LQDT-aware excess drawdown over the replay of the same trades at sub-kopeck
     precision: the rounded ledger must not be used to calculate risk drawdown.
     """
-    near_mult, margin, quantity, marks = curve
-    mults = (near_mult, near_mult)
+    mults, margin, quantity, marks = curve
     entries = {trade["entry"]["date"]: trade for trade in trades}
     exits = {trade["exit"]["date"]: trade for trade in trades}
     funding_by_date = {row["date"]: float(row["funding_rub"] or 0.0) for row in unit["series"]}
@@ -302,7 +301,7 @@ def fixed_pair_accounting(
         for row in rows
     ]
     drawdown = _account_curve(
-        capital, unit, rows, trades, ledger, (near_mult, margin, quantity, marks)
+        capital, unit, rows, trades, ledger, ((near_mult, far_mult), margin, quantity, marks)
     )
     gross, cost, net = (math.fsum(row[i] for row in raw_totals) for i in range(3))
     return rows, trades, ledger, drawdown, (gross, cost, net)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from statistics import fmean
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import optuna
 
@@ -13,7 +13,7 @@ from moex_spread_lab.core.w0 import run_id
 
 from .landscape import Axis, Landscape
 from .landscape import lamps as _lamps
-from .proof_kernel import resolve_seed
+from .proof_kernel import StudyWindow, resolve_seed
 
 _Obj = dict[str, Any]
 _Metrics = dict[str, Any]
@@ -22,52 +22,6 @@ _Progress = Callable[[int, int], None]
 _OnProgress = Callable[[dict[str, Any]], None]
 # `landscape` is not strict-typed yet; read its private helper through the module
 # namespace so this strict module inherits a callable signature instead of Unknown.
-
-
-class _CaseLike(Protocol):
-    """A cohort member that can replay one parameter vector into a report."""
-
-    request: dict[str, Any]
-    full: dict[str, Any]
-
-    def report(self, point: Mapping[str, float]) -> dict[str, Any]: ...
-
-
-class _LampCaseLike(_CaseLike, Protocol):
-    """A member that also carries the training landscape used by the lamps."""
-
-    seed: dict[str, Any]
-    fit: Landscape
-
-    def report(self, point: Mapping[str, float]) -> dict[str, Any]: ...
-
-
-class _SettingsLike(Protocol):
-    validation_percent: float
-    random_seed: int
-
-    def metadata(self) -> dict[str, float | bool | str]: ...
-
-
-class _GroupLike(Protocol):
-    active: str
-    axes: dict[str, Axis]
-    seed: dict[str, Any]
-    members: list[tuple[_Obj, Any]]
-    land: Landscape
-
-    def plateau(
-        self, point: Mapping[str, float], *, on_progress: _Progress | None = None
-    ) -> Any: ...
-
-    def report_members(
-        self,
-        point: Mapping[str, float],
-        best: _Obj | None,
-        settings: _SettingsLike,
-        check_cancelled: Callable[[], None],
-        on_progress: _Progress | None = None,
-    ) -> tuple[list[_Obj], bool, _Obj | None]: ...
 
 
 @dataclass(frozen=True)
@@ -108,7 +62,7 @@ def _optional_progress(
 
 
 def _report_plateau(
-    group: _GroupLike,
+    group: Any,
     point: Mapping[str, float],
     enabled: bool,
     on_progress: _OnProgress | None,
@@ -162,7 +116,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
     best, trials, attempts = report.best, report.trials, report.attempts
     check_cancelled, on_progress = report.check_cancelled, report.on_progress
     axes, seed, members, land = group.axes, group.seed, group.members, group.land
-    first = cast(_CaseLike, members[0][1])
+    first = cast(StudyWindow, members[0][1])
     records = _member_records(attempts, axes, land)
     point = best or seed
     if on_progress is not None:
@@ -207,7 +161,7 @@ def build_cohort_result(report: CohortReport) -> _Obj:
     return {**result, "run_id": run_id(result)}
 
 
-def unavailable(case: _LampCaseLike, reason: str) -> _Obj:
+def unavailable(case: StudyWindow, reason: str) -> _Obj:
     """Report an unchecked cohort whose window was not admissible."""
     candidates: list[_Obj] = []
     result = {

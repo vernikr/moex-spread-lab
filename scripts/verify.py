@@ -180,19 +180,6 @@ def always_run_files(legs: list[str]) -> list[str]:
     return files
 
 
-def _docs_steps(paths: list[str]) -> tuple[list[Step], list[str], str]:
-    docs = [p for p in paths if change_scope.is_docs_path(p)]
-    reason = (
-        f"docs-only change ({len(docs)} file(s)): whitespace, conflict markers, credential tokens"
-    )
-    steps = [Step("docs-scan", reason, [*python_cmd(), "scripts/docs_scan.py", *docs])]
-    skipped = [
-        BROWSER_SKIPPED,
-        *(f"{name} (docs-only)" for name in ("check_health.sh", "pytest", "architecture gate")),
-    ]
-    return steps, skipped, "affected/docs"
-
-
 def _testmon_available() -> bool:
     try:
         probe = subprocess.run(
@@ -211,7 +198,14 @@ def _affected_steps(base: str) -> tuple[list[Step], list[str], str]:
         paths, nod = ["__router_error__"], set()
     decision = change_scope.decide_paths(paths, new_or_deleted=nod)
     if decision.profile == "docs":
-        return _docs_steps(paths)
+        docs = [p for p in paths if change_scope.is_docs_path(p)]
+        reason = f"docs-only change ({len(docs)} file(s)): whitespace, conflict markers, tokens"
+        steps = [Step("docs-scan", reason, [*python_cmd(), "scripts/docs_scan.py", *docs])]
+        skipped = [
+            BROWSER_SKIPPED,
+            *(f"{name} (docs-only)" for name in ("check_health.sh", "pytest", "architecture gate")),
+        ]
+        return steps, skipped, "affected/docs"
     if decision.profile == "full":
         print(
             f"verify: no scoped path applies — falling back to full ({'; '.join(decision.reasons)})"

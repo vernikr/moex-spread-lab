@@ -182,14 +182,7 @@ for (const file of process.argv.slice(1)) {
 }
 if (failed) process.exitCode = 1;"""
         result = subprocess.run(
-            [
-                node,
-                "--no-warnings",
-                "--experimental-vm-modules",
-                "-e",
-                program,
-                *map(str, paths),
-            ],
+            [node, "--no-warnings", "--experimental-vm-modules", "-e", program, *map(str, paths)],
             capture_output=True,
             text=True,
             check=False,

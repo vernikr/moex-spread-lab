@@ -7,7 +7,6 @@ only in GitHub Issues and Project #2.
 | Guide | Owns |
 |---|---|
 | [execution-proof.md](execution-proof.md) | The `/`, `/proof` workbench contract: cohort coordinator, common-strategy search, lamps and scores, automatic per-entry sizing, global capital and seed, research screens, price fills, window/period table, funding-evidence policy, runtime performance contracts and every dated regression rule. |
-| [profit-audit.md](profit-audit.md) | A two-line pointer to the archived W1–W7 audit and S3 reference reproduction (kept until #229 updates the remaining inbound links); the durable rules live in `docs/decisions.md` (A-11/A-12/A-13). |
 
 Cross-cutting governance stays in the repository root: Stage-9 invariants and
 `run_id`/hash rules in `docs/stages/*`, approved boundaries in

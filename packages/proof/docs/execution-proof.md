@@ -4,7 +4,7 @@ The local workbench evaluates ordinary pairs and native calendar spreads on cach
 
 ## Homepage, automatic parameters and stability lamps (2026-11-18)
 
-`/` and `/proof` serve the same screen and deep links. The S2 homepage and its compatibility API (`/api/optimize`, `/api/screen`, `/api/run`, `/api/catalog`, `/api/runs`, `/api/searches`, `screener_search`) were **retired on 2026-11-26** (issue #243); the proof UI never called it.
+`/` and `/proof` serve the same screen and deep links.
 
 ### Scope and compatibility
 

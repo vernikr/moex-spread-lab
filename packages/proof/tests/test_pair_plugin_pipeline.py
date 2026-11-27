@@ -19,7 +19,7 @@ from moex_spread_lab.core.contracts import (
 )
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof.fixed_plugin_payload import fixed_pair_accounting
+from moex_spread_lab.proof.fixed_plugin_payload import _summary_update, fixed_pair_accounting
 from moex_spread_lab.proof.pair_plugin_accounting import (
     prepare_daily_pair_unit,
 )
@@ -435,3 +435,13 @@ def test_fixed_pair_curve_uses_each_leg_multiplier(far_mult, side, terminal, fil
     assert totals[2] == pytest.approx(final_pnl, abs=1e-7)
     assert ledger[-1]["cumulative_net_rub"] == round(final_pnl, 2)
     assert trade["net_rub"] == round(final_pnl, 2)
+    template: dict[str, Any] = {
+        "summary": dict.fromkeys(("gross_rub", "costs_rub", "net_rub"), -999)
+    }
+    _summary_update(template, trades, ledger, drawdown, totals)
+    summary = template["summary"]
+    assert [summary[key] for key in ("gross_rub", "costs_rub", "net_rub")] == [
+        round(value, 2) for value in totals
+    ]
+    assert summary["ledger_reconciliation_rub"] == 0
+    assert summary["max_excess_drawdown_rub"] == round(expected_drawdown, 2)

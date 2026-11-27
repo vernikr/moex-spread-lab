@@ -131,31 +131,6 @@ def _curve_step(
     return change, 0.0, {**position, "near": near_px, "far": far_px}
 
 
-def _entry_step(
-    row: dict[str, Any], opening: dict[str, Any], mults: tuple[float, float], quantity: int
-) -> tuple[float, float, dict[str, Any]]:
-    """Mark change and entry fees of a position opened on this row."""
-    sign = 1 if opening["side"] == "long_spread" else -1
-    enter = opening["entry"]
-    change = (
-        sign
-        * quantity
-        * (
-            (row["near"] - enter["near_price"]) * mults[0]
-            - (row["far"] - enter["far_price"]) * mults[1]
-        )
-    )
-    return (
-        change,
-        sum(enter["costs"].values()),
-        {
-            "sign": sign,
-            "near": row["near"],
-            "far": row["far"],
-        },
-    )
-
-
 def _excess_drawdown(values: list[float], marks: list[float], capital: float) -> float:
     """Maximum drawdown of the account curve measured against the LQDT benchmark."""
     peak = drawdown = 0.0
@@ -191,9 +166,15 @@ def _account_curve(
             change, fee, position = _curve_step(row, position, exits.get(day), mults, quantity)
         opening = entries.get(day) if row["volume_eligible"] else None
         if opening:
-            moved, cost, position = _entry_step(row, opening, mults, quantity)
+            enter = opening["entry"]
+            position = {
+                "sign": 1 if opening["side"] == "long_spread" else -1,
+                "near": enter["near_price"],
+                "far": enter["far_price"],
+            }
+            moved, _, position = _curve_step(row, position, None, mults, quantity)
             change += moved
-            fee += cost
+            fee += sum(enter["costs"].values())
         cumulative += change - fee + funding_by_date[day] * quantity
         precise_pnl.append(round(capital + cumulative, 8) - capital)
     values, _ = lqdt_overlay_values(
@@ -210,25 +191,15 @@ def _summary_update(
     totals: tuple[float, float, float],
 ) -> None:
     closed = [trade for trade in trades if not trade["open_at_end"]]
-    gross, costs, net = (
-        sum(trade[key] for trade in trades) for key in ("gross_rub", "costs_rub", "net_rub")
-    )
     hurdle = sum(trade["lqdt_on_margin_rub"] for trade in trades)
     template["summary"].update(
         trades=len(trades),
         closed_trades=len(closed),
         open_positions=len(trades) - len(closed),
         winners=sum(trade["net_rub"] > 0 for trade in closed),
-        gross_rub=round(gross, 2),
-        costs_rub=round(costs, 2),
-        net_rub=round(net, 2),
         cost_totals=_cost_totals(trades),
         lqdt_on_margin_rub=round(hurdle, 2),
-        excess_over_lqdt_rub=round(net - hurdle, 2),
         max_excess_drawdown_rub=round(drawdown, 2),
-        ledger_reconciliation_rub=round(
-            net - (ledger[-1]["cumulative_net_rub"] if ledger else 0), 2
-        ),
     )
     apply_raw_trade_totals(template["summary"], trades, ledger, totals)
     if abs(template["summary"]["ledger_reconciliation_rub"]) > 0.02:

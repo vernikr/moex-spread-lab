@@ -1,16 +1,20 @@
 """Registry-backed search keeps legacy family order and fails closed for new engines."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof import cohort_prepare as helpers
+from moex_spread_lab.proof import proof_kernel, proof_search, request_validation
 from moex_spread_lab.proof import proof_strategy_search as search
 from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 from moex_spread_lab.strategies import StrategyRegistry
+from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlugin
 
 DEFAULT_REGISTRY = get_strategy_registry()
 
@@ -48,7 +52,7 @@ def test_discovered_plugin_without_accounting_adapter_is_never_searched():
         supported_universes=frozenset({PAIR_UNIVERSE}),
         requires_daily_bars=False,
     )
-    registry = StrategyRegistry({**DEFAULT_REGISTRY.as_dict(), "new_plugin": fake})
+    registry = StrategyRegistry({**DEFAULT_REGISTRY.as_dict(), "new_plugin": cast(Any, fake)})
     # Injected registry, not a patched module global: the unmatched plugin is ignored.
     assert search._families(
         {"strategy": "mean_reversion"},
@@ -77,7 +81,7 @@ def test_calendar_proof_opt_in_is_narrow_and_unambiguous():
         family_id = "new_calendar"
         proof_adapter = "calendar_price_intents.v1"
 
-    plugin = NewCalendar()
+    plugin = cast(Any, NewCalendar())
     existing = DEFAULT_REGISTRY.as_dict()
     # The narrow adapter set stays unambiguous per family: the injected plugin joins because it
     # declares the adapter and owns a family of its own, while z-score stays in the shared
@@ -112,7 +116,7 @@ def test_injected_adapted_plugin_enters_the_search_without_patching():
         family_id = "drop_in_calendar"
         proof_adapter = "calendar_price_intents.v1"
 
-    plugin = DropIn()
+    plugin = cast(Any, DropIn())
     registry = StrategyRegistry({**DEFAULT_REGISTRY.as_dict(), plugin.strategy_id: plugin})
     families = search._families(
         {"strategy": plugin.strategy_id},
@@ -121,3 +125,39 @@ def test_injected_adapted_plugin_enters_the_search_without_patching():
         registry,
     )
     assert families == ["zscore_mean_reversion", "convergence_to_ruonia", "drop_in_calendar"]
+
+
+# ---- request validation and dependency injection (folded into the registry suite) ----
+
+
+def test_request_helpers_remain_reexported():
+    for name in ("EXECUTION_AXES", "execution_axes", "_identity", "_validate", "compact_result"):
+        assert getattr(proof_kernel, name) is getattr(request_validation, name.lstrip("_"))
+        assert getattr(proof_search, name) is getattr(request_validation, name.lstrip("_"))
+
+
+def test_validation_uses_injected_registry_and_rejects_invalid_options_first():
+    class CustomCalendar(CalendarZscorePlugin):
+        strategy_id = "test_calendar"
+        family_id = "test_calendar"
+        proof_adapter = "calendar_price_intents.v1"
+
+    plugin = CustomCalendar()
+    registry = StrategyRegistry(
+        {**get_strategy_registry().as_dict(), plugin.strategy_id: cast(Any, plugin)}
+    )
+    request = {"strategy": plugin.strategy_id, "parameters": {"window": 10}}
+    request_validation.validate(request, registry=registry)
+    with pytest.raises(W0Error, match="Неизвестная стратегия"):
+        request_validation.validate(request)
+    with pytest.raises(W0Error, match="optimize_strategy"):
+        request_validation.validate({**request, "optimize_strategy": 1}, registry=registry)
+    with pytest.raises(W0Error, match="количество"):
+        request_validation.validate(
+            {**request, "sizing": AUTO_SIZING, "quantity": 1}, registry=registry
+        )
+    with pytest.raises(W0Error, match="Порог выхода"):
+        request_validation.validate(
+            {**request, "parameters": {"window": 10, "entry_z": 1.0, "exit_z": 1.0}},
+            registry=registry,
+        )

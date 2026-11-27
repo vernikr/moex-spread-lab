@@ -7,7 +7,7 @@ import pytest
 from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof import proof_batch
+from moex_spread_lab.proof import cohort_prepare as helpers
 from moex_spread_lab.proof import proof_strategy_search as search
 from moex_spread_lab.proof.strategy_catalog import get_strategy_registry
 from moex_spread_lab.strategies import StrategyRegistry
@@ -57,15 +57,15 @@ def test_discovered_plugin_without_accounting_adapter_is_never_searched():
         registry,
     ) == ["mean_reversion", "funding_only"]
     with pytest.raises(W0Error, match="Неизвестная стратегия"):
-        proof_batch._native_request({"strategy": "new_plugin"}, {"universe": PAIR_UNIVERSE})
+        helpers._native_request({"strategy": "new_plugin"}, {"universe": PAIR_UNIVERSE})
 
 
 def test_seed_defaults_come_from_contextual_plugin_schema():
     assert (
-        proof_batch._active_seed({"asset": "BR"}, "zscore_mean_reversion")["window"]
-        != proof_batch._active_seed({"asset": "SR"}, "zscore_mean_reversion")["window"]
+        helpers._active_seed({"asset": "BR"}, "zscore_mean_reversion")["window"]
+        != helpers._active_seed({"asset": "SR"}, "zscore_mean_reversion")["window"]
     )
-    assert proof_batch._active_seed({}, "funding_only")["lookback"] == 20
+    assert helpers._active_seed({}, "funding_only")["lookback"] == 20
 
 
 def test_calendar_proof_opt_in_is_narrow_and_unambiguous():

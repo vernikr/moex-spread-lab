@@ -12,7 +12,8 @@ from moex_spread_lab.proof.landscape import Axis
 
 
 def test_cohort_request_helpers_remain_reexported():
-    for name in ("MAX_TARGETS", "_targets", "_translate", "_native_request", "_active_seed"):
+    # proof_batch keeps only the names it consumes; the rest are helpers-private.
+    for name in ("MAX_TARGETS", "_targets"):
         assert getattr(proof_batch, name) is getattr(helpers, name)
 
 

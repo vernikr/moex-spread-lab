@@ -21,21 +21,7 @@ from moex_spread_lab.strategies.funding_carry.carry import (
 
 from .cohort_models import Cohort, RemoteCohort
 from .cohort_prepare import MAX_TARGETS as MAX_TARGETS
-
-# Compatibility re-exports used by existing consumers.
-from .cohort_prepare import (
-    PreparationInputs,
-    RemoteCase,
-    RemoteSplit,
-    TrainingSlice,
-    active_seed,
-    confirmation,
-    filter_training,
-    intersect_axes,
-    native_request,
-    prepare_cohort,
-    translate,
-)
+from .cohort_prepare import PreparationInputs, prepare_cohort
 from .cohort_prepare import targets as _targets
 from .cohort_reporting import CohortReport, build_cohort_result
 from .cohort_reporting import shared_unavailable as _unavailable
@@ -85,15 +71,6 @@ class _CohortLike(Protocol):
     def plateau(self, point: _Obj, *, on_progress: _Step | None = None) -> Any: ...
 
 
-_active_seed = active_seed
-_confirmation = confirmation
-_filter_training = filter_training
-_intersect_axes = intersect_axes
-_native_request = native_request
-_translate = translate
-_RemoteCase = RemoteCase
-_RemoteSplit = RemoteSplit
-_TrainingSlice = TrainingSlice
 _Cohort = Cohort
 _RemoteCohort = RemoteCohort
 _identity = identity

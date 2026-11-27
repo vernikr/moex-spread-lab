@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Change-scope router and touched-file helpers (stdlib only; used by ci.yml, verify, gates).
 
-Per changed path, any unmatched path resolves to ``full``: ``docs/**`` and root-level
-``*.md`` are docs; ``packages/<p>/{src,tests}/**/*.py`` selects ``p`` plus its reverse
-dependents (any other package file selects the same legs with testmon disabled);
-everything else is ``full``, and C99/sanitizer/CI paths also set ``run_tier2``.
-Without ``--event`` it routes the working tree; with ``--event`` it routes
-``git diff base..head``, and any error, ``schedule``/``workflow_dispatch`` or a
+Per changed path, unmatched paths resolve to ``full``: ``docs/**`` and root ``*.md``
+are docs; ``packages/<p>/{src,tests}/**/*.py`` selects ``p`` plus reverse dependents
+(other package files select the same legs with testmon off); C99/sanitizer/CI paths
+also set ``run_tier2``. Without ``--event`` it routes the working tree; with ``--event``
+it routes ``git diff base..head``; any error, ``schedule``/``workflow_dispatch`` or a
 missing base resolves to full (CI contract)."""
 
 import argparse

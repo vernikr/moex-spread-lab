@@ -21,13 +21,14 @@ ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 
 # Installed uv workspace or plain checkout alike, with no runtime dependency.
-for source in sorted((ROOT / "packages").glob("*/src"), reverse=True):
-    sys.path.insert(0, str(source))
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "packages" / "core" / "tests"))
-# tests/contract imports shared fixtures from tests/: both must be importable.
-sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests"))
-sys.path.insert(0, str(ROOT / "packages" / "strategies" / "tests" / "contract"))
+# tests/contract imports shared fixtures from tests/: all must be importable.
+sys.path[:0] = [
+    str(ROOT / "packages/strategies/tests/contract"),
+    str(ROOT / "packages/strategies/tests"),
+    str(ROOT / "packages/core/tests"),
+    str(ROOT / "src"),
+    *sorted(str(p) for p in (ROOT / "packages").glob("*/src")),
+]
 
 # DAG/conformance tests import inside main() so importing this module stays light.
 

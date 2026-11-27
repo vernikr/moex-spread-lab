@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Composable repository verification profiles (stdlib only; used by ci.yml and CI health).
 
-A profile is an ordered list of named steps (commands plus sanitized pytest invocations
-with a short reason). Steps run in their own process group under ``MSL_VERIFY_TIMEOUT``
-(default 900); ``--list``/``--dry-run`` print the plan without running. ``full`` runs the
-health gate, whole suite and browser smokes; ``affected`` derives its pytest set from
-``change_scope`` (advisory only); ``quick`` keeps the first three health checks; ``health``
-and ``docs`` run just those checks. Exit 0 = all run steps passed, 1 = failure, 2 =
-unavailable. Each step appends one sanitized ``msl.verification-record/1`` line to
-``reports/perf/records.jsonl`` (``MSL_VERIFICATION_RECORDS`` overrides; empty disables)."""
+A profile is an ordered list of named steps (commands plus sanitized pytest invocations).
+Steps run in their own process group under ``MSL_VERIFY_TIMEOUT`` (default 900);
+``--dry-run`` prints commands without running. ``full`` runs the health gate, whole suite
+and browser smokes; ``affected`` derives its pytest set from ``change_scope`` (advisory);
+``quick`` keeps the first three health checks; ``health``/``docs`` run just those checks.
+Exit 0 = all run steps passed, 1 = failure, 2 = unavailable. Each step appends one
+sanitized ``msl.verification-record/1`` line to ``reports/perf/records.jsonl``
+(``MSL_VERIFICATION_RECORDS`` overrides; empty disables)."""
 
 import argparse
 import json

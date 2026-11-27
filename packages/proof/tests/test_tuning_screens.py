@@ -251,8 +251,19 @@ def test_no_free_margin_new_data_or_risk_override(tmp_path_factory):
     assert not r["allow_failed_volume"]
 
 
-def test_two_failed_screens_on_one_carry_window_still_allow_the_search(tmp_path_factory):
-    root = tmp_path_factory.mktemp("two-failures")
+def _search_request() -> dict:
+    """The funding search over the single pair target the two-screen fixture gates."""
+    return {
+        **P,
+        "strategy": "funding_only",
+        "parameters": {"lookback": 8},
+        "targets": [P],
+    }
+
+
+def _volume_anomaly(tmp_path_factory, name: str) -> tuple[Path, ProofService]:
+    """A thin-calendar root whose carry volume drops to 3 on one history row."""
+    root = tmp_path_factory.mktemp(name)
     screen_failures(root, thin_calendar=True)
     svc = ProofService(root)
     path = next((root / "data/carry-history-cache").glob("CRZ6-*.json"))
@@ -261,12 +272,12 @@ def test_two_failed_screens_on_one_carry_window_still_allow_the_search(tmp_path_
     v = h["columns"].index("VOLUME")
     h["data"][4][v] = 3
     path.write_text(json.dumps(doc))
-    req = {
-        **P,
-        "strategy": "funding_only",
-        "parameters": {"lookback": 8},
-        "targets": [P],
-    }
+    return root, svc
+
+
+def test_two_failed_screens_on_one_carry_window_still_allow_the_search(tmp_path_factory):
+    root, svc = _volume_anomaly(tmp_path_factory, "two-failures")
+    req = _search_request()
     r = research_run(svc, req, optimize=True)
     assert r["status"] == "maximum_found"
     assert r["evaluation"]["failed_screens"] == ["volume", "capital"]
@@ -278,21 +289,8 @@ def test_two_failed_screens_on_one_carry_window_still_allow_the_search(tmp_path_
     ids=["volume-denied", "capital-denied", "both-denied"],
 )
 def test_waiving_the_failed_screens_leaves_nothing_to_search(tmp_path_factory, volume, capital):
-    root = tmp_path_factory.mktemp("waive-both")
-    screen_failures(root, thin_calendar=True)
-    svc = ProofService(root)
-    path = next((root / "data/carry-history-cache").glob("CRZ6-*.json"))
-    doc = json.loads(path.read_text())
-    h = doc["payload"]["history"]
-    v = h["columns"].index("VOLUME")
-    h["data"][4][v] = 3
-    path.write_text(json.dumps(doc))
-    req = {
-        **P,
-        "strategy": "funding_only",
-        "parameters": {"lookback": 8},
-        "targets": [P],
-    }
+    root, svc = _volume_anomaly(tmp_path_factory, "waive-both")
+    req = _search_request()
     save_settings(root, {"allow_failed_capital": capital, "allow_failed_volume": volume})
     r = research_run(svc, req, optimize=True)
     assert r["remaining_count"] == 0
@@ -300,9 +298,7 @@ def test_waiving_the_failed_screens_leaves_nothing_to_search(tmp_path_factory, v
 
 
 def test_no_volume_observations_leave_the_plateau_unavailable(tmp_path_factory):
-    root = tmp_path_factory.mktemp("no-observations")
-    screen_failures(root, thin_calendar=True)
-    svc = ProofService(root)
+    root, svc = _volume_anomaly(tmp_path_factory, "no-observations")
     path = next((root / "data/carry-history-cache").glob("CRZ6-*.json"))
     doc = json.loads(path.read_text())
     h = doc["payload"]["history"]
@@ -311,13 +307,7 @@ def test_no_volume_observations_leave_the_plateau_unavailable(tmp_path_factory):
     for row in h["data"]:
         row[v] = None
     path.write_text(json.dumps(doc))
-    req = {
-        **P,
-        "strategy": "funding_only",
-        "parameters": {"lookback": 8},
-        "targets": [P],
-    }
-    r = checked_plateau(svc, req)
+    r = checked_plateau(svc, _search_request())
     assert r["plateau"] is None
     assert "Нет наблюдений" in r["excluded"][0]["reason"]
 

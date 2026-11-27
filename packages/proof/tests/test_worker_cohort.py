@@ -13,12 +13,11 @@ from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
 def test_worker_exports_and_carry_retry_keep_shared_state():
     for name in (
-        "_WORKER_COHORTS",
-        "_worker_init_cohort",
-        "_worker_release_cohort",
-        "_worker_eval_indices",
-        "_worker_eval_plateau_batch",
-        "_worker_report_cohort",
+        "worker_init_cohort",
+        "worker_release_cohort",
+        "worker_eval_indices",
+        "worker_eval_plateau_batch",
+        "worker_report_cohort",
     ):
         assert getattr(proof_pool, name) is getattr(worker_cohort, name)
     native = {"strategy": "funding_only", "parameters": {"lookback": 99}}
@@ -73,12 +72,12 @@ def test_worker_evaluation_is_sorted_and_stops_at_first_failure():
     try:
         points = {"x": {"window": 5}}
         expected = ((2, "B", "bad"), [(1, 2.0, True)])
-        assert worker_cohort._worker_eval_indices("test", points) == expected
-        assert worker_cohort._worker_eval_plateau_batch("test", [(7, points)]) == {7: expected}
-        assert worker_cohort._worker_eval_indices("test", points, exclude_idx=2) == (
+        assert worker_cohort.worker_eval_indices("test", points) == expected
+        assert worker_cohort.worker_eval_plateau_batch("test", [(7, points)]) == {7: expected}
+        assert worker_cohort.worker_eval_indices("test", points, exclude_idx=2) == (
             None,
             [(1, 2.0, True)],
         )
     finally:
-        worker_cohort._worker_release_cohort("test")
+        worker_cohort.worker_release_cohort("test")
     assert "test" not in worker_cohort._WORKER_COHORTS

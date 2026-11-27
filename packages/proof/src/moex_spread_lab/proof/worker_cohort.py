@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any
 
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
@@ -12,76 +11,20 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
-from .landscape import Axis
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
 
 if TYPE_CHECKING:
     from .service import ProofService
 
-# Wildcard surface frozen to the pre-P7.2 revision: star imports keep exposing exactly the
-# bindings they exposed before the strict-typing pass. ``_WORKER_COHORTS`` and the task
-# functions stay module attributes under their historical names because the pool facade and
-# ``spawn`` subprocess targets resolve them here.
-__all__ = [
-    "CALENDAR_UNIVERSE",
-    "Any",
-    "CalendarData",
-    "CarryStrategyError",
-    "ResearchSettings",
-    "StudyWindow",
-    "W0Error",
-    "annotations",
-    "cast",
-    "get_strategy_axes",
-]
-
-_Obj = dict[str, Any]
-_Axes = dict[str, Axis]
-_Failure = tuple[int, str, str]
-_Scores = list[tuple[int, float, bool]]
-_Evaluation = tuple[_Failure | None, _Scores]
-_ReportRow = tuple[int, _Obj, bool, _Obj | None]
-
-# The service factory stays private to `worker_window`; resolving it through the
-# module facade keeps this file off that module's protected surface.
-
-
-class _SplitLike(Protocol):
-    training: Sequence[str]
-
-    def metadata(self) -> _Obj: ...
-
-
-class _WorkerService(Protocol):
-    """Proof service handed to worker windows; the factory always installs its calendar."""
-
-    calendar_data: CalendarData
-
-
-class _FitLike(Protocol):
-    def measure(self, values: _Obj) -> _Obj: ...
-
-
-class _CaseLike(Protocol):
-    """Structural view of the untyped `StudyWindow` case used by worker tasks."""
-
-    request: _Obj
-    strategy_axes: _Axes
-    execution_axes: _Axes
-    axes: _Axes
-    seed: _Obj
-    split: _SplitLike
-    fit: _FitLike
-    full: _Obj
-
-    def admission(self) -> str | None: ...
-    def lamp_warning(self) -> str | None: ...
-    def report(self, point: _Obj) -> _Obj: ...
-
+type _Obj = dict[str, Any]
+type _Failure = tuple[int, str, str]
+type _Scores = list[tuple[int, float, bool]]
+type _Evaluation = tuple[_Failure | None, _Scores]
+type _ReportRow = tuple[int, _Obj, bool, _Obj | None]
 
 _WORKER_SERVICES: dict[str, ProofService] = {}
-_WORKER_COHORTS: dict[str, dict[int, tuple[_Obj, _CaseLike]]] = {}
+_WORKER_COHORTS: dict[str, dict[int, tuple[_Obj, Any]]] = {}
 
 
 def worker_service(root_str: str) -> ProofService:
@@ -96,46 +39,29 @@ def worker_service(root_str: str) -> ProofService:
 
 
 def _prepare_worker_case(
-    svc: _WorkerService | None,
+    svc: Any,
     native: _Obj,
-    settings: ResearchSettings,
-    benchmark: tuple[list[str], dict[str, float]],
+    settings: Any,
+    benchmark: Any,
     calendar: CalendarData | None,
-) -> _CaseLike:
+) -> StudyWindow:
     # Worker startup is lazy: discovery happens here, not at import time.
     strategy_axes = get_strategy_axes()
-    initial: _Obj = dict(cast(_Obj, native["parameters"]))
-    for name, axis in strategy_axes[cast(str, native["strategy"])].items():
+    initial: _Obj = dict(native["parameters"])
+    for name, axis in strategy_axes[native["strategy"]].items():
         if name in initial:
             initial[name] = min(axis.high, max(axis.low, initial[name]))
     try:
-        case = cast(
-            _CaseLike,
-            StudyWindow(
-                svc,
-                {**native, "parameters": initial},
-                settings,
-                benchmark,
-                calendar,
-            ),
-        )
+        return StudyWindow(svc, {**native, "parameters": initial}, settings, benchmark, calendar)
     except CarryStrategyError:
         if native["strategy"] != "funding_only" or initial["lookback"] == 5:
             raise
-        case = cast(
-            _CaseLike,
-            StudyWindow(
-                svc,
-                {**native, "parameters": {"lookback": 5}},
-                settings,
-                benchmark,
-                calendar,
-            ),
+        return StudyWindow(
+            svc, {**native, "parameters": {"lookback": 5}}, settings, benchmark, calendar
         )
-    return case
 
 
-def _worker_init_cohort(
+def worker_init_cohort(
     cohort_id: str,
     root_str: str,
     settings: ResearchSettings,
@@ -143,18 +69,17 @@ def _worker_init_cohort(
     items: list[tuple[int, _Obj, _Obj, bool]],
 ) -> list[tuple[int, str, _Obj]]:
     """Initialize assigned StudyWindows inside the worker and keep them sticky."""
-    svc = cast(_WorkerService, worker_service(root_str))
-    # The worker-service factory always installs CalendarData for this process.
-    calendar = svc.calendar_data
+    svc = worker_service(root_str)
+    calendar: CalendarData = svc.calendar_data
     bucket = _WORKER_COHORTS.setdefault(cohort_id, {})
     results: list[tuple[int, str, _Obj]] = []
     for idx, target, native, checked in items:
         try:
             if checked and target["universe"] == CALENDAR_UNIVERSE:
                 calendar.check_training_window(
-                    cast(str, target["asset"]),
-                    cast(str, target["pair"]),
-                    cast(int, native.get("quantity", 1)),
+                    target["asset"],
+                    target["pair"],
+                    native.get("quantity", 1),
                     settings,
                 )
             case = _prepare_worker_case(svc, native, settings, benchmark, calendar)
@@ -185,11 +110,11 @@ def _worker_init_cohort(
     return results
 
 
-def _worker_release_cohort(cohort_id: str) -> None:
+def worker_release_cohort(cohort_id: str) -> None:
     _WORKER_COHORTS.pop(cohort_id, None)
 
 
-def _worker_eval_indices(
+def worker_eval_indices(
     cohort_id: str,
     point_by_strategy: dict[str, _Obj],
     indices: list[int] | None = None,
@@ -203,7 +128,7 @@ def _worker_eval_indices(
         if exclude_idx is not None and idx == exclude_idx:
             continue
         target, case = bucket[idx]
-        m = case.fit.measure(point_by_strategy[cast(str, case.request["strategy"])])
+        m = case.fit.measure(point_by_strategy[case.request["strategy"]])
         score = m.get("rank_score")
         if score is None:
             return (idx, target["pair"], m.get("reason", "нет допустимого результата")), scores
@@ -211,30 +136,19 @@ def _worker_eval_indices(
     return None, scores
 
 
-def _worker_eval_plateau_batch(
+def worker_eval_plateau_batch(
     cohort_id: str,
     points: list[tuple[int, dict[str, _Obj]]],
 ) -> dict[int, _Evaluation]:
     """Evaluate all uncached plateau neighbor points across this shard's windows."""
-    bucket = _WORKER_COHORTS.get(cohort_id, {})
-    ordered_indices = sorted(bucket)
-    out: dict[int, _Evaluation] = {}
-    for p_idx, point_by_strategy in points:
-        scores: _Scores = []
-        failure: _Failure | None = None
-        for idx in ordered_indices:
-            target, case = bucket[idx]
-            m = case.fit.measure(point_by_strategy[cast(str, case.request["strategy"])])
-            score = m.get("rank_score")
-            if score is None:
-                failure = (idx, target["pair"], m.get("reason", "нет допустимого результата"))
-                break
-            scores.append((idx, float(score), m["utility"] is not None))
-        out[p_idx] = (failure, scores)
-    return out
+    ordered = sorted(_WORKER_COHORTS.get(cohort_id, {}))
+    return {
+        p_idx: worker_eval_indices(cohort_id, point_by_strategy, ordered)
+        for p_idx, point_by_strategy in points
+    }
 
 
-def _worker_report_cohort(
+def worker_report_cohort(
     cohort_id: str,
     point_by_strategy: dict[str, _Obj],
     best_is_none: bool,
@@ -245,11 +159,11 @@ def _worker_report_cohort(
     rows: list[_ReportRow] = []
     for idx in sorted(bucket):
         target, case = bucket[idx]
-        local = point_by_strategy[cast(str, case.request["strategy"])]
+        local = point_by_strategy[case.request["strategy"]]
         full = case.full
         exec_ref = bool(full.get("execution_reference", False))
         selection: _Obj = {
-            **cast(_Obj, full["selection"]),
+            **full["selection"],
             **{k: local[k] for k in case.execution_axes},
             "parameters": {k: local[k] for k in case.strategy_axes},
         }
@@ -301,17 +215,3 @@ def _worker_report_cohort(
                 )
             )
     return rows
-
-
-# Explicit aliases preserve the original spawn callables and shared state while
-# the historical private attributes remain the worker and facade patch points.
-WORKER_COHORTS = _WORKER_COHORTS
-prepare_worker_case = _prepare_worker_case
-worker_eval_indices = _worker_eval_indices
-worker_eval_plateau_batch = _worker_eval_plateau_batch
-worker_init_cohort = _worker_init_cohort
-worker_release_cohort = _worker_release_cohort
-worker_report_cohort = _worker_report_cohort
-
-
-# Typed internal exports used by other proof modules.

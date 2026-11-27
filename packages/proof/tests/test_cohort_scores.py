@@ -45,7 +45,7 @@ def test_aggregation_preserves_canonical_order_failure_and_inactive_utility():
 
 def _canary_handler(slot, phase):
     def run(name, cohort_id, point, indices=None, exclude=None):
-        assert name == "_worker_eval_indices" and cohort_id == "cohort"
+        assert name == "worker_eval_indices" and cohort_id == "cohort"
         if phase[0] == 0:
             return (
                 ((2, "C", "initial"), [(0, 1.0, True)])

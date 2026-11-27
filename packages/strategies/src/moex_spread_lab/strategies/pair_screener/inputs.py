@@ -25,7 +25,7 @@ from ..pair_data import (
     leg_volumes,
     positive_leg_days,
 )
-from .screener import _normalized_series
+from .normalization import _normalized_series
 
 __all__ = [
     "DEFAULT_TIMEFRAME",

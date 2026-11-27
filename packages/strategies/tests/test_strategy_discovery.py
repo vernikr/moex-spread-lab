@@ -228,3 +228,25 @@ def test_pair_fill_defaults_and_rejections():
             pair_fill({"fill": bad}, "funding_only")
     with pytest.raises(W0Error):
         pair_fill({"fill": "same_day_settlement"}, "mean_reversion")
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        "analytics",
+        "calendar_spreads",
+        "carry",
+        "funding_recheck",
+        "funding_screen",
+        "proof_funding",
+        "proof_signals",
+        "screener",
+        "strategies.pair_screener.screener",
+    ),
+)
+def test_retired_strategy_shims_stay_deleted(suffix):
+    # Build the name at runtime: these are absence checks, not legacy import edges.
+    module = f"moex_spread_lab.{suffix}"
+    with pytest.raises(ModuleNotFoundError) as error:
+        importlib.import_module(module)
+    assert error.value.name == module

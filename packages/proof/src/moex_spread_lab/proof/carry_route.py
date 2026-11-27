@@ -132,17 +132,16 @@ def strategy_name_of(spec: ReplaySpec) -> str:
     return plugin.strategy_id if plugin is not None else "funding_only"
 
 
-def _reference_fee(state: CarryWindowState) -> float:
-    """Round-trip taker cost of one unit of the pair at the reference settlement."""
+def reference_costs(state: CarryWindowState) -> dict[str, float]:
+    """One-unit taker cost at the reference settlement, by cost component."""
     spec = state.spec
     near, far = spec.pair["near"], spec.pair["far"]
     leg_contracts = load_contracts_for_side_cost(spec.inputs.contracts, near, far)
-    costs = side_cost(
+    return side_cost(
         tariff_profile(float(spec.execution["slippage_ticks"])),
         [(leg_contracts[near], state.ref_near), (leg_contracts[far], state.ref_far)],
         1,
     )
-    return round(sum(costs.values()), 8)
 
 
 def _pluginreport_for(
@@ -186,7 +185,7 @@ def _pluginreport_for(
         state.study,
         intents,
         quantity=int(execution["quantity"]),
-        side_cost=_reference_fee(state),
+        side_cost=round(sum(reference_costs(state).values()), 8),
         far_expiry=leg_contracts[far].get("expiry"),
         **full,
     )

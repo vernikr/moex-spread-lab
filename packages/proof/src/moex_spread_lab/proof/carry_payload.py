@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from moex_spread_lab.accounting.costs import side_cost, tariff_profile
 from moex_spread_lab.core.contracts import plugin_trust_tier
 
 from .carry_route import (
@@ -16,6 +15,7 @@ from .carry_route import (
     CarryWindowState,
     carry_plugin_of,
     funding_head,
+    reference_costs,
     report_for,
     sizing_intent_payload,
     strategy_name_of,
@@ -27,7 +27,6 @@ from .pair_payload import SPREAD_NOTES, PairPayloadSpec, pair_payload
 from .payload_tools import (
     TradeSpec,
     fill_block,
-    load_contracts_for_side_cost,
     rel_pct,
     trade_block,
 )
@@ -73,23 +72,16 @@ def _settlement_fill(
     )
 
 
-def _entry_costs(spec: ReplaySpec, state: CarryWindowState) -> dict[str, float]:
+def _entry_costs(state: CarryWindowState) -> dict[str, float]:
     """Round-trip reference side cost scaled to the requested quantity."""
-    near, far = spec.pair["near"], spec.pair["far"]
-    leg_contracts = load_contracts_for_side_cost(spec.inputs.contracts, near, far)
-    reference = side_cost(
-        tariff_profile(float(spec.execution["slippage_ticks"])),
-        [(leg_contracts[near], state.ref_near), (leg_contracts[far], state.ref_far)],
-        1,
-    )
-    quantity = int(spec.execution["quantity"])
-    return {key: round(value * quantity, 2) for key, value in reference.items()}
+    quantity = int(state.spec.execution["quantity"])
+    return {key: round(value * quantity, 2) for key, value in reference_costs(state).items()}
 
 
 def _trade_rows(state: CarryWindowState, report: dict[str, Any]) -> list[dict[str, Any]]:
     """Settlement-priced trade rows for the full payload."""
     spec = state.spec
-    costs = _entry_costs(spec, state)
+    costs = _entry_costs(state)
     daily_by_date = {row["date"]: row for row in report["daily"]}
     last_date = report["daily"][-1]["date"]
     reasons = {(sig["date"], sig["action"]): sig.get("reason") for sig in report.get("signals", [])}

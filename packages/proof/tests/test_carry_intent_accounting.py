@@ -196,3 +196,37 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
         assert any(t["exit_execution_date"] for t in actual["trades"])
     for got, expected in zip(actual["daily"], native["daily"], strict=True):
         assert all(got[k] == v for k, v in expected.items()), (got, expected)
+
+
+def test_reference_cost_components_keep_scaling_and_rounding(monkeypatch):
+    from types import SimpleNamespace
+    from typing import cast
+
+    from moex_spread_lab.proof import carry_route
+    from moex_spread_lab.proof.carry_payload import _entry_costs
+
+    contracts = {"near": {"name": "N"}, "far": {"name": "F"}}
+    calls = []
+    state = cast(
+        carry_route.CarryWindowState,
+        SimpleNamespace(
+            spec=SimpleNamespace(
+                pair={"near": "near", "far": "far"},
+                inputs=SimpleNamespace(contracts="source"),
+                execution={"quantity": 3, "slippage_ticks": 1.5},
+            ),
+            ref_near=100.0,
+            ref_far=105.0,
+        ),
+    )
+    monkeypatch.setattr(carry_route, "load_contracts_for_side_cost", lambda *args: contracts)
+    monkeypatch.setattr(carry_route, "tariff_profile", lambda slip: slip)
+
+    def side_cost(profile, legs, quantity):
+        calls.append((profile, legs, quantity))
+        return {"exchange": 0.004, "slippage": 0.005}
+
+    monkeypatch.setattr(carry_route, "side_cost", side_cost)
+    assert carry_route.reference_costs(state) == {"exchange": 0.004, "slippage": 0.005}
+    assert _entry_costs(state) == {"exchange": 0.01, "slippage": 0.01}
+    assert calls == [(1.5, [(contracts["near"], 100.0), (contracts["far"], 105.0)], 1)] * 2

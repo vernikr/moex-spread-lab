@@ -10,7 +10,7 @@ from typing import Any, Protocol, cast
 
 from moex_spread_lab.core.w0 import W0Error
 
-from .phase_metrics import measure_phase
+from .worker_metrics import measure_phase
 
 GREEN = 70
 AMBER = 40

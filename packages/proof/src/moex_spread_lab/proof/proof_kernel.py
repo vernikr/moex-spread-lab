@@ -31,7 +31,6 @@ from .evaluation import excess_curve as _excess_curve
 from .evaluation import missing_exposure as _missing_exposure
 from .landscape import Axis, Landscape
 from .landscape import ordered as _ordered
-from .phase_metrics import measure_phase as measure_phase
 from .request_validation import EXECUTION_AXES as EXECUTION_AXES
 from .request_validation import compact_result as compact_result
 from .request_validation import execution_axes as execution_axes
@@ -40,6 +39,7 @@ from .request_validation import validate as _validate
 from .service import reference_eval as reference_eval
 from .service import shared_mark as _mark
 from .strategy_catalog import get_strategy_axes as get_strategy_axes
+from .worker_metrics import measure_phase as measure_phase
 
 _identity = identity
 

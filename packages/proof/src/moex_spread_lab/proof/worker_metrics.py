@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import resource
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from functools import wraps
+from typing import Any, ParamSpec, TypeVar
 
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 
@@ -86,3 +88,42 @@ def unwrap_worker_result(value: Any) -> Any:
     for name, count in value.cache.items():
         totals.cache[name] += count
     return value.result
+
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+_PHASE_METRICS: ContextVar[dict[str, float] | None] = ContextVar("msl_phase_metrics", default=None)
+_PHASE_ACTIVE: ContextVar[frozenset[str]] = ContextVar("msl_phase_active", default=frozenset())
+
+
+@contextmanager
+def collect_phase_metrics() -> Generator[dict[str, float]]:
+    timings: dict[str, float] = {}
+    token = _PHASE_METRICS.set(timings)
+    active_token = _PHASE_ACTIVE.set(frozenset())
+    try:
+        yield timings
+    finally:
+        _PHASE_ACTIVE.reset(active_token)
+        _PHASE_METRICS.reset(token)
+
+
+def measure_phase(name: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    def decorate(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+        @wraps(fn)
+        def call(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            timings = _PHASE_METRICS.get()
+            active = _PHASE_ACTIVE.get()
+            if timings is None or name in active:
+                return fn(*args, **kwargs)
+            token = _PHASE_ACTIVE.set(active | {name})
+            started = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                timings[name] = timings.get(name, 0.0) + (time.perf_counter() - started) * 1000
+                _PHASE_ACTIVE.reset(token)
+
+        return call
+
+    return decorate

@@ -26,12 +26,11 @@ from moex_spread_lab.core import _fastcore_loader
 from moex_spread_lab.core.cache_metrics import collect_cache_metrics
 from moex_spread_lab.core.settings import settings_with_override
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.proof.phase_metrics import collect_phase_metrics
 from moex_spread_lab.proof.proof_batch import checked_plateau
 from moex_spread_lab.proof.proof_pool import configured_workers
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.proof_windows import window_summaries
-from moex_spread_lab.proof.worker_metrics import collect_worker_metrics
+from moex_spread_lab.proof.worker_metrics import collect_phase_metrics, collect_worker_metrics
 
 _STARTED = time.monotonic()
 _STARTED_AT = datetime.now(UTC).isoformat()

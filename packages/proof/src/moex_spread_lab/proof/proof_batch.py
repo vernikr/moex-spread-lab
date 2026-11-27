@@ -39,7 +39,6 @@ from .cohort_prepare import (
 from .cohort_prepare import targets as _targets
 from .cohort_reporting import CohortReport, build_cohort_result
 from .cohort_reporting import shared_unavailable as _unavailable
-from .phase_metrics import measure_phase
 from .proof_kernel import TRIALS, StudyWindow, TuningOptions, resolve_seed
 from .proof_kernel import Axis as Axis
 from .proof_kernel import tune as _tune
@@ -50,6 +49,7 @@ from .request_validation import identity
 from .service import shared_benchmark_marks as _benchmark_marks
 from .strategy_catalog import get_strategy_axes
 from .strategy_catalog import resolve_strategy_registry as resolve_strategy_registry
+from .worker_metrics import measure_phase
 
 _Obj = dict[str, Any]
 _Progress = Callable[[_Obj], Any]

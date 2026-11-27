@@ -11,7 +11,7 @@ from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
 from .landscape import Landscape, lamps, probe_points
-from .phase_metrics import measure_phase
+from .worker_metrics import measure_phase
 
 if TYPE_CHECKING:
     from .proof_pool import CohortWorkerPool

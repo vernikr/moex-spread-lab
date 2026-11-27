@@ -17,6 +17,8 @@ from moex_spread_lab.core.timeframes import get_timeframe
 from moex_spread_lab.strategies.pair_mean_reversion.analytics import compute_rolling_z
 from moex_spread_lab.strategies.pair_screener.pair_screener import _session_volumes
 
+from .payload_tools import min_leg_volume
+
 
 @dataclass(frozen=True, slots=True)
 class ReplaySpec:
@@ -138,15 +140,12 @@ def _smallest_leg_volume(window: PairMarketWindow) -> float | None:
     sessions = sessions_for(window)
     near, far = window.spec.pair["near"], window.spec.pair["far"]
     near_volumes, far_volumes = sessions.get(near, {}), sessions.get(far, {})
-    volumes: list[float] = []
-    for row in window.series["rows"]:
+
+    def leg_volumes(row: dict[str, Any]) -> tuple[Any, Any]:
         session_date = row.get("session_date", row["date"][:10])
-        near_volume, far_volume = near_volumes.get(session_date), far_volumes.get(session_date)
-        if near_volume is None or far_volume is None:
-            continue
-        if float(near_volume) > 0 and float(far_volume) > 0:
-            volumes.append(min(float(near_volume), float(far_volume)))
-    return min(volumes) if volumes else None
+        return near_volumes.get(session_date), far_volumes.get(session_date)
+
+    return min_leg_volume(leg_volumes(row) for row in window.series["rows"])
 
 
 def window_meta(window: PairMarketWindow) -> dict[str, Any]:

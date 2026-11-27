@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 from bisect import bisect_right
+from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -232,17 +233,26 @@ def days_held(entry_date: str, exit_date: str) -> int | float | None:
         return None
 
 
-def observed_min_leg_volume(series_rows: list[dict[str, Any]]) -> float | None:
-    """Smallest observed min-leg volume; rows with a missing or zero leg are skipped."""
+def min_leg_volume(pairs: Iterable[tuple[Any, Any]]) -> float | None:
+    """Smallest min-leg volume over observations where both legs are present and positive."""
     volumes: list[float] = []
-    for row in series_rows:
-        near_volume = row.get("near_session_volume", row.get("near_volume"))
-        far_volume = row.get("far_session_volume", row.get("far_volume"))
+    for near_volume, far_volume in pairs:
         if near_volume is None or far_volume is None:
             continue
         if float(near_volume) > 0 and float(far_volume) > 0:
             volumes.append(min(float(near_volume), float(far_volume)))
     return min(volumes) if volumes else None
+
+
+def observed_min_leg_volume(series_rows: list[dict[str, Any]]) -> float | None:
+    """Smallest observed min-leg volume; rows with a missing or zero leg are skipped."""
+    return min_leg_volume(
+        (
+            row.get("near_session_volume", row.get("near_volume")),
+            row.get("far_session_volume", row.get("far_volume")),
+        )
+        for row in series_rows
+    )
 
 
 def fill_block(

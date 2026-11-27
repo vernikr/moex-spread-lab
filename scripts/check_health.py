@@ -168,9 +168,8 @@ def report(
             print(log.read_text(encoding="utf-8", errors="replace"), end="")
         if status == "passed" and not scope.changed:
             advisories = _advisories(log)
-            print(
-                f"{name}: passed ({secs}s{f', {len(advisories)} advisory' if advisories else ''})"
-            )
+            suffix = f", {len(advisories)} advisory" if advisories else ""
+            print(f"{name}: passed ({secs}s{suffix})")
             print("".join(f"  {line}\n" for line in advisories[:5]), end="")
             if len(advisories) > 5:
                 print(f"  advisory: … (see {name} log)")

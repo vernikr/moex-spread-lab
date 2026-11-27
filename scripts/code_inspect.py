@@ -110,11 +110,10 @@ def outline(path: Path) -> int:
         except (AttributeError, ValueError):
             args = "..."
         print(f"  {node.lineno}-{end}: {prefix} {node.name}({args}) [CCN {_complexity(node)}]")
-    classes = sorted(
+    for node in sorted(
         (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)),
         key=lambda item: item.lineno,
-    )
-    for node in classes:
+    ):
         print(f"  {node.lineno}-{node.end_lineno or node.lineno}: class {node.name}")
     return 0
 

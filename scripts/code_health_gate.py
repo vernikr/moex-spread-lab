@@ -203,9 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             f"code-health-gate: baseline reductions recorded in {BASELINE_PATH.relative_to(ROOT)}"
         )
     elif args.changed:
-        print(
-            f"code-health-gate (changed): passed ({len(file_metrics)} touched files; base {args.base})"
-        )
+        print(f"code-health-gate (changed): passed ({len(file_metrics)} touched; base {args.base})")
         print(f"skipped: {', '.join(skipped) or 'nothing'}")
     else:
         print("code-health-gate: passed")

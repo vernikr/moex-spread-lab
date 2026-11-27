@@ -22,11 +22,24 @@ from scripts.code_health_gate_common import (
 )
 
 
-def _parity_inventory(
-    test_tree: ast.Module, test_path: Path
-) -> tuple[dict[str, str] | None, str | None]:
+def _fastcore_parity_failures() -> list[str]:
+    c_path = ROOT / "packages/core/src/moex_spread_lab/core/_fastcore.c"
+    test_path = ROOT / "packages/proof/tests/test_fastcore_parity.py"
+    try:
+        c_source = c_path.read_text(encoding="utf-8")
+        test_tree = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
+    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+        raise GateError(f"cannot read or parse fastcore parity sources: {exc}") from exc
+    table_start = c_source.find("FastCoreMethods[]")
+    body_start = c_source.find("{", table_start)
+    table_end = c_source.find("};", body_start)
+    if min(table_start, body_start, table_end) < 0:
+        return ["_fastcore.c: FastCoreMethods table was not found"]
+    exports = re.findall(r'\{\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,', c_source[body_start:table_end])
+    if not exports:
+        return ["_fastcore.c: FastCoreMethods table contains no exported methods"]
     rel = test_path.relative_to(ROOT)
-    node = next(
+    inventory_node = next(
         (
             node
             for node in test_tree.body
@@ -38,20 +51,35 @@ def _parity_inventory(
         ),
         None,
     )
-    if node is None:
-        return None, f"{rel}: FASTCORE_EXPORT_PARITY_TESTS inventory is missing"
+    if inventory_node is None:
+        return [f"{rel}: FASTCORE_EXPORT_PARITY_TESTS inventory is missing"]
     try:
-        inventory = ast.literal_eval(node.value)
+        inventory = ast.literal_eval(inventory_node.value)
     except (ValueError, TypeError):
-        return None, f"{rel}: parity inventory must be a literal mapping"
+        return [f"{rel}: parity inventory must be a literal mapping"]
     if not isinstance(inventory, dict) or not all(
         isinstance(name, str) and isinstance(target, str) for name, target in inventory.items()
     ):
-        return None, f"{rel}: parity inventory must map export names to test targets"
-    return inventory, None
+        return [f"{rel}: parity inventory must map export names to test targets"]
+    failures = []
+    missing = sorted(set(exports) - set(inventory))
+    extra = sorted(set(inventory) - set(exports))
+    if missing:
+        failures.append(f"{rel}: add parity tests for C exports {', '.join(missing)}")
+    if extra:
+        failures.append(f"{rel}: remove stale C exports {', '.join(extra)} from parity inventory")
+    for export in sorted(set(exports) & set(inventory)):
+        target = inventory[export]
+        if "::" not in target:
+            failures.append(f"{rel}: invalid parity test target for {export}: {target}")
+            continue
+        relative, selector = target.split("::", 1)
+        if not _target_exists(relative, selector):
+            failures.append(f"{export}: parity test target does not exist: {target}")
+    return failures
 
 
-def _parity_target_exists(relative: str, selector: str) -> bool:
+def _target_exists(relative: str, selector: str) -> bool:
     if not selector or Path(relative).is_absolute() or ".." in Path(relative).parts:
         return False
     path = ROOT / relative
@@ -74,44 +102,6 @@ def _parity_target_exists(relative: str, selector: str) -> bool:
         )
         for node in tree.body
     )
-
-
-def _fastcore_parity_failures() -> list[str]:
-    c_path = ROOT / "packages/core/src/moex_spread_lab/core/_fastcore.c"
-    test_path = ROOT / "packages/proof/tests/test_fastcore_parity.py"
-    try:
-        c_source = c_path.read_text(encoding="utf-8")
-        test_tree = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
-    except (OSError, UnicodeDecodeError, SyntaxError) as exc:
-        raise GateError(f"cannot read or parse fastcore parity sources: {exc}") from exc
-    table_start = c_source.find("FastCoreMethods[]")
-    body_start = c_source.find("{", table_start)
-    table_end = c_source.find("};", body_start)
-    if min(table_start, body_start, table_end) < 0:
-        return ["_fastcore.c: FastCoreMethods table was not found"]
-    exports = re.findall(r'\{\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,', c_source[body_start:table_end])
-    if not exports:
-        return ["_fastcore.c: FastCoreMethods table contains no exported methods"]
-    inventory, error = _parity_inventory(test_tree, test_path)
-    if inventory is None:
-        return [error or "fastcore parity inventory is malformed"]
-    rel = test_path.relative_to(ROOT)
-    failures = []
-    missing = sorted(set(exports) - set(inventory))
-    extra = sorted(set(inventory) - set(exports))
-    if missing:
-        failures.append(f"{rel}: add parity tests for C exports {', '.join(missing)}")
-    if extra:
-        failures.append(f"{rel}: remove stale C exports {', '.join(extra)} from parity inventory")
-    for export in sorted(set(exports) & set(inventory)):
-        target = inventory[export]
-        if "::" not in target:
-            failures.append(f"{rel}: invalid parity test target for {export}: {target}")
-            continue
-        relative, selector = target.split("::", 1)
-        if not _parity_target_exists(relative, selector):
-            failures.append(f"{export}: parity test target does not exist: {target}")
-    return failures
 
 
 def _broad_exception(node: ast.expr | None) -> bool:

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Docs-file integrity scan (plan S2 docs profile).
 
-Checks changed Markdown/docs files for trailing whitespace, conflict markers and
-credential-shaped tokens. Exit 0 = clean, 1 = findings, 2 = usage error. ``--links``
-additionally verifies relative links/anchors; ``--repo --links`` checks the authored
-docs surface and skips the style scan (changed files only). Preserved evidence is
-excluded from link checking because it is reproduced as received: ``docs/inputs/``
-(bytes pinned by ``docs/inputs/manifest.json``), ``docs/research/results/received/``
-and ``docs/research/reuse/``."""
+Checks changed Markdown/docs for trailing whitespace, conflict markers and
+credential-shaped tokens. Exit 0 = clean, 1 = findings, 2 = usage error.
+``--links`` verifies relative links/anchors; ``--repo --links`` checks the
+authored docs surface and skips the style scan (changed files only).
+Preserved evidence is excluded from link checking because it is reproduced
+as received: ``docs/inputs/`` (pinned by ``docs/inputs/manifest.json``),
+``docs/research/results/received/`` and ``docs/research/reuse/``."""
 
 import argparse
 import re
@@ -22,7 +22,7 @@ _CREDENTIAL_RE = re.compile(
 _CONFLICT_MARKERS = ("<<<<<<<", ">>>>>>>", "|||||||")
 _LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-# Verbatim/redacted user inputs: pinned by docs/inputs/manifest.json, never edited.
+# Verbatim user inputs: pinned by docs/inputs/manifest.json, never edited.
 _EXCLUDED_PREFIXES = (
     "docs/inputs/",
     "docs/research/results/received/",

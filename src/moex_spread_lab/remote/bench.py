@@ -1,9 +1,8 @@
 """Offline benchmark helpers for a workstation and disposable candidate worktree.
 
-Data is provisioned privately by default (copy-on-write clone on macOS, byte copy
-elsewhere); ``MOEX_BENCH_DATA=symlink`` opts into a read-only symlink farm. The
-candidate is trusted code, not a security sandbox — see ``remote.candidate_data``.
-"""
+Data is provisioned privately by default (CoW clone on macOS, byte copy
+elsewhere); ``MOEX_BENCH_DATA=symlink`` opts into a read-only symlink farm.
+The candidate is trusted code, not a sandbox — see ``remote.candidate_data``."""
 
 import fcntl
 import hashlib
@@ -42,7 +41,7 @@ def normalize_provenance(full: Any, root: Path | None) -> Any:
     provenance = dict(raw)
     for key, entry in provenance.items():
         if key.endswith("_path") and isinstance(entry, str) and Path(entry).is_absolute():
-            # External paths stay unchanged, and cannot compare equal accidentally.
+            # External paths stay unchanged (cannot compare equal by accident).
             with suppress(ValueError):
                 provenance[key] = "$ROOT/" + str(Path(entry).resolve().relative_to(root.resolve()))
     return {**full, "provenance": provenance}

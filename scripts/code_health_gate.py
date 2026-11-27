@@ -74,7 +74,7 @@ def _run_complexipy(paths: list[Path] | None = None) -> dict[str, int]:
     executable = shutil.which("complexipy")
     if executable is None:
         raise GateError("complexipy is not installed; run `uv sync --frozen`")
-    # complexipy reports only file basenames: batch unique names, run duplicates alone.
+    # complexipy reports basenames only: batch uniques, split duplicates.
     runs: list[tuple[list[Path], str | None]] = [([], None)] if paths is None else []
     if paths is not None:
         by_name: dict[str, list[Path]] = {}
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--update-baseline",
         action="store_true",
-        help="lock in reductions only; never accept new growth or new offenders",
+        help="record reductions only; never accept growth",
     )
     parser.add_argument("--changed", action="store_true", help="only check touched files")
     parser.add_argument("--base", default="HEAD", help="base revision for --changed")

@@ -179,7 +179,7 @@ def status(root: Path) -> dict[str, Any]:
 
 def sync(root: Path) -> dict[str, Any]:
     if command(root, "git", "status", "--porcelain", "--untracked-files=no"):
-        raise RuntimeError("tracked changes; refusing to sync")
+        raise RuntimeError("tracked checkout changes; refusing to sync")
     if command(root, "git", "branch", "--show-current") != "main":
         raise RuntimeError("not on main; refusing to sync")
     if not service(root)["launchd_loaded"]:
@@ -196,7 +196,7 @@ def sync(root: Path) -> dict[str, Any]:
         "changed_files": 0,
     }
     if old == new:
-        # Repeated-SHA no-op: the daemon already serves this head.
+        # Repeated-SHA no-op: daemon already serves this head.
         return _sync_result(old, old, "up-to-date", "skipped-up-to-date", "not-required", **state)
     changed = command(root, "git", "diff", "--name-only", f"{old}..{new}").splitlines()
     command(root, "git", "merge", "--ff-only", "origin/main")

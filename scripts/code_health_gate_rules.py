@@ -337,7 +337,7 @@ def _c_function_failures(current: dict[str, dict[str, int]], baseline: dict[str,
 def _baseline_entry_is_obsolete(relative: str, metrics: dict[str, int]) -> bool:
     archetype, budget = _budget_for(relative)
     if archetype == "kernel":
-        # The C99 kernel is one translation unit: keep its LOC ratchet above the soft target.
+        # Kernel keeps its LOC ratchet above the soft target.
         return metrics["loc"] <= budget["soft_loc"]
     return metrics["loc"] <= budget["hard_loc"] and metrics["tokens"] <= budget["hard_tokens"]
 

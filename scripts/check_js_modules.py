@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Lightweight checks for the project's ES modules; Node adds a full syntax check.
 
-The identifier guard is heuristic, not a JS scope analyser: it checks references to
-sibling top-level declarations and ignores properties and object keys. Node is
-optional; without it syntax checking is skipped explicitly.
-"""
+The identifier guard is heuristic, not a JS scope analyser: it checks references
+to sibling top-level declarations and ignores properties/object keys. Node is
+optional; without it syntax checking is skipped."""
 
 import re
 import shutil
@@ -20,7 +19,7 @@ DECL = re.compile(
     rf"^(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+({IDENT})", re.M
 )
 EXPORTED = re.compile(rf"^export\s+(?:async\s+)?(?:function|class|const|let|var)\s+({IDENT})", re.M)
-# Preserve template interpolations while masking strings and comments.
+# Preserve ${...} interpolations while masking strings and comments.
 MASK = re.compile(r"//[^\n]*|/\*[\s\S]*?\*/|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
 TOKEN = re.compile(rf"{IDENT}|\?\.|[^\s]", re.M)
 

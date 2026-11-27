@@ -1,9 +1,4 @@
-"""Candidate interpreter selection for bench worktrees.
-
-Keeps ``remote.bench`` under the token ceiling; the trust decision
-(reuse root ``.venv`` with ``PYTHONPATH`` shadowing vs. isolated sync) lives
-here next to the verification that the candidate actually shadows the root.
-"""
+"""Candidate interpreter selection for bench worktrees (keeps ``remote.bench`` lean)."""
 
 import os
 import subprocess

@@ -30,7 +30,7 @@ _TEXT_COLS = {
     "Second Location",
     "Function",
 }
-# (title, payload key, empty message, [(header, str.format_map template)]); "#" is prepended.
+# (title, payload key, empty message, [(header, format_map template)]); "#" prepended.
 _TABLES: tuple[tuple[str, str, str, list[tuple[str, str]]], ...] = (
     (
         "Top-10 Hotspots (Lowest Code Health × 90d Churn)",

@@ -2,11 +2,11 @@
 """Run the standalone browser smoke suites offline with a shared browser per worker.
 
 Each worker launches Chromium once; every suite's ``scenario(browser)`` keeps its
-own ``BrowserContext`` and loopback server (no shared writable state); fixture
-templates are built once per worker and cloned per suite (``_templates``); a
-scenario asserting no numerical result may bound its Optuna budget
-(``_harness.ui_only_trials``). Each suite reports its phase split as one
-``MOEX_SMOKE_PHASES`` line; the runner aggregates them into the printed table."""
+own context and loopback server (no shared writable state); templates are built
+once per worker and cloned per suite (``_templates``); a scenario asserting no
+numerical result may bound its Optuna budget (``_harness.ui_only_trials``).
+Each suite reports its phase split as one ``MOEX_SMOKE_PHASES`` line; the runner
+aggregates them into the printed table."""
 
 import argparse
 import io

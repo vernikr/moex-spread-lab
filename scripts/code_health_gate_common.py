@@ -12,20 +12,20 @@ SOURCE_SUFFIXES = {".py", ".c", ".js", ".css", ".html"}
 EXCLUDED_PARTS = {"vendor", "__pycache__"}
 ALLOW_MARKER = "code-health: allow broad exception:"
 
-# Tiered size policy: soft green, advisory yellow (never fails), hard red (fails CI).
-# Complexity and the import DAG stay strictly hard — they drive reasoning cost.
+# Tiered size policy: soft green, advisory yellow (never fails), hard red (fails CI);
+# complexity and the import DAG stay strictly hard — they drive reasoning cost.
 FILE_BUDGETS: dict[str, dict[str, int]] = {
     "production": {"soft_loc": 400, "soft_tokens": 4000, "hard_loc": 600, "hard_tokens": 6000},
     "declarative": {"soft_loc": 550, "soft_tokens": 5500, "hard_loc": 800, "hard_tokens": 8000},
     "tests": {"soft_loc": 600, "soft_tokens": 6500, "hard_loc": 900, "hard_tokens": 9500},
-    # The C99 kernel is one atomically compiled translation unit: LOC only.
+    # C99 kernel: one translation unit, LOC only.
     "kernel": {"soft_loc": 900, "hard_loc": 1350},
 }
 DECLARATIVE_STEMS = ("contracts", "universe", "catalog", "cli_parsers", "registry")
 DECLARATIVE_COMPOUND_STEMS = tuple(f"_{stem}" for stem in DECLARATIVE_STEMS)
 DECLARATIVE_SUFFIXES = (".html", ".css")
 DECLARATIVE_DIRS = ("universe",)
-# Anti-fragmentation: token-driven splits produce shallow pass-through shards (Ousterhout).
+# Anti-fragmentation: token splits produce shallow pass-through shards (Ousterhout).
 FORBIDDEN_FRAGMENT_PATTERNS: dict[str, str] = {
     "p72 overflow shard": r"p72",
     "issue-numbered shard": r"(?:^|[_-])\d{2,4}(?:$|[_-])",
@@ -33,7 +33,7 @@ FORBIDDEN_FRAGMENT_PATTERNS: dict[str, str] = {
 }
 SHALLOW_SHARD_MAX_LOC = 40
 SHALLOW_SHARD_MAX_CALLERS = 1
-# Package totals are a split-vs-cohesion signal: only material regressions report.
+# Package totals signal split-vs-cohesion; only material regressions report.
 PACKAGE_TOKEN_TOLERANCE_PCT = 2
 
 POLICY: dict[str, Any] = {

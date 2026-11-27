@@ -18,8 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    # Remote commands must not import every strategy/web plugin just to contact
-    # the bridge. The normal parser still discovers all installed providers.
+    # Remote skips plugin discovery; the normal parser still loads providers.
     if len(sys.argv) > 1 and sys.argv[1] == "remote":
         parser = argparse.ArgumentParser(prog="moex-spread-lab")
         register_remote(parser.add_subparsers(dest="command", required=True))

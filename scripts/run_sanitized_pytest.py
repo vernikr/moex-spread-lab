@@ -138,9 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         supp_path.write_text(LSAN_SUPPRESSIONS, encoding="utf-8")
         env = build_sanitized_env(asan_runtime, supp_path)
         bootstrap = (
-            "import os, pytest, sys; "
-            "rt = os.environ.get('MOEX_FASTCORE_ASAN_RUNTIME'); "
-            "os.environ['DYLD_INSERT_LIBRARIES'] = rt if (sys.platform == 'darwin' and rt and not os.environ.get('DYLD_INSERT_LIBRARIES')) else os.environ.get('DYLD_INSERT_LIBRARIES', ''); "
+            "import os,pytest,sys;rt=os.environ.get('MOEX_FASTCORE_ASAN_RUNTIME');"
+            "os.environ['DYLD_INSERT_LIBRARIES']=os.environ.get('DYLD_INSERT_LIBRARIES')"
+            " or (rt if sys.platform=='darwin' else '');"
             "raise SystemExit(pytest.main(sys.argv[1:]))"
         )
         # sys.executable bypasses macOS SIP stripping; DYLD_* is restored in-process

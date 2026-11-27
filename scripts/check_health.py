@@ -190,6 +190,14 @@ def _scope(args: argparse.Namespace) -> Scope:
     return Scope(True, args.base, touched, bool(touched) and imports_changed(args.base))
 
 
+def _write_status(mode_: str, results_: list[tuple[str, str, int]]) -> None:
+    if target := os.environ.get("MSL_HEALTH_STATUS_FILE"):
+        checks = {name: status for name, status, _ in results_}
+        Path(target).write_text(
+            json.dumps({"mode": mode_, "checks": checks}) + "\n", encoding="utf-8"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="check_health.sh", description=__doc__)
     parser.add_argument("--verbose", "-v", action="store_true", help="print every check's log")
@@ -201,14 +209,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     started = time.monotonic()
     mode = "changed" if args.changed else "full"
-
-    def _write_status(mode_: str, results_: list[tuple[str, str, int]]) -> None:
-        if target := os.environ.get("MSL_HEALTH_STATUS_FILE"):
-            checks = {name: status for name, status, _ in results_}
-            Path(target).write_text(
-                json.dumps({"mode": mode_, "checks": checks}) + "\n", encoding="utf-8"
-            )
-
     try:
         scope = _scope(args)
     except RuntimeError as exc:

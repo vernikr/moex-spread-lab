@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Composable repository verification profiles (stdlib only; used by ci.yml and CI health).
 
-A profile is an ordered list of named steps (commands plus sanitized pytest invocations).
-Steps run in their own process group under ``MSL_VERIFY_TIMEOUT`` (default 900);
-``--dry-run`` prints commands without running. ``full`` runs the health gate, whole suite
-and browser smokes; ``affected`` derives its pytest set from ``change_scope`` (advisory);
-``quick`` keeps the first three health checks; ``health``/``docs`` run just those checks.
-Exit 0 = all run steps passed, 1 = failure, 2 = unavailable. Each step appends one
-sanitized ``msl.verification-record/1`` line to ``reports/perf/records.jsonl``
-(``MSL_VERIFICATION_RECORDS`` overrides; empty disables)."""
+A profile is an ordered list of named steps (commands plus sanitized pytest
+invocations). Steps run in their own process group under ``MSL_VERIFY_TIMEOUT``
+(default 900); ``--dry-run`` prints commands without running. ``full`` = health
+gate + whole suite + browser smokes; ``affected`` derives its pytest set from
+``change_scope`` (advisory); ``quick`` = first three health checks; ``health``/
+``docs`` = just those checks. Exit 0 = all run steps passed, 1 = failure, 2 =
+unavailable. Each step appends one sanitized ``msl.verification-record/1`` line
+to ``reports/perf/records.jsonl`` (``MSL_VERIFICATION_RECORDS`` overrides)."""
 
 import argparse
 import json
@@ -113,7 +113,7 @@ def _status_of(returncode: int, detail: dict[str, str] | None = None) -> str:
     return {0: "passed", 127: "unavailable"}.get(returncode, "failed")
 
 
-def _record(step: Step, started: datetime, wall: float, rc: int, detail: dict | None) -> dict:
+def _record(step: Step, wall: float, rc: int, detail: dict | None) -> dict:
     return {
         "schema": "msl.verification-record/1",
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -122,7 +122,6 @@ def _record(step: Step, started: datetime, wall: float, rc: int, detail: dict | 
         "workers": worker_count() if "pytest" in step.command else os.cpu_count() or 1,
         "durations": {"call_s": round(wall, 3)},
         "outcome": _status_of(rc, detail),
-        "started": started.isoformat(timespec="seconds"),
         "command": [sanitize(item) for item in step.command],
         "checks_detail": detail,
     }
@@ -132,7 +131,7 @@ def run_step(step: Step, records: Path, dry_run: bool) -> tuple[str, float]:
     if dry_run:
         print(f"dry-run [{step.key}]: {' '.join(step.command)}")
         return "not run", 0.0
-    started, t0 = datetime.now(UTC), time.monotonic()
+    t0 = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="msl-verify-") as tmp:
         status_file = Path(tmp) / "health.json"
         env = {
@@ -153,7 +152,7 @@ def run_step(step: Step, records: Path, dry_run: bool) -> tuple[str, float]:
         except (OSError, ValueError, KeyError, AttributeError):
             detail = None
     wall = time.monotonic() - t0
-    record = _record(step, started, wall, rc, detail)
+    record = _record(step, wall, rc, detail)
     records.parent.mkdir(parents=True, exist_ok=True)
     with records.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")

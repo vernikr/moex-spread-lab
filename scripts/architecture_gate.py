@@ -1,10 +1,8 @@
 """Run the repository-wide, dependency-light architecture gate.
 
-Reuses the checked-in DAG/conformance tests and invokes the governance CLI check
-in-process for the fast CI gate; full behavioral and numerical suites run in the
-package test matrix. Package-manifest conformance (#140) is validated stdlib-only
-(``json`` + ``tomllib``), so manifest drift fails before any heavy import.
-"""
+Reuses the checked-in DAG/conformance tests and invokes the governance CLI
+check in-process for the fast CI gate. Manifest conformance (#140) is
+stdlib-only (``json`` + ``tomllib``) so drift fails before any heavy import."""
 
 import argparse
 import json
@@ -32,8 +30,7 @@ sys.path[:0] = [
 
 # DAG/conformance tests import inside main() so importing this module stays light.
 
-# Stage-5 required keys for every packages/<name>/manifest.json
-# (docs/stages/05-architecture.md, "Module contract").
+# Stage-5 required manifest keys (docs/stages/05-architecture.md, "Module contract").
 REQUIRED_MANIFEST_KEYS = (
     "module_id",
     "release",

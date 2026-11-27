@@ -108,10 +108,7 @@ def outline(path: Path) -> int:
     for node in sorted(functions, key=lambda item: (item.lineno, item.name)):
         end = node.end_lineno or node.lineno
         prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
-        try:
-            args = ast.unparse(node.args)
-        except (AttributeError, ValueError):
-            args = "..."
+        args = ast.unparse(node.args)
         print(f"  {node.lineno}-{end}: {prefix} {node.name}({args}) [CCN {_complexity(node)}]")
     for node in sorted(
         (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)),
@@ -149,7 +146,7 @@ def _check_file(path: Path, *, strict_limits: bool) -> tuple[bool, bool]:
     offenders = [
         f"{name}={value}" for name, value in complexities.items() if value > MAX_COMPLEXITY
     ]
-    # Like the gate, the advisory band never fails; only hard ceilings do.
+    # Advisory band never fails; only hard ceilings do (like the gate).
     over = band == "over-hard" or bool(offenders)
     status = "FAIL" if strict_limits and over else "WARN" if over else "PASS"
     print(f"{_relative_key(path)}: {status} {summary}")

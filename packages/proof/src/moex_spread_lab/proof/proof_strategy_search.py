@@ -1,8 +1,6 @@
 """Choose one strategy and one common vector on a fixed cohort's training periods.
 
-Each declared family gets a full TPE budget, so no categorical branch is starved by
-early pruning. Execution is not optimized: price strategies keep their chosen fill,
-funding carry keeps its mandatory same-day settlement (explicit user decision).
+Each declared family gets a full TPE budget; inadmissible targets are reported before any tuning starts.
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ from .cohort_models import Cohort, RemoteCohort
 from .cohort_prepare import RemoteCase
 from .cohort_prepare import targets as _targets
 from .cohort_prepare import translate as _translate
-from .landscape import Axis
 from .pair_payload import budget
 from .proof_batch import call_with_optional_progress as _call_with_optional_progress
 from .proof_batch import cohort_result as _cohort_result
@@ -35,10 +32,6 @@ from .proof_kernel import tune as _tune
 from .service import ProofService
 from .strategy_catalog import get_proof_adapter_ids as get_proof_adapter_ids
 from .strategy_catalog import resolve_strategy_registry
-from .strategy_search_prepare import no_prepared_result as _no_prepared_result
-from .strategy_search_prepare import prepare_candidates as _prepare_candidates
-from .strategy_search_prepare import record_trials as _record_trials
-from .strategy_search_prepare import winner_is_better as _winner_is_better
 
 PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 
@@ -49,9 +42,8 @@ Progress = Callable[[dict[str, Any]], None]
 Attempts = list[dict[str, Any]]
 Prepared = tuple[Obj, Any, Obj]
 LabelMap = dict[str, str]
-Axes = dict[str, Axis]
-
-
+TargetKey = tuple[tuple[str, Any], ...]
+Failures = list[dict[TargetKey, dict[str, Any]]]
 Winner = tuple[Obj, Cohort | RemoteCohort, "Obj | None", int, Attempts]
 
 
@@ -73,35 +65,16 @@ class Run:
     records: list[Obj] = field(default_factory=list)
 
 
-def _preferred_universe(
-    active: Any, kinds: set[str], registry: StrategyRegistry, calendar: str | None = None
-) -> str:
+def _preferred_universe(active: Any, kinds: set[str], registry: StrategyRegistry) -> str:
     """A mixed cohort follows the active editor when it can span both universes."""
-    active_plugin = registry.get(active) if isinstance(active, str) and active in registry else None
-    selected = CALENDAR_UNIVERSE if calendar is None else calendar
+    plugin = registry.get(active) if isinstance(active, str) and active in registry else None
+    selected = CALENDAR_UNIVERSE
     if kinds == {selected}:
         return selected
-    if (
-        len(kinds) > 1
-        and active_plugin is not None
-        and selected in active_plugin.supported_universes
-    ):
+    spans = plugin is not None and selected in plugin.supported_universes
+    if len(kinds) > 1 and spans:
         return selected
     return next((u for u in sorted(kinds) if u != selected), selected)
-
-
-def _group_families(
-    registry: StrategyRegistry, adapter_ids: frozenset[str], timeframe: TimeframeSpec
-) -> dict[str, list[StrategyPlugin]]:
-    """Compatible adapters by family, in registry order, funding carry last on intraday."""
-    grouped: dict[str, list[StrategyPlugin]] = {}
-    for plugin in registry.values():
-        if plugin.strategy_id not in adapter_ids:
-            continue
-        if plugin.requires_daily_bars and not timeframe.supports_funding_strategy:
-            continue
-        grouped.setdefault(plugin.family_id, []).append(plugin)
-    return grouped
 
 
 def families(
@@ -110,17 +83,20 @@ def families(
     timeframe: TimeframeSpec,
     registry: StrategyRegistry,
 ) -> list[str]:
-    """One compatible adapter per registered family, in registry order.
-
-    The allowlist is intentional: a plugin alone may lack the accounting adapter
-    needed to replay it safely; a mixed cohort prefers the active editor's universe.
-    """
+    """One compatible adapter per family in registry order; the allowlist excludes plugins that lack their accounting adapter."""
     adapter_ids = get_proof_adapter_ids(registry)
-    calendar = CALENDAR_UNIVERSE
     kinds = {str(target["universe"]) for target in targets}
-    preferred = _preferred_universe(request.get("strategy"), kinds, registry, calendar)
+    preferred = _preferred_universe(request.get("strategy"), kinds, registry)
+    # Compatible adapters by family, in registry order, funding carry last on intraday.
+    grouped: dict[str, list[StrategyPlugin]] = {}
+    for plugin in registry.values():
+        if plugin.strategy_id not in adapter_ids or (
+            plugin.requires_daily_bars and not timeframe.supports_funding_strategy
+        ):
+            continue
+        grouped.setdefault(plugin.family_id, []).append(plugin)
     result: list[str] = []
-    for group in _group_families(registry, adapter_ids, timeframe).values():
+    for group in grouped.values():
         covered: set[str] = set[str]().union(*(p.supported_universes for p in group))
         if not kinds <= covered:
             continue
@@ -146,11 +122,10 @@ def _candidate_request(
     registry: StrategyRegistry,
 ) -> Obj:
     shared = request.get("parameters", {})
-    params = (
-        _translate(cast(Mapping[str, Any], shared), strategy)
-        if isinstance(shared, Mapping) and _same_family(strategy, request.get("strategy"), registry)
-        else {}
+    shared_ok = isinstance(shared, Mapping) and _same_family(
+        strategy, request.get("strategy"), registry
     )
+    params = _translate(cast(Mapping[str, Any], shared), strategy) if shared_ok else {}
     fills = registry.get(strategy).supported_fills
     fill = price_fill if price_fill in fills else (fills[0] if fills else price_fill)
     return {
@@ -193,6 +168,36 @@ def _progress_callback(
     return report
 
 
+def no_prepared_result(base: Obj, failures: Failures, request: Obj, targets: list[Obj]) -> Obj:
+    # Only universally inadmissible windows may be proposed for removal: if
+    # different families fail different members, no common strategy exists.
+    common: set[TargetKey] = (
+        set(failures[0]).intersection(*(set(f) for f in failures[1:])) if failures else set()
+    )
+    if common and request.get("targets"):
+        excluded: list[Obj] = []
+        for key in sorted(common):
+            messages = list(dict.fromkeys(cast(str, f[key]["reason"]) for f in failures))
+            excluded.append(
+                {
+                    "target": failures[0][key]["target"],
+                    "reason": "Ни одна общая стратегия не проходит: " + " ".join(messages),
+                }
+            )
+        return {
+            **base,
+            "status": "selection_requires_confirmation",
+            "excluded": excluded,
+            "remaining_count": len(targets) - len(excluded),
+        }
+    result = {
+        **base,
+        "status": "no_common_strategy",
+        "reason": "Нет стратегии, допустимой сразу для всех выбранных окон. Отметки и параметры сохранены.",
+    }
+    return {**result, "run_id": run_id(result)}
+
+
 def _search_family(run: Run, p_idx: int, prepared: list[Prepared], total_budget: int) -> None:
     """Tune one prepared family, then keep it only if it beats the running winner."""
     proposed, group, item = prepared[p_idx]
@@ -219,20 +224,35 @@ def _search_family(run: Run, p_idx: int, prepared: list[Prepared], total_budget:
         ),
     )
     item["trial_count"] = count
-    score = cohort.land.measure(best)["rank_score"] if best is not None else None
+    score: Any = cohort.land.measure(best)["rank_score"] if best is not None else None
     item.update(
         status="measured" if best is not None else "no_admissible_candidate",
         training_best_pp=score,
     )
-    _record_trials(run.records, group, proposed, attempts)
-    # Holdout, trade count and plateau never break cross-family ties.
-    if _winner_is_better(
-        best,
-        score,
-        (run.top, run.winner),
-        (group, run.active, run.registry),
-        _same_family,
-    ):
+    # Measure each attempt exactly once, in original order.
+    for i, point in enumerate(attempts):
+        run.records.append(
+            {
+                "trial": len(run.records),
+                "strategy_trial": i,
+                "strategy": group.active,
+                "fill": proposed["fill"],
+                "parameters": {k: point[k] for k in cast(dict[str, Any], group.axes)},
+                **group.land.measure(point),
+            }
+        )
+    # Ties: holdout/trade count/plateau never decide; keep active then first family.
+    prior = run.winner
+    better = best is not None and (
+        score > run.top
+        or (
+            score == run.top
+            and _same_family(group.active, run.active, run.registry)
+            and prior is not None
+            and not _same_family(prior[1].active, run.active, run.registry)
+        )
+    )
+    if better:
         run.winner = (proposed, cohort, best, count, attempts)
         run.top = cast(float, score)
 
@@ -308,42 +328,83 @@ def strategy_search(
     resolved = resolve_strategy_registry(registry)
     labels: LabelMap = {p.strategy_id: p.short_label_ru for p in resolved}
     targets = _targets(request)
-    spec = get_timeframe(settings.timeframe)
     price_fill = _price_fill(request, settings)
-    active = cast(str, request.get("strategy", "zscore_mean_reversion"))
     calendar = getattr(service, "_calendar", None) or CalendarData(service.root)
-    # Resolve the run seed before any cohort is prepared: an invalid setting must
-    # fail before the expensive replays start.
+    # Resolve the run seed first: an invalid setting must fail before replays start.
     run = Run(
         request=request,
         settings=settings,
         check_cancelled=check_cancelled,
         registry=resolved,
         labels=labels,
-        active=active,
+        active=cast(str, request.get("strategy", "zscore_mean_reversion")),
         # One base seed per run; each family derives its own child seed from it.
         base_seed=resolve_seed(settings.random_seed),
         on_progress=on_progress,
     )
-    prepared, alternatives, failures = _prepare_candidates(
-        {
-            "service": service,
-            "request": request,
-            "settings": settings,
-            "benchmark": benchmark,
-            "check_cancelled": check_cancelled,
-            "calendar": calendar,
-            "registry": resolved,
-            "on_progress": on_progress,
-            "labels": labels,
-            "targets": targets,
-            "price_fill": price_fill,
-        },
-        _families(request, targets, spec, resolved),
-        _candidate_request,
-        _prepare_cohort,
-        _call_with_optional_progress,
-    )
+    prepared: list[Prepared] = []
+    alternatives: list[Obj] = []
+    failures: Failures = []
+    family_names = _families(request, targets, get_timeframe(settings.timeframe), resolved)
+    total_families = max(len(family_names), 1)
+    for f_idx, name in enumerate(family_names):
+        check_cancelled()
+        proposed = _candidate_request(request, name, targets, price_fill, resolved)
+        s_label = labels.get(name, name)
+
+        def progress(done: int, total: int, fi: int = f_idx, sl: str = s_label) -> None:
+            callback = cast(Callable[[dict[str, Any]], None], on_progress)
+            callback(
+                {
+                    "stage": "prepare",
+                    "done": fi * total + done,
+                    "total": total_families * total,
+                    "percent": round(
+                        2.0 + 10.0 * ((fi + done / max(total, 1)) / total_families), 1
+                    ),
+                    "label": f"Подготовка окон ({sl}, {fi + 1}/{total_families}): {done}/{total}",
+                }
+            )
+
+        if on_progress is not None:
+            progress(0, len(targets))
+
+        group = _call_with_optional_progress(
+            _prepare_cohort,
+            service,
+            proposed,
+            settings,
+            benchmark,
+            check_cancelled,
+            calendar=calendar,
+            registry=resolved,
+            on_progress=None if on_progress is None else progress,
+        )
+        item: Obj = {
+            "strategy": name,
+            "fill": proposed["fill"],
+            "trial_count": 0,
+            "training_best_pp": None,
+        }
+        alternatives.append(item)
+        if isinstance(group, dict):
+            excluded = cast(list[Obj], group["excluded"])
+            item.update(status="incompatible", excluded=excluded)
+            failures.append({tuple(sorted(x["target"].items())): x for x in excluded})
+        else:
+            item.update(
+                status="ready",
+                training_periods=[
+                    {
+                        "target": target,
+                        "dates": [case.split.training[0], case.split.training[-1]],
+                        "observations": len(case.split.training),
+                    }
+                    for target, case in cast(list[tuple[Any, Any]], group.members)
+                ],
+            )
+            prepared.append((proposed, group, item))
+
     policy: Obj = {
         "policy": "common-strategy.v1",
         "execution_policy": "native_rules",
@@ -356,7 +417,7 @@ def strategy_search(
     }
     run.base = _base_payload(run, targets, policy)
     if not prepared:
-        return _no_prepared_result(run.base, failures, request, targets, run_id)
+        return no_prepared_result(run.base, failures, request, targets)
 
     total_budget = len(prepared) * budget()
     try:

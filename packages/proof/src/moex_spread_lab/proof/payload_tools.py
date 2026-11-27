@@ -191,21 +191,48 @@ def load_instruments(contracts_path: Path) -> dict[str, dict[str, Any]]:
     return mapping
 
 
+_SIDE_CONTRACTS_CACHE: _HashedJSONCache[
+    tuple[str, int, int, int | None, int | None], tuple[dict[str, dict[str, Any]], str]
+] = _HashedJSONCache(32)
+
+
 def load_contracts_for_side_cost(
     contracts_path: Path, near: str, far: str
 ) -> dict[str, dict[str, Any]]:
-    """Uncached contract rows for the two legs, including historical specifications."""
-    payload = json.loads(contracts_path.read_text(encoding="utf-8"))
-    rows: list[Any] = list(payload.get("instruments", []))
-    historical_path = contracts_path.parent / "historical-contracts.json"
-    if historical_path.is_file():
-        historical = json.loads(historical_path.read_text(encoding="utf-8"))
-        rows.extend(historical.get("instruments", []))
-    contracts: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if isinstance(row, dict) and cast(dict[str, Any], row).get("secid") in (near, far):
-            contracts[row["secid"]] = row
-    return contracts
+    """Contract rows for the two legs, including historical specifications.
+
+    The successful parse is memoised on file identity, so repeated loads within
+    one request (and across cohort trials) skip the ~0.5 MB re-read; a missing
+    or corrupt contracts file still raises — it must never degrade into an
+    empty mapping, which would silently price side cost as zero.
+    """
+    resolved = contracts_path.resolve()
+    stat = resolved.stat()
+    historical_path = resolved.parent / "historical-contracts.json"
+    h_stat = historical_path.stat() if historical_path.is_file() else None
+    key = (
+        str(resolved),
+        stat.st_mtime_ns,
+        stat.st_size,
+        h_stat.st_mtime_ns if h_stat else None,
+        h_stat.st_size if h_stat else None,
+    )
+    cached = _SIDE_CONTRACTS_CACHE.get(key)
+    if cached is None:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+        rows: list[Any] = list(payload.get("instruments", []))
+        if h_stat is not None:
+            historical = json.loads(historical_path.read_text(encoding="utf-8"))
+            rows.extend(historical.get("instruments", []))
+        terms: dict[str, dict[str, Any]] = {
+            row["secid"]: row
+            for row in rows
+            if isinstance(row, dict) and cast(dict[str, Any], row).get("secid")
+        }
+        _SIDE_CONTRACTS_CACHE.put(key, (terms, ""))
+    else:
+        terms = cached[0]
+    return {secid: row for secid, row in terms.items() if secid in (near, far)}
 
 
 def point_value(terms: dict[str, Any], fallback: float = 1.0) -> float:

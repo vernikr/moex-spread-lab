@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sysconfig
 from pathlib import Path
 
@@ -204,3 +205,49 @@ def test_buffer_list_conversion_failure_propagates(kind: str) -> None:
     values[index][1] = BadValue()
     with pytest.raises(ValueError, match=f"bad {kind}"):
         fastcore.calendar_sample_z(*values, 2, False)
+
+
+def _clean_sample() -> dict[str, object]:
+    return {
+        "ok": 1.5,
+        "neg_zero": -0.0,
+        "bad": [float("nan"), float("inf"), float("-inf"), (1, float("nan"), {"x": -0.0})],
+        "text": "keep",
+        "count": 42,
+        "flag": True,
+        "none": None,
+    }
+
+
+def test_clean_obj_delegates_to_c99_and_replaces_nonfinite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MOEX_PROOF_DISABLE_C", raising=False)
+    assert loader.load_fastcore() is not None
+    cleaned = loader.clean_obj(_clean_sample())
+    assert cleaned["ok"] == 1.5
+    assert cleaned["bad"][:3] == [None, None, None]
+    assert isinstance(cleaned["bad"], list)
+    nested = cleaned["bad"][3]
+    assert isinstance(nested, tuple)  # C99 keeps tuple containers
+    assert nested[:2] == (1, None)
+    assert math.copysign(1.0, nested[2]["x"]) == -1.0
+    assert math.copysign(1.0, cleaned["neg_zero"]) == -1.0
+    assert (cleaned["text"], cleaned["count"], cleaned["flag"], cleaned["none"]) == (
+        "keep",
+        42,
+        True,
+        None,
+    )
+
+
+def test_clean_obj_pure_python_fallback_when_c_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MOEX_PROOF_DISABLE_C", "1")
+    assert loader.load_fastcore() is None
+    cleaned = loader.clean_obj(_clean_sample())
+    assert cleaned["bad"][:3] == [None, None, None]
+    assert cleaned["bad"][3] == [1, None, {"x": -0.0}]  # tuple -> list fallback
+    assert math.copysign(1.0, cleaned["neg_zero"]) == -1.0
+    assert cleaned["ok"] == 1.5 and cleaned["text"] == "keep"

@@ -1,4 +1,5 @@
-"""Fingerprint-keyed derived cache for expensive payloads.
+"""Fingerprint-keyed derived cache for expensive payloads, plus the shared
+content-hash primitives and request-local cache telemetry.
 
 The fingerprint covers ``data/`` (excluding the mutable ``data/analytics`` state),
 ``data-lake/`` and every packaged source tree (``src/``, ``packages/*/src/``). Files
@@ -7,22 +8,97 @@ invalidates the entry; larger files are keyed by ``(relpath, mtime_ns, ctime_ns,
 size)``. Entries live under ``data/analytics/derived-cache/`` (gitignored runtime
 state). A stale entry is never served: the key is the freshness proof. Set
 ``MOEX_DERIVED_CACHE=0`` to bypass the cache entirely.
+
+``canonical_bytes`` / ``sha256_bytes`` / ``sha256_file`` are the canonical
+serialization and digest helpers every artifact hash is built from; ``w0``
+re-exports them for artifact-level callers. ``HashedJSONCache`` and the opt-in
+``collect_cache_metrics`` counters serve the hashed-JSON readers.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
 import threading
 import time
-from contextlib import suppress
+from collections import OrderedDict
+from collections.abc import Generator, Hashable
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-from .w0 import canonical_bytes, sha256_bytes, sha256_file
-
 DERIVED_CACHE_SCHEMA = "msl.derived-cache/2"
+
+
+def canonical_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+_COUNTERS: ContextVar[dict[str, int] | None] = ContextVar("msl_cache_metrics", default=None)
+
+
+def record_cache_lookup(name: str, hit: bool) -> None:
+    counters = _COUNTERS.get()
+    if counters is not None:
+        key = f"{name}_{'hits' if hit else 'misses'}"
+        counters[key] = counters.get(key, 0) + 1
+
+
+@contextmanager
+def collect_cache_metrics() -> Generator[dict[str, int]]:
+    counters = {"json_hits": 0, "json_misses": 0, "zscore_hits": 0, "zscore_misses": 0}
+    token = _COUNTERS.set(counters)
+    try:
+        yield counters
+    finally:
+        _COUNTERS.reset(token)
+
+
+class HashedJSONCache[Key: Hashable, Value]:
+    """Small LRU for immutable file snapshots, typed by each cache's key/value."""
+
+    def __init__(self, capacity: int) -> None:
+        self._capacity = max(1, capacity)
+        self._data: OrderedDict[Key, Value] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: Key) -> Value | None:
+        with self._lock:
+            entry = self._data.get(key)
+            record_cache_lookup("json", entry is not None)
+            if entry is not None:
+                self._data.move_to_end(key)
+            return entry
+
+    def put(self, key: Key, value: Value) -> None:
+        with self._lock:
+            self._data[key] = value
+            self._data.move_to_end(key)
+            while len(self._data) > self._capacity:
+                self._data.popitem(last=False)
+
+
 _CONTENT_HASH_MAX_BYTES = 2 * 1024 * 1024
 
 _DISABLED = frozenset({"0", "off", "false", "no"})

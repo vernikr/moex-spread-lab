@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import ctypes
 import importlib.util
+import math
 import os
 import shutil
 import subprocess
 import sysconfig
 import threading
+from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _LOCK = threading.Lock()
 _CACHE: dict[bool, Any] = {}
@@ -21,8 +23,8 @@ def _has_asan_runtime() -> bool:
     try:
         proc = ctypes.CDLL(None)
         return hasattr(proc, "__asan_init")
-    # code-health: allow broad exception: symbol probe may raise platform OSError/AttributeError.
-    except Exception:
+    # CDLL/symbol probes fail with platform OSError/AttributeError on foreign builds.
+    except (OSError, AttributeError):
         return False
 
 
@@ -153,10 +155,26 @@ def load_fastcore() -> Any:
         if sanitize:
             _CACHE[True] = _load_sanitized_fastcore(pkg_dir, ext)
             return _CACHE[True]
-        try:
+        # Any failure of the optional C extension falls back to pure Python, and the
+        # negative result is cached so a broken build is not retried per call.
+        loaded: Any = None
+        with suppress(Exception):
             so_path = _ensure_compiled(pkg_dir, ext, sanitize=False)
-            _CACHE[False] = _import_shared_module(so_path) if so_path.is_file() else None
-        # code-health: allow broad exception: optional C extension falls back to Python.
-        except Exception:
-            _CACHE[False] = None
+            loaded = _import_shared_module(so_path) if so_path.is_file() else None
+        _CACHE[False] = loaded
         return _CACHE[False]
+
+
+def clean_obj(value: Any) -> Any:
+    """Recursively replace non-finite floats with None via C99 ``fc.clean_obj`` when
+    built, else the equivalent pure-Python ``math.isfinite`` fallback."""
+    fc = load_fastcore()
+    if fc is not None:
+        return fc.clean_obj(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: clean_obj(item) for key, item in cast(dict[Any, Any], value).items()}
+    if isinstance(value, (list, tuple)):
+        return [clean_obj(item) for item in cast(list[Any] | tuple[Any, ...], value)]
+    return value

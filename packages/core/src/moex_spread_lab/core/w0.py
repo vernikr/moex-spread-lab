@@ -12,8 +12,60 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
 
-from .hashed_json_cache import HashedJSONCache as _HashedJSONCache
-from .json_types import as_str_dict, load_object
+from .derived_cache import (
+    HashedJSONCache as _HashedJSONCache,
+)
+from .derived_cache import (
+    canonical_bytes,
+    sha256_bytes,
+    sha256_file,
+)
+
+type JsonScalar = bool | int | float | str | None
+type JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+type JsonObject = dict[str, JsonValue]
+
+
+class JSONBoundaryError(ValueError):
+    """Raised when decoded input is not a JSON object with string keys."""
+
+
+def as_str_dict(
+    value: object,
+    *,
+    label: str = "JSON value",
+    error: type[Exception] = JSONBoundaryError,
+) -> JsonObject:
+    """Validate and narrow a decoded object without allowing non-string keys."""
+    if not isinstance(value, dict):
+        raise error(f"{label} must be a JSON object with string keys")
+    object_value = cast(dict[object, object], value)
+    if any(not isinstance(key, str) for key in object_value):
+        raise error(f"{label} must be a JSON object with string keys")
+    return cast(JsonObject, value)
+
+
+def load_object(
+    path: str | Path,
+    *,
+    label: str | None = None,
+    error: type[Exception] = JSONBoundaryError,
+) -> JsonObject:
+    """Read UTF-8 JSON from ``path`` and require an object root.
+
+    Callers may provide their domain-specific exception class, keeping the
+    boundary typed without changing public error contracts.
+    """
+    source = Path(path)
+    context = label or str(source)
+    try:
+        decoded: object = json.loads(source.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise error(f"cannot read {context} as UTF-8 JSON: {exc}") from exc
+    return as_str_dict(decoded, label=context, error=error)
+
 
 MANIFEST_SCHEMA = "run-manifest.v1"
 
@@ -29,28 +81,6 @@ SECRET_PATTERNS = (
 
 class W0Error(ValueError):
     """Raised when a W0 manifest is invalid."""
-
-
-def canonical_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-
-
-def sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def load_json(path: Path) -> dict[str, Any]:

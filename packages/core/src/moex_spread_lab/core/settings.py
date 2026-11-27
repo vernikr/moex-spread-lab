@@ -12,9 +12,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
-from .json_types import load_object
 from .timeframes import DEFAULT_TIMEFRAME, get_timeframe
-from .w0 import W0Error
+from .w0 import W0Error, load_object
 
 DEFAULT_VALIDATION_PERCENT = 0
 DEFAULT_INITIAL_CAPITAL_RUB = 30_000.0

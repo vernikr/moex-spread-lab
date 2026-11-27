@@ -97,7 +97,3 @@ def lqdt_overlay_values(
         shortfalls += free < 0
         values.append(free + margins[index])
     return values, shortfalls
-
-
-# Compatibility for existing private imports until #168 migrates external callers.
-_cost_totals = cost_totals

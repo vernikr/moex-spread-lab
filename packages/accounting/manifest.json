@@ -7,16 +7,13 @@
     "moex_tariff_costs",
     "vtb_account_risk_screen",
     "matched_lqdt_wealth_overlay",
-    "causal_position_sizing",
-    "execution_ledger"
+    "causal_position_sizing"
   ],
   "inputs": [
-    "iss-intake.v1",
-    "analytical-baseline.v1"
+    "iss-intake.v1"
   ],
   "outputs": [
-    "vtb-account-risk.v1",
-    "execution-ledger.v1"
+    "vtb-account-risk.v1"
   ],
   "dependencies": [
     "moex-spread-lab.core"

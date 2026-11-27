@@ -19,7 +19,6 @@ from moex_spread_lab.accounting.costs import (
     side_cost,
     tariff_profile,
 )
-from moex_spread_lab.accounting.portfolio import lqdt_overlay_values as portfolio_overlay
 from moex_spread_lab.core.w0 import W0Error
 
 NEAR = {
@@ -88,7 +87,6 @@ def test_costs_rejects_invalid_slippage_and_unknown_secid(bad: object) -> None:
 
 
 def test_lqdt_overlay_compounds_free_cash_and_flags_negative_only() -> None:
-    assert portfolio_overlay is lqdt_overlay_values
     flat, sf0 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 0, 0], [1.0, 1.1, 1.21])
     held, sf1 = lqdt_overlay_values(1000.0, [0, 0, 0], [0, 500, 500], [1.0, 1.1, 1.21])
     assert flat[-1] == pytest.approx(1210.0)
@@ -177,18 +175,58 @@ def test_assess_vtb_pair_rejects_bad_inputs_and_unknown_kwargs(tmp_path: Path) -
         assess_vtb_pair(path, "SBERF", "SRZ6", **extra)
 
 
-def test_research_and_validation_modules_are_removed() -> None:
-    for name in (
-        "moex_spread_lab.accounting.research",
-        "moex_spread_lab.accounting.research_intake",
-        "moex_spread_lab.accounting.research_simulation",
-        "moex_spread_lab.accounting.validation",
-    ):
-        with pytest.raises(ModuleNotFoundError):
-            importlib.import_module(name)
+@pytest.mark.parametrize(
+    "name",
+    [
+        "accounting.ledger",
+        "accounting.portfolio",
+        "accounting.research",
+        "accounting.research_intake",
+        "accounting.research_simulation",
+        "accounting.validation",
+        "account_risk",
+        "costs",
+        "ledger",
+        "portfolio",
+        "position_sizing",
+        "research",
+        "validation",
+    ],
+)
+def test_retired_modules_are_removed(name: str) -> None:
+    module = f"moex_spread_lab.{name}"
+    with pytest.raises(ModuleNotFoundError) as exc:
+        importlib.import_module(module)
+    assert exc.value.name == module
+
+
+def test_costs_exposes_only_canonical_helpers() -> None:
+    from moex_spread_lab import accounting
+    from moex_spread_lab.accounting import costs
+
+    assert accounting.lqdt_overlay_values is lqdt_overlay_values
+    assert not hasattr(costs, "_cost_totals")
 
 
 def test_accounting_cli_exposes_only_live_commands() -> None:
-    commands = argparse.ArgumentParser().add_subparsers(dest="command")
+    parser = argparse.ArgumentParser()
+    commands = parser.add_subparsers(dest="command")
     register_accounting_cli(commands)
-    assert set(commands.choices) == {"account-risk-check", "execution-ledger"}
+    assert set(commands.choices) == {"account-risk-check"}
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(
+            ["execution-ledger", "--baseline", "baseline.json", "--output", "ledger.json"]
+        )
+    assert exc.value.code == 2
+
+
+def test_accounting_manifest_exposes_only_live_contracts() -> None:
+    manifest = json.loads((Path(__file__).parents[1] / "manifest.json").read_text(encoding="utf-8"))
+    assert set(manifest["capabilities"]) == {
+        "moex_tariff_costs",
+        "vtb_account_risk_screen",
+        "matched_lqdt_wealth_overlay",
+        "causal_position_sizing",
+    }
+    assert manifest["inputs"] == ["iss-intake.v1"]
+    assert manifest["outputs"] == ["vtb-account-risk.v1"]

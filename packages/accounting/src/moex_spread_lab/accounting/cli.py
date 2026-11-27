@@ -10,13 +10,6 @@ from moex_spread_lab.core.w0 import W0Error, write_json
 
 
 def register(subparsers: Any) -> None:
-    ledger_parser = subparsers.add_parser(
-        "execution-ledger", help="build a rebuildable analytical execution and portfolio ledger"
-    )
-    ledger_parser.add_argument("--baseline", type=Path, required=True)
-    ledger_parser.add_argument("--output", type=Path, required=True)
-    ledger_parser.set_defaults(_msl_cli_handler=_run_execution_ledger_cmd)
-
     account_risk_parser = subparsers.add_parser(
         "account-risk-check", help="run the working VTB EBS/KPUR margin stress screen"
     )
@@ -30,28 +23,6 @@ def register(subparsers: Any) -> None:
     account_risk_parser.add_argument("--uncertainty-buffer", type=float, default=5000.0)
     account_risk_parser.add_argument("--key-rate", type=float, default=0.14)
     account_risk_parser.set_defaults(_msl_cli_handler=_run_account_risk_cmd)
-
-
-def _run_execution_ledger_cmd(args: Any) -> int:
-    from moex_spread_lab.accounting.ledger import build_ledger
-
-    result = build_ledger(args.baseline)
-    write_json(args.output, result)
-    print(
-        json.dumps(
-            {
-                "release_state": result["release_state"],
-                "timeframe": result["timeframe"],
-                "execution_attempt_count": result["summary"]["execution_attempt_count"],
-                "final_X": result["summary"]["final_X"],
-                "executable_value_available": result["summary"]["executable_value_available"],
-                "output": str(args.output),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
 
 
 def _run_account_risk_cmd(args: Any) -> int:

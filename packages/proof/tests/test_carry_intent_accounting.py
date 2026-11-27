@@ -94,8 +94,9 @@ def test_nonfinite_inputs_fail_closed():
 def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, prefix, negative_late):
     from funding_fixtures import PAIR, change, fixture
     from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+    from moex_spread_lab.core.w0 import load_contracts
     from moex_spread_lab.proof.service import ProofService
-    from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, load_contracts
+    from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
     from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
     from moex_spread_lab.strategies.pair_screener.pair_screener import _pair
 
@@ -162,10 +163,11 @@ def test_replay_matches_native_cash_flows_on_real_study(tmp_path, quantity, pref
         quantity=quantity,
         side_cost=round(fee, 8),
         far_expiry=contracts[pair["far"]]["expiry"],
-        initial_capital=30000,
-        margin_per_pair=contracts[pair["near"]]["initial_margin"]
-        + contracts[pair["far"]]["initial_margin"],
-        benchmark=prices,
+        account=(
+            30000,
+            contracts[pair["near"]]["initial_margin"] + contracts[pair["far"]]["initial_margin"],
+            prices,
+        ),
     )
     full_native = build_carry_strategy(study, inputs.benchmark, inputs.contracts, **options)
     for got, expected in zip(full["daily"], full_native["daily"], strict=True):

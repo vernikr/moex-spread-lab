@@ -4,7 +4,7 @@ import pytest
 
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof.pair_funding_replay import replay_pair_funding
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
+from moex_spread_lab.strategies.pair_mean_reversion.engine import run_mean_reversion_baseline
 
 DATES = [f"2026-01-0{i}" for i in range(1, 6)]
 RATES = dict(zip(DATES, [0.2, 0.3, 0.4, 0.5, 0.7], strict=False))

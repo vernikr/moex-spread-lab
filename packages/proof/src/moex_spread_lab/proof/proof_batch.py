@@ -15,7 +15,7 @@ from moex_spread_lab.core.contracts import InstrumentContext as InstrumentContex
 from moex_spread_lab.core.settings import ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import StrategyRegistry
-from moex_spread_lab.strategies.funding_carry.carry import (
+from moex_spread_lab.strategies.funding_carry.study import (
     CarryStrategyError as CarryStrategyError,
 )
 

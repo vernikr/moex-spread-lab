@@ -16,12 +16,13 @@ from moex_spread_lab.core.contracts import WindowSnapshot, plugin_is_builtin
 from moex_spread_lab.core.settings import MIN_DAILY_VOLUME
 from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.strategies.funding_carry.carry import build_carry_strategy, build_carry_study
+from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
 from moex_spread_lab.strategies.funding_carry.intents import carry_settlement_intents
 from moex_spread_lab.strategies.funding_carry.proof_funding import ProofFunding
+from moex_spread_lab.strategies.funding_carry.study import build_carry_study
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 
-from .carry_intent_accounting import replay_carry_intents
+from .carry_intent_accounting import AccountTerms, replay_carry_intents
 from .ledger_blocks import pair_selection
 from .market_window import ReplaySpec
 from .payload_tools import PROOF_SCHEMA, load_contracts_for_side_cost, point_value
@@ -171,15 +172,15 @@ def _pluginreport_for(
         raise W0Error(verdict.reason or "Несовместимое окно carry.")
     intents = carry_settlement_intents(plugin, snapshot, spec.params)
     leg_contracts = load_contracts_for_side_cost(spec.inputs.contracts, near, far)
-    full: dict[str, Any] = (
-        {}
+    account: AccountTerms | None = (
+        None
         if metrics_only
-        else {
-            "initial_capital": execution["initial_capital_rub"],
-            "margin_per_pair": float(spec.terms[near].get("initial_margin") or 0)
+        else (
+            execution["initial_capital_rub"],
+            float(spec.terms[near].get("initial_margin") or 0)
             + float(spec.terms[far].get("initial_margin") or 0),
-            "benchmark": spec.benchmark_prices or {},
-        }
+            spec.benchmark_prices or {},
+        )
     )
     report = replay_carry_intents(
         state.study,
@@ -187,7 +188,7 @@ def _pluginreport_for(
         quantity=int(execution["quantity"]),
         side_cost=round(sum(reference_costs(state).values()), 8),
         far_expiry=leg_contracts[far].get("expiry"),
-        **full,
+        account=account,
     )
     if metrics_only:
         for row in report["daily"]:

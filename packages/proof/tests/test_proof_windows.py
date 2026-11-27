@@ -22,7 +22,7 @@ from moex_spread_lab.proof import worker_cohort
 from moex_spread_lab.proof.proof_search import StudyWindow, research_run
 from moex_spread_lab.proof.proof_windows import MAX_WINDOW_REQUESTS, window_summaries
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import (
+from moex_spread_lab.strategies.pair_mean_reversion.engine import (
     AnalyticsError,
     run_mean_reversion_baseline,
 )

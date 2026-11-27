@@ -22,6 +22,7 @@ from unittest.mock import patch
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
+from moex_spread_lab.data.iss.catalog import _history_url
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.service import ProofService
 from moex_spread_lab.proof.strategy_catalog import (
@@ -29,7 +30,6 @@ from moex_spread_lab.proof.strategy_catalog import (
     get_strategy_registry,
 )
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from synthetic_history import iso_weekdays as _weekdays
 from synthetic_history import write_h1_candles as _write_h1_candles
 

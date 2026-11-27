@@ -29,7 +29,7 @@ from moex_spread_lab.proof.service import (
     reference_eval,
 )
 from moex_spread_lab.strategies.calendar.calendar_spreads import HISTORY_FIELDS, HISTORY_FROM
-from moex_spread_lab.strategies.funding_carry.carry import fetch_history
+from moex_spread_lab.strategies.funding_carry.study import fetch_history
 from perf_equivalence_fixtures import (  # noqa: F401  (re-exported helper names)
     H1WorkspaceCase,
     _build_h1_workspace,

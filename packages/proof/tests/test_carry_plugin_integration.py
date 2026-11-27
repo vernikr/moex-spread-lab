@@ -9,12 +9,12 @@ import pytest
 from funding_fixtures import PAIR, WEEKEND_PAIR, change, fixture, page, request, weekend
 from moex_spread_lab.core.settings import ResearchSettings, save_settings
 from moex_spread_lab.core.w0 import W0Error
+from moex_spread_lab.data.iss.catalog import _history_url
 from moex_spread_lab.data.universe import HISTORY_WINDOWS
 from moex_spread_lab.proof.pair_route import _validate_carry_result
 from moex_spread_lab.proof.proof_search import research_run
 from moex_spread_lab.proof.strategy_catalog import get_proof_adapter_ids
 from moex_spread_lab.strategies.base import StrategyRegistry
-from moex_spread_lab.strategies.funding_carry.carry import _history_url
 from moex_spread_lab.strategies.funding_carry.plugin import FundingCarryPlugin
 from moex_spread_lab.strategies.pair_screener.pair_screener import ScreenerInputs
 from perf_equivalence_fixtures import assert_pool_parity, assert_same_fields, installed_plugin

@@ -24,7 +24,7 @@ from moex_spread_lab.proof.pair_plugin_accounting import (
     prepare_daily_pair_unit,
 )
 from moex_spread_lab.strategies.funding_carry.proof_funding import FundingTimeline, FundingWindow
-from moex_spread_lab.strategies.pair_mean_reversion.analytics import run_mean_reversion_baseline
+from moex_spread_lab.strategies.pair_mean_reversion.engine import run_mean_reversion_baseline
 
 DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
 

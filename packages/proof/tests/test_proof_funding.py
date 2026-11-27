@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.core.w0 import W0Error
-from moex_spread_lab.strategies.funding_carry.carry import fetch_history
 from moex_spread_lab.strategies.funding_carry.funding_recheck import recheck
 from moex_spread_lab.strategies.funding_carry.proof_funding import (
     NO_CLEARING,
@@ -20,6 +19,7 @@ from moex_spread_lab.strategies.funding_carry.proof_funding import (
     published_rates,
     supplement_path,
 )
+from moex_spread_lab.strategies.funding_carry.study import fetch_history
 
 
 class FundingPolicyTests(unittest.TestCase):

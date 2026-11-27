@@ -12,12 +12,13 @@ from collections.abc import Callable, Mapping
 from datetime import date, timedelta
 from typing import Any, cast
 
-from moex_spread_lab.accounting.portfolio import lqdt_overlay_values
+from moex_spread_lab.accounting.costs import lqdt_overlay_values
 from moex_spread_lab.core.w0 import W0Error
 
 type Row = Mapping[str, Any]
 type Trade = Mapping[str, Any]
 type Acct = tuple[float, float, Callable[[str], float], float]
+type AccountTerms = tuple[float, float, Mapping[str, float]]
 
 
 def _validate_inputs(
@@ -272,18 +273,18 @@ def replay_carry_intents(
     quantity: int,
     side_cost: float,
     far_expiry: str | None,
-    expiry_buffer_days: int = 5,
-    assignment_window_trading_days: int = 10,
-    initial_capital: float | None = None,
-    margin_per_pair: float | None = None,
-    benchmark: Mapping[str, float] | None = None,
+    window: tuple[int, int] = (5, 10),
+    account: AccountTerms | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Replay short-near carry on EOD settlements, rejecting unsafe horizons.
 
     An ordinary exit receives the price move but not exit-day funding; an open
     end-of-sample position includes its final clearing and pays no exit fee.
-    Expiry and the native assignment window always apply.
+    Expiry and the native assignment window always apply. ``window`` is
+    (expiry_buffer_days, assignment_window_trading_days); ``account`` is
+    (initial_capital, margin_per_pair, benchmark) and switches on the full ledger.
     """
+    expiry_buffer_days, assignment_window_trading_days = window
     _validate_inputs(
         study, intents, quantity, side_cost, expiry_buffer_days, assignment_window_trading_days
     )
@@ -299,10 +300,7 @@ def replay_carry_intents(
     if not math.isfinite(fee):
         raise W0Error("Переполнение издержек carry.")
     cumulative_gross = cumulative_cost = 0.0
-    full = initial_capital is not None or margin_per_pair is not None or benchmark is not None
-    account: Acct | None = (
-        _account_config(initial_capital, margin_per_pair, benchmark, rows) if full else None
-    )
+    acct: Acct | None = _account_config(*account, rows) if account is not None else None
     for i, row in enumerate(rows):
         increment = funding = 0.0
         if active is not None:
@@ -343,7 +341,7 @@ def replay_carry_intents(
                 "cumulative_transaction_costs": round(cumulative_cost, 8),
             }
         )
-    if account is not None:
-        _apply_account(daily, quantity, account)
+    if acct is not None:
+        _apply_account(daily, quantity, acct)
     _append_open_trade(active, trades, trade_gross, fee)
     return {"daily": daily, "trades": trades, "signals": signals}

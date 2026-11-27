@@ -19,7 +19,7 @@ from moex_spread_lab.proof.worker_metrics import (
     submit_worker,
     unwrap_worker_result,
 )
-from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
+from moex_spread_lab.strategies.funding_carry.study import CarryStrategyError
 
 
 def test_worker_exports_and_carry_retry_keep_shared_state():

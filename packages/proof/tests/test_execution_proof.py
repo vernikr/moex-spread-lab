@@ -4,8 +4,8 @@ import unittest
 from datetime import date
 from pathlib import Path
 
+from moex_spread_lab.data.iss.catalog import HISTORY_FIELDS, _history_url
 from moex_spread_lab.proof.service import ProofService
-from moex_spread_lab.strategies.funding_carry.carry import HISTORY_FIELDS, _history_url
 from perf_equivalence_fixtures import temporary_workspace
 from synthetic_history import weekdays
 

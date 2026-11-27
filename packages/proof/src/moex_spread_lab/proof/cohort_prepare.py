@@ -17,7 +17,7 @@ from moex_spread_lab.core.universe import CALENDAR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies import StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
-from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
+from moex_spread_lab.strategies.funding_carry.study import CarryStrategyError
 
 from .cohort_models import Cohort as _Cohort
 from .cohort_models import RemoteCohort as _RemoteCohort

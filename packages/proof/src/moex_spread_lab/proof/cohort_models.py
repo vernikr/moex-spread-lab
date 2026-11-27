@@ -10,7 +10,7 @@ from moex_spread_lab.core.contracts import plugin_parameter_aliases
 from moex_spread_lab.core.settings import EvaluationSplit, ResearchSettings
 from moex_spread_lab.core.w0 import W0Error
 
-from .landscape import AMBER, GREEN, Landscape
+from .landscape import Landscape, lamps, probe_points
 from .phase_metrics import measure_phase
 
 if TYPE_CHECKING:
@@ -20,38 +20,6 @@ if TYPE_CHECKING:
 ProgressCallback = Callable[[int, int], None]
 CancelCheck = Callable[[], None]
 PointValues = Mapping[str, Any]
-
-
-class _LandscapeView(Protocol):
-    @property
-    def axes(self) -> Mapping[str, Any]: ...
-
-    @property
-    def cache(self) -> dict[tuple[Any, ...], Any]: ...
-
-    def measure(self, values: PointValues) -> Mapping[str, Any]: ...
-
-    def profile(self, values: PointValues, name: str) -> Mapping[str, Any]: ...
-
-
-class _CohortPool(Protocol):
-    def eval_plateau_batch(
-        self,
-        cohort_state: dict[str, Any],
-        points: list[tuple[int, dict[str, dict[str, Any]]]],
-        check_cancelled: CancelCheck,
-        on_progress: ProgressCallback | None = None,
-    ) -> dict[int, dict[str, Any]]: ...
-
-    def report_cohort(
-        self,
-        cohort_state: dict[str, Any],
-        point_by_strategy: dict[str, dict[str, Any]],
-        best_is_none: bool,
-        settings: ResearchSettings,
-        check_cancelled: CancelCheck,
-        on_progress: ProgressCallback | None = None,
-    ) -> list[tuple[int, dict[str, Any], bool, dict[str, Any] | None]]: ...
 
 
 class _MemberCase(Protocol):
@@ -73,10 +41,6 @@ class _LocalMemberCase(_MemberCase, Protocol):
     def report(self, point: PointValues) -> dict[str, Any]: ...
 
 
-def _ordered_values(values: PointValues) -> bool:
-    return "exit_z" not in values or "entry_z" not in values or values["exit_z"] < values["entry_z"]
-
-
 def _translate_parameters(params: PointValues, strategy: str) -> dict[str, Any]:
     """Rename shared parameter names to ``strategy``'s declared spelling."""
     result = dict(params)
@@ -92,58 +56,8 @@ def _translate_parameters(params: PointValues, strategy: str) -> dict[str, Any]:
     return result
 
 
-def _probe_points(land: _LandscapeView, point: PointValues) -> list[dict[str, Any]]:
-    probe_points: list[dict[str, Any]] = []
-    seen: set[tuple[Any, ...]] = set()
-    center_key = tuple(point[name] for name in land.axes)
-    if center_key not in land.cache:
-        seen.add(center_key)
-        probe_points.append(dict(point))
-    for name, axis in land.axes.items():
-        value = point[name]
-        for offset in (-2, -1, 1, 2):
-            neighbor = round(value + offset * axis.step, 6)
-            other = {**point, name: neighbor}
-            if axis.contains(neighbor) and _ordered_values(other):
-                key = tuple(other[name] for name in land.axes)
-                if key not in land.cache and key not in seen:
-                    seen.add(key)
-                    probe_points.append(other)
-    return probe_points
-
-
-def _plateau_lamps(
-    land: _LandscapeView,
-    point: PointValues,
-    reason: str | None,
-    *,
-    on_progress: ProgressCallback | None = None,
-) -> dict[str, Any]:
-    # Same fields, pre-warmed probes and progress accounting as the landscape helper.
-    if reason:
-        fields: dict[str, Any] = {
-            name: {"value": point[name], "score": None, "reason": reason, "neighbors": []}
-            for name in land.axes
-        }
-    else:
-        if on_progress is not None:
-            probes = _probe_points(land, point)
-            total_probes = len(probes)
-            for idx, probe in enumerate(probes, start=1):
-                land.measure(probe)
-                on_progress(idx, total_probes)
-        fields = {name: land.profile(point, name) for name in land.axes}
-    return {
-        "basis": "training",
-        "unit": "annualized_excess_pp",
-        "fields": fields,
-        "green": GREEN,
-        "amber": AMBER,
-    }
-
-
 @dataclass
-class _Cohort:
+class Cohort:
     active: str
     axes: Mapping[str, Any]
     seed: Mapping[str, Any]
@@ -181,8 +95,8 @@ class _Cohort:
         reason = self._plateau_reason(point)
         first = cast(_LocalMemberCase, self.members[0][1])
         native_single = len(self.members) == 1 and first.request["strategy"] == self.active
-        land = cast(_LandscapeView, first.fit if native_single else self.land)
-        return _plateau_lamps(land, point, reason, on_progress=on_progress)
+        land = first.fit if native_single else self.land
+        return lamps(land, point, reason, on_progress=on_progress)
 
     @measure_phase("final_report")
     def report_members(
@@ -219,7 +133,7 @@ class _Cohort:
                 if on_progress is not None:
                     on_progress(idx, total_members)
                 continue
-            training_rate = cast(_LandscapeView, member.fit).measure(local).get("rank_score")
+            training_rate = member.fit.measure(local).get("rank_score")
             row: dict[str, Any] = {
                 "target": target,
                 "selection": selection,
@@ -247,7 +161,7 @@ class _Cohort:
 
 
 @dataclass
-class _RemoteCohort(_Cohort):
+class RemoteCohort(Cohort):
     pool: CohortWorkerPool | None = None
     # Worker state stays dynamically typed until its producer is strict-checked;
     # casts below express the contract at the pool boundary.
@@ -263,30 +177,13 @@ class _RemoteCohort(_Cohort):
     def _uncached_points(
         self, point: PointValues
     ) -> list[tuple[tuple[Any, ...], dict[str, dict[str, Any]]]]:
-        land = cast(_LandscapeView, self.land)
-        uncached_points: list[tuple[tuple[Any, ...], dict[str, dict[str, Any]]]] = []
-        seen_keys: set[tuple[Any, ...]] = set()
-
-        def enqueue(candidate: PointValues) -> None:
-            key = tuple(candidate[name] for name in land.axes)
-            if key not in land.cache and key not in seen_keys:
-                seen_keys.add(key)
-                point_by_strat = {
-                    strat: _translate_parameters(candidate, strat)
-                    for strat in self.distinct_strategies
-                }
-                uncached_points.append((key, point_by_strat))
-
-        enqueue(point)
-        for name, axis in land.axes.items():
-            value = point[name]
-            for offset in (-2, -1, 1, 2):
-                neighbor = round(value + offset * axis.step, 6)
-                other = {**point, name: neighbor}
-                if axis.contains(neighbor) and _ordered_values(other):
-                    enqueue(other)
-
-        return uncached_points
+        return [
+            (
+                tuple(probe[name] for name in self.land.axes),
+                {strat: _translate_parameters(probe, strat) for strat in self.distinct_strategies},
+            )
+            for probe in probe_points(self.land, point)
+        ]
 
     @measure_phase("plateau")
     def plateau(
@@ -300,17 +197,16 @@ class _RemoteCohort(_Cohort):
                 batch_payload: list[tuple[int, dict[str, dict[str, Any]]]] = [
                     (idx, p_by_strat) for idx, (_, p_by_strat) in enumerate(uncached_points)
                 ]
-                pool = cast(_CohortPool, self.pool)
+                pool = cast("CohortWorkerPool", self.pool)
                 batch_out = pool.eval_plateau_batch(
                     cast(dict[str, Any], self.cohort_state),
                     batch_payload,
                     cast(CancelCheck, self.check_cancelled),
                     on_progress=on_progress,
                 )
-                land = cast(_LandscapeView, self.land)
                 for idx, (key, _) in enumerate(uncached_points):
-                    land.cache[key] = batch_out[idx]
-        return _plateau_lamps(cast(_LandscapeView, self.land), point, reason)
+                    self.land.cache[key] = batch_out[idx]
+        return lamps(self.land, point, reason)
 
     @measure_phase("final_report")
     def report_members(
@@ -324,7 +220,7 @@ class _RemoteCohort(_Cohort):
         point_by_strat = {
             strat: _translate_parameters(point, strat) for strat in self.distinct_strategies
         }
-        results = cast(_CohortPool, self.pool).report_cohort(
+        results = cast("CohortWorkerPool", self.pool).report_cohort(
             cast(dict[str, Any], self.cohort_state),
             point_by_strat,
             not best,
@@ -336,8 +232,3 @@ class _RemoteCohort(_Cohort):
         any_exec_ref = any(exec_ref for _, _, exec_ref, _ in results)
         single = next((s for _, _, _, s in reversed(results) if s is not None), None)
         return rows, any_exec_ref, single
-
-
-# Typed internal exports used by other proof modules.
-Cohort = _Cohort
-RemoteCohort = _RemoteCohort

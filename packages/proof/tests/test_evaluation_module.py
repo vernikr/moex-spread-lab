@@ -12,8 +12,8 @@ from moex_spread_lab.proof import evaluation, proof_kernel, proof_search
 
 def test_evaluation_exports_remain_compatible():
     for name in ("_annualized_returns", "_excess_curve", "account_checks"):
-        assert getattr(proof_kernel, name) is getattr(evaluation, name)
-        assert getattr(proof_search, name) is getattr(evaluation, name)
+        assert getattr(proof_kernel, name) is getattr(evaluation, name.lstrip("_"))
+        assert getattr(proof_search, name) is getattr(evaluation, name.lstrip("_"))
 
 
 def test_validation_uses_continuous_automatic_account_and_reports_shortfall():
@@ -36,7 +36,7 @@ def test_validation_uses_continuous_automatic_account_and_reports_shortfall():
     }
     marks = dict(zip(days, [100.0, 110.0, 121.0], strict=True))
     split = EvaluationSplit.from_dates(days, 25)
-    result = evaluation._annualized_returns(proof, marks, split)
+    result = evaluation.annualized_returns(proof, marks, split)
     assert result["calendar_days"] == 365
     assert result["strategy_annualized_pct"] == pytest.approx(10)
     assert result["lqdt_annualized_pct"] == pytest.approx(10)
@@ -49,4 +49,4 @@ def test_validation_uses_continuous_automatic_account_and_reports_shortfall():
     }
     for invalid in (0, math.inf, math.nan):
         with pytest.raises(W0Error, match="LQDT"):
-            evaluation._annualized_returns(proof, {**marks, days[1]: invalid}, split)
+            evaluation.annualized_returns(proof, {**marks, days[1]: invalid}, split)

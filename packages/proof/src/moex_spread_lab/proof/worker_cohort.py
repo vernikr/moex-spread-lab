@@ -11,7 +11,7 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
-from .axis import Axis
+from .landscape import Axis
 from .proof_kernel import StudyWindow
 from .strategy_catalog import get_strategy_axes
 from .worker_window import worker_service as _worker_service

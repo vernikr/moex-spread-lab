@@ -2,7 +2,7 @@
 
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof import landscape, proof_kernel, proof_search
-from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Axis
 
 
 def test_kernel_and_search_reexport_landscape_api():

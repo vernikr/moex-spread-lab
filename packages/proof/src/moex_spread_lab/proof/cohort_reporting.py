@@ -11,8 +11,7 @@ import optuna
 
 from moex_spread_lab.core.w0 import run_id
 
-from .axis import Axis
-from .landscape import Landscape
+from .landscape import Axis, Landscape
 from .landscape import lamps as _lamps
 from .proof_kernel import resolve_seed
 

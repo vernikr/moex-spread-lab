@@ -2,8 +2,7 @@
 
 import pytest
 
-from moex_spread_lab.proof.axis import Axis
-from moex_spread_lab.proof.landscape import Landscape
+from moex_spread_lab.proof.landscape import Axis, Landscape
 from moex_spread_lab.proof.proof_kernel import TuningOptions, _suggest_point, _tune, run_tuning
 from moex_spread_lab.proof.proof_search import _tune as facade_tune
 

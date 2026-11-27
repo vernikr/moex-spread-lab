@@ -17,10 +17,9 @@ from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 from moex_spread_lab.strategies.funding_carry.carry import CarryStrategyError
 
-from .axis import Axis
 from .cohort_models import Cohort as _Cohort
 from .cohort_models import RemoteCohort as _RemoteCohort
-from .landscape import Landscape
+from .landscape import Axis, Landscape
 from .request_validation import execution_axes as execution_axes
 from .request_validation import identity as _identity
 from .strategy_catalog import get_strategy_axes, resolve_strategy_registry

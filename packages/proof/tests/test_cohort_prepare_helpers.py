@@ -8,7 +8,7 @@ import pytest
 from moex_spread_lab.core.w0 import W0Error
 from moex_spread_lab.proof import cohort_prepare as helpers
 from moex_spread_lab.proof import proof_batch
-from moex_spread_lab.proof.axis import Axis
+from moex_spread_lab.proof.landscape import Axis
 
 
 def test_cohort_request_helpers_remain_reexported():

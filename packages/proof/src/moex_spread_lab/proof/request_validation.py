@@ -9,8 +9,7 @@ from moex_spread_lab.accounting.position_sizing import AUTO_SIZING, automatic
 from moex_spread_lab.core.universe import CALENDAR_UNIVERSE, PAIR_UNIVERSE
 from moex_spread_lab.core.w0 import W0Error
 
-from .axis import Axis
-from .axis import ordered as _ordered
+from .landscape import Axis, ordered
 from .strategy_catalog import get_strategy_axes
 
 if TYPE_CHECKING:
@@ -28,7 +27,7 @@ def execution_axes(request: _Request) -> _Axes:
     return {} if automatic(request) else EXECUTION_AXES
 
 
-def _identity(request: Mapping[str, Any]) -> dict[str, str]:
+def identity(request: Mapping[str, Any]) -> dict[str, str]:
     u = request.get("universe", CALENDAR_UNIVERSE)
     t: dict[str, Any] = {"universe": u, "pair": request.get("pair")}
     if u == CALENDAR_UNIVERSE:
@@ -101,37 +100,13 @@ def _validate_parameters(request: _Request, registry: StrategyRegistry | None) -
         axis = domains[name]
         if not axis.contains(value):
             raise W0Error(f"{name}: допустимый диапазон {axis.low}–{axis.high}")
-    if not _ordered(typed_params):
+    if not ordered(typed_params):
         raise W0Error("Порог выхода должен быть ниже порога входа")
 
 
-def _validate(request: object, *, registry: StrategyRegistry | None = None) -> None:
+def validate(request: object, *, registry: StrategyRegistry | None = None) -> None:
     if not isinstance(request, dict):
         raise W0Error("Выбор должен быть объектом.")
     checked = cast(dict[str, Any], request)
     _validate_options(checked)
     _validate_parameters(checked, registry)
-
-
-# ``proof_kernel`` and ``proof_search`` re-export these helpers, so they are
-# declared surface of this module even though their names stay private.
-__all__ = [
-    "AUTO_SIZING",
-    "CALENDAR_UNIVERSE",
-    "EXECUTION_AXES",
-    "PAIR_UNIVERSE",
-    "Axis",
-    "W0Error",
-    "_identity",
-    "_validate",
-    "annotations",
-    "automatic",
-    "compact_result",
-    "execution_axes",
-    "get_strategy_axes",
-]
-
-
-# Typed internal exports used by other proof modules.
-identity = _identity
-validate = _validate

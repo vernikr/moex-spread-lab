@@ -27,16 +27,15 @@ from moex_spread_lab.core.settings import (
 from moex_spread_lab.core.timeframes import get_timeframe as get_timeframe
 from moex_spread_lab.core.w0 import W0Error, run_id
 
-from .axis import Axis
-from .axis import ordered as _ordered
 from .evaluation import account_checks as account_checks
 from .evaluation import annualized_returns as _annualized_returns
 from .evaluation import excess_curve as _excess_curve
 from .evaluation import missing_exposure as _missing_exposure
 from .landscape import AMBER as AMBER
 from .landscape import GREEN as GREEN
-from .landscape import Landscape
+from .landscape import Axis, Landscape
 from .landscape import lamps as _lamps
+from .landscape import ordered as _ordered
 from .phase_metrics import measure_phase as measure_phase
 from .request_validation import EXECUTION_AXES as EXECUTION_AXES
 from .request_validation import compact_result as compact_result

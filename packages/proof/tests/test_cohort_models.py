@@ -1,11 +1,11 @@
 """Extracted cohort models preserve prewarmed probes and lifecycle contracts."""
 
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 from moex_spread_lab.proof import cohort_models, proof_batch
-from moex_spread_lab.proof.axis import Axis
-from moex_spread_lab.proof.landscape import Landscape
+from moex_spread_lab.proof.landscape import Axis, Landscape
 
 
 def test_remote_plateau_prewarm_deduplicates_and_release_is_idempotent():
@@ -21,11 +21,11 @@ def test_remote_plateau_prewarm_deduplicates_and_release_is_idempotent():
 
     pool.eval_plateau_batch.side_effect = batch
     state = {"cohort_id": "id", "owner_of": {0: 0}}
-    group = cohort_models._RemoteCohort(
+    group = cohort_models.RemoteCohort(
         active="mean_reversion",
         axes=axes,
         seed={"lookback": 5},
-        members=[({}, case)],
+        members=[({}, cast(Any, case))],
         land=land,
         pool=pool,
         cohort_state=state,
@@ -43,8 +43,8 @@ def test_remote_plateau_prewarm_deduplicates_and_release_is_idempotent():
     group.close()
     group.close()
     pool.release_cohort.assert_called_once_with("id", {0: 0})
-    assert proof_batch._Cohort is cohort_models._Cohort
-    assert proof_batch._RemoteCohort is cohort_models._RemoteCohort
+    assert proof_batch._Cohort is cohort_models.Cohort
+    assert proof_batch._RemoteCohort is cohort_models.RemoteCohort
 
 
 def test_invalid_center_does_not_submit_plateau_work():
@@ -52,11 +52,11 @@ def test_invalid_center_does_not_submit_plateau_work():
     land = Landscape(axes, lambda _: {"utility": 10.0})
     case = SimpleNamespace(request={"strategy": "mean_reversion"}, lamp_warning=lambda: None)
     pool = Mock()
-    group = cohort_models._RemoteCohort(
+    group = cohort_models.RemoteCohort(
         active="mean_reversion",
         axes=axes,
         seed={"lookback": 5},
-        members=[({}, case)],
+        members=[({}, cast(Any, case))],
         land=land,
         pool=pool,
         cohort_state={},

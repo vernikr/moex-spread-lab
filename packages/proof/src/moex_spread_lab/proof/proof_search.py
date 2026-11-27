@@ -15,11 +15,10 @@ from moex_spread_lab.core.w0 import W0Error
 
 from . import proof_batch as _proof_batch
 from . import proof_strategy_search as _proof_strategy_search
-from .axis import Axis
 from .evaluation import account_checks as account_checks
 from .evaluation import annualized_returns as _annualized_returns
 from .evaluation import excess_curve as _excess_curve
-from .landscape import AMBER, GREEN, Landscape
+from .landscape import AMBER, GREEN, Axis, Landscape
 from .proof_kernel import ENTRY, MIN_SESSIONS, SEED, TRIALS, derive_seed, resolve_seed
 from .proof_kernel import StudyWindow as StudyWindow
 from .proof_kernel import lamps as _lamps

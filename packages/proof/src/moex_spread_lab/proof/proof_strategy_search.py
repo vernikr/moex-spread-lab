@@ -20,9 +20,9 @@ from moex_spread_lab.core.w0 import run_id
 from moex_spread_lab.strategies.base import StrategyRegistry
 from moex_spread_lab.strategies.calendar.calendar_spreads import CalendarData
 
-from .axis import Axis
 from .cohort_prepare import targets as _targets
 from .cohort_prepare import translate as _translate
+from .landscape import Axis
 from .pair_payload import budget
 from .proof_batch import call_with_optional_progress as _call_with_optional_progress
 from .proof_batch import cohort_result as _cohort_result

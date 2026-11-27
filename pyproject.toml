@@ -3806,10 +3806,6 @@ label = "perf_equivalence_pool_fixtures.py"
 paths = ["packages/proof/tests/perf_equivalence_pool_fixtures.py"]
 
 [[tool.size-report.columns]]
-label = "axis.py"
-paths = ["packages/proof/src/moex_spread_lab/proof/axis.py"]
-
-[[tool.size-report.columns]]
 label = "packages/proof/src/moex_spread_lab/proof_runtime/axis.py"
 paths = ["packages/proof/src/moex_spread_lab/proof_runtime/axis.py"]
 

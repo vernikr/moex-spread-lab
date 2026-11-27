@@ -1,5 +1,7 @@
 """Compatibility and dependency injection for extracted request validation."""
 
+from typing import Any, cast
+
 import pytest
 
 from moex_spread_lab.accounting.position_sizing import AUTO_SIZING
@@ -12,8 +14,8 @@ from moex_spread_lab.strategies.calendar_zscore.plugin import CalendarZscorePlug
 
 def test_request_helpers_remain_reexported():
     for name in ("EXECUTION_AXES", "execution_axes", "_identity", "_validate", "compact_result"):
-        assert getattr(proof_kernel, name) is getattr(request_validation, name)
-        assert getattr(proof_search, name) is getattr(request_validation, name)
+        assert getattr(proof_kernel, name) is getattr(request_validation, name.lstrip("_"))
+        assert getattr(proof_search, name) is getattr(request_validation, name.lstrip("_"))
 
 
 def test_validation_uses_injected_registry_and_rejects_invalid_options_first():
@@ -23,19 +25,21 @@ def test_validation_uses_injected_registry_and_rejects_invalid_options_first():
         proof_adapter = "calendar_price_intents.v1"
 
     plugin = CustomCalendar()
-    registry = StrategyRegistry({**get_strategy_registry().as_dict(), plugin.strategy_id: plugin})
+    registry = StrategyRegistry(
+        {**get_strategy_registry().as_dict(), plugin.strategy_id: cast(Any, plugin)}
+    )
     request = {"strategy": plugin.strategy_id, "parameters": {"window": 10}}
-    request_validation._validate(request, registry=registry)
+    request_validation.validate(request, registry=registry)
     with pytest.raises(W0Error, match="Неизвестная стратегия"):
-        request_validation._validate(request)
+        request_validation.validate(request)
     with pytest.raises(W0Error, match="optimize_strategy"):
-        request_validation._validate({**request, "optimize_strategy": 1}, registry=registry)
+        request_validation.validate({**request, "optimize_strategy": 1}, registry=registry)
     with pytest.raises(W0Error, match="количество"):
-        request_validation._validate(
+        request_validation.validate(
             {**request, "sizing": AUTO_SIZING, "quantity": 1}, registry=registry
         )
     with pytest.raises(W0Error, match="Порог выхода"):
-        request_validation._validate(
+        request_validation.validate(
             {**request, "parameters": {"window": 10, "entry_z": 1.0, "exit_z": 1.0}},
             registry=registry,
         )

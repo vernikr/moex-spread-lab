@@ -22,7 +22,7 @@ from moex_spread_lab.strategies.base import (
     daily_pair_proof_plugin_ids,
 )
 
-from .axis import Axis
+from .landscape import Axis
 
 Derived = tuple[StrategyRegistry, frozenset[str], dict[str, dict[str, Axis]]]
 

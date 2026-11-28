@@ -15,8 +15,8 @@ from .proof_pool import (
     CohortWorkerPool,
     await_chunks,
     estimate_weight,
-    get_worker_pool,
     plan_shards,
+    service_pool_factory,
 )
 from .request_validation import compact_result as compact_result
 from .request_validation import identity as _identity
@@ -149,7 +149,7 @@ def window_summaries(
     benchmark = _benchmark_marks(service.root / "data/benchmark/lqdt-lineage.json")
     calendar = service._calendar or CalendarData(service.root)
     if StudyWindow is _DEFAULT_STUDY_WINDOW and type(calendar) is CalendarData:
-        pool = get_worker_pool(service)
+        pool = service_pool_factory(service)(service)
         est = sum(estimate_weight(service.root, t, settings.timeframe) for t in identities)
         if pool.should_use(total_windows, est):
             payload = [

@@ -11,6 +11,7 @@ import statistics
 from collections.abc import Iterator
 from concurrent.futures import Future
 from copy import deepcopy
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -368,14 +369,14 @@ class _InlineExecutor:
 def test_progress_is_identical_for_local_and_worker_paths(service):
     requests = {"requests": [PAIR, CAL]}
     local_events = []
-    with patch("moex_spread_lab.proof.proof_windows.get_worker_pool") as get_pool:
-        get_pool.return_value.should_use.return_value = False
+    with patch("moex_spread_lab.proof.proof_windows.service_pool_factory") as get_pool:
+        get_pool.return_value.return_value.should_use.return_value = False
         local = window_summaries(service, requests, on_progress=local_events.append)
 
     worker_events = []
     try:
-        with patch("moex_spread_lab.proof.proof_windows.get_worker_pool") as get_pool:
-            pool = get_pool.return_value
+        with patch("moex_spread_lab.proof.proof_windows.service_pool_factory") as get_pool:
+            pool = get_pool.return_value.return_value
             pool.max_workers = 2
             pool.should_use.return_value = True
             pool.ensure_workers.side_effect = lambda count: [
@@ -387,3 +388,23 @@ def test_progress_is_identical_for_local_and_worker_paths(service):
     assert worker == local
     assert worker_events == local_events
     assert [event["percent"] for event in local_events] == [4.0, 51.0, 98.0]
+
+
+def test_injected_pool_factory_is_the_one_windows_and_cohorts_use(service):
+    """#357: `ProofService(pool_factory=...)` must not be dead configuration."""
+    marker = SimpleNamespace(should_use=lambda *_args: False)
+    calls = []
+
+    def factory(target):
+        calls.append(target)
+        return marker
+
+    injected = ProofService(service.root, calendar=service._calendar, pool_factory=factory)
+    try:
+        with patch("moex_spread_lab.proof.proof_windows.CohortWorkerPool") as default_pool:
+            default_pool.return_value.should_use.return_value = False
+            window_summaries(injected, {"requests": [PAIR]})
+        assert calls == [injected]
+        default_pool.assert_not_called()
+    finally:
+        injected.close()

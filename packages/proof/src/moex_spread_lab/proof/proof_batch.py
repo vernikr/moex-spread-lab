@@ -29,7 +29,7 @@ from .proof_kernel import TRIALS, StudyWindow, TuningOptions, resolve_seed
 from .proof_kernel import Axis as Axis
 from .proof_kernel import tune as _tune
 from .proof_kernel import validate as _validate
-from .proof_pool import get_worker_pool
+from .proof_pool import service_pool_factory
 from .proof_pool import shared_estimate_weight as _estimate_weight
 from .request_validation import identity
 from .service import shared_benchmark_marks as _benchmark_marks
@@ -148,7 +148,7 @@ def _can_use_pool(
 
     if StudyWindow is not _DEFAULT_STUDY_WINDOW or type(calendar) is not CalendarData:
         return False
-    pool = get_worker_pool(service)
+    pool = service_pool_factory(service)(service)
     est = sum(_estimate_weight(service.root, t, timeframe) for _, t, _ in valid_specs)
     return pool.should_use(len(valid_specs), est)
 
@@ -179,7 +179,7 @@ def _prepare_cohort(
                 options.get("registry"),
                 StudyWindow,
                 _can_use_pool,
-                get_worker_pool,
+                service_pool_factory(service),
                 _unavailable,
             )
         ),

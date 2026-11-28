@@ -434,5 +434,10 @@ def get_worker_pool(service: Any) -> CohortWorkerPool:
     return cast(CohortWorkerPool, service._pool)
 
 
+def service_pool_factory(service: Any) -> Any:
+    """The factory a service was constructed with; `get_worker_pool` unless a test overrode it."""
+    return getattr(service, "_pool_factory", None) or get_worker_pool
+
+
 _estimate_weight = estimate_weight
 shared_estimate_weight = estimate_weight

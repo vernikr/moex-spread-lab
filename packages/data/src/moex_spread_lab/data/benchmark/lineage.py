@@ -72,18 +72,21 @@ def rate_rows_to_price(rows: list[dict[str, Any]], ticker: str) -> list[dict[str
 
 
 def adjust_vtbm_split(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Rescale every price before a >5x or <0.2x break (the 1000:1 split) onto the latest scale."""
+    """Rescale prices across 1000:1 breaks, preserving their underlying returns."""
     ordered = sorted(rows, key=lambda item: item["date"])
     adjusted = [dict(row) for row in ordered]
     factor = 1.0
     for index in range(len(adjusted) - 1, -1, -1):
         adjusted[index]["price"] *= factor
+        adjusted[index]["split_adjustment"] = factor
         if index:
             previous = float(ordered[index - 1]["price"])
             current = float(ordered[index]["price"])
             if previous > 0 and current > 0 and not 0.2 <= current / previous <= 5:
-                factor *= current / previous
-        adjusted[index]["split_adjustment"] = factor
+                split = 0.001 if current < previous else 1000.0
+                if abs(current / (previous * split) - 1) >= 0.2:
+                    raise BenchmarkError("VTBM price break is not consistent with the 1000:1 split")
+                factor *= split
     return adjusted
 
 

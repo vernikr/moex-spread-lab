@@ -107,12 +107,39 @@ def test_rate_proxy_compounds_over_elapsed_days():
     assert rows[0]["source_kind"] == "synthetic_proxy"
 
 
-def test_vtbm_split_adjustment_removes_large_break():
-    adjusted = adjust_vtbm_split(
-        [observed("VTBM", "2020-03-23", 1008.8), observed("VTBM", "2020-03-24", 1.01)]
-    )
-    assert adjusted[0]["price"] == pytest.approx(adjusted[1]["price"], abs=1e-4)
-    assert adjusted[1]["price"] == pytest.approx(1.01, abs=1e-4)
+def test_vtbm_split_adjustment_preserves_break_day_return_and_applied_factors():
+    original = [
+        observed("VTBM", f"2024-01-0{i}", price)
+        for i, price in enumerate((1000, 1010, 1.02, 1.03), 1)
+    ]
+    adjusted = adjust_vtbm_split(original)
+    assert [r["price"] for r in adjusted] == pytest.approx([1, 1.01, 1.02, 1.03])
+    assert [r["split_adjustment"] for r in adjusted] == pytest.approx([0.001, 0.001, 1, 1])
+    assert [r["price"] for r in original] == [1000, 1010, 1.02, 1.03]
+    assert adjusted[2]["price"] / adjusted[1]["price"] - 1 == pytest.approx(1.02 / 1.01 - 1)
+
+
+def test_vtbm_split_adjustment_matches_observed_break():
+    rows = [observed("VTBM", "2020-03-23", 1008.8), observed("VTBM", "2020-03-24", 1.0084)]
+    adjusted = adjust_vtbm_split(rows)
+    assert [r["price"] for r in adjusted] == pytest.approx([1.0088, 1.0084])
+    assert [r["split_adjustment"] for r in adjusted] == pytest.approx([0.001, 1])
+
+
+def test_vtbm_multiple_inverse_splits_apply_each_factor_to_earlier_rows():
+    rows = [
+        observed("VTBM", f"2024-01-0{i}", price)
+        for i, price in enumerate((1000, 1.01, 1020, 1030), 1)
+    ]
+    adjusted = adjust_vtbm_split(rows)
+    assert [r["price"] for r in adjusted] == pytest.approx([1000, 1010, 1020, 1030])
+    assert [r["split_adjustment"] for r in adjusted] == pytest.approx([1, 1000, 1, 1])
+
+
+def test_vtbm_rejects_break_inconsistent_with_documented_split():
+    rows = [observed("VTBM", "2024-01-01", 100), observed("VTBM", "2024-01-02", 10)]
+    with pytest.raises(BenchmarkError, match=r"not consistent with.*1000"):
+        adjust_vtbm_split(rows)
 
 
 def test_lineage_marks_proxy_and_observed_periods():

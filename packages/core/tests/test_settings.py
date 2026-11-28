@@ -173,6 +173,49 @@ class GlobalPeriodTests(unittest.TestCase):
             self.assertEqual(read_settings(root)["validation_percent"], 0)
 
 
+class ResearchSettingsBoundaryTests(unittest.TestCase):
+    def test_invalid_values_are_rejected_at_construction(self):
+        bad = (
+            {"validation_percent": 99},
+            {"validation_percent": -1},
+            {"slippage_ticks": -5},
+            {"slippage_ticks": 11},
+            {"initial_capital_rub": -1},
+            {"initial_capital_rub": 0},
+            {"timeframe": "fortnight"},
+            {"price_fill": "same_tick"},
+            {"allow_failed_volume": "yes"},
+            {"allow_failed_capital": 1},
+            {"random_seed": -1},
+            {"random_seed": 2_147_483_648},
+            {"random_seed": 1.5},
+        )
+        for kwargs in bad:
+            with self.subTest(case=kwargs), self.assertRaises(W0Error):
+                ResearchSettings(**kwargs)
+
+    def test_construction_normalizes_to_loader_semantics(self):
+        settings = ResearchSettings(validation_percent=10.0, slippage_ticks=2)
+        self.assertEqual(settings.validation_percent, 10)
+        self.assertEqual(settings.slippage_ticks, 2.0)
+
+    def test_metadata_carries_schema_marker_and_survives_roundtrip(self):
+        settings = ResearchSettings()
+        self.assertEqual(settings.metadata()["schema"], "research-settings.v1")
+        for key in ResearchSettings.__dataclass_fields__:
+            self.assertIn(key, settings.metadata())
+
+    def test_settings_with_override_accepts_metadata_roundtrip(self):
+        from moex_spread_lab.core.settings import settings_with_override
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            saved = save_settings(root, ResearchSettings().metadata())
+            self.assertEqual(saved["validation_percent"], 0)
+            override = settings_with_override(root, {"validation_percent": 25})
+            self.assertEqual(override.validation_percent, 25)
+
+
 def test_nonfinite_preferences_are_rejected_without_changing_saved_settings(tmp_path):
     saved = save_settings(tmp_path, {"validation_percent": 5})
     for key in ("validation_percent", "initial_capital_rub", "slippage_ticks", "random_seed"):

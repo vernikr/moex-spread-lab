@@ -34,10 +34,14 @@ BYTE_EXACT_PLATFORM = "Linux"
 # while the platform-independent NUMERIC_DIGEST below stayed identical.
 # Re-recorded again for #272: evaluation metadata now carries effective_validation_percent,
 # which is part of the hashed payload (NUMERIC_DIGEST moved with it).
-BYTE_EXACT_RUN_ID = "940c946c7e532b75"
-BYTE_EXACT_DIGEST = "0e38e3a72fc0f61096b46587bae025a0cd6e55c85e43662aed0ff132ce2eddf4"
+# Re-recorded again for #318: ResearchSettings.metadata() now embeds the
+# research-settings.v1 schema marker (self-describing run identities). Verified: with the
+# marker stripped the pipeline reproduces the previous hashes exactly, so this move is
+# caused solely by the schema key.
+BYTE_EXACT_RUN_ID = "92f53213ab612ce6"
+BYTE_EXACT_DIGEST = "3c027d9abc513af38fc7e2c5f17b4e4de7a527bf8002de02f3a1660d322fd734"
 # Platform-independent: floats rounded to 9 decimals, generated ids replaced.
-NUMERIC_DIGEST = "e4b72d254e2986787f6d85abc7e0edf35391bd67738a8a8452ee0e2b00aae202"
+NUMERIC_DIGEST = "17c38354c1b9872208ae8e58cefefb2ef6486b395f8435e5222aa0a614cb82b1"
 ROUND_DIGITS = 9
 
 

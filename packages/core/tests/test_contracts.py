@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from moex_spread_lab.core.contracts import (
     CompatibilityVerdict,
@@ -34,6 +34,54 @@ class CoreContractsTests(unittest.TestCase):
     def test_parameter_spec_contains_rejects_huge_ints(self) -> None:
         spec = ParameterSpec("a", "a", "int", 10, 1, 100, 1)
         self.assertFalse(spec.contains(10**400))
+
+    def test_parameter_spec_rejects_degenerate_declarations(self) -> None:
+        bad: tuple[tuple[str, object], ...] = (
+            ("inverted_bounds", {"min_value": 10, "max_value": 0}),
+            ("zero_step", {"step": 0}),
+            ("negative_step", {"step": -0.1}),
+            ("default_above_max", {"default": 101}),
+            ("default_below_min", {"default": 1, "min_value": 5}),
+            ("nonfinite_step", {"step": float("inf")}),
+            ("nonfinite_bound", {"min_value": float("nan")}),
+            ("int_kind_float_bounds", {"min_value": 5.5}),
+            ("int_kind_float_step", {"step": 1.5}),
+            ("int_kind_float_default", {"default": 10.5}),
+            ("bool_step", {"step": True}),
+        )
+        for name, overrides in bad:
+            kwargs: dict[str, Any] = {
+                "name": "a",
+                "label_ru": "a",
+                "kind": "int",
+                "default": 50,
+                "min_value": 10,
+                "max_value": 100,
+                "step": 1,
+            }
+            kwargs.update(overrides)
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, "ParameterSpec"):
+                ParameterSpec(**kwargs)
+
+    def test_parameter_spec_rejects_malformed_shape_fields(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ParameterSpec"):
+            ParameterSpec("", "a", "int", 5, 0, 10, 1)  # blank name
+        with self.assertRaisesRegex(ValueError, "ParameterSpec"):
+            ParameterSpec("a", "a", "angle", 5, 0, 10, 1)  # unknown kind
+        with self.assertRaisesRegex(ValueError, "ParameterSpec"):
+            ParameterSpec("a", "a", "int", 5, 0, 10, 1, lamp_steps=(-1, 0.5))  # type: ignore[arg-type]
+
+    def test_parameter_spec_contains_enforces_step_grid(self) -> None:
+        spec = ParameterSpec("entry_z", "Вход · z", "float", 2.0, 0.5, 5.0, 0.1)
+        self.assertTrue(spec.contains(2.0))
+        self.assertTrue(spec.contains(0.5))
+        self.assertTrue(spec.contains(5.0))
+        self.assertFalse(spec.contains(2.0123))
+        self.assertFalse(spec.contains(1.55))  # off-grid: 10.5 steps
+        self.assertTrue(spec.contains(1.5))  # on-grid despite float arithmetic
+        int_spec = ParameterSpec("lookback", "Окно · набл.", "int", 20, 4, 80, 2)
+        self.assertTrue(int_spec.contains(22))
+        self.assertFalse(int_spec.contains(23))
 
     def test_window_snapshot_truncation_preserves_metadata(self) -> None:
         rows = ({"date": "2026-01-01", "spread": 10.0}, {"date": "2026-01-02", "spread": 12.0})

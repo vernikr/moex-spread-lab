@@ -510,7 +510,9 @@ def test_daily_hurdle_marks_positions_across_a_split_and_reconciles_at_exit():
 @pytest.mark.parametrize("bad", [51, -1, True, "25"], ids=["over", "negative", "bool", "str"])
 def test_http_home_alias_new_search_rerun_and_local_origin_boundary(pair_service, bad):
     proof = pair_service
-    assert read_settings(proof.root) == ResearchSettings().metadata()
+    assert read_settings(proof.root) == {
+        k: v for k, v in ResearchSettings().metadata().items() if k != "schema"
+    }
     with pytest.raises(W0Error):
         save_settings(proof.root, {"validation_percent": bad})
     assert read_settings(proof.root)["validation_percent"] == 0

@@ -30,6 +30,9 @@ VALID_PRICE_FILLS = ("next_open", "next_close", "reference_same_bar")
 # choice of the project reproducible.
 DEFAULT_RANDOM_SEED = 0
 MAX_RANDOM_SEED = 2_147_483_647
+# Schema marker embedded in ResearchSettings.metadata() so stored run identities are
+# self-describing when fields are added; older readers ignore unknown top-level keys.
+RESEARCH_SETTINGS_SCHEMA = "research-settings.v1"
 
 
 def validation_percent(value: object) -> float:
@@ -48,31 +51,6 @@ def random_seed(value: object) -> int:
             f"Сид должен быть целым числом от 0 до {MAX_RANDOM_SEED}; 0 — новый сид при каждом запуске."
         )
     return value
-
-
-@dataclass(frozen=True)
-class ResearchSettings:
-    """One immutable snapshot for all search members, probes and result-period replays."""
-
-    validation_percent: float = DEFAULT_VALIDATION_PERCENT
-    allow_failed_volume: bool = True
-    allow_failed_capital: bool = True
-    slippage_ticks: float = 1.0
-    initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
-    timeframe: str = DEFAULT_TIMEFRAME
-    price_fill: str = DEFAULT_PRICE_FILL
-    random_seed: int = DEFAULT_RANDOM_SEED
-
-    def metadata(self) -> dict[str, float | bool | str]:
-        return asdict(self)
-
-    @classmethod
-    def load(cls, root: Path) -> ResearchSettings:
-        return cls(**cast(dict[str, Any], read_settings(root)))
-
-
-# Direct, non-tuning proof consumers do not implicitly opt into the research exceptions.
-STRICT_SCREENS = ResearchSettings(allow_failed_volume=False, allow_failed_capital=False)
 
 
 def _validated_initial_capital(value: object) -> float:
@@ -151,10 +129,45 @@ _VALIDATORS: dict[str, Callable[[object], object]] = {
 }
 
 
+@dataclass(frozen=True)
+class ResearchSettings:
+    """One immutable snapshot for all search members, probes and result-period replays."""
+
+    validation_percent: float = DEFAULT_VALIDATION_PERCENT
+    allow_failed_volume: bool = True
+    allow_failed_capital: bool = True
+    slippage_ticks: float = 1.0
+    initial_capital_rub: float = DEFAULT_INITIAL_CAPITAL_RUB
+    timeframe: str = DEFAULT_TIMEFRAME
+    price_fill: str = DEFAULT_PRICE_FILL
+    random_seed: int = DEFAULT_RANDOM_SEED
+
+    def __post_init__(self) -> None:
+        for key, validator in _VALIDATORS.items():
+            object.__setattr__(self, key, validator(getattr(self, key)))
+
+    def metadata(self) -> dict[str, float | bool | str]:
+        payload = {"schema": RESEARCH_SETTINGS_SCHEMA, **asdict(self)}
+        return cast(dict[str, float | bool | str], payload)
+
+    @classmethod
+    def load(cls, root: Path) -> ResearchSettings:
+        stored = read_settings(root)
+        stored.pop("schema", None)
+        return cls(**cast(dict[str, Any], stored))
+
+
+# Direct, non-tuning proof consumers do not implicitly opt into the research exceptions.
+STRICT_SCREENS = ResearchSettings(allow_failed_volume=False, allow_failed_capital=False)
+
+
 def _validated_patch(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise W0Error("Неизвестные или пустые настройки расчёта.")
-    mapping = cast(dict[str, object], value)
+    mapping = dict(cast(dict[str, object], value))
+    schema = mapping.pop("schema", RESEARCH_SETTINGS_SCHEMA)
+    if schema != RESEARCH_SETTINGS_SCHEMA:
+        raise W0Error("Версия настроек расчёта не поддерживается.")
     if not mapping or mapping.keys() - _VALIDATORS.keys():
         raise W0Error("Неизвестные или пустые настройки расчёта.")
     return {key: _VALIDATORS[key](item) for key, item in mapping.items()}
@@ -182,9 +195,10 @@ def read_settings(root: Path) -> dict[str, float | bool | str]:
         if "validation_percent" not in stored:
             raise W0Error("В настройках отсутствует доля проверки.")
         # Older files omit newer preferences. GET supplies defaults without rewriting them.
-        return ResearchSettings(**cast(dict[str, Any], stored)).metadata()
+        # Roundtrip output stays constructor-shaped (no schema marker); metadata() adds it.
+        return asdict(ResearchSettings(**cast(dict[str, Any], stored)))
     except FileNotFoundError:
-        return ResearchSettings().metadata()
+        return asdict(ResearchSettings())
     except (ValueError, UnicodeError) as exc:
         raise W0Error("Не удалось прочитать настройки расчёта. Сохраните их заново.") from exc
 
@@ -198,9 +212,7 @@ def save_settings(root: Path, body: object) -> dict[str, float | bool | str]:
         # clients and partial updates must preserve every other saved preference.
         settings = cast(
             dict[str, object],
-            patch
-            if patch.keys() == ResearchSettings().metadata().keys()
-            else read_settings(root) | patch,
+            patch if patch.keys() == _VALIDATORS.keys() else read_settings(root) | patch,
         )
         # A sibling temporary file keeps replacement atomic for concurrent readers.
         with NamedTemporaryFile(

@@ -14,6 +14,58 @@ def _empty_mapping() -> dict[str, Any]:
     return {}
 
 
+def _shape_errors(spec: ParameterSpec) -> list[str]:
+    errors: list[str] = []
+    name = cast(object, spec.name)
+    if not isinstance(name, str) or not name.strip():
+        errors.append("name must be a non-empty string")
+    label = cast(object, spec.label_ru)
+    if not isinstance(label, str):
+        errors.append("label_ru must be a string")
+    if spec.kind not in ("int", "float"):
+        errors.append("kind must be 'int' or 'float'")
+    if type(spec.tunable) is not bool:
+        errors.append("tunable must be a bool")
+    steps = cast(object, spec.lamp_steps)
+    if not isinstance(steps, tuple) or any(
+        type(step) is not int for step in cast(tuple[object, ...], steps)
+    ):
+        errors.append("lamp_steps must be a tuple of ints")
+    return errors
+
+
+def _finite_number(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    return math.isfinite(cast(float, value))
+
+
+def _bounded_errors(spec: ParameterSpec) -> list[str]:
+    bounded: tuple[tuple[str, object], ...] = (
+        ("min_value", spec.min_value),
+        ("max_value", spec.max_value),
+        ("step", spec.step),
+        ("default", spec.default),
+    )
+    finite_errors: list[str] = [
+        f"{label} must be a finite number" for label, value in bounded if not _finite_number(value)
+    ]
+    if finite_errors:
+        return finite_errors
+    errors: list[str] = []
+    if spec.min_value > spec.max_value:
+        errors.append("min_value must not exceed max_value")
+    if spec.step <= 0:
+        errors.append("step must be greater than zero")
+    if not spec.min_value <= spec.default <= spec.max_value:
+        errors.append("default must lie within [min_value, max_value]")
+    if spec.kind == "int":
+        for label, value in bounded:
+            if int(value) != value:
+                errors.append(f"{label} must be integral for kind='int'")
+    return errors
+
+
 @dataclass(frozen=True)
 class ParameterSpec:
     """Declarative numeric parameter specification for a registered strategy plugin."""
@@ -28,6 +80,14 @@ class ParameterSpec:
     tunable: bool = True
     lamp_steps: tuple[int, ...] = (-2, -1, 1, 2)
 
+    def __post_init__(self) -> None:
+        errors = [
+            *_shape_errors(self),
+            *(_bounded_errors(self) if self.kind in ("int", "float") else []),
+        ]
+        if errors:
+            raise ValueError("Invalid ParameterSpec: " + "; ".join(errors))
+
     def contains(self, value: Any) -> bool:
         if type(value) not in (int, float):
             return False
@@ -39,7 +99,10 @@ class ParameterSpec:
             return False
         if self.kind == "int" and type(value) is not int:
             return False
-        return self.min_value <= value <= self.max_value
+        if not self.min_value <= value <= self.max_value:
+            return False
+        grid = (value - self.min_value) / self.step
+        return math.isclose(grid, round(grid), rel_tol=0.0, abs_tol=1e-9)
 
     def to_dict(self) -> dict[str, Any]:
         return {

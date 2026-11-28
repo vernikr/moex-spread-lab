@@ -153,7 +153,12 @@ def pair_price_intent_trades(
         or fill not in plugin.supported_fills
     ):
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
-    rows = list(window.rows)
+    rows = [
+        {**r, "date": r["timestamp"]}
+        if window.timeframe == "1h" and len(str(r.get("date", ""))) == 10 and "timestamp" in r
+        else r
+        for r in window.rows
+    ]
     _, index = build_date_index(
         rows,
         "Окно пары должно содержать уникальные упорядоченные даты.",

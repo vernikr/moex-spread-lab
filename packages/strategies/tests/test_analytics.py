@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 from moex_spread_lab.accounting.costs import side_cost, tariff_profile
+from moex_spread_lab.core.contracts import WindowSnapshot
+from moex_spread_lab.core.universe import PAIR_UNIVERSE
 from moex_spread_lab.strategies.pair_mean_reversion.engine import (
     AnalyticsError,
     build_daily_series,
@@ -12,6 +14,8 @@ from moex_spread_lab.strategies.pair_mean_reversion.engine import (
     load_contracts,
     run_mean_reversion_baseline,
 )
+from moex_spread_lab.strategies.pair_mean_reversion.plugin import PairMeanReversionPlugin
+from moex_spread_lab.strategies.pair_screener.intents import pair_price_intent_trades
 from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 
@@ -299,6 +303,83 @@ class AnalyticsTests(unittest.TestCase):
                     near="NEAR",
                     far="FAR",
                 )
+
+    def test_h1_build_series_uses_prior_benchmark_before_1800_and_plugin_emits_timestamp_signal_date(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_near_far_contracts(
+                root / "contracts.json",
+                near={
+                    "secid": "NEAR",
+                    "lot_size": 1,
+                    "tick_size": 1.0,
+                    "tick_value": 1.0,
+                    "initial_margin": 3000.0,
+                },
+                far={
+                    "secid": "FAR",
+                    "lot_size": 1,
+                    "tick_size": 1.0,
+                    "tick_value": 1.0,
+                    "initial_margin": 3000.0,
+                },
+            )
+            write_lqdt_lineage(root / "benchmark.json", {"2026-02-01": 1.00, "2026-02-02": 1.05})
+            ts_list = [f"2026-02-02 {h:02d}:00:00" for h in range(10, 17)]
+            near_px = [101.0, 99.0, 100.0, 100.0, 100.0, 120.0, 100.0]
+            for secid, pxs in (("NEAR", near_px), ("FAR", [100.0] * 7)):
+                (root / f"{secid}.json").write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "iss-candles.v1",
+                            "secid": secid,
+                            "interval": 60,
+                            "rows": [
+                                {
+                                    "begin": ts,
+                                    "open": px,
+                                    "close": px,
+                                    "volume": 500,
+                                    "price_proxy_kind": "candle_close",
+                                }
+                                for ts, px in zip(ts_list, pxs, strict=True)
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            s1h = build_series(
+                root / "NEAR.json",
+                root / "FAR.json",
+                root / "benchmark.json",
+                root / "contracts.json",
+                near="NEAR",
+                far="FAR",
+                interval=60,
+            )
+            self.assertEqual(s1h["rows"][-1]["benchmark_mark_kind"], "prior_daily_close")
+            self.assertEqual(s1h["rows"][-1]["benchmark_price"], 1.0)
+            rows_with_vol = [{**r, "near_volume": 500, "far_volume": 500} for r in s1h["rows"]]
+            snap = WindowSnapshot(
+                universe=PAIR_UNIVERSE,
+                pair="NEAR/FAR",
+                timeframe="1h",
+                near="NEAR",
+                far="FAR",
+                rows=tuple(rows_with_vol),
+                contracts=s1h["contracts"],
+            )
+            plugin = PairMeanReversionPlugin()
+            run = plugin.evaluate_intents(
+                snap, {"lookback": 5, "entry_z": 1.0, "exit_z": 0.5}, "reference_same_bar"
+            )
+            self.assertEqual(run.intents[0]["signal"]["date"], "2026-02-02 15:00:00")
+            trades = pair_price_intent_trades(
+                plugin, snap, {"lookback": 5, "entry_z": 1.0, "exit_z": 0.5}, "reference_same_bar"
+            )
+            self.assertEqual(len(trades), 1)
 
 
 if __name__ == "__main__":

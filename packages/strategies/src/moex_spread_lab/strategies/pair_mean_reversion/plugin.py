@@ -29,13 +29,13 @@ _SCHEMA = (
 
 
 class PairMeanReversionPlugin:
-    strategy_id = "mean_reversion"
-    family_id = "mean_reversion"
-    label_ru = "Возврат спреда к среднему"
-    short_label_ru = "возврат к среднему"
-    supported_universes = frozenset({PAIR_UNIVERSE})
-    supported_fills = ("next_open", "next_close", "reference_same_bar")
-    requires_daily_bars = False
+    strategy_id: str = "mean_reversion"
+    family_id: str = "mean_reversion"
+    label_ru: str = "Возврат спреда к среднему"
+    short_label_ru: str = "возврат к среднему"
+    supported_universes: frozenset[str] = frozenset({PAIR_UNIVERSE})
+    supported_fills: tuple[str, ...] = ("next_open", "next_close", "reference_same_bar")
+    requires_daily_bars: bool = False
 
     # Declarative adapter metadata (consumed via moex_spread_lab.core.contracts helpers).
     proof_adapter: Literal["pair_price_intents.v1"] = "pair_price_intents.v1"
@@ -126,7 +126,10 @@ class PairMeanReversionPlugin:
             entry = str(row.get("timestamp", row["date"]))
             key = entry[:10] if window.timeframe == "1d" else entry[:19].replace(" ", "T")
             signal_row = positive_rows[max(0, index - delay)]
-            signal_days_by_entry[key] = str(signal_row["date"])
+            sig_stamp = str(signal_row.get("timestamp", signal_row["date"]))
+            signal_days_by_entry[key] = (
+                str(signal_row["date"])[:10] if window.timeframe == "1d" else sig_stamp
+            )
 
         def signal_day(entry: str) -> str:
             key = entry[:10] if window.timeframe == "1d" else entry[:19].replace(" ", "T")

@@ -269,7 +269,10 @@ def _select_benchmark_mark(
     timestamp: str,
     date_key: str,
 ) -> tuple[dict[str, Any] | None, str]:
-    if interval == 24 or last_timestamp_by_date[date_key] == timestamp:
+    is_eod_bar = last_timestamp_by_date[date_key] == timestamp and (
+        interval != 60 or int(timestamp[11:13]) >= 18
+    )
+    if interval == 24 or is_eod_bar:
         return benchmark.get(date_key), "daily_close_same_date"
     prior_index = bisect_left(benchmark_dates, date_key) - 1
     row = benchmark.get(benchmark_dates[prior_index]) if prior_index >= 0 else None

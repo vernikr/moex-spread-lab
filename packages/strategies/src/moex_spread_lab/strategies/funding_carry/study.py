@@ -79,6 +79,21 @@ def fetch_history(
     )
 
 
+def _parse_history_row(row: Mapping[str, Any], secid: str) -> tuple[float, float | None]:
+    raw_settle = row["SETTLEPRICE"]
+    raw_swap = row.get("SWAPRATE")
+    try:
+        settle = float(raw_settle)
+        swaprate = float(raw_swap) if raw_swap is not None else None
+    except (TypeError, ValueError) as exc:
+        raise CarryError(f"non-numeric history field for {secid} {row.get('TRADEDATE')}") from exc
+    if isinstance(raw_settle, bool) or not math.isfinite(settle) or settle <= 0:
+        raise CarryError(f"Некорректная расчётная цена {secid} за {row['TRADEDATE']}.")
+    if swaprate is not None and (isinstance(raw_swap, bool) or not math.isfinite(swaprate)):
+        raise CarryError(f"Некорректная ставка SWAPRATE {secid} за {row['TRADEDATE']}.")
+    return settle, swaprate
+
+
 def _normalize_history(
     source: dict[str, Any], secid: str
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
@@ -88,15 +103,7 @@ def _normalize_history(
     for row in source.get("rows", []):
         if row.get("TRADEDATE") is None or row.get("SETTLEPRICE") is None:
             continue
-        try:
-            settle = float(row["SETTLEPRICE"])
-            swaprate = float(row["SWAPRATE"]) if row.get("SWAPRATE") is not None else None
-        except (TypeError, ValueError) as exc:
-            raise CarryError(
-                f"non-numeric history field for {secid} {row.get('TRADEDATE')}"
-            ) from exc
-        if not math.isfinite(settle) or isinstance(row["SETTLEPRICE"], bool):
-            raise CarryError(f"Некорректная расчётная цена {secid} за {row['TRADEDATE']}.")
+        settle, swaprate = _parse_history_row(row, secid)
         trade_date = str(row["TRADEDATE"])
         normalized[trade_date] = {
             "date": trade_date,
@@ -157,10 +164,13 @@ def _basis_pnl(
 
 
 def _swaprate_for(date_key: str, near: str, near_row: Mapping[str, Any], mark: Any) -> float:
-    swaprate = mark.value if mark else near_row["swaprate"]
-    if swaprate is None:
+    raw = mark.value if mark else near_row["swaprate"]
+    if raw is None or isinstance(raw, bool):
         raise CarryError(f"missing {near} SWAPRATE on {date_key}")
-    return float(swaprate)
+    val = float(raw)
+    if not math.isfinite(val):
+        raise CarryError(f"non-finite {near} SWAPRATE on {date_key}")
+    return val
 
 
 def _regime_fields(

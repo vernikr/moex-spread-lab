@@ -16,7 +16,11 @@ from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
 from moex_spread_lab.strategies.funding_carry.engine import (
     transaction_cost_profile as _transaction_cost_profile,
 )
-from moex_spread_lab.strategies.funding_carry.study import CarryStrategyError, build_carry_study
+from moex_spread_lab.strategies.funding_carry.study import (
+    CarryError,
+    CarryStrategyError,
+    build_carry_study,
+)
 from strategy_fixtures import write_lqdt_lineage, write_near_far_contracts
 
 STRATEGY_KWARGS = {
@@ -294,6 +298,52 @@ class CarryTests(unittest.TestCase):
         for retired in ("funding-screen", "carry-study", "carry-strategy", "analytical-baseline"):
             with self.assertRaises(SystemExit), redirect_stderr(StringIO()):
                 parser.parse_args([retired])
+
+    def test_normalize_history_rejects_bool_nan_swaprate_and_non_positive_settle(self):
+        contracts_path = write_near_far_contracts(
+            self.root / "contracts_valid.json",
+            near={"secid": "CNYRUBF"},
+            far={"secid": "CRZ6", "expiry": "2026-12-17"},
+        )
+        far_src = source(
+            "CRZ6",
+            [
+                {"TRADEDATE": "2026-02-01", "SETTLEPRICE": 12.2, "SWAPRATE": 0.0},
+                {"TRADEDATE": "2026-02-02", "SETTLEPRICE": 12.2, "SWAPRATE": 0.0},
+            ],
+        )
+        for bad_swap in (float("nan"), float("inf"), True, False):
+            near_src = source(
+                "CNYRUBF",
+                [
+                    {"TRADEDATE": "2026-02-01", "SETTLEPRICE": 12.0, "SWAPRATE": bad_swap},
+                    {"TRADEDATE": "2026-02-02", "SETTLEPRICE": 12.0, "SWAPRATE": 0.01},
+                ],
+            )
+            with self.assertRaises(CarryError):
+                build_carry_study(near_src, far_src, contracts_path, near="CNYRUBF", far="CRZ6")
+
+        for bad_settle in (0.0, -5.0, True):
+            near_src = source(
+                "CNYRUBF",
+                [
+                    {"TRADEDATE": "2026-02-01", "SETTLEPRICE": bad_settle, "SWAPRATE": 0.01},
+                    {"TRADEDATE": "2026-02-02", "SETTLEPRICE": 12.0, "SWAPRATE": 0.01},
+                ],
+            )
+            with self.assertRaises(CarryError):
+                build_carry_study(near_src, far_src, contracts_path, near="CNYRUBF", far="CRZ6")
+
+        # Also verify engine signal guard never triggers positive_trailing_funding on NaN funding
+        dates = [f"2026-01-{day:02d}" for day in range(1, 7)]
+        nan_study = _carry_study(
+            dates,
+            basis=(1.0,) * 6,
+            funding=(float("nan"), -5.0, float("nan"), -5.0, -5.0, -5.0),
+            gross=(1.0,) * 6,
+        )
+        strat = self._strategy(nan_study, dates, strategy_variant="funding_only")
+        self.assertEqual(strat["trades"], [])
 
 
 if __name__ == "__main__":

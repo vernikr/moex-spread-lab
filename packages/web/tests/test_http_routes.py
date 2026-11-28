@@ -112,6 +112,22 @@ class WebPackageArchitectureTests(unittest.TestCase):
             dispatch._read_selection(handler, "/api/settings")
         self.assertEqual(handler.rfile.read(), b"")
 
+    def test_unknown_post_route_drains_declared_body_before_404(self) -> None:
+        sent: list[tuple[int, dict[str, str]]] = []
+        handler = SimpleNamespace(
+            headers={"Content-Length": "7"},
+            rfile=BytesIO(b"payload"),
+            send_json=lambda status, value: sent.append((status, value)),
+        )
+
+        def drain_body(size: int) -> None:
+            handler.rfile.read(size)
+
+        handler.drain_body = drain_body
+        dispatch.dispatch_post(handler, object(), "/api/retired")
+        self.assertEqual(sent, [(404, {"error": "not found"})])
+        self.assertEqual(handler.rfile.read(), b"")
+
 
 class WebHttpRoutesTests(unittest.TestCase):
     _tmp: ClassVar[tempfile.TemporaryDirectory[str]]

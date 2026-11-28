@@ -69,13 +69,16 @@ def dispatch_get(handler: Any, store: Any, path: str) -> None:
     handler.send_json(404, {"error": "not found"})
 
 
+def _declared_body_size(handler: Any) -> int:
+    try:
+        return int(handler.headers.get("Content-Length", "0"))
+    except ValueError:
+        return 0
+
+
 def _read_selection(handler: Any, path: str) -> Any:
     if handler.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
-        try:
-            size = int(handler.headers.get("Content-Length", "0"))
-        except ValueError:
-            size = 0
-        handler.drain_body(size)
+        handler.drain_body(_declared_body_size(handler))
         raise _UnsupportedMediaType
     size = int(handler.headers.get("Content-Length", "0"))
     limit = (
@@ -105,6 +108,7 @@ def _post_result(handler: Any, store: Any, path: str, selection: Any):
 def dispatch_post(handler: Any, store: Any, path: str) -> None:
     """Answer one POST with validated framing, then the first route that handles it."""
     if path not in ALL_POST_ROUTES:
+        handler.drain_body(_declared_body_size(handler))
         handler.send_json(404, {"error": "not found"})
         return
     try:

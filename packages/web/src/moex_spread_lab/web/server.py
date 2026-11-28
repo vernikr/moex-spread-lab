@@ -32,26 +32,32 @@ class ScreenerStore:
         self.proof_windows_lock = threading.Lock()
         self._calendar: Any = None
         self._proof: ProofService | None = None
+        # `ThreadingHTTPServer` serves first requests concurrently; an unsynchronized lazy
+        # `ProofService` would be built twice and the orphaned worker pool never closed.
+        self._proof_lock = threading.Lock()
 
     @property
     def proof(self) -> ProofService:
-        if self._proof is None:
-            self._proof = ProofService(
-                self.inputs.root,
-                calendar=self._calendar,
-                pool_factory=get_worker_pool,
-            )
-        return self._proof
+        with self._proof_lock:
+            if self._proof is None:
+                self._proof = ProofService(
+                    self.inputs.root,
+                    calendar=self._calendar,
+                    pool_factory=get_worker_pool,
+                )
+            return self._proof
 
     @property
     def calendar(self) -> Any:
-        if self._calendar is None:
-            self._calendar = self.proof.calendar_data
-        return self._calendar
+        with self._proof_lock:
+            if self._calendar is None:
+                self._calendar = self.proof.calendar_data
+            return self._calendar
 
     def close(self) -> None:
-        proof = self._proof
-        self._proof = None
+        with self._proof_lock:
+            proof = self._proof
+            self._proof = None
         if proof is not None:
             proof.close()
 

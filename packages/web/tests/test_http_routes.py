@@ -8,7 +8,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from io import BytesIO
@@ -115,6 +117,31 @@ class WebPackageArchitectureTests(unittest.TestCase):
                 json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()[2:]
             ]
             self.assertEqual([record["run_id"] for record in records], ["old", "new"])
+
+    def test_concurrent_first_proof_access_builds_one_service(self) -> None:
+        """#348: parallel first requests must not orphan a second `ProofService`."""
+        created: list[object] = []
+
+        class FakeProof:
+            calendar_data = object()
+
+            def close(self) -> None:
+                pass
+
+        def fake_init(*_args: object, **_kwargs: object) -> FakeProof:
+            time.sleep(0.05)
+            proof = FakeProof()
+            created.append(proof)
+            return proof
+
+        store = web_server.ScreenerStore(ScreenerInputs(Path.cwd()))
+        with mock.patch.object(web_server, "ProofService", side_effect=fake_init):
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                services = [pool.submit(lambda: store.proof) for _ in range(8)]
+                resolved = [f.result() for f in services]
+            store.close()
+        self.assertEqual(len(created), 1)
+        self.assertTrue(all(service is resolved[0] for service in resolved))
 
     def test_torn_proof_search_history_stays_writable(self) -> None:
         """#339: a half-written UTF-8 byte must not fail the save, and a torn line must not merge."""

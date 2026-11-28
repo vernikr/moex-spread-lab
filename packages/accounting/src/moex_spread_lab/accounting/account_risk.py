@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,10 @@ def _observed_loss(observed_daily_pnl: Iterable[float] | None) -> float:
     if observed_daily_pnl is None:
         return 0.0
     values = [float(value) for value in observed_daily_pnl]
+    if any(not math.isfinite(value) for value in values):
+        raise AccountRiskError(
+            "observed daily pnl must be finite; a missing observation cannot become zero loss"
+        )
     return max(0.0, -min(values)) if values else 0.0
 
 

@@ -280,6 +280,17 @@ def test_lqdt_overlay_accepts_a_negative_cumulative_pnl() -> None:
     assert overlay.shortfall_rows == 0
 
 
+def test_observed_loss_rejects_non_finite_series(tmp_path: Path) -> None:
+    path = _contracts(tmp_path)
+    for bad in ([1.0, float("nan")], [float("inf")], [1.0, 2.0, float("-inf")]):
+        with pytest.raises(AccountRiskError, match="must be finite"):
+            assess_vtb_pair(path, "SBERF", "SRZ6", initial_capital=30000.0, observed_daily_pnl=bad)
+    worst = assess_vtb_pair(
+        path, "SBERF", "SRZ6", initial_capital=30000.0, observed_daily_pnl=[10.0, -400.0]
+    )
+    assert worst["stress_inputs"]["observed_worst_daily_loss_rub"] == 400.0
+
+
 def test_ebs_charge_and_validation() -> None:
     assert ebs_undercovered_margin_charge(12000.0, 10000.0, key_rate=0.14, days=5) == pytest.approx(
         2000.0 * 0.16 * 5 / 365.0

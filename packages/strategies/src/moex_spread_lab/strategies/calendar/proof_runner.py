@@ -20,21 +20,24 @@ from .intents import calendar_intent_trades
 from .proof_payload import build_proof_payload
 
 
-def _prepare_daily_eligibility(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Annotate calendar rows with the eligibility flags the intent verifier rebinds against.
-
-    Hourly windows carry them from their own liquidity screen; daily windows are admitted by
-    positive spread volume alone, so every admitted row is eligible for signal, entry and exit.
-    """
+def _prepare_daily_eligibility(
+    rows: list[dict[str, Any]], fill: str = "close"
+) -> list[dict[str, Any]]:
+    """Annotate calendar rows with the eligibility flags the intent verifier rebinds against."""
     prepared: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
+        open_missing = fill == "open" and item.get("has_open_quote") is False
         if item.get("signal_eligible") is None:
             item["signal_eligible"] = True
         if item.get("entry_eligible") is None:
-            item["entry_eligible"] = True
+            item["entry_eligible"] = not open_missing
+        elif open_missing:
+            item["entry_eligible"] = False
         if item.get("exit_eligible") is None:
-            item["exit_eligible"] = True
+            item["exit_eligible"] = not open_missing
+        elif open_missing:
+            item["exit_eligible"] = False
         prepared.append(item)
     return prepared
 
@@ -175,10 +178,10 @@ def _prepare_analysis_rows(
             h1_cache[h1_key] = (res_window, prepared)
         return res_window, prepared
     elig_cache = cache.setdefault("daily_eligible", {}) if cache is not None else None
-    elig_key = (*scope, through)
+    elig_key = (*scope, through, fill)
     if elig_cache is not None and elig_key in elig_cache:
         return window, elig_cache[elig_key]
-    analysis_rows = _prepare_daily_eligibility(positive_spread_volume_rows(window["rows"]))
+    analysis_rows = _prepare_daily_eligibility(positive_spread_volume_rows(window["rows"]), fill)
     if len(analysis_rows) < 2:
         raise W0Error("fewer than two positive-volume calendar-spread observations")
     if elig_cache is not None:

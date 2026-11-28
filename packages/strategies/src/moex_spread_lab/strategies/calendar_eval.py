@@ -128,6 +128,19 @@ def calendar_compatibility(
     return CompatibilityVerdict(True)
 
 
+def _rows_for_fill(rows: Sequence[Mapping[str, Any]], fill: str) -> list[dict[str, Any]]:
+    if fill != "open":
+        return [dict(r) for r in rows]
+    out: list[dict[str, Any]] = []
+    for src in rows:
+        row = dict(src)
+        if row.get("has_open_quote") is False:
+            row["entry_eligible"] = False
+            row["exit_eligible"] = False
+        out.append(row)
+    return out
+
+
 def calendar_evaluate_intents(
     plugin: Any, window: WindowSnapshot, params: Mapping[str, Any], fill: str
 ) -> StrategyIntentRun:
@@ -147,11 +160,12 @@ def calendar_evaluate_intents(
         d = b.reason or getattr(plugin, "incompatible_reason", "incompatible calendar window")
         raise W0Error(d)
     delay, quote = PRICE_FILLS[fill]
-    rows = (
+    base_rows = (
         list(window.rows)
         if window.timeframe == "1h"
         else [r for r in window.rows if (r.get("min_volume") or 0) > 0]
     )
+    rows = _rows_for_fill(base_rows, quote)
     e = CalendarScan(window, rows, a, delay, quote, monthly)
     trades = list(plugin.scan_trades(e))
     if (
@@ -346,7 +360,7 @@ def evaluate_variants(
                 skip_dividend_windows_in_zscore=c,
                 zscore_options=zscore_options,
             )
-            per_pair = {a: d(rows) for (a, rows) in pairs.items()}
+            per_pair = {a: d(_rows_for_fill(rows, fill)) for (a, rows) in pairs.items()}
             if b:
                 variants.append(
                     {

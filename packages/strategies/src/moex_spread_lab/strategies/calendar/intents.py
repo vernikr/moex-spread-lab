@@ -78,7 +78,7 @@ def _validate_calendar_intent(
     }
 
 
-def _prepare_verifier_rows(window: WindowSnapshot) -> list[dict[str, Any]]:
+def _prepare_verifier_rows(window: WindowSnapshot, quote: str) -> list[dict[str, Any]]:
     if window.timeframe == "1h":
         return [dict(r) for r in window.rows]
     out: list[dict[str, Any]] = []
@@ -86,6 +86,9 @@ def _prepare_verifier_rows(window: WindowSnapshot) -> list[dict[str, Any]]:
         row = dict(src)
         if "min_volume" in row and (row.get("min_volume") or 0) <= 0:
             row["signal_eligible"] = False
+            row["entry_eligible"] = False
+            row["exit_eligible"] = False
+        elif quote == "open" and row.get("has_open_quote") is False:
             row["entry_eligible"] = False
             row["exit_eligible"] = False
         out.append(row)
@@ -102,7 +105,8 @@ def calendar_intent_trades(
         or fill not in plugin.supported_fills
     ):
         raise W0Error("Неподдерживаемая вселенная или исполнение плагина.")
-    rows = _prepare_verifier_rows(window)
+    delay, quote = PRICE_FILLS[fill]
+    rows = _prepare_verifier_rows(window, quote)
     _, lookup = build_date_index(
         rows, "Окно плагина должно содержать уникальные упорядоченные даты."
     )
@@ -113,6 +117,5 @@ def calendar_intent_trades(
         fill,
         tuple_msg="Плагин должен вернуть неизменяемый список сигналов.",
     )
-    delay, quote = PRICE_FILLS[fill]
     tracker = IntentSpanTracker(rows=rows, delay=delay)
     return [_validate_calendar_intent(item, lookup, quote, tracker) for item in intents]

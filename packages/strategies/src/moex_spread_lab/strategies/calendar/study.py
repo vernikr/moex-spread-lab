@@ -38,7 +38,7 @@ from .contracts import (
 from .h1_candles import asof_before
 from .loaders import cached_till_date, fetch_inputs, offline_loader
 
-_DAILY_ROW_KEYS = "date spread open_spread near_close far_close dev_pp days_to_near_expiry dividend_in_window margin min_volume mult near_price far_price near_open_price far_open_price spread_price spread_open_price spread_last_trade spread_trades near_volume far_volume"
+_DAILY_ROW_KEYS = "date spread open_spread near_close far_close dev_pp days_to_near_expiry dividend_in_window margin min_volume mult near_price far_price near_open_price far_open_price spread_price spread_open_price spread_last_trade spread_trades near_volume far_volume has_open_quote"
 _WINDOW_KEYS = "pair spread_instrument near far first_date last_date near_expiry rows min_spread_volume max_pair_margin_rub"
 _STUDY_WINDOW_KEYS = "pair spread_instrument from to observations min_spread_volume tradable_every_day max_pair_margin_rub passes_capital_screen"
 _SPAN_KEYS = "from to years"
@@ -89,6 +89,7 @@ def _build_daily_window_row(
             f.get("NUMTRADES"),
             c.get("VOLUME"),
             e.get("VOLUME"),
+            p,
         ),
     )
 
@@ -171,13 +172,25 @@ def span_years(windows: list[dict[str, Any]]) -> float:
     ).days / 365
 
 
+def _evaluated_span_years(windows: list[dict[str, Any]], liquid: list[dict[str, Any]]) -> float:
+    if not liquid or len(liquid) == len(windows):
+        return span_years(windows)
+    days = sum(
+        (date.fromisoformat(a["near_expiry"]) - date.fromisoformat(a["first_date"])).days
+        for a in liquid
+    )
+    return max(days, 1) / 365
+
+
 def _evaluate_asset_study(
     asset: str, windows: list[dict[str, Any]], benchmark: dict[str, float], profile: dict[str, Any]
 ) -> dict[str, Any]:
     if not windows:
         return {"status": "no_complete_windows"}
-    c = {a["pair"]: a["rows"] for a in windows if a["min_spread_volume"] >= MIN_DAILY_VOLUME}
+    liquid = [a for a in windows if a["min_spread_volume"] >= MIN_DAILY_VOLUME]
+    c = {a["pair"]: positive_spread_volume_rows(a["rows"]) for a in liquid}
     d = span_years(windows)
+    eval_years = _evaluated_span_years(windows, liquid)
     e = (
         evaluate_variants(
             c,
@@ -203,7 +216,7 @@ def _evaluate_asset_study(
                 "windows_with_trades": len(by_window),
                 "windows_net_positive": sum(a > 0 for a in by_window.values()),
                 "excess_pp_per_year_on_allocation": round(
-                    b["excess_over_lqdt_on_margin_rub"] / INITIAL_CAPITAL / d * 100, 3
+                    b["excess_over_lqdt_on_margin_rub"] / INITIAL_CAPITAL / eval_years * 100, 3
                 ),
             }
         )

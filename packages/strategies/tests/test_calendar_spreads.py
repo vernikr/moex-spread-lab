@@ -25,6 +25,7 @@ from moex_spread_lab.strategies.calendar.proof_runner import (
     _build_h1_eligible_rows,
     execute_calendar_proof,
 )
+from moex_spread_lab.strategies.calendar.study import _evaluate_asset_study
 from moex_spread_lab.strategies.calendar_eval import evaluate_variants
 from synthetic_history import iso_weekdays_until as _days
 
@@ -528,6 +529,73 @@ class ProofPayloadTests(unittest.TestCase):
             self.assertEqual(len(trades), 1)
             self.assertEqual(trades[0]["reason"], "end_of_window")
             self.assertEqual(trades[0]["exit"]["date"], "2026-01-12")
+
+    def test_asset_study_excludes_zero_volume_days_and_annualizes_over_evaluated_windows(self):
+        near_days = _days(date(2022, 12, 12), date(2023, 3, 16))
+        far_days = _days(date(2022, 12, 12), date(2023, 6, 15))
+        zero_vol_day, zero_vol_next = near_days[32], near_days[33]
+        histories = {
+            "SRH3": {
+                d: {
+                    "TRADEDATE": d,
+                    "SETTLEPRICE": 30000.0,
+                    "OPEN": None if d in (zero_vol_day, zero_vol_next) else 30000.0,
+                    "VOLUME": 500,
+                }
+                for d in near_days
+            },
+            "SRM3": {
+                d: {
+                    "TRADEDATE": d,
+                    "SETTLEPRICE": 35000.0 if d == zero_vol_day else 30100.0 + (i % 2),
+                    "OPEN": None if d in (zero_vol_day, zero_vol_next) else 30100.0 + (i % 2),
+                    "VOLUME": 500,
+                }
+                for i, d in enumerate(far_days)
+            },
+            "SRH3SRM3": {
+                d: {
+                    "TRADEDATE": d,
+                    "SETTLEPRICE": 5000.0 if d == zero_vol_day else 100.0,
+                    "OPEN": None,
+                    "VOLUME": 0 if d in (zero_vol_day, zero_vol_next) else 500,
+                }
+                for d in near_days
+            },
+        }
+        windows = build_windows(histories, "SR", TERMS, RUONIA)
+        bm = dict.fromkeys(far_days, 1.0)
+        res_single = _evaluate_asset_study("SR", windows, bm, tariff_profile(1.0))
+        for v in res_single["variants"]:
+            if v["strategy"] == "zscore_mean_reversion":
+                self.assertEqual(v["trades"], 0)
+
+        # Adding a skipped illiquid window 2 years later must not dilute annualization of the liquid window.
+        active_win = {**windows[0]}
+        active_win["rows"] = [
+            {
+                **r,
+                "spread": 100.0 if idx < 25 else 500.0,
+                "open_spread": 100.0 if idx < 25 else 500.0,
+            }
+            for idx, r in enumerate(active_win["rows"])
+        ]
+        illiquid_win = {
+            **active_win,
+            "pair": "SRH5/SRM5",
+            "spread_instrument": "SRH5SRM5",
+            "first_date": "2024-12-20",
+            "last_date": "2025-03-14",
+            "near_expiry": "2025-03-20",
+            "min_spread_volume": 5.0,
+        }
+        res_one = _evaluate_asset_study("SR", [active_win], bm, tariff_profile(1.0))
+        res_with_skipped = _evaluate_asset_study(
+            "SR", [active_win, illiquid_win], bm, tariff_profile(1.0)
+        )
+        one_pp = [v["excess_pp_per_year_on_allocation"] for v in res_one["variants"]]
+        skipped_pp = [v["excess_pp_per_year_on_allocation"] for v in res_with_skipped["variants"]]
+        self.assertEqual(one_pp, skipped_pp)
 
     def test_execute_calendar_proof_honors_threshold_pp_and_rejects_bad_params(self):
         days = [f"2026-01-{day:02d}" for day in range(1, 28)]

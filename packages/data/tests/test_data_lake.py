@@ -153,6 +153,38 @@ class DataLakeTests(unittest.TestCase):
             self.assertEqual(store.verify_legacy(legacy)["status"], "verified")
 
 
+@pytest.mark.parametrize("field", ["open", "high", "low", "close", "value", "volume"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_import_rejects_nonfinite_bar_values_before_dataset_write(tmp_path, field, value):
+    legacy = DataLakeTests()._legacy(tmp_path)
+    payload = json.loads(legacy.read_text())
+    payload["rows"][1][field] = value
+    payload["rows"][1].pop("price_proxy")
+    legacy.write_text(json.dumps(payload))
+    store = ParquetBarStore(tmp_path)
+    with pytest.raises(DataLakeError, match=field):
+        store.import_legacy(legacy)
+    assert not store.manifest_path.exists()
+    assert not list((tmp_path / "data-lake").rglob("*.parquet"))
+
+
+def test_failed_nonfinite_replacement_preserves_registered_dataset(tmp_path):
+    legacy = DataLakeTests()._legacy(tmp_path)
+    original = legacy.read_bytes()
+    store = ParquetBarStore(tmp_path)
+    record = store.import_legacy(legacy)
+    paths = [store.manifest_path, tmp_path / record["bars_path"], tmp_path / record["sources_path"]]
+    snapshots = [path.read_bytes() for path in paths]
+    payload = json.loads(original)
+    payload["rows"][1]["high"] = float("nan")
+    legacy.write_text(json.dumps(payload))
+    with pytest.raises(DataLakeError, match="high"):
+        store.upsert_legacy(legacy)
+    assert [path.read_bytes() for path in paths] == snapshots
+    legacy.write_bytes(original)
+    assert store.verify_legacy(legacy)["status"] == "verified"
+
+
 def test_verify_all_reports_each_dataset_failure_and_keeps_healthy_results(tmp_path, capsys):
     helper = DataLakeTests()
     first = helper._legacy(tmp_path, "A.json")

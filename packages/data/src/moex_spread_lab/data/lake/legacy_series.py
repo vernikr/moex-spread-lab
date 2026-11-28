@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -60,7 +61,13 @@ def _number(value: Any, label: str, *, required: bool = False) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DataLakeError(f"legacy candle {label} must be numeric or null")
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise DataLakeError(f"legacy candle {label} must be finite") from exc
+    if not math.isfinite(number):
+        raise DataLakeError(f"legacy candle {label} must be finite")
+    return number
 
 
 def _timestamp(value: Any, label: str) -> str:
@@ -74,6 +81,8 @@ def _integer(value: Any, label: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DataLakeError(f"legacy candle {label} must be an integer or null")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise DataLakeError(f"legacy candle {label} must be a finite integer or null")
     integer = int(value)
     if integer != value:
         raise DataLakeError(f"legacy candle {label} must be an integer or null")

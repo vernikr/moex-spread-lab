@@ -306,6 +306,29 @@ def test_ebs_charge_and_validation() -> None:
             ebs_undercovered_margin_charge(gross, cash, key_rate=rate, days=days)
 
 
+def test_assess_vtb_pair_rejects_percent_rates_and_fractional_quantity(tmp_path: Path) -> None:
+    path = _contracts(tmp_path)
+    for kwargs in ({"quantity": 1.5}, {"quantity": True}, {"quantity": 0}):
+        with pytest.raises(AccountRiskError, match="quantity must be a positive integer"):
+            assess_vtb_pair(path, "SBERF", "SRZ6", **kwargs)
+    for kwargs in (
+        {"key_rate": 14.0},
+        {"key_rate": float("nan")},
+        {"initial_capital": float("inf")},
+    ):
+        with pytest.raises(AccountRiskError, match=r"must be a (finite number|fraction)"):
+            assess_vtb_pair(path, "SBERF", "SRZ6", **kwargs)
+    for args, kwargs in (
+        ((-1.0, 0.0), {}),
+        ((1.0, 0.0), {"days": 1.5}),
+        ((1.0, 0.0), {"days": -1}),
+    ):
+        with pytest.raises(AccountRiskError):
+            ebs_undercovered_margin_charge(*args, **kwargs)
+    ok = assess_vtb_pair(path, "SBERF", "SRZ6", quantity=2)
+    assert json.dumps(ok, allow_nan=False)
+
+
 def test_assess_vtb_pair_scenarios_and_buffers(tmp_path: Path) -> None:
     path = _contracts(tmp_path)
     ok = assess_vtb_pair(path, "SBERF", "SRZ6", initial_capital=30000.0)

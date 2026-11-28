@@ -70,3 +70,16 @@ def test_retired_validate_manifest_command_is_rejected(capsys):
         cli.build_parser().parse_args(["validate-manifest"])
     assert exit_info.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_remote_is_registered_once_and_fast_path_skips_plugins(monkeypatch, capsys):
+    with _plugins(register_core_cli) as discover:
+        parsed = cli.build_parser().parse_args(["remote", "status"])
+        assert parsed.remote_command == "status"
+        discover.assert_called_once_with(group="moex_spread_lab.cli")
+    monkeypatch.setattr(cli, "entry_points", lambda **kwargs: pytest.fail("unexpected discovery"))
+    monkeypatch.setattr("sys.argv", ["moex-spread-lab", "remote", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 0
+    assert "status" in capsys.readouterr().out

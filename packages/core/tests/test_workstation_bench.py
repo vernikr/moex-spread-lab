@@ -311,6 +311,15 @@ def test_patch_paths_and_dependency_input_detection():
     )
 
 
+def test_candidate_pythonpath_includes_remote_workspace(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "packages/remote/src").mkdir(parents=True)
+    entries = candidate_python.candidate_pythonpath(tmp_path).split(os.pathsep)
+    assert str(tmp_path / "src") in entries
+    assert str(tmp_path / "packages/remote/src") in entries
+    assert str(tmp_path / "packages/remote") not in entries
+
+
 def test_candidate_python_guard_accepts_shadowed_module_and_rejects_escape(tmp_path):
     candidate = tmp_path / "checkout"
     module_dir = candidate / "packages" / "core" / "src" / "moex_spread_lab" / "core"

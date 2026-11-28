@@ -227,6 +227,9 @@ def test_sync_is_a_no_op_when_head_is_already_at_origin(monkeypatch, tmp_path):
         ("src/moex_spread_lab/cli.py", True),
         ("packages/proof/src/moex_spread_lab/proof/service.py", True),
         ("packages/core/pyproject.toml", True),  # dependency input
+        ("packages/remote/pyproject.toml", True),
+        ("packages/remote/src/moex_spread_lab/remote/cli.py", True),
+        ("packages/remote/tests/test_remote_cli.py", False),
         ("some/new/unknown-tool.py", True),  # fail safe towards freshness
         ("packages/proof/tests/test_proof_plateau.py", False),
         ("docs/development/plan.md", False),

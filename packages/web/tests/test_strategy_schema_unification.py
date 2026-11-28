@@ -128,5 +128,94 @@ class StrategySchemaTests(unittest.TestCase):
         )
 
 
+#: Drives `strategy-plans.js` / `state.js` routing for two family variants whose
+#: parameter grids disagree (float step 0.1 vs 0.5) and a calendar-only plugin.
+_ROUTING_HARNESS = r"""
+const fs = require('fs'), vm = require('vm'), path = require('path');
+const root = process.argv[2];
+const cache = new Map();
+function getModule(file) {
+  const p = path.resolve(file);
+  if (!cache.has(p)) cache.set(p, new vm.SourceTextModule(fs.readFileSync(p, 'utf8'), { identifier: p }));
+  return cache.get(p);
+}
+globalThis.document = {
+  getElementById: id => id === 'cohort-editor'
+    ? ({ querySelectorAll: () => [{ dataset: { axis: 'band_z' }, value: '1.3', valueAsNumber: 1.3, validity: { valid: true } }] })
+    : ({ value: 'plugin_cal', hidden: false, textContent: '' }),
+  dispatchEvent: () => {},
+};
+globalThis.window = { fetch: () => {} };
+globalThis.performance = { now: () => 0 };
+(async () => {
+  const state = getModule(path.join(root, 'state.js'));
+  const plans = getModule(path.join(root, 'strategy-plans.js'));
+  const link = async (spec, ref) => getModule(path.resolve(path.dirname(ref.identifier), spec));
+  await state.link(link); await state.evaluate();
+  await plans.link(link); await plans.evaluate();
+  const api = state.namespace;
+  api.installStrategyRegistry({ strategies: [
+    { id: 'plugin_pair', family_id: 'fam', is_builtin: false, proof_enabled: true,
+      supported_universes: ['pair_screen'], ui_order: ['band_z'],
+      parameters: [{ name: 'band_z', kind: 'float', default: 2.0, min_value: 1.0, max_value: 3.0, step: 0.1 }] },
+    { id: 'plugin_cal', family_id: 'fam', is_builtin: false, proof_enabled: true,
+      supported_universes: ['calendar_native'], ui_order: ['band_z'],
+      parameters: [{ name: 'band_z', kind: 'float', default: 2.0, min_value: 1.0, max_value: 3.0, step: 0.5 }],
+      context_parameters: { calendar_native: { '1d': { quarterly: [
+        { name: 'band_z', kind: 'float', default: 2.0, min_value: 1.0, max_value: 3.0, step: 0.5 }], monthly: [] } } } },
+    { id: 'cal_only_plugin', family_id: 'cal_only_plugin', is_builtin: false, proof_enabled: true,
+      proof_adapter: 'calendar_price_intents.v1', supported_universes: ['calendar_native'],
+      parameters: [{ name: 'band_z', kind: 'float', default: 2, min_value: 1, max_value: 3, step: 0.1 }] },
+  ]});
+  api.state.branches.set('calendar_native|SR', { key: 'calendar_native|SR', asset: { asset: 'SR', monthly: false } });
+  const leaf = { key: 'calendar_native|SR|SRH3/SRM3', branch: 'calendar_native|SR',
+    target: { universe: 'calendar_native', asset: 'SR', pair: 'SRH3/SRM3' } };
+  api.state.leaves.set(leaf.key, leaf);
+  api.state.checked.add(leaf.key);
+  api.state.sharedStrategy = 'plugin_pair';
+  const offGrid = plans.namespace.leafPlan(leaf);
+  console.log(JSON.stringify({
+    offGridCommon: offGrid.common,
+    offGridParams: offGrid.req.parameters,
+    calendarOnlyOnPair: api.pairStrategyAvailable(
+      { id: 'CNYRUBF/CRZ6', proof_strategies: { mean_reversion: true }, strategies: { mean_reversion: true } },
+      'cal_only_plugin',
+    ),
+  }));
+})().catch(err => { console.error(err); process.exitCode = 1; });
+"""
+
+
+class StrategyRoutingTests(unittest.TestCase):
+    """Shared-plan routing honours the per-window parameter grid and universes (##335, #336)."""
+
+    def test_shared_plan_falls_back_when_the_window_grid_rejects_the_point(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node not found; strategy routing harness skipped")
+        with tempfile.TemporaryDirectory() as tmp:
+            harness_path = Path(tmp) / "routing.js"
+            harness_path.write_text(_ROUTING_HARNESS, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    node,
+                    "--no-warnings",
+                    "--experimental-vm-modules",
+                    str(harness_path),
+                    str(_JS_DIR),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        payload = json.loads(result.stdout)
+        # #335: 1.3 is off the calendar variant's 0.5 grid, so the window keeps its own plan.
+        self.assertFalse(payload["offGridCommon"], payload)
+        self.assertEqual(payload["offGridParams"], {"band_z": 2}, payload)
+        # #336: a calendar-only plugin must not be routed onto a pair window.
+        self.assertFalse(payload["calendarOnlyOnPair"], payload)
+
+
 if __name__ == "__main__":
     unittest.main()

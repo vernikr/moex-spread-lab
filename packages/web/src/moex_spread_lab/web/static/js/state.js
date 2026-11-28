@@ -171,7 +171,7 @@ export function calendarStrategySupported(assetObj, name) {
 
 export function pairStrategyAvailable(p, name, proof = false) {
   const meta = getStrategyMeta(name);
-  if (!meta || !timeframeSupported(meta)) return false;
+  if (!meta?.proof_enabled || !meta.supported_universes?.includes('pair_screen') || !timeframeSupported(meta)) return false;
   const useProof = proof || state.preferences.validation_percent || state.preferences.allow_failed_volume;
   return !!(useProof ? p?.proof_strategies : p?.strategies)?.[pairCatalogSlot(name)];
 }

@@ -90,12 +90,18 @@ export function pointError(inputs) {
   return entry && exit && exit.valueAsNumber >= entry.valueAsNumber ? 'Порог выхода должен быть ниже порога входа.' : '';
 }
 
+function specAccepts(s, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  if (s.kind === 'int' && !Number.isInteger(value)) return false;
+  if (value < s.min_value || value > s.max_value) return false;
+  const grid = (value - s.min_value) / s.step;
+  return Math.abs(grid - Math.round(grid)) <= 1e-6;
+}
+
 function specsAcceptPoint(strategyId, params, options) {
   const specs = orderedStrategySpecs(strategyId, options);
   if (!specs.length) return false;
-  if (!specs.every(s => typeof params[s.name] === 'number' && Number.isFinite(params[s.name]) && params[s.name] >= s.min_value && params[s.name] <= s.max_value)) {
-    return false;
-  }
+  if (!specs.every(s => specAccepts(s, params[s.name]))) return false;
   return !('entry_z' in params && 'exit_z' in params && params.exit_z >= params.entry_z);
 }
 

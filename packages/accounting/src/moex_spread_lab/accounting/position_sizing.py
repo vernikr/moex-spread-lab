@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
 from moex_spread_lab.core._fastcore_loader import load_fastcore
 from moex_spread_lab.core.w0 import W0Error, run_id
@@ -321,6 +321,26 @@ class _Replay:
         )
 
 
+def _require_executable_exits(proof: dict[str, Any]) -> None:
+    """A planned exit must fall on a row the strategy can actually trade out of."""
+    series = cast(list[dict[str, Any]], proof.get("series") or [])
+    trades = cast(list[dict[str, Any]], proof.get("trades") or [])
+    rows = {row["date"]: row for row in series}
+    for trade in trades:
+        if trade.get("open_at_end"):
+            continue
+        exit_date = trade["exit"]["date"]
+        row = rows.get(exit_date)
+        if row is None:
+            raise W0Error(f"Плановая дата выхода {exit_date} отсутствует в окне расчёта.")
+        eligible = bool(row.get("volume_eligible", True))
+        if not bool(row.get("exit_eligible", eligible)):
+            raise W0Error(
+                f"Плановая дата выхода {exit_date} не исполнима (exit_eligible=False); "
+                "перенесите выход на исполнимый день."
+            )
+
+
 def size_proof(
     unit: dict[str, Any],
     marks: dict[str, float],
@@ -342,6 +362,7 @@ def size_proof(
         if copy_unit
         else unit
     )
+    _require_executable_exits(proof)
     terms = Terms(proof, contracts, settings)
     state = None
     fc = load_fastcore() if metrics_only else None

@@ -167,6 +167,28 @@ class FundedSizingTests(unittest.TestCase):
             places=2,
         )
 
+    def test_a_planned_exit_on_an_ineligible_day_fails_closed(self):
+        # Silently keeping the position open used to report a closed trade with no exit costs.
+        unit, marks, contracts = unit_proof(entries=((0, 1),))
+        unit["series"][1]["exit_eligible"] = False
+        for metrics_only in (False, True):
+            with self.assertRaises(W0Error):
+                size_proof(unit, marks, ResearchSettings(), contracts, metrics_only=metrics_only)
+
+    def test_an_exit_date_outside_the_window_fails_closed(self):
+        unit, marks, contracts = unit_proof(entries=((0, 1),))
+        unit["trades"][0]["exit"]["date"] = "2027-01-01"
+        with self.assertRaises(W0Error):
+            size_proof(unit, marks, ResearchSettings(), contracts)
+
+    def test_an_open_position_at_the_end_is_not_required_to_be_exit_eligible(self):
+        unit, marks, contracts = unit_proof(entries=((0, 1),))
+        unit["trades"][0]["open_at_end"] = True
+        unit["series"][1]["exit_eligible"] = False
+        proof = size_proof(unit, marks, ResearchSettings(), contracts)
+        self.assertEqual(proof["summary"]["open_positions"], 1)
+        self.assertEqual(proof["summary"]["closed_trades"], 0)
+
     def test_losses_resize_the_next_entry_but_never_an_open_position(self):
         unit, marks, contracts = unit_proof()
         proof = replay(unit, marks, contracts)

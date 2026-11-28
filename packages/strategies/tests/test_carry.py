@@ -11,11 +11,13 @@ from io import StringIO
 from pathlib import Path
 
 from moex_spread_lab.accounting.account_risk import assess_vtb_pair, ebs_undercovered_margin_charge
+from moex_spread_lab.core.contracts import WindowSnapshot
 from moex_spread_lab.strategies.cli import register as register_strategy_cli
 from moex_spread_lab.strategies.funding_carry.engine import build_carry_strategy
 from moex_spread_lab.strategies.funding_carry.engine import (
     transaction_cost_profile as _transaction_cost_profile,
 )
+from moex_spread_lab.strategies.funding_carry.plugin import PLUGIN as carry_plugin
 from moex_spread_lab.strategies.funding_carry.study import (
     CarryError,
     CarryStrategyError,
@@ -344,6 +346,48 @@ class CarryTests(unittest.TestCase):
         )
         strat = self._strategy(nan_study, dates, strategy_variant="funding_only")
         self.assertEqual(strat["trades"], [])
+
+    def test_funding_carry_plugin_returns_empty_intents_when_lookback_meets_or_exceeds_rows(self):
+        contracts_path = write_near_far_contracts(
+            self.root / "contracts_lb.json",
+            near={"secid": "CNYRUBF"},
+            far={"secid": "CRZ6", "expiry": "2026-12-17"},
+        )
+        bench_path = write_lqdt_lineage(self.root / "bench_lb.json", {"2026-01-01": 1.0})
+        dates = [f"2026-02-{d:02d}" for d in range(1, 11)]
+        study = build_carry_study(
+            source(
+                "CNYRUBF",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.0, "SWAPRATE": 0.01, "VOLUME": 500}
+                    for d in dates
+                ],
+            ),
+            source(
+                "CRZ6",
+                [
+                    {"TRADEDATE": d, "SETTLEPRICE": 12.2, "SWAPRATE": 0.0, "VOLUME": 500}
+                    for d in dates
+                ],
+            ),
+            contracts_path,
+            near="CNYRUBF",
+            far="CRZ6",
+        )
+        snap = WindowSnapshot(
+            universe="pair_screen",
+            pair="CNYRUBF/CRZ6",
+            near="CNYRUBF",
+            far="CRZ6",
+            timeframe="1d",
+            carry_study=study,
+            benchmark=bench_path,
+            extra={"contracts_path": contracts_path, "transaction_cost_scenario": "tariff"},
+        )
+        self.assertTrue(carry_plugin.check_compatibility(snap).compatible)
+        for lb in (10, 20):
+            run = carry_plugin.evaluate_intents(snap, {"lookback": lb}, "same_day_settlement")
+            self.assertEqual(run.intents, ())
 
 
 if __name__ == "__main__":

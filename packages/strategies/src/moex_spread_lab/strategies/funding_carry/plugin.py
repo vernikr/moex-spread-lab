@@ -89,6 +89,15 @@ class FundingCarryPlugin:
         benchmark_path = window.benchmark
         if not isinstance(contracts_path, Path) or not isinstance(benchmark_path, Path):
             raise W0Error("carry strategy evaluation requires contracts_path and benchmark Path")
+        study = window.carry_study
+        assert study is not None
+        if len(study["rows"]) <= int(validated["lookback"]):
+            return StrategyIntentRun(
+                strategy_id=self.strategy_id,
+                fill=fill,
+                parameters=validated,
+                intents=(),
+            )
         cost_scenario = str(window.extra.get("transaction_cost_scenario", "tariff"))
         report = build_carry_strategy(
             dict(window.carry_study),  # type: ignore[arg-type]
